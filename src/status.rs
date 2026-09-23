@@ -23,13 +23,16 @@ use crate::src::screen_write::{
 };
 pub use crate::src::server::clients;
 use crate::src::server::server_add_message;
-use crate::src::server_client::{server_client_clear_overlay, server_client_set_message};
+use crate::src::server_client::{
+    server_client_clear_overlay, server_client_clear_saved_status_screen,
+    server_client_set_message, server_client_set_saved_status_screen,
+};
 pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::style::{
     style_apply, style_ranges_free, style_ranges_get_range, style_ranges_init,
 };
 use crate::src::tmux::global_s_options;
-use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf_cstring};
+use crate::src::xmalloc::{xcalloc, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -282,7 +285,7 @@ pub unsafe extern "C" fn status_get_range(
 unsafe extern "C" fn status_push_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
     if (*sl).active == &raw mut (*sl).screen {
-        (*sl).active = xmalloc(::core::mem::size_of::<screen>() as size_t) as *mut screen;
+        server_client_set_saved_status_screen(c, Box::new(std::mem::zeroed::<screen>()));
         screen_init((*sl).active, (*c).tty.sx, status_line_size(c), 0 as u_int);
     }
     (*sl).references += 1;
@@ -292,8 +295,7 @@ unsafe extern "C" fn status_pop_screen(mut c: *mut client) {
     (*sl).references -= 1;
     if (*sl).references == 0 as ::core::ffi::c_int {
         screen_free((*sl).active);
-        free((*sl).active as *mut ::core::ffi::c_void);
-        (*sl).active = &raw mut (*sl).screen;
+        server_client_clear_saved_status_screen(c);
     }
 }
 #[no_mangle]
@@ -333,7 +335,7 @@ pub unsafe extern "C" fn status_free(mut c: *mut client) {
     }
     if (*sl).active != &raw mut (*sl).screen {
         screen_free((*sl).active);
-        free((*sl).active as *mut ::core::ffi::c_void);
+        server_client_clear_saved_status_screen(c);
     }
     screen_free(&raw mut (*sl).screen);
 }

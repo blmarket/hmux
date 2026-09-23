@@ -1991,6 +1991,19 @@ legacy callers safe.
   comparison covered filter rejection, event completion with verbose payload,
   explicit wake, and server flush. No sanitizer was run.
 
+### Increment 267 — saved status screen owner (2026-09-23)
+
+- `ClientOwner` now holds `Option<Box<screen>>` for the saved status screen.
+  `status.active` remains a borrowed C-layout pointer view while messages or
+  prompts hold references. Final pop and client status teardown call
+  `screen_free`, clear the view, and drop the box in that order.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and
+  `scripts/status_saved_screen_owner_cli_checks.py` passed on main. The
+  attached-PTY comparison with the pinned baseline covered message
+  replacement and timer expiry, a prompt, and client teardown with an active
+  message or prompt. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2001,8 +2014,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit the status saved-screen record for complete push/pop, prompt/message,
-   and client-teardown ownership.
+1. Audit `window_buffer_editdata` and the remaining `wait-for` channel/lock
+   records for complete callback and teardown ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
@@ -2040,7 +2053,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–264 above, with increment 228 explicitly retracted.
+recorded in increments 226–267 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

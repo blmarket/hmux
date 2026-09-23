@@ -124,6 +124,7 @@ pub use crate::src::shared::client::{
 struct ClientOwner {
     node: client,
     message: Option<CString>,
+    saved_status_screen: Option<Box<screen>>,
     term_cap_strings: Vec<CString>,
     term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
 }
@@ -138,6 +139,21 @@ pub(crate) unsafe fn server_client_set_message(c: *mut client, message: Option<C
     if let Some(message) = (*owner).message.as_ref() {
         (*c).message_string = message.as_ptr().cast_mut();
     }
+}
+
+pub(crate) unsafe fn server_client_set_saved_status_screen(c: *mut client, screen: Box<screen>) {
+    let owner = c as *mut ClientOwner;
+    assert!((*owner).saved_status_screen.is_none());
+    (*owner).saved_status_screen = Some(screen);
+    (*c).status.active = (*owner).saved_status_screen.as_deref_mut().unwrap();
+}
+
+pub(crate) unsafe fn server_client_clear_saved_status_screen(c: *mut client) {
+    let owner = c as *mut ClientOwner;
+    // Reset the public view before dropping the allocation it pointed into.
+    (*c).status.active = &raw mut (*c).status.screen;
+    assert!((*owner).saved_status_screen.is_some());
+    (*owner).saved_status_screen = None;
 }
 
 unsafe fn server_client_add_term_cap(c: *mut client, data: *const ::core::ffi::c_char) {
@@ -185,6 +201,7 @@ mod client_message_owner_tests {
             let mut owner = Box::new(ClientOwner {
                 node: std::mem::zeroed::<client>(),
                 message: None,
+                saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
             });
@@ -215,6 +232,7 @@ mod client_message_owner_tests {
             let mut owner = Box::new(ClientOwner {
                 node: std::mem::zeroed::<client>(),
                 message: None,
+                saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
             });
@@ -611,6 +629,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     c = &raw mut (*Box::into_raw(Box::new(ClientOwner {
         node: std::mem::zeroed::<client>(),
         message: None,
+        saved_status_screen: None,
         term_cap_strings: Vec::new(),
         term_cap_ptrs: Vec::new(),
     })))
