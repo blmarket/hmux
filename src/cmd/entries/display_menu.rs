@@ -1251,7 +1251,8 @@ unsafe extern "C" fn cmd_display_popup_exec(
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut argv: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut formatted_title: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
     let mut modify: ::core::ffi::c_int = popup_present(tc);
     let mut flags: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1439,10 +1440,11 @@ unsafe extern "C" fn cmd_display_popup_exec(
                 1988999557336856620 => {}
                 _ => {
                     if args_has(args, 'T' as i32 as u_char) != 0 {
-                        title =
+                        formatted_title =
                             format_single_from_target(item, args_get(args, 'T' as i32 as u_char));
+                        title = formatted_title;
                     } else {
-                        title = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+                        title = c"".as_ptr();
                     }
                     if args_has(args, 'N' as i32 as u_char) != 0 || modify == 0 {
                         flags = 0 as ::core::ffi::c_int;
@@ -1490,7 +1492,7 @@ unsafe extern "C" fn cmd_display_popup_exec(
                     {
                         environ_free(env);
                         free(formatted_cwd as *mut ::core::ffi::c_void);
-                        free(title as *mut ::core::ffi::c_void);
+                        free(formatted_title as *mut ::core::ffi::c_void);
                         cmd_free_argv(argc, argv);
                         return CMD_RETURN_WAIT;
                     }
@@ -1506,14 +1508,14 @@ unsafe extern "C" fn cmd_display_popup_exec(
             cmd_free_argv(argc, argv);
             environ_free(env);
             free(formatted_cwd as *mut ::core::ffi::c_void);
-            free(title as *mut ::core::ffi::c_void);
+            free(formatted_title as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         _ => {
             cmd_free_argv(argc, argv);
             environ_free(env);
             free(formatted_cwd as *mut ::core::ffi::c_void);
-            free(title as *mut ::core::ffi::c_void);
+            free(formatted_title as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     };

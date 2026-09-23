@@ -125,11 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_display_popup_exec` still duplicates a literal empty default title
-   before `popup_display` or `popup_modify`, then frees it on all exits.
-   Both consumers synchronously copy title into `PopupOwner`. Borrow the
-   literal for the default branch while keeping formatted `-T` title C-owned.
-   Compare default and explicit title rendering with pinned tmux.
+1. `cmd_new_window_exec`'s `-n` path calls `clean_name` and carries its
+   C-owned output through `-S` matching, `spawn_context.name`, and several
+   early exits. Use `clean_name_cstring` with a local `Option<CString>`, lend
+   its pointer through synchronous spawn, and remove the four manual frees.
+   Preserve `check_name` and the separate formatted-input C owner. Compare
+   explicit names, `-S` matching, and spawn errors with pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1240,6 +1241,17 @@ name error.
   new popup cwd CLI passed. The new CLI checks actual child `$PWD` for default
   and explicit `-d` paths with both candidate and pinned tmux. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 426 — borrow default popup title literal (2026-09-23)
+
+- `cmd_display_popup_exec` now borrows the empty C literal for its default
+  title. `popup_display` and `popup_modify` synchronously copy that value into
+  `PopupOwner`; the default-path `xstrdup` and matching frees are gone.
+  Formatted `-T` titles retain their C-owned result and cleanup on all exits.
+- Serialized workspace tests, binary build, popup cwd CLI, and popup owner
+  CLI passed. The popup owner script also passed with pinned tmux, exercising
+  explicit titles; the popup cwd script exercises the default title branch.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
