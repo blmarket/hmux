@@ -125,13 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_make_commands` owns a command string only through substitution and
-   synchronous parsing. It currently duplicates the starting command,
-   replaces it with a C allocation for each argument, frees each previous
-   allocation, then frees the final result. The now crate-visible
-   `cmd_template_replace_cstring` can keep the entire temporary as `CString`
-   while the retained argument value in `args_copy_copy_value` continues to
-   use its C-owned output contract.
+1. `tty_keys_clipboard` still decodes an OSC 52 reply into an `xmalloc`
+   buffer, then either frees it or transfers it to `paste_add` after a
+   synchronous input-request callback. The paste buffer now owns boxed bytes.
+   A private owned-byte paste path can let the decoder use `Vec<u8>` through
+   the callback and move its exact decoded slice on the query path, while the
+   exported `paste_add` retains its C-input transfer contract. Validate real
+   terminal OSC 52 query/reply, invalid base64, and binary bytes including
+   an interior NUL.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -950,6 +951,19 @@ libc allocation on success and leaves it with the caller on error, so a local
 - Serialized workspace tests and the binary build passed. Pinned-baseline
   CLI comparisons passed for choose-tree command execution, attached help
   redraw with `C-h`, and switch-mode selection and target paths. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 406 — owned argument command construction (2026-09-23)
+
+- `args_make_commands` now holds its temporary command as `CString` from the
+  initial copy through each argument substitution and synchronous
+  `cmd_parse_from_string`. This retires its initial `xstrdup`, each exported
+  C replacement allocation, and the matching manual frees. The returned
+  command list and parse-error ownership contracts are unchanged.
+- Serialized workspace tests and the binary build passed. Pinned-baseline
+  CLI comparisons passed for if-shell, run-shell, and two successive
+  command-prompt substitutions including a literal semicolon and a parse
+  error. The existing UTF-8 prompt-paste CLI check passed. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index

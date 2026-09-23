@@ -1,6 +1,7 @@
 use crate::src::cmd::{
     cmd_append_argv, cmd_get_args, cmd_get_entry, cmd_get_source, cmd_list_copy, cmd_list_first,
     cmd_list_free, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace,
+    cmd_template_replace_cstring,
 };
 use crate::src::cmd_find::cmd_find_copy_state;
 use crate::src::cmd_parse::cmd_parse_from_string;
@@ -1389,8 +1390,6 @@ pub unsafe extern "C" fn args_make_commands(
     mut error: *mut *mut ::core::ffi::c_char,
 ) -> *mut cmd_list {
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut new_cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: ::core::ffi::c_int = 0;
     if !(*state).cmdlist.is_null() {
         if argc == 0 as ::core::ffi::c_int {
@@ -1399,11 +1398,11 @@ pub unsafe extern "C" fn args_make_commands(
         }
         return cmd_list_copy((*state).cmdlist, argc, argv);
     }
-    cmd = xstrdup((*state).cmd);
+    let mut cmd = CStr::from_ptr((*state).cmd).to_owned();
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd,
+        cmd.as_ptr(),
     );
     cmd_log_argv(
         argc,
@@ -1412,25 +1411,28 @@ pub unsafe extern "C" fn args_make_commands(
     );
     i = 0 as ::core::ffi::c_int;
     while i < argc {
-        new_cmd = cmd_template_replace(cmd, *argv.offset(i as isize), i + 1 as ::core::ffi::c_int);
+        let next = cmd_template_replace_cstring(
+            cmd.as_ptr(),
+            *argv.offset(i as isize),
+            i + 1 as ::core::ffi::c_int,
+        );
         log_debug(
             b"%s: %%%u %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
             i + 1 as ::core::ffi::c_int,
             *argv.offset(i as isize),
-            new_cmd,
+            next.as_ptr(),
         );
-        free(cmd as *mut ::core::ffi::c_void);
-        cmd = new_cmd;
+        cmd = next;
         i += 1;
     }
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd,
+        cmd.as_ptr(),
     );
-    pr = cmd_parse_from_string(cmd, &raw mut (*state).pi);
-    free(cmd as *mut ::core::ffi::c_void);
+    pr = cmd_parse_from_string(cmd.as_ptr(), &raw mut (*state).pi);
+    drop(cmd);
     match (*pr).status as ::core::ffi::c_uint {
         0 => {
             *error = (*pr).error;

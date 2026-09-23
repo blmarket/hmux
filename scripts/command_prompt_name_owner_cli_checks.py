@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare default command-prompt labels for string and command-list templates."""
+"""Compare command-prompt labels, substitutions, and parse errors with tmux."""
 
 import fcntl
 import os
@@ -80,6 +80,36 @@ def trace(binary):
             command = None
             raw_value = run("show-options", "-gqv", "@prompt_raw")
 
+            command = subprocess.Popen(
+                base + ["command-prompt", "-t", client_tty, "-p", "pair-one:,pair-two:",
+                        "set-option -g @prompt_pair '%1|%2'"],
+                env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            wait_for_terminal(b"pair-one:")
+            os.write(master, b"alpha\r")
+            wait_for_terminal(b"pair-two:")
+            os.write(master, b"beta;delta\r")
+            _, stderr = command.communicate(timeout=5)
+            assert command.returncode == 0, stderr
+            command = None
+            pair_value = run("show-options", "-gqv", "@prompt_pair")
+
+            command = subprocess.Popen(
+                base + ["command-prompt", "-t", client_tty,
+                        "-p", "invalid-one:,invalid-two:",
+                        "set-option -g @prompt_parse_guard '%1:%2' ; }"],
+                env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            wait_for_terminal(b"invalid-one:")
+            os.write(master, b"gamma\r")
+            wait_for_terminal(b"invalid-two:")
+            os.write(master, b"epsilon\r")
+            wait_for_terminal(b"Syntax error")
+            _, stderr = command.communicate(timeout=5)
+            assert command.returncode == 0, stderr
+            command = None
+            parse_guard = run("show-options", "-gqv", "@prompt_parse_guard")
+
             os.write(master, b"\x07")  # Trigger the parsed command-list binding.
             block_label = b"(set-environment)"
             wait_for_terminal(block_label)
@@ -97,8 +127,10 @@ def trace(binary):
                 raise AssertionError("parsed command-list prompt did not set environment")
             block_value = result.stdout
             assert raw_value == b"alpha\n", raw_value
+            assert pair_value == b"alpha|beta;delta\n", pair_value
+            assert parse_guard == b"", parse_guard
             assert block_value == b"PROMPT_BLOCK=beta\n", block_value
-            return raw_label, raw_value, block_label, block_value
+            return raw_label, raw_value, pair_value, parse_guard, block_label, block_value
         finally:
             if command is not None:
                 command.kill()
