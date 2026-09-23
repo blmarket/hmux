@@ -637,61 +637,6 @@ pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut sessi
     l
 }
 #[no_mangle]
-pub unsafe extern "C" fn sort_get_panes(
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut window_pane {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut i: u_int = 0;
-    static mut l: *mut *mut window_pane =
-        ::core::ptr::null::<*mut window_pane>() as *mut *mut window_pane;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
-    while !s.is_null() {
-        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
-        while !wl.is_null() {
-            w = (*wl).window;
-            wp = (*w).panes.tqh_first;
-            while !wp.is_null() {
-                if lsz <= i {
-                    lsz = lsz.wrapping_add(100 as u_int);
-                    l = xreallocarray(
-                        l as *mut ::core::ffi::c_void,
-                        lsz as size_t,
-                        ::core::mem::size_of::<*mut window_pane>() as size_t,
-                    ) as *mut *mut window_pane;
-                }
-                let fresh8 = i;
-                i = i.wrapping_add(1);
-                let ref mut fresh9 = *l.offset(fresh8 as isize);
-                *fresh9 = wp;
-                wp = (*wp).entry.tqe_next;
-            }
-            wl = winlinks_next(wl);
-        }
-        s = sessions_next(s);
-    }
-    sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
-        ::core::mem::size_of::<*mut window_pane>() as u_int,
-        Some(
-            sort_pane_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
-    *n = i;
-    return l;
-}
-#[no_mangle]
 pub unsafe extern "C" fn sort_get_panes_session(
     mut s: *mut session,
     mut n: *mut u_int,

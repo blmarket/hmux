@@ -2326,6 +2326,21 @@ legacy callers safe.
   passed. Rustfmt reports two import-layout differences also present in the
   base commit. No sanitizer was run.
 
+### Increment 130 — remove unused global pane sorter (2026-09-22)
+
+- Removed `sort_get_panes` and its process-global `xreallocarray` pointer
+  cache/capacity counter. Repository-wide source search found no in-tree
+  caller, header, or documented foreign contract. Its traversal and
+  comparator duplicated the used window-scoped pane sorter; deletion removes
+  a permanent allocation with no production caller.
+- The `no_mangle` staticlib symbol is intentionally gone. An undocumented
+  foreign consumer would need updating; the session-scoped sorter remains
+  exported until its separate audit completes.
+- Isolated validation: library build, serialized workspace tests,
+  `git diff --check`, and `nm` confirmed the removed symbol is absent while
+  `sort_get_panes_session` remains. Rustfmt reports one import-layout
+  difference also present in the base commit. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2368,9 +2383,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–129. The remaining
+Current validation is recorded in increments 15–130. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–129 has its own local commit; none was pushed.
+Each of increments 15–130 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
