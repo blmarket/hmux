@@ -6,7 +6,7 @@ use crate::src::format::{
     format_add, format_create, format_defaults, format_expand, format_free, format_single,
     format_true,
 };
-use crate::src::format_draw::{format_draw, format_trim_left, format_width};
+use crate::src::format_draw::{format_draw, format_trim_left_bytes, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::mode_tree::{
@@ -723,15 +723,21 @@ unsafe extern "C" fn window_tree_draw_label(
     let mut width: u_int = 0;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
-    let mut new_label: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if sx < 5 as u_int || sy < 3 as u_int {
         return;
     }
     width = format_width(label);
-    if width > sx.wrapping_sub(4 as u_int) {
-        new_label = format_trim_left(label, sx.wrapping_sub(4 as u_int));
-        label = new_label;
-        width = format_width(new_label);
+    let trimmed_label = if width > sx.wrapping_sub(4 as u_int) {
+        Some(
+            CString::new(format_trim_left_bytes(label, sx.wrapping_sub(4 as u_int)))
+                .expect("trimmed preview label contains no NUL"),
+        )
+    } else {
+        None
+    };
+    if let Some(trimmed_label) = trimmed_label.as_ref() {
+        label = trimmed_label.as_ptr();
+        width = format_width(label);
     }
     if width == 0 as u_int {
         return;
@@ -780,7 +786,6 @@ unsafe extern "C" fn window_tree_draw_label(
         ::core::ptr::null_mut::<style_ranges>(),
         0 as ::core::ffi::c_int,
     );
-    free(new_label as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_tree_border_cell(
     mut gc: *mut grid_cell,

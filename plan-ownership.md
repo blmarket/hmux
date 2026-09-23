@@ -125,12 +125,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_tree_draw_label` still uses the exported C-returning
-   `format_trim_left` for its local preview label. Its zero-width early
-   return skips `free(new_label)` after trimming a wide glyph into a narrow
-   preview, so an owned left-trim result closes a live leak. Keep the
-   exported formatter's C result for expression callers and validate with
-   focused trim tests and the mode-tree preview-label CLI comparison.
+1. `options_parse` and `options_match_command` still return C-owned option
+   name and nullable array-key outputs. In-tree `set-option`, `show-options`,
+   and customize-mode callers free both on their success/error paths. A
+   private `(CString, Option<CString>)` result can own the parsed values
+   while exported adapters retain their C output contracts. Preserve
+   `options_parse`'s untouched key output on empty input and
+   `options_match_command`'s untouched ambiguity output on parse failure;
+   test valid, invalid, ambiguous, and array-key commands against pinned
+   tmux. This is smaller than the disconnected-client wait-queue boundary.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1133,6 +1136,21 @@ name error.
   build passed. The menu overlay CLI script passed with both candidate and
   pinned tmux, including a long trimmed label and key suffix. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 418 — owned window-tree preview label (2026-09-23)
+
+- Private `format_trim_left_bytes` returns the already built trimmed
+  `Vec<u8>`; exported `format_trim_left` still copies into its C-owned
+  result for expression callers. `window_tree_draw_label` now owns a local
+  `CString` and lends its pointer through width and drawing calls. Its
+  zero-width early return drops the owner instead of leaking the former
+  `new_label` C allocation.
+- Serialized workspace tests and binary build passed. The pinned-baseline
+  preview-label CLI comparison passed for normal modes and a 9-column
+  attached client. With a five-column preview, ASCII `Z` draws an inner
+  label box while the two-column `界` trims to empty at limit one and draws
+  only the outer preview border. The narrow comparison passed repeatedly.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

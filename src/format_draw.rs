@@ -1870,9 +1870,16 @@ unsafe fn format_trim_output(bytes: &[u8]) -> *mut ::core::ffi::c_char {
 
 #[no_mangle]
 pub unsafe extern "C" fn format_trim_left(
+    expanded: *const ::core::ffi::c_char,
+    limit: u_int,
+) -> *mut ::core::ffi::c_char {
+    format_trim_output(&format_trim_left_bytes(expanded, limit))
+}
+
+pub(crate) unsafe fn format_trim_left_bytes(
     mut expanded: *const ::core::ffi::c_char,
     mut limit: u_int,
-) -> *mut ::core::ffi::c_char {
+) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
     let mut cp: *const ::core::ffi::c_char = expanded;
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1955,7 +1962,7 @@ pub unsafe extern "C" fn format_trim_left(
             }
         }
     }
-    return format_trim_output(&out);
+    out
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_trim_right(
