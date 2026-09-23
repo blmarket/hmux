@@ -2884,6 +2884,20 @@ legacy callers safe.
   follows rustfmt; `src/shared/tty.rs` retains its pre-existing test-import
   formatting difference. No sanitizer was run.
 
+### Increment 329 — boxed pane prompt data (2026-09-23)
+
+- `window_pane_set_prompt` now boxes its `window_pane_prompt` record and passes
+  the stable pointer to `prompt_create`; `window_pane_prompt_free_callback`
+  clears the pane's borrowed `prompt_data`, calls the existing user free
+  callback, then drops the Box. Removed the record's `xcalloc`/`free` pair and
+  unused `Copy`/`Clone` derive. The prompt callback ABI and reentrant
+  clearing order are unchanged.
+- Added `scripts/pane_prompt_owner_cli_checks.py` for an attached client's
+  `command-prompt -P` path. Ctrl-C cancellation, submitted input, and pane
+  destruction with an active prompt matched the pinned baseline. Full
+  workspace tests, binary build, changed-file rustfmt, and diff checks
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2894,12 +2908,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_pane_prompt` in `src/window.rs` has one allocation in
-   `window_pane_set_prompt` and one callback destructor in
-   `window_pane_prompt_free_callback`. Its address is borrowed by prompt
-   callbacks and `window_pane.prompt_data`; preserve clearing and callback
-   order, and test with attached `command-prompt -P` submit, cancel,
-   replacement, and pane teardown.
+1. `window_mode_entry` in `src/window.rs` has one constructor in
+   `window_pane_set_mode` and destruction on init failure, reset, and pane
+   teardown. It has intrusive mode-list links and mode callbacks; preserve
+   stable addresses and unlink/free order. Attached mode enter, reset, and
+   pane teardown can exercise the complete lifecycle.
+   `tty_term.codes` looks like a simple fixed-size array, but
+   `tty_features.rs` temporarily replaces `term.codes` with a borrowed Vec
+   view during feature probing. Audit that alias before changing its owner.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`

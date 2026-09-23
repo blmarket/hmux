@@ -143,7 +143,6 @@ pub const PANE_DESTROYED: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
 pub const PANE_STATUS_TOP_FLOATING: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_prompt {
     pub wp_id: u_int,
@@ -218,6 +217,7 @@ pub struct window_pane {
     pub searchstr: *mut ::core::ffi::c_char,
     pub searchregex: ::core::ffi::c_int,
     pub prompt: *mut prompt,
+    /// Box-owned prompt data while `prompt` is active; the free callback clears it.
     pub prompt_data: *mut window_pane_prompt,
     pub prompt_cx: u_int,
     pub border_gc_set: ::core::ffi::c_int,

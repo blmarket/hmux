@@ -3686,7 +3686,7 @@ unsafe extern "C" fn window_pane_prompt_free_callback(mut data: *mut ::core::ffi
     if (*wpp).freecb.is_some() {
         (*wpp).freecb.expect("non-null function pointer")((*wpp).data);
     }
-    free(wpp as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(wpp));
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_set_prompt(
@@ -3756,16 +3756,14 @@ pub unsafe extern "C" fn window_pane_set_prompt(
         s = (*c).session;
     }
     window_pane_clear_prompt(wp);
-    wpp = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_pane_prompt>() as size_t,
-    ) as *mut window_pane_prompt;
-    (*wpp).wp_id = (*wp).id;
-    (*wpp).c = c;
-    (*wpp).inputcb = inputcb;
-    (*wpp).freecb = freecb;
-    (*wpp).data = data;
-    (*wpp).type_0 = type_0;
+    wpp = Box::into_raw(Box::new(window_pane_prompt {
+        wp_id: (*wp).id,
+        c,
+        inputcb,
+        freecb,
+        data,
+        type_0,
+    }));
     memset(
         &raw mut pd as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
