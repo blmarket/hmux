@@ -2,8 +2,8 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::compat::utf8proc::{utf8proc_wctomb, utf8proc_wcwidth};
 use crate::src::compat::vis::vis;
 use crate::src::ffi::libc::{
-    __ctype_b_loc, __errno_location, free, memcmp, memcpy, memset, strchr, strlen, strncmp,
-    strtoull, wctomb,
+    __ctype_b_loc, __errno_location, free, memcpy, memset, strchr, strlen, strncmp, strtoull,
+    wctomb,
 };
 use crate::src::log::{fatalx, log_debug};
 use crate::src::options::{
@@ -2037,30 +2037,47 @@ pub unsafe extern "C" fn utf8_rpadcstr(
 }
 #[no_mangle]
 pub unsafe extern "C" fn utf8_cstrhas(
-    mut s: *const ::core::ffi::c_char,
-    mut ud: *const utf8_data,
+    s: *const ::core::ffi::c_char,
+    ud: *const utf8_data,
 ) -> ::core::ffi::c_int {
-    let mut copy: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut loop_0: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    copy = utf8_fromcstr(s);
-    loop_0 = copy;
-    while (*loop_0).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        if !((*loop_0).size as ::core::ffi::c_int != (*ud).size as ::core::ffi::c_int) {
-            if memcmp(
-                &raw mut (*loop_0).data as *mut u_char as *const ::core::ffi::c_void,
-                &raw const (*ud).data as *const u_char as *const ::core::ffi::c_void,
-                (*loop_0).size as size_t,
-            ) == 0 as ::core::ffi::c_int
-            {
-                found = 1 as ::core::ffi::c_int;
-                break;
+    let bytes = CStr::from_ptr(s).to_bytes();
+    let mut offset = 0;
+    let mut found = 0;
+    while offset < bytes.len() {
+        let mut cell = utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
+        let mut more = utf8_open(&raw mut cell, bytes[offset]);
+        if more == UTF8_MORE {
+            let start = offset;
+            offset += 1;
+            while offset < bytes.len() && more == UTF8_MORE {
+                more = utf8_append(&raw mut cell, bytes[offset]);
+                offset += 1;
+            }
+            if more != UTF8_DONE {
+                // utf8_fromcstr retries every byte after an incomplete or
+                // invalid candidate, including bytes consumed by utf8_append.
+                offset = start;
             }
         }
-        loop_0 = loop_0.offset(1);
+        if more != UTF8_DONE {
+            utf8_set(&raw mut cell, bytes[offset]);
+            offset += 1;
+        }
+        let matches = {
+            let target = &*ud;
+            cell.size == target.size
+                && cell.data[..cell.size as usize] == target.data[..target.size as usize]
+        };
+        if matches {
+            found = 1;
+        }
     }
-    free(copy as *mut ::core::ffi::c_void);
-    return found;
+    found
 }
 
 pub const __WCHAR_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

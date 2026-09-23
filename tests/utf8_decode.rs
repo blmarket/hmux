@@ -1,6 +1,6 @@
 use hmux2::src::shared::grid::utf8_data;
 use hmux2::src::shared::utf8::{UTF8_DONE, UTF8_ERROR, UTF8_MORE};
-use hmux2::src::utf8::{utf8_append, utf8_fromcstr, utf8_open, utf8_towc};
+use hmux2::src::utf8::{utf8_append, utf8_cstrhas, utf8_fromcstr, utf8_open, utf8_towc};
 use hmux2::src::utf8_decode::{decode_utf8, DecodeResult};
 use std::ffi::CString;
 
@@ -47,6 +47,71 @@ fn c_string_recovery_still_retries_each_byte_after_a_bad_sequence() {
         assert_eq!(cells[2].data[0], 0xa1);
         assert_eq!(cells[3].size, 0);
         libc::free(decoded.cast());
+    }
+}
+
+#[test]
+fn cstrhas_matches_decoded_cells_without_owning_an_array() {
+    // Cover plain text, a valid multibyte cell, invalid lead and continuation
+    // bytes, a malformed candidate, a truncated candidate, and first-NUL.
+    for input in [
+        &b"abc\0"[..],
+        &b"a\xc3\xa9z\0"[..],
+        &b"\xff\x80\0"[..],
+        &b"\xe2(\xa1\0"[..],
+        &b"a\xe2(\xa1\0"[..], // Match before a malformed suffix.
+        &b"\xf0\x9f\x92\0"[..],
+        &b"a\0\xc3\xa9"[..],
+        &b"\0ignored"[..],
+    ] {
+        unsafe {
+            let decoded = utf8_fromcstr(input.as_ptr().cast());
+            let mut cell = decoded;
+            while (*cell).size != 0 {
+                let mut query = *cell;
+                query.have = 0;
+                query.width = 99;
+                assert_eq!(
+                    utf8_cstrhas(input.as_ptr().cast(), &query),
+                    1,
+                    "decoded cell {:?} missing from {input:?}",
+                    &query.data[..query.size as usize]
+                );
+                cell = cell.add(1);
+            }
+            libc::free(decoded.cast());
+        }
+    }
+
+    let query = |bytes: &[u8]| {
+        let mut cell = empty_data();
+        cell.size = bytes.len() as u8;
+        cell.data[..bytes.len()].copy_from_slice(bytes);
+        cell
+    };
+    unsafe {
+        assert_eq!(utf8_cstrhas(b"a\0b\0".as_ptr().cast(), &query(b"b")), 0);
+        assert_eq!(
+            utf8_cstrhas(b"a\xc3\xa9z\0".as_ptr().cast(), &query(&[0xa9])),
+            0
+        );
+        assert_eq!(
+            utf8_cstrhas(b"\xe2(\xa1\0".as_ptr().cast(), &query(&[0xe2, b'(', 0xa1])),
+            0
+        );
+        assert_eq!(
+            utf8_cstrhas(b"\xe2(\xa1\0".as_ptr().cast(), &query(b"(")),
+            1
+        );
+        assert_eq!(
+            utf8_cstrhas(b"\xf0\x9f\x92\0".as_ptr().cast(), &query(&[0x9f])),
+            1
+        );
+        assert_eq!(utf8_cstrhas(b"\xff\0".as_ptr().cast(), &query(&[0xff])), 1);
+        assert_eq!(
+            utf8_cstrhas(b"a\xe2(\xa1\0".as_ptr().cast(), &query(b"a")),
+            1
+        );
     }
 }
 

@@ -1406,6 +1406,20 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check` passed in the isolated
   worktree. No sanitizer run was performed.
 
+### Increment 74 — UTF-8 C-string membership scan (2026-09-22)
+
+- `utf8_cstrhas` now decodes each candidate into a stack `utf8_data`
+  instead of allocating and freeing the full `utf8_fromcstr` array. It
+  preserves `utf8_open`/`utf8_append` recovery for malformed sequences,
+  compares only the recorded cell bytes, and continues through the entire
+  input after a match so suffix decoding effects remain. The target borrow
+  is scoped after each decode call; C input still ends at its first NUL.
+- `tests/utf8_decode.rs` compares membership against cells produced by
+  `utf8_fromcstr` for ASCII, multibyte, malformed, truncated, non-UTF-8,
+  and first-NUL inputs, with negative and suffix cases. Workspace tests,
+  binary build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1420,13 +1434,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `utf8_cstrhas`'s temporary decoded array and the private
-   `cmd_show_environment_escape` builder. Remaining `xstrndup` callers
-   return or transfer C-owned strings; `window_copy` regex buffers grow
-   through a shared C API.
+2. Inspect the private `cmd_show_environment_escape` builder and other
+   bounded string buffers. Remaining `xstrndup` callers return or transfer
+   C-owned strings; `window_copy` regex buffers grow through a shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–73. The remaining
+Current validation is recorded in increments 15–74. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–73 has its own local commit; none was pushed.
+Each of increments 15–74 has its own local commit; none was pushed.
