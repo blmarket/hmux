@@ -1721,6 +1721,21 @@ legacy callers safe.
   per-commit diff checks, and the file-message and lexer CLI comparisons
   passed. Both CLI checks matched the pinned baseline. No sanitizer was run.
 
+### Increment 247 — window copy selection owner (2026-09-23)
+
+- `window_copy_get_selection` and `window_copy_copy_line` now collect selection
+  bytes in `Vec<u8>`. The pipe and clipboard paths borrow those bytes during
+  synchronous calls; copy and append allocate a C buffer only when handing
+  ownership to paste storage. The search-match fallback keeps its previous
+  first-NUL length behavior, while the format callback still returns a
+  libc-freeable C string as required by its ABI.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/window_copy_selection_owner_cli_checks.py` passed. The CLI check
+  matched the pinned baseline for copy, append, pipe, copy-pipe, UTF-8/tab
+  text, and appending after a binary paste buffer containing an embedded NUL.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1731,17 +1746,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_copy_get_selection` and `window_copy_copy_line` still grow a raw
-   selection buffer and transfer it to clipboard, pipe, and paste consumers.
-   The full caller lifecycle and null-versus-empty behavior need a single
-   migration; clipboard and pipe paths borrow bytes synchronously, while
-   paste storage requires a C-owned transfer. `set-buffer`'s payload is a
-   less useful local target: `paste_set` retains the libc allocation on
-   success and leaves it with the caller on error, so a local `Vec` alone
-   would add an allocation and copy.
-   A validated isolated migration is committed as `20b8686` in
-   `/tmp/hmux2-window-copy-selection-owner`; review and integrate it as the
-   next increment, then remove that temporary worktree.
+1. `input_ctx.input_buf`, `grid_string_cells`, and `client_exitmessage` are
+   under independent owner/caller audits. Integrate only a migration that
+   removes a meaningful manual lifetime without weakening its C boundary.
+   `set-buffer`'s payload is a less useful local target: `paste_set` retains
+   the libc allocation on success and leaves it with the caller on error, so
+   a local `Vec` alone would add an allocation and copy.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1769,7 +1779,7 @@ non-string value.
    tag-only generated ID would violate the agreed type policy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–246 above, with increment 228 explicitly retracted.
+recorded in increments 226–247 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

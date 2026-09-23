@@ -132,7 +132,7 @@ use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_set_active_pane,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xcalloc, xmalloc, xreallocarray, xstrdup, xvasprintf_cstring};
 use std::borrow::Cow;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -7120,9 +7120,9 @@ unsafe extern "C" fn window_copy_match_start_end(
         *end = (*end).wrapping_sub(1);
     }
 }
-unsafe extern "C" fn window_copy_match_at_cursor(
+unsafe fn window_copy_match_at_cursor_bytes(
     mut data: *mut window_copy_mode_data,
-) -> *mut ::core::ffi::c_char {
+) -> Option<Vec<u8>> {
     let mut gd: *mut grid = (*(*data).backing).grid;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -7147,21 +7147,21 @@ unsafe extern "C" fn window_copy_match_at_cursor(
     let mut sx: u_int = (*(*(*data).backing).grid).sx;
     let mut output = Vec::<u8>::new();
     if (*data).searchmark.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
     cy = (*(*(*data).backing).grid)
         .hsize
         .wrapping_sub((*data).oy)
         .wrapping_add((*data).cy);
     if window_copy_search_mark_at(data, (*data).cx, cy, &raw mut at) != 0 as ::core::ffi::c_int {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
     if *(*data).searchmark.offset(at as isize) as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         if at == 0 as u_int || {
             at = at.wrapping_sub(1);
             *(*data).searchmark.offset(at as isize) as ::core::ffi::c_int == 0 as ::core::ffi::c_int
         } {
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+            return None;
         }
     }
     window_copy_match_start_end(data, at, &raw mut start, &raw mut end);
@@ -7186,10 +7186,18 @@ unsafe extern "C" fn window_copy_match_at_cursor(
         at = at.wrapping_add(1);
     }
     if output.is_empty() {
-        return ::core::ptr::null_mut();
+        return None;
     }
-    // Both callers treat the result as a libc-freeable C string. Keep all
-    // grid bytes, including any interior NUL, before the final terminator.
+    Some(output)
+}
+unsafe extern "C" fn window_copy_match_at_cursor(
+    data: *mut window_copy_mode_data,
+) -> *mut ::core::ffi::c_char {
+    let Some(output) = window_copy_match_at_cursor_bytes(data) else {
+        return ::core::ptr::null_mut();
+    };
+    // The format callback owns a libc-freeable C string. Keep all grid bytes,
+    // including interior NUL, before the final terminator.
     let buf = xmalloc(output.len() + 1) as *mut ::core::ffi::c_char;
     std::ptr::copy_nonoverlapping(output.as_ptr(), buf.cast::<u8>(), output.len());
     *buf.add(output.len()) = 0;
@@ -8371,15 +8379,11 @@ unsafe extern "C" fn window_copy_set_selection(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_copy_get_selection(
-    mut wme: *mut window_mode_entry,
-    mut len: *mut size_t,
-) -> *mut ::core::ffi::c_void {
+unsafe fn window_copy_get_selection(mut wme: *mut window_mode_entry) -> Option<Vec<u8>> {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut off: size_t = 0;
+    let mut buf = Vec::<u8>::new();
     let mut i: u_int = 0;
     let mut xx: u_int = 0;
     let mut yy: u_int = 0;
@@ -8398,17 +8402,14 @@ unsafe extern "C" fn window_copy_get_selection(
         && (*data).lineflag as ::core::ffi::c_uint
             == LINE_SEL_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        buf = window_copy_match_at_cursor(data);
-        if !buf.is_null() {
-            *len = strlen(buf);
-        } else {
-            *len = 0 as size_t;
-        }
-        return buf as *mut ::core::ffi::c_void;
+        return window_copy_match_at_cursor_bytes(data).map(|mut matched| {
+            // This fallback used strlen, so an embedded NUL ends the copied match.
+            if let Some(first_nul) = matched.iter().position(|&byte| byte == 0) {
+                matched.truncate(first_nul);
+            }
+            matched
+        });
     }
-    buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
-    off = 0 as size_t;
-    *buf = '\0' as i32 as ::core::ffi::c_char;
     xx = (*data).endselx;
     yy = (*data).endsely;
     if yy < (*data).sely || yy == (*data).sely && xx < (*data).selx {
@@ -8469,18 +8470,15 @@ unsafe extern "C" fn window_copy_get_selection(
     while i <= ey {
         window_copy_copy_line(
             wme,
-            &raw mut buf,
-            &raw mut off,
+            &mut buf,
             i,
             if i == sy { firstsx } else { restsx },
             if i == ey { lastex } else { restex },
         );
         i = i.wrapping_add(1);
     }
-    if off == 0 as size_t {
-        free(buf as *mut ::core::ffi::c_void);
-        *len = 0 as size_t;
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    if buf.is_empty() {
+        return None;
     }
     if keys == MODEKEY_EMACS || lastex <= ey_last {
         if !((*grid_get_line((*(*data).backing).grid, ey)).flags as ::core::ffi::c_int)
@@ -8488,17 +8486,21 @@ unsafe extern "C" fn window_copy_get_selection(
             != 0
             || lastex != ey_last
         {
-            off = off.wrapping_sub(1 as size_t);
+            buf.pop();
         }
     }
-    *len = off;
-    return buf as *mut ::core::ffi::c_void;
+    return Some(buf);
 }
-unsafe extern "C" fn window_copy_copy_buffer(
+unsafe fn window_copy_alloc_paste_data(buf: &[u8]) -> *mut ::core::ffi::c_char {
+    // paste_add and paste_set take ownership and free this allocation.
+    let data = xmalloc(buf.len().max(1)) as *mut ::core::ffi::c_char;
+    std::ptr::copy_nonoverlapping(buf.as_ptr(), data.cast(), buf.len());
+    data
+}
+unsafe fn window_copy_copy_buffer(
     mut wme: *mut window_mode_entry,
     mut prefix: *const ::core::ffi::c_char,
-    mut buf: *mut ::core::ffi::c_void,
-    mut len: size_t,
+    buf: Vec<u8>,
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
@@ -8528,8 +8530,8 @@ unsafe extern "C" fn window_copy_copy_buffer(
         screen_write_setselection(
             &raw mut ctx,
             b"\0" as *const u8 as *const ::core::ffi::c_char,
-            buf as *mut u_char,
-            len as u_int,
+            buf.as_ptr() as *mut u_char,
+            buf.len() as u_int,
         );
         screen_write_stop(&raw mut ctx);
         (*wp).flags |= redraw;
@@ -8539,20 +8541,16 @@ unsafe extern "C" fn window_copy_copy_buffer(
         );
     }
     if set_paste != 0 {
-        paste_add(prefix, buf as *mut ::core::ffi::c_char, len);
-    } else {
-        free(buf);
+        paste_add(prefix, window_copy_alloc_paste_data(&buf), buf.len());
     };
 }
-unsafe extern "C" fn window_copy_pipe_run(
+unsafe fn window_copy_pipe_run(
     mut wme: *mut window_mode_entry,
     mut s: *mut session,
     mut cmd: *const ::core::ffi::c_char,
-    mut len: *mut size_t,
-) -> *mut ::core::ffi::c_void {
-    let mut buf: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
+) -> Option<Vec<u8>> {
     let mut job: *mut job = ::core::ptr::null_mut::<job>();
-    buf = window_copy_get_selection(wme, len);
+    let buf = window_copy_get_selection(wme);
     if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
         cmd = options_get_string(
             global_options,
@@ -8576,20 +8574,23 @@ unsafe extern "C" fn window_copy_pipe_run(
             -(1 as ::core::ffi::c_int),
         );
         if !job.is_null() {
-            bufferevent_write(job_get_event(job), buf, *len);
+            bufferevent_write(
+                job_get_event(job),
+                buf.as_ref()
+                    .map_or(::core::ptr::null(), |buf| buf.as_ptr())
+                    .cast(),
+                buf.as_ref().map_or(0, Vec::len),
+            );
         }
     }
-    return buf;
+    buf
 }
 unsafe extern "C" fn window_copy_pipe(
     mut wme: *mut window_mode_entry,
     mut s: *mut session,
     mut cmd: *const ::core::ffi::c_char,
 ) {
-    let mut buf: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-    let mut len: size_t = 0;
-    buf = window_copy_pipe_run(wme, s, cmd, &raw mut len);
-    free(buf);
+    let _ = window_copy_pipe_run(wme, s, cmd);
 }
 unsafe extern "C" fn window_copy_copy_pipe(
     mut wme: *mut window_mode_entry,
@@ -8599,11 +8600,8 @@ unsafe extern "C" fn window_copy_copy_pipe(
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
-    let mut buf: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-    let mut len: size_t = 0;
-    buf = window_copy_pipe_run(wme, s, cmd, &raw mut len);
-    if !buf.is_null() {
-        window_copy_copy_buffer(wme, prefix, buf, len, set_paste, set_clip);
+    if let Some(buf) = window_copy_pipe_run(wme, s, cmd) {
+        window_copy_copy_buffer(wme, prefix, buf, set_paste, set_clip);
     }
 }
 unsafe extern "C" fn window_copy_copy_selection(
@@ -8612,27 +8610,16 @@ unsafe extern "C" fn window_copy_copy_selection(
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
-    buf = window_copy_get_selection(wme, &raw mut len) as *mut ::core::ffi::c_char;
-    if !buf.is_null() {
-        window_copy_copy_buffer(
-            wme,
-            prefix,
-            buf as *mut ::core::ffi::c_void,
-            len,
-            set_paste,
-            set_clip,
-        );
+    if let Some(buf) = window_copy_get_selection(wme) {
+        window_copy_copy_buffer(wme, prefix, buf, set_paste, set_clip);
     }
 }
 unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
     let mut wp: *mut window_pane = (*wme).wp;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf: Vec<u8>;
     let mut bufname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
     let mut bufsize: size_t = 0;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
@@ -8644,10 +8631,10 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
         scrolled: 0,
         bg: 0,
     };
-    buf = window_copy_get_selection(wme, &raw mut len) as *mut ::core::ffi::c_char;
-    if buf.is_null() {
-        return;
-    }
+    buf = match window_copy_get_selection(wme) {
+        Some(buf) => buf,
+        None => return,
+    };
     if options_get_number(
         global_options,
         b"set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
@@ -8657,8 +8644,8 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
         screen_write_setselection(
             &raw mut ctx,
             b"\0" as *const u8 as *const ::core::ffi::c_char,
-            buf as *mut u_char,
-            len as u_int,
+            buf.as_mut_ptr(),
+            buf.len() as u_int,
         );
         screen_write_stop(&raw mut ctx);
         events_fire_pane(
@@ -8669,35 +8656,26 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
     pb = paste_get_top(&raw mut bufname);
     if !pb.is_null() {
         bufdata = paste_buffer_data(pb, &raw mut bufsize);
-        buf = xrealloc(buf as *mut ::core::ffi::c_void, len.wrapping_add(bufsize))
-            as *mut ::core::ffi::c_char;
-        memmove(
-            buf.offset(bufsize as isize) as *mut ::core::ffi::c_void,
-            buf as *const ::core::ffi::c_void,
-            len,
-        );
-        memcpy(
-            buf as *mut ::core::ffi::c_void,
-            bufdata as *const ::core::ffi::c_void,
-            bufsize,
-        );
-        len = len.wrapping_add(bufsize);
+        let mut appended = std::slice::from_raw_parts(bufdata.cast::<u8>(), bufsize).to_vec();
+        appended.extend_from_slice(&buf);
+        buf = appended;
     }
+    let len = buf.len();
+    let data = window_copy_alloc_paste_data(&buf);
     if paste_set(
-        buf,
+        data,
         len,
         bufname,
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
     ) != 0 as ::core::ffi::c_int
     {
-        free(buf as *mut ::core::ffi::c_void);
+        free(data.cast());
     }
     free(bufname as *mut ::core::ffi::c_void);
 }
-unsafe extern "C" fn window_copy_copy_line(
+unsafe fn window_copy_copy_line(
     mut wme: *mut window_mode_entry,
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut off: *mut size_t,
+    buf: &mut Vec<u8>,
     mut sy: u_int,
     mut sx: u_int,
     mut ex: u_int,
@@ -8776,28 +8754,13 @@ unsafe extern "C" fn window_copy_copy_line(
                         );
                     }
                 }
-                *buf = xrealloc(
-                    *buf as *mut ::core::ffi::c_void,
-                    (*off).wrapping_add(ud.size as size_t),
-                ) as *mut ::core::ffi::c_char;
-                memcpy(
-                    (*buf).offset(*off as isize) as *mut ::core::ffi::c_void,
-                    &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
-                    ud.size as size_t,
-                );
-                *off = (*off).wrapping_add(ud.size as size_t);
+                buf.extend_from_slice(&ud.data[..ud.size as usize]);
             }
             i = i.wrapping_add(1);
         }
     }
     if wrapped == 0 || ex != xx {
-        *buf = xrealloc(
-            *buf as *mut ::core::ffi::c_void,
-            (*off).wrapping_add(1 as size_t),
-        ) as *mut ::core::ffi::c_char;
-        let fresh4 = *off;
-        *off = (*off).wrapping_add(1);
-        *(*buf).offset(fresh4 as isize) = '\n' as i32 as ::core::ffi::c_char;
+        buf.push(b'\n');
     }
 }
 unsafe extern "C" fn window_copy_clear_selection(mut wme: *mut window_mode_entry) {
