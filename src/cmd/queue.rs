@@ -18,7 +18,7 @@ use crate::src::events_payload::{
     event_payload_set_target,
 };
 use crate::src::ffi::libc::{__ctype_toupper_loc, free, getpwuid, getuid, memcpy, time};
-use crate::src::file::file_error;
+use crate::src::file::{file_cancel_cmdq_wait, file_error};
 use crate::src::format::{format_add, format_create, format_free, format_merge};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_debug, log_get_level};
@@ -118,6 +118,7 @@ struct CmdqItemOwner {
     name: Option<CString>,
     error: Option<CString>,
     cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
+    wait_file: *mut client_file,
 }
 
 const _: () = assert!(::core::mem::offset_of!(CmdqItemOwner, node) == 0);
@@ -128,6 +129,7 @@ unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_it
         name: None,
         error: None,
         cancel_data: None,
+        wait_file: ::core::ptr::null_mut(),
     });
     let item = &raw mut owner.node;
     let label = if label.is_null() {
@@ -172,6 +174,46 @@ unsafe fn cmdq_cancel_unfired_data(item: *mut cmdq_item) {
     }
     if let Some(cancel) = (&mut *item.cast::<CmdqItemOwner>()).cancel_data.take() {
         cancel((*item).data);
+    }
+}
+
+/// The file remains live until its terminal event, including when a local
+/// file operation schedules immediate completion. The queue item only borrows
+/// it while the command is waiting.
+pub(crate) unsafe fn cmdq_set_wait_file(item: *mut cmdq_item, cf: *mut client_file) {
+    assert!(!cf.is_null());
+    let owner = &mut *item.cast::<CmdqItemOwner>();
+    assert!(
+        owner.wait_file.is_null(),
+        "queue item already owns a file wait"
+    );
+    owner.wait_file = cf;
+}
+
+pub(crate) unsafe fn cmdq_clear_wait_file(item: *mut cmdq_item, cf: *mut client_file) {
+    let owner = &mut *item.cast::<CmdqItemOwner>();
+    if owner.wait_file == cf {
+        owner.wait_file = ::core::ptr::null_mut();
+    }
+}
+
+/// A dead client cannot resume a file-backed waiting command. Cancel its
+/// callback data first, then remove the waiting item and its queued suffix.
+/// Other wait families need their own cancellation before they can be drained.
+pub(crate) unsafe fn cmdq_abort_file_wait(c: *mut client) {
+    let queue = (*c).queue;
+    let first = (*queue).list.tqh_first;
+    if first.is_null() || (*first).flags & CMDQ_WAITING == 0 {
+        return;
+    }
+    let cf = (*first.cast::<CmdqItemOwner>()).wait_file;
+    if cf.is_null() {
+        return;
+    }
+    file_cancel_cmdq_wait(cf);
+    (*queue).item = ::core::ptr::null_mut();
+    while !(*queue).list.tqh_first.is_null() {
+        cmdq_remove((*queue).list.tqh_first);
     }
 }
 
@@ -571,6 +613,10 @@ pub unsafe extern "C" fn cmdq_continue(mut item: *mut cmdq_item) {
     (*item).flags &= !CMDQ_WAITING;
 }
 unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
+    assert!(
+        (*item.cast::<CmdqItemOwner>()).wait_file.is_null(),
+        "file wait must finish or cancel before queue item removal"
+    );
     cmdq_cancel_unfired_data(item);
     if !(*item).client.is_null() {
         server_client_unref((*item).client);

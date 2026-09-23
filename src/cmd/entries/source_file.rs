@@ -6,7 +6,7 @@ use crate::src::cmd_queue::{
     cmdq_insert_after, cmdq_set_cancel_data,
 };
 use crate::src::ffi::libc::{__ctype_b_loc, free, glob, globfree, strcmp, strerror};
-use crate::src::file::file_read;
+use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::format_single_from_target;
 use crate::src::log::log_debug;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
@@ -242,7 +242,7 @@ unsafe extern "C" fn cmd_source_file_done(
     n = (*cdata).current;
     if (n as usize) < (*cdata).files.len() {
         let next_path = (&(*cdata).files)[n as usize].as_ptr();
-        file_read(
+        file_read_with_cmdq_wait(
             c,
             next_path,
             Some(
@@ -257,6 +257,8 @@ unsafe extern "C" fn cmd_source_file_done(
                     ) -> (),
             ),
             cdata as *mut ::core::ffi::c_void,
+            item,
+            Some(cmd_source_file_cancel_complete),
         );
     } else {
         cmd_source_file_complete(cdata);
@@ -435,7 +437,7 @@ unsafe extern "C" fn cmd_source_file_exec(
     (*cdata).retval = retval;
     if !(*cdata).files.is_empty() {
         let first_path = (&(*cdata).files)[0].as_ptr();
-        file_read(
+        file_read_with_cmdq_wait(
             c,
             first_path,
             Some(
@@ -450,6 +452,8 @@ unsafe extern "C" fn cmd_source_file_exec(
                     ) -> (),
             ),
             cdata as *mut ::core::ffi::c_void,
+            item,
+            Some(cmd_source_file_cancel_complete),
         );
         retval = CMD_RETURN_WAIT;
     } else {

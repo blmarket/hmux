@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::{free, strerror};
-use crate::src::file::file_read_with_owned_data;
+use crate::src::file::file_read_with_owned_data_and_cmdq_wait;
 use crate::src::format::format_single_from_target;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
@@ -203,7 +203,7 @@ unsafe extern "C" fn cmd_load_buffer_exec(
         (*tc).references += 1;
     }
     path = format_single_from_target(item, args_string(args, 0 as u_int));
-    file_read_with_owned_data(
+    file_read_with_owned_data_and_cmdq_wait(
         cmdq_get_client(item),
         path,
         Some(
@@ -218,6 +218,7 @@ unsafe extern "C" fn cmd_load_buffer_exec(
                 ) -> (),
         ),
         cdata,
+        item,
     );
     free(path as *mut ::core::ffi::c_void);
     return CMD_RETURN_WAIT;

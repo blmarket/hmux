@@ -19,7 +19,7 @@ use crate::src::ffi::libc::{
     memset, regcomp, regexec, regfree, strcasecmp,
 };
 use crate::src::ffi::utempter::utempter_remove_record;
-use crate::src::file::{file_cancel, file_read};
+use crate::src::file::{file_cancel, file_read_with_cmdq_wait};
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid_view::grid_view_string_cells_bytes;
 use crate::src::input::{input_free, input_init, input_parse_buffer, input_parse_pane};
@@ -170,6 +170,7 @@ pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_36;
 
 struct window_pane_input_data {
     item: *mut cmdq_item,
+    client: *mut client,
     wp: u_int,
     file: *mut client_file,
 }
@@ -4582,11 +4583,14 @@ unsafe extern "C" fn window_pane_input_callback(
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut u_char;
     let mut len: size_t = evbuffer_get_length(buffer);
     wp = window_pane_find_by_id((*cdata).wp);
-    if !(*cdata).file.is_null() && (wp.is_null() || (*c).flags & CLIENT_DEAD as uint64_t != 0) {
-        if wp.is_null() {
-            (*c).retval = 1 as ::core::ffi::c_int;
-            (*c).flags |= CLIENT_EXIT as uint64_t;
-        }
+    if wp.is_null() {
+        (*c).retval = 1 as ::core::ffi::c_int;
+        (*c).flags |= CLIENT_EXIT as uint64_t;
+    }
+    if !(*cdata).file.is_null()
+        && closed == 0
+        && (wp.is_null() || (*c).flags & CLIENT_DEAD as uint64_t != 0 || error != 0)
+    {
         file_cancel((*cdata).file);
     } else if (*cdata).file.is_null() || closed != 0 || error != 0 as ::core::ffi::c_int {
         cmdq_continue((*cdata).item);
@@ -4596,6 +4600,10 @@ unsafe extern "C" fn window_pane_input_callback(
         input_parse_buffer(wp, buf, len);
     }
     evbuffer_drain(buffer, len);
+}
+unsafe fn window_pane_input_cancel(data: *mut ::core::ffi::c_void) {
+    let cdata = Box::from_raw(data.cast::<window_pane_input_data>());
+    server_client_unref(cdata.client);
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_start_input(
@@ -4616,11 +4624,12 @@ pub unsafe extern "C" fn window_pane_start_input(
     }
     let cdata = Box::into_raw(Box::new(window_pane_input_data {
         item,
+        client: c,
         wp: (*wp).id,
         file: std::ptr::null_mut(),
     }));
     (*c).references += 1;
-    let file = file_read(
+    let file = file_read_with_cmdq_wait(
         c,
         b"-\0" as *const u8 as *const ::core::ffi::c_char,
         Some(
@@ -4635,6 +4644,8 @@ pub unsafe extern "C" fn window_pane_start_input(
                 ) -> (),
         ),
         cdata as *mut ::core::ffi::c_void,
+        item,
+        Some(window_pane_input_cancel),
     );
     // A failed open schedules a terminal callback and returns null. That
     // callback uses the initial null file value to release this owner.

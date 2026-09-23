@@ -125,51 +125,24 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Disconnected file-reading clients can leave a waiting command-queue item.
-   Skipped terminal callbacks for `source-file` and pane stdin also retain
-   callback data and client references. Releasing those alone can reach
-   `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
-   wait-owner detach hooks, callback-data destruction, and queue draining as
-   one coordinated boundary. A closed file may still invoke its normal
-   callback after client loss. Terminal event scheduling is now idempotent;
-   further progress callbacks and terminal error ordering still need audit.
-   Reproduction: keep a `source-file -` or `split-window -d -I` client's
-   stdin pipe open, kill that waiting client, and inspect the `-vv` server
-   log: `lost client` has no matching `free client` while the server remains
-   responsive. Closing the pipe first hides the issue.
-   `scripts/disconnected_file_client_cli_checks.py --observe` now reproduces
-   the `source-file -` case with a private socket, held-open stdin, bounded
-   cleanup, and a server responsiveness probe. It reports no matching free
-   on both the pinned tmux and candidate. Its default mode requires the
-   candidate to free the client and is ready for the teardown migration.
-   The smallest safe implementation includes the wait owner, callback data,
-   and queue drain together. The client queue runs serially, so a registered
-   file-backed waiter is the only fired waiting item at its head, but queued
-   callback payloads have cancellation hooks for parser errors, queued keys,
-   mode-tree and window-tree references, and source-file completion data.
-   Other callbacks borrow a client or carry null data. A registered file-wait
-   cancel hook can release these before a scoped queue drain. A blanket drain would also
-   need hooks for wait-for, jobs, popup, prompt, and pane waiters. The E2E
-   now queues a suffix command and proves it never runs after disconnect.
-   Pane input also serves `display-message -I`.
-2. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
+1. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
    title stack duplicates and transfers title text. `screen` is still a Copy
    C-layout record, so migrate the title/path/stack lifecycle together only
    after auditing every by-value copy and embedded screen destruction path.
    Existing title-stack and OSC 7 CLI checks provide normal-path coverage.
-3. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
+2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. These string-return contracts are deferred
    while live client fields remain. Revisit this ranking after each completed
    boundary.
-4. The remaining address-based registries, other UI tags, and session/winlink
+3. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
    PIDs can repeat, and creation timestamps are not unique by contract. Its
    pointer tag must wait for a client owner/observer migration; a new tag-only
    generated ID would violate the agreed type policy.
-5. The only direct `xvasprintf` production caller outside the `xmalloc`
+4. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -186,7 +159,7 @@ non-string value.
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-6. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+5. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
@@ -1529,6 +1502,27 @@ name error.
   Serialized workspace tests, binary build, key, tree, source-file, and
   control-related CLI checks, changed-file rustfmt, and diff check passed.
   No sanitizer ran. File-wait teardown remains pending.
+
+### Increment 447 — cancel disconnected file-backed queue waits (2026-09-23)
+
+- `FileOwner` registers file-backed command waits before terminal events can
+  be scheduled, including immediate read/write errors. `file_cancel_cmdq_wait`
+  suppresses callbacks and drops owned or explicitly cancelled payloads;
+  terminal events still release the file. Registered waits on dead clients
+  receive no progress or terminal callbacks, including a closed stream.
+- `CmdqItemOwner` tracks the live file wait. `server_client_lost` cancels a
+  registered waiting head item, then removes the queued suffix and its owned
+  callback payloads. Source-file reads, pane stdin, load-buffer, and
+  save-buffer register their waits. Source-file and pane cancellation release
+  their raw callback data and client refs; load-buffer drops its boxed data;
+  save-buffer only borrowed its queue item. Pane progress errors now retain
+  callback data through terminal cleanup.
+- The held-open stdin E2E proves the pinned baseline retains a disconnected
+  `source-file -` client while the candidate frees it; its queued suffix never
+  runs and the server remains responsive. Serialized workspace tests, binary
+  build, source/config, pane input, load/save, changed-file rustfmt, and diff
+  checks passed. No sanitizer ran. Queue waits without a registered file
+  owner remain outside this scoped disconnect drain.
 
 ## Historical migration index
 

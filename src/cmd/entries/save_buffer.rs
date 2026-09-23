@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print_data};
 use crate::src::ffi::libc::{free, strerror};
-use crate::src::file::file_write;
+use crate::src::file::file_write_with_cmdq_wait;
 use crate::src::format::format_single_from_target;
 use crate::src::log::fatalx;
 use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
@@ -208,7 +208,7 @@ unsafe extern "C" fn cmd_save_buffer_exec(
     } else {
         flags = O_TRUNC;
     }
-    file_write(
+    file_write_with_cmdq_wait(
         cmdq_get_client(item),
         path,
         flags,
@@ -226,6 +226,8 @@ unsafe extern "C" fn cmd_save_buffer_exec(
                 ) -> (),
         ),
         item as *mut ::core::ffi::c_void,
+        item,
+        None,
     );
     if let Some(expanded_path) = expanded_path {
         free(expanded_path as *mut ::core::ffi::c_void);

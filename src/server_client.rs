@@ -5,8 +5,8 @@ use crate::src::cmd::{cmd_free_argv, cmd_list_all_have, cmd_list_free, cmd_unpac
 use crate::src::cmd_find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd_parse::cmd_parse_from_arguments;
 use crate::src::cmd_queue::{
-    cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback1, cmdq_get_client, cmdq_get_command,
-    cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_set_cancel_data,
+    cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback1, cmdq_get_client,
+    cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_set_cancel_data,
 };
 use crate::src::colour::{
     colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
@@ -1579,6 +1579,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     server_client_clear_overlay(c);
     status_prompt_clear(c);
     status_message_clear(c);
+    cmdq_abort_file_wait(c);
     cf = client_files_minmax(&raw mut (*c).files, RB_NEGINF);
     while !cf.is_null() && {
         cf1 = client_files_next(cf);
