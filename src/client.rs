@@ -148,8 +148,7 @@ static mut client_exitreason: client_exit_reason = CLIENT_EXIT_NONE;
 static mut client_exitflag: ::core::ffi::c_int = 0;
 static mut client_exitval: ::core::ffi::c_int = 0;
 static mut client_exittype: msgtype = 0 as msgtype;
-static mut client_exitsession: *const ::core::ffi::c_char =
-    ::core::ptr::null::<::core::ffi::c_char>();
+static mut client_exitsession: Option<CString> = None;
 static mut client_exitmessage: Option<Vec<u8>> = None;
 static mut client_execshell: *const ::core::ffi::c_char =
     ::core::ptr::null::<::core::ffi::c_char>();
@@ -317,25 +316,25 @@ unsafe extern "C" fn client_exit_message() -> *const ::core::ffi::c_char {
     static mut msg: [::core::ffi::c_char; 256] = [0; 256];
     match client_exitreason as ::core::ffi::c_uint {
         1 => {
-            if !client_exitsession.is_null() {
+            if let Some(session) = client_exitsession.as_ref() {
                 xsnprintf(
                     &raw mut msg as *mut ::core::ffi::c_char,
                     ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
                     b"detached (from session %s)\0" as *const u8 as *const ::core::ffi::c_char,
-                    client_exitsession,
+                    session.as_ptr(),
                 );
                 return &raw mut msg as *mut ::core::ffi::c_char;
             }
             return b"detached\0" as *const u8 as *const ::core::ffi::c_char;
         }
         2 => {
-            if !client_exitsession.is_null() {
+            if let Some(session) = client_exitsession.as_ref() {
                 xsnprintf(
                     &raw mut msg as *mut ::core::ffi::c_char,
                     ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
                     b"detached and SIGHUP (from session %s)\0" as *const u8
                         as *const ::core::ffi::c_char,
-                    client_exitsession,
+                    session.as_ptr(),
                 );
                 return &raw mut msg as *mut ::core::ffi::c_char;
             }
@@ -646,6 +645,7 @@ pub unsafe extern "C" fn client_main(
     setblocking(STDOUT_FILENO, 1 as ::core::ffi::c_int);
     setblocking(STDERR_FILENO, 1 as ::core::ffi::c_int);
     client_exitmessage.take();
+    client_exitsession.take();
     return client_exitval;
 }
 unsafe fn client_send_identify(
@@ -1130,7 +1130,7 @@ unsafe extern "C" fn client_dispatch_attached(mut imsg: *mut imsg) {
             {
                 fatalx(b"bad MSG_DETACH string\0" as *const u8 as *const ::core::ffi::c_char);
             }
-            client_exitsession = xstrdup(data);
+            client_exitsession = Some(std::ffi::CStr::from_ptr(data).to_owned());
             client_exittype = (*imsg).hdr.type_0 as msgtype;
             if (*imsg).hdr.type_0 == MSG_DETACHKILL as ::core::ffi::c_int as uint32_t {
                 client_exitreason = CLIENT_EXIT_DETACHED_HUP;

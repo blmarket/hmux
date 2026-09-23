@@ -125,12 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The client process's detached-session name is a private static string:
-   one validated `MSG_DETACH`/`MSG_DETACHKILL` writer duplicates it, and
-   `client_exit_message` borrows it for final output. A `CString` owner can
-   remove that allocation and release it after `client_main` prints the
-   message. The client-process exec shell/command pair is another nearby
-   candidate, but `execl` replaces the process on its normal path.
+1. `key_string_parse_numeric` allocates decoded UTF-8 cells through
+   `utf8_fromcstr` and frees them after synchronous numeric-key inspection.
+   The existing byte-equivalent `utf8_fromcstr_vec` is a small local owner
+   candidate. The client-process exec shell/command pair is nearby, but
+   `execl` replaces the process on its normal path.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -502,6 +501,18 @@ libc allocation on success and leaves it with the caller on error, so a local
   client was not exercised because this test user owns the server and cannot
   revoke its own UID access. Serialized workspace tests, binary build,
   changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
+### Increment 377 — owned client-process detached session name (2026-09-23)
+
+- The private `client_exitsession` static now holds `Option<CString>` rather
+  than a raw `xstrdup` result. Validated detach messages copy bytes into the
+  owner; `client_exit_message` borrows its pointer for final formatting, and
+  `client_main` releases it after output. A later detach packet replaces and
+  releases the previous value. No public ABI or wire format changed.
+- The attached-PTY CLI renamed a session before detach and checked the
+  client-reported final name against the 3.8-rc baseline. Serialized
+  workspace tests, binary build, changed-file rustfmt, and diff checks
+  passed. No sanitizer was run.
 
 ## Historical migration index
 
