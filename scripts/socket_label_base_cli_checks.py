@@ -46,6 +46,8 @@ def check_case(binary_path, parent, case):
     elif case == "unsafe-permissions":
         os.mkdir(uid_dir)
         os.chmod(uid_dir, 0o755)
+    elif case == "mkdir-error":
+        os.chmod(socket_base, 0o500)
 
     try:
         create = run(b"new-session", b"-d", b"-s", b"socketbase", b"sleep", b"60")
@@ -60,9 +62,12 @@ def check_case(binary_path, parent, case):
             expected = {
                 "not-directory": b"is not a directory",
                 "unsafe-permissions": b"has unsafe permissions",
+                "mkdir-error": b"couldn't create directory",
             }[case]
             assert expected in create.stderr, (case, create.stderr)
             assert socket_base in create.stderr, (case, create.stderr)
+            if case == "mkdir-error":
+                assert b"Permission denied" in create.stderr, create.stderr
             assert not os.path.exists(socket_path), socket_path
             display = None
 
@@ -78,10 +83,15 @@ def check_case(binary_path, parent, case):
     finally:
         if case == "success":
             run(b"kill-server")
+        elif case == "mkdir-error":
+            os.chmod(socket_base, 0o700)
 
 
 with tempfile.TemporaryDirectory(prefix="socket-label-base-", dir="/tmp") as tmp:
-    for case in ("success", "not-directory", "unsafe-permissions"):
+    cases = ["success", "not-directory", "unsafe-permissions"]
+    if os.geteuid() != 0:
+        cases.append("mkdir-error")
+    for case in cases:
         candidate_dir = pathlib.Path(tmp, "candidate-" + case)
         candidate_dir.mkdir()
         candidate_output = check_case(binary, candidate_dir, case)

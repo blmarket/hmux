@@ -641,10 +641,17 @@ unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<
     }
     paths
 }
-unsafe extern "C" fn make_label(
+fn make_label_cause(parts: &[&[u8]]) -> CString {
+    let mut bytes = Vec::new();
+    for part in parts {
+        bytes.extend_from_slice(part);
+    }
+    CString::new(bytes).expect("socket label cause contains no NUL")
+}
+
+unsafe fn make_label(
     mut label: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
+) -> Result<*mut ::core::ffi::c_char, CString> {
     let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut sb: stat = stat {
         st_dev: 0,
@@ -673,7 +680,6 @@ unsafe extern "C" fn make_label(
         __glibc_reserved: [0; 3],
     };
     let mut uid: uid_t = 0;
-    *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if label.is_null() {
         label = b"default\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -683,11 +689,7 @@ unsafe extern "C" fn make_label(
         false,
     );
     if paths.is_empty() {
-        xasprintf(
-            cause,
-            b"no suitable socket path\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return Err(c"no suitable socket path".to_owned());
     }
     let mut base_bytes = paths[0].to_bytes().to_vec();
     base_bytes.extend_from_slice(b"/tmux-");
@@ -696,31 +698,31 @@ unsafe extern "C" fn make_label(
     if mkdir(base.as_ptr(), S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int
         && *__errno_location() != EEXIST
     {
-        xasprintf(
-            cause,
-            b"couldn't create directory %s (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            base.as_ptr(),
-            strerror(*__errno_location()),
-        );
+        let error = CStr::from_ptr(strerror(*__errno_location()));
+        return Err(make_label_cause(&[
+            b"couldn't create directory ",
+            base.to_bytes(),
+            b" (",
+            error.to_bytes(),
+            b")",
+        ]));
     } else if lstat(base.as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
-        xasprintf(
-            cause,
-            b"couldn't read directory %s (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            base.as_ptr(),
-            strerror(*__errno_location()),
-        );
+        let error = CStr::from_ptr(strerror(*__errno_location()));
+        return Err(make_label_cause(&[
+            b"couldn't read directory ",
+            base.to_bytes(),
+            b" (",
+            error.to_bytes(),
+            b")",
+        ]));
     } else if !(sb.st_mode & __S_IFMT as __mode_t == 0o40000 as __mode_t) {
-        xasprintf(
-            cause,
-            b"%s is not a directory\0" as *const u8 as *const ::core::ffi::c_char,
-            base.as_ptr(),
-        );
+        return Err(make_label_cause(&[base.to_bytes(), b" is not a directory"]));
     } else if sb.st_uid != uid || sb.st_mode & TMUX_SOCK_PERM as __mode_t != 0 as __mode_t {
-        xasprintf(
-            cause,
-            b"directory %s has unsafe permissions\0" as *const u8 as *const ::core::ffi::c_char,
-            base.as_ptr(),
-        );
+        return Err(make_label_cause(&[
+            b"directory ",
+            base.to_bytes(),
+            b" has unsafe permissions",
+        ]));
     } else {
         xasprintf(
             &raw mut path,
@@ -728,9 +730,8 @@ unsafe extern "C" fn make_label(
             base.as_ptr(),
             label,
         );
-        return path;
+        return Ok(path);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_char>();
 }
 #[no_mangle]
 pub unsafe extern "C" fn shell_argv0(
@@ -894,7 +895,6 @@ unsafe fn main_0(
 ) -> ::core::ffi::c_int {
     let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut label: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut var: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1149,18 +1149,18 @@ unsafe fn main_0(
         }
     }
     if path.is_null() {
-        path = make_label(label, &raw mut cause);
-        if path.is_null() {
-            if !cause.is_null() {
+        path = match make_label(label) {
+            Ok(path) => path,
+            Err(cause) => {
                 fprintf(
                     stderr,
                     b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
+                    cause.as_ptr(),
                 );
-                free(cause as *mut ::core::ffi::c_void);
+                drop(cause);
+                exit(1 as ::core::ffi::c_int);
             }
-            exit(1 as ::core::ffi::c_int);
-        }
+        };
         flags |= CLIENT_DEFAULTSOCKET as uint64_t;
     }
     socket_path = path;

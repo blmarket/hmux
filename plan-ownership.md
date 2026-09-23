@@ -1044,6 +1044,20 @@ legacy callers safe.
   matched the pinned baseline byte for byte, including UTF-8, escaped
   backslash, and underline cells. No sanitizer was run.
 
+### Increment 201 — socket-label error owner (2026-09-23)
+
+- Private `make_label` now returns `Result<*mut c_char, CString>`: all five
+  error causes are byte-preserving Rust owners. Its sole CLI caller prints a
+  borrowed cause pointer and drops the owner before exit. Removed five error
+  `xasprintf` allocations and the caller's cause free. The successful socket
+  path remains C-owned because `socket_path` is global and shared with the
+  client/server startup contract.
+- Library/binary build, `platform_socket` and `expand_path_environment`
+  tests, changed-file rustfmt, Python syntax check, and `git diff --check`
+  passed. The private socket-label CLI check matched the pinned baseline,
+  including mkdir permission failure, non-directory, unsafe permissions, and
+  success. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1054,11 +1068,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `make_label` has one caller and returns C-owned error `cause` strings on
-   five failure branches. Migrate those private errors to `Option<CString>`
-   through their print-and-exit caller while leaving the global socket path
-   contract intact. `file_get_path` remains deferred: `client_file.path` is a
-   public `char *`
+1. `options_to_string` joins array items by repeatedly allocating a result
+   and manually freeing its previous result and next item. Its private
+   `options_value_to_string` producer has numeric, string, choice, and
+   command-list branches. Audit whether an owned internal value API can
+   remove those intermediate frees while keeping exported
+   `options_to_string`'s C-owned return and byte behavior.
+   `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
    place; changing the field needs an explicit opaque-record ABI decision
@@ -1086,10 +1102,13 @@ non-string value.
    PIDs can repeat, and creation timestamps are not unique by contract.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
+   `hyperlinks_put`'s formatted external ID also remains C-owned in the public
+   `hyperlinks_uri.external_id` field and is libc-freed by
+   `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–198. The remaining
+Current validation is recorded in increments 15–201. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–198 has its own local commit; none was pushed.
+Each of increments 15–201 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1324,3 +1343,14 @@ build, lockfile-owner, hook-monitor-string, and shell-argv0-owner CLI checks,
 changed-file rustfmt, Python syntax checks, and `git diff --check` passed on
 main. All three CLI checks also passed with the pinned baseline binary. No
 combined sanitizer was run.
+After increments 199–201 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, prompt-completion, capture-pane-grid-cell, and socket-label-base CLI
+checks, Python syntax checks, and `git diff --check` passed on main. The
+prompt-completion check passed separately on the pinned baseline. Capture
+output matched byte for byte; socket-label output matched after normalizing
+the private socket paths. Rustfmt
+passed for `capture_pane.rs` and `tmux.rs`. `prompt.rs` has the same two
+pre-existing rustfmt differences at lines 1 and 62 as its pre-increment-199
+version; rustfmt reports no differences in the changed code. No combined
+sanitizer was run.
