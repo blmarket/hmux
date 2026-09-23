@@ -1195,21 +1195,21 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
         (*w).redraw_scene_generation as ::core::ffi::c_ulonglong,
     );
     redraw_build_cells(&raw mut bctx, &mut cells.0);
-    scene = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<redraw_scene>() as size_t,
-    ) as *mut redraw_scene;
-    (*scene).c = c;
-    (*scene).w = w;
+    // The client borrows this address until redraw_free_scene releases it.
+    scene = Box::into_raw(Box::new(redraw_scene {
+        c,
+        w,
+        lines: ::core::ptr::null_mut(),
+        generation: (*w).redraw_scene_generation,
+        sx: bctx.sx,
+        sy: bctx.sy,
+        ox: bctx.ox,
+        oy: bctx.oy,
+    }));
     (*scene).lines = xcalloc(
         bctx.sy as size_t,
         ::core::mem::size_of::<redraw_line>() as size_t,
     ) as *mut redraw_line;
-    (*scene).generation = (*w).redraw_scene_generation;
-    (*scene).sx = bctx.sx;
-    (*scene).sy = bctx.sy;
-    (*scene).ox = bctx.ox;
-    (*scene).oy = bctx.oy;
     y = 0 as u_int;
     while y < bctx.sy {
         line = (*scene).lines.offset(y as isize) as *mut redraw_line;
@@ -1294,7 +1294,7 @@ pub unsafe extern "C" fn redraw_free_scene(mut scene: *mut redraw_scene) {
         y = y.wrapping_add(1);
     }
     free((*scene).lines as *mut ::core::ffi::c_void);
-    free(scene as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(scene));
 }
 #[no_mangle]
 pub unsafe extern "C" fn redraw_invalidate_scene(mut w: *mut window) {

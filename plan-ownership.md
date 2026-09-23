@@ -2243,6 +2243,20 @@ legacy callers safe.
   rejected append with rollback. `options_value_owner` also passed on the
   candidate. No sanitizer was run.
 
+### Increment 285 — redraw scene record (2026-09-23)
+
+- `redraw_make_scene` now creates the stable `redraw_scene` record in a `Box`;
+  `redraw_free_scene` releases it after unlinking and dropping spans and
+  freeing the line array. `client.redraw_scene` remains a borrowed pointer
+  invalidated by the same free/rebuild path. The scene record is no longer
+  `Copy`, and its `xcalloc`/`free` pair is gone. Its line array remains C-owned
+  pending a separate alias audit.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, and diff checks passed. Attached-client
+  `pane_visible_ranges` and `window_clock_owner` checks passed on the
+  candidate; both also passed on the pinned baseline during increment 283.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2253,11 +2267,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `redraw_scene` in `src/screen_redraw.rs` is now the next small record
-   candidate. `redraw_make_scene` allocates it once, `client.redraw_scene`
-   observes its stable address, and `redraw_free_scene` releases it after the
-   spans and line array. The line array is a separate allocation and needs its
-   own alias audit before it can become a Rust owner.
+1. `window_customize_edit_close_cb` in `src/window_customize.rs` builds one
+   temporary `value` buffer from editor bytes and frees it after synchronous
+   option, command, note, or environment setters. A `Vec<u8>` with a terminal
+   NUL could own it, preserving its explicit length and first-NUL C views.
+   This needs an attached customize-editor E2E to cover the callback. The
+   redraw scene's line array is a separate allocation with self-referential
+   intrusive list tails and needs its own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

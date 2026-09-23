@@ -7,7 +7,6 @@ use super::menu::menu_data;
 use super::pane::window_pane;
 use super::window::window;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct redraw_scene {
     pub c: *mut client,
