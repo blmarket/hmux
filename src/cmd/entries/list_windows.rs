@@ -116,8 +116,6 @@ unsafe extern "C" fn cmd_list_windows_exec(
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut c: *mut client = cmdq_get_client(item);
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut l: *mut *mut winlink = ::core::ptr::null_mut::<*mut winlink>();
-    let mut all_winlinks = Vec::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut i: u_int = 0;
     let mut n: u_int = 0;
@@ -146,23 +144,24 @@ unsafe extern "C" fn cmd_list_windows_exec(
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    if args_has(args, 'a' as i32 as u_char) != 0 {
-        all_winlinks = sort_get_winlinks(&raw mut sort_crit);
-        n = u_int::try_from(all_winlinks.len()).expect("too many winlinks to list");
-        l = all_winlinks.as_mut_ptr();
+    let winlinks = if args_has(args, 'a' as i32 as u_char) != 0 {
+        let links = sort_get_winlinks(&raw mut sort_crit);
         if template.is_null() {
             template = LIST_WINDOWS_WITH_SESSION_TEMPLATE.as_ptr();
         }
+        links
     } else {
-        l = sort_get_winlinks_session((*target).s, &raw mut n, &raw mut sort_crit);
+        let links = sort_get_winlinks_session((*target).s, &raw mut sort_crit);
         if template.is_null() {
             template = b"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}\0"
                 as *const u8 as *const ::core::ffi::c_char;
         }
-    }
+        links
+    };
+    n = u_int::try_from(winlinks.len()).expect("too many winlinks to list");
     i = 0 as u_int;
     while i < n {
-        wl = *l.offset(i as isize);
+        wl = winlinks[i as usize];
         s = (*wl).session;
         ft = format_create(
             cmdq_get_client(item),

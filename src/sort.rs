@@ -793,36 +793,19 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winli
     );
     links
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_winlinks_session(
-    mut s: *mut session,
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut winlink {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut i: u_int = 0;
-    static mut l: *mut *mut winlink = ::core::ptr::null::<*mut winlink>() as *mut *mut winlink;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+pub unsafe fn sort_get_winlinks_session(
+    s: *mut session,
+    sort_crit: *mut sort_criteria,
+) -> Vec<*mut winlink> {
+    let mut l = Vec::new();
+    let mut wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if lsz <= i {
-            lsz = lsz.wrapping_add(100 as u_int);
-            l = xreallocarray(
-                l as *mut ::core::ffi::c_void,
-                lsz as size_t,
-                ::core::mem::size_of::<*mut winlink>() as size_t,
-            ) as *mut *mut winlink;
-        }
-        let fresh16 = i;
-        i = i.wrapping_add(1);
-        let ref mut fresh17 = *l.offset(fresh16 as isize);
-        *fresh17 = wl;
+        l.push(wl);
         wl = winlinks_next(wl);
     }
     sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
+        l.as_mut_ptr() as *mut ::core::ffi::c_void,
+        u_int::try_from(l.len()).expect("too many winlinks to sort"),
         ::core::mem::size_of::<*mut winlink>() as u_int,
         Some(
             sort_winlink_cmp
@@ -833,8 +816,7 @@ pub unsafe extern "C" fn sort_get_winlinks_session(
         ),
         sort_crit,
     );
-    *n = i;
-    return l;
+    l
 }
 pub unsafe fn sort_get_key_bindings(sort_crit: *mut sort_criteria) -> Vec<*mut key_binding> {
     let mut bindings = Vec::new();

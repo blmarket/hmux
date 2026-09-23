@@ -585,8 +585,6 @@ unsafe extern "C" fn window_tree_build_session(
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut wl: *mut winlink = (*s).curw;
-    let mut l: *mut *mut winlink = ::core::ptr::null_mut::<*mut winlink>();
-    let mut n: u_int = 0;
     let mut i: u_int = 0;
     let mut empty: u_int = 0;
     let mut expanded: ::core::ffi::c_int = 0;
@@ -632,12 +630,12 @@ unsafe extern "C" fn window_tree_build_session(
         expanded,
     ) as *mut mode_tree_item;
     free(text as *mut ::core::ffi::c_void);
-    l = sort_get_winlinks_session(s, &raw mut n, sort_crit);
+    let l = sort_get_winlinks_session(s, sort_crit);
+    let n = u_int::try_from(l.len()).expect("too many winlinks in window tree");
     empty = 0 as u_int;
     i = 0 as u_int;
     while i < n {
-        if window_tree_build_window(s, *l.offset(i as isize), modedata, sort_crit, mti, filter) == 0
-        {
+        if window_tree_build_window(s, l[i as usize], modedata, sort_crit, mti, filter) == 0 {
             empty = empty.wrapping_add(1);
         }
         i = i.wrapping_add(1);

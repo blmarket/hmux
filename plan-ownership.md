@@ -2306,6 +2306,26 @@ legacy callers safe.
   import-layout differences also present in the base commit. No sanitizer
   was run.
 
+### Increment 129 — session sorted winlink list (2026-09-22)
+
+- `sort_get_winlinks_session` now returns a caller-owned
+  `Vec<*mut winlink>` to `list-windows`, the format `W:` loop, and the
+  window-tree builder. Removed its process-global `xreallocarray` pointer
+  list and capacity counter. Session winlink trees still own the pointees;
+  each caller owns only its sorted snapshot through traversal.
+- Name/index/reverse order, nested `W:` formatting, deletion behavior, and
+  `list-windows`' total-count `#{line}` value are preserved. After both
+  winlink sorter migrations, `cmd_list_windows_exec` now chooses one owned
+  Vec for either branch and indexes it directly, removing its local raw-list
+  pointer and branch-specific compatibility views. The translated
+  `sort_get_winlinks_session` staticlib symbol is gone; no in-tree or
+  documented foreign caller was found.
+- Isolated validation: serialized workspace tests, binary build,
+  `git diff --check`, focused format-loop and session CLI checks, and a
+  private-server scenario for sorting, nested `W:` loops, and deletion
+  passed. Rustfmt reports two import-layout differences also present in the
+  base commit. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2316,12 +2336,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The remaining used sorted candidate caches are `sort_get_winlinks`,
-   `sort_get_winlinks_session`, and `sort_get_panes_window`. They still keep
-   process-global `xreallocarray` pointer lists, while their callers traverse
-   them synchronously in list, format, and mode builders. Audit each caller
-   for nested sorting and lifetime before moving each complete cache to a
-   caller-owned Vec. The unused pane variants also need an export/ABI audit.
+1. The remaining `sort_get_panes` and `sort_get_panes_session` still keep
+   process-global `xreallocarray` pointer lists but have no in-tree callers.
+   Both are exported `no_mangle` staticlib symbols; no header or documented
+   foreign use was found. Audit their external ABI obligation before
+   deleting dead caches or preserving an intentional foreign API.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -2349,9 +2368,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–128. The remaining
+Current validation is recorded in increments 15–129. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–128 has its own local commit; none was pushed.
+Each of increments 15–129 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2428,3 +2447,11 @@ CLI checks, and `git diff --check` passed on main. Changed-file rustfmt reports
 three import-layout differences in `sort.rs`, `window_tree.rs`, and
 `window_switch.rs`; checking the exact files from pre-increment `803b3b3`
 reports the same three sites. No combined sanitizer was run.
+After increments 127–129 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the binary build,
+all-session winlink, session-winlink, window-pane, format-loop, and
+session-reference CLI checks, and `git diff --check` passed on main.
+Changed-file rustfmt reports three import-layout differences in `sort.rs`,
+`window_switch.rs`, and `window_tree.rs`; checking the exact files from
+pre-increment `b7a5535` reports the same three sites. No combined sanitizer
+was run.

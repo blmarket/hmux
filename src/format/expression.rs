@@ -1398,10 +1398,8 @@ pub(super) unsafe extern "C" fn format_loop_windows(
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut l: *mut *mut winlink = ::core::ptr::null_mut::<*mut winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut i: ::core::ffi::c_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
     if s.is_null() {
         format_log1(
             es,
@@ -1415,10 +1413,11 @@ pub(super) unsafe extern "C" fn format_loop_windows(
     if buffer.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    l = sort_get_winlinks_session(s, &raw mut n as *mut u_int, sc);
+    let l = sort_get_winlinks_session(s, sc);
+    let n = ::core::ffi::c_int::try_from(l.len()).expect("too many winlinks in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
-        wl = *l.offset(i as isize);
+        wl = l[i as usize];
         w = (*wl).window;
         format_log1(
             es,
@@ -1450,9 +1449,7 @@ pub(super) unsafe extern "C" fn format_loop_windows(
             b"%d\0" as *const u8 as *const ::core::ffi::c_char,
             (i == n - 1 as ::core::ffi::c_int) as ::core::ffi::c_int,
         );
-        if i > 0 as ::core::ffi::c_int
-            && *l.offset((i - 1 as ::core::ffi::c_int) as isize) == (*s).curw
-        {
+        if i > 0 as ::core::ffi::c_int && l[(i - 1 as ::core::ffi::c_int) as usize] == (*s).curw {
             format_add(
                 nft,
                 b"window_after_active\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1466,7 +1463,7 @@ pub(super) unsafe extern "C" fn format_loop_windows(
             );
         }
         if (i + 1 as ::core::ffi::c_int) < n
-            && *l.offset((i + 1 as ::core::ffi::c_int) as isize) == (*s).curw
+            && l[(i + 1 as ::core::ffi::c_int) as usize] == (*s).curw
         {
             format_add(
                 nft,
@@ -1483,7 +1480,7 @@ pub(super) unsafe extern "C" fn format_loop_windows(
         if (i + 1 as ::core::ffi::c_int) < n {
             format_add_window_neighbour(
                 nft,
-                *l.offset((i + 1 as ::core::ffi::c_int) as isize),
+                l[(i + 1 as ::core::ffi::c_int) as usize],
                 s,
                 b"next\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -1491,7 +1488,7 @@ pub(super) unsafe extern "C" fn format_loop_windows(
         if i > 0 as ::core::ffi::c_int {
             format_add_window_neighbour(
                 nft,
-                *l.offset((i - 1 as ::core::ffi::c_int) as isize),
+                l[(i - 1 as ::core::ffi::c_int) as usize],
                 s,
                 b"prev\0" as *const u8 as *const ::core::ffi::c_char,
             );
