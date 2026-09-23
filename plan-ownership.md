@@ -2971,6 +2971,19 @@ legacy callers safe.
   the pinned baseline. Full workspace tests, binary build, changed-file
   rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 335 — boxed window-copy backing screen (2026-09-23)
+
+- `window_copy_clone_screen` and `window_copy_view_init` now Box-allocate
+  the stable outer `screen` used as `window_copy_mode_data.backing`. Mode
+  teardown and full refresh replacement call `screen_free` before consuming
+  that Box. Existing callbacks keep borrowing the raw pointer, including
+  the same invalidation boundary on refresh. Removed the constructors'
+  `xcalloc`/`xmalloc` and both matching libc `free` calls.
+- Added `scripts/window_copy_backing_owner_cli_checks.py` to compare normal
+  copy mode, refresh after a pane size change, view mode, and both exits
+  against the pinned baseline. Full workspace tests, binary build,
+  changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2981,12 +2994,7 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_copy_mode_data.backing` in `src/window_copy.rs` has two outer
-   screen constructors and two `screen_free`/`free` destruction paths,
-   including refresh replacement. A boxed screen can retain the stable
-   borrowed pointer; normal copy mode, view mode, refresh after resize,
-   and teardown should be checked against the baseline.
-   `cmd_load_buffer_data`
+1. `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
    can skip that callback when a nonattached source client dies before the

@@ -132,7 +132,7 @@ use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_set_active_pane,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xreallocarray, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xmalloc, xreallocarray, xstrdup, xvasprintf_cstring};
 use std::borrow::Cow;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -141,6 +141,7 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 #[repr(C)]
 pub struct window_copy_mode_data {
     pub screen: screen,
+    /// Owned boxed screen; callbacks borrow this pointer until refresh or mode teardown.
     pub backing: *mut screen,
     pub backing_written: ::core::ffi::c_int,
     pub ictx: *mut input_ctx,
@@ -416,7 +417,7 @@ unsafe extern "C" fn window_copy_clone_screen(
     let mut wx: u_int = 0;
     let mut wy: u_int = 0;
     let mut reflow: ::core::ffi::c_int = 0;
-    dst = xcalloc(1 as size_t, ::core::mem::size_of::<screen>() as size_t) as *mut screen;
+    dst = Box::into_raw(Box::new(::core::mem::zeroed::<screen>()));
     sy = (*(*src).grid).hsize.wrapping_add((*(*src).grid).sy);
     if trim != 0 {
         while sy > (*(*src).grid).hsize {
@@ -725,7 +726,7 @@ unsafe extern "C" fn window_copy_view_init(
     data = window_copy_common_init(wme);
     (*data).viewmode = 1 as ::core::ffi::c_int;
     (*data).line_numbers = 0 as ::core::ffi::c_int;
-    (*data).backing = xmalloc(::core::mem::size_of::<screen>() as size_t) as *mut screen;
+    (*data).backing = Box::into_raw(Box::new(::core::mem::zeroed::<screen>()));
     screen_init((*data).backing, sx, (*(*base).grid).sy, UINT_MAX);
     (*data).ictx = input_init(
         ::core::ptr::null_mut::<window_pane>(),
@@ -751,7 +752,7 @@ unsafe extern "C" fn window_copy_free(mut wme: *mut window_mode_entry) {
         input_free((*data).ictx);
     }
     screen_free((*data).backing);
-    free((*data).backing as *mut ::core::ffi::c_void);
+    drop(Box::from_raw((*data).backing));
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
 }
@@ -3518,7 +3519,7 @@ unsafe extern "C" fn window_copy_do_refresh(
     oy_from_top = (*(*(*data).backing).grid).hsize.wrapping_sub((*data).oy);
     if window_copy_sync_backing(wme) == 0 {
         screen_free((*data).backing);
-        free((*data).backing as *mut ::core::ffi::c_void);
+        drop(Box::from_raw((*data).backing));
         (*data).backing = window_copy_clone_screen(
             &raw mut (*wp).base,
             &raw mut (*data).screen,
