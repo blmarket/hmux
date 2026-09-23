@@ -1147,14 +1147,10 @@ pub unsafe extern "C" fn server_client_exec(
     mut cmd: *const ::core::ffi::c_char,
 ) {
     let mut s: *mut session = (*c).session;
-    let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cmdsize: size_t = 0;
-    let mut shellsize: size_t = 0;
     if *cmd as ::core::ffi::c_int == '\0' as i32 {
         return;
     }
-    cmdsize = strlen(cmd).wrapping_add(1 as size_t);
     if !s.is_null() {
         shell = options_get_string(
             (*s).options,
@@ -1169,26 +1165,18 @@ pub unsafe extern "C" fn server_client_exec(
     if checkshell(shell) == 0 {
         shell = _PATH_BSHELL.as_ptr();
     }
-    shellsize = strlen(shell).wrapping_add(1 as size_t);
-    msg = xmalloc(cmdsize.wrapping_add(shellsize)) as *mut ::core::ffi::c_char;
-    memcpy(
-        msg as *mut ::core::ffi::c_void,
-        cmd as *const ::core::ffi::c_void,
-        cmdsize,
-    );
-    memcpy(
-        msg.offset(cmdsize as isize) as *mut ::core::ffi::c_void,
-        shell as *const ::core::ffi::c_void,
-        shellsize,
-    );
+    let cmd_bytes = CStr::from_ptr(cmd).to_bytes_with_nul();
+    let shell_bytes = CStr::from_ptr(shell).to_bytes_with_nul();
+    let mut msg = Vec::with_capacity(cmd_bytes.len() + shell_bytes.len());
+    msg.extend_from_slice(cmd_bytes);
+    msg.extend_from_slice(shell_bytes);
     proc_send(
         (*c).peer,
         MSG_EXEC,
         -(1 as ::core::ffi::c_int),
-        msg as *const ::core::ffi::c_void,
-        cmdsize.wrapping_add(shellsize),
+        msg.as_ptr().cast(),
+        msg.len(),
     );
-    free(msg as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn server_client_in_scrollbar_area(
     mut wp: *mut window_pane,

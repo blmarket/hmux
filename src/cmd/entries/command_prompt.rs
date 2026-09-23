@@ -57,8 +57,8 @@ pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 pub use crate::src::shared::prompt::{
-    PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL, PROMPT_ISPANE,
-    PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE, prompt_free_cb, prompt_result,
+    prompt_free_cb, prompt_result, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE,
+    PROMPT_INCREMENTAL, PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE,
 };
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};

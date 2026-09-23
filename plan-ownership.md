@@ -1304,6 +1304,25 @@ legacy callers safe.
   baseline for raw-string and parsed command-list prompt labels and effects.
   No sanitizer was run.
 
+### Increment 219 — detach exec message byte owner (2026-09-23)
+
+- `server_client_exec` now assembles the two NUL-terminated command and shell
+  strings in a `Vec<u8>` and borrows its bytes for `proc_send`. Removed the
+  local `xmalloc`, two `memcpy` operations, manual lengths, and `free`.
+  `proc_send` calls `imsg_compose`, whose `ibuf_add` copies the payload before
+  returning, so the vector drops after the complete wire message is queued.
+  Exported signatures and message bytes remain unchanged.
+- Binary build, two focused `server_client` tests, changed-file rustfmt, and
+  diff checks passed. The attached-client
+  `scripts/server_client_exec_owner_cli_checks.py` drove `detach-client -E`
+  with a non-UTF-8 command byte and verified the command and shell results
+  against the pinned baseline. No sanitizer was run.
+- Combined validation after increments 217–219: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt,
+  Python AST checks, and commit diff checks passed. The command-list,
+  argument-escape, attached prompt, and attached exec CLI checks matched
+  the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1314,10 +1333,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `server_client_exec` assembles a temporary `MSG_EXEC` byte payload with
-   `xmalloc`, two `memcpy` calls, and `free`; `proc_send` copies the payload
-   synchronously through `imsg_compose` and `ibuf_add`. A `Vec<u8>` can own the
-   payload without changing the wire format. The command-list cache in
+1. `server_client_check_exit` assembles its `MSG_EXIT` payload with `xmalloc`,
+   `memcpy`, and `free` before the same copying `proc_send` call. Audit the
+   native integer bytes, optional NUL-terminated exit message, and early
+   return paths before moving it to `Vec<u8>`. The command-list cache in
    `args_value_as_string` is retained in its C-layout record and needs a
    record-owner migration.
    `file_get_path` remains deferred:
@@ -1354,9 +1373,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–218. The remaining
+Current validation is recorded in increments 15–219. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–218 has its own local commit; none was pushed.
+Each of increments 15–219 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
