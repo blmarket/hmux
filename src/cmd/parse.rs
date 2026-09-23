@@ -7,8 +7,8 @@ use crate::src::cmd_find::{cmd_find_from_client, cmd_find_valid_state};
 use crate::src::cmd_queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::environ::{environ_find, environ_put};
 use crate::src::ffi::libc::{
-    __ctype_b_loc, free, getc, getpwnam, getpwuid, getuid, malloc, memcpy, memset, sscanf, strchr,
-    strcmp, strlen, ungetc, wctomb,
+    __ctype_b_loc, free, getc, getpwnam, getpwuid, getuid, malloc, memset, sscanf, strchr, strcmp,
+    strlen, ungetc, wctomb,
 };
 use crate::src::format::{format_create, format_defaults, format_expand, format_free, format_true};
 use crate::src::log::{fatalx, log_debug};
@@ -93,7 +93,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::global_environ;
 use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xrealloc, xrecallocarray, xstrdup, xvasprintf_cstring,
+    xasprintf, xcalloc, xmalloc, xrecallocarray, xstrdup, xvasprintf_cstring,
 };
 use libc;
 use std::ffi::{CStr, CString};
@@ -3236,37 +3236,48 @@ unsafe extern "C" fn yylex_is_var(
         != 0
         || ch as ::core::ffi::c_int == '_' as i32) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn yylex_append(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
-    mut add: *const ::core::ffi::c_char,
-    mut addlen: size_t,
-) {
-    if addlen > (SIZE_MAX as size_t).wrapping_sub(1 as size_t)
-        || *len
-            > (SIZE_MAX as size_t)
-                .wrapping_sub(1 as size_t)
-                .wrapping_sub(addlen)
-    {
-        fatalx(b"buffer is too big\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    *buf = xrealloc(
-        *buf as *mut ::core::ffi::c_void,
-        (*len).wrapping_add(1 as size_t).wrapping_add(addlen),
-    ) as *mut ::core::ffi::c_char;
-    memcpy(
-        (*buf).offset(*len as isize) as *mut ::core::ffi::c_void,
-        add as *const ::core::ffi::c_void,
-        addlen,
-    );
-    *len = (*len).wrapping_add(addlen);
+/// A lexer scratch buffer. Only completed tokens need a libc allocation for
+/// the generated parser's existing free and transfer paths.
+struct LexerBuffer {
+    bytes: Vec<u8>,
 }
-unsafe extern "C" fn yylex_append1(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
-    mut add: ::core::ffi::c_char,
-) {
-    yylex_append(buf, len, &raw mut add, 1 as size_t);
+
+impl LexerBuffer {
+    fn new() -> Self {
+        Self { bytes: Vec::new() }
+    }
+
+    unsafe fn append(&mut self, add: *const ::core::ffi::c_char, addlen: size_t) {
+        if self
+            .bytes
+            .len()
+            .checked_add(addlen)
+            .and_then(|len| len.checked_add(1))
+            .is_none()
+        {
+            fatalx(b"buffer is too big\0" as *const u8 as *const ::core::ffi::c_char);
+        }
+        if addlen == 0 {
+            return;
+        }
+        self.bytes
+            .extend_from_slice(std::slice::from_raw_parts(add.cast(), addlen));
+    }
+
+    fn push(&mut self, byte: ::core::ffi::c_char) {
+        if self.bytes.len() == SIZE_MAX as usize - 1 {
+            unsafe { fatalx(b"buffer is too big\0" as *const u8 as *const ::core::ffi::c_char) };
+        }
+        self.bytes.push(byte as u8);
+    }
+
+    unsafe fn into_raw(self) -> *mut ::core::ffi::c_char {
+        let size = self.bytes.len() + 1;
+        let buf = xmalloc(size) as *mut ::core::ffi::c_char;
+        ::core::ptr::copy_nonoverlapping(self.bytes.as_ptr(), buf.cast(), self.bytes.len());
+        *buf.add(self.bytes.len()) = 0;
+        buf
+    }
 }
 unsafe extern "C" fn yylex_getc1() -> ::core::ffi::c_int {
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
@@ -3315,12 +3326,9 @@ unsafe extern "C" fn yylex_getc() -> ::core::ffi::c_int {
     }
 }
 unsafe extern "C" fn yylex_get_word(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi::c_char {
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
-    len = 0 as size_t;
-    buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
+    let mut buf = LexerBuffer::new();
     loop {
-        yylex_append1(&raw mut buf, &raw mut len, ch as ::core::ffi::c_char);
+        buf.push(ch as ::core::ffi::c_char);
         ch = yylex_getc();
         if !(ch != EOF
             && strchr(b" \t\n\0" as *const u8 as *const ::core::ffi::c_char, ch).is_null())
@@ -3329,7 +3337,7 @@ unsafe extern "C" fn yylex_get_word(mut ch: ::core::ffi::c_int) -> *mut ::core::
         }
     }
     yylex_ungetc(ch);
-    *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
+    let buf = buf.into_raw();
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"yylex_get_word\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3483,18 +3491,10 @@ unsafe extern "C" fn yylex() -> ::core::ffi::c_int {
 }
 unsafe extern "C" fn yylex_format() -> *mut ::core::ffi::c_char {
     let mut current_block: u64;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
+    let mut buf = LexerBuffer::new();
     let mut ch: ::core::ffi::c_int = 0;
     let mut brackets: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    len = 0 as size_t;
-    buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
-    yylex_append(
-        &raw mut buf,
-        &raw mut len,
-        b"#{\0" as *const u8 as *const ::core::ffi::c_char,
-        2 as size_t,
-    );
+    buf.append(b"#{".as_ptr().cast(), 2);
     loop {
         ch = yylex_getc();
         if ch == EOF || ch == '\n' as i32 {
@@ -3510,27 +3510,23 @@ unsafe extern "C" fn yylex_format() -> *mut ::core::ffi::c_char {
             if ch == '{' as i32 {
                 brackets += 1;
             }
-            yylex_append1(
-                &raw mut buf,
-                &raw mut len,
-                '#' as i32 as ::core::ffi::c_char,
-            );
+            buf.push('#' as i32 as ::core::ffi::c_char);
         } else if ch == '}' as i32 {
             if brackets != 0 as ::core::ffi::c_int && {
                 brackets -= 1;
                 brackets == 0 as ::core::ffi::c_int
             } {
-                yylex_append1(&raw mut buf, &raw mut len, ch as ::core::ffi::c_char);
+                buf.push(ch as ::core::ffi::c_char);
                 current_block = 10048703153582371463;
                 break;
             }
         }
-        yylex_append1(&raw mut buf, &raw mut len, ch as ::core::ffi::c_char);
+        buf.push(ch as ::core::ffi::c_char);
     }
     match current_block {
         10048703153582371463 => {
             if !(brackets != 0 as ::core::ffi::c_int) {
-                *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
+                let buf = buf.into_raw();
                 log_debug(
                     b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     b"yylex_format\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3541,13 +3537,9 @@ unsafe extern "C" fn yylex_format() -> *mut ::core::ffi::c_char {
         }
         _ => {}
     }
-    free(buf as *mut ::core::ffi::c_void);
     return ::core::ptr::null_mut::<::core::ffi::c_char>();
 }
-unsafe extern "C" fn yylex_token_escape(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
-) -> ::core::ffi::c_int {
+unsafe fn yylex_token_escape(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let mut ch: ::core::ffi::c_int = 0;
     let mut type_0: ::core::ffi::c_int = 0;
@@ -3572,7 +3564,7 @@ unsafe extern "C" fn yylex_token_escape(
                 ch = 64 as ::core::ffi::c_int * (ch - '0' as i32)
                     + 8 as ::core::ffi::c_int * (o2 - '0' as i32)
                     + (o3 - '0' as i32);
-                yylex_append1(buf, len, ch as ::core::ffi::c_char);
+                buf.push(ch as ::core::ffi::c_char);
                 return 1 as ::core::ffi::c_int;
             }
         }
@@ -3683,24 +3675,16 @@ unsafe extern "C" fn yylex_token_escape(
                 );
                 return 0 as ::core::ffi::c_int;
             }
-            yylex_append(
-                buf,
-                len,
-                &raw mut m as *mut ::core::ffi::c_char,
-                mlen as size_t,
-            );
+            buf.append(&raw mut m as *mut ::core::ffi::c_char, mlen as size_t);
             return 1 as ::core::ffi::c_int;
         }
         _ => {
-            yylex_append1(buf, len, ch as ::core::ffi::c_char);
+            buf.push(ch as ::core::ffi::c_char);
             return 1 as ::core::ffi::c_int;
         }
     };
 }
-unsafe extern "C" fn yylex_token_variable(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
-) -> ::core::ffi::c_int {
+unsafe fn yylex_token_variable(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut ch: ::core::ffi::c_int = 0;
     let mut brackets: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -3715,7 +3699,7 @@ unsafe extern "C" fn yylex_token_variable(
         brackets = 1 as ::core::ffi::c_int;
     } else {
         if yylex_is_var(ch as ::core::ffi::c_char, 1 as ::core::ffi::c_int) == 0 {
-            yylex_append1(buf, len, '$' as i32 as ::core::ffi::c_char);
+            buf.push('$' as i32 as ::core::ffi::c_char);
             yylex_ungetc(ch);
             return 1 as ::core::ffi::c_int;
         }
@@ -3764,14 +3748,11 @@ unsafe extern "C" fn yylex_token_variable(
             &raw mut name as *mut ::core::ffi::c_char,
             value,
         );
-        yylex_append(buf, len, value, strlen(value));
+        buf.append(value, strlen(value));
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn yylex_token_tilde(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
-) -> ::core::ffi::c_int {
+unsafe fn yylex_token_tilde(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut ch: ::core::ffi::c_int = 0;
     let mut name: [::core::ffi::c_char; 1024] = [0; 1024];
@@ -3834,18 +3815,15 @@ unsafe extern "C" fn yylex_token_tilde(
         &raw mut name as *mut ::core::ffi::c_char,
         home,
     );
-    yylex_append(buf, len, home, strlen(home));
+    buf.append(home, strlen(home));
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi::c_char {
     let mut current_block: u64;
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
+    let mut buf = LexerBuffer::new();
     let mut state: C2RustUnnamed_44 = NONE;
     let mut last: C2RustUnnamed_44 = START;
-    len = 0 as size_t;
-    buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
     loop {
         if ch == EOF {
             log_debug(
@@ -3900,11 +3878,7 @@ unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi
             } else if ch == '\n' as i32
                 && state as ::core::ffi::c_uint != NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                yylex_append1(
-                    &raw mut buf,
-                    &raw mut len,
-                    '\n' as i32 as ::core::ffi::c_char,
-                );
+                buf.push('\n' as i32 as ::core::ffi::c_char);
                 loop {
                     ch = yylex_getc();
                     if !(ch == ' ' as i32 || ch == '\t' as i32) {
@@ -3931,7 +3905,7 @@ unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi
                     && state as ::core::ffi::c_uint
                         != SINGLE_QUOTES as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    if yylex_token_escape(&raw mut buf, &raw mut len) == 0 {
+                    if yylex_token_escape(&mut buf) == 0 {
                         current_block = 9856007333916341158;
                         break;
                     }
@@ -3941,7 +3915,7 @@ unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi
                     && state as ::core::ffi::c_uint
                         != SINGLE_QUOTES as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    if yylex_token_tilde(&raw mut buf, &raw mut len) == 0 {
+                    if yylex_token_tilde(&mut buf) == 0 {
                         current_block = 9856007333916341158;
                         break;
                     }
@@ -3950,7 +3924,7 @@ unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi
                     && state as ::core::ffi::c_uint
                         != SINGLE_QUOTES as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    if yylex_token_variable(&raw mut buf, &raw mut len) == 0 {
+                    if yylex_token_variable(&mut buf) == 0 {
                         current_block = 9856007333916341158;
                         break;
                     }
@@ -4003,11 +3977,7 @@ unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi
                             match current_block {
                                 13302697912176427116 => {}
                                 _ => {
-                                    yylex_append1(
-                                        &raw mut buf,
-                                        &raw mut len,
-                                        ch as ::core::ffi::c_char,
-                                    );
+                                    buf.push(ch as ::core::ffi::c_char);
                                     current_block = 2515528795579319319;
                                 }
                             }
@@ -4026,12 +3996,11 @@ unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi
     }
     match current_block {
         9856007333916341158 => {
-            free(buf as *mut ::core::ffi::c_void);
             return ::core::ptr::null_mut::<::core::ffi::c_char>();
         }
         _ => {
             yylex_ungetc(ch);
-            *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
+            let buf = buf.into_raw();
             log_debug(
                 b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 b"yylex_token\0" as *const u8 as *const ::core::ffi::c_char,

@@ -1701,6 +1701,26 @@ legacy callers safe.
   and the 65,809-byte pinned-baseline file-message CLI comparison passed. No
   sanitizer was run.
 
+### Increment 246 — command lexer scratch owner (2026-09-23)
+
+- `yylex_get_word`, `yylex_format`, `yylex_token`, and their escape, variable,
+  and tilde helpers now grow a `Vec<u8>` lexer scratch buffer. This removes
+  per-byte `xrealloc`, manual `(buf, len)` updates, and explicit error-path
+  frees. A completed token gets one C allocation for the parser's existing
+  libc-freeable `YYSTYPE` contract. Embedded bytes are preserved through the
+  handoff; C-string consumers still stop at the first NUL.
+- Workspace tests, library/binary build, changed-file rustfmt, diff check,
+  the existing parser CLI check, and
+  `scripts/lexer_scratch_owner_cli_checks.py` passed. The new CLI check matched
+  the pinned baseline for an 8 KiB token, nested formats, expansions,
+  Unicode and octal escapes, first-NUL behavior, and lexer errors. Parser
+  semantic-value cleanup remains outside this scratch migration. No sanitizer
+  was run.
+- Combined validation after increments 244–246: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt,
+  per-commit diff checks, and the file-message and lexer CLI comparisons
+  passed. Both CLI checks matched the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1711,13 +1731,17 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `yylex_append` grows scratch buffers for `yylex_get_word`, `yylex_format`,
-   and `yylex_token`. Their returned strings cross parser ownership paths;
-   audit all lexer success, error, and token-destruction paths before changing
-   the shared `(buf, len)` lifecycle. `set-buffer`'s payload is a less useful
-   local target: `paste_set` retains
-   the libc allocation on success and leaves it with the caller on error, so
-   a local `Vec` alone would add an allocation and copy.
+1. `window_copy_get_selection` and `window_copy_copy_line` still grow a raw
+   selection buffer and transfer it to clipboard, pipe, and paste consumers.
+   The full caller lifecycle and null-versus-empty behavior need a single
+   migration; clipboard and pipe paths borrow bytes synchronously, while
+   paste storage requires a C-owned transfer. `set-buffer`'s payload is a
+   less useful local target: `paste_set` retains the libc allocation on
+   success and leaves it with the caller on error, so a local `Vec` alone
+   would add an allocation and copy.
+   A validated isolated migration is committed as `20b8686` in
+   `/tmp/hmux2-window-copy-selection-owner`; review and integrate it as the
+   next increment, then remove that temporary worktree.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1745,7 +1769,7 @@ non-string value.
    tag-only generated ID would violate the agreed type policy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–243 above, with increment 228 explicitly retracted.
+recorded in increments 226–246 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.
