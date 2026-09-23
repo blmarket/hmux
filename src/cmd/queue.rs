@@ -1,6 +1,6 @@
 use crate::src::arguments::{
-    args_count, args_first, args_first_value, args_get, args_next, args_next_value, args_print,
-    args_string,
+    args_count, args_first, args_first_value, args_get, args_next, args_next_value,
+    args_print_cstring, args_string,
 };
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
 use crate::src::cmd::{
@@ -396,7 +396,6 @@ pub unsafe extern "C" fn cmdq_insert_hook(
     let mut ap: ::core::ffi::VaList;
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut flag: ::core::ffi::c_char = 0;
-    let mut arguments: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if (*(*item).state).flags & CMDQ_STATE_NOHOOKS != 0 {
@@ -415,14 +414,13 @@ pub unsafe extern "C" fn cmdq_insert_hook(
         None,
         None,
     );
-    arguments = args_print(args_0);
+    let arguments = args_print_cstring(args_0);
     event_payload_set_string(
         ep,
         b"arguments\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        arguments,
+        arguments.as_ptr(),
     );
-    free(arguments as *mut ::core::ffi::c_void);
     i = 0 as u_int;
     while i < args_count(args_0) {
         xsnprintf(

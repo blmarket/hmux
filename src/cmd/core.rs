@@ -1,5 +1,5 @@
 pub use crate::src::arguments::args_parse;
-use crate::src::arguments::{args_copy, args_escape, args_free, args_print};
+use crate::src::arguments::{args_copy, args_escape, args_free, args_print_cstring};
 use crate::src::cmd_attach_session::cmd_attach_session_entry;
 use crate::src::cmd_bind_key::cmd_bind_key_entry;
 use crate::src::cmd_break_pane::cmd_break_pane_entry;
@@ -707,8 +707,8 @@ pub unsafe extern "C" fn cmd_print(cmd: *mut cmd) -> *mut ::core::ffi::c_char {
 }
 
 pub(crate) unsafe fn cmd_print_cstring(cmd: *mut cmd) -> CString {
-    let args = args_print((*cmd).args);
-    let arguments = CStr::from_ptr(args).to_bytes();
+    let args = args_print_cstring((*cmd).args);
+    let arguments = args.as_bytes();
     let name = CStr::from_ptr((*(*cmd).entry).name).to_bytes();
     let mut buf = Vec::with_capacity(
         name.len()
@@ -723,7 +723,6 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: *mut cmd) -> CString {
         buf.push(b' ');
         buf.extend_from_slice(arguments);
     }
-    free(args.cast());
     CString::new(buf).expect("command print contains no interior NUL")
 }
 #[no_mangle]

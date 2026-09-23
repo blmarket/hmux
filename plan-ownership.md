@@ -1192,6 +1192,22 @@ legacy callers safe.
   both binaries because `server_client_print` passes `%.*s` into
   `window_copy_vadd` and the first-NUL view is parsed. No sanitizer was run.
 
+### Increment 211 — printed arguments owner (2026-09-23)
+
+- Private `args_print_cstring` now assembles option flags and values in a
+  `Vec<u8>` and returns a `CString`. `args_print_add` appends the first-NUL
+  C-string view of each variadic fragment. This removes the printer's
+  `xcalloc`/`xrealloc`, capacity count, and raw append pointer. The in-repo
+  `cmd_print_cstring` and `cmdq_insert_hook` callers borrow the owner and no
+  longer free a temporary; exported `args_print` still returns a libc-freeable
+  duplicate. No supported input to `args_print_add` supplies a middle NUL:
+  `%c` receives nonzero option flags, and `%s` receives terminated strings.
+- Ten focused argument/command-list tests, library/binary build, changed-file
+  rustfmt, Python syntax, and diff checks passed. Private-server CLI checks
+  matched the pinned baseline for command printing, argument escaping, and
+  `#{hook_arguments}` with empty, non-UTF-8, and plain values. No sanitizer was
+  run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1202,13 +1218,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_print` still builds its output with manual xcalloc/xrealloc and
-   returns C-owned memory. Its two in-repo callers in `cmd_print_cstring`
-   and command-queue logging consume and free the result synchronously.
-   Audit a private owned printer and those callers while keeping the
-   exported libc-freeable wrapper and exact variadic formatting behavior.
-   `file_get_path` remains deferred: `client_file.path` is a public `char *`
-   field in a `#[repr(C)]` record built into the staticlib. A raw
+1. `key_bindings_add` and the synchronous key rendering paths in
+   `window_customize` still obtain C-owned `cmd_list_print` results, then
+   free them locally. The existing private `cmd_list_print_cstring` owner can
+   cover those borrows while delayed prompt values keep their C-owned
+   contract. `file_get_path` remains deferred: `client_file.path` is a public
+   `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
    place; changing the field needs an explicit opaque-record ABI decision
    or a fully audited sidecar owner and callback teardown.
@@ -1240,9 +1255,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–210. The remaining
+Current validation is recorded in increments 15–211. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–210 has its own local commit; none was pushed.
+Each of increments 15–211 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

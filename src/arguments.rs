@@ -6,7 +6,7 @@ use crate::src::cmd_find::cmd_find_copy_state;
 use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn, strlcat};
+use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn};
 use crate::src::format::format_single_from_target;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::server_client::server_client_unref;
@@ -81,9 +81,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::utf8::utf8_strvis;
-use crate::src::xmalloc::{
-    xasprintf, xcalloc, xrealloc, xrecallocarray, xstrdup, xvasprintf_cstring,
-};
+use crate::src::xmalloc::{xasprintf, xcalloc, xrecallocarray, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_21;
@@ -893,32 +891,24 @@ pub unsafe extern "C" fn args_from_vector(
     return values;
 }
 unsafe extern "C" fn args_print_add(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
+    buf: &mut Vec<u8>,
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) {
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();
     let formatted = xvasprintf_cstring(fmt, ap);
-    *len = (*len).wrapping_add(formatted.as_bytes().len() as size_t);
-    *buf = xrealloc(*buf as *mut ::core::ffi::c_void, *len) as *mut ::core::ffi::c_char;
-    strlcat(*buf, formatted.as_ptr(), *len);
+    buf.extend_from_slice(formatted.as_bytes());
 }
-unsafe extern "C" fn args_print_add_value(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
-    mut value: *mut args_value,
-) {
-    if **buf as ::core::ffi::c_int != '\0' as i32 {
-        args_print_add(buf, len, b" \0" as *const u8 as *const ::core::ffi::c_char);
+unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: *mut args_value) {
+    if !buf.is_empty() {
+        args_print_add(buf, b" \0" as *const u8 as *const ::core::ffi::c_char);
     }
     match (*value).type_0 as ::core::ffi::c_uint {
         2 => {
             let expanded = cmd_list_print_cstring((*value).c2rust_unnamed.cmdlist, 0);
             args_print_add(
                 buf,
-                len,
                 b"{ %s }\0" as *const u8 as *const ::core::ffi::c_char,
                 expanded.as_ptr(),
             );
@@ -927,7 +917,6 @@ unsafe extern "C" fn args_print_add_value(
             let expanded = args_escape_cstring(CStr::from_ptr((*value).c2rust_unnamed.string));
             args_print_add(
                 buf,
-                len,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 expanded.as_ptr(),
             );
@@ -936,32 +925,29 @@ unsafe extern "C" fn args_print_add_value(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_char {
-    let mut len: size_t = 0;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+pub unsafe extern "C" fn args_print(args: *mut args) -> *mut ::core::ffi::c_char {
+    let printed = args_print_cstring(args);
+    xstrdup(printed.as_ptr())
+}
+
+pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
+    let mut buf = Vec::new();
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut last: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    len = 1 as size_t;
-    buf = xcalloc(1 as size_t, len) as *mut ::core::ffi::c_char;
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() {
         if !((*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0) {
             if (*entry).values.tqh_first.is_null() {
-                if *buf as ::core::ffi::c_int == '\0' as i32 {
-                    args_print_add(
-                        &raw mut buf,
-                        &raw mut len,
-                        b"-\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
+                if buf.is_empty() {
+                    args_print_add(&mut buf, b"-\0" as *const u8 as *const ::core::ffi::c_char);
                 }
                 j = 0 as u_int;
                 while j < (*entry).count {
                     args_print_add(
-                        &raw mut buf,
-                        &raw mut len,
+                        &mut buf,
                         b"%c\0" as *const u8 as *const ::core::ffi::c_char,
                         (*entry).flag as ::core::ffi::c_int,
                     );
@@ -974,17 +960,15 @@ pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() {
         if (*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 {
-            if *buf as ::core::ffi::c_int != '\0' as i32 {
+            if !buf.is_empty() {
                 args_print_add(
-                    &raw mut buf,
-                    &raw mut len,
+                    &mut buf,
                     b" -%c\0" as *const u8 as *const ::core::ffi::c_char,
                     (*entry).flag as ::core::ffi::c_int,
                 );
             } else {
                 args_print_add(
-                    &raw mut buf,
-                    &raw mut len,
+                    &mut buf,
                     b"-%c\0" as *const u8 as *const ::core::ffi::c_char,
                     (*entry).flag as ::core::ffi::c_int,
                 );
@@ -993,22 +977,20 @@ pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_
         } else if !(*entry).values.tqh_first.is_null() {
             value = (*entry).values.tqh_first;
             while !value.is_null() {
-                if *buf as ::core::ffi::c_int != '\0' as i32 {
+                if !buf.is_empty() {
                     args_print_add(
-                        &raw mut buf,
-                        &raw mut len,
+                        &mut buf,
                         b" -%c\0" as *const u8 as *const ::core::ffi::c_char,
                         (*entry).flag as ::core::ffi::c_int,
                     );
                 } else {
                     args_print_add(
-                        &raw mut buf,
-                        &raw mut len,
+                        &mut buf,
                         b"-%c\0" as *const u8 as *const ::core::ffi::c_char,
                         (*entry).flag as ::core::ffi::c_int,
                     );
                 }
-                args_print_add_value(&raw mut buf, &raw mut len, value);
+                args_print_add_value(&mut buf, value);
                 value = (*value).entry.tqe_next;
             }
             last = entry;
@@ -1017,21 +999,19 @@ pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_
     }
     if !last.is_null() && (*last).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 {
         args_print_add(
-            &raw mut buf,
-            &raw mut len,
+            &mut buf,
             b" --\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
     i = 0 as u_int;
     while i < (*args).count {
         args_print_add_value(
-            &raw mut buf,
-            &raw mut len,
+            &mut buf,
             (*args).values.offset(i as isize) as *mut args_value,
         );
         i = i.wrapping_add(1);
     }
-    return buf;
+    CString::new(buf).expect("printed arguments contain no interior NUL")
 }
 unsafe fn args_escape_cstring(s: &CStr) -> CString {
     let source = s.to_bytes();
