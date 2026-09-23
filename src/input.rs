@@ -23,7 +23,7 @@ use crate::src::log::{fatalx, log_debug};
 use crate::src::options::{
     options_get_number, options_get_only, options_remove_or_default, options_set_number,
 };
-use crate::src::paste::{paste_add, paste_add_owned, paste_buffer_data, paste_get_top};
+use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top};
 use crate::src::reactor::{
     bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length,
     evbuffer_new, event_add, event_del, event_set,
@@ -6255,7 +6255,6 @@ unsafe extern "C" fn input_request_clipboard_reply(
     let mut ev: *mut bufferevent = (*ictx).event;
     let mut cd: *mut input_request_clipboard_data = data as *mut input_request_clipboard_data;
     let mut state: ::core::ffi::c_int = 0;
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     state = options_get_number(
         global_options,
         b"get-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
@@ -6263,14 +6262,9 @@ unsafe extern "C" fn input_request_clipboard_reply(
     if state == 0 as ::core::ffi::c_int || state == 1 as ::core::ffi::c_int {
         return;
     }
-    if state == 3 as ::core::ffi::c_int {
-        copy = xmalloc((*cd).len) as *mut ::core::ffi::c_char;
-        memcpy(
-            copy as *mut ::core::ffi::c_void,
-            (*cd).buf as *const ::core::ffi::c_void,
-            (*cd).len,
-        );
-        paste_add(::core::ptr::null::<::core::ffi::c_char>(), copy, (*cd).len);
+    if state == 3 as ::core::ffi::c_int && (*cd).len != 0 {
+        let owned: Box<[u8]> = std::slice::from_raw_parts((*cd).buf.cast::<u8>(), (*cd).len).into();
+        paste_add_owned(::core::ptr::null(), owned);
     }
     if (*ir).idx == INPUT_END_BEL as ::core::ffi::c_int {
         input_reply_clipboard(

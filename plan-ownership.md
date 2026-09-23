@@ -125,11 +125,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `input_request_clipboard_reply` still xmallocs and copies borrowed terminal
-   reply bytes solely to pass them to `paste_add`, which copies and frees them
-   again. It can copy once into a boxed slice and use `paste_add_owned`, while
-   retaining the borrowed reply data through `input_reply_clipboard`. The real
-   attached-PTY query E2E covers binary, invalid, and empty replies.
+1. Named paste-set payload producers still allocate C byte buffers before
+   `paste_set` copies accepted data into `PasteBufferOwner`. Add a private
+   owned helper while preserving exported `paste_set`'s success-consumes and
+   error-retains contract. Start with `cmd_load_buffer_done`, which copies
+   evbuffer bytes into xmalloc storage only for `paste_set`; its `-w`
+   selection borrows those bytes synchronously. The existing load-buffer CLI
+   check covers binary, empty, invalid name/path, and pending FIFO client
+   cancellation. Capture-pane, set-buffer, and window-copy producers can
+   follow as independent boundaries.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1010,6 +1014,21 @@ errors still leave the C producer allocation with the caller.
   invalid base64, and empty payload, plus popup binary `A\0B\xff`. The pane
   and popup traces wait for a marker after the OSC before inspecting the
   clipboard. Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 410 — owned clipboard request copy (2026-09-23)
+
+- In `input_request_clipboard_reply`, the `get-clipboard=both` path now copies
+  nonempty borrowed terminal reply bytes once into a boxed slice and calls
+  `paste_add_owned`. The former xmalloc, memcpy, second paste copy, and C
+  free are gone. The original borrowed reply remains valid for the subsequent
+  `input_reply_clipboard`; an empty reply still creates no paste buffer.
+- Serialized workspace tests and binary build passed. A real attached-PTY
+  comparison against pinned tmux sets `set-clipboard=on` and
+  `get-clipboard=both`, has a pane application issue OSC 52 query, and checks
+  the terminal's binary `A\0B\xff` response, the application's response,
+  and the exact new paste buffer. Invalid base64 and empty terminal replies
+  create neither an application response nor a new buffer. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
