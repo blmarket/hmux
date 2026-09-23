@@ -344,6 +344,43 @@ fn positional_command_cache_survives_array_growth_and_copy() {
 }
 
 #[test]
+fn copied_argument_templates_own_intermediate_and_final_strings() {
+    unsafe {
+        let source = args_create();
+        args_set(source, b'n', string_value(c"left-%1-right-%2"), 0);
+        args_set(source, b'q', string_value(c"%%"), 0);
+        let positional = args_push_positional(source);
+        (*positional).type_0 = ARGS_STRING;
+        (*positional).c2rust_unnamed.string = xstrdup(c"%2:%1".as_ptr());
+
+        let mut argv = [c"A'B".as_ptr().cast_mut(), c"X Y".as_ptr().cast_mut()];
+        let copied = args_copy(source, argv.len() as i32, argv.as_mut_ptr());
+        let source_named = args_first_value(source, b'n');
+        let copied_named = args_first_value(copied, b'n');
+        assert_ne!(
+            (*source_named).c2rust_unnamed.string,
+            (*copied_named).c2rust_unnamed.string
+        );
+        args_free(source);
+
+        assert_eq!(
+            CStr::from_ptr((*copied_named).c2rust_unnamed.string).to_bytes(),
+            b"left-A'B-right-X Y"
+        );
+        let quoted = args_first_value(copied, b'q');
+        assert_eq!(
+            CStr::from_ptr((*quoted).c2rust_unnamed.string).to_bytes(),
+            b"A'\\''B"
+        );
+        assert_eq!(
+            CStr::from_ptr((*(*copied).values).c2rust_unnamed.string).to_bytes(),
+            b"X Y:A'B"
+        );
+        args_free(copied);
+    }
+}
+
+#[test]
 fn rejected_command_argument_keeps_source_value_ownership() {
     unsafe {
         let values = xcalloc(2, size_of::<args_value>()) as *mut args_value;

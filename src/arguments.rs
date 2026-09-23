@@ -1,7 +1,6 @@
 use crate::src::cmd::{
     cmd_append_argv, cmd_get_args, cmd_get_entry, cmd_get_source, cmd_list_copy, cmd_list_first,
-    cmd_list_free, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace,
-    cmd_template_replace_cstring,
+    cmd_list_free, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::cmd_find::cmd_find_copy_state;
 use crate::src::cmd_parse::cmd_parse_from_string;
@@ -708,25 +707,22 @@ unsafe extern "C" fn args_copy_copy_value(
     mut argc: ::core::ffi::c_int,
     mut argv: *mut *mut ::core::ffi::c_char,
 ) {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut i: ::core::ffi::c_int = 0;
     (*to).type_0 = (*from).type_0;
     match (*from).type_0 as ::core::ffi::c_uint {
         1 => {
-            expanded = xstrdup((*from).c2rust_unnamed.string);
-            i = 0 as ::core::ffi::c_int;
-            while i < argc {
-                s = cmd_template_replace(
-                    expanded,
-                    *argv.offset(i as isize),
-                    i + 1 as ::core::ffi::c_int,
-                );
-                free(expanded as *mut ::core::ffi::c_void);
-                expanded = s;
-                i += 1;
+            let source = (*from).c2rust_unnamed.string;
+            if argc <= 0 {
+                (*to).c2rust_unnamed.string = xstrdup(source);
+                return;
             }
-            (*to).c2rust_unnamed.string = expanded;
+            let mut expanded = cmd_template_replace_cstring(source, *argv, 1);
+            for i in 1..argc {
+                expanded =
+                    cmd_template_replace_cstring(expanded.as_ptr(), *argv.add(i as usize), i + 1);
+            }
+            // args_value still has a C-owned string field and args_free_value
+            // releases it with libc free. Only the final copy crosses that ABI.
+            (*to).c2rust_unnamed.string = xstrdup(expanded.as_ptr());
         }
         2 => {
             (*to).c2rust_unnamed.cmdlist =

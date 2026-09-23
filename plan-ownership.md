@@ -1414,6 +1414,20 @@ name error.
   A unit test covers the no-active-pane empty result through both APIs.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
+### Increment 438 — own intermediate argument template substitutions (2026-09-23)
+
+- `args_copy_copy_value` now uses `CString` for results between successive
+  `cmd_template_replace_cstring` calls. The first substitution borrows the
+  source value, and each subsequent result drops when replaced. This removes
+  the intermediate C allocation/free loop without adding an allocation;
+  zero substitutions still duplicate the source directly. The final
+  `args_value.string` remains a libc-freeable duplicate for `args_free_value`.
+- A focused argument-conversion test covers two substitutions, single-quote
+  escaping, named and positional values, source destruction before reading
+  the copy, and final `args_free`. All 12 argument-conversion tests, serialized
+  workspace tests, binary build, changed-file rustfmt, and diff check passed.
+  No sanitizer ran.
+
 ## Historical migration index
 
 Each retained increment was committed separately; increment 228 was reverted.
