@@ -31,6 +31,19 @@ with tempfile.TemporaryDirectory(prefix="control-lines-", dir=root / "target") a
             assert chunk, (marker, output, control.poll())
             output.extend(chunk)
 
+    def wait_no_clients():
+        deadline = time.monotonic() + 5
+        while True:
+            result = subprocess.run(
+                base + [b"list-clients", b"-F", b"#{client_name}"],
+                env=env, capture_output=True, timeout=20,
+            )
+            assert result.returncode == 0, result.stderr
+            if result.stdout == b"":
+                return
+            assert time.monotonic() < deadline, result.stdout
+            time.sleep(0.02)
+
     try:
         run(b"new-session", b"-d", b"-s", b"ctrl", b"sleep", b"30")
         control = subprocess.Popen(
@@ -58,6 +71,24 @@ with tempfile.TemporaryDirectory(prefix="control-lines-", dir=root / "target") a
         finally:
             control.terminate()
             control.communicate(timeout=5)
+        wait_no_clients()
+
+        control = subprocess.Popen(
+            base + [b"-C", b"attach-session", b"-t", b"ctrl"],
+            env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        output = bytearray()
+        try:
+            read_until(b"%session-changed $0 ctrl\n")
+            control.stdin.write(b"display-message -p second-state-marker\n")
+            control.stdin.flush()
+            read_until(b"second-state-marker\n")
+            assert b"%begin " in output and b"%end " in output, output
+        finally:
+            control.terminate()
+            control.communicate(timeout=5)
+        wait_no_clients()
+
     finally:
         subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=20)
 

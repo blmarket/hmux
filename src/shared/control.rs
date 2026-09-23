@@ -6,8 +6,8 @@ use super::monitor::monitor_set;
 use super::pane::window_pane_offset;
 use super::window::{window, windows};
 
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Owned by the control client from `control_start` through `control_stop`.
 pub struct control_state {
     pub panes: control_panes,
     pub windows: control_windows,

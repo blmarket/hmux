@@ -2984,6 +2984,20 @@ legacy callers safe.
   against the pinned baseline. Full workspace tests, binary build,
   changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 336 — boxed control-client state (2026-09-23)
+
+- `control_start` now Box-allocates its zeroed `control_state`; `control_stop`
+  releases monitor, events, pane offsets, windows, deferred lines, and blocks
+  before consuming the Box and clearing the client pointer. The stable
+  address and C layout remain. Removed the outer `xcalloc`/`free` pair and
+  the record's `Copy`/`Clone` derives.
+- Extended `scripts/control_lines_cli_checks.py` to detach and reattach a
+  control client, issue a command through each state, and verify no client
+  remains after each disconnect. It and the per-window size/teardown CLI
+  check passed on candidate and pinned baseline. Full workspace tests,
+  binary build, changed-file rustfmt, and diff checks passed. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

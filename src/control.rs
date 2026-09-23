@@ -99,7 +99,7 @@ use crate::src::window::{
     window_pane_find_by_id, window_pane_get_new_data, window_pane_update_used_data,
     winlink_find_by_window,
 };
-use crate::src::xmalloc::{xcalloc, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xstrdup, xvasprintf_cstring};
 use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -1336,10 +1336,7 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
         setblocking((*c).out_fd, 0 as ::core::ffi::c_int);
     }
     setblocking((*c).fd, 0 as ::core::ffi::c_int);
-    (*c).control_state = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<control_state>() as size_t,
-    ) as *mut control_state;
+    (*c).control_state = Box::into_raw(Box::new(::core::mem::zeroed::<control_state>()));
     cs = (*c).control_state;
     (*cs).panes.storage = std::ptr::null_mut();
     (*cs).windows.storage = std::ptr::null_mut();
@@ -1505,7 +1502,7 @@ pub unsafe extern "C" fn control_stop(mut c: *mut client) {
         cb = cb1;
     }
     (*c).control_state = ::core::ptr::null_mut::<control_state>();
-    free(cs as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(cs));
 }
 #[no_mangle]
 pub unsafe extern "C" fn control_add_sub(
