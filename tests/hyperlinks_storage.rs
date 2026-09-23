@@ -1,5 +1,8 @@
 use hmux2::src::hyperlinks::*;
-use std::{ffi::CStr, ptr::null_mut};
+use std::{
+    ffi::{CStr, CString},
+    ptr::null_mut,
+};
 
 // A single test keeps the process-global eviction list serialized.
 #[test]
@@ -57,6 +60,33 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
             1
         );
         assert_eq!(CStr::from_ptr(external_id), c"tmux138D");
+
+        // Both retained fields must survive the caller's input going away.
+        let escaped_uri = CString::new(b"https://example.com/a\n\xff".to_vec()).unwrap();
+        let escaped_id = CString::new(b"id\n\xff".to_vec()).unwrap();
+        let escaped = hyperlinks_put(b, escaped_uri.as_ptr(), escaped_id.as_ptr());
+        drop(escaped_uri);
+        drop(escaped_id);
+        let mut internal_id = std::ptr::null();
+        assert_eq!(
+            hyperlinks_get(b, escaped, &mut uri, &mut internal_id, null_mut()),
+            1
+        );
+        assert_eq!(
+            CStr::from_ptr(uri).to_bytes(),
+            b"https://example.com/a\n\\377"
+        );
+        assert_eq!(CStr::from_ptr(internal_id).to_bytes(), b"id\n\\377");
+        assert_eq!(
+            hyperlinks_put(
+                b,
+                CString::new(b"https://example.com/a\n\xff".to_vec())
+                    .unwrap()
+                    .as_ptr(),
+                CString::new(b"id\n\xff".to_vec()).unwrap().as_ptr(),
+            ),
+            escaped
+        );
         hyperlinks_free(shared);
         hyperlinks_free(b);
     }

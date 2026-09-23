@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{free, strcmp, strlen};
+use crate::src::ffi::libc::{free, strcmp};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::hyperlinks::{
     hyperlink_inner_entry, hyperlink_list_entry, hyperlink_uri_entry, hyperlinks,
@@ -6,7 +6,7 @@ pub use crate::src::shared::hyperlinks::{
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
-use crate::src::utf8::utf8_stravis;
+use crate::src::utf8::utf8_stravis_cstring;
 use crate::src::xmalloc::xcalloc;
 use std::ffi::CString;
 
@@ -15,7 +15,9 @@ use std::ffi::CString;
 #[repr(C)]
 struct HyperlinkUriOwner {
     node: hyperlinks_uri,
+    internal_id: CString,
     external_id: CString,
+    uri: CString,
 }
 
 const _: () = assert!(std::mem::offset_of!(HyperlinkUriOwner, node) == 0);
@@ -69,8 +71,6 @@ unsafe extern "C" fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
     global_hyperlinks_count = global_hyperlinks_count.wrapping_sub(1);
     hyperlinks_by_inner_tree_remove(&raw mut (*hl).by_inner, hlu);
     hyperlinks_by_uri_tree_remove(&raw mut (*hl).by_uri, hlu);
-    free((*hlu).internal_id as *mut ::core::ffi::c_void);
-    free((*hlu).uri as *mut ::core::ffi::c_void);
     drop(Box::from_raw(hlu.cast::<HyperlinkUriOwner>()));
 }
 #[no_mangle]
@@ -97,24 +97,19 @@ pub unsafe extern "C" fn hyperlinks_put(
         },
     };
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut uri: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut internal_id: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if internal_id_in.is_null() {
         internal_id_in = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    utf8_stravis(&raw mut uri, uri_in, VIS_OCTAL | VIS_CSTYLE);
-    if strlen(uri) > MAX_HYPERLINK_URI as size_t {
-        free(uri as *mut ::core::ffi::c_void);
+    let uri = utf8_stravis_cstring(uri_in, VIS_OCTAL | VIS_CSTYLE);
+    if uri.as_bytes().len() > MAX_HYPERLINK_URI as usize {
         return 0 as u_int;
     }
-    utf8_stravis(&raw mut internal_id, internal_id_in, VIS_OCTAL | VIS_CSTYLE);
-    if *internal_id as ::core::ffi::c_int != '\0' as i32 {
-        find.uri = uri;
-        find.internal_id = internal_id;
+    let internal_id = utf8_stravis_cstring(internal_id_in, VIS_OCTAL | VIS_CSTYLE);
+    if !internal_id.as_bytes().is_empty() {
+        find.uri = uri.as_ptr();
+        find.internal_id = internal_id.as_ptr();
         hlu = hyperlinks_by_uri_tree_find(&raw mut (*hl).by_uri, &raw mut find);
         if !hlu.is_null() {
-            free(uri as *mut ::core::ffi::c_void);
-            free(internal_id as *mut ::core::ffi::c_void);
             return (*hlu).inner;
         }
     }
@@ -122,16 +117,18 @@ pub unsafe extern "C" fn hyperlinks_put(
     hyperlinks_next_external_id = hyperlinks_next_external_id + 1;
     let mut owner = Box::new(HyperlinkUriOwner {
         node: std::mem::zeroed(),
+        internal_id,
         external_id: CString::new(format!("tmux{:X}", fresh0 as u64))
             .expect("generated hyperlink ID contains no NUL"),
+        uri,
     });
+    owner.node.internal_id = owner.internal_id.as_ptr();
     owner.node.external_id = owner.external_id.as_ptr();
+    owner.node.uri = owner.uri.as_ptr();
     hlu = Box::into_raw(owner).cast();
     let fresh1 = (*hl).next_inner;
     (*hl).next_inner = (*hl).next_inner.wrapping_add(1);
     (*hlu).inner = fresh1;
-    (*hlu).internal_id = internal_id;
-    (*hlu).uri = uri;
     (*hlu).tree = hl;
     hyperlinks_by_uri_tree_insert(&raw mut (*hl).by_uri, hlu);
     hyperlinks_by_inner_tree_insert(&raw mut (*hl).by_inner, hlu);

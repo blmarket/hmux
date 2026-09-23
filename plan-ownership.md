@@ -1512,6 +1512,19 @@ legacy callers safe.
   prompt/row CLI comparisons with the pinned baseline passed. No sanitizer was
   run.
 
+### Increment 233 — retained hyperlink URI and internal ID owners (2026-09-23)
+
+- `HyperlinkUriOwner` now holds the URI and internal ID as `CString` fields
+  alongside its external ID. The public `hyperlinks_uri` string pointers
+  borrow these fields until `hyperlinks_remove` unlinks and drops the owner.
+  A private `utf8_stravis_cstring` writes the unchanged `utf8_strvis` byte
+  conversion directly into Rust-owned storage; duplicate lookup, length
+  rejection, eviction, and reset no longer allocate and free C strings for
+  these fields.
+- Hyperlink storage and real-pane OSC 8 tests, binary build, changed-file
+  rustfmt, and diff checks passed. The new live CLI check matched the pinned
+  baseline for invalid UTF-8 in both retained fields. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1551,8 +1564,6 @@ non-string value.
    PIDs can repeat, and creation timestamps are not unique by contract.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
-   Other URI and internal ID fields in `hyperlinks_uri` still use their C-owned
-   allocations and must be migrated with their full record lifecycle.
 
 Historical validation for increments 15–225 follows. Newer validation is
 recorded in increments 226–231 above, with increment 228 explicitly retracted.

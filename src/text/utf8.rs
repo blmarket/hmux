@@ -1724,6 +1724,22 @@ pub unsafe extern "C" fn utf8_stravis(
     ) as *mut ::core::ffi::c_char;
     return len;
 }
+
+/// Escape a C string using the same byte conversion as `utf8_stravis`, with
+/// the result owned by Rust. The legacy entry point still returns C storage.
+pub(crate) unsafe fn utf8_stravis_cstring(src: *const ::core::ffi::c_char, flag: i32) -> CString {
+    let source_len = strlen(src);
+    // `utf8_strvis` writes at most four bytes for each source byte, followed
+    // by one NUL. It initializes the buffer through that final NUL.
+    let capacity = source_len
+        .checked_mul(4)
+        .and_then(|size| size.checked_add(1))
+        .expect("escaped UTF-8 string is too large");
+    let mut buffer = vec![0u8; capacity];
+    let escaped_len = utf8_strvis(buffer.as_mut_ptr().cast(), src, source_len, flag);
+    buffer.truncate(escaped_len + 1);
+    CString::from_vec_with_nul(buffer).expect("utf8_strvis output has no interior NUL")
+}
 #[no_mangle]
 pub unsafe extern "C" fn utf8_stravisx(
     mut dst: *mut *mut ::core::ffi::c_char,
