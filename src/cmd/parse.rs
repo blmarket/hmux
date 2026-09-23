@@ -1,7 +1,7 @@
 use crate::src::arguments::args_free_value;
 use crate::src::cmd::{
     cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_free, cmd_list_move,
-    cmd_list_new, cmd_list_print, cmd_parse,
+    cmd_list_new, cmd_list_print_cstring, cmd_parse,
 };
 use crate::src::cmd_find::{cmd_find_from_client, cmd_find_valid_state};
 use crate::src::cmd_queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
@@ -308,28 +308,26 @@ unsafe extern "C" fn cmd_parse_print_commands(
     mut pi: *mut cmd_parse_input,
     mut cmdlist: *mut cmd_list,
 ) {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*pi).item.is_null() || !(*pi).flags & CMD_PARSE_VERBOSE != 0 {
         return;
     }
-    s = cmd_list_print(cmdlist, 0 as ::core::ffi::c_int);
+    let s = cmd_list_print_cstring(cmdlist, 0);
     if !(*pi).file.is_null() {
         cmdq_print(
             (*pi).item,
             b"%s:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
             (*pi).file,
             (*pi).line,
-            s,
+            s.as_ptr(),
         );
     } else {
         cmdq_print(
             (*pi).item,
             b"%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
             (*pi).line,
-            s,
+            s.as_ptr(),
         );
     }
-    free(s as *mut ::core::ffi::c_void);
 }
 pub const YYFINAL: ::core::ffi::c_int = 20 as ::core::ffi::c_int;
 pub const YYLAST: ::core::ffi::c_int = 104 as ::core::ffi::c_int;
@@ -820,7 +818,6 @@ unsafe extern "C" fn cmd_parse_log_commands(
     let mut arg: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
     let mut i: u_int = 0;
     let mut j: u_int = 0;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     i = 0 as u_int;
     cmd = (*cmds).tqh_first;
     while !cmd.is_null() {
@@ -847,15 +844,14 @@ unsafe extern "C" fn cmd_parse_log_commands(
                     );
                 }
                 2 => {
-                    s = cmd_list_print((*arg).cmdlist, 0 as ::core::ffi::c_int);
+                    let s = cmd_list_print_cstring((*arg).cmdlist, 0);
                     log_debug(
                         b"%s %u:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
                         prefix,
                         i,
                         j,
-                        s,
+                        s.as_ptr(),
                     );
-                    free(s as *mut ::core::ffi::c_void);
                 }
                 _ => {}
             }
@@ -1561,7 +1557,6 @@ unsafe extern "C" fn cmd_parse_build_commands(
     let mut line: u_int = UINT_MAX;
     let mut current: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut result: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     memset(
         pr as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -1609,13 +1604,12 @@ unsafe extern "C" fn cmd_parse_build_commands(
         cmd_list_move(result, current);
         cmd_list_free(current);
     }
-    s = cmd_list_print(result, 0 as ::core::ffi::c_int);
+    let s = cmd_list_print_cstring(result, 0);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_parse_build_commands\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        s.as_ptr(),
     );
-    free(s as *mut ::core::ffi::c_void);
     (*pr).status = CMD_PARSE_SUCCESS;
     (*pr).cmdlist = result;
 }

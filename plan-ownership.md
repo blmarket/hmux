@@ -1248,6 +1248,19 @@ legacy callers safe.
   `hooks_insert_one` log bytes against the pinned baseline. No sanitizer was
   run.
 
+### Increment 215 — parser command-print scratch owners (2026-09-23)
+
+- `cmd_parse_print_commands`, the command-list branch of
+  `cmd_parse_log_commands`, and `cmd_parse_build_commands` now hold the
+  existing `cmd_list_print_cstring` owner through their synchronous
+  `cmdq_print` or `log_debug` calls. Removed three C-owned results and their
+  frees; parser output bytes and exported signatures remain unchanged.
+- Library/binary build, changed-file rustfmt, and diff checks passed. A new
+  private-server `scripts/cmd_parse_print_owner_cli_checks.py` exercises
+  `source-file -v` with grouped and nested commands, and checks the parsed
+  command argument and final command list debug log lines under `-vv`.
+  Candidate output matched the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1258,11 +1271,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_parse_print_commands`, `cmd_parse_log_commands`, and
-   `cmd_parse_build_commands` have synchronous `cmd_list_print` print-and-free
-   scratch paths. `options_value_to_cstring` copies a C-owned command-list
-   print result into a `CString` and frees the original. Audit those paths for
-   direct use of the existing owned printer. `file_get_path` remains deferred:
+1. `options_value_to_cstring` copies a C-owned command-list print result into
+   a `CString` and frees the original. Audit direct use of the existing owned
+   printer. `file_get_path` remains deferred:
    `client_file.path` is a
    public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
@@ -1296,9 +1307,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–214. The remaining
+Current validation is recorded in increments 15–215. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–214 has its own local commit; none was pushed.
+Each of increments 15–215 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
