@@ -3448,6 +3448,21 @@ legacy callers safe.
   attached-terminal `server_term_caps_cli_checks.py`, changed-file rustfmt,
   and `git diff --check` passed. No sanitizer was run.
 
+### Increment 367 — owned client terminal name (2026-09-23)
+
+- Existing `ClientOwner` now holds `client.term_name` in an
+  `Option<CString>`. The identify message setter and the
+  missing/empty-to-`unknown` fallback refresh the exported borrowed pointer;
+  `server_client_lost` clears it at the former free site after tty teardown.
+  Removed both `xstrdup` allocations and both manual frees for this field.
+  `tty_term_create` copies the value into its own owner, format callbacks
+  duplicate it for their C result, and the public client layout is unchanged.
+- A focused owner test covers replacement, non-UTF-8 bytes, absent/empty
+  fallback, and clearing. The attached-terminal CLI check now asserts
+  `#{client_termname}` in addition to successful tty setup/detach. Full
+  workspace tests, the binary build, changed-file rustfmt, and diff checks
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3458,11 +3473,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `client.term_name` is the next small live owner. Its identify writer and
-   fallback-to-`unknown` replacement are both in `server_client`; tty-term
-   setup and format callbacks copy or borrow it synchronously. Existing
-   `ClientOwner` can hold a `CString` and clear its borrowed public pointer
-   at the current free site after tty teardown.
+1. `client.cwd` has one identify branch with validated-path, home, and root
+   fallback choices and a single free on client loss. It is a candidate for
+   `ClientOwner` `CString` ownership, but the many synchronous consumers of
+   `server_client_get_cwd` need an alias audit first. `client.term_type` is a
+   separate nearby candidate; its one writer is in `tty_keys` and requires a
+   shared setter.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
