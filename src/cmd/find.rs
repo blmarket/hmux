@@ -20,7 +20,7 @@ use crate::src::window::{
     winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
     winlinks_next,
 };
-use crate::src::xmalloc::{xreallocarray, xstrdup};
+use crate::src::xmalloc::xreallocarray;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -1188,6 +1188,7 @@ pub unsafe extern "C" fn cmd_find_target(
     let mut colon: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut period: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut copy_owned = Vec::<u8>::new();
     let mut tmp: [::core::ffi::c_char; 256] = [0; 256];
     let mut session: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut window: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1421,7 +1422,8 @@ pub unsafe extern "C" fn cmd_find_target(
                     current_block = 15319680530019787978;
                 }
             } else {
-                copy = xstrdup(target);
+                copy_owned = CStr::from_ptr(target).to_bytes_with_nul().to_vec();
+                copy = copy_owned.as_mut_ptr().cast();
                 colon = strchr(copy, ':' as i32);
                 if !colon.is_null() {
                     let fresh0 = colon;
@@ -1677,7 +1679,7 @@ pub unsafe extern "C" fn cmd_find_target(
                         b"cmd_find_target\0" as *const u8 as *const ::core::ffi::c_char,
                         fs,
                     );
-                    free(copy as *mut ::core::ffi::c_void);
+                    drop(copy_owned);
                     return 0 as ::core::ffi::c_int;
                 }
             }
@@ -1689,7 +1691,7 @@ pub unsafe extern "C" fn cmd_find_target(
         b"%s: error\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_find_target\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    free(copy as *mut ::core::ffi::c_void);
+    drop(copy_owned);
     if flags & CMD_FIND_CANFAIL != 0 {
         return 0 as ::core::ffi::c_int;
     }

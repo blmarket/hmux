@@ -1361,6 +1361,21 @@ legacy callers safe.
   rustfmt, and `git diff --check` passed in the isolated worktree. A live
   window cannot exercise the zero-member branch; no sanitizer run was done.
 
+### Increment 71 — split target lookup buffer (2026-09-22)
+
+- `cmd_find_target` now owns the first-NUL, writable target copy as a local
+  `Vec<u8>`, replacing `xstrdup` and the success/error `free` pair. Session,
+  window, and pane components may alias this buffer; `cmd_find_map_table`
+  returns either a static mapping or its input, and all later lookup and
+  error consumers use the aliases before the Vec drops at the former free
+  point. Numeric IDs and target selection are unchanged.
+- `scripts/find_target_cli_checks.py` covers session:window.pane lookup,
+  exact-session and abbreviated targets, all three component error paths,
+  and non-UTF-8 error bytes. Workspace tests, binary build, CLI check,
+  changed-file rustfmt, and staged `git diff --check` passed in the isolated
+  worktree. CLI arguments cannot contain NUL; the CStr copy preserves the
+  previous first-NUL view. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1375,12 +1390,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `tty_keys_clipboard`'s local base64 copy and
-   `cmd_find_target`'s mutable target split. Remaining `xstrndup` callers
-   return or transfer C-owned strings.
+2. Inspect `tty_keys_clipboard`'s local base64 copy and other bounded
+   buffers. Remaining `xstrndup` callers return or transfer C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–70. The remaining
+Current validation is recorded in increments 15–71. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–70 has its own local commit; none was pushed.
+Each of increments 15–71 has its own local commit; none was pushed.
