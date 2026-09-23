@@ -3,6 +3,7 @@ use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::cmd_parse::cmd_parse_and_append;
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_free_state, cmdq_get_callback1, cmdq_get_client, cmdq_new_state,
+    cmdq_set_cancel_data,
 };
 use crate::src::ffi::libc::{
     __ctype_tolower_loc, __ctype_toupper_loc, free, memcpy, memset, strcasestr, strlen, strstr,
@@ -1745,6 +1746,9 @@ unsafe extern "C" fn mode_tree_prompt_accept(
     mode_tree_remove_ref(mtd);
     return CMD_RETURN_NORMAL;
 }
+unsafe fn mode_tree_cancel_prompt_accept(data: *mut ::core::ffi::c_void) {
+    mode_tree_remove_ref(data.cast::<mode_tree_data>());
+}
 unsafe extern "C" fn mode_tree_prompt_input_callback(
     mut data: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
@@ -1879,20 +1883,16 @@ pub unsafe extern "C" fn mode_tree_set_prompt(
     (*(*mtd).wp).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
         (*mtd).references = (*mtd).references.wrapping_add(1);
-        cmdq_append(
-            c,
-            cmdq_get_callback1(
-                b"mode_tree_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
-                Some(
-                    mode_tree_prompt_accept
-                        as unsafe extern "C" fn(
-                            *mut cmdq_item,
-                            *mut ::core::ffi::c_void,
-                        ) -> cmd_retval,
-                ),
-                mtd as *mut ::core::ffi::c_void,
+        let item = cmdq_get_callback1(
+            b"mode_tree_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
+            Some(
+                mode_tree_prompt_accept
+                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
             ),
+            mtd as *mut ::core::ffi::c_void,
         );
+        cmdq_set_cancel_data(item, mode_tree_cancel_prompt_accept);
+        cmdq_append(c, item);
     }
 }
 unsafe extern "C" fn mode_tree_search_backward(

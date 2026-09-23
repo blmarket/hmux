@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
-use crate::src::cmd_queue::{cmdq_append, cmdq_get_callback1};
+use crate::src::cmd_queue::{cmdq_append, cmdq_get_callback1, cmdq_set_cancel_data};
 use crate::src::ffi::libc::{__ctype_tolower_loc, free, memcpy, strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand, format_free, format_single,
@@ -2077,6 +2077,22 @@ unsafe extern "C" fn window_tree_command_done(
     window_tree_destroy(data);
     return CMD_RETURN_NORMAL;
 }
+unsafe fn window_tree_cancel_command_done(modedata: *mut ::core::ffi::c_void) {
+    window_tree_destroy(modedata.cast::<window_tree_modedata>());
+}
+unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tree_modedata) {
+    (*data).references += 1;
+    let item = cmdq_get_callback1(
+        b"window_tree_command_done\0" as *const u8 as *const ::core::ffi::c_char,
+        Some(
+            window_tree_command_done
+                as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
+        ),
+        data as *mut ::core::ffi::c_void,
+    );
+    cmdq_set_cancel_data(item, window_tree_cancel_command_done);
+    cmdq_append(c, item);
+}
 unsafe extern "C" fn window_tree_command_callback(
     mut c: *mut client,
     mut modedata: *mut ::core::ffi::c_void,
@@ -2104,18 +2120,7 @@ unsafe extern "C" fn window_tree_command_callback(
         1 as ::core::ffi::c_int,
     );
     (*data).entered = ::core::ptr::null::<::core::ffi::c_char>();
-    (*data).references += 1;
-    cmdq_append(
-        c,
-        cmdq_get_callback1(
-            b"window_tree_command_done\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                window_tree_command_done
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
-            data as *mut ::core::ffi::c_void,
-        ),
-    );
+    window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn window_tree_command_free(mut modedata: *mut ::core::ffi::c_void) {
@@ -2202,18 +2207,7 @@ unsafe extern "C" fn window_tree_kill_current_callback(
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
     );
     server_renumber_all();
-    (*data).references += 1;
-    cmdq_append(
-        c,
-        cmdq_get_callback1(
-            b"window_tree_command_done\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                window_tree_command_done
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
-            data as *mut ::core::ffi::c_void,
-        ),
-    );
+    window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn window_tree_kill_tagged_callback(
@@ -2270,18 +2264,7 @@ unsafe extern "C" fn window_tree_kill_tagged_callback(
         1 as ::core::ffi::c_int,
     );
     server_renumber_all();
-    (*data).references += 1;
-    cmdq_append(
-        c,
-        cmdq_get_callback1(
-            b"window_tree_command_done\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                window_tree_command_done
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
-            data as *mut ::core::ffi::c_void,
-        ),
-    );
+    window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn window_tree_mouse(

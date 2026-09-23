@@ -1,6 +1,7 @@
 use crate::src::cmd_parse::cmd_parse_and_append;
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_free_state, cmdq_get_callback1, cmdq_get_client, cmdq_guard, cmdq_new_state,
+    cmdq_set_cancel_data,
 };
 use crate::src::ffi::libc::{__errno_location, close, free, memcpy, memset, poll, strcmp, strlen};
 pub use crate::src::ffi::libc::{nfds_t, pollfd};
@@ -886,6 +887,10 @@ unsafe extern "C" fn control_error(
     free(error as *mut ::core::ffi::c_void);
     return CMD_RETURN_NORMAL;
 }
+
+unsafe fn control_cancel_error(data: *mut ::core::ffi::c_void) {
+    free(data);
+}
 unsafe extern "C" fn control_error_callback(
     mut bufev: *mut bufferevent,
     mut what: ::core::ffi::c_short,
@@ -936,21 +941,19 @@ unsafe extern "C" fn control_read_callback(
             if status as ::core::ffi::c_uint
                 == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                cmdq_append(
-                    c,
-                    cmdq_get_callback1(
-                        b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
-                        Some(
-                            control_error
-                                as unsafe extern "C" fn(
-                                    *mut cmdq_item,
-                                    *mut ::core::ffi::c_void,
-                                )
-                                    -> cmd_retval,
-                        ),
-                        error as *mut ::core::ffi::c_void,
+                let error_item = cmdq_get_callback1(
+                    b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
+                    Some(
+                        control_error
+                            as unsafe extern "C" fn(
+                                *mut cmdq_item,
+                                *mut ::core::ffi::c_void,
+                            ) -> cmd_retval,
                     ),
+                    error as *mut ::core::ffi::c_void,
                 );
+                cmdq_set_cancel_data(error_item, control_cancel_error);
+                cmdq_append(c, error_item);
             }
             cmdq_free_state(state);
             free(line as *mut ::core::ffi::c_void);

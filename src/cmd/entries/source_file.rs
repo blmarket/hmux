@@ -3,7 +3,7 @@ use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::src::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::src::cmd_queue::{
     cmdq_continue, cmdq_error, cmdq_get_callback1, cmdq_get_client, cmdq_get_target,
-    cmdq_insert_after,
+    cmdq_insert_after, cmdq_set_cancel_data,
 };
 use crate::src::ffi::libc::{__ctype_b_loc, free, glob, globfree, strcmp, strerror};
 use crate::src::file::file_read;
@@ -135,12 +135,8 @@ unsafe fn cmd_source_file_free_data(cdata: *mut cmd_source_file_data) {
         server_client_unref(cdata.client);
     }
 }
-unsafe extern "C" fn cmd_source_file_complete_cb(
-    mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
-    let mut cdata: *mut cmd_source_file_data = data as *mut cmd_source_file_data;
-    let mut c: *mut client = (*cdata).client;
+unsafe fn cmd_source_file_decrement_depth(cdata: *mut cmd_source_file_data) {
+    let c = (*cdata).client;
     if c.is_null() {
         cmd_source_file_depth = cmd_source_file_depth.wrapping_sub(1);
         log_debug(
@@ -156,6 +152,18 @@ unsafe extern "C" fn cmd_source_file_complete_cb(
             (*c).source_file_depth,
         );
     }
+}
+unsafe fn cmd_source_file_cancel_complete(data: *mut ::core::ffi::c_void) {
+    let cdata = data as *mut cmd_source_file_data;
+    cmd_source_file_decrement_depth(cdata);
+    cmd_source_file_free_data(cdata);
+}
+unsafe extern "C" fn cmd_source_file_complete_cb(
+    item: *mut cmdq_item,
+    data: *mut ::core::ffi::c_void,
+) -> cmd_retval {
+    let cdata = data as *mut cmd_source_file_data;
+    cmd_source_file_decrement_depth(cdata);
     cfg_print_causes(item);
     cmd_source_file_free_data(cdata);
     return CMD_RETURN_NORMAL;
@@ -181,6 +189,7 @@ unsafe extern "C" fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_da
         ),
         cdata as *mut ::core::ffi::c_void,
     );
+    cmdq_set_cancel_data(new_item, cmd_source_file_cancel_complete);
     cmdq_insert_after((*cdata).after, new_item);
 }
 unsafe extern "C" fn cmd_source_file_done(

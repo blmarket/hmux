@@ -125,15 +125,7 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The remaining owned callback payloads need cancellation-aware queue-item
-   ownership before a disconnected client's file-backed wait can be drained.
-   `control_error` consumes a parser-owned C error string; key callbacks own
-   a boxed event and sometimes a client reference; mode-tree and window-tree
-   callbacks hold counted references; source-file completion owns its data
-   and depth. Preserve each callback's normal release and add a destruction
-   path for an unfired item. `cmdq_get_error` now provides the first owned
-   queue-item payload example.
-2. Disconnected file-reading clients can leave a waiting command-queue item.
+1. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
    `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
@@ -153,34 +145,31 @@ non-string value.
    The smallest safe implementation includes the wait owner, callback data,
    and queue drain together. The client queue runs serially, so a registered
    file-backed waiter is the only fired waiting item at its head, but queued
-   callback payloads still need an ownership audit before generic draining.
-   The callback audit found owned queue data in `cmdq_get_error` and
-   `control_error` strings, boxed key events (sometimes with a client ref),
-   counted mode-tree and window-tree references, and source-file completion
-   data/depth. Other callbacks borrow a client or carry null data. A private
-   callback-item cancel destructor and registered file-wait cancel hook can
-   release these before a scoped queue drain. A blanket drain would also
+   callback payloads have cancellation hooks for parser errors, queued keys,
+   mode-tree and window-tree references, and source-file completion data.
+   Other callbacks borrow a client or carry null data. A registered file-wait
+   cancel hook can release these before a scoped queue drain. A blanket drain would also
    need hooks for wait-for, jobs, popup, prompt, and pane waiters. The E2E
    now queues a suffix command and proves it never runs after disconnect.
    Pane input also serves `display-message -I`.
-3. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
+2. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
    title stack duplicates and transfers title text. `screen` is still a Copy
    C-layout record, so migrate the title/path/stack lifecycle together only
    after auditing every by-value copy and embedded screen destruction path.
    Existing title-stack and OSC 7 CLI checks provide normal-path coverage.
-4. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
+3. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. These string-return contracts are deferred
    while live client fields remain. Revisit this ranking after each completed
    boundary.
-5. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
    PIDs can repeat, and creation timestamps are not unique by contract. Its
    pointer tag must wait for a client owner/observer migration; a new tag-only
    generated ID would violate the agreed type policy.
-6. The only direct `xvasprintf` production caller outside the `xmalloc`
+5. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -197,7 +186,7 @@ non-string value.
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-7. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+6. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
@@ -1526,6 +1515,20 @@ name error.
   Serialized workspace tests, binary build, changed-file rustfmt, and
   diff check passed. No sanitizer ran. The broader disconnected-client
   queue cleanup is still pending.
+
+### Increment 446 — release unfired callback payloads (2026-09-23)
+
+- `CmdqItemOwner` now holds an optional cancellation destructor. Queue removal
+  and detached-item destruction call it only before a callback fires. This
+  releases parser-owned `control_error` text, boxed queued key events and
+  their optional client reference, counted mode-tree and window-tree
+  references, and source-file completion data and depth. Normal callbacks
+  retain their existing release paths. Other queue callbacks carry borrowed
+  or null data.
+- A focused detached-item test checks that the cancellation destructor runs.
+  Serialized workspace tests, binary build, key, tree, source-file, and
+  control-related CLI checks, changed-file rustfmt, and diff check passed.
+  No sanitizer ran. File-wait teardown remains pending.
 
 ## Historical migration index
 

@@ -117,6 +117,7 @@ struct CmdqItemOwner {
     node: cmdq_item,
     name: Option<CString>,
     error: Option<CString>,
+    cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
 }
 
 const _: () = assert!(::core::mem::offset_of!(CmdqItemOwner, node) == 0);
@@ -126,6 +127,7 @@ unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_it
         node: ::core::mem::zeroed::<cmdq_item>(),
         name: None,
         error: None,
+        cancel_data: None,
     });
     let item = &raw mut owner.node;
     let label = if label.is_null() {
@@ -149,8 +151,33 @@ unsafe fn cmdq_drop_owner(item: *mut cmdq_item) {
     drop(Box::from_raw(item.cast::<CmdqItemOwner>()));
 }
 
+/// Register the release path for callback data when this item is removed
+/// before its callback runs. The normal callback still owns its release.
+pub(crate) unsafe fn cmdq_set_cancel_data(
+    item: *mut cmdq_item,
+    cancel: unsafe fn(*mut ::core::ffi::c_void),
+) {
+    assert_eq!((*item).type_0, CMDQ_CALLBACK);
+    let owner = &mut *item.cast::<CmdqItemOwner>();
+    assert!(
+        owner.cancel_data.is_none(),
+        "callback cancel hook already set"
+    );
+    owner.cancel_data = Some(cancel);
+}
+
+unsafe fn cmdq_cancel_unfired_data(item: *mut cmdq_item) {
+    if (*item).flags & CMDQ_FIRED != 0 {
+        return;
+    }
+    if let Some(cancel) = (&mut *item.cast::<CmdqItemOwner>()).cancel_data.take() {
+        cancel((*item).data);
+    }
+}
+
 /// Release an item that has not been linked into a command queue.
 pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
+    cmdq_cancel_unfired_data(item);
     if !(*item).client.is_null() {
         server_client_unref((*item).client);
     }
@@ -544,6 +571,7 @@ pub unsafe extern "C" fn cmdq_continue(mut item: *mut cmdq_item) {
     (*item).flags &= !CMDQ_WAITING;
 }
 unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
+    cmdq_cancel_unfired_data(item);
     if !(*item).client.is_null() {
         server_client_unref((*item).client);
     }
@@ -1139,5 +1167,37 @@ pub unsafe extern "C" fn cmdq_error(
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
             msg.as_ptr(),
         );
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
+
+    struct Payload;
+
+    impl Drop for Payload {
+        fn drop(&mut self) {
+            DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    unsafe fn cancel_payload(data: *mut ::core::ffi::c_void) {
+        drop(Box::from_raw(data.cast::<Payload>()));
+    }
+
+    #[test]
+    fn detached_unfired_callback_releases_its_payload() {
+        let before = DROPPED.load(Ordering::SeqCst);
+        unsafe {
+            let data = Box::into_raw(Box::new(Payload)).cast();
+            let item = cmdq_get_callback1(c"cancel-payload".as_ptr(), None, data);
+            cmdq_set_cancel_data(item, cancel_payload);
+            cmdq_free_detached(item);
+        }
+        assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1);
     }
 }

@@ -6,7 +6,7 @@ use crate::src::cmd_find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd_parse::cmd_parse_from_arguments;
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback1, cmdq_get_client, cmdq_get_command,
-    cmdq_get_error, cmdq_insert_after, cmdq_new,
+    cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_set_cancel_data,
 };
 use crate::src::colour::{
     colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
@@ -3294,6 +3294,15 @@ unsafe extern "C" fn server_client_key_callback(
     return CMD_RETURN_NORMAL;
 }
 
+unsafe fn server_client_key_cancel(data: *mut ::core::ffi::c_void) {
+    let owned = Box::from_raw(data as *mut OwnedKeyEvent);
+    let ec = owned.event.client;
+    drop(owned);
+    if !ec.is_null() {
+        server_client_unref(ec);
+    }
+}
+
 // key_event remains a plain C layout value because command states and overlay
 // callbacks copy or borrow it. Only queued events use this owner. The Vec keeps
 // buf alive across the command queue callback; those copies only inspect the
@@ -3528,6 +3537,7 @@ unsafe fn server_client_handle_key0(
         ),
         queued_event as *mut ::core::ffi::c_void,
     );
+    cmdq_set_cancel_data(item, server_client_key_cancel);
     if !after.is_null() {
         (*event).client = c;
         (*c).references += 1;
