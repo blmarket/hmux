@@ -1537,6 +1537,25 @@ legacy callers safe.
   and `git diff --check` passed in the isolated worktree. No sanitizer run was
   performed.
 
+### Increment 83 — copy-mode cell bytes (2026-09-22)
+
+- `window_copy_cellstring` now returns `Cow<[u8]>`: static and ordinary grid
+  bytes are borrowed, while decoded extended-cell bytes are owned by Vec.
+  Its two callers, `window_copy_stringify` and
+  `window_copy_cstrtocellpos`, consume that owner directly. The latter keeps
+  a `Vec<Cow<[u8]>>` through regex byte-to-cell mapping. This removes the
+  extended-cell `xmalloc`/`memcpy`/per-cell `free` pair, the manual allocated
+  flags and lengths, and the C array allocation/free. A local `utf8_data`
+  also replaces the shared static decode scratch. Zero-size cells retain an
+  empty byte view; the grid and static byte views are not copied.
+- A new live copy-mode test checks forward and backward regex search and
+  cursor positions across multibyte and wide cells. The focused test,
+  binary check and build, changed-file rustfmt, and `git diff --check`
+  passed in the isolated worktree. After all three increments, the combined
+  main branch passed `cargo test --workspace --quiet`, the binary build,
+  changed-file rustfmt, and `git diff --check`. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1556,15 +1575,21 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. Inspect `window_copy_cellstring`'s extended-cell copy. Remaining `xstrndup`
-   callers return or transfer C-owned strings; `window_copy` regex buffers
-   grow through a shared C API.
+2. Inspect `cmd_show_options_print`'s local value and `cmd_save_buffer_exec`'s
+   path for another small string boundary. Remaining `xstrndup` callers
+   return or transfer C-owned strings; `window_copy` regex buffers grow
+   through a shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
-   require separate ownership migrations after small leaf lifetimes.
+   require separate ownership migrations after small leaf lifetimes. The
+   unused `window_switch_itemdata.tag` can be removed as cleanup, but doing
+   so alone migrates no ownership. For `window_tree` selection tags, the
+   smallest sound prerequisite is a typed semantic mode-tree key: session
+   IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
+   be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–82. The remaining
+Current validation is recorded in increments 15–83. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–82 has its own local commit; none was pushed.
+Each of increments 15–83 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

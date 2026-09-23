@@ -133,6 +133,7 @@ use crate::src::window::{
     window_pane_scrollbar_show, window_set_active_pane,
 };
 use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
+use std::borrow::Cow;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -251,13 +252,6 @@ pub struct C2RustUnnamed_46 {
 pub const WINDOW_COPY_REL_POS_ON_SCREEN: C2RustUnnamed_50 = 1;
 pub const WINDOW_COPY_REL_POS_BELOW: C2RustUnnamed_50 = 2;
 pub const WINDOW_COPY_REL_POS_ABOVE: C2RustUnnamed_50 = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_47 {
-    pub d: *const ::core::ffi::c_char,
-    pub dlen: size_t,
-    pub allocated: ::core::ffi::c_int,
-}
 pub const WINDOW_COPY_SEARCHDOWN: C2RustUnnamed_49 = 2;
 pub const WINDOW_COPY_SEARCHUP: C2RustUnnamed_49 = 1;
 pub const BOTTOM: C2RustUnnamed_48 = 2;
@@ -5953,59 +5947,37 @@ unsafe extern "C" fn window_copy_search_rl_regex(
     *psx = 0 as u_int;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_copy_cellstring(
-    mut gl: *const grid_line,
-    mut px: u_int,
-    mut size: *mut size_t,
-    mut allocated: *mut ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
-    static mut ud: utf8_data = utf8_data {
+unsafe fn window_copy_cellstring(gl: &grid_line, px: u_int) -> Cow<'_, [u8]> {
+    let mut ud = utf8_data {
         data: [0; 32],
         have: 0,
         size: 0,
         width: 0,
     };
-    let mut gce: *mut grid_cell_entry = ::core::ptr::null_mut::<grid_cell_entry>();
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if px >= (*gl).cellsize as u_int {
-        *size = 1 as size_t;
-        *allocated = 0 as ::core::ffi::c_int;
-        return b" \0" as *const u8 as *const ::core::ffi::c_char;
+    if px >= gl.cellsize as u_int {
+        return Cow::Borrowed(b" ");
     }
-    gce = (*gl).celldata.offset(px as isize) as *mut grid_cell_entry;
-    if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-        *size = 0 as size_t;
-        *allocated = 0 as ::core::ffi::c_int;
-        return ::core::ptr::null::<::core::ffi::c_char>();
+    let gce = &*gl.celldata.add(px as usize);
+    if gce.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
+        return Cow::Borrowed(b"");
     }
-    if !((*gce).flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
-        *size = 1 as size_t;
-        *allocated = 0 as ::core::ffi::c_int;
-        return &raw mut (*gce).c2rust_unnamed.data.data as *const ::core::ffi::c_char;
+    if !(gce.flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
+        return Cow::Borrowed(::core::slice::from_raw_parts(
+            &raw const gce.c2rust_unnamed.data.data,
+            1,
+        ));
     }
-    if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-        *size = 1 as size_t;
-        *allocated = 0 as ::core::ffi::c_int;
-        return b"\t\0" as *const u8 as *const ::core::ffi::c_char;
+    if gce.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
+        return Cow::Borrowed(b"\t");
     }
     utf8_to_data(
-        (*(*gl).extddata.offset((*gce).c2rust_unnamed.offset as isize)).data,
+        (*gl.extddata.add(gce.c2rust_unnamed.offset as usize)).data,
         &raw mut ud,
     );
-    if ud.size as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-        *size = 0 as size_t;
-        *allocated = 0 as ::core::ffi::c_int;
-        return ::core::ptr::null::<::core::ffi::c_char>();
+    if ud.size == 0 {
+        return Cow::Borrowed(b"");
     }
-    *size = ud.size as size_t;
-    *allocated = 1 as ::core::ffi::c_int;
-    copy = xmalloc(ud.size as size_t) as *mut ::core::ffi::c_char;
-    memcpy(
-        copy as *mut ::core::ffi::c_void,
-        &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
-        ud.size as size_t,
-    );
-    return copy;
+    Cow::Owned(ud.data[..ud.size as usize].to_vec())
 }
 unsafe extern "C" fn window_copy_last_regex(
     mut gd: *mut grid,
@@ -6097,10 +6069,7 @@ unsafe extern "C" fn window_copy_stringify(
     let mut bx: u_int = 0;
     let mut newsize: u_int = *size;
     let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
-    let mut d: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufsize: size_t = 1024 as size_t;
-    let mut dlen: size_t = 0;
-    let mut allocated: ::core::ffi::c_int = 0;
     while bufsize < newsize as size_t {
         bufsize = bufsize.wrapping_mul(2 as size_t);
     }
@@ -6113,7 +6082,8 @@ unsafe extern "C" fn window_copy_stringify(
     bx = (*size).wrapping_sub(1 as u_int);
     ax = first;
     while ax < last {
-        d = window_copy_cellstring(gl, ax, &raw mut dlen, &raw mut allocated);
+        let d = window_copy_cellstring(&*gl, ax);
+        let dlen = d.len() as size_t;
         newsize = (newsize as size_t).wrapping_add(dlen) as u_int as u_int;
         while bufsize < newsize as size_t {
             bufsize = bufsize.wrapping_mul(2 as size_t);
@@ -6122,17 +6092,14 @@ unsafe extern "C" fn window_copy_stringify(
         if dlen == 1 as size_t {
             let fresh1 = bx;
             bx = bx.wrapping_add(1);
-            *buf.offset(fresh1 as isize) = *d;
+            *buf.offset(fresh1 as isize) = d[0] as ::core::ffi::c_char;
         } else if dlen != 0 as size_t {
             memcpy(
                 buf.offset(bx as isize) as *mut ::core::ffi::c_void,
-                d as *const ::core::ffi::c_void,
+                d.as_ptr() as *const ::core::ffi::c_void,
                 dlen,
             );
             bx = (bx as size_t).wrapping_add(dlen) as u_int as u_int;
-        }
-        if allocated != 0 {
-            free(d as *mut ::core::ffi::c_void);
         }
         ax = ax.wrapping_add(1);
     }
@@ -6155,30 +6122,17 @@ unsafe extern "C" fn window_copy_cstrtocellpos(
     let mut len: u_int = 0;
     let mut match_0: ::core::ffi::c_int = 0;
     let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
-    let mut d: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut dlen: size_t = 0;
-    let mut cells: *mut C2RustUnnamed_47 = ::core::ptr::null_mut::<C2RustUnnamed_47>();
-    cells = xreallocarray(
-        NULL,
-        ncells as size_t,
-        ::core::mem::size_of::<C2RustUnnamed_47>() as size_t,
-    ) as *mut C2RustUnnamed_47;
+    let mut cells: Vec<Cow<'_, [u8]>> = Vec::with_capacity(ncells as usize);
     cell = 0 as u_int;
     px = *ppx;
     pywrap = *ppy;
     gl = grid_peek_line(gd, pywrap);
     if gl.is_null() {
-        free(cells as *mut ::core::ffi::c_void);
         return;
     }
     while cell < ncells {
-        let ref mut fresh0 = (*cells.offset(cell as isize)).d;
-        *fresh0 = window_copy_cellstring(
-            gl,
-            px,
-            &raw mut (*cells.offset(cell as isize)).dlen,
-            &raw mut (*cells.offset(cell as isize)).allocated,
-        );
+        cells.push(window_copy_cellstring(&*gl, px));
         cell = cell.wrapping_add(1);
         px = px.wrapping_add(1);
         if !(px == (*gd).sx) {
@@ -6203,10 +6157,12 @@ unsafe extern "C" fn window_copy_cstrtocellpos(
                 match_0 = 0 as ::core::ffi::c_int;
                 break;
             } else {
-                d = (*cells.offset(ccell as isize)).d;
-                dlen = (*cells.offset(ccell as isize)).dlen;
+                let d = &cells[ccell as usize];
+                dlen = d.len() as size_t;
                 if dlen == 1 as size_t {
-                    if *str.offset(pos as isize) as ::core::ffi::c_int != *d as ::core::ffi::c_int {
+                    if *str.offset(pos as isize) as ::core::ffi::c_int
+                        != d[0] as ::core::ffi::c_char as ::core::ffi::c_int
+                    {
                         match_0 = 0 as ::core::ffi::c_int;
                         break;
                     } else {
@@ -6218,7 +6174,7 @@ unsafe extern "C" fn window_copy_cstrtocellpos(
                     }
                     if memcmp(
                         str.offset(pos as isize) as *const ::core::ffi::c_void,
-                        d as *const ::core::ffi::c_void,
+                        d.as_ptr() as *const ::core::ffi::c_void,
                         dlen,
                     ) != 0 as ::core::ffi::c_int
                     {
@@ -6244,14 +6200,6 @@ unsafe extern "C" fn window_copy_cstrtocellpos(
     }
     *ppx = px;
     *ppy = pywrap;
-    cell = 0 as u_int;
-    while cell < ncells {
-        if (*cells.offset(cell as isize)).allocated != 0 {
-            free((*cells.offset(cell as isize)).d as *mut ::core::ffi::c_void);
-        }
-        cell = cell.wrapping_add(1);
-    }
-    free(cells as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_copy_move_left(
     mut s: *mut screen,
