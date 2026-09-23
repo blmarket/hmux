@@ -100,7 +100,6 @@ impl ModeTreeIdentity {
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
@@ -122,8 +121,7 @@ pub struct mode_tree_data {
     pub helpcb: mode_tree_help_cb,
     pub children: mode_tree_list,
     pub saved: mode_tree_list,
-    pub line_list: *mut mode_tree_line,
-    pub line_size: u_int,
+    pub lines: Vec<mode_tree_line>,
     pub depth: u_int,
     pub maxdepth: u_int,
     pub width: u_int,

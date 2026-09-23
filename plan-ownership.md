@@ -1937,6 +1937,26 @@ legacy callers safe.
   passed. An attached PTY scenario completed two prompt steps with initial
   inputs and checked the resulting option value. No sanitizer was run.
 
+### Increment 108 — mode-tree line array (2026-09-22)
+
+- `mode_tree_data` is Box-owned from `mode_tree_start` until its existing
+  reference count reaches zero. Its inline `Vec<mode_tree_line>` replaces
+  `line_list` and `line_size` across build, recursion, selection, drawing,
+  search, mouse handling, and teardown. Removed the array `xreallocarray`,
+  free, count/pointer synchronization, and record `xcalloc`/`free`.
+- Line records are POD with borrowed mode-tree item pointers. Readers use
+  Vec length or temporary buffer pointers; no pointer into a line survives
+  growth or rebuild. The Box allocator establishes the translated zero state
+  for the other C fields before initializing the Vec. Callback signatures
+  are unchanged. The internal Rust-only record layout changed from 512 to
+  520 bytes, and its authoritative layout fixture/test were updated.
+- Validation in the isolated worktree: four focused identity tests including
+  65 nested rows, selection, and empty rebuild; workspace tests; binary
+  build; changed-file rustfmt; and `git diff --check` passed. A detached
+  choose-tree smoke entered mode and killed the session for teardown.
+  Detached `send-keys q` did not exit mode, so no quit-key coverage is
+  claimed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1956,9 +1976,12 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `mode_tree_data.line_list` still uses `xreallocarray` and a manual count.
-   Its C-zeroed record, many line aliases, and callback-driven rebuild need
-   one lifecycle audit before replacing the array with `Vec`.
+2. `window_customize_find_user_options` still builds a temporary borrowed
+   name array with `xreallocarray`/`free`. Its three callers share it only
+   within `window_customize_build_options`; audit name lifetime across the
+   mode-tree callbacks before moving this scratch list to Vec. The cached
+   redraw-cell buffer in `screen_redraw` is another later array owner whose
+   static lifetime and reentrant draw aliases need an audit.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1974,9 +1997,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–107. The remaining
+Current validation is recorded in increments 15–108. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–107 has its own local commit; none was pushed.
+Each of increments 15–108 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2003,3 +2026,9 @@ After increments 103–105 were integrated, `cargo test --workspace --quiet`,
 pre-existing import-layout differences in `layout/custom.rs` at lines 7 and
 58; the same check on the pre-increment `204ab04` file reports both sites.
 No combined sanitizer or additional live UI scenario was run.
+After increments 106–108 were integrated, `cargo test --workspace --quiet`,
+`cargo build --bin hmux2 --quiet`, `scripts/menu_owner_cli_checks.py`, and
+`git diff --check` passed on main. Changed-file rustfmt reports only three
+pre-existing import-layout differences in `menu.rs`, `command_prompt.rs`,
+and `mode_tree.rs`; the same check on their pre-increment `75ec29b` versions
+reports those exact sites. No combined sanitizer was run.
