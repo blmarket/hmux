@@ -436,32 +436,27 @@ unsafe extern "C" fn format_cb_start_command_list(
     mut ft: *mut format_tree,
 ) -> *mut ::core::ffi::c_void {
     let mut wp: *mut window_pane = (*ft).wp;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0 as size_t;
-    let mut i: ::core::ffi::c_int = 0;
     if wp.is_null() {
+        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    }
+    if (*wp).argc < 0 {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     if (*wp).argc == 0 as ::core::ffi::c_int {
         return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
             as *mut ::core::ffi::c_void;
     }
-    i = 0 as ::core::ffi::c_int;
-    while i < (*wp).argc {
-        s = format_quote_shell_single(*(*wp).argv.offset(i as isize));
-        len = len.wrapping_add(strlen(s).wrapping_add(1 as size_t));
-        buf = xrealloc(buf as *mut ::core::ffi::c_void, len) as *mut ::core::ffi::c_char;
-        if i == 0 as ::core::ffi::c_int {
-            *buf = '\0' as i32 as ::core::ffi::c_char;
-        } else {
-            strlcat(buf, b" \0" as *const u8 as *const ::core::ffi::c_char, len);
+    let mut command = Vec::<u8>::new();
+    for i in 0..(*wp).argc {
+        let quoted = format_quote_shell_single(*(*wp).argv.offset(i as isize));
+        if i != 0 {
+            command.push(b' ');
         }
-        strlcat(buf, s, len);
-        free(s as *mut ::core::ffi::c_void);
-        i += 1;
+        command.extend_from_slice(std::ffi::CStr::from_ptr(quoted).to_bytes());
+        free(quoted.cast());
     }
-    return buf as *mut ::core::ffi::c_void;
+    // The format tree owns and frees callback results, so copy once at its boundary.
+    xmemdup(command.as_ptr().cast(), command.len()) as *mut ::core::ffi::c_void
 }
 unsafe extern "C" fn format_cb_start_path(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     let mut wp: *mut window_pane = (*ft).wp;
