@@ -24,13 +24,13 @@ use crate::src::grid_reader::{
     grid_reader_cursor_previous_word, grid_reader_cursor_right, grid_reader_cursor_start_of_line,
     grid_reader_get_cursor, grid_reader_in_set, grid_reader_start,
 };
-use crate::src::hyperlinks::{hyperlinks_copy, hyperlinks_free};
 use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
 use crate::src::reactor::{bufferevent_write, event_add, event_del, event_set};
+use crate::src::screen::screen_share_hyperlinks;
 use crate::src::screen::{
     screen_check_selection, screen_clear_selection, screen_free, screen_hide_selection,
     screen_init, screen_resize, screen_resize_cursor, screen_set_default_cursor,
@@ -667,8 +667,7 @@ unsafe extern "C" fn window_copy_init(
     (*data).scroll_exit = args_has(args, 'e' as i32 as u_char);
     (*data).hide_position = args_has(args, 'H' as i32 as u_char);
     if !(*base).hyperlinks.is_null() {
-        hyperlinks_free((*data).screen.hyperlinks);
-        (*data).screen.hyperlinks = hyperlinks_copy((*base).hyperlinks);
+        screen_share_hyperlinks(&raw mut (*data).screen, base);
     }
     (*data).screen.cx = window_copy_cursor_offset(wme, (*data).cx, (*(*data).screen.grid).sx);
     (*data).screen.cy = (*data).cy;

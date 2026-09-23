@@ -117,10 +117,11 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate retained hyperlink ownership across screen creation/reset, format
-rendering, copy-mode borrowing/retention, and destruction. Reuse the completed
-screen construction and move audit. Write rows, text buffers, queued commands,
-active contexts, and the reuse pool now have explicit Rust owners.
+Next, migrate hyperlink table/node storage and its global eviction observers.
+Retained screen/style references now have typed clone/drop ownership, but the
+C reference counter, raw index owners, URI-node owning pointers, and global
+intrusive eviction list remain inside the hyperlink implementation. Preserve
+cross-table oldest-first eviction and shared reset semantics during that batch.
 
 Screen title/path strings and the bounded title stack now live in a nullable
 boxed `ScreenStorage` owner. Raw title/path pointers and `ntitles` are compatibility
@@ -156,6 +157,14 @@ on the event-loop thread. No raw global freelist or command allocation remains.
 Write contexts and their containing input contexts are no longer Copy; fresh
 initialization and stop/drop preserve the existing record layouts.
 
+ScreenStorage and the event-loop style cache now own HyperlinksRef values.
+Popup rendering and copy mode clone that owner instead of manually pairing C
+retain/release calls. Screen hyperlink pointers and synchronous format/tty access
+are borrows. The typed owner centralizes the existing count without manufacturing
+shared Rust references to the mutably aliased C table; Rc/RefCell conversion must
+include table/index/eviction mutation together, not wrap those raw mutations in
+unchecked interior mutability. Exported C retain/release contracts remain intact.
+
 Copy-mode lazy callbacks now return owned results directly into the entry cache.
 Both lookup and enumeration evaluate them without holding an owner borrow across
 callback execution. All four production registrations use `format_add_owned_cb`;
@@ -190,8 +199,9 @@ passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
 1. Screen text, title-stack, tabs, selection, grid records, and grid line/cell
-   arrays, write rows/text, and command nodes have Rust owners. Hyperlink storage
-   still has manual lifetime boundaries. Migrate each complete producer/consumer
+   arrays, write rows/text, command nodes, and retained hyperlink references have
+   Rust owners. Hyperlink table/node/index storage and eviction observers still
+   have manual lifetime boundaries. Migrate each complete producer/consumer
    lifecycle; do not add
    a blanket screen Drop until borrowed resource views and partial construction
    paths have been audited. Title/path compatibility pointers are borrows.
@@ -1873,6 +1883,27 @@ name error.
   copy-backing, format-draw, and saved-status checks passed on candidate and
   pinned tmux. No sanitizer ran.
 - Next: retained hyperlink ownership.
+
+### Batch — retained screen and style hyperlink ownership (2026-09-23)
+
+- HyperlinksRef centralizes the existing C reference count in clone/drop, without
+  forming aliased Rust references to the mutable table. ScreenStorage retains
+  the owner through moves, reset, and destruction; the raw screen field is a
+  borrow cleared during teardown. A shared-screen helper retains before replacing,
+  making self-sharing safe. Popup and copy-mode producers use that helper.
+- The event-loop style cache now retains its table in a thread-local owner.
+  Synchronous format rendering, style lookup, and terminal calls still borrow
+  table pointers. No production subsystem manually pairs hyperlinks_init/copy/
+  free outside the retaining owner; exported C adapters remain unchanged.
+- Extended screen lifecycle checks for self-sharing, retained counts, moves,
+  survival after source destruction, identity-preserving reset, and pointer
+  clearing. Existing hyperlink tests cover byte escaping, deduplication, global
+  eviction, and C retain/release. All 402 serialized workspace tests, binary
+  build, changed-file rustfmt, and diff checks passed. Hyperlink fields,
+  capture-pane, copy-match, copy-backing, popup, and format-draw CLI comparisons
+  passed on candidate and pinned tmux. No sanitizer ran.
+- Retained lifetime management is complete at the screen/style boundary. The
+  counter and raw table/node/index/eviction ownership remain the next migration.
 
 ## Historical migration index
 

@@ -6,7 +6,7 @@ use crate::src::ffi::libc::{
 };
 use crate::src::format::{format_create, format_free, format_single};
 use crate::src::grid::grid_default_cell;
-use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_init, hyperlinks_put};
+use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_debug};
 pub use crate::src::options::options_table_entry;
 use crate::src::options::{options_get, options_get_string, options_string_to_style};
@@ -142,7 +142,21 @@ static mut style_default: style = unsafe {
         link: 0 as u_int,
     }
 };
-static mut style_hyperlinks: *mut hyperlinks = ::core::ptr::null::<hyperlinks>() as *mut hyperlinks;
+thread_local! {
+    // Style parsing and the global hyperlink eviction list run on the event loop.
+    static STYLE_HYPERLINKS: std::cell::RefCell<Option<HyperlinksRef>> = const { std::cell::RefCell::new(None) };
+}
+unsafe fn style_hyperlinks(create: bool) -> *mut hyperlinks {
+    STYLE_HYPERLINKS.with(|slot| {
+        let mut owner = slot.borrow_mut();
+        if create && owner.is_none() {
+            *owner = Some(HyperlinksRef::new());
+        }
+        owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), HyperlinksRef::as_ptr)
+    })
+}
 unsafe extern "C" fn style_set_range_string(mut sy: *mut style, mut s: *const ::core::ffi::c_char) {
     strlcpy(
         &raw mut (*sy).range_string as *mut ::core::ffi::c_char,
@@ -729,9 +743,7 @@ pub unsafe extern "C" fn style_parse(
             if tmp[5 as ::core::ffi::c_int as usize] as ::core::ffi::c_int == '\0' as i32 {
                 (*sy).link = 0 as u_int;
             } else {
-                if style_hyperlinks.is_null() {
-                    style_hyperlinks = hyperlinks_init();
-                }
+                let style_hyperlinks = style_hyperlinks(true);
                 (*sy).link = hyperlinks_put(
                     style_hyperlinks,
                     (&raw mut tmp as *mut ::core::ffi::c_char)
@@ -1045,6 +1057,7 @@ pub unsafe extern "C" fn style_tostring(mut sy: *mut style) -> *const ::core::ff
 #[no_mangle]
 pub unsafe extern "C" fn style_link(mut sy: *mut style) -> *const ::core::ffi::c_char {
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let style_hyperlinks = style_hyperlinks(false);
     if (*sy).link == 0 as u_int || style_hyperlinks.is_null() {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }

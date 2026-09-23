@@ -3,7 +3,6 @@ use crate::src::colour::{colour_palette_free, colour_palette_from_option, colour
 use crate::src::ffi::libc::{free, memcpy};
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
-use crate::src::hyperlinks::{hyperlinks_copy, hyperlinks_free};
 use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::input_keys::{input_key, input_key_get_mouse};
 use crate::src::job::{job_free, job_get_data, job_get_event, job_get_status, job_resize, job_run};
@@ -11,6 +10,7 @@ use crate::src::options::options_get_number;
 use crate::src::reactor::{
     bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
+use crate::src::screen::screen_share_hyperlinks;
 use crate::src::screen::{screen_free, screen_init, screen_resize, screen_set_default_cursor};
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
@@ -432,8 +432,7 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
     popup_reapply_styles(pd);
     screen_init(&raw mut s, (*pd).sx, (*pd).sy, 0 as u_int);
     if !(*pd).s.hyperlinks.is_null() {
-        hyperlinks_free(s.hyperlinks);
-        s.hyperlinks = hyperlinks_copy((*pd).s.hyperlinks);
+        screen_share_hyperlinks(&raw mut s, &raw const (*pd).s);
     }
     screen_write_start(&raw mut ctx, &raw mut s);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);

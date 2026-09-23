@@ -5268,6 +5268,7 @@ mod write_row_tests {
                 grid: Some(grid),
                 saved_grid: None,
                 write_rows: None,
+                hyperlinks: None,
             }));
             s.rupper = 0;
             s.rlower = 2;

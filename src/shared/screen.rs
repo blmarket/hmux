@@ -60,6 +60,7 @@ pub struct screen {
     pub sel: Option<Box<screen_sel>>,
     /// Borrowed from ScreenStorage; invalidated by resize or free.
     pub write_list: *mut screen_write_cline,
+    /// Borrowed from the retained table in ScreenStorage.
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
 }
@@ -71,6 +72,7 @@ pub struct ScreenStorage {
     pub(crate) grid: Option<Box<grid>>,
     pub(crate) saved_grid: Option<Box<grid>>,
     pub(crate) write_rows: Option<Box<[screen_write_cline]>>,
+    pub(crate) hyperlinks: Option<crate::src::hyperlinks::HyperlinksRef>,
 }
 
 #[derive(Copy, Clone)]

@@ -9,6 +9,35 @@ pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 use crate::src::utf8::utf8_stravis_cstring;
 use std::ffi::CString;
 
+/// One retained reference to the mutable hyperlink table. The legacy table
+/// remains behind the raw C API; this owner never creates an aliased Rust
+/// reference to it. Clone/drop preserve the existing C retain/release contract.
+pub(crate) struct HyperlinksRef(std::ptr::NonNull<hyperlinks>);
+
+impl HyperlinksRef {
+    pub(crate) unsafe fn new() -> Self {
+        Self(std::ptr::NonNull::new(hyperlinks_init()).expect("allocated hyperlink table"))
+    }
+    pub(crate) fn as_ptr(&self) -> *mut hyperlinks {
+        self.0.as_ptr()
+    }
+}
+impl Clone for HyperlinksRef {
+    fn clone(&self) -> Self {
+        unsafe {
+            hyperlinks_copy(self.as_ptr());
+        }
+        Self(self.0)
+    }
+}
+impl Drop for HyperlinksRef {
+    fn drop(&mut self) {
+        unsafe {
+            hyperlinks_free(self.as_ptr());
+        }
+    }
+}
+
 // The C-layout record is the first field so tree and list pointers still point
 // at hyperlinks_uri. The external ID remains valid until hyperlinks_remove.
 #[repr(C)]

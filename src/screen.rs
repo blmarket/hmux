@@ -4,7 +4,7 @@ use crate::src::grid::{
     grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
 use crate::src::grid_view::{grid_view_clear, grid_view_delete_lines};
-use crate::src::hyperlinks::{hyperlinks_free, hyperlinks_init, hyperlinks_reset};
+use crate::src::hyperlinks::{hyperlinks_reset, HyperlinksRef};
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::options_get_number;
 use crate::src::screen_write::{screen_write_free_list, screen_write_make_list};
@@ -116,6 +116,7 @@ pub unsafe extern "C" fn screen_init(
             grid: Some(grid),
             saved_grid: None,
             write_rows: None,
+            hyperlinks: None,
         })),
     );
     screen_sync_text(s);
@@ -167,10 +168,33 @@ pub unsafe extern "C" fn screen_reinit(mut s: *mut screen, mut check: ::core::ff
 #[no_mangle]
 pub unsafe extern "C" fn screen_reset_hyperlinks(mut s: *mut screen) {
     if (*s).hyperlinks.is_null() {
-        (*s).hyperlinks = hyperlinks_init();
+        let owner = HyperlinksRef::new();
+        (*s).hyperlinks = owner.as_ptr();
+        (*s).titles
+            .as_mut()
+            .expect("initialized screen storage")
+            .hyperlinks = Some(owner);
     } else {
         hyperlinks_reset((*s).hyperlinks);
     };
+}
+/// Retain before replacing so sharing a screen with itself remains valid.
+pub(crate) unsafe fn screen_share_hyperlinks(dst: *mut screen, src: *const screen) {
+    let owner = (*src)
+        .titles
+        .as_ref()
+        .expect("initialized source screen storage")
+        .hyperlinks
+        .clone();
+    let view = owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), HyperlinksRef::as_ptr);
+    (*dst)
+        .titles
+        .as_mut()
+        .expect("initialized destination screen storage")
+        .hyperlinks = owner;
+    (*dst).hyperlinks = view;
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
@@ -194,9 +218,10 @@ pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
     }
     (*s).saved_grid = std::ptr::null_mut();
     (*s).grid = std::ptr::null_mut();
-    if !(*s).hyperlinks.is_null() {
-        hyperlinks_free((*s).hyperlinks);
+    if let Some(storage) = (*s).titles.as_mut() {
+        drop(storage.hyperlinks.take());
     }
+    (*s).hyperlinks = std::ptr::null_mut();
     screen_free_titles(s);
     drop((*s).titles.take());
 }
@@ -1237,6 +1262,13 @@ mod text_owner_tests {
             let saved_grid = current.saved_grid;
             assert_eq!(screen_alternate_on(&raw mut current, &raw mut cell, 1), 0);
             assert_eq!(current.saved_grid, saved_grid);
+            let link = crate::src::hyperlinks::hyperlinks_put(
+                current.hyperlinks,
+                c"https://retained.test".as_ptr(),
+                c"shared".as_ptr(),
+            );
+            screen_share_hyperlinks(&raw mut current, &raw const current);
+            assert_eq!((*current.hyperlinks).references, 1);
             let mut old = std::mem::replace(&mut current, std::mem::zeroed());
             screen_init(&raw mut current, 10, 2, 0);
             screen_set_title(&raw mut current, c"new".as_ptr(), 0);
@@ -1254,6 +1286,9 @@ mod text_owner_tests {
             assert_eq!(old.grid, original_grid);
             assert_eq!(old.saved_grid, saved_grid);
             assert!(current.saved_grid.is_null());
+            screen_share_hyperlinks(&raw mut current, &raw const old);
+            assert_eq!(current.hyperlinks, old.hyperlinks);
+            assert_eq!((*current.hyperlinks).references, 2);
             assert!(old.sel.is_some());
             assert!(current.sel.is_none());
             assert!(screen_has_tab(&raw const old, 16));
@@ -1264,6 +1299,34 @@ mod text_owner_tests {
             assert!(old.write_list.is_null());
             assert!(old.grid.is_null());
             assert!(old.saved_grid.is_null());
+            assert!(old.hyperlinks.is_null());
+            assert_eq!((*current.hyperlinks).references, 1);
+            let mut uri = std::ptr::null();
+            assert_eq!(
+                crate::src::hyperlinks::hyperlinks_get(
+                    current.hyperlinks,
+                    link,
+                    &raw mut uri,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut()
+                ),
+                1
+            );
+            assert_eq!(CStr::from_ptr(uri), c"https://retained.test");
+            // Reset clears entries without replacing the shared table identity.
+            let table = current.hyperlinks;
+            screen_reset_hyperlinks(&raw mut current);
+            assert_eq!(current.hyperlinks, table);
+            assert_eq!(
+                crate::src::hyperlinks::hyperlinks_get(
+                    current.hyperlinks,
+                    link,
+                    &raw mut uri,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut()
+                ),
+                0
+            );
             assert_eq!(CStr::from_ptr(current.title), c"new");
 
             cell.data.data[0] = b'X';
