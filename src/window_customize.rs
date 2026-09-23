@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::ffi::{c_char, CStr, CString};
 
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_list_free, cmd_list_print, cmd_list_print_cstring};
+use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::cmd_find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
 use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::environ::{
@@ -4257,7 +4257,6 @@ unsafe extern "C" fn window_customize_set_key(
     let mut key: key_code = (*item).key;
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     if item.is_null()
@@ -4275,7 +4274,7 @@ unsafe extern "C" fn window_customize_set_key(
     {
         let key_string = key_string_format(key, false);
         let prompt = window_customize_key_prompt(&key_string);
-        value = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
+        let value = cmd_list_print_cstring((*bd).cmdlist, 0 as ::core::ffi::c_int);
         new_item = window_customize_new_item();
         (*new_item).data = data as *mut window_customize_modedata;
         (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
@@ -4287,7 +4286,7 @@ unsafe extern "C" fn window_customize_set_key(
             (*data).data,
             c,
             prompt.as_ptr(),
-            value,
+            value.as_ptr(),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
             Some(
@@ -4305,7 +4304,6 @@ unsafe extern "C" fn window_customize_set_key(
             ),
             new_item as *mut ::core::ffi::c_void,
         );
-        free(value as *mut ::core::ffi::c_void);
     } else if strcmp(s, b"Note\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {

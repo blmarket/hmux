@@ -125,7 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Disconnected file-reading clients can leave a waiting command-queue item.
+1. The customize-mode option prompt in `window_customize_set_option` still
+   calls exported `options_to_string`, passes its C-owned duplicate to
+   `mode_tree_set_prompt`, then frees it. The existing private
+   `options_to_cstring` can lend its result to that synchronous prompt copy,
+   as increment 439 did for the key Command prompt. The attached-client
+   `scripts/customize_set_option_prompt_cli_checks.py` covers this path.
+2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
    `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
@@ -147,24 +153,24 @@ non-string value.
    file-backed waiter is the only fired waiting item at its head, but queued
    callback payloads still need an ownership audit before generic draining.
    Pane input also serves `display-message -I`.
-2. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
+3. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
    title stack duplicates and transfers title text. `screen` is still a Copy
    C-layout record, so migrate the title/path/stack lifecycle together only
    after auditing every by-value copy and embedded screen destruction path.
    Existing title-stack and OSC 7 CLI checks provide normal-path coverage.
-3. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
+4. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. These string-return contracts are deferred
    while live client fields remain. Revisit this ranking after each completed
    boundary.
-4. The remaining address-based registries, other UI tags, and session/winlink
+5. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
    PIDs can repeat, and creation timestamps are not unique by contract. Its
    pointer tag must wait for a client owner/observer migration; a new tag-only
    generated ID would violate the agreed type policy.
-5. The only direct `xvasprintf` production caller outside the `xmalloc`
+6. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -181,7 +187,7 @@ non-string value.
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-6. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+7. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
@@ -1427,6 +1433,18 @@ name error.
   the copy, and final `args_free`. All 12 argument-conversion tests, serialized
   workspace tests, binary build, changed-file rustfmt, and diff check passed.
   No sanitizer ran.
+
+### Increment 439 — own customize key Command prompt text (2026-09-23)
+
+- `window_customize_set_key` now passes `cmd_list_print_cstring`'s owned
+  result to `mode_tree_set_prompt` for its Command branch. The prompt copies
+  the input into its own cells synchronously, so the local `CString` drops
+  after the call. Removed the exported C-return duplicate and manual `free`
+  from this production path. The exported `cmd_list_print` contract remains.
+- The attached-client customize set-key PTY script passed against both the
+  candidate and pinned tmux, covering the Command and Note prompt text and
+  edits. Serialized workspace tests, binary build, changed-file rustfmt, and
+  diff check passed. No sanitizer ran.
 
 ## Historical migration index
 
