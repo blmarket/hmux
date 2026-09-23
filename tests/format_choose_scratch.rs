@@ -24,6 +24,14 @@ fn compare_repeat_and_arithmetic_expand_split_operands() {
             (b"#{==:\xff,\xff}\0", b"1"),
             (b"#{R:a,3}\0", b"aaa"),
             (b"#{e|+:1,2}\0", b"3"),
+            (b"prefix#{==:missing-comma}tail\0", b"prefix"),
+            (b"prefix#{R:missing-comma}tail\0", b"prefix"),
+            (b"#{R:a,0}\0", b""),
+            (b"#{R:a,invalid}\0", b""),
+            (b"#{e|+:missing-comma}\0", b""),
+            (b"#{e|+:invalid,2}\0", b""),
+            (b"#{e|+:1,invalid}\0", b""),
+            (b"#{e|+:1,}\0", b"1"),
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
             let result = format_expand(tree, expression.as_ptr());

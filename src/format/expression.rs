@@ -593,25 +593,23 @@ pub unsafe extern "C" fn format_skip(
 ) -> *const ::core::ffi::c_char {
     return format_skip1(::core::ptr::null_mut::<format_expand_state>(), s, end);
 }
-pub(super) unsafe extern "C" fn format_choose(
+unsafe fn format_choose(
     mut es: *mut format_expand_state,
     mut s: *const ::core::ffi::c_char,
-    mut left: *mut *mut ::core::ffi::c_char,
-    mut right: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Option<(CString, CString)> {
     let cp = format_skip1(es, s, b",\0" as *const u8 as *const ::core::ffi::c_char);
     if cp.is_null() {
-        return -(1 as ::core::ffi::c_int);
+        return None;
     }
     let split = cp.offset_from(s) as usize;
     // Clone both operands before expansion: a format callback may reenter
     // the formatter or change the storage backing the original input.
     let left0 = CString::new(&CStr::from_ptr(s).to_bytes()[..split]).unwrap();
     let right0 = CStr::from_ptr(cp.add(1)).to_owned();
-    *left = format_expand1(es, left0.as_ptr());
+    let left = format_expand1_cstring(es, left0.as_ptr());
     drop(left0);
-    *right = format_expand1(es, right0.as_ptr());
-    return 0 as ::core::ffi::c_int;
+    let right = format_expand1_cstring(es, right0.as_ptr());
+    Some((left, right))
 }
 
 // The three format loops only borrow the operands while expanding each item.
@@ -2119,8 +2117,6 @@ pub(super) unsafe extern "C" fn format_replace_expression(
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut endch: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut left: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut right: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut use_fp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut prec: u_int = 0 as u_int;
     let mut mleft: ::core::ffi::c_double = 0.;
@@ -2248,9 +2244,8 @@ pub(super) unsafe extern "C" fn format_replace_expression(
             match current_block {
                 7376217411786091060 => {}
                 _ => {
-                    if format_choose(es, copy, &raw mut left, &raw mut right)
-                        != 0 as ::core::ffi::c_int
-                    {
+                    let operands = format_choose(es, copy);
+                    if operands.is_none() {
                         format_log1(
                             es,
                             b"format_replace_expression\0" as *const u8
@@ -2258,7 +2253,8 @@ pub(super) unsafe extern "C" fn format_replace_expression(
                             b"expression syntax error\0" as *const u8 as *const ::core::ffi::c_char,
                         );
                     } else {
-                        mleft = strtod(left, &raw mut endch);
+                        let (left, right) = operands.unwrap();
+                        mleft = strtod(left.as_ptr(), &raw mut endch);
                         if *endch as ::core::ffi::c_int != '\0' as i32 {
                             format_log1(
                                 es,
@@ -2266,10 +2262,10 @@ pub(super) unsafe extern "C" fn format_replace_expression(
                                     as *const ::core::ffi::c_char,
                                 b"expression left side is invalid: %s\0" as *const u8
                                     as *const ::core::ffi::c_char,
-                                left,
+                                left.as_ptr(),
                             );
                         } else {
-                            mright = strtod(right, &raw mut endch);
+                            mright = strtod(right.as_ptr(), &raw mut endch);
                             if *endch as ::core::ffi::c_int != '\0' as i32 {
                                 format_log1(
                                     es,
@@ -2277,7 +2273,7 @@ pub(super) unsafe extern "C" fn format_replace_expression(
                                         as *const ::core::ffi::c_char,
                                     b"expression right side is invalid: %s\0" as *const u8
                                         as *const ::core::ffi::c_char,
-                                    right,
+                                    right.as_ptr(),
                                 );
                             } else {
                                 if use_fp == 0 {
@@ -2371,8 +2367,6 @@ pub(super) unsafe extern "C" fn format_replace_expression(
                                         as *const ::core::ffi::c_char,
                                     value,
                                 );
-                                free(right as *mut ::core::ffi::c_void);
-                                free(left as *mut ::core::ffi::c_void);
                                 return value;
                             }
                         }
@@ -2382,8 +2376,6 @@ pub(super) unsafe extern "C" fn format_replace_expression(
         }
         _ => {}
     }
-    free(right as *mut ::core::ffi::c_void);
-    free(left as *mut ::core::ffi::c_void);
     return ::core::ptr::null_mut::<::core::ffi::c_char>();
 }
 pub(super) unsafe extern "C" fn format_cycle_callback(
@@ -2493,11 +2485,8 @@ pub(super) unsafe fn format_replace(
     let mut cp2: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut marker: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut time_format: Option<CString> = None;
-    let mut found: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut left: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut right: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut valuelen: size_t = 0;
     let mut modifiers: uint64_t = 0 as uint64_t;
     let mut limit: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -2919,9 +2908,9 @@ pub(super) unsafe fn format_replace(
         );
         value = format_unescape(es, copy, strlen(copy));
     } else if modifiers & FORMAT_CHARACTER as uint64_t != 0 {
-        new = format_expand1(es, copy);
+        let new = format_expand1_cstring(es, copy);
         c = strtonum(
-            new,
+            new.as_ptr(),
             32 as ::core::ffi::c_longlong,
             126 as ::core::ffi::c_longlong,
             &raw mut errstr,
@@ -2935,16 +2924,17 @@ pub(super) unsafe fn format_replace(
                 c,
             );
         }
-        free(new as *mut ::core::ffi::c_void);
     } else if modifiers & FORMAT_COLOUR as uint64_t != 0 {
-        new = format_expand1(es, copy);
+        let new = format_expand1_cstring(es, copy);
         if modifiers & (FORMAT_COLOUR_ESC_FG | FORMAT_COLOUR_ESC_BG) as uint64_t != 0 {
-            if strcasecmp(new, b"none\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
+            if strcasecmp(
+                new.as_ptr(),
+                b"none\0" as *const u8 as *const ::core::ffi::c_char,
+            ) == 0 as ::core::ffi::c_int
             {
                 value = xstrdup(b"\x1B[0m\0" as *const u8 as *const ::core::ffi::c_char);
             } else {
-                c = colour_parse_cstr(std::ffi::CStr::from_ptr(new)).unwrap_or(-1);
+                c = colour_parse_cstr(new.as_c_str()).unwrap_or(-1);
                 if c == -(1 as ::core::ffi::c_int) {
                     value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
                 } else {
@@ -2957,7 +2947,7 @@ pub(super) unsafe fn format_replace(
                 }
             }
         } else {
-            c = colour_parse_cstr(std::ffi::CStr::from_ptr(new)).unwrap_or(-1);
+            c = colour_parse_cstr(new.as_c_str()).unwrap_or(-1);
             if c == -(1 as ::core::ffi::c_int) || {
                 c = colour_force_rgb(c);
                 c == -(1 as ::core::ffi::c_int)
@@ -2971,7 +2961,6 @@ pub(super) unsafe fn format_replace(
                 );
             }
         }
-        free(new as *mut ::core::ffi::c_void);
     } else {
         if modifiers & FORMAT_SESSIONS as uint64_t != 0 {
             value = format_loop_sessions(es, copy);
@@ -3030,13 +3019,13 @@ pub(super) unsafe fn format_replace(
                 current_block = 1803726662341650892;
             }
         } else if !search.is_null() {
-            new = format_expand1(es, copy);
+            let new = format_expand1_cstring(es, copy);
             if wp.is_null() {
                 format_log1(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                     b"search '%s' but no pane\0" as *const u8 as *const ::core::ffi::c_char,
-                    new,
+                    new.as_ptr(),
                 );
                 value = xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
             } else {
@@ -3044,15 +3033,15 @@ pub(super) unsafe fn format_replace(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                     b"search '%s' pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    new,
+                    new.as_ptr(),
                     (*wp).id,
                 );
-                value = format_search(search, wp, new);
+                value = format_search(search, wp, new.as_ptr());
             }
-            free(new as *mut ::core::ffi::c_void);
             current_block = 1803726662341650892;
         } else if modifiers & FORMAT_REPEAT as uint64_t != 0 {
-            if format_choose(es, copy, &raw mut left, &raw mut right) != 0 as ::core::ffi::c_int {
+            let operands = format_choose(es, copy);
+            if operands.is_none() {
                 format_log1(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3061,8 +3050,9 @@ pub(super) unsafe fn format_replace(
                 );
                 current_block = 6506207624831006569;
             } else {
+                let (left, right) = operands.unwrap();
                 nrep = strtonum(
-                    right,
+                    right.as_ptr(),
                     1 as ::core::ffi::c_longlong,
                     FORMAT_MAX_REPEAT as ::core::ffi::c_longlong,
                     &raw mut errstr,
@@ -3079,8 +3069,6 @@ pub(super) unsafe fn format_replace(
                             break;
                         }
                         if format_check_time(es, &raw mut check) == 0 {
-                            free(right as *mut ::core::ffi::c_void);
-                            free(left as *mut ::core::ffi::c_void);
                             free(value as *mut ::core::ffi::c_void);
                             current_block = 6506207624831006569;
                             break;
@@ -3089,7 +3077,7 @@ pub(super) unsafe fn format_replace(
                                 &raw mut new,
                                 b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
                                 value,
-                                left,
+                                left.as_ptr(),
                             );
                             free(value as *mut ::core::ffi::c_void);
                             value = new;
@@ -3100,8 +3088,6 @@ pub(super) unsafe fn format_replace(
                 match current_block {
                     6506207624831006569 => {}
                     _ => {
-                        free(right as *mut ::core::ffi::c_void);
-                        free(left as *mut ::core::ffi::c_void);
                         current_block = 1803726662341650892;
                     }
                 }
@@ -3128,7 +3114,8 @@ pub(super) unsafe fn format_replace(
             }
             current_block = 1803726662341650892;
         } else if !cmp.is_null() {
-            if format_choose(es, copy, &raw mut left, &raw mut right) != 0 as ::core::ffi::c_int {
+            let operands = format_choose(es, copy);
+            if operands.is_none() {
                 format_log1(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3138,26 +3125,27 @@ pub(super) unsafe fn format_replace(
                 );
                 current_block = 6506207624831006569;
             } else {
+                let (left, right) = operands.unwrap();
                 format_log1(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                     b"compare %s left is: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    left,
+                    left.as_ptr(),
                 );
                 format_log1(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                     b"compare %s right is: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    right,
+                    right.as_ptr(),
                 );
                 if strcmp(
                     &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
                     b"==\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
                 {
-                    if strcmp(left, right) == 0 as ::core::ffi::c_int {
+                    if strcmp(left.as_ptr(), right.as_ptr()) == 0 as ::core::ffi::c_int {
                         value = xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
                     } else {
                         value = xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
@@ -3167,7 +3155,7 @@ pub(super) unsafe fn format_replace(
                     b"!=\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
                 {
-                    if strcmp(left, right) != 0 as ::core::ffi::c_int {
+                    if strcmp(left.as_ptr(), right.as_ptr()) != 0 as ::core::ffi::c_int {
                         value = xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
                     } else {
                         value = xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
@@ -3177,7 +3165,7 @@ pub(super) unsafe fn format_replace(
                     b"<\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
                 {
-                    if strcmp(left, right) < 0 as ::core::ffi::c_int {
+                    if strcmp(left.as_ptr(), right.as_ptr()) < 0 as ::core::ffi::c_int {
                         value = xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
                     } else {
                         value = xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
@@ -3187,7 +3175,7 @@ pub(super) unsafe fn format_replace(
                     b">\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
                 {
-                    if strcmp(left, right) > 0 as ::core::ffi::c_int {
+                    if strcmp(left.as_ptr(), right.as_ptr()) > 0 as ::core::ffi::c_int {
                         value = xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
                     } else {
                         value = xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
@@ -3197,7 +3185,7 @@ pub(super) unsafe fn format_replace(
                     b"<=\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
                 {
-                    if strcmp(left, right) <= 0 as ::core::ffi::c_int {
+                    if strcmp(left.as_ptr(), right.as_ptr()) <= 0 as ::core::ffi::c_int {
                         value = xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
                     } else {
                         value = xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
@@ -3207,7 +3195,7 @@ pub(super) unsafe fn format_replace(
                     b">=\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
                 {
-                    if strcmp(left, right) >= 0 as ::core::ffi::c_int {
+                    if strcmp(left.as_ptr(), right.as_ptr()) >= 0 as ::core::ffi::c_int {
                         value = xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
                     } else {
                         value = xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
@@ -3217,10 +3205,8 @@ pub(super) unsafe fn format_replace(
                     b"m\0" as *const u8 as *const ::core::ffi::c_char,
                 ) == 0 as ::core::ffi::c_int
                 {
-                    value = format_match(cmp, left, right);
+                    value = format_match(cmp, left.as_ptr(), right.as_ptr());
                 }
-                free(right as *mut ::core::ffi::c_void);
-                free(left as *mut ::core::ffi::c_void);
                 current_block = 1803726662341650892;
             }
         } else {
@@ -3252,7 +3238,7 @@ pub(super) unsafe fn format_replace(
                             b"condition is: %s\0" as *const u8 as *const ::core::ffi::c_char,
                             condition.as_ptr(),
                         );
-                        found = format_find(
+                        let found = format_find(
                             ft,
                             condition.as_ptr(),
                             modifiers,
@@ -3260,11 +3246,9 @@ pub(super) unsafe fn format_replace(
                                 .as_ref()
                                 .map_or(::core::ptr::null(), |s| s.as_ptr()),
                         );
-                        if found.is_null() {
-                            found = format_expand1(es, condition.as_ptr());
-                            if strcmp(found, condition.as_ptr()) == 0 as ::core::ffi::c_int {
-                                free(found as *mut ::core::ffi::c_void);
-                                found = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+                        let condition_is_true = if found.is_null() {
+                            let expanded = format_expand1_cstring(es, condition.as_ptr());
+                            if expanded.as_c_str() == condition.as_c_str() {
                                 format_log1(
                                     es,
                                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3272,6 +3256,9 @@ pub(super) unsafe fn format_replace(
                                         as *const ::core::ffi::c_char,
                                     condition.as_ptr(),
                                 );
+                                false
+                            } else {
+                                format_true(expanded.as_ptr()) != 0
                             }
                         } else {
                             format_log1(
@@ -3282,11 +3269,14 @@ pub(super) unsafe fn format_replace(
                                 condition.as_ptr(),
                                 found,
                             );
-                        }
+                            let is_true = format_true(found) != 0;
+                            free(found.cast());
+                            is_true
+                        };
                         cp = cp2.offset(1 as ::core::ffi::c_int as isize);
                         cp2 =
                             format_skip1(es, cp, b",\0" as *const u8 as *const ::core::ffi::c_char);
-                        if format_true(found) != 0 {
+                        if condition_is_true {
                             format_log1(
                                 es,
                                 b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3306,7 +3296,6 @@ pub(super) unsafe fn format_replace(
                                 drop(right);
                             }
                             drop(condition);
-                            free(found as *mut ::core::ffi::c_void);
                             break;
                         } else {
                             format_log1(
@@ -3317,7 +3306,6 @@ pub(super) unsafe fn format_replace(
                                 condition.as_ptr(),
                             );
                             drop(condition);
-                            free(found as *mut ::core::ffi::c_void);
                             if cp2.is_null() {
                                 format_log1(
                                     es,
@@ -3406,21 +3394,19 @@ pub(super) unsafe fn format_replace(
     i = 0 as u_int;
     while (i as usize) < sub.len() {
         let modifier = sub[i as usize];
-        left = format_expand1(es, (*modifier).arg(0));
-        right = format_expand1(es, (*modifier).arg(1));
-        new = format_sub(modifier, value, left, right);
+        let left = format_expand1_cstring(es, (*modifier).arg(0));
+        let right = format_expand1_cstring(es, (*modifier).arg(1));
+        new = format_sub(modifier, value, left.as_ptr(), right.as_ptr());
         format_log1(
             es,
             b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
             b"substitute '%s' to '%s': %s\0" as *const u8 as *const ::core::ffi::c_char,
-            left,
-            right,
+            left.as_ptr(),
+            right.as_ptr(),
             new,
         );
         free(value as *mut ::core::ffi::c_void);
         value = new;
-        free(right as *mut ::core::ffi::c_void);
-        free(left as *mut ::core::ffi::c_void);
         i = i.wrapping_add(1);
     }
     if limit > 0 as ::core::ffi::c_int {
@@ -4017,35 +4003,12 @@ mod format_choose_tests {
                 (b",\0", b"", b""),
             ] {
                 let input = CStr::from_bytes_with_nul(input).unwrap();
-                let mut left = std::ptr::null_mut();
-                let mut right = std::ptr::null_mut();
-                assert_eq!(
-                    format_choose(&raw mut es, input.as_ptr(), &raw mut left, &raw mut right,),
-                    0,
-                    "{input:?}"
-                );
-                assert_eq!(CStr::from_ptr(left).to_bytes(), expected_left, "{input:?}");
-                assert_eq!(
-                    CStr::from_ptr(right).to_bytes(),
-                    expected_right,
-                    "{input:?}"
-                );
-                free(left.cast());
-                free(right.cast());
+                let (left, right) = format_choose(&raw mut es, input.as_ptr()).unwrap();
+                assert_eq!(left.to_bytes(), expected_left, "{input:?}");
+                assert_eq!(right.to_bytes(), expected_right, "{input:?}");
             }
 
-            let mut left = std::ptr::null_mut();
-            let mut right = std::ptr::null_mut();
-            assert_eq!(
-                format_choose(
-                    &raw mut es,
-                    b"no delimiter\0".as_ptr().cast(),
-                    &raw mut left,
-                    &raw mut right,
-                ),
-                -1
-            );
-            assert!(left.is_null() && right.is_null());
+            assert!(format_choose(&raw mut es, c"no delimiter".as_ptr()).is_none());
             format_free(ft);
         }
     }

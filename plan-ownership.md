@@ -117,13 +117,14 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate the remaining `format_choose` and `format_replace` consumers of
-the C-return `format_expand1` adapter in `src/format/expression.rs`. Predicates,
-name lookups, loop-body expansion, and the job command/output path now retain
-owned recursive results. The predicate and loop helper return values and loop
-accumulators still use their old C contracts with `format_replace`; migrate
-those producer/consumer contracts together. Split only at complete return
-contracts if that batch is too broad; do not replace it with unrelated leaves.
+Next, migrate `format_replace`'s accumulated value and the predicate/loop/lookup
+return contracts that feed it in `src/format/expression.rs`. Only its branch
+results and re-expansion transforms still consume the internal C-return
+`format_expand1` adapter; `format_expand_time` also uses that adapter for its
+exported result. Operands, predicates, name lookups, loop-body expansion, and
+job expansion now retain owned recursive inputs. Loop accumulators still use
+manual evbuffer lifetimes. Migrate complete producer/consumer contracts together
+until the internal adapter can be removed, retaining the exported C contract.
 
 Customize, buffer, client, switch, and tree modes now use owned expansion
 results, as does the save-buffer path. Exported `format_expand`,
@@ -1606,6 +1607,23 @@ name error.
   The existing nested client-sort check passed on candidate but the pinned
   baseline repeated a client row; that unchanged test exposes its nested-sort
   behavior and was not weakened. No sanitizer ran.
+
+### Batch — owned format replacement operands (2026-09-23)
+
+- `format_choose` now returns `Option<(CString, CString)>`; comparison, repeat,
+  and arithmetic callers own both operands across success and syntax/numeric
+  errors. Substitution, character, colour, and search inputs use the recursive
+  owned API directly. Conditional fallback tests evaluate their owned result
+  locally; the still-C-owned lookup result is freed after its truth value is
+  consumed. Removed operand pointer slots and their manual cleanup branches.
+- Serialized workspace tests (396), binary build, changed-file rustfmt, and
+  diff checks passed. The existing operand test now includes missing delimiters,
+  invalid repeat counts, invalid arithmetic operands, and empty right operands.
+  Loop, expansion-output, search, trim, and quote CLI checks passed on candidate
+  and pinned baseline. No sanitizer ran.
+- Remaining internal C expansion consumers are the accumulated value paths in
+  `format_replace`. Their producers and transforms are the next batch; exported
+  C-return functions still supply libc-freeable results.
 
 ## Historical migration index
 
