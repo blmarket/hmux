@@ -32,7 +32,7 @@ use crate::src::style::{
     style_apply, style_ranges_free, style_ranges_get_range, style_ranges_init,
 };
 use crate::src::tmux::global_s_options;
-use crate::src::xmalloc::{xcalloc, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -864,13 +864,12 @@ unsafe extern "C" fn status_prompt_input_callback(
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn status_prompt_free_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut spd: *mut status_prompt_data = data as *mut status_prompt_data;
-    let mut freecb: prompt_free_cb = (*spd).freecb;
-    let mut arg: *mut ::core::ffi::c_void = (*spd).data;
+    let spd = Box::from_raw(data as *mut status_prompt_data);
+    let freecb = spd.freecb;
+    let arg = spd.data;
     if freecb.is_some() {
         freecb.expect("non-null function pointer")(arg);
     }
-    free(spd as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn status_prompt_accept(
     mut item: *mut cmdq_item,
@@ -947,19 +946,16 @@ pub unsafe extern "C" fn status_prompt_set(
         freecb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
     };
-    let mut spd: *mut status_prompt_data = ::core::ptr::null_mut::<status_prompt_data>();
     server_client_clear_overlay(c);
     status_message_clear(c);
     status_prompt_clear(c);
     status_push_screen(c);
-    spd = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<status_prompt_data>() as size_t,
-    ) as *mut status_prompt_data;
-    (*spd).c = c;
-    (*spd).inputcb = inputcb;
-    (*spd).freecb = freecb;
-    (*spd).data = data;
+    let spd = Box::into_raw(Box::new(status_prompt_data {
+        c,
+        inputcb,
+        freecb,
+        data,
+    }));
     memset(
         &raw mut pd as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,

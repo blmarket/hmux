@@ -112,10 +112,17 @@ def trace(binary):
 
             invalid = run("confirm-before", "-t", tty, "-c", "xy",
                           "set-option -g @invalid yes", ok=False)
+            run("confirm-before", "-b", "-t", tty, "-p", "Teardown owner?",
+                "set-option -g @teardown yes")
+            prompt(b"Teardown owner?")
+            run("detach-client", "-t", tty)
+            client.wait(timeout=6)
+            teardown_value = option("@teardown")
             result = (
                 accepted_value, rejected.returncode, rejected_error, rejected_value,
                 default_yes_value,
                 replaced_value, replacement_value, invalid.returncode, invalid.stderr,
+                teardown_value,
             )
             assert accepted_value == (0, b"yes\n"), result
             assert rejected_value[1] == b"", result
@@ -123,6 +130,7 @@ def trace(binary):
             assert replaced_value[1] == b"", result
             assert replacement_value == (0, b"yes\n"), result
             assert invalid.returncode != 0 and b"invalid confirm key" in invalid.stderr, result
+            assert teardown_value[1] == b"", result
             return result
         finally:
             subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)

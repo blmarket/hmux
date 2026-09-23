@@ -2071,6 +2071,20 @@ legacy callers safe.
   baseline and covered rendering, modification, explicit close, job exit,
   and client detachment. No sanitizer was run.
 
+### Increment 273 — status prompt callback record (2026-09-23)
+
+- `status_prompt_data` now has one stable `Box` allocation; its C-layout
+  pointer remains callback data for the prompt. The free callback invokes the
+  caller's `freecb` first, then drops the box, preserving replacement and
+  client-teardown order.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/confirm_before_owner_cli_checks.py` and
+  `scripts/prompt_mutable_cli_checks.py` passed on main. The attached-client
+  check also passed with the pinned baseline and covered accepting, rejecting,
+  replacing, and detaching a client with an active prompt. No sanitizer was
+  run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2081,12 +2095,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit `popup_data` and status prompt callback data for complete overlay,
-   job, callback, and teardown ownership.
-   OSC 52 decode output transfers directly into `paste_add`, which retains
-   its C allocation until `paste_free`; a local Vec would add a copy without
-   removing the lifetime. The existing clipboard-reply E2E covers decoded
-   `A\0B` and a first NUL in encoded input.
+1. The remaining address-based registries, other UI tags, and session/winlink
+   graph require separate migrations. The typed mode-tree key permits further
+   semantic tags, but each mode still needs its own identity and alias audit.
+   `window_client` has no existing guaranteed unique semantic key: names and
+   PIDs can repeat, and creation timestamps are not unique by contract. Its
+   pointer tag must wait for a client owner/observer migration; a new tag-only
+   generated ID would violate the agreed type policy.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -2107,13 +2122,11 @@ non-string value.
    The expansion output now has a local owner, but its exported result still
    crosses the C-owned return boundary. Remaining `xstrndup` callers return
    or transfer C-owned strings.
-4. The remaining address-based registries, other UI tags, and session/winlink
-   graph require separate migrations. The typed mode-tree key permits further
-   semantic tags, but each mode still needs its own identity and alias audit.
-   `window_client` has no existing guaranteed unique semantic key: names and
-   PIDs can repeat, and creation timestamps are not unique by contract.
-   Its pointer tag must wait for a client owner/observer migration; a new
-   tag-only generated ID would violate the agreed type policy.
+
+OSC 52 decode output transfers directly into `paste_add`, which retains its C
+allocation until `paste_free`; a local Vec would add a copy without removing
+the lifetime. The existing clipboard-reply E2E covers decoded `A\0B` and a
+first NUL in encoded input.
 
 `set-buffer`'s payload is a less useful local target: `paste_set` retains the
 libc allocation on success and leaves it with the caller on error, so a local
