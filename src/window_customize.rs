@@ -4293,6 +4293,14 @@ unsafe extern "C" fn window_customize_set_note_callback(
     (*(*data).wp).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
+fn window_customize_key_prompt(key_string: &CStr) -> CString {
+    let mut prompt = Vec::with_capacity(key_string.to_bytes().len() + 3);
+    prompt.extend_from_slice(b"(");
+    prompt.extend_from_slice(key_string.to_bytes());
+    prompt.extend_from_slice(b") ");
+    CString::new(prompt).expect("formatted key contains no NUL")
+}
+
 unsafe extern "C" fn window_customize_set_key(
     mut c: *mut client,
     mut data: *mut window_customize_modedata,
@@ -4301,7 +4309,6 @@ unsafe extern "C" fn window_customize_set_key(
     let mut key: key_code = (*item).key;
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
@@ -4319,11 +4326,7 @@ unsafe extern "C" fn window_customize_set_key(
         == 0 as ::core::ffi::c_int
     {
         let key_string = key_string_format(key, false);
-        xasprintf(
-            &raw mut prompt,
-            b"(%s) \0" as *const u8 as *const ::core::ffi::c_char,
-            key_string.as_ptr(),
-        );
+        let prompt = window_customize_key_prompt(&key_string);
         value = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
         new_item = window_customize_new_item();
         (*new_item).data = data as *mut window_customize_modedata;
@@ -4335,7 +4338,7 @@ unsafe extern "C" fn window_customize_set_key(
         mode_tree_set_prompt(
             (*data).data,
             c,
-            prompt,
+            prompt.as_ptr(),
             value,
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
@@ -4354,17 +4357,12 @@ unsafe extern "C" fn window_customize_set_key(
             ),
             new_item as *mut ::core::ffi::c_void,
         );
-        free(prompt as *mut ::core::ffi::c_void);
         free(value as *mut ::core::ffi::c_void);
     } else if strcmp(s, b"Note\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {
         let key_string = key_string_format(key, false);
-        xasprintf(
-            &raw mut prompt,
-            b"(%s) \0" as *const u8 as *const ::core::ffi::c_char,
-            key_string.as_ptr(),
-        );
+        let prompt = window_customize_key_prompt(&key_string);
         new_item = window_customize_new_item();
         (*new_item).data = data as *mut window_customize_modedata;
         (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
@@ -4375,7 +4373,7 @@ unsafe extern "C" fn window_customize_set_key(
         mode_tree_set_prompt(
             (*data).data,
             c,
-            prompt,
+            prompt.as_ptr(),
             if (*bd).note.is_null() {
                 b"\0" as *const u8 as *const ::core::ffi::c_char
             } else {
@@ -4398,7 +4396,6 @@ unsafe extern "C" fn window_customize_set_key(
             ),
             new_item as *mut ::core::ffi::c_void,
         );
-        free(prompt as *mut ::core::ffi::c_void);
     }
 }
 unsafe extern "C" fn window_customize_add_key_callback(

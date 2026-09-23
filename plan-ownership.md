@@ -891,6 +891,19 @@ legacy callers safe.
   the pinned baseline, including UTF-8 session/value text. No sanitizer was
   run.
 
+### Increment 190 — customize key-binding prompt scratch (2026-09-22)
+
+- `window_customize_set_key` now uses a local `CString` for both the Command
+  and Note prompt labels, built from the byte-preserving `key_string_format`
+  result. Removed both `xasprintf` allocations and matching frees;
+  `mode_tree_set_prompt` copies each prompt synchronously. The separate
+  C-owned command value keeps its existing lifetime.
+- Library/binary build, three focused customize tests, one key-binding
+  storage test, changed-file rustfmt, Python syntax check, and
+  `git diff --check` passed. The new private attached-client CLI check
+  displayed both prompt variants and matched the pinned baseline, including
+  UTF-8 command and note values. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
