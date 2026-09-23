@@ -304,11 +304,9 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut m: Vec<*mut window_switch_itemdata> = Vec::new();
     let mut f: *const ::core::ffi::c_char = (*data).filter;
-    let mut nw: u_int = 0;
     let mut i: u_int = 0;
     let mut order: u_int = 0 as u_int;
     let mut sx: u_int = (*(*data).screen.grid).sx;
-    let mut wl: *mut *mut winlink = ::core::ptr::null_mut::<*mut winlink>();
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
@@ -328,11 +326,9 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
             }
         }
         1 => {
-            wl = sort_get_winlinks(&raw mut nw, &raw mut sort_crit);
-            i = 0 as u_int;
-            while i < nw {
-                window_switch_add_window(data, *wl.offset(i as isize), &raw mut order);
-                i = i.wrapping_add(1);
+            let links = sort_get_winlinks(&raw mut sort_crit);
+            for wl in links {
+                window_switch_add_window(data, wl, &raw mut order);
             }
         }
         _ => {}

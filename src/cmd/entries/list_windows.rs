@@ -117,6 +117,7 @@ unsafe extern "C" fn cmd_list_windows_exec(
     let mut c: *mut client = cmdq_get_client(item);
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut l: *mut *mut winlink = ::core::ptr::null_mut::<*mut winlink>();
+    let mut all_winlinks = Vec::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut i: u_int = 0;
     let mut n: u_int = 0;
@@ -146,7 +147,9 @@ unsafe extern "C" fn cmd_list_windows_exec(
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        l = sort_get_winlinks(&raw mut n, &raw mut sort_crit);
+        all_winlinks = sort_get_winlinks(&raw mut sort_crit);
+        n = u_int::try_from(all_winlinks.len()).expect("too many winlinks to list");
+        l = all_winlinks.as_mut_ptr();
         if template.is_null() {
             template = LIST_WINDOWS_WITH_SESSION_TEMPLATE.as_ptr();
         }

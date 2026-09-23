@@ -786,40 +786,20 @@ pub unsafe extern "C" fn sort_get_panes_window(
     *n = i;
     return l;
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_winlinks(
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut winlink {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut i: u_int = 0;
-    static mut l: *mut *mut winlink = ::core::ptr::null::<*mut winlink>() as *mut *mut winlink;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winlink> {
+    let mut links = Vec::new();
+    let mut s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
-        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+        let mut wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
         while !wl.is_null() {
-            if lsz <= i {
-                lsz = lsz.wrapping_add(100 as u_int);
-                l = xreallocarray(
-                    l as *mut ::core::ffi::c_void,
-                    lsz as size_t,
-                    ::core::mem::size_of::<*mut winlink>() as size_t,
-                ) as *mut *mut winlink;
-            }
-            let fresh14 = i;
-            i = i.wrapping_add(1);
-            let ref mut fresh15 = *l.offset(fresh14 as isize);
-            *fresh15 = wl;
+            links.push(wl);
             wl = winlinks_next(wl);
         }
         s = sessions_next(s);
     }
     sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
+        links.as_mut_ptr() as *mut ::core::ffi::c_void,
+        u_int::try_from(links.len()).expect("too many winlinks to sort"),
         ::core::mem::size_of::<*mut winlink>() as u_int,
         Some(
             sort_winlink_cmp
@@ -830,8 +810,7 @@ pub unsafe extern "C" fn sort_get_winlinks(
         ),
         sort_crit,
     );
-    *n = i;
-    return l;
+    links
 }
 #[no_mangle]
 pub unsafe extern "C" fn sort_get_winlinks_session(

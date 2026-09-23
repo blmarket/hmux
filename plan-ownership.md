@@ -2269,6 +2269,25 @@ legacy callers safe.
   The CLI check now covers replacing a saved word with UTF-8 input and pasting
   the replacement. No sanitizer was run.
 
+### Increment 127 — all-session sorted winlink list (2026-09-22)
+
+- `sort_get_winlinks` now returns a caller-owned `Vec<*mut winlink>` to
+  `list-windows -a` and the window-switch mode builder. Removed its
+  process-global `xreallocarray` pointer list and capacity counter. Session
+  winlink trees still own the pointees; the command or mode build owns only
+  its sorted snapshot through traversal.
+- Enumeration retains duplicate links across grouped sessions, the existing
+  comparator and reverse order, and `list-windows`' total-count `#{line}`
+  value. The command temporarily borrows a pointer into its local Vec while
+  its other branch still uses a raw sorter; that pointer expires when the
+  command returns. The translated `sort_get_winlinks` staticlib symbol is
+  gone; no in-tree or documented foreign caller was found.
+- Isolated validation: serialized workspace tests, binary build,
+  `git diff --check`, grouped-session sorting and window-switch CLI checks,
+  and session CLI comparison with reference tmux passed. Rustfmt reports two
+  import-layout differences also present in the base commit. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2312,9 +2331,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–126. The remaining
+Current validation is recorded in increments 15–127. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–126 has its own local commit; none was pushed.
+Each of increments 15–127 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
