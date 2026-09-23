@@ -1,14 +1,16 @@
 use std::ffi::CStr;
 use std::mem::size_of;
 
-use hmux2::src::arguments::{args_create, args_free, args_print, args_to_vector};
+use hmux2::src::arguments::{
+    args_create, args_free, args_print, args_push_positional, args_to_vector,
+};
 use hmux2::src::cmd::entries::display_message::cmd_display_message_entry;
 use hmux2::src::cmd::{
     cmd, cmd_free, cmd_free_argv, cmd_list_append, cmd_list_new, cmd_list_print, cmd_print,
     CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::ffi::libc::free;
-use hmux2::src::shared::arguments::{args_value, ARGS_COMMANDS};
+use hmux2::src::shared::arguments::ARGS_COMMANDS;
 use hmux2::src::xmalloc::xcalloc;
 
 #[test]
@@ -73,10 +75,9 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             free(printed.cast());
         }
         let args = args_create();
-        (*args).count = 1;
-        (*args).values = xcalloc(1, size_of::<args_value>()) as *mut args_value;
-        (*(*args).values).type_0 = ARGS_COMMANDS;
-        (*(*args).values).c2rust_unnamed.cmdlist = list;
+        let positional = args_push_positional(args);
+        (*positional).type_0 = ARGS_COMMANDS;
+        (*positional).c2rust_unnamed.cmdlist = list;
 
         let printed = args_print(args);
         assert_eq!(

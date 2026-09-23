@@ -3220,6 +3220,22 @@ legacy callers safe.
   matched the pinned baseline. Full workspace tests, binary build,
   changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 353 — owned positional values inside args (2026-09-23)
+
+- `ArgsOwner` now stores positional `args_value` records in a `Vec`, while
+  the public C-layout `args.values` remains a borrowed view refreshed after
+  each append. `args_parse` grows through `args_push_positional`; `args_copy`
+  appends and deep-copies into the same owner. `args_free` still releases
+  each string, command-list reference, and cache payload before the Vec
+  drops. Removed the stored array's `xrecallocarray`, `xcalloc`, and final
+  libc free. The two integration tests that installed C arrays directly in
+  `args.values` now use the owner append operation. Element pointers remain
+  valid only until the next append; cache owners remain indexed by slot.
+- Argument print/escape and parser print CLI checks matched the pinned
+  baseline. Focused argument and command-print tests, full workspace tests,
+  binary build, changed-file rustfmt, and diff checks passed. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3230,12 +3246,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Positional `args_value` elements held by `ArgsOwner` remain in movable C
-   arrays grown by `args_parse` and copied by `args_copy`. Their allocation,
-   growth, payload cleanup, and raw compatibility view need one
-   collection-owner migration. The separate exported `args_from_vector`
-   result still crosses a C-owned array boundary; both client callers need
-   coordinated cleanup, including the parse-error branch in
+1. The separate exported `args_from_vector` result still crosses a C-owned
+   array boundary; both client callers need coordinated cleanup, including
+   the parse-error branch in
    `server_client_dispatch_command` that currently leaks the temporary array.
    Disconnected file-reading clients can leave a waiting command-queue item
    even after callback data is released; that needs a separate queue

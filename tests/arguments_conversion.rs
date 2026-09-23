@@ -4,10 +4,10 @@ use std::ptr;
 
 use hmux2::src::arguments::{
     args_copy, args_create, args_escape, args_first_value, args_free, args_free_values, args_has,
-    args_next_value, args_parse as parse_args, args_percentage_result, args_print, args_set,
-    args_string, args_string_percentage_and_expand_result, args_strtonum,
-    args_strtonum_and_expand_result, args_strtonum_result, parse_number, parse_percentage,
-    ArgumentValueError,
+    args_next_value, args_parse as parse_args, args_percentage_result, args_print,
+    args_push_positional, args_set, args_string, args_string_percentage_and_expand_result,
+    args_strtonum, args_strtonum_and_expand_result, args_strtonum_result, parse_number,
+    parse_percentage, ArgumentValueError,
 };
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
 use hmux2::src::cmd_queue::{cmdq_free_state, cmdq_get_callback1};
@@ -255,10 +255,9 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         args_free(args);
 
         let args = args_create();
-        (*args).count = 1;
-        (*args).values = xcalloc(1, size_of::<args_value>()) as *mut args_value;
-        (*(*args).values).type_0 = ARGS_COMMANDS;
-        (*(*args).values).c2rust_unnamed.cmdlist = cmd_list_new();
+        let positional = args_push_positional(args);
+        (*positional).type_0 = ARGS_COMMANDS;
+        (*positional).c2rust_unnamed.cmdlist = cmd_list_new();
         let first = args_string(args, 0);
         let second = args_string(args, 0);
         assert_eq!(first, second);

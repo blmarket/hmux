@@ -81,15 +81,16 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::utf8::utf8_strvis;
-use crate::src::xmalloc::{xasprintf, xcalloc, xrecallocarray, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup, xvasprintf_cstring};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
-// The public args layout remains at offset zero. Its positional values may be
-// moved by xrecallocarray, so cache ownership follows their stable indexes.
+// The public args layout remains at offset zero. Vec growth may move positional
+// values, so cache ownership follows their stable indexes.
 #[repr(C)]
 struct ArgsOwner {
     raw: args,
+    positional_values: Vec<args_value>,
     positional_caches: Vec<Option<CString>>,
 }
 
@@ -356,9 +357,21 @@ pub unsafe extern "C" fn args_create() -> *mut args {
             count: 0,
             values: ::core::ptr::null_mut(),
         },
+        positional_values: Vec::new(),
         positional_caches: Vec::new(),
     });
     Box::into_raw(owner).cast::<args>()
+}
+/// Append a zeroed positional value and return its temporary write pointer.
+/// The pointer is invalidated by the next append; `args` retains the value.
+pub unsafe fn args_push_positional(args: *mut args) -> *mut args_value {
+    let owner = &mut *args.cast::<ArgsOwner>();
+    owner
+        .positional_values
+        .push(::core::mem::zeroed::<args_value>());
+    owner.raw.count = owner.positional_values.len() as u_int;
+    owner.raw.values = owner.positional_values.as_mut_ptr();
+    owner.raw.values.add(owner.positional_values.len() - 1)
 }
 pub(crate) unsafe fn args_new_flag_value() -> *mut args_value {
     Box::into_raw(Box::new(::core::mem::zeroed::<args_value>()))
@@ -623,15 +636,7 @@ pub unsafe extern "C" fn args_parse(
             } else {
                 type_0 = ARGS_PARSE_STRING;
             }
-            (*args).values = xrecallocarray(
-                (*args).values as *mut ::core::ffi::c_void,
-                (*args).count as size_t,
-                (*args).count.wrapping_add(1 as u_int) as size_t,
-                ::core::mem::size_of::<args_value>() as size_t,
-            ) as *mut args_value;
-            let fresh0 = (*args).count;
-            (*args).count = (*args).count.wrapping_add(1);
-            new = (*args).values.offset(fresh0 as isize) as *mut args_value;
+            new = args_push_positional(args);
             match type_0 as ::core::ffi::c_uint {
                 0 => {
                     fatalx(
@@ -774,14 +779,9 @@ pub unsafe extern "C" fn args_copy(
     if (*args).count == 0 as u_int {
         return new_args;
     }
-    (*new_args).count = (*args).count;
-    (*new_args).values = xcalloc(
-        (*args).count as size_t,
-        ::core::mem::size_of::<args_value>() as size_t,
-    ) as *mut args_value;
     i = 0 as u_int;
     while i < (*args).count {
-        new_value = (*new_args).values.offset(i as isize) as *mut args_value;
+        new_value = args_push_positional(new_args);
         args_copy_copy_value(
             new_value,
             (*args).values.offset(i as isize) as *mut args_value,
@@ -832,7 +832,6 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         }
     }
     args_free_values((*args).values, (*args).count);
-    free((*args).values as *mut ::core::ffi::c_void);
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() && {
         entry1 = args_tree_next(&raw mut (*args).tree, entry);
