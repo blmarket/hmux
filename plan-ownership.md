@@ -741,6 +741,20 @@ legacy callers safe.
   for both initial and split panes, including their pane IDs; it passed for
   the migrated and pinned baseline binaries. No sanitizer was run.
 
+### Increment 179 — socket label base scratch (2026-09-22)
+
+- `make_label` now owns its byte-preserving socket-directory base with a
+  local `CString` through `mkdir`, `lstat`, error formatting, and returned
+  path construction. Removed the base `xasprintf` allocation and both
+  success/error frees. The returned socket path and error causes remain
+  C-owned; `CString::as_ptr()` is borrowed only during synchronous calls.
+- In the isolated branch, library/binary build, three
+  `expand_path_environment` tests, changed-file rustfmt, and
+  `git diff --check` passed. The new private `TMUX_TMPDIR` CLI check used
+  non-UTF-8 path bytes and compared success, regular-file failure, and
+  unsafe-permission failure output with the pinned baseline. A race-driven
+  `lstat` failure was source audited but not E2E covered. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -755,11 +769,7 @@ non-string value.
    repeat detail text with `xasprintf`/`xstrdup`, passes each to
    `mode_tree_add_identity`, then frees it. The tree copies these strings;
    the three branches can be audited as one small, byte-preserving owner.
-2. `make_label` in `src/tmux.rs` formats a local socket-directory base
-   path, borrows it through `mkdir`, `lstat`, and error formatting, then
-   frees it on success or failure. It can be a local byte-preserving CString
-   while returned socket paths and error causes remain C-owned.
-3. The only direct `xvasprintf` production caller outside the `xmalloc`
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -768,14 +778,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-4. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-5. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and

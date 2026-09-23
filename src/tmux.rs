@@ -642,7 +642,6 @@ unsafe extern "C" fn make_label(
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
     let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut base: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut sb: stat = stat {
         st_dev: 0,
         st_ino: 0,
@@ -686,50 +685,47 @@ unsafe extern "C" fn make_label(
         );
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    xasprintf(
-        &raw mut base,
-        b"%s/tmux-%ld\0" as *const u8 as *const ::core::ffi::c_char,
-        paths[0].as_ptr(),
-        uid as ::core::ffi::c_long,
-    );
-    if mkdir(base, S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int && *__errno_location() != EEXIST
+    let mut base_bytes = paths[0].to_bytes().to_vec();
+    base_bytes.extend_from_slice(b"/tmux-");
+    base_bytes.extend_from_slice((uid as ::core::ffi::c_long).to_string().as_bytes());
+    let base = CString::new(base_bytes).expect("socket base contains no NUL");
+    if mkdir(base.as_ptr(), S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int
+        && *__errno_location() != EEXIST
     {
         xasprintf(
             cause,
             b"couldn't create directory %s (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            base,
+            base.as_ptr(),
             strerror(*__errno_location()),
         );
-    } else if lstat(base, &raw mut sb) != 0 as ::core::ffi::c_int {
+    } else if lstat(base.as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
         xasprintf(
             cause,
             b"couldn't read directory %s (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            base,
+            base.as_ptr(),
             strerror(*__errno_location()),
         );
     } else if !(sb.st_mode & __S_IFMT as __mode_t == 0o40000 as __mode_t) {
         xasprintf(
             cause,
             b"%s is not a directory\0" as *const u8 as *const ::core::ffi::c_char,
-            base,
+            base.as_ptr(),
         );
     } else if sb.st_uid != uid || sb.st_mode & TMUX_SOCK_PERM as __mode_t != 0 as __mode_t {
         xasprintf(
             cause,
             b"directory %s has unsafe permissions\0" as *const u8 as *const ::core::ffi::c_char,
-            base,
+            base.as_ptr(),
         );
     } else {
         xasprintf(
             &raw mut path,
             b"%s/%s\0" as *const u8 as *const ::core::ffi::c_char,
-            base,
+            base.as_ptr(),
             label,
         );
-        free(base as *mut ::core::ffi::c_void);
         return path;
     }
-    free(base as *mut ::core::ffi::c_void);
     return ::core::ptr::null_mut::<::core::ffi::c_char>();
 }
 #[no_mangle]
