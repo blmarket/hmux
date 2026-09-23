@@ -1073,6 +1073,21 @@ legacy callers safe.
   variable-name literals, so the live test does not supply a non-UTF-8 name.
   No sanitizer run was performed.
 
+### Increment 51 — format job command name (2026-09-22)
+
+- `format_expand1` now owns its `#()` command-name scratch as a local,
+  byte-preserving `CString`, removing the `xstrndup`/`free` pair. The balanced
+  scan ends before the format C string's terminating NUL. `format_log1`
+  reads the name synchronously; `format_job_get` copies it into its cache
+  key and job record before recursive expansion or job launch. Output
+  remains C-owned under the existing format ABI.
+- `scripts/format_job_name_cli_checks.py` attaches a persistent PTY client,
+  checks asynchronous `#()` command execution through a marker, and checks
+  verbose trace parsing of nested parentheses. Workspace tests, binary
+  build, the live CLI check, changed-file rustfmt, and `git diff --check`
+  passed in the isolated worktree. The script does not assert cached job
+  output display; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1087,11 +1102,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `#()` command names in format expansion for synchronous
-   borrow-only use.
+2. Inspect the bracketed style scratch in `fuzzy.rs` and `format_draw.rs`,
+   then the conditional operand scratch in `format_replace`. Audit whether
+   `style_parse` and nested format callbacks retain pointers.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–50. The remaining
+Current validation is recorded in increments 15–51. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–50 has its own local commit; none was pushed.
+Each of increments 15–51 has its own local commit; none was pushed.

@@ -3997,7 +3997,6 @@ pub(super) unsafe extern "C" fn format_expand1(
     let mut ft: *mut format_tree = (*es).ft;
     let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut style_end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -4106,12 +4105,14 @@ pub(super) unsafe extern "C" fn format_expand1(
                         break;
                     }
                     n = ptr.offset_from(fmt) as ::core::ffi::c_long as size_t;
-                    name = xstrndup(fmt, n);
+                    // The closing ')' is before the terminating NUL in fmt.
+                    let name = CString::new(std::slice::from_raw_parts(fmt.cast::<u8>(), n))
+                        .expect("format job name contains no NUL");
                     format_log1(
                         es,
                         b"format_expand1\0" as *const u8 as *const ::core::ffi::c_char,
                         b"found #(): %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        name,
+                        name.as_ptr(),
                     );
                     if (*ft).flags & FORMAT_NOJOBS != 0 || (*es).flags & FORMAT_EXPAND_NOJOBS != 0 {
                         out = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
@@ -4121,7 +4122,7 @@ pub(super) unsafe extern "C" fn format_expand1(
                             b"#() is disabled\0" as *const u8 as *const ::core::ffi::c_char,
                         );
                     } else {
-                        out = format_job_get(es, name);
+                        out = format_job_get(es, name.as_ptr());
                         format_log1(
                             es,
                             b"format_expand1\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4129,7 +4130,6 @@ pub(super) unsafe extern "C" fn format_expand1(
                             out,
                         );
                     }
-                    free(name as *mut ::core::ffi::c_void);
                     outlen = strlen(out);
                     while len.wrapping_sub(off) < outlen.wrapping_add(1 as size_t) {
                         buf = xreallocarray(buf as *mut ::core::ffi::c_void, 2 as size_t, len)
