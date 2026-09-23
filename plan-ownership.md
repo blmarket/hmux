@@ -3150,6 +3150,19 @@ legacy callers safe.
   matched the pinned baseline. Full workspace tests, binary build,
   changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 348 — boxed parser argument records (2026-09-23)
+
+- The five grammar-action and two argument-vector allocations now create
+  `cmd_parse_argument` through one zeroed Box constructor. Type-specific
+  destruction still frees a string, nested parsed commands, or a referenced
+  command list before consuming the Box. Removed seven record `xcalloc`
+  calls, the matching libc free, and the record's `Copy`/`Clone` derives.
+  `yydestruct` also releases a discarded standalone `argument` on parse
+  errors. Intrusive-list pointers remain borrowed aliases while linked.
+- Argument escape, nested parser print, and lexer error/recovery CLI checks
+  matched the pinned baseline. Full workspace tests, binary build,
+  changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

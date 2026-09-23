@@ -126,8 +126,8 @@ pub struct cmd_parse_arguments {
     pub tqh_first: *mut cmd_parse_argument,
     pub tqh_last: *mut *mut cmd_parse_argument,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned parser argument; payload ownership depends on `type_0`.
 pub struct cmd_parse_argument {
     pub type_0: cmd_parse_argument_type,
     pub string: *mut ::core::ffi::c_char,
@@ -331,6 +331,9 @@ unsafe extern "C" fn cmd_parse_print_commands(
 }
 pub const YYFINAL: ::core::ffi::c_int = 20 as ::core::ffi::c_int;
 pub const YYLAST: ::core::ffi::c_int = 104 as ::core::ffi::c_int;
+unsafe fn cmd_parse_new_argument() -> *mut cmd_parse_argument {
+    Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_argument>()))
+}
 unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
     match (*arg).type_0 as ::core::ffi::c_uint {
         0 => {
@@ -344,7 +347,7 @@ unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
         }
         _ => {}
     }
-    free(arg as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(arg));
 }
 pub const YYNTOKENS: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const YYMAXUTOK: ::core::ffi::c_int = 266 as ::core::ffi::c_int;
@@ -1777,6 +1780,12 @@ unsafe extern "C" fn yydestruct(
         yymsg = b"Deleting\0" as *const u8 as *const ::core::ffi::c_char;
     }
     match yykind {
+        YYSYMBOL_argument => {
+            let arg = (*yyvaluep).argument;
+            if !arg.is_null() {
+                cmd_parse_free_argument(arg);
+            }
+        }
         YYSYMBOL_arguments => {
             let args = (*yyvaluep).arguments;
             if !args.is_null() {
@@ -2627,10 +2636,7 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             let mut arg: *mut cmd_parse_argument =
                                 ::core::ptr::null_mut::<cmd_parse_argument>();
                             yyval.command = cmd_parse_new_command((*(*ps_12).input).line);
-                            arg = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_argument>() as size_t,
-                            ) as *mut cmd_parse_argument;
+                            arg = cmd_parse_new_argument();
                             (*arg).type_0 = CMD_PARSE_STRING;
                             (*arg).string = (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
                             (*arg).entry.tqe_next = (*yyval.command).arguments.tqh_first;
@@ -2681,10 +2687,7 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             drop(Box::from_raw(
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments,
                             ));
-                            arg_0 = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_argument>() as size_t,
-                            ) as *mut cmd_parse_argument;
+                            arg_0 = cmd_parse_new_argument();
                             (*arg_0).type_0 = CMD_PARSE_STRING;
                             (*arg_0).string =
                                 (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).token;
@@ -2920,31 +2923,19 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments;
                         }
                         43 => {
-                            yyval.argument = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_argument>() as size_t,
-                            )
-                                as *mut cmd_parse_argument;
+                            yyval.argument = cmd_parse_new_argument();
                             (*yyval.argument).type_0 = CMD_PARSE_STRING;
                             (*yyval.argument).string =
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
                         }
                         44 => {
-                            yyval.argument = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_argument>() as size_t,
-                            )
-                                as *mut cmd_parse_argument;
+                            yyval.argument = cmd_parse_new_argument();
                             (*yyval.argument).type_0 = CMD_PARSE_STRING;
                             (*yyval.argument).string =
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
                         }
                         45 => {
-                            yyval.argument = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_argument>() as size_t,
-                            )
-                                as *mut cmd_parse_argument;
+                            yyval.argument = cmd_parse_new_argument();
                             (*yyval.argument).type_0 = CMD_PARSE_COMMANDS;
                             (*yyval.argument).commands =
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands
@@ -3132,10 +3123,7 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
                 }
             }
             if end == 0 || size != 0 as size_t {
-                arg = xcalloc(
-                    1 as size_t,
-                    ::core::mem::size_of::<cmd_parse_argument>() as size_t,
-                ) as *mut cmd_parse_argument;
+                arg = cmd_parse_new_argument();
                 (*arg).type_0 = CMD_PARSE_STRING;
                 (*arg).string = copy;
                 (*arg).entry.tqe_next = ::core::ptr::null_mut::<cmd_parse_argument>();
@@ -3148,10 +3136,7 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
         } else if (*values.offset(i as isize)).type_0 as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            arg = xcalloc(
-                1 as size_t,
-                ::core::mem::size_of::<cmd_parse_argument>() as size_t,
-            ) as *mut cmd_parse_argument;
+            arg = cmd_parse_new_argument();
             (*arg).type_0 = CMD_PARSE_PARSED_COMMANDS;
             (*arg).cmdlist = (*values.offset(i as isize)).c2rust_unnamed.cmdlist as *mut cmd_list;
             (*(*arg).cmdlist).references += 1;
