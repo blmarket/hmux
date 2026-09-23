@@ -125,7 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Disconnected file-reading clients can leave a waiting command-queue item.
+1. The pane's cached `window_pane.searchstr` is created in
+   `window_copy_search`, read by copy-mode initialization and the
+   `pane_search_string` format callback, then freed in `window_pane_free`.
+   `WindowPaneOwned` can own it as `Option<CString>` while the pane field stays
+   a borrowed compatibility pointer. Its writer only duplicates a C string,
+   so this needs no extra formatting-output copy.
+2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
    `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
@@ -133,20 +139,24 @@ non-string value.
    one coordinated boundary. A closed file may still invoke its normal
    callback after client loss. Terminal event scheduling is now idempotent;
    further progress callbacks and terminal error ordering still need audit.
-2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
+   Reproduction: keep a `source-file -` or `split-window -d -I` client's
+   stdin pipe open, kill that waiting client, and inspect the `-vv` server
+   log: `lost client` has no matching `free client` while the server remains
+   responsive. Closing the pipe first hides the issue.
+3. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. `ibufq_new`/`ibufq_free` are a small
    standalone allocation pair, but have no in-tree production caller. The
    exported contracts are deferred while live client fields remain. Revisit
    this ranking after each completed boundary.
-3. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
    PIDs can repeat, and creation timestamps are not unique by contract. Its
    pointer tag must wait for a client owner/observer migration; a new tag-only
    generated ID would violate the agreed type policy.
-4. The only direct `xvasprintf` production caller outside the `xmalloc`
+5. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -163,7 +173,7 @@ non-string value.
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-5. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+6. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
@@ -534,6 +544,21 @@ libc allocation on success and leaves it with the caller on error, so a local
   CLI check passed against the pinned 3.8-rc baseline, including raw `0xff`
   output and `$SHELL=/bin/sh`. Changed-file rustfmt and diff checks passed.
   No sanitizer was run.
+
+### Increment 380 — owned copy-mode search string (2026-09-23)
+
+- The private boxed `window_copy_mode_data.searchstr` now uses
+  `Option<CString>`. Copy-mode initialization and plain/incremental search
+  commands copy C-string bytes into the owner; searches borrow its pointer.
+  Replacements and mode teardown drop it automatically, removing its local
+  `xstrdup`/`free` pairs. The `-F` search still gets a C-owned
+  `format_single` result, which is copied into this owner and libc-freed at
+  that producer boundary. Absent and empty values remain distinct.
+- Serialized workspace tests and binary build passed. Copy-match and
+  copy-mode backing CLI checks passed against the pinned 3.8-rc baseline.
+  The copy-match CLI now exercises `search-forward -F` and reads
+  `pane_search_string` after replacements. Changed-file rustfmt and diff
+  checks passed. No sanitizer was run.
 
 ## Historical migration index
 

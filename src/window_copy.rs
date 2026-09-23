@@ -134,6 +134,7 @@ use crate::src::window::{
 };
 use crate::src::xmalloc::{xmalloc, xreallocarray, xstrdup, xvasprintf_cstring};
 use std::borrow::Cow;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -181,7 +182,7 @@ pub struct window_copy_mode_data {
     pub searchtype: ::core::ffi::c_int,
     pub searchdirection: ::core::ffi::c_int,
     pub searchregex: ::core::ffi::c_int,
-    pub searchstr: *mut ::core::ffi::c_char,
+    searchstr: Option<CString>,
     /// Owns searchmark; the pointer is invalidated on replacement or clear.
     searchmark_owner: Option<Box<[u8]>>,
     pub searchmark: *mut u_char,
@@ -198,6 +199,13 @@ pub struct window_copy_mode_data {
     pub dragtimer: event,
     pub refresh_timer: event,
     pub refresh_active: ::core::ffi::c_int,
+}
+
+unsafe fn window_copy_searchstr(data: *const window_copy_mode_data) -> *const ::core::ffi::c_char {
+    (*data)
+        .searchstr
+        .as_ref()
+        .map_or(::core::ptr::null(), |value| value.as_ptr())
 }
 pub type C2RustUnnamed_42 = ::core::ffi::c_uint;
 pub const RECENTRE_BOTTOM: C2RustUnnamed_42 = 2;
@@ -582,6 +590,7 @@ unsafe extern "C" fn window_copy_common_init(
     uninit_data.write_bytes(0, 1);
     (&raw mut (*uninit_data).jumpchar).write(Vec::new());
     (&raw mut (*uninit_data).searchmark_owner).write(None);
+    (&raw mut (*uninit_data).searchstr).write(None);
     data = Box::into_raw(storage.assume_init());
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).cursordrag = CURSORDRAG_NONE;
@@ -590,11 +599,11 @@ unsafe extern "C" fn window_copy_common_init(
     if !(*wp).searchstr.is_null() {
         (*data).searchtype = WINDOW_COPY_SEARCHUP as ::core::ffi::c_int;
         (*data).searchregex = (*wp).searchregex;
-        (*data).searchstr = xstrdup((*wp).searchstr);
+        (*data).searchstr = Some(CStr::from_ptr((*wp).searchstr).to_owned());
     } else {
         (*data).searchtype = WINDOW_COPY_OFF as ::core::ffi::c_int;
         (*data).searchregex = 0 as ::core::ffi::c_int;
-        (*data).searchstr = ::core::ptr::null_mut::<::core::ffi::c_char>();
+        (*data).searchstr = None;
     }
     (*data).searcho = -(1 as ::core::ffi::c_int);
     (*data).searchy = (*data).searcho;
@@ -747,7 +756,6 @@ unsafe extern "C" fn window_copy_free(mut wme: *mut window_mode_entry) {
     event_del(&raw mut (*data).dragtimer);
     event_del(&raw mut (*data).refresh_timer);
     window_copy_drop_searchmark(data);
-    free((*data).searchstr as *mut ::core::ffi::c_void);
     if !(*data).ictx.is_null() {
         input_free((*data).ictx);
     }
@@ -1582,11 +1590,10 @@ unsafe extern "C" fn window_copy_expand_search_string(
             free(expanded as *mut ::core::ffi::c_void);
             return 0 as ::core::ffi::c_int;
         }
-        free((*data).searchstr as *mut ::core::ffi::c_void);
-        (*data).searchstr = expanded;
+        (*data).searchstr = Some(CStr::from_ptr(expanded).to_owned());
+        free(expanded.cast());
     } else {
-        free((*data).searchstr as *mut ::core::ffi::c_void);
-        (*data).searchstr = xstrdup(ss);
+        (*data).searchstr = Some(CStr::from_ptr(ss).to_owned());
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -3301,7 +3308,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward(
     if window_copy_expand_search_string(cs) == 0 {
         return WINDOW_COPY_CMD_MOVE;
     }
-    if !(*data).searchstr.is_null() {
+    if (*data).searchstr.is_some() {
         (*data).searchtype = WINDOW_COPY_SEARCHUP as ::core::ffi::c_int;
         (*data).searchregex = 1 as ::core::ffi::c_int;
         (*data).timeout = 0 as ::core::ffi::c_int;
@@ -3321,7 +3328,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward_text(
     if window_copy_expand_search_string(cs) == 0 {
         return WINDOW_COPY_CMD_MOVE;
     }
-    if !(*data).searchstr.is_null() {
+    if (*data).searchstr.is_some() {
         (*data).searchtype = WINDOW_COPY_SEARCHUP as ::core::ffi::c_int;
         (*data).searchregex = 0 as ::core::ffi::c_int;
         (*data).timeout = 0 as ::core::ffi::c_int;
@@ -3341,7 +3348,7 @@ unsafe extern "C" fn window_copy_cmd_search_forward(
     if window_copy_expand_search_string(cs) == 0 {
         return WINDOW_COPY_CMD_MOVE;
     }
-    if !(*data).searchstr.is_null() {
+    if (*data).searchstr.is_some() {
         (*data).searchtype = WINDOW_COPY_SEARCHDOWN as ::core::ffi::c_int;
         (*data).searchregex = 1 as ::core::ffi::c_int;
         (*data).timeout = 0 as ::core::ffi::c_int;
@@ -3361,7 +3368,7 @@ unsafe extern "C" fn window_copy_cmd_search_forward_text(
     if window_copy_expand_search_string(cs) == 0 {
         return WINDOW_COPY_CMD_MOVE;
     }
-    if !(*data).searchstr.is_null() {
+    if (*data).searchstr.is_some() {
         (*data).searchtype = WINDOW_COPY_SEARCHDOWN as ::core::ffi::c_int;
         (*data).searchregex = 0 as ::core::ffi::c_int;
         (*data).timeout = 0 as ::core::ffi::c_int;
@@ -3378,7 +3385,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward_incremental(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
-    let mut ss: *const ::core::ffi::c_char = (*data).searchstr;
+    let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(data);
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
@@ -3418,8 +3425,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward_incremental(
         61 | 45 => {
             (*data).searchtype = WINDOW_COPY_SEARCHUP as ::core::ffi::c_int;
             (*data).searchregex = 0 as ::core::ffi::c_int;
-            free((*data).searchstr as *mut ::core::ffi::c_void);
-            (*data).searchstr = xstrdup(arg0);
+            (*data).searchstr = Some(CStr::from_ptr(arg0).to_owned());
             if window_copy_search_up(wme, 0 as ::core::ffi::c_int) == 0 {
                 window_copy_clear_marks(wme);
                 return WINDOW_COPY_CMD_REDRAW;
@@ -3428,8 +3434,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward_incremental(
         43 => {
             (*data).searchtype = WINDOW_COPY_SEARCHDOWN as ::core::ffi::c_int;
             (*data).searchregex = 0 as ::core::ffi::c_int;
-            free((*data).searchstr as *mut ::core::ffi::c_void);
-            (*data).searchstr = xstrdup(arg0);
+            (*data).searchstr = Some(CStr::from_ptr(arg0).to_owned());
             if window_copy_search_down(wme, 0 as ::core::ffi::c_int) == 0 {
                 window_copy_clear_marks(wme);
                 return WINDOW_COPY_CMD_REDRAW;
@@ -3445,7 +3450,7 @@ unsafe extern "C" fn window_copy_cmd_search_forward_incremental(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
-    let mut ss: *const ::core::ffi::c_char = (*data).searchstr;
+    let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(data);
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
@@ -3485,8 +3490,7 @@ unsafe extern "C" fn window_copy_cmd_search_forward_incremental(
         61 | 43 => {
             (*data).searchtype = WINDOW_COPY_SEARCHDOWN as ::core::ffi::c_int;
             (*data).searchregex = 0 as ::core::ffi::c_int;
-            free((*data).searchstr as *mut ::core::ffi::c_void);
-            (*data).searchstr = xstrdup(arg0);
+            (*data).searchstr = Some(CStr::from_ptr(arg0).to_owned());
             if window_copy_search_down(wme, 0 as ::core::ffi::c_int) == 0 {
                 window_copy_clear_marks(wme);
                 return WINDOW_COPY_CMD_REDRAW;
@@ -3495,8 +3499,7 @@ unsafe extern "C" fn window_copy_cmd_search_forward_incremental(
         45 => {
             (*data).searchtype = WINDOW_COPY_SEARCHUP as ::core::ffi::c_int;
             (*data).searchregex = 0 as ::core::ffi::c_int;
-            free((*data).searchstr as *mut ::core::ffi::c_void);
-            (*data).searchstr = xstrdup(arg0);
+            (*data).searchstr = Some(CStr::from_ptr(arg0).to_owned());
             if window_copy_search_up(wme, 0 as ::core::ffi::c_int) == 0 {
                 window_copy_clear_marks(wme);
                 return WINDOW_COPY_CMD_REDRAW;
@@ -6549,7 +6552,7 @@ unsafe extern "C" fn window_copy_search(
         bg: 0,
     };
     let mut gd: *mut grid = (*s).grid;
-    let mut str: *const ::core::ffi::c_char = (*data).searchstr;
+    let mut str: *const ::core::ffi::c_char = window_copy_searchstr(data);
     let mut at: u_int = 0;
     let mut endline: u_int = 0;
     let mut fx: u_int = 0;
@@ -6931,7 +6934,7 @@ unsafe extern "C" fn window_copy_search_marks(
     if ssp.is_null() {
         width = screen_write_strlen(
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*data).searchstr,
+            window_copy_searchstr(data),
         ) as u_int;
         screen_init(&raw mut ss, width, 1 as u_int, 0 as u_int);
         screen_write_start(&raw mut ctx, &raw mut ss);
@@ -6940,14 +6943,14 @@ unsafe extern "C" fn window_copy_search_marks(
             -(1 as ::core::ffi::c_int) as ssize_t,
             &raw const grid_default_cell,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*data).searchstr,
+            window_copy_searchstr(data),
         );
         screen_write_stop(&raw mut ctx);
         ssp = &raw mut ss;
     } else {
         width = (*(*ssp).grid).sx;
     }
-    cis = window_copy_is_lowercase((*data).searchstr);
+    cis = window_copy_is_lowercase(window_copy_searchstr(data));
     if regex != 0 {
         let mut sbuf = vec![0u8];
         window_copy_stringify(
