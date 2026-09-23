@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_tolower_loc, free, sscanf, strcasecmp, wctomb};
+use crate::src::ffi::libc::{__ctype_tolower_loc, sscanf, strcasecmp, wctomb};
 pub use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::control_character::{
@@ -10,7 +10,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 pub use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
-use crate::src::utf8::{utf8_append, utf8_from_data, utf8_fromcstr, utf8_open, utf8_to_data};
+use crate::src::utf8::{utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_0;
@@ -5634,20 +5634,14 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
     }
     multibyte[length as usize] = '\0' as ::core::ffi::c_char;
 
-    // `utf8_fromcstr` owns its result; retain the original allocation/free
-    // behavior of the numeric form while keeping the raw pointer local.
-    let decoded = unsafe { utf8_fromcstr(multibyte.as_ptr()) };
-    if decoded.is_null() {
-        return None;
-    }
+    let decoded = unsafe { utf8_fromcstr_vec(multibyte.as_ptr()) };
     let mut codepoint: utf8_char = 0;
     let valid = unsafe {
-        (*decoded).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
-            && (*decoded.offset(1)).size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
-            && utf8_from_data(decoded, &raw mut codepoint) as ::core::ffi::c_uint
+        decoded[0].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
+            && decoded[1].size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
+            && utf8_from_data(decoded.as_ptr(), &raw mut codepoint) as ::core::ffi::c_uint
                 == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
     };
-    unsafe { free(decoded as *mut ::core::ffi::c_void) };
 
     valid.then_some(codepoint as key_code)
 }
@@ -5724,8 +5718,7 @@ fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
         if more as ::core::ffi::c_uint != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
         }
-        if unsafe { utf8_from_data(&raw mut data, &raw mut codepoint) }
-            as ::core::ffi::c_uint
+        if unsafe { utf8_from_data(&raw mut data, &raw mut codepoint) } as ::core::ffi::c_uint
             != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;

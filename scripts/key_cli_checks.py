@@ -22,6 +22,9 @@ with tempfile.TemporaryDirectory(prefix="key-cli-", dir=root / "target") as tmp:
 
     try:
         run("new-session", "-d", "-s", "keys", "sleep", "60")
+        run("bind-key", "-T", "keynumeric", "0x41", "display-message", "numeric")
+        numeric = run("list-keys", "-T", "keynumeric")
+        assert numeric.stdout == b"bind-key  -T keynumeric A display-message numeric\n", numeric.stdout
         run("bind-key", "-T", "keycheck", "C-a", "display-message", "control")
         run("bind-key", "-T", "keycheck", "Insert", "display-message", "insert")
         listing = run("list-keys", "-T", "keycheck")

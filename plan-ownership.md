@@ -125,11 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `key_string_parse_numeric` allocates decoded UTF-8 cells through
-   `utf8_fromcstr` and frees them after synchronous numeric-key inspection.
-   The existing byte-equivalent `utf8_fromcstr_vec` is a small local owner
-   candidate. The client-process exec shell/command pair is nearby, but
-   `execl` replaces the process on its normal path.
+1. The client-process `MSG_EXEC` handler duplicates command and shell into
+   two private static pointers. It validates the two-string packet, then
+   `client_main` lends both strings to `client_exec` after the event loop.
+   One `Option<(CString, CString)>` can own the pair atomically; `execl`
+   replaces the process on its normal path.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -513,6 +513,18 @@ libc allocation on success and leaves it with the caller on error, so a local
   client-reported final name against the 3.8-rc baseline. Serialized
   workspace tests, binary build, changed-file rustfmt, and diff checks
   passed. No sanitizer was run.
+
+### Increment 378 — owned numeric-key UTF-8 cells (2026-09-23)
+
+- `key_string_parse_numeric` now uses the existing
+  `utf8_fromcstr_vec` decoder for its local numeric-key cells. The vector
+  preserves the size-zero terminator used by `utf8_from_data` and drops at
+  function exit. Removed the local `utf8_fromcstr` allocation and `free`;
+  locale-sensitive `sscanf`/`wctomb` and numeric-key rules remain intact.
+- Existing numeric-key parser tests, serialized workspace tests, and binary
+  build passed. The key CLI now binds `0x41` and checks canonical `A`
+  listing; candidate and matching 3.8-rc baseline passed. Changed-file
+  rustfmt and diff checks passed. No sanitizer was run.
 
 ## Historical migration index
 
