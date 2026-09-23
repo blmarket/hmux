@@ -2914,6 +2914,20 @@ legacy callers safe.
   unlink/drop path; it passed on both binaries. Full workspace tests, binary
   build, changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 331 — boxed terminal capability array (2026-09-23)
+
+- `tty_term_create` now fixes the 234 zeroed `tty_code` records in a boxed
+  slice before storing their raw compatibility pointer. `tty_term_free`
+  releases each C-owned string capability, then reconstructs and drops the
+  slice using the fixed `tty_term_ncodes()` length. Removed the array's
+  `xcalloc`/`free` pair. Its stable addresses and `tty_term` layout remain.
+- Attached terminal override output matched the pinned baseline, including
+  non-UTF-8, empty, removed, numeric, and flag capabilities. The custom
+  terminfo success and missing-`clear` failure paths passed on candidate
+  and baseline. Full workspace tests, binary build, changed-file rustfmt
+  for `src/tty_term.rs`, and diff checks passed. `src/shared/tty.rs` retains
+  its pre-existing test-import formatting difference. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2924,13 +2938,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `tty_term.codes` in `src/tty_term.rs` has one production allocation in
-   `tty_term_create` and one release in `tty_term_free`, after freeing each
-   owned capability string. `tty_term_ncodes()` is the fixed row count.
-   Box the array before callers take element pointers, and preserve string
-   cleanup before releasing the slice. The apparent borrowed Vec assignment
-   in `tty_features.rs` is confined to a test-only fake `tty_term` and never
-   calls the production destructor.
+1. The remaining non-string `event_payload_item` variants in
+   `src/events_payload.rs` have eight repetitive constructors and one
+   `event_payload_free_item` destructor. Each item stays at a stable address
+   in a payload map; replacement and payload teardown share that destructor.
+   Keep the separately Box-owned string variant and release values and names
+   before dropping each other record.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
@@ -2940,9 +2953,10 @@ non-string value.
    invalid command-queue item. Its `-w` target-client reference also needs
    release on empty input and read errors; the existing code releases it only
    for nonempty success. Direct Box replacement was deferred rather than
-   retaining these leaks. `args_value` has several
-   constructors and external fixtures, so audit its scalar/array ownership
-   together before selection.
+   retaining these leaks. `args_value` has separate scalar constructors,
+   movable positional arrays, and external callers of exported
+   `args_set`/`args_free_value`; a whole-type migration needs an ABI and
+   ownership redesign across those paths.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache
    design; window-copy backing remains larger.
    `window_copy_mode_data.backing` is larger:

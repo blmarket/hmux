@@ -81,7 +81,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
@@ -1400,10 +1400,9 @@ pub unsafe extern "C" fn tty_term_create(
     }));
     (*term).tty = tty as *mut tty;
     (*term).name = xstrdup(name);
-    (*term).codes = xcalloc(
-        tty_term_ncodes() as size_t,
-        ::core::mem::size_of::<tty_code>() as size_t,
-    ) as *mut tty_code;
+    let codes =
+        vec![::core::mem::zeroed::<tty_code>(); tty_term_ncodes() as usize].into_boxed_slice();
+    (*term).codes = Box::into_raw(codes) as *mut tty_code;
     (*term).entry.le_next = tty_terms.lh_first;
     if !(*term).entry.le_next.is_null() {
         (*tty_terms.lh_first).entry.le_prev = &raw mut (*term).entry.le_next;
@@ -1596,7 +1595,10 @@ pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {
         }
         i = i.wrapping_add(1);
     }
-    free((*term).codes as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(::core::ptr::slice_from_raw_parts_mut(
+        (*term).codes,
+        tty_term_ncodes() as usize,
+    )));
     if !(*term).entry.le_next.is_null() {
         (*(*term).entry.le_next).entry.le_prev = (*term).entry.le_prev;
     }

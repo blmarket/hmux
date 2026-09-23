@@ -379,6 +379,7 @@ pub struct tty_term {
     pub tty: *mut tty,
     pub applied_features: ::core::ffi::c_int,
     pub acs: [[::core::ffi::c_char; 2]; 256],
+    /// Box-owned fixed capability slice of `tty_term_ncodes()` entries.
     pub codes: *mut tty_code,
     pub flags: ::core::ffi::c_int,
     pub entry: tty_term_entry,
