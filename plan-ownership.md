@@ -2107,6 +2107,22 @@ legacy callers safe.
   duplicate alias, unique and ambiguous matches, sorted display, clear after
   typing, and cancel after display. No sanitizer was run.
 
+### Increment 118 — immutable prompt option strings (2026-09-22)
+
+- The Box-owned prompt record now holds `style_str`, `command_style_str`,
+  `message_format`, and `word_separators` as CStrings. `prompt_create` copies
+  each at its original initialization point; draw, format, and word-navigation
+  calls borrow `as_ptr()` synchronously. Removed four `xstrdup` allocations
+  and their `prompt_free` frees.
+- Each producer already supplied a non-null C string, and copying through
+  `CStr` preserves non-UTF-8 bytes and the first-NUL view. The prompt free
+  callback still precedes owned-field destruction. The internal prompt
+  record layout fixture changed from 360 to 392 bytes; `prompt_create_data`
+  and its external callback signatures are unchanged.
+- Isolated validation: workspace tests with serialized test threads, binary
+  build, attached prompt paste and completion CLI scenarios, changed-file
+  rustfmt, and `git diff --check` passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2126,11 +2142,10 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. The Box-owned prompt record still has several separately allocated
-   immutable C strings, including `message_format`, `style_str`, and
-   `command_style_str`. Audit each field's producer, callback reads, and
-   prompt teardown, then migrate a complete leaf field or a related group to
-   CString without changing null versus empty semantics.
+2. The Box-owned prompt record still has mutable prompt-label `string` and
+   nullable incremental `last` as separately allocated C strings. Audit
+   `prompt_update` and incremental reset/read paths before moving those
+   complete fields to CString/Option<CString>; preserve null versus empty.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2146,9 +2161,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–117. The remaining
+Current validation is recorded in increments 15–118. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–117 has its own local commit; none was pushed.
+Each of increments 15–118 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
