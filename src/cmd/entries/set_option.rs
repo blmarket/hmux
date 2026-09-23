@@ -10,7 +10,7 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::free;
 use crate::src::format::format_single_from_target;
 use crate::src::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
-use crate::src::monitor::monitor_parse;
+use crate::src::monitor::monitor_parse_owned;
 pub use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_array_assign, options_array_clear, options_array_get, options_array_set, options_empty,
@@ -312,12 +312,8 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut format: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut type_0: monitor_type = MONITOR_SESSION;
-    let mut id: ::core::ffi::c_int = 0;
     let mut scope: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if args_count(args) > 1 as u_int {
@@ -328,34 +324,28 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
         return CMD_RETURN_ERROR;
     }
     value = args_get(args, 'B' as i32 as u_char);
-    if args_has(args, 'u' as i32 as u_char) != 0 {
-        if monitor_parse(
-            value,
-            &raw mut name,
-            &raw mut type_0,
-            &raw mut id,
-            &raw mut format,
-        ) != 0 as ::core::ffi::c_int
-        {
-            name = xstrdup(value);
+    let unsubscribe = args_has(args, 'u' as i32 as u_char) != 0;
+    let parsed = monitor_parse_owned(value);
+    let (name_owned, type_0, id, format_owned) = if unsubscribe {
+        match parsed {
+            Some(parsed) => (parsed.name, parsed.type_0, parsed.id, None),
+            None => (CStr::from_ptr(value).to_owned(), MONITOR_SESSION, 0, None),
         }
-        free(format as *mut ::core::ffi::c_void);
-        format = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    } else if monitor_parse(
-        value,
-        &raw mut name,
-        &raw mut type_0,
-        &raw mut id,
-        &raw mut format,
-    ) != 0 as ::core::ffi::c_int
-    {
-        cmdq_error(
-            item,
-            b"invalid subscription: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            value,
-        );
-        return CMD_RETURN_ERROR;
-    }
+    } else {
+        let Some(parsed) = parsed else {
+            cmdq_error(
+                item,
+                b"invalid subscription: %s\0" as *const u8 as *const ::core::ffi::c_char,
+                value,
+            );
+            return CMD_RETURN_ERROR;
+        };
+        (parsed.name, parsed.type_0, parsed.id, Some(parsed.format))
+    };
+    let name = name_owned.as_ptr();
+    let format = format_owned
+        .as_ref()
+        .map_or(::core::ptr::null(), |format| format.as_ptr());
     if *name as ::core::ffi::c_int != '@' as i32 {
         cmdq_error(
             item,
@@ -422,14 +412,10 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
                 hooks_monitor_add(item, oo, name, type_0, id, format, flags, &raw mut fs, s);
             }
             free(expanded as *mut ::core::ffi::c_void);
-            free(name as *mut ::core::ffi::c_void);
-            free(format as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     }
     free(expanded as *mut ::core::ffi::c_void);
-    free(name as *mut ::core::ffi::c_void);
-    free(format as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }
 unsafe extern "C" fn cmd_set_option_exec(

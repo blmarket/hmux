@@ -10,7 +10,7 @@ use crate::src::control::{
 };
 use crate::src::ffi::libc::{free, sscanf};
 use crate::src::log::log_debug;
-use crate::src::monitor::monitor_parse;
+use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
 use crate::src::server_client::server_client_set_flags;
 use crate::src::server_fn::{server_redraw_client, server_status_client};
@@ -127,24 +127,17 @@ unsafe extern "C" fn cmd_refresh_client_update_subscription(
     mut tc: *mut client,
     mut value: *const ::core::ffi::c_char,
 ) {
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut format: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut type_0: monitor_type = MONITOR_SESSION;
-    let mut id: ::core::ffi::c_int = 0;
-    if monitor_parse(
-        value,
-        &raw mut name,
-        &raw mut type_0,
-        &raw mut id,
-        &raw mut format,
-    ) != 0 as ::core::ffi::c_int
-    {
+    let Some(parsed) = monitor_parse_owned(value) else {
         control_remove_sub(tc, value);
         return;
-    }
-    control_add_sub(tc, name, type_0, id, format);
-    free(name as *mut ::core::ffi::c_void);
-    free(format as *mut ::core::ffi::c_void);
+    };
+    control_add_sub(
+        tc,
+        parsed.name.as_ptr(),
+        parsed.type_0,
+        parsed.id,
+        parsed.format.as_ptr(),
+    );
 }
 unsafe extern "C" fn cmd_refresh_client_control_client_size(
     mut self_0: *mut cmd,

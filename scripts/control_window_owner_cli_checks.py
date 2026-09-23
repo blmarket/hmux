@@ -39,6 +39,12 @@ with tempfile.TemporaryDirectory(prefix="control-window-owner-", dir=root / "tar
             time.sleep(0.02)
         target = name.decode()
 
+        # Subscription parsing lends its owned name and format only while
+        # control_add_sub copies them. Invalid input removes the named entry.
+        run("refresh-client", "-t", target, "-B", "@watch::#{session_name}")
+        run("refresh-client", "-t", target, "-B", "@watch")
+        run("refresh-client", "-t", target, "-B", "@pane:%*:#{pane_id}")
+
         run("refresh-client", "-t", target, "-C", "100x30")
         assert size() == b"100x30\n"
         run("refresh-client", "-t", target, "-C", f"{window}:40x12")

@@ -3279,6 +3279,23 @@ legacy callers safe.
   Full workspace tests, binary build, changed-file rustfmt, and diff checks
   passed. No sanitizer was run.
 
+### Increment 357 — owned monitor parse outputs for in-tree callers (2026-09-23)
+
+- `monitor_parse_owned` now returns a `ParsedMonitor` with owned `CString`
+  name and format fields. `cmd_refresh_client_update_subscription` and
+  `cmd_set_hook_monitor_exec` lend those strings to the synchronous monitor
+  registration calls and let the owner drop on success, errors, and bare-name
+  unsubscribe. Removed their explicit output frees and the invalid
+  unsubscribe `xstrdup`. The exported `monitor_parse` keeps its existing
+  C-owned output contract by duplicating the owned parse strings with
+  `xstrdup`; invalid parses still leave name/format outputs untouched and
+  preserve numeric target parsing through `sscanf`.
+- Monitor parser tests, monitor leaf and string CLI comparisons, hook append
+  and invalid/unsubscribe CLI checks, and control-client subscription CLI
+  checks passed. The latter two ran against both candidate and pinned baseline.
+  Full workspace tests, binary build, changed-file rustfmt, and diff checks
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3289,10 +3306,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The two in-tree `monitor_parse` callers can take owned `CString` outputs
-   while its exported C-owned result contract remains. Exported
-   `args_from_vector` still returns a C-owned array to external callers; no
-   in-tree production caller uses it now.
+1. The client-owned `tty.r` range array only requests one element in
+   `tty_check_overlay_range`; an inline `visible_range` in the boxed
+   `ClientOwner` can replace its growth/free pair while preserving the public
+   borrowed `visible_ranges` view. Exported `args_from_vector` and
+   `monitor_parse` retain C-owned output contracts for external callers; no
+   in-tree production caller uses either raw-output path now.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach

@@ -74,7 +74,7 @@ pub use crate::src::shared::window::{
 use crate::src::window::{
     window_find_by_id, window_pane_find_by_id, winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::{xcalloc, xstrdup, xstrndup};
+use crate::src::xmalloc::{xcalloc, xstrdup};
 
 use std::ffi::{CStr, CString};
 
@@ -720,24 +720,27 @@ pub unsafe extern "C" fn monitor_destroy(mut ms: *mut monitor_set) {
         drop(Box::from_raw(ms));
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn monitor_parse(
-    value: *const ::core::ffi::c_char,
-    mut name: *mut *mut ::core::ffi::c_char,
-    mut type_0: *mut monitor_type,
-    mut id: *mut ::core::ffi::c_int,
-    mut format: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let value = CStr::from_ptr(value);
+pub(crate) struct ParsedMonitor {
+    pub(crate) name: CString,
+    pub(crate) type_0: monitor_type,
+    pub(crate) id: ::core::ffi::c_int,
+    pub(crate) format: CString,
+}
+
+unsafe fn monitor_parse_parts(
+    value: &CStr,
+    type_0: *mut monitor_type,
+    id: *mut ::core::ffi::c_int,
+) -> Option<(CString, CString)> {
     let value_bytes = value.to_bytes();
     *id = -(1 as ::core::ffi::c_int);
     let Some(first_colon) = value_bytes.iter().position(|&byte| byte == b':') else {
-        return -(1 as ::core::ffi::c_int);
+        return None;
     };
     let target_start = first_colon + 1;
     let target_bytes = &value_bytes[target_start..];
     let Some(second_colon) = target_bytes.iter().position(|&byte| byte == b':') else {
-        return -(1 as ::core::ffi::c_int);
+        return None;
     };
     let target_bytes = &target_bytes[..second_colon];
     let format_start = target_start + second_colon + 1;
@@ -767,13 +770,46 @@ pub unsafe extern "C" fn monitor_parse(
         {
             *type_0 = MONITOR_WINDOW;
         } else {
-            return -(1 as ::core::ffi::c_int);
+            return None;
         }
     }
 
-    *name = xstrndup(value.as_ptr(), first_colon as size_t);
-    *format = xstrdup(value.as_ptr().add(format_start));
-    0 as ::core::ffi::c_int
+    Some((
+        CString::new(&value_bytes[..first_colon]).expect("monitor name contains no NUL"),
+        CString::new(&value_bytes[format_start..]).expect("monitor format contains no NUL"),
+    ))
+}
+
+pub(crate) unsafe fn monitor_parse_owned(
+    value: *const ::core::ffi::c_char,
+) -> Option<ParsedMonitor> {
+    let mut type_0 = MONITOR_SESSION;
+    let mut id = -1;
+    let (name, format) = monitor_parse_parts(CStr::from_ptr(value), &raw mut type_0, &raw mut id)?;
+    Some(ParsedMonitor {
+        name,
+        type_0,
+        id,
+        format,
+    })
+}
+
+/// The exported output strings remain libc-owned for callers that free them.
+#[no_mangle]
+pub unsafe extern "C" fn monitor_parse(
+    value: *const ::core::ffi::c_char,
+    name: *mut *mut ::core::ffi::c_char,
+    type_0: *mut monitor_type,
+    id: *mut ::core::ffi::c_int,
+    format: *mut *mut ::core::ffi::c_char,
+) -> ::core::ffi::c_int {
+    let Some((owned_name, owned_format)) = monitor_parse_parts(CStr::from_ptr(value), type_0, id)
+    else {
+        return -1;
+    };
+    *name = xstrdup(owned_name.as_ptr());
+    *format = xstrdup(owned_format.as_ptr());
+    0
 }
 #[no_mangle]
 pub unsafe extern "C" fn monitor_add(

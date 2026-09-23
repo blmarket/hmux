@@ -34,6 +34,17 @@ with tempfile.TemporaryDirectory(prefix="hook-monitor-append-", dir=root / "targ
         run(b"set-hook", b"-g", b"-B", monitor, b"")
         run(b"set-hook", b"-ga", b"-B", monitor, b"tail")
         assert run(b"show-options", b"-gv", b"@watch") == b"tail\n"
+
+        invalid = subprocess.run(
+            base + [b"set-hook", b"-g", b"-B", b"@invalid"],
+            env=env, capture_output=True, timeout=20,
+        )
+        assert invalid.returncode == 1
+        assert invalid.stderr == b"invalid subscription: @invalid\n"
+
+        # The unsubscribe path also accepts a bare hook name.
+        run(b"set-hook", b"-g", b"-u", b"-B", b"@watch")
+        assert b"@watch" not in run(b"show-hooks", b"-g", b"-B", b"-F", b"#{option_name}")
     finally:
         subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=20)
 
