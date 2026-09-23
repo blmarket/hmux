@@ -70,7 +70,8 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::status::status_prompt_set;
-use crate::src::xmalloc::{xasprintf, xcalloc};
+use crate::src::xmalloc::xcalloc;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -135,7 +136,6 @@ unsafe extern "C" fn cmd_confirm_before_exec(
         ::core::ptr::null_mut::<cmd_confirm_before_data>();
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut new_prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut prompt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -177,25 +177,23 @@ unsafe extern "C" fn cmd_confirm_before_exec(
         (*cdata).confirm_key = 'y' as i32 as u_char;
     }
     prompt = args_get(args, 'p' as i32 as u_char);
-    if !prompt.is_null() {
-        xasprintf(
-            &raw mut new_prompt,
-            b"%s \0" as *const u8 as *const ::core::ffi::c_char,
-            prompt,
-        );
+    let new_prompt = if !prompt.is_null() {
+        let mut bytes = CStr::from_ptr(prompt).to_bytes().to_vec();
+        bytes.push(b' ');
+        CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
         cmd = (*cmd_get_entry(cmd_list_first((*cdata).cmdlist))).name;
-        xasprintf(
-            &raw mut new_prompt,
-            b"Confirm '%s'? (%c/n) \0" as *const u8 as *const ::core::ffi::c_char,
-            cmd,
-            (*cdata).confirm_key as ::core::ffi::c_int,
-        );
-    }
+        let mut bytes = b"Confirm '".to_vec();
+        bytes.extend_from_slice(CStr::from_ptr(cmd).to_bytes());
+        bytes.extend_from_slice(b"'? (");
+        bytes.push((*cdata).confirm_key);
+        bytes.extend_from_slice(b"/n) ");
+        CString::new(bytes).expect("C string command and validated key contain no interior NUL")
+    };
     status_prompt_set(
         tc,
         target,
-        new_prompt,
+        new_prompt.as_ptr(),
         ::core::ptr::null::<::core::ffi::c_char>(),
         Some(
             cmd_confirm_before_callback
@@ -211,7 +209,7 @@ unsafe extern "C" fn cmd_confirm_before_exec(
         PROMPT_SINGLE,
         PROMPT_TYPE_COMMAND,
     );
-    free(new_prompt as *mut ::core::ffi::c_void);
+    drop(new_prompt);
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }

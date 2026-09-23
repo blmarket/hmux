@@ -1585,6 +1585,21 @@ legacy callers safe.
   `git diff --check` passed in the isolated worktree. No sanitizer run was
   performed.
 
+### Increment 86 — confirm-before prompt (2026-09-22)
+
+- `cmd_confirm_before_exec` now builds both custom and default prompts
+  directly as `CString` from borrowed C-string bytes and literal bytes.
+  This removes the local `xasprintf` allocation and matching free. The
+  existing `-c` validation ensures the inserted confirm key is one printable
+  ASCII byte. `status_prompt_set` reaches `prompt_create`, which duplicates
+  the prompt synchronously; the local owner drops at the former free point.
+- Binary check and build, changed-file rustfmt, and `git diff --check`
+  passed in the isolated worktree. A manual attached-PTY check displayed
+  custom and default prompts and confirmed both commands ran. No automated
+  E2E test or sanitizer run was added. After all three increments, the
+  combined main branch passed `cargo test --workspace --quiet`, the binary
+  build, changed-file rustfmt, and `git diff --check`.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1604,9 +1619,13 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `cmd_save_buffer_exec`'s `file_write` call copies the path synchronously,
-   but changing only its local expanded path to `CString` would add a copy
-   solely to replace the C-owned `format_single_from_target` result. Revisit
+2. `fuzzy_scan` and its sole caller `fuzzy_match` still share a private
+   growable C array of `fuzzy_char` that is freed on match and no-match paths.
+   Migrating that producer and consumer together is the next small local
+   owner. `cmd_save_buffer_exec`'s `file_write` call copies its path
+   synchronously, but changing only its local expanded path to `CString`
+   would add a copy solely to replace the C-owned
+   `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
@@ -1618,9 +1637,9 @@ non-string value.
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–85. The remaining
+Current validation is recorded in increments 15–86. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–85 has its own local commit; none was pushed.
+Each of increments 15–86 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
