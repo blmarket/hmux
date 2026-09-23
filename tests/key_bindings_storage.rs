@@ -27,7 +27,7 @@ fn named_tables_defaults_replacement_and_retained_table_lifetime() {
         assert_eq!(CStr::from_ptr((*binding).note), c"replacement");
         assert_ne!((*binding).flags & KEY_BINDING_REPEAT, 0);
         // Active and default bindings use independent indexes with identical keys.
-        let default = libc::calloc(1, std::mem::size_of::<key_binding>()) as *mut key_binding;
+        let default = Box::into_raw(Box::new(std::mem::zeroed::<key_binding>()));
         (*default).key = 42;
         (*default).cmdlist = cmd_list_new();
         key_bindings_index_insert(&mut (*a).default_key_bindings, default);

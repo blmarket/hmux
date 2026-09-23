@@ -2494,6 +2494,21 @@ legacy callers safe.
   and baseline. Changed files retain exactly their pre-existing rustfmt
   import-order differences. No sanitizer was run.
 
+### Increment 302 — boxed key binding records (2026-09-23)
+
+- `key_bindings_add` and `key_bindings_init_done` now box their zeroed
+  `key_binding` records; `key_bindings_free` releases the command-list reference
+  and owned note, then consumes the `Box` after index removal. The live record's
+  `tablename` remains borrowed from its table; the default snapshot still has
+  a null `tablename` and increments the shared command-list reference count.
+  Index entries retain stable borrowed pointers until removal. Updated the
+  existing storage test fixture to use the same boxed allocation contract.
+- Extended `scripts/key_cli_checks.py` to rebind an existing key, exercising
+  replacement and old-record destruction. It passed with the candidate and
+  pinned pre-migration binary. The key-storage test and full workspace tests,
+  binary build, and diff checks passed. Changed files retain the pre-existing
+  rustfmt import-order difference in `key_bindings.rs`. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2504,10 +2519,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `key_binding` records in `src/key_bindings.rs` have two `xcalloc`
-   constructors and one free helper. Preserve snapshot command-list reference
-   counts, live `tablename` borrows, note ownership, map removal order, and
-   stable pointers when boxing them. `window_copy_mode_data.backing` is larger:
+1. `key_table` or `monitor_item` records are the next small owner candidates;
+   audit their retain/release and callback lifetimes before selecting one.
+   `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias
    audit.

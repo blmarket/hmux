@@ -2189,6 +2189,8 @@ pub struct key_bindings {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Each live/default index owns a boxed record. Index removal clears the
+/// borrowed `entry.owner` link; the table owns the borrowed `tablename` text.
 pub struct key_binding {
     pub key: key_code,
     pub cmdlist: *mut cmd_list,

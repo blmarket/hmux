@@ -71,7 +71,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
+use crate::src::xmalloc::{xmalloc, xstrdup};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -106,7 +106,7 @@ unsafe extern "C" fn key_bindings_cmp(
 unsafe extern "C" fn key_bindings_free(mut bd: *mut key_binding) {
     cmd_list_free((*bd).cmdlist);
     free((*bd).note as *mut ::core::ffi::c_void);
-    free(bd as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(bd));
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_get_table(
@@ -256,7 +256,7 @@ pub unsafe extern "C" fn key_bindings_add(
         key_bindings_index_remove(&raw mut (*table).key_bindings, bd);
         key_bindings_free(bd);
     }
-    bd = xcalloc(1 as size_t, ::core::mem::size_of::<key_binding>() as size_t) as *mut key_binding;
+    bd = Box::into_raw(Box::new(::core::mem::zeroed::<key_binding>()));
     (*bd).key = (key as ::core::ffi::c_ulonglong & !KEYC_MASK_FLAGS) as key_code;
     (*bd).tablename = (*table).name;
     if !note.is_null() {
@@ -388,8 +388,7 @@ unsafe extern "C" fn key_bindings_init_done(
     while !table.is_null() {
         bd = key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
         while !bd.is_null() {
-            new_bd = xcalloc(1 as size_t, ::core::mem::size_of::<key_binding>() as size_t)
-                as *mut key_binding;
+            new_bd = Box::into_raw(Box::new(::core::mem::zeroed::<key_binding>()));
             (*new_bd).key = (*bd).key;
             if !(*bd).note.is_null() {
                 (*new_bd).note = xstrdup((*bd).note);
