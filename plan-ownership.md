@@ -2426,6 +2426,21 @@ legacy callers safe.
   files retain exactly their pre-existing rustfmt import-order differences;
   no changed hunk adds a formatting difference. No sanitizer was run.
 
+### Increment 297 — boxed outer format tree (2026-09-23)
+
+- `format_create` now allocates the zeroed outer `format_tree` with `Box`,
+  removing its `xcalloc`. `format_free` still drains entries, drops their
+  Box-owned index, and releases the retained client reference before consuming
+  the outer `Box` in place of libc `free`. Callback and nested-format pointers
+  remain borrowed views of the stable record, invalid after `format_free`.
+  The C-layout record keeps `Copy` because it contains no drop-bearing field;
+  the actual allocation remains uniquely owned by the create/free contract.
+- Focused format-entry and modifier-copy tests, `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, binary build, and diff checks passed. Format
+  search and format-job CLI checks matched the pinned baseline. Changed tree
+  and shared declarations pass rustfmt; `src/format.rs` has exactly its
+  pre-existing import-order differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2436,14 +2451,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The outer `format_tree` record in `src/format/tree.rs` has one `xcalloc` in
-   `format_create` and one final libc `free` in `format_free`; its entry index
-   is already Box-owned. Preserve the zeroed C-layout fields, callback borrows,
-   and entry/client-ref teardown order when boxing this stable outer record.
-   `tty_key` trie nodes are another contained allocation/free pair with
-   recursive teardown. `window_copy_mode_data.backing` is larger: its borrowed
-   screen pointer is invalidated on refresh. The redraw scene's line array has
-   self-referential intrusive list tails and needs its own alias audit.
+1. `tty_key` trie nodes in `src/tty_keys.rs` have one `xcalloc` creation and a
+   recursive free path. Boxed nodes can retain stable child pointers and the
+   current postorder teardown. `window_copy_mode_data.backing` is larger: its
+   borrowed screen pointer is invalidated on refresh. The redraw scene's line
+   array has self-referential intrusive list tails and needs its own alias
+   audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

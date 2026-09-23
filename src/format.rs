@@ -83,8 +83,8 @@ use crate::src::window_copy::{
 };
 use crate::src::window_tree::window_tree_mode;
 use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xmemdup, xrealloc, xreallocarray, xsnprintf, xstrdup, xstrndup,
-    xvasprintf, xvasprintf_cstring,
+    xasprintf, xmalloc, xmemdup, xrealloc, xreallocarray, xsnprintf, xstrdup, xstrndup, xvasprintf,
+    xvasprintf_cstring,
 };
 
 pub use crate::src::shared::abi::NULL_0;

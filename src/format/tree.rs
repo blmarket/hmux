@@ -192,7 +192,7 @@ pub unsafe extern "C" fn format_create(
     mut flags: ::core::ffi::c_int,
 ) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    ft = xcalloc(1 as size_t, ::core::mem::size_of::<format_tree>() as size_t) as *mut format_tree;
+    ft = Box::into_raw(Box::new(::core::mem::zeroed::<format_tree>()));
     (*ft).tree.entries = Box::into_raw(Box::new(format_entry_tree_storage::default()));
     if !c.is_null() {
         (*ft).client = c;
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn format_free(mut ft: *mut format_tree) {
     if !(*ft).client.is_null() {
         server_client_unref((*ft).client);
     }
-    free(ft as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(ft));
 }
 pub(super) unsafe extern "C" fn format_log_debug_cb(
     mut key: *const ::core::ffi::c_char,
