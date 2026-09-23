@@ -28,7 +28,6 @@ pub const MENU_NOMOUSE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const MENU_STAYOPEN: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const MENU_TAB: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct menu_data {
     pub w: *mut window,

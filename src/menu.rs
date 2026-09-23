@@ -90,7 +90,6 @@ pub use crate::src::shared::window::{
 };
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::window::window_update_focus;
-use crate::src::xmalloc::{xcalloc, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -107,6 +106,25 @@ struct MenuOwner {
     strings: Vec<MenuRowStrings>,
     items: Vec<menu_item>,
     title: CString,
+}
+
+// Window overlays borrow the C-shaped prefix. The owner keeps the optional
+// style strings alive until menu_free_data releases the overlay.
+#[repr(C)]
+struct MenuDisplayOwner {
+    raw: menu_data,
+    style: Option<CString>,
+    selected_style: Option<CString>,
+    border_style: Option<CString>,
+}
+const _: () = assert!(std::mem::offset_of!(MenuDisplayOwner, raw) == 0);
+
+unsafe fn menu_optional_style(style: *const ::core::ffi::c_char) -> Option<CString> {
+    if style.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(style).to_owned())
+    }
 }
 
 #[derive(Default)]
@@ -474,10 +492,7 @@ unsafe extern "C" fn menu_free_data(mut md: *mut menu_data) {
         }
         screen_free(&raw mut (*md).s);
         menu_free((*md).menu);
-        free((*md).style as *mut ::core::ffi::c_void);
-        free((*md).selected_style as *mut ::core::ffi::c_void);
-        free((*md).border_style as *mut ::core::ffi::c_void);
-        free(md as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(md.cast::<MenuDisplayOwner>()));
     }
 }
 #[no_mangle]
@@ -2251,7 +2266,25 @@ pub unsafe extern "C" fn menu_display(
             b"menu-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
         ) as box_lines;
     }
-    md = xcalloc(1 as size_t, ::core::mem::size_of::<menu_data>() as size_t) as *mut menu_data;
+    let mut owner = Box::new(MenuDisplayOwner {
+        raw: ::core::mem::zeroed(),
+        style: menu_optional_style(style),
+        selected_style: menu_optional_style(selected_style),
+        border_style: menu_optional_style(border_style),
+    });
+    owner.raw.style = owner
+        .style
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |style| style.as_ptr().cast_mut());
+    owner.raw.selected_style = owner
+        .selected_style
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |style| style.as_ptr().cast_mut());
+    owner.raw.border_style = owner
+        .border_style
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |style| style.as_ptr().cast_mut());
+    md = &raw mut owner.raw;
     (*md).w = w;
     (*md).flags = flags;
     (*md).border_lines = lines;
@@ -2264,15 +2297,6 @@ pub unsafe extern "C" fn menu_display(
             &raw mut (*event).m as *const ::core::ffi::c_void,
             ::core::mem::size_of::<mouse_event>() as size_t,
         );
-    }
-    if !style.is_null() {
-        (*md).style = xstrdup(style);
-    }
-    if !selected_style.is_null() {
-        (*md).selected_style = xstrdup(selected_style);
-    }
-    if !border_style.is_null() {
-        (*md).border_style = xstrdup(border_style);
     }
     if !fs.is_null() {
         cmd_find_copy_state(&raw mut (*md).fs, fs);
@@ -2334,6 +2358,7 @@ pub unsafe extern "C" fn menu_display(
         }
     }
     menu_close((*md).w);
+    let md = Box::into_raw(owner).cast::<menu_data>();
     (*(*md).w).menu = md;
     redraw_invalidate_scene((*md).w);
     window_update_focus((*md).w);

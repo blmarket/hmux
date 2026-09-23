@@ -64,6 +64,12 @@ with tempfile.TemporaryDirectory(prefix="menu-owner-", dir=root / "target") as t
             client_tty,
             "-T",
             "Menu title",
+            "-s",
+            "fg=green,bg=black",
+            "-H",
+            "fg=red,bg=black",
+            "-S",
+            "fg=blue,bg=black",
             "first row",
             "a",
             "set-option -g @choice first",
@@ -92,6 +98,22 @@ with tempfile.TemporaryDirectory(prefix="menu-owner-", dir=root / "target") as t
             raise AssertionError(f"menu did not render: {output[-1000:]!r}")
         assert b"hidden" not in output, output[-1000:]
         assert b"(c)" in output and re.search(rb"L{30,}>", output), output[-1000:]
+
+        # Replacing the first overlay releases its screen and optional styles.
+        run(
+            "display-menu", "-c", client_tty, "-T", "Replacement menu",
+            "replacement row", "b", "set-option -g @choice second",
+        )
+        output = bytearray()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.1)
+            if ready:
+                output.extend(os.read(master, 65536))
+            if b"Replacement menu" in output and b"replacement row" in output:
+                break
+        else:
+            raise AssertionError(f"replacement menu did not render: {output[-1000:]!r}")
 
         os.write(master, b"b")
         deadline = time.monotonic() + 5

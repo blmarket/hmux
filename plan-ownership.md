@@ -2004,6 +2004,19 @@ legacy callers safe.
   replacement and timer expiry, a prompt, and client teardown with an active
   message or prompt. No sanitizer was run.
 
+### Increment 268 — menu display owner (2026-09-23)
+
+- `MenuDisplayOwner` now holds the C-layout `menu_data` prefix and owns its
+  optional style, selected-style, and border-style strings as `CString`.
+  Window menu pointers remain borrowed stable views. Menu close or window
+  destruction still calls the choice callback, frees the screen and menu,
+  then drops the owner and its strings; `menu_data` is no longer `Copy`.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and the expanded
+  `scripts/menu_owner_cli_checks.py` passed on main and the pinned baseline.
+  The attached check covered styled rendering, menu replacement, selection,
+  and overlay teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
