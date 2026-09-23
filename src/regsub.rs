@@ -4,30 +4,21 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::regex::{
     __re_long_size_t, re_dfa_t, re_pattern_buffer, reg_syntax_t, regex_t, regmatch_t, regoff_t,
 };
-use crate::src::xmalloc::{xrealloc, xstrdup};
+use crate::src::xmalloc::{xmalloc, xstrdup};
 
-unsafe extern "C" fn regsub_copy(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut ssize_t,
-    mut text: *const ::core::ffi::c_char,
-    mut start: size_t,
-    mut end: size_t,
+unsafe fn regsub_copy(
+    buf: &mut Vec<u8>,
+    text: *const ::core::ffi::c_char,
+    start: size_t,
+    end: size_t,
 ) {
-    let mut add: size_t = end.wrapping_sub(start);
-    *buf = xrealloc(
-        *buf as *mut ::core::ffi::c_void,
-        (*len as size_t).wrapping_add(add).wrapping_add(1 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    memcpy(
-        (*buf).offset(*len as isize) as *mut ::core::ffi::c_void,
-        text.offset(start as isize) as *const ::core::ffi::c_void,
-        add,
-    );
-    *len = (*len as size_t).wrapping_add(add) as ssize_t as ssize_t;
+    buf.extend_from_slice(::core::slice::from_raw_parts(
+        text.add(start).cast::<u8>(),
+        end.wrapping_sub(start),
+    ));
 }
-unsafe extern "C" fn regsub_expand(
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut ssize_t,
+unsafe fn regsub_expand(
+    buf: &mut Vec<u8>,
     mut with: *const ::core::ffi::c_char,
     mut text: *const ::core::ffi::c_char,
     mut m: *mut regmatch_t,
@@ -47,7 +38,6 @@ unsafe extern "C" fn regsub_expand(
                 if i < n && (*m.offset(i as isize)).rm_so != (*m.offset(i as isize)).rm_eo {
                     regsub_copy(
                         buf,
-                        len,
                         text,
                         (*m.offset(i as isize)).rm_so as size_t,
                         (*m.offset(i as isize)).rm_eo as size_t,
@@ -64,13 +54,7 @@ unsafe extern "C" fn regsub_expand(
         }
         match current_block_5 {
             17216689946888361452 => {
-                *buf = xrealloc(
-                    *buf as *mut ::core::ffi::c_void,
-                    (*len + 2 as ssize_t) as size_t,
-                ) as *mut ::core::ffi::c_char;
-                let fresh0 = *len;
-                *len = *len + 1;
-                *(*buf).offset(fresh0 as isize) = *cp;
+                buf.push(*cp as u8);
             }
             _ => {}
         }
@@ -99,9 +83,8 @@ pub unsafe extern "C" fn regsub(
     let mut start: ssize_t = 0;
     let mut end: ssize_t = 0;
     let mut last: ssize_t = 0;
-    let mut len: ssize_t = 0 as ssize_t;
     let mut empty: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf = Vec::<u8>::new();
     if *text as ::core::ffi::c_int == '\0' as i32 {
         return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -124,26 +107,18 @@ pub unsafe extern "C" fn regsub(
             0 as ::core::ffi::c_int,
         ) != 0 as ::core::ffi::c_int
         {
-            regsub_copy(
-                &raw mut buf,
-                &raw mut len,
-                text,
-                start as size_t,
-                end as size_t,
-            );
+            regsub_copy(&mut buf, text, start as size_t, end as size_t);
             break;
         } else {
             regsub_copy(
-                &raw mut buf,
-                &raw mut len,
+                &mut buf,
                 text,
                 last as size_t,
                 (m[0 as ::core::ffi::c_int as usize].rm_so as ssize_t + start) as size_t,
             );
             if *pattern as ::core::ffi::c_int == '^' as i32 {
                 regsub_expand(
-                    &raw mut buf,
-                    &raw mut len,
+                    &mut buf,
                     with,
                     text.offset(start as isize),
                     &raw mut m as *mut regmatch_t,
@@ -152,13 +127,7 @@ pub unsafe extern "C" fn regsub(
                         as u_int,
                 );
                 last = start + m[0 as ::core::ffi::c_int as usize].rm_eo as ssize_t;
-                regsub_copy(
-                    &raw mut buf,
-                    &raw mut len,
-                    text,
-                    last as size_t,
-                    end as size_t,
-                );
+                regsub_copy(&mut buf, text, last as size_t, end as size_t);
                 break;
             } else if empty != 0
                 || start + m[0 as ::core::ffi::c_int as usize].rm_so as ssize_t != last
@@ -166,8 +135,7 @@ pub unsafe extern "C" fn regsub(
                     != m[0 as ::core::ffi::c_int as usize].rm_eo
             {
                 regsub_expand(
-                    &raw mut buf,
-                    &raw mut len,
+                    &mut buf,
                     with,
                     text.offset(start as isize),
                     &raw mut m as *mut regmatch_t,
@@ -186,7 +154,10 @@ pub unsafe extern "C" fn regsub(
             }
         }
     }
-    *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
     regfree(&raw mut r);
-    return buf;
+    // The exported result is freed by the format caller with libc free.
+    let result = xmalloc(buf.len().wrapping_add(1)) as *mut ::core::ffi::c_char;
+    memcpy(result.cast(), buf.as_ptr().cast(), buf.len());
+    *result.add(buf.len()) = 0;
+    result
 }

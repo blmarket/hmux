@@ -1555,6 +1555,17 @@ legacy callers safe.
   pinned baseline for search-match formatting and copy fallback with a tab
   and wide characters. No sanitizer was run.
 
+### Increment 236 — regex substitution output owner (2026-09-23)
+
+- `regsub_copy`, `regsub_expand`, and `regsub` now build substitution bytes in
+  a local `Vec<u8>` instead of growing a raw buffer with `xrealloc` and a
+  manual length. The exported `regsub` still makes one NUL-terminated C
+  allocation for the format caller's libc-freeable return contract. Backrefs,
+  anchors, empty matches, and deletion keep their existing byte behavior.
+- Focused `regsub_owner` and existing format modifier tests, binary build,
+  changed-file rustfmt, and diff checks passed. The format-unescape CLI check
+  matched the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
