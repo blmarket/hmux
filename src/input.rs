@@ -5889,7 +5889,7 @@ pub unsafe extern "C" fn input_reply_clipboard(
     mut end: *const ::core::ffi::c_char,
     mut clip: ::core::ffi::c_char,
 ) {
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut out = Vec::<u8>::new();
     let mut outlen: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if !buf.is_null() && len != 0 as size_t {
         if len
@@ -5903,15 +5903,14 @@ pub unsafe extern "C" fn input_reply_clipboard(
         outlen = (4 as size_t)
             .wrapping_mul(len.wrapping_add(2 as size_t).wrapping_div(3 as size_t))
             .wrapping_add(1 as size_t) as ::core::ffi::c_int;
-        out = xmalloc(outlen as size_t) as *mut ::core::ffi::c_char;
+        out.resize(outlen as usize, 0);
         outlen = __b64_ntop(
             buf as *const ::core::ffi::c_uchar,
             len,
-            out,
+            out.as_mut_ptr().cast(),
             outlen as size_t,
         );
         if outlen == -(1 as ::core::ffi::c_int) {
-            free(out as *mut ::core::ffi::c_void);
             return;
         }
     }
@@ -5933,10 +5932,9 @@ pub unsafe extern "C" fn input_reply_clipboard(
         1 as size_t,
     );
     if outlen != 0 as ::core::ffi::c_int {
-        bufferevent_write(bev, out as *const ::core::ffi::c_void, outlen as size_t);
+        bufferevent_write(bev, out.as_ptr().cast(), outlen as size_t);
     }
     bufferevent_write(bev, end as *const ::core::ffi::c_void, strlen(end));
-    free(out as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn input_set_buffer_size(mut buffer_size: size_t) {

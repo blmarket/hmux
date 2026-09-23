@@ -939,6 +939,19 @@ legacy callers safe.
   directly select the ignore-styles branch; the focused test covers the
   escape helper. No sanitizer run was performed.
 
+### Increment 41 — clipboard reply base64 scratch (2026-09-22)
+
+- `input_reply_clipboard` now uses a local `Vec<u8>` for the base64 encoder's
+  output. This removes the scratch `xmalloc` and both manual `free` paths.
+  The existing size guard, FFI signature, encoder result length, optional
+  clipboard selector, and BEL/ST terminators remain unchanged. The vector is
+  borrowed only while `__b64_ntop` writes and `bufferevent_write` copies.
+- `tests/input_reply_clipboard.rs` checks binary input containing NUL, BEL
+  and ST output, null/empty input, and the oversize guard. Workspace tests,
+  binary build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. The encoder-error return remains source-audited but was
+  not forced by the test; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -953,13 +966,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `input_reply_clipboard`'s local base64 output allocation/free and
-   `format_add_window_neighbour`'s local formatted key scratch. Both have
-   synchronous C consumers and no apparent retained observer. Then inspect
-   other local format expansion scratch strings.
+2. Inspect `format_add_window_neighbour`'s local formatted key scratch and
+   other local format expansion scratch strings. Audit each return and
+   callback contract before changing its allocator.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–40. The remaining
+Current validation is recorded in increments 15–41. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–40 has its own local commit; none was pushed.
+Each of increments 15–41 has its own local commit; none was pushed.
