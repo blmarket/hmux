@@ -26,6 +26,7 @@ use crate::src::server::server_add_message;
 use crate::src::server_client::{
     server_client_clear_overlay, server_client_clear_saved_status_screen,
     server_client_set_message, server_client_set_saved_status_screen,
+    server_client_set_status_expanded,
 };
 pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::style::{
@@ -327,7 +328,7 @@ pub unsafe extern "C" fn status_free(mut c: *mut client) {
         style_ranges_free(
             &raw mut (*(&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)).ranges,
         );
-        free((*sl).entries[i as usize].expanded as *mut ::core::ffi::c_void);
+        server_client_set_status_expanded(c, i as usize, None);
         i = i.wrapping_add(1);
     }
     if event_initialized(&raw mut (*sl).timer) != 0 {
@@ -495,8 +496,9 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
                         &raw mut (*sle).ranges,
                         0 as ::core::ffi::c_int,
                     );
-                    free((*sle).expanded as *mut ::core::ffi::c_void);
-                    (*sle).expanded = expanded;
+                    let owned = CStr::from_ptr(expanded).to_owned();
+                    free(expanded.cast());
+                    server_client_set_status_expanded(c, i as usize, Some(owned));
                 }
             }
             i = i.wrapping_add(1);

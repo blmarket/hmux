@@ -127,6 +127,7 @@ pub use crate::src::shared::client::{
 // user borrows the cached passwd name until the final client free.
 // name borrows the identify result through final client destruction.
 // exit_message borrows the latest exit reason until client loss.
+// status entries borrow their expanded strings until redraw or client loss.
 // term_caps borrows term_cap_ptrs, whose entries borrow term_cap_strings.
 // Both views are refreshed after every identify capability and cleared after
 // tty_free, before the client owner is eventually dropped.
@@ -145,6 +146,7 @@ struct ClientOwner {
     user: Option<CString>,
     name: Option<CString>,
     exit_message: Option<CString>,
+    status_expanded: [Option<CString>; 5],
     saved_status_screen: Option<Box<screen>>,
     term_cap_strings: Vec<CString>,
     term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
@@ -160,6 +162,20 @@ pub(crate) unsafe fn server_client_set_message(c: *mut client, message: Option<C
     (*owner).message = message;
     if let Some(message) = (*owner).message.as_ref() {
         (*c).message_string = message.as_ptr().cast_mut();
+    }
+}
+
+pub(crate) unsafe fn server_client_set_status_expanded(
+    c: *mut client,
+    index: usize,
+    expanded: Option<CString>,
+) {
+    let owner = c.cast::<ClientOwner>();
+    assert!(index < (*owner).status_expanded.len());
+    (*c).status.entries[index].expanded = ::core::ptr::null_mut();
+    (*owner).status_expanded[index] = expanded;
+    if let Some(expanded) = (*owner).status_expanded[index].as_ref() {
+        (*c).status.entries[index].expanded = expanded.as_ptr().cast_mut();
     }
 }
 
@@ -334,6 +350,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -376,6 +393,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -414,6 +432,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -453,6 +472,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -491,6 +511,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -529,6 +550,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -567,6 +589,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -608,6 +631,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -652,6 +676,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -690,6 +715,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -728,6 +754,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -766,6 +793,7 @@ mod client_message_owner_tests {
                 user: None,
                 name: None,
                 exit_message: None,
+                status_expanded: std::array::from_fn(|_| None),
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -1174,6 +1202,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         user: None,
         name: None,
         exit_message: None,
+        status_expanded: std::array::from_fn(|_| None),
         saved_status_screen: None,
         term_cap_strings: Vec::new(),
         term_cap_ptrs: Vec::new(),

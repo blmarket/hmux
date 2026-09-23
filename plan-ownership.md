@@ -125,16 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `status_line.entries[i].expanded` is the next bounded live owner. Its sole
-   persistent writer is `status_redraw`: an unchanged expansion is freed
-   immediately, while a changed expansion replaces a stored raw pointer.
-   `status_free` has the final free. The containing `client` already has an
-   offset-zero `ClientOwner`, which can hold five optional `CString` values
-   and lend the public entry pointers. Preserve comparison and `format_draw`
-   ordering before replacement, and clear owners during `status_free` rather
-   than only at final client destruction. ClientOwner test fixtures need the
-   added field. A CLI redraw check should cover unchanged then changed status
-   text and client teardown against the pinned baseline.
+1. CSI colon parameter strings in `InputCtxOwner` are the next bounded live
+   owner. `input_split` has the sole `xstrdup` producer and frees strings from
+   the previous list; `input_free` has the final free. The existing boxed
+   context can own 24 optional `CString` values and lend pointers into the
+   public parameter union. Clear owners on the next split and at final drop,
+   preserving partially parsed lists on numeric parse failure. Colon SGR
+   handling reads the original string through a private mutable copy. A live
+   pane can exercise repeated colon SGR sequences against the pinned baseline.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -832,6 +830,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   passed. Event payload format, hook monitor string, client command payload,
   and server exit payload CLI checks passed against pinned 3.8-rc.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 398 — owned client status expansions (2026-09-23)
+
+- `ClientOwner` now holds five optional `CString` expansions for its public
+  `status_line.entries`. `status_redraw` keeps the C-produced string alive
+  through comparison and drawing, then copies a changed result into the owner
+  and frees the C allocation. A helper invalidates the legacy pointer before
+  replacement. `status_free` clears each owner at the old final free point,
+  before the client owner is eventually dropped. The unchanged expansion
+  remains a short-lived C allocation and is freed immediately.
+- Serialized workspace tests and binary build passed. A new PTY CLI comparison
+  passed against pinned 3.8-rc: it waits through unchanged status timer ticks,
+  changes the expanded option twice, observes both redraws, then detaches the
+  client. Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
