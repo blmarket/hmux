@@ -631,9 +631,8 @@ pub unsafe extern "C" fn format_grid_word(
         link: 0,
     };
     let mut ws: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
+    let mut ud: Vec<utf8_data> = Vec::new();
     let mut end: u_int = 0;
-    let mut size: size_t = 0 as size_t;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ws = options_get_string(
@@ -690,23 +689,16 @@ pub unsafe extern "C" fn format_grid_word(
         if format_is_word_separator(ws, &raw mut gc) != 0 {
             break;
         }
-        ud = xreallocarray(
-            ud as *mut ::core::ffi::c_void,
-            size.wrapping_add(2 as size_t),
-            ::core::mem::size_of::<utf8_data>() as size_t,
-        ) as *mut utf8_data;
-        let fresh7 = size;
-        size = size.wrapping_add(1);
-        memcpy(
-            ud.offset(fresh7 as isize) as *mut utf8_data as *mut ::core::ffi::c_void,
-            &raw mut gc.data as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<utf8_data>() as size_t,
-        );
+        ud.push(gc.data);
     }
-    if size != 0 as size_t {
-        (*ud.offset(size as isize)).size = 0 as u_char;
-        s = utf8_tocstr(ud);
-        free(ud as *mut ::core::ffi::c_void);
+    if !ud.is_empty() {
+        ud.push(utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        });
+        s = utf8_tocstr(ud.as_mut_ptr());
     }
     return s;
 }

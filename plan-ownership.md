@@ -1665,6 +1665,18 @@ legacy callers safe.
   than `src/format.rs`, and `git diff --check`. No sanitizer run was
   performed.
 
+### Increment 91 — format grid-word cell scratch (2026-09-22)
+
+- `format_grid_word` now collects copied `utf8_data` cells in a local Vec,
+  appends the same size-zero terminator, and drops the Vec after `utf8_tocstr`
+  makes the caller-owned C string. This removes its per-cell `xreallocarray`,
+  manual count, `memcpy`, and matching free. An empty word still returns null;
+  separator and padding traversal are unchanged.
+- A focused test covers two words, a wide cell with padding, empty output, and
+  returned-string lifetime after grid and option teardown. The focused grid
+  tests, binary build, changed-file rustfmt, and `git diff --check` passed in
+  the isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1684,9 +1696,7 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `format_grid_word` has the next similar local growable UTF-8 cell array.
-   Inspect it as the next small owner.
-   `cmd_save_buffer_exec`'s `file_write` call copies its path
+2. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
@@ -1700,9 +1710,9 @@ non-string value.
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–90. The remaining
+Current validation is recorded in increments 15–91. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–90 has its own local commit; none was pushed.
+Each of increments 15–91 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
