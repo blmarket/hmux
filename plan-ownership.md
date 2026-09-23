@@ -125,11 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `session.name` has a bounded `SessionOwner` target. Its writers are
-   explicit and generated creation plus `rename-session`; `session_free` has
-   the final free. Preserve bytewise generated prefixes, collision checks,
-   and remove-before-replace map order. Check synchronous rename hooks and
-   delayed final drop before changing the public borrowed name pointer.
+1. `job.cmd` is the next bounded live owner. `job_run` has two initial
+   writers (`xstrdup(cmd)` and `cmd_stringify_argv`); `job_transfer` and
+   `job_free` manually release the value before freeing the job record.
+   An offset-zero `JobOwner` can hold an optional `CString` and lend its
+   pointer to the public job. Use `cmd_stringify_argv_cstring` directly,
+   preserve null when no command is supplied, and keep the owner alive
+   through free callbacks. The run-shell and if-shell CLI comparisons cover
+   the main job paths; `job_transfer` has no in-tree caller.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -662,6 +665,24 @@ libc allocation on success and leaves it with the caller on error, so a local
 - Serialized workspace tests, binary build, and the pane-cwd CLI comparison
   passed. A focused session-cwd CLI comparison covers initial and attached
   cwd, session path formatting, and subsequent window creation. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 388 — owned session name (2026-09-23)
+
+- `SessionOwner` now holds `session.name` as a byte-preserving `CString`;
+  the public pointer borrows it through delayed final session release.
+  Explicit creation copies the incoming name directly. Generated creation
+  builds the optional raw-byte prefix, hyphen, and decimal ID in Rust while
+  retaining the collision loop. `rename-session` copies the C-owned
+  `clean_name` result and frees that producer allocation, then removes the
+  old map key before replacing the owner and inserting the new key. Rename
+  event payload strings are copied before the replacement. Removed the
+  creation `xstrdup`, generated-name `xasprintf`/free cycle, rename free,
+  and final name free.
+- Serialized workspace tests, binary build, generated-prefix, session, and
+  sorted-session CLI comparisons passed. A focused name CLI comparison
+  covers explicit and generated names, rename hooks, duplicate/invalid
+  names, map lookup, sorted listing, and kill/recreate. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index

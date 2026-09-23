@@ -11,7 +11,7 @@ use crate::src::ffi::libc::{free, strcmp};
 use crate::src::format::format_single_from_target;
 use crate::src::server_fn::server_status_session;
 pub use crate::src::session::sessions;
-use crate::src::session::{session_find, sessions_insert, sessions_remove};
+use crate::src::session::{session_find, session_replace_name, sessions_insert, sessions_remove};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -72,6 +72,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::{check_name, clean_name};
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -168,9 +169,10 @@ unsafe extern "C" fn cmd_rename_session_exec(
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         newname,
     );
+    let owned_name = CStr::from_ptr(newname).to_owned();
+    free(newname.cast());
     sessions_remove(&raw mut sessions, s);
-    free((*s).name as *mut ::core::ffi::c_void);
-    (*s).name = newname;
+    drop(session_replace_name(s, owned_name));
     sessions_insert(&raw mut sessions, s);
     server_status_session(s);
     events_fire(

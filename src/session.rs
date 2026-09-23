@@ -91,7 +91,7 @@ use crate::src::window::{
     winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push, winlink_stack_remove,
     winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
+use crate::src::xmalloc::{xasprintf, xcalloc};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -105,12 +105,13 @@ pub static mut next_session_id: u_int = 0;
 pub static mut session_groups: session_groups = session_groups { storage: None };
 
 /// The node stays at offset zero so existing session pointers retain their
-/// layout. Its `tio` and `cwd` pointers borrow boxed owner values.
+/// layout. Its `tio`, `cwd`, and `name` pointers borrow boxed owner values.
 #[repr(C)]
 struct SessionOwner {
     node: session,
     tio: Option<Box<termios>>,
     cwd: Option<CString>,
+    name: CString,
 }
 const _: () = assert!(::core::mem::offset_of!(SessionOwner, node) == 0);
 
@@ -132,6 +133,14 @@ pub(crate) unsafe fn session_set_cwd_from_c_owned(
     let cwd = CStr::from_ptr(raw_cwd).to_owned();
     free(raw_cwd.cast());
     session_set_cwd(s, Some(cwd));
+}
+
+/// Replace the borrowed public name after callers remove the old map key.
+pub(crate) unsafe fn session_replace_name(s: *mut session, name: CString) -> CString {
+    let owner = s.cast::<SessionOwner>();
+    let previous = std::mem::replace(&mut (*owner).name, name);
+    (*s).name = (*owner).name.as_ptr() as *mut _;
+    previous
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_cmp(
@@ -514,6 +523,7 @@ pub unsafe extern "C" fn session_create(
             Some(Box::new(*tio))
         },
         cwd: Some(CStr::from_ptr(cwd).to_owned()),
+        name: CString::new("").expect("empty session name has no NUL"),
     });
     owner.node.tio = owner
         .tio
@@ -530,7 +540,7 @@ pub unsafe extern "C" fn session_create(
     (*s).options = oo;
     status_update_cache(s);
     if !name.is_null() {
-        (*s).name = xstrdup(name);
+        drop(session_replace_name(s, CStr::from_ptr(name).to_owned()));
         let fresh0 = next_session_id;
         next_session_id = next_session_id.wrapping_add(1);
         (*s).id = fresh0;
@@ -539,21 +549,18 @@ pub unsafe extern "C" fn session_create(
             let fresh1 = next_session_id;
             next_session_id = next_session_id.wrapping_add(1);
             (*s).id = fresh1;
-            free((*s).name as *mut ::core::ffi::c_void);
-            if !prefix.is_null() {
-                xasprintf(
-                    &raw mut (*s).name,
-                    b"%s-%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    prefix,
-                    (*s).id,
-                );
+            let mut generated = if prefix.is_null() {
+                Vec::new()
             } else {
-                xasprintf(
-                    &raw mut (*s).name,
-                    b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*s).id,
-                );
-            }
+                let mut bytes = CStr::from_ptr(prefix).to_bytes().to_vec();
+                bytes.push(b'-');
+                bytes
+            };
+            generated.extend_from_slice((*s).id.to_string().as_bytes());
+            drop(session_replace_name(
+                s,
+                CString::new(generated).expect("generated name has no NUL"),
+            ));
             if sessions_find(&raw mut sessions, s).is_null() {
                 break;
             }
@@ -630,7 +637,6 @@ unsafe extern "C" fn session_free(
         environ_free((*s).environ);
         options_free((*s).options);
         crate::src::window::winlink_stack_clear(&raw mut (*s).lastw);
-        free((*s).name as *mut ::core::ffi::c_void);
         drop(Box::from_raw(s.cast::<SessionOwner>()));
     }
 }
