@@ -1415,6 +1415,19 @@ legacy callers safe.
   argv-stringification, and config-path CLI checks matched the pinned
   baseline. No sanitizer was run.
 
+### Increment 226 — format expansion output owner (2026-09-23)
+
+- `format_expand1` and its private `format_replace` helper now assemble all
+  literal, style, modifier, and nested expansion output in one `Vec<u8>`.
+  The exported result still makes one NUL-terminated C allocation for callers
+  that free it with libc. This removes the raw capacity, offset, and
+  `xreallocarray` growth from the complete output path.
+- Workspace tests, library/binary build, changed-file rustfmt, and diff checks
+  passed. `scripts/format_expand_output_owner_cli_checks.py` matched the pinned
+  baseline for long literals, nested and quoted expressions, style, non-UTF-8
+  bytes, and a trailing `#`; format job and loop CLI checks also passed. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1425,13 +1438,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_expand1` still grows its result with `xmalloc` and
-   `xreallocarray` across literal, modifier, and nested expansion paths.
-   Audit whether a private byte owner can cover the complete expansion and
-   retain one C-owned copy only at its exported return boundary. This is
-   broader than the local scratch migrations above. The command-list cache
-   in `args_value_as_string` is retained in its C-layout record and needs a
-   record-owner migration.
+1. The command-list cache in `args_value_as_string` is retained in its
+   C-layout record and needs a record-owner migration.
    `file_get_path` remains deferred:
    `client_file.path` is a
    public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw

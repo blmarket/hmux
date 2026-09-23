@@ -2562,13 +2562,11 @@ pub(super) unsafe extern "C" fn format_cycle(
         end.offset_from(start) as ::core::ffi::c_long as size_t,
     );
 }
-pub(super) unsafe extern "C" fn format_replace(
+pub(super) unsafe fn format_replace(
     mut es: *mut format_expand_state,
     mut key: *const ::core::ffi::c_char,
     mut keylen: size_t,
-    mut buf: *mut *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
-    mut off: *mut size_t,
+    output: &mut Vec<u8>,
 ) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
@@ -3609,17 +3607,7 @@ pub(super) unsafe extern "C" fn format_replace(
         );
     }
     valuelen = strlen(value);
-    while (*len).wrapping_sub(*off) < valuelen.wrapping_add(1 as size_t) {
-        *buf = xreallocarray(*buf as *mut ::core::ffi::c_void, 2 as size_t, *len)
-            as *mut ::core::ffi::c_char;
-        *len = (*len).wrapping_mul(2 as size_t);
-    }
-    memcpy(
-        (*buf).offset(*off as isize) as *mut ::core::ffi::c_void,
-        value as *const ::core::ffi::c_void,
-        valuelen,
-    );
-    *off = (*off).wrapping_add(valuelen);
+    output.extend_from_slice(std::slice::from_raw_parts(value.cast::<u8>(), valuelen));
     format_log1(
         es,
         b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3638,13 +3626,10 @@ pub(super) unsafe extern "C" fn format_expand1(
     mut fmt: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
     let mut ft: *mut format_tree = (*es).ft;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut style_end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut off: size_t = 0;
-    let mut len: size_t = 0;
     let mut n: size_t = 0;
     let mut outlen: size_t = 0;
     let mut ch: ::core::ffi::c_int = 0;
@@ -3703,21 +3688,12 @@ pub(super) unsafe extern "C" fn format_expand1(
         }
         fmt = &raw mut expanded as *mut ::core::ffi::c_char;
     }
-    len = 64 as size_t;
-    buf = xmalloc(len) as *mut ::core::ffi::c_char;
-    off = 0 as size_t;
+    let mut output = Vec::<u8>::with_capacity(64);
     while *fmt as ::core::ffi::c_int != '\0' as i32 {
         if *fmt as ::core::ffi::c_int != '#' as i32 {
-            while len.wrapping_sub(off) < 2 as size_t {
-                buf = xreallocarray(buf as *mut ::core::ffi::c_void, 2 as size_t, len)
-                    as *mut ::core::ffi::c_char;
-                len = len.wrapping_mul(2 as size_t);
-            }
             let fresh10 = fmt;
             fmt = fmt.offset(1);
-            let fresh11 = off;
-            off = off.wrapping_add(1);
-            *buf.offset(fresh11 as isize) = *fresh10;
+            output.push(*fresh10 as u8);
         } else {
             fmt = fmt.offset(1);
             if *fmt as ::core::ffi::c_int == '\0' as i32 {
@@ -3774,17 +3750,7 @@ pub(super) unsafe extern "C" fn format_expand1(
                         );
                     }
                     outlen = strlen(out);
-                    while len.wrapping_sub(off) < outlen.wrapping_add(1 as size_t) {
-                        buf = xreallocarray(buf as *mut ::core::ffi::c_void, 2 as size_t, len)
-                            as *mut ::core::ffi::c_char;
-                        len = len.wrapping_mul(2 as size_t);
-                    }
-                    memcpy(
-                        buf.offset(off as isize) as *mut ::core::ffi::c_void,
-                        out as *const ::core::ffi::c_void,
-                        outlen,
-                    );
-                    off = off.wrapping_add(outlen);
+                    output.extend_from_slice(std::slice::from_raw_parts(out.cast::<u8>(), outlen));
                     free(out as *mut ::core::ffi::c_void);
                     fmt = fmt.offset(n.wrapping_add(1 as size_t) as isize);
                     continue;
@@ -3807,9 +3773,7 @@ pub(super) unsafe extern "C" fn format_expand1(
                         n as ::core::ffi::c_int,
                         fmt,
                     );
-                    if format_replace(es, fmt, n, &raw mut buf, &raw mut len, &raw mut off)
-                        != 0 as ::core::ffi::c_int
-                    {
+                    if format_replace(es, fmt, n, &mut output) != 0 as ::core::ffi::c_int {
                         break;
                     }
                     fmt = fmt.offset(n.wrapping_add(1 as size_t) as isize);
@@ -3835,18 +3799,10 @@ pub(super) unsafe extern "C" fn format_expand1(
                             b"found #*%zu[\0" as *const u8 as *const ::core::ffi::c_char,
                             n,
                         );
-                        while len.wrapping_sub(off) < n.wrapping_add(2 as size_t) {
-                            buf = xreallocarray(buf as *mut ::core::ffi::c_void, 2 as size_t, len)
-                                as *mut ::core::ffi::c_char;
-                            len = len.wrapping_mul(2 as size_t);
-                        }
-                        memcpy(
-                            buf.offset(off as isize) as *mut ::core::ffi::c_void,
-                            fmt.offset(-(2 as ::core::ffi::c_int as isize))
-                                as *const ::core::ffi::c_void,
+                        output.extend_from_slice(std::slice::from_raw_parts(
+                            fmt.offset(-(2 as ::core::ffi::c_int as isize)).cast::<u8>(),
                             n.wrapping_add(1 as size_t),
-                        );
-                        off = off.wrapping_add(n.wrapping_add(1 as size_t));
+                        ));
                         fmt = ptr.offset(1 as ::core::ffi::c_int as isize);
                         continue;
                     }
@@ -3862,17 +3818,8 @@ pub(super) unsafe extern "C" fn format_expand1(
                         }
                     }
                     if s.is_null() {
-                        while len.wrapping_sub(off) < 3 as size_t {
-                            buf = xreallocarray(buf as *mut ::core::ffi::c_void, 2 as size_t, len)
-                                as *mut ::core::ffi::c_char;
-                            len = len.wrapping_mul(2 as size_t);
-                        }
-                        let fresh14 = off;
-                        off = off.wrapping_add(1);
-                        *buf.offset(fresh14 as isize) = '#' as i32 as ::core::ffi::c_char;
-                        let fresh15 = off;
-                        off = off.wrapping_add(1);
-                        *buf.offset(fresh15 as isize) = ch as ::core::ffi::c_char;
+                        output.push(b'#');
+                        output.push(ch as u8);
                         continue;
                     } else {
                         n = strlen(s);
@@ -3883,9 +3830,7 @@ pub(super) unsafe extern "C" fn format_expand1(
                             ch,
                             s,
                         );
-                        if format_replace(es, s, n, &raw mut buf, &raw mut len, &raw mut off)
-                            != 0 as ::core::ffi::c_int
-                        {
+                        if format_replace(es, s, n, &mut output) != 0 as ::core::ffi::c_int {
                             break;
                         } else {
                             continue;
@@ -3899,17 +3844,14 @@ pub(super) unsafe extern "C" fn format_expand1(
                 b"found #%c\0" as *const u8 as *const ::core::ffi::c_char,
                 ch,
             );
-            while len.wrapping_sub(off) < 2 as size_t {
-                buf = xreallocarray(buf as *mut ::core::ffi::c_void, 2 as size_t, len)
-                    as *mut ::core::ffi::c_char;
-                len = len.wrapping_mul(2 as size_t);
-            }
-            let fresh13 = off;
-            off = off.wrapping_add(1);
-            *buf.offset(fresh13 as isize) = ch as ::core::ffi::c_char;
+            output.push(ch as u8);
         }
     }
-    *buf.offset(off as isize) = '\0' as i32 as ::core::ffi::c_char;
+    // Callers of format_expand1 free its result with libc::free. Only the
+    // final handoff needs a C allocation; expansion itself owns its bytes.
+    let buf = xmalloc(output.len() + 1) as *mut ::core::ffi::c_char;
+    std::ptr::copy_nonoverlapping(output.as_ptr(), buf.cast::<u8>(), output.len());
+    *buf.add(output.len()) = 0;
     format_log1(
         es,
         b"format_expand1\0" as *const u8 as *const ::core::ffi::c_char,
