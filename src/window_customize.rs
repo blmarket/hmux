@@ -4100,19 +4100,19 @@ unsafe extern "C" fn window_customize_set_array_key(
 ) {
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if item.is_null()
         || (*item).array_key.is_null()
         || window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
     {
         return;
     }
-    xasprintf(
-        &raw mut prompt,
-        b"(%s[%s]) \0" as *const u8 as *const ::core::ffi::c_char,
-        (*item).name,
-        (*item).array_key,
-    );
+    let mut prompt_bytes = Vec::new();
+    prompt_bytes.extend_from_slice(b"(");
+    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).name).to_bytes());
+    prompt_bytes.extend_from_slice(b"[");
+    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).array_key).to_bytes());
+    prompt_bytes.extend_from_slice(b"]) ");
+    let prompt = CString::new(prompt_bytes).expect("array-key prompt contains no NUL");
     new_item = window_customize_new_item();
     (*new_item).data = data as *mut window_customize_modedata;
     (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
@@ -4125,7 +4125,7 @@ unsafe extern "C" fn window_customize_set_array_key(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        prompt,
+        prompt.as_ptr(),
         (*item).array_key,
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
@@ -4144,7 +4144,6 @@ unsafe extern "C" fn window_customize_set_array_key(
         ),
         new_item as *mut ::core::ffi::c_void,
     );
-    free(prompt as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_customize_unset_environment(
     mut data: *mut window_customize_modedata,

@@ -865,6 +865,19 @@ legacy callers safe.
   customize-mode CLI check displayed both prompts and matched the pinned
   baseline binary. No sanitizer was run.
 
+### Increment 188 — customize array-key prompt scratch (2026-09-22)
+
+- `window_customize_set_array_key` now owns its name/key prompt with a
+  byte-preserving local `CString` through `mode_tree_set_prompt`. Removed
+  the `xasprintf` allocation and matching `free`; `prompt_create` copies
+  the text synchronously. The array-key input and callback ownership are
+  unchanged.
+- In the isolated branch, library/binary build, five focused
+  `options_storage` tests, changed-file rustfmt, and `git diff --check`
+  passed. The new attached-client CLI check displayed the `status-format[7]`
+  prompt, renamed its key to 8, and matched the pinned baseline output.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -877,9 +890,8 @@ non-string value.
 
 1. Customize-mode prompt labels still have local `xasprintf`/free pairs
    around `mode_tree_set_prompt`. The option-change prompt's scalar and
-   array branches, and the array-key prompt, are the next local owner
-   candidates. Reset/unset prompts follow after their branch-specific bytes
-   are audited.
+   array branches are the next local owner candidate. Reset/unset prompts
+   follow after their branch-specific bytes are audited.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
