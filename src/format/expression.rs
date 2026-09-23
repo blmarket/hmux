@@ -487,22 +487,18 @@ pub(super) unsafe extern "C" fn format_check_time(
     );
     return 0 as ::core::ffi::c_int;
 }
-pub(super) unsafe extern "C" fn format_unescape(
-    mut es: *mut format_expand_state,
+unsafe fn format_unescape_cstring(
+    es: *mut format_expand_state,
     mut s: *const ::core::ffi::c_char,
-    mut n: size_t,
-) -> *mut ::core::ffi::c_char {
-    let mut end: *const ::core::ffi::c_char = s.offset(n as isize);
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    n: size_t,
+) -> CString {
+    let end = s.add(n);
+    let mut out = Vec::with_capacity(n);
     let mut brackets: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut check: u_int = 0 as u_int;
-    out = xmalloc(n.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
-    cp = out;
     while s != end {
         if format_check_time(es, &raw mut check) == 0 {
-            free(out as *mut ::core::ffi::c_void);
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+            return CString::default();
         }
         if *s as ::core::ffi::c_int == '#' as i32
             && s.offset(1 as ::core::ffi::c_int as isize) != end
@@ -520,21 +516,28 @@ pub(super) unsafe extern "C" fn format_unescape(
             .is_null()
         {
             s = s.offset(1);
-            let fresh22 = cp;
-            cp = cp.offset(1);
-            *fresh22 = *s;
+            out.push(*s as u8);
         } else {
             if *s as ::core::ffi::c_int == '}' as i32 {
                 brackets -= 1;
             }
-            let fresh23 = cp;
-            cp = cp.offset(1);
-            *fresh23 = *s;
+            out.push(*s as u8);
         }
         s = s.offset(1);
     }
-    *cp = '\0' as i32 as ::core::ffi::c_char;
-    return out;
+    // C callers observe only the bytes before the first NUL, even if a
+    // counted input contains one in the middle.
+    if let Some(first_nul) = out.iter().position(|&byte| byte == 0) {
+        out.truncate(first_nul);
+    }
+    CString::new(out).expect("unescaped C-string view has no NUL")
+}
+pub(super) unsafe extern "C" fn format_unescape(
+    es: *mut format_expand_state,
+    s: *const ::core::ffi::c_char,
+    n: size_t,
+) -> *mut ::core::ffi::c_char {
+    xstrdup(format_unescape_cstring(es, s, n).as_ptr())
 }
 pub(super) unsafe extern "C" fn format_strip(
     mut es: *mut format_expand_state,
@@ -721,7 +724,6 @@ pub(super) unsafe fn format_build_modifiers(
     let mut last: [::core::ffi::c_char; 4] =
         ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"X;:\0");
     let mut argv: Vec<CString> = Vec::new();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     while *cp as ::core::ffi::c_int != '\0' as i32 && *cp as ::core::ffi::c_int != ':' as i32 {
         if *cp as ::core::ffi::c_int == ';' as i32 {
             cp = cp.offset(1);
@@ -808,14 +810,13 @@ pub(super) unsafe fn format_build_modifiers(
                     if end.is_null() {
                         break;
                     }
-                    value = format_unescape(
+                    let value = format_unescape_cstring(
                         es,
                         cp.offset(1 as ::core::ffi::c_int as isize),
                         end.offset_from(cp.offset(1 as ::core::ffi::c_int as isize))
                             as ::core::ffi::c_long as size_t,
                     );
-                    argv.push(format_expand_modifier_arg(es, value));
-                    free(value as *mut ::core::ffi::c_void);
+                    argv.push(format_expand_modifier_arg(es, value.as_ptr()));
                     format_add_modifier(&mut list, &raw mut c, 1 as size_t, argv);
                     cp = end;
                 } else {
@@ -839,13 +840,12 @@ pub(super) unsafe fn format_build_modifiers(
                                 break;
                             }
                             cp = cp.offset(1);
-                            value = format_unescape(
+                            let value = format_unescape_cstring(
                                 es,
                                 cp,
                                 end.offset_from(cp) as ::core::ffi::c_long as size_t,
                             );
-                            argv.push(format_expand_modifier_arg(es, value));
-                            free(value as *mut ::core::ffi::c_void);
+                            argv.push(format_expand_modifier_arg(es, value.as_ptr()));
                             cp = end;
                             if !(format_is_end(*cp.offset(0 as ::core::ffi::c_int as isize)) == 0) {
                                 break;

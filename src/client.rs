@@ -545,8 +545,7 @@ pub unsafe extern "C" fn client_main(
             return 1 as ::core::ffi::c_int;
         }
         const _: () = assert!(
-            ::core::mem::size_of::<msg_command>()
-                == ::core::mem::size_of::<::core::ffi::c_int>()
+            ::core::mem::size_of::<msg_command>() == ::core::mem::size_of::<::core::ffi::c_int>()
         );
         let header_size = ::core::mem::size_of::<msg_command>();
         let mut data = vec![0u8; header_size + size];

@@ -1349,6 +1349,26 @@ legacy callers safe.
   the pinned baseline for normal, non-UTF-8, zero-argument, large successful,
   failed-send, and too-long command paths. No sanitizer was run.
 
+### Increment 222 — format modifier unescape scratch owner (2026-09-23)
+
+- Private `format_unescape_cstring` now builds escaped modifier argument bytes
+  in a `Vec<u8>` and returns a `CString`. Both modifier-parser call sites
+  borrow that owner through `format_expand_modifier_arg`, removing their
+  C-owned result frees and the producer's raw allocation and pointer writes.
+  `format_unescape` keeps a C-owned duplicate for literal format output.
+  The owned result preserves high bytes, first-NUL C-string viewing, and the
+  empty result on a format time limit.
+- Workspace tests, library/binary build, changed-file rustfmt, Python syntax,
+  and diff checks passed in the isolated worktree. The new
+  `scripts/format_unescape_owner_cli_checks.py` matched the pinned baseline
+  for escaped commas, chained modifiers, non-UTF-8 bytes, and literal output.
+  No sanitizer was run.
+- Combined validation after increments 220–222: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt,
+  Python AST checks, and commit diff checks passed. The exit-payload,
+  client-command-packet, and modifier-unescape CLI checks matched the pinned
+  baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1359,12 +1379,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_unescape` still allocates a raw scratch string and returns a
-   C-owned pointer. Its modifier parser callers expand then free the result
-   synchronously, while literal format output keeps a C-owned return. Audit
-   a private owned producer and wrapper with exact escape and timeout
-   behavior. The command-list cache in `args_value_as_string` is retained in
-   its C-layout record and needs a record-owner migration.
+1. `format_strip` still allocates raw scratch bytes for a stripped time
+   format. Its only caller stores and frees `time_format` within
+   `format_replace`; audit a private owned producer and the branch that
+   replaces an earlier time format. The command-list cache in
+   `args_value_as_string` is retained in its C-layout record and needs a
+   record-owner migration.
    `file_get_path` remains deferred:
    `client_file.path` is a
    public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
@@ -1399,9 +1419,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–221. The remaining
+Current validation is recorded in increments 15–222. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–221 has its own local commit; none was pushed.
+Each of increments 15–222 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
