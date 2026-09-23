@@ -10,22 +10,22 @@ use std::ffi::{CStr, CString, NulError};
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-/// Owns one C-allocated environment with Rust-owned ordered entries.
+/// Owns one boxed environment with Rust-owned ordered entries.
 ///
 /// The ABI-visible [`environ`] and [`environ_entry`] records intentionally stay
 /// `Copy` because they are passed through the
 /// translated interface. This wrapper is the owner for a tree returned by
 /// `environ_create` (or another function with the same allocation contract).
-/// It is deliberately not `Copy` or `Clone`; dropping it releases the tree with
-/// the matching deallocators for the C outer record and Rust entries.
+/// It is deliberately not `Copy` or `Clone`; dropping it releases the entry
+/// storage before the outer record.
 pub struct EnvironOwner {
     raw: NonNull<environ>,
 }
 
 impl EnvironOwner {
-    /// Allocate an empty environment using the existing C allocator.
+    /// Allocate an empty environment.
     pub fn new() -> Self {
-        // `xcalloc` aborts on allocation failure, so a successful return is a
+        // Box allocation aborts on failure, so a successful return is a
         // non-null owned tree just like the legacy C call site expects.
         unsafe { Self::from_raw(environ_create()) }
     }
@@ -35,7 +35,7 @@ impl EnvironOwner {
     /// # Safety
     ///
     /// `raw` must be a non-null pointer returned by `environ_create` or an
-    /// equivalent allocation path, and no other owner may free it.
+    /// equivalent boxed allocation path, and no other owner may free it.
     pub unsafe fn from_raw(raw: *mut environ) -> Self {
         Self {
             raw: NonNull::new(raw).expect("owned environment pointer must not be null"),
@@ -367,10 +367,11 @@ unsafe fn environ_insert(
 
 #[no_mangle]
 pub unsafe extern "C" fn environ_create() -> *mut environ {
-    let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
-    env = xcalloc(1 as size_t, ::core::mem::size_of::<environ>() as size_t) as *mut environ;
-    (*env).entries = Box::into_raw(Box::new(environ_storage::default()));
-    return env;
+    let mut env = Box::new(environ {
+        entries: ::core::ptr::null_mut(),
+    });
+    env.entries = Box::into_raw(Box::new(environ_storage::default()));
+    Box::into_raw(env)
 }
 #[no_mangle]
 pub unsafe extern "C" fn environ_free(mut env: *mut environ) {
@@ -378,7 +379,7 @@ pub unsafe extern "C" fn environ_free(mut env: *mut environ) {
         return;
     }
     drop(Box::from_raw((*env).entries));
-    free(env as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(env));
 }
 #[no_mangle]
 pub unsafe extern "C" fn environ_first(mut env: *mut environ) -> *mut environ_entry {

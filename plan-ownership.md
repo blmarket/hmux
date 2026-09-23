@@ -2398,6 +2398,21 @@ legacy callers safe.
   `src/hooks.rs` retains exactly its pre-existing rustfmt import-order
   differences. No sanitizer was run.
 
+### Increment 295 — boxed outer environment record (2026-09-23)
+
+- `environ_create` now boxes the stable outer `environ` record, removing its
+  `xcalloc`; `environ_free` drops the already boxed entry storage before
+  consuming the outer `Box`, removing the matching libc `free`. `EnvironOwner`
+  documentation now describes the boxed allocation contract. Its raw pointer,
+  `environ_entry.owner` back-pointers, and exported create/free signatures are
+  retained. Repository global, session, client, and command paths transfer or
+  release the record through `environ_free`.
+- `cargo test --test environment`, `RUST_TEST_THREADS=1 cargo test --workspace
+  --quiet`, binary build, and diff checks passed. Attached customize-mode
+  environment rows and spawn environment log bytes matched the pinned baseline.
+  `src/environ.rs` retains exactly its pre-existing rustfmt import-order
+  difference. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
