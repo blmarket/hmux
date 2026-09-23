@@ -19,7 +19,7 @@ use crate::src::format::{
 use crate::src::grid::grid_default_cell;
 use crate::src::hooks::{
     hooks_add_event, hooks_is_event, hooks_monitor_get_fire_count, hooks_monitor_get_fire_time,
-    hooks_monitor_to_string,
+    hooks_monitor_to_cstring,
 };
 use crate::src::key_bindings::{
     key_bindings_add, key_bindings_first, key_bindings_first_table, key_bindings_get,
@@ -1227,15 +1227,13 @@ unsafe extern "C" fn window_customize_build_option(
         );
     }
     if is_monitor != 0 {
-        value = hooks_monitor_to_string(o);
-        if !value.is_null() {
+        if let Some(monitor) = hooks_monitor_to_cstring(o) {
             format_add(
                 ft,
                 b"option_monitor\0" as *const u8 as *const ::core::ffi::c_char,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                value,
+                monitor.as_ptr(),
             );
-            free(value as *mut ::core::ffi::c_void);
         } else {
             format_add(
                 ft,
@@ -2046,7 +2044,6 @@ unsafe extern "C" fn window_customize_draw_option(
     let mut unit: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut monitor: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut label: [::core::ffi::c_char; 64] = [0; 64];
     let mut default_value: *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -2205,8 +2202,7 @@ unsafe extern "C" fn window_customize_draw_option(
             match current_block {
                 4086289836260337793 => {}
                 _ => {
-                    monitor = hooks_monitor_to_string(o);
-                    if !monitor.is_null() {
+                    if let Some(monitor) = hooks_monitor_to_cstring(o) {
                         if window_customize_write_value(
                             ctx,
                             cx,
@@ -2215,13 +2211,11 @@ unsafe extern "C" fn window_customize_draw_option(
                             0 as ::core::ffi::c_int,
                             b"Monitor: \0" as *const u8 as *const ::core::ffi::c_char,
                             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                            monitor,
+                            monitor.as_ptr(),
                         ) == 0
                         {
-                            free(monitor as *mut ::core::ffi::c_void);
                             current_block = 4086289836260337793;
                         } else {
-                            free(monitor as *mut ::core::ffi::c_void);
                             current_block = 13460095289871124136;
                         }
                     } else {

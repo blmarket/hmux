@@ -8,7 +8,7 @@ use crate::src::format::{
 };
 use crate::src::hooks::{
     hooks_is_event, hooks_monitor_get, hooks_monitor_get_fire_count, hooks_monitor_get_fire_time,
-    hooks_monitor_to_string,
+    hooks_monitor_to_cstring,
 };
 pub use crate::src::options::options_table_entry;
 use crate::src::options::{
@@ -505,7 +505,6 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
     let mut type_0: monitor_type = MONITOR_SESSION;
     let mut template: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tv: timeval = timeval {
         tv_sec: 0 as __time_t,
@@ -514,12 +513,10 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
     let mut fire_count: u_int = 0;
     let mut fire_time: time_t = 0;
     let mut id: ::core::ffi::c_int = 0;
-    value = hooks_monitor_to_string(o);
-    if value.is_null() {
+    let Some(value) = hooks_monitor_to_cstring(o) else {
         return;
-    }
+    };
     if hooks_monitor_get(o, &raw mut type_0, &raw mut id, &raw mut format) == 0 {
-        free(value as *mut ::core::ffi::c_void);
         return;
     }
     if template.is_null() {
@@ -544,7 +541,7 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
         ft,
         b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        value,
+        value.as_ptr(),
     );
     format_add(
         ft,
@@ -636,7 +633,6 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
     );
     free(line as *mut ::core::ffi::c_void);
     drop(target);
-    free(value as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn cmd_show_options_all(
     mut self_0: *mut cmd,

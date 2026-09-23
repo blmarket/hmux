@@ -106,7 +106,8 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::global_s_options;
-use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
+use crate::src::xmalloc::{xcalloc, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -747,60 +748,32 @@ pub unsafe extern "C" fn hooks_monitor_add(
 }
 #[no_mangle]
 pub unsafe extern "C" fn hooks_monitor_to_string(
-    mut o: *mut options_entry,
+    o: *mut options_entry,
 ) -> *mut ::core::ffi::c_char {
-    let mut hm: *mut hooks_monitor = options_get_monitor_data(o) as *mut hooks_monitor;
-    let mut name: *const ::core::ffi::c_char = options_name(o);
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    hooks_monitor_to_cstring(o).map_or(::core::ptr::null_mut(), |s| xstrdup(s.as_ptr()))
+}
+
+pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<CString> {
+    let hm = options_get_monitor_data(o) as *mut hooks_monitor;
     if hm.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
-    match (*hm).type_0 as ::core::ffi::c_uint {
-        0 => {
-            xasprintf(
-                &raw mut s,
-                b"%s::%s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-                (*hm).format,
-            );
-        }
-        1 => {
-            xasprintf(
-                &raw mut s,
-                b"%s:%%%d:%s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-                (*hm).id,
-                (*hm).format,
-            );
-        }
-        2 => {
-            xasprintf(
-                &raw mut s,
-                b"%s:%%*:%s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-                (*hm).format,
-            );
-        }
-        3 => {
-            xasprintf(
-                &raw mut s,
-                b"%s:@%d:%s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-                (*hm).id,
-                (*hm).format,
-            );
-        }
-        4 => {
-            xasprintf(
-                &raw mut s,
-                b"%s:@*:%s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-                (*hm).format,
-            );
-        }
-        _ => {}
+    let mut bytes = CStr::from_ptr(options_name(o)).to_bytes().to_vec();
+    let target = match (*hm).type_0 {
+        0 => b"::".as_slice(),
+        1 => b":%".as_slice(),
+        2 => b":%*:".as_slice(),
+        3 => b":@".as_slice(),
+        4 => b":@*:".as_slice(),
+        _ => return None,
+    };
+    bytes.extend_from_slice(target);
+    if matches!((*hm).type_0, 1 | 3) {
+        bytes.extend_from_slice((*hm).id.to_string().as_bytes());
+        bytes.push(b':');
     }
-    return s;
+    bytes.extend_from_slice(CStr::from_ptr((*hm).format).to_bytes());
+    Some(CString::new(bytes).expect("C string parts contain no NUL"))
 }
 #[no_mangle]
 pub unsafe extern "C" fn hooks_monitor_get(

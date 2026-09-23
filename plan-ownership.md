@@ -988,6 +988,20 @@ legacy callers safe.
   lock contention/retry, unavailable lockfile, and non-UTF-8 path bytes with
   the pinned baseline. No sanitizer was run.
 
+### Increment 197 — hook monitor string owner (2026-09-22)
+
+- `hooks_monitor_to_cstring` now builds all five monitor target forms in a
+  byte-preserving `Option<CString>`. Three in-repo callers borrow the result
+  synchronously for `format_add` or drawing and no longer free raw strings.
+  Removed five `xasprintf` branches and their caller frees. The exported
+  `hooks_monitor_to_string` C wrapper still returns a libc-freeable duplicate
+  and preserves its null result.
+- In the isolated branch, library/binary build, six focused tests,
+  changed-file rustfmt, Python syntax check, and `git diff --check` passed.
+  The new private-server CLI check matched all five monitor target forms,
+  non-UTF-8 format bytes, and attached customize detail with the pinned
+  baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -998,9 +1012,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `hooks_monitor_to_string` has three in-repo callers that borrow its
-   formatted result synchronously and free it. Migrate those to an internal
-   `Option<CString>` producer while preserving its exported C-owned wrapper.
+1. `shell_argv0` has two in-repo callers. `job_run` frees the returned
+   string on parent success/failure paths; `client_exec` passes it to `execl`
+   and does not return. Audit the fork/exec lifetime and migrate the internal
+   callers to a Rust owner while retaining the exported C-owned wrapper.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
