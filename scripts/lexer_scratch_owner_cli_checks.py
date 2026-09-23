@@ -65,13 +65,29 @@ def check(binary, directory):
             os.fsencode(os.path.expanduser("~/lexer")) + b"\n",
         ], outputs
 
+        nested = source(
+            "nested.conf",
+            b"%if 1\n%if 0\nset -g @nested wrong\n"
+            b"%elif 1\nset -g @nested selected\n"
+            b"%else\nset -g @nested wrong\n%endif\n"
+            b"%else\nset -g @nested wrong\n%endif\n",
+        )
+        assert nested == (0, b"", b""), nested
+        selected = run("show-options", "-gv", "@nested")
+        assert selected.returncode == 0 and selected.stdout == b"selected\n", selected
+
         errors = [
             source("bad-octal.conf", b"set -g @bad \"\\400\"\n"),
             source("bad-format.conf", b"%if #{==:#{==:1,1},1\n"),
             source("bad-variable.conf", b"set -g @bad \"${LEXER_WORD\"\n"),
+            source("unclosed-if.conf", b"%if 1\nset -g @unclosed yes\n"),
         ]
         assert all(code != 0 for code, _, _ in errors), errors
-        return outputs, errors
+        recovered = source("recovered.conf", b"set -g @recovered yes\n")
+        assert recovered == (0, b"", b""), recovered
+        value = run("show-options", "-gv", "@recovered")
+        assert value.returncode == 0 and value.stdout == b"yes\n", value
+        return outputs, selected.stdout, errors, recovered, value.stdout
     finally:
         run("kill-server")
 

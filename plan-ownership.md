@@ -3040,6 +3040,20 @@ legacy callers safe.
   tests, binary build, changed-file rustfmt, and diff checks passed. No
   sanitizer was run.
 
+### Increment 340 — boxed parser conditional scopes (2026-09-23)
+
+- The three `%if`/`%else`/`%elif` grammar actions now allocate
+  `cmd_parse_scope` through Box. Branch replacement, `%endif`, and parser
+  stack cleanup consume the matching Box, and the type no longer derives
+  `Copy`/`Clone`. `cmd_parse_run_parser` also drops an active scope left by
+  syntax errors or an unclosed `%if`, fixing its previous error-path leak;
+  that active scope is separate from the intrusive stack entries.
+- Extended `scripts/lexer_scratch_owner_cli_checks.py` with nested
+  `%if`/`%elif`/`%else`, an unclosed `%if` error, and a successful
+  `source-file` immediately afterward. Candidate output matched the pinned
+  baseline. Full workspace tests, binary build, changed-file rustfmt, and
+  diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

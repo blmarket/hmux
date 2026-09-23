@@ -168,8 +168,8 @@ pub struct C2RustUnnamed_41 {
     pub tqh_first: *mut cmd_parse_scope,
     pub tqh_last: *mut *mut cmd_parse_scope,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned while active or linked in the parser scope stack.
 pub struct cmd_parse_scope {
     pub flag: ::core::ffi::c_int,
     pub entry: C2RustUnnamed_42,
@@ -688,8 +688,12 @@ unsafe extern "C" fn cmd_parse_run_parser(
             (*ps).stack.tqh_last = (*scope).entry.tqe_prev;
         }
         *(*scope).entry.tqe_prev = (*scope).entry.tqe_next;
-        free(scope as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(scope));
         scope = scope1;
+    }
+    if !(*ps).scope.is_null() {
+        drop(Box::from_raw((*ps).scope));
+        (*ps).scope = ::core::ptr::null_mut();
     }
     if retval != 0 as ::core::ffi::c_int {
         *cause = (*ps).error;
@@ -2269,8 +2273,8 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             let mut ps_5: *mut cmd_parse_state = &raw mut parse_state;
                             let mut scope_1: *mut cmd_parse_scope =
                                 ::core::ptr::null_mut::<cmd_parse_scope>();
-                            scope_1 = xmalloc(::core::mem::size_of::<cmd_parse_scope>() as size_t)
-                                as *mut cmd_parse_scope;
+                            scope_1 =
+                                Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_scope>()));
                             (*scope_1).flag = format_true(
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
                             );
@@ -2297,18 +2301,18 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             let mut ps_6: *mut cmd_parse_state = &raw mut parse_state;
                             let mut scope_2: *mut cmd_parse_scope =
                                 ::core::ptr::null_mut::<cmd_parse_scope>();
-                            scope_2 = xmalloc(::core::mem::size_of::<cmd_parse_scope>() as size_t)
-                                as *mut cmd_parse_scope;
+                            scope_2 =
+                                Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_scope>()));
                             (*scope_2).flag = ((*(*ps_6).scope).flag == 0) as ::core::ffi::c_int;
-                            free((*ps_6).scope as *mut ::core::ffi::c_void);
+                            drop(Box::from_raw((*ps_6).scope));
                             (*ps_6).scope = scope_2;
                         }
                         19 => {
                             let mut ps_7: *mut cmd_parse_state = &raw mut parse_state;
                             let mut scope_3: *mut cmd_parse_scope =
                                 ::core::ptr::null_mut::<cmd_parse_scope>();
-                            scope_3 = xmalloc(::core::mem::size_of::<cmd_parse_scope>() as size_t)
-                                as *mut cmd_parse_scope;
+                            scope_3 =
+                                Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_scope>()));
                             (*scope_3).flag = format_true(
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
                             );
@@ -2317,12 +2321,12 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token
                                     as *mut ::core::ffi::c_void,
                             );
-                            free((*ps_7).scope as *mut ::core::ffi::c_void);
+                            drop(Box::from_raw((*ps_7).scope));
                             (*ps_7).scope = scope_3;
                         }
                         20 => {
                             let mut ps_8: *mut cmd_parse_state = &raw mut parse_state;
-                            free((*ps_8).scope as *mut ::core::ffi::c_void);
+                            drop(Box::from_raw((*ps_8).scope));
                             (*ps_8).scope = (*ps_8).stack.tqh_first;
                             if !(*ps_8).scope.is_null() {
                                 if !(*(*ps_8).scope).entry.tqe_next.is_null() {
