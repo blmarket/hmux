@@ -99,7 +99,8 @@ use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::window::{window_pane_reset_mode, window_zoom, winlink_find_by_index};
-use crate::src::xmalloc::{xasprintf, xstrdup};
+use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -734,7 +735,7 @@ unsafe extern "C" fn window_switch_run_command(
     };
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut target: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut target: Option<CString> = None;
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     let mut command: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -748,11 +749,10 @@ unsafe extern "C" fn window_switch_run_command(
         0 => {
             s = session_find_by_id((*item).session as u_int);
             if !s.is_null() {
-                xasprintf(
-                    &raw mut target,
-                    b"=%s:\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*s).name,
-                );
+                let mut bytes = Vec::from(b"=".as_slice());
+                bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+                bytes.push(b':');
+                target = Some(CString::new(bytes).expect("session target contains no NUL"));
                 cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
             }
         }
@@ -761,22 +761,22 @@ unsafe extern "C" fn window_switch_run_command(
             if !s.is_null() {
                 wl = winlink_find_by_index(&raw mut (*s).windows, (*item).winlink);
                 if !s.is_null() && !wl.is_null() {
-                    xasprintf(
-                        &raw mut target,
-                        b"=%s:%u.\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*s).name,
-                        (*wl).idx,
-                    );
+                    let mut bytes = Vec::from(b"=".as_slice());
+                    bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+                    bytes.push(b':');
+                    bytes.extend_from_slice(((*wl).idx as u32).to_string().as_bytes());
+                    bytes.push(b'.');
+                    target = Some(CString::new(bytes).expect("window target contains no NUL"));
                     cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
                 }
             }
         }
         _ => {}
     }
-    if target.is_null() {
+    let Some(target) = target else {
         return 0 as ::core::ffi::c_int;
-    }
-    command = cmd_template_replace((*data).command, target, 1 as ::core::ffi::c_int);
+    };
+    command = cmd_template_replace((*data).command, target.as_ptr(), 1 as ::core::ffi::c_int);
     if !command.is_null() && *command as ::core::ffi::c_int != '\0' as i32 {
         state = cmdq_new_state(
             &raw mut fs,
@@ -832,7 +832,6 @@ unsafe extern "C" fn window_switch_run_command(
         cmdq_free_state(state);
     }
     free(command as *mut ::core::ffi::c_void);
-    free(target as *mut ::core::ffi::c_void);
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn window_switch_prompt_callback(
