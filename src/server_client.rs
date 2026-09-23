@@ -120,6 +120,7 @@ pub use crate::src::shared::client::{
 // term_caps borrows term_cap_ptrs, whose entries borrow term_cap_strings.
 // Both views are refreshed after every identify capability and cleared after
 // tty_free, before the client owner is eventually dropped.
+// tty.r borrows tty_range only after tty_init clears and initializes the tty.
 #[repr(C)]
 struct ClientOwner {
     node: client,
@@ -127,6 +128,7 @@ struct ClientOwner {
     saved_status_screen: Option<Box<screen>>,
     term_cap_strings: Vec<CString>,
     term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
+    tty_range: visible_range,
 }
 
 const _: () = assert!(std::mem::offset_of!(ClientOwner, node) == 0);
@@ -190,7 +192,7 @@ unsafe fn server_client_clear_term_caps(c: *mut client) {
 mod client_message_owner_tests {
     use super::{
         client, server_client_add_term_cap, server_client_clear_term_caps,
-        server_client_set_message, ClientOwner,
+        server_client_set_message, visible_range, ClientOwner,
     };
     use crate::src::status::status_message_clear;
     use std::ffi::{CStr, CString};
@@ -204,6 +206,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
             assert!((*c).message_string.is_null());
@@ -235,6 +238,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
             let mut expected = Vec::new();
@@ -632,6 +636,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         saved_status_screen: None,
         term_cap_strings: Vec::new(),
         term_cap_ptrs: Vec::new(),
+        tty_range: visible_range { px: 0, nx: 0 },
     })))
     .node;
     (*c).references = 1 as ::core::ffi::c_int;
@@ -1040,6 +1045,11 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
         control_stop(c);
     }
     if (*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
+        let owner = c.cast::<ClientOwner>();
+        assert_eq!((*c).tty.r.ranges, &raw mut (*owner).tty_range);
+        (*c).tty.r.ranges = ::core::ptr::null_mut();
+        (*c).tty.r.used = 0;
+        (*c).tty.r.size = 0;
         tty_free(&raw mut (*c).tty);
     }
     free((*c).ttyname as *mut ::core::ffi::c_void);
@@ -4493,6 +4503,9 @@ unsafe extern "C" fn server_client_dispatch_identify(
             close((*c).fd);
             (*c).fd = -(1 as ::core::ffi::c_int);
         } else {
+            let owner = c.cast::<ClientOwner>();
+            (*c).tty.r.ranges = &raw mut (*owner).tty_range;
+            (*c).tty.r.size = 1;
             tty_resize(&raw mut (*c).tty);
             (*c).flags |= CLIENT_TERMINAL as uint64_t;
         }

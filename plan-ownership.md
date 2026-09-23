@@ -3296,6 +3296,22 @@ legacy callers safe.
   Full workspace tests, binary build, changed-file rustfmt, and diff checks
   passed. No sanitizer was run.
 
+### Increment 358 — inline client tty range (2026-09-23)
+
+- `ClientOwner` now holds the single `visible_range` needed by its embedded
+  tty's no-overlay path. After `tty_init` clears the public tty record,
+  `server_client_dispatch_identify` installs the owner-backed pointer and
+  capacity before the first resize/redraw. `tty_check_overlay_range` therefore
+  reuses that slot without allocating. `server_client_lost` asserts the view
+  still points to the owner, clears it, then calls exported `tty_free`; its
+  legacy C-owned free behavior remains for out-of-tree callers. The inline
+  slot drops with `ClientOwner`.
+- Real PTY popup checks passed on candidate and pinned baseline, including
+  no-overlay rendering, overlay display, and client teardown. Full workspace
+  tests, binary build, changed-file rustfmt, and diff checks passed. The first
+  test build exposed a missing test-module type import, which was fixed before
+  rerunning the suite. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3306,12 +3322,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The client-owned `tty.r` range array only requests one element in
-   `tty_check_overlay_range`; an inline `visible_range` in the boxed
-   `ClientOwner` can replace its growth/free pair while preserving the public
-   borrowed `visible_ranges` view. Exported `args_from_vector` and
-   `monitor_parse` retain C-owned output contracts for external callers; no
-   in-tree production caller uses either raw-output path now.
+1. The in-tree `fuzzy_match` consumers can own the returned bit mask as a
+   `Vec<bitstr_t>`: `format_match_fuzzy` uses it locally, while the boxed
+   `window_switch_itemdata` can retain it through redraw. The exported
+   `fuzzy_match` result must remain C-freeable. Exported `args_from_vector`
+   and `monitor_parse` likewise retain C-owned output contracts for external
+   callers; no in-tree production caller uses either raw-output path now.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
