@@ -4269,7 +4269,6 @@ unsafe extern "C" fn input_csi_dispatch_sgr_rgb(
 unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut s: *mut ::core::ffi::c_char = (*ictx).param_list[i as usize].c2rust_unnamed.str_0;
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut p: [::core::ffi::c_int; 8] = [0; 8];
@@ -4284,8 +4283,9 @@ unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut 
         n = n.wrapping_add(1);
     }
     n = 0 as u_int;
-    copy = xstrdup(s);
-    ptr = copy;
+    // strsep writes delimiters into this private C-string copy.
+    let mut copy = std::ffi::CStr::from_ptr(s).to_bytes_with_nul().to_vec();
+    ptr = copy.as_mut_ptr().cast();
     loop {
         out = strsep(
             &raw mut ptr,
@@ -4308,7 +4308,6 @@ unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut 
                     == (::core::mem::size_of::<[::core::ffi::c_int; 8]>() as usize)
                         .wrapping_div(::core::mem::size_of::<::core::ffi::c_int>() as usize)
             {
-                free(copy as *mut ::core::ffi::c_void);
                 return;
             }
         } else {
@@ -4317,7 +4316,6 @@ unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut 
                 == (::core::mem::size_of::<[::core::ffi::c_int; 8]>() as usize)
                     .wrapping_div(::core::mem::size_of::<::core::ffi::c_int>() as usize)
             {
-                free(copy as *mut ::core::ffi::c_void);
                 return;
             }
         }
@@ -4328,7 +4326,6 @@ unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut 
             p[n.wrapping_sub(1 as u_int) as usize],
         );
     }
-    free(copy as *mut ::core::ffi::c_void);
     if n == 0 as u_int {
         return;
     }
@@ -4407,6 +4404,67 @@ unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut 
         }
         _ => {}
     };
+}
+
+#[cfg(test)]
+mod sgr_colon_tests {
+    use super::{
+        colour_join_rgb, grid_cell, input_csi_dispatch_sgr_colon, input_ctx,
+        input_param_c2rust_unnamed, COLOUR_FLAG_256, GRID_ATTR_UNDERSCORE_2,
+        GRID_ATTR_UNDERSCORE_3,
+    };
+
+    fn parse(source: &[u8]) -> grid_cell {
+        assert!(source.contains(&0));
+        let mut source_copy = source.to_vec();
+        // This parser only reads the parameter pointer and edits the cell.
+        let mut ictx: input_ctx = unsafe { std::mem::zeroed() };
+        ictx.param_list[0].c2rust_unnamed = input_param_c2rust_unnamed {
+            str_0: source_copy.as_mut_ptr().cast(),
+        };
+        ictx.cell.cell.fg = 11;
+        ictx.cell.cell.bg = 12;
+        ictx.cell.cell.us = 13;
+        ictx.cell.cell.attr = GRID_ATTR_UNDERSCORE_2 as u16;
+        unsafe { input_csi_dispatch_sgr_colon(&raw mut ictx, 0) };
+        assert_eq!(
+            source_copy, source,
+            "the input parameter must not be tokenized"
+        );
+        ictx.cell.cell
+    }
+
+    #[test]
+    fn parses_rgb_indexed_and_underline_colon_parameters() {
+        assert_eq!(parse(b"38:2:1:2:3\0").fg, unsafe {
+            colour_join_rgb(1, 2, 3)
+        });
+        assert_eq!(parse(b"38:2::1:2:3\0").fg, unsafe {
+            colour_join_rgb(1, 2, 3)
+        });
+        assert_eq!(parse(b"48:5:196\0").bg, 196 | COLOUR_FLAG_256);
+        assert_eq!(parse(b"58:2:5:6:7\0").us, unsafe {
+            colour_join_rgb(5, 6, 7)
+        });
+        assert_eq!(parse(b"4:3\0").attr as i32, GRID_ATTR_UNDERSCORE_3);
+    }
+
+    #[test]
+    fn rejects_bad_and_excess_tokens_without_changing_colours() {
+        for source in [
+            b"38:2:999999999999999:2:3\0".as_slice(),
+            b"38:2:abc:2:3\0",
+            b"38:2:1:2:3:4:5:6\0", // eighth populated token
+            b":::::::\0",          // eighth empty token
+            b"38:2:300:2:3\0",     // parsed RGB outside the colour range
+            b"38:2:1:2\0",         // incomplete RGB
+        ] {
+            let cell = parse(source);
+            assert_eq!((cell.fg, cell.bg, cell.us), (11, 12, 13), "{source:?}");
+        }
+        // Both xstrdup and CStr stop at the first NUL.
+        assert_eq!(parse(b"38:5:196\0:2:1:2:3\0").fg, 196 | COLOUR_FLAG_256);
+    }
 }
 unsafe extern "C" fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;

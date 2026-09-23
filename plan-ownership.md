@@ -1006,6 +1006,18 @@ legacy callers safe.
   Workspace tests, binary build, rustfmt, and `git diff --check` passed in
   the isolated worktree. No sanitizer run was performed.
 
+### Increment 46 — SGR colon parser copy (2026-09-22)
+
+- `input_csi_dispatch_sgr_colon` now tokenizes a writable, NUL-terminated
+  `Vec<u8>` copied from the parameter's first-NUL C-string view. This removes
+  its `xstrdup` and the normal and two early-return `free` calls. `strsep`
+  borrows stable vector storage; the original parameter remains untouched.
+- Direct parser tests cover RGB, indexed color, underline, malformed and
+  overflow tokens, both token-limit exits, incomplete/out-of-range RGB, and
+  first-NUL handling. Workspace tests, binary build, changed-file rustfmt,
+  and `git diff --check` passed in the isolated worktree. No live pane or
+  sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1020,13 +1032,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `input_csi_dispatch_sgr_colon`: its local copy is tokenized with
-   `strsep` and freed on success and two early error returns. A writable
-   NUL-terminated owner may remove those paths. Then inspect local format
-   expansion strings, auditing return and callback contracts first.
+2. Inspect OSC 8 hyperlink ID scratch and local format expansion strings,
+   auditing return and callback contracts first.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–45. The remaining
+Current validation is recorded in increments 15–46. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–45 has its own local commit; none was pushed.
+Each of increments 15–46 has its own local commit; none was pushed.
