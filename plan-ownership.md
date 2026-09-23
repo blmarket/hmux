@@ -125,12 +125,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_build_array` and `window_customize_build_option`
-   still call C-return `options_to_string` for each option row, pass the
-   result to `format_add`, then free it. `format_add` copies the bytes
-   synchronously into its own entry, so the existing private
-   `options_to_cstring` can own the temporary for both row builders. The
-   array-name and changed-only customize CLI checks cover row rendering.
+1. `cmdq_get_error` still duplicates callback text into a raw pointer that
+   `cmdq_error_callback` frees only when it runs. Moving that text into the
+   existing `CmdqItemOwner` would release it on both normal removal and a
+   future aborted queue drain, while preserving the exported constructor.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1500,6 +1498,17 @@ name error.
 - The candidate and pinned tmux passed the customize array-key prompt CLI
   check. Serialized workspace tests, binary build, changed-file rustfmt,
   and diff check passed. No sanitizer ran.
+
+### Increment 444 — own customize option-row text (2026-09-23)
+
+- `window_customize_build_array` and `window_customize_build_option` now
+  use `options_to_cstring` for each row's temporary value. `format_add`
+  copies the bytes into its own entry before return. Removed both exported
+  C-return duplicates and manual frees; the array-row owner drops at the
+  former free point after its displayed text is built.
+- Candidate and pinned tmux passed customize array-name and changed-only
+  CLI checks. Serialized workspace tests, binary build, changed-file
+  rustfmt, and diff check passed. No sanitizer ran.
 
 ## Historical migration index
 

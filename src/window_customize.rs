@@ -1039,7 +1039,6 @@ unsafe extern "C" fn window_customize_build_array(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut ai: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut count: u_int = 0 as u_int;
@@ -1060,12 +1059,12 @@ unsafe extern "C" fn window_customize_build_array(
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 name.as_ptr(),
             );
-            value = options_to_string(o, array_key, 0 as ::core::ffi::c_int);
+            let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
             format_add(
                 ft,
                 b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                value,
+                value.as_ptr(),
             );
             item = window_customize_add_item(data);
             (*item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
@@ -1087,7 +1086,7 @@ unsafe extern "C" fn window_customize_build_array(
                 -(1 as ::core::ffi::c_int),
             );
             free(text as *mut ::core::ffi::c_void);
-            free(value as *mut ::core::ffi::c_void);
+            drop(value);
             count = count.wrapping_add(1);
             ai = options_array_next(ai);
         }
@@ -1112,7 +1111,6 @@ unsafe extern "C" fn window_customize_build_option(
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut global: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut array: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut is_hook: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1240,7 +1238,7 @@ unsafe extern "C" fn window_customize_build_option(
         );
     }
     if array == 0 {
-        value = options_to_string(
+        let value = options_to_cstring(
             o,
             ::core::ptr::null::<::core::ffi::c_char>(),
             0 as ::core::ffi::c_int,
@@ -1249,9 +1247,8 @@ unsafe extern "C" fn window_customize_build_option(
             ft,
             b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            value,
+            value.as_ptr(),
         );
-        free(value as *mut ::core::ffi::c_void);
     }
     if !filter.is_null() {
         expanded = format_expand(ft, filter);
