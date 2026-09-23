@@ -21,7 +21,7 @@ pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::message::*;
 pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg, imsgbuf, msgbuf};
 pub use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
-pub use crate::src::shared::process::{tmuxpeer, tmuxpeer_entry, tmuxproc, tmuxproc_peers};
+pub use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, __sigval_t, sigaction, sigaction___sigaction_handler, siginfo_t,
     siginfo_t__sifields, siginfo_t__sifields__kill, siginfo_t__sifields__rt,
@@ -36,7 +36,7 @@ pub use crate::src::shared::socket::{
     SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
 };
 use crate::src::tmux::{getversion, socket_path};
-use crate::src::xmalloc::{xcalloc, xstrdup};
+use crate::src::xmalloc::xstrdup;
 use ::libc;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
@@ -269,10 +269,20 @@ pub unsafe extern "C" fn proc_start(mut name: *const ::core::ffi::c_char) -> *mu
         NCURSES_VERSION.as_ptr(),
         NCURSES_VERSION_PATCH,
     );
-    tp = xcalloc(1 as size_t, ::core::mem::size_of::<tmuxproc>() as size_t) as *mut tmuxproc;
-    (*tp).name = xstrdup(name);
-    (*tp).peers.tqh_first = ::core::ptr::null_mut::<tmuxpeer>();
-    (*tp).peers.tqh_last = &raw mut (*tp).peers.tqh_first;
+    tp = Box::into_raw(Box::new(tmuxproc {
+        name: xstrdup(name),
+        exit: 0,
+        signalcb: None,
+        ev_sigint: ::core::mem::zeroed(),
+        ev_sighup: ::core::mem::zeroed(),
+        ev_sigchld: ::core::mem::zeroed(),
+        ev_sigcont: ::core::mem::zeroed(),
+        ev_sigterm: ::core::mem::zeroed(),
+        ev_sigusr1: ::core::mem::zeroed(),
+        ev_sigusr2: ::core::mem::zeroed(),
+        ev_sigwinch: ::core::mem::zeroed(),
+        peers: Vec::new(),
+    }));
     return tp;
 }
 #[no_mangle]
@@ -299,11 +309,9 @@ pub unsafe extern "C" fn proc_loop(
 }
 #[no_mangle]
 pub unsafe extern "C" fn proc_exit(mut tp: *mut tmuxproc) {
-    let mut peer: *mut tmuxpeer = ::core::ptr::null_mut::<tmuxpeer>();
-    peer = (*tp).peers.tqh_first;
-    while !peer.is_null() {
+    for peer in (*tp).peers.iter_mut() {
+        let peer: *mut tmuxpeer = &mut **peer;
         imsgbuf_flush(&raw mut (*peer).ibuf);
-        peer = (*peer).entry.tqe_next;
     }
     (*tp).exit = 1 as ::core::ffi::c_int;
 }
@@ -504,8 +512,8 @@ pub unsafe extern "C" fn proc_add_peer(
     mut dispatchcb: Option<unsafe extern "C" fn(*mut imsg, *mut ::core::ffi::c_void) -> ()>,
     mut arg: *mut ::core::ffi::c_void,
 ) -> *mut tmuxpeer {
-    let mut peer: *mut tmuxpeer = ::core::ptr::null_mut::<tmuxpeer>();
-    peer = Box::into_raw(Box::new(::core::mem::zeroed::<tmuxpeer>()));
+    let mut owned_peer = Box::new(::core::mem::zeroed::<tmuxpeer>());
+    let peer: *mut tmuxpeer = &mut *owned_peer;
     (*peer).parent = tp;
     (*peer).dispatchcb = dispatchcb;
     (*peer).arg = arg;
@@ -537,21 +545,18 @@ pub unsafe extern "C" fn proc_add_peer(
         fd,
         arg,
     );
-    (*peer).entry.tqe_next = ::core::ptr::null_mut::<tmuxpeer>();
-    (*peer).entry.tqe_prev = (*tp).peers.tqh_last;
-    *(*tp).peers.tqh_last = peer;
-    (*tp).peers.tqh_last = &raw mut (*peer).entry.tqe_next;
+    (*tp).peers.push(owned_peer);
     proc_update_event(peer);
     return peer;
 }
 #[no_mangle]
-pub unsafe extern "C" fn proc_remove_peer(mut peer: *mut tmuxpeer) {
-    if !(*peer).entry.tqe_next.is_null() {
-        (*(*peer).entry.tqe_next).entry.tqe_prev = (*peer).entry.tqe_prev;
-    } else {
-        (*(*peer).parent).peers.tqh_last = (*peer).entry.tqe_prev;
-    }
-    *(*peer).entry.tqe_prev = (*peer).entry.tqe_next;
+pub unsafe extern "C" fn proc_remove_peer(peer: *mut tmuxpeer) {
+    let peers = &mut (*(*peer).parent).peers;
+    let peer_index = peers
+        .iter()
+        .position(|owned_peer| std::ptr::eq(&**owned_peer, peer))
+        .expect("peer must be owned by its parent process");
+    let owned_peer = peers.remove(peer_index);
     log_debug(
         b"remove peer %p\0" as *const u8 as *const ::core::ffi::c_char,
         peer,
@@ -559,7 +564,7 @@ pub unsafe extern "C" fn proc_remove_peer(mut peer: *mut tmuxpeer) {
     event_del(&raw mut (*peer).event);
     imsgbuf_clear(&raw mut (*peer).ibuf);
     close((*peer).ibuf.fd);
-    drop(Box::from_raw(peer));
+    drop(owned_peer);
 }
 #[no_mangle]
 pub unsafe extern "C" fn proc_kill_peer(mut peer: *mut tmuxpeer) {

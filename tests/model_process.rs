@@ -437,7 +437,7 @@ fn original_copies_match() {
     record!(
         "src/proc.rs::tmuxpeer",
         hmux2::src::proc::tmuxpeer,
-        [parent, ibuf, event, uid, gid, flags, dispatchcb, arg, entry]
+        [parent, ibuf, event, uid, gid, flags, dispatchcb, arg]
     );
     record!(
         "src/prompt.rs::tmuxpeer",
@@ -587,11 +587,6 @@ fn original_copies_match() {
         []
     );
     record!(
-        "src/proc.rs::C2RustUnnamed_20",
-        hmux2::src::proc::tmuxpeer_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
         "src/client.rs::tmuxproc",
         *mut hmux2::src::client::tmuxproc,
         []
@@ -634,11 +629,6 @@ fn original_copies_match() {
         "src/spawn.rs::tmuxproc",
         *mut hmux2::src::spawn::tmuxproc,
         []
-    );
-    record!(
-        "src/proc.rs::C2RustUnnamed_21",
-        hmux2::src::proc::tmuxproc_peers,
-        [tqh_first, tqh_last]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-process.txt"));
