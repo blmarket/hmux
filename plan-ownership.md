@@ -125,11 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_display_menu_exec` duplicates a literal empty default title before
-   `menu_create` and frees it immediately afterward. `menu_create` copies the
-   title into `MenuOwner.title`, so borrow the literal for the default branch
-   and free only the formatted `-T` result. Exercise an attached-client menu
-   without `-T` and compare with pinned tmux.
+1. `window_customize_start_edit` still prepares its editor input through
+   C-owned strings and frees them immediately after synchronous `spawn_editor`.
+   Option and command branches already have private `CString` producers;
+   key-note and environment values can be borrowed through the write.
+   Preserve empty-value newline substitution and audit every branch. Compare
+   option, key-note, and environment editor input with pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1277,6 +1278,17 @@ name error.
   UTF-8, and the `-A` branch's no-terminal error. A genuine `spawn_window`
   failure needs controlled fault injection and was not exercised by CLI.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 429 — borrow default menu title literal (2026-09-23)
+
+- `cmd_display_menu_exec` now lends the empty C literal to `menu_create` for
+  the default title; `menu_create` copies it immediately into `MenuOwner.title`.
+  Its default-path `xstrdup` and matching `free` are gone. A formatted `-T`
+  title keeps its C-owned result and cleanup after creation.
+- Serialized workspace tests and binary build passed. The extended attached
+  menu CLI passed with candidate and pinned tmux: an untitled menu rendered,
+  accepted its selection, and closed. Existing explicit-title cases also
+  passed. Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

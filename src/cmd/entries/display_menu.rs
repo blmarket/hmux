@@ -1047,7 +1047,8 @@ unsafe extern "C" fn cmd_display_menu_exec(
     let mut border_style: *const ::core::ffi::c_char = args_get(args, 'S' as i32 as u_char);
     let mut selected_style: *const ::core::ffi::c_char = args_get(args, 'H' as i32 as u_char);
     let mut lines: box_lines = BOX_LINES_DEFAULT;
-    let mut title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut formatted_title: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut starting_choice: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1092,12 +1093,14 @@ unsafe extern "C" fn cmd_display_menu_exec(
     match current_block {
         1841672684692190573 => {
             if args_has(args, 'T' as i32 as u_char) != 0 {
-                title = format_single_from_target(item, args_get(args, 'T' as i32 as u_char));
+                formatted_title =
+                    format_single_from_target(item, args_get(args, 'T' as i32 as u_char));
+                title = formatted_title;
             } else {
-                title = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+                title = c"".as_ptr();
             }
             menu = menu_create(title);
-            free(title as *mut ::core::ffi::c_void);
+            free(formatted_title as *mut ::core::ffi::c_void);
             i = 0 as u_int;
             loop {
                 if !(i != count) {

@@ -129,6 +129,36 @@ with tempfile.TemporaryDirectory(prefix="menu-owner-", dir=root / "target") as t
             time.sleep(0.05)
         else:
             raise AssertionError(f"menu choice did not run: {result.stderr!r}")
+
+        run(
+            "display-menu", "-c", client_tty,
+            "default title row", "d", "set-option -g @choice default",
+        )
+        output = bytearray()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.1)
+            if ready:
+                output.extend(os.read(master, 65536))
+            if b"default title row" in output:
+                break
+        else:
+            raise AssertionError(f"default-title menu did not render: {output[-1000:]!r}")
+
+        os.write(master, b"d")
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            result = subprocess.run(
+                base + ["show-option", "-gqv", "@choice"],
+                env=env,
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout == b"default\n":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError(f"default-title menu choice did not run: {result.stderr!r}")
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
         if client is not None:
