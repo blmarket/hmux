@@ -147,7 +147,7 @@ unsafe extern "C" fn cmdq_get(mut c: *mut client) -> *mut cmdq_list {
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_new() -> *mut cmdq_list {
     let mut queue: *mut cmdq_list = ::core::ptr::null_mut::<cmdq_list>();
-    queue = xcalloc(1 as size_t, ::core::mem::size_of::<cmdq_list>() as size_t) as *mut cmdq_list;
+    queue = Box::into_raw(Box::new(::core::mem::zeroed::<cmdq_list>()));
     (*queue).list.tqh_first = ::core::ptr::null_mut::<cmdq_item>();
     (*queue).list.tqh_last = &raw mut (*queue).list.tqh_first;
     return queue;
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn cmdq_free(mut queue: *mut cmdq_list) {
     if !(*queue).list.tqh_first.is_null() {
         fatalx(b"queue not empty\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    free(queue as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(queue));
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_get_name(mut item: *mut cmdq_item) -> *const ::core::ffi::c_char {

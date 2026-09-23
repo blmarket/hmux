@@ -2674,6 +2674,20 @@ legacy callers safe.
   CLI checks matched the pinned baseline; display-panes command checks
   passed separately on candidate and baseline. No sanitizer was run.
 
+### Increment 315 — boxed command queue records (2026-09-23)
+
+- `cmdq_new` now boxes each zeroed `cmdq_list` before setting the empty
+  intrusive list's tail pointer into the stable record. `cmdq_free` still
+  asserts the queue is empty before consuming the Box. Client queues retain
+  their existing create/free lifecycle; the lazy global queue remains for
+  the process lifetime. Queue items continue to borrow the queue address.
+- Extended `scripts/cmdq_cli_checks.py` to fire the global `after-new-window`
+  hook twice, checking append after the queue has emptied. The CLI check
+  passed on the candidate and pinned pre-migration binary. Full workspace
+  tests, binary build, and diff checks passed. Changed code follows rustfmt;
+  `src/cmd/queue.rs` retains its pre-existing import-order difference. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2684,13 +2698,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmdq_list` in `src/cmd/queue.rs` has one constructor, `cmdq_new`, and one
-   final free, `cmdq_free`, after an empty-list assertion. Its intrusive tail
-   pointer points into the record, so a Box must fix its address before that
-   self-link is initialized. Client queues use the destructor; the lazy
-   global queue intentionally lives for the process. `args_value` has several
-   constructors and external fixtures, so audit its scalar/array ownership
-   together before selection.
+1. `json_node` in `src/json.rs` has one allocator, `json_create_node`, and
+   one recursive destructor, `json_destroy_node`. Audit the object and array
+   child links, error cleanup, and any borrowed node pointers before moving
+   this recursive owner. `args_value` has several constructors and external
+   fixtures, so audit its scalar/array ownership together before selection.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache
    design; window-copy backing remains larger.
    `window_copy_mode_data.backing` is larger:

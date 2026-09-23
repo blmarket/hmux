@@ -22,9 +22,12 @@ with tempfile.TemporaryDirectory(prefix="cmdq-cli-", dir=root / "target") as tmp
 
     try:
         run(b"new-session", b"-d", b"-s", b"cmdq", b"sleep", b"60")
-        run(b"set-hook", b"-g", b"after-new-window", b"set-option -g @cmdq-hook fired")
+        run(b"set-option", b"-g", b"@cmdq-hook", b"")
+        run(b"set-hook", b"-g", b"after-new-window", b"set-option -ga @cmdq-hook fired")
         run(b"new-window", b"-d", b"-t", b"cmdq:", b"sleep", b"60")
         assert run(b"show-options", b"-gqv", b"@cmdq-hook").stdout == b"fired\n"
+        run(b"new-window", b"-d", b"-t", b"cmdq:", b"sleep", b"60")
+        assert run(b"show-options", b"-gqv", b"@cmdq-hook").stdout == b"firedfired\n"
 
         for table in (b"missing", b"\xff"):
             error = run(b"list-keys", b"-T", table, ok=False)

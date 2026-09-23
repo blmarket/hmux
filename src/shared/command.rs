@@ -125,6 +125,8 @@ pub struct cmds {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by a client until `cmdq_free`; the lazy global queue lives for
+/// the process. An empty queue's tail link points into this stable record.
 pub struct cmdq_list {
     pub item: *mut cmdq_item,
     pub list: cmdq_item_list,
