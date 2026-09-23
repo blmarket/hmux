@@ -2,7 +2,6 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_print};
 use crate::src::environ::{environ_find, environ_first, environ_next};
-use crate::src::ffi::libc::{free, strlen};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -63,7 +62,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::global_environ;
-use crate::src::xmalloc::xmalloc;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -98,41 +97,17 @@ pub static mut cmd_show_environment_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_show_environment_escape(
-    mut envent: *mut environ_entry,
-) -> *mut ::core::ffi::c_char {
-    let mut value: *const ::core::ffi::c_char = (*envent).value;
-    let mut c: ::core::ffi::c_char = 0;
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut ret: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    ret = xmalloc(
-        strlen(value)
-            .wrapping_mul(2 as size_t)
-            .wrapping_add(1 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    out = ret;
-    loop {
-        let fresh0 = value;
-        value = value.offset(1);
-        c = *fresh0;
-        if !(c as ::core::ffi::c_int != '\0' as i32) {
-            break;
+unsafe fn cmd_show_environment_escape(envent: *const environ_entry) -> CString {
+    // The entry value is a C string: only bytes before its first NUL are visible.
+    let value = CStr::from_ptr((*envent).value).to_bytes();
+    let mut escaped = Vec::with_capacity(value.len().saturating_mul(2));
+    for &byte in value {
+        if matches!(byte, b'$' | b'`' | b'"' | b'\\') {
+            escaped.push(b'\\');
         }
-        if c as ::core::ffi::c_int == '$' as i32
-            || c as ::core::ffi::c_int == '`' as i32
-            || c as ::core::ffi::c_int == '"' as i32
-            || c as ::core::ffi::c_int == '\\' as i32
-        {
-            let fresh1 = out;
-            out = out.offset(1);
-            *fresh1 = '\\' as i32 as ::core::ffi::c_char;
-        }
-        let fresh2 = out;
-        out = out.offset(1);
-        *fresh2 = c;
+        escaped.push(byte);
     }
-    *out = '\0' as i32 as ::core::ffi::c_char;
-    return ret;
+    CString::new(escaped).expect("environment value was truncated at its first NUL")
 }
 unsafe extern "C" fn cmd_show_environment_print(
     mut self_0: *mut cmd,
@@ -140,7 +115,6 @@ unsafe extern "C" fn cmd_show_environment_print(
     mut envent: *mut environ_entry,
 ) {
     let mut args: *mut args = cmd_get_args(self_0);
-    let mut escaped: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if args_has(args, 'h' as i32 as u_char) == 0 && (*envent).flags & ENVIRON_HIDDEN != 0 {
         return;
     }
@@ -165,15 +139,14 @@ unsafe extern "C" fn cmd_show_environment_print(
         return;
     }
     if !(*envent).value.is_null() {
-        escaped = cmd_show_environment_escape(envent);
+        let escaped = cmd_show_environment_escape(envent);
         cmdq_print(
             item,
             b"%s=\"%s\"; export %s;\0" as *const u8 as *const ::core::ffi::c_char,
             (*envent).name,
-            escaped,
+            escaped.as_ptr(),
             (*envent).name,
         );
-        free(escaped as *mut ::core::ffi::c_void);
     } else {
         cmdq_print(
             item,
@@ -243,4 +216,22 @@ unsafe extern "C" fn cmd_show_environment_exec(
         envent = environ_next(envent);
     }
     return CMD_RETURN_NORMAL;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_preserves_non_utf8_bytes_and_stops_at_first_nul() {
+        let mut value = b"\xff$`\"\\\0ignored".to_vec();
+        let entry = environ_entry {
+            name: std::ptr::null_mut(),
+            value: value.as_mut_ptr().cast(),
+            flags: 0,
+            owner: std::ptr::null_mut(),
+        };
+        let escaped = unsafe { cmd_show_environment_escape(&entry) };
+        assert_eq!(escaped.as_bytes(), b"\xff\\$\\`\\\"\\\\");
+    }
 }
