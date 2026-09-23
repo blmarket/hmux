@@ -119,6 +119,7 @@ pub use crate::src::shared::client::{
 // message_string borrows the CString until the next replacement or clear.
 // ttyname borrows the CString until a new identify payload or client loss.
 // term_name borrows the CString until identify completion or client loss.
+// cwd borrows the CString until a new identify payload or client loss.
 // term_caps borrows term_cap_ptrs, whose entries borrow term_cap_strings.
 // Both views are refreshed after every identify capability and cleared after
 // tty_free, before the client owner is eventually dropped.
@@ -129,6 +130,7 @@ struct ClientOwner {
     message: Option<CString>,
     ttyname: Option<CString>,
     term_name: Option<CString>,
+    cwd: Option<CString>,
     saved_status_screen: Option<Box<screen>>,
     term_cap_strings: Vec<CString>,
     term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
@@ -163,6 +165,15 @@ unsafe fn server_client_set_term_name(c: *mut client, term_name: Option<CString>
     (*owner).term_name = term_name;
     if let Some(term_name) = (*owner).term_name.as_ref() {
         (*c).term_name = term_name.as_ptr().cast_mut();
+    }
+}
+
+unsafe fn server_client_set_cwd(c: *mut client, cwd: Option<CString>) {
+    let owner = c.cast::<ClientOwner>();
+    (*c).cwd = ::core::ptr::null();
+    (*owner).cwd = cwd;
+    if let Some(cwd) = (*owner).cwd.as_ref() {
+        (*c).cwd = cwd.as_ptr();
     }
 }
 
@@ -221,8 +232,8 @@ unsafe fn server_client_clear_term_caps(c: *mut client) {
 mod client_message_owner_tests {
     use super::{
         client, server_client_add_term_cap, server_client_clear_term_caps,
-        server_client_ensure_term_name, server_client_set_message, server_client_set_term_name,
-        server_client_set_ttyname, visible_range, ClientOwner,
+        server_client_ensure_term_name, server_client_set_cwd, server_client_set_message,
+        server_client_set_term_name, server_client_set_ttyname, visible_range, ClientOwner,
     };
     use crate::src::status::status_message_clear;
     use std::ffi::{CStr, CString};
@@ -235,6 +246,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -269,6 +281,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -299,6 +312,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -323,6 +337,37 @@ mod client_message_owner_tests {
     }
 
     #[test]
+    fn cwd_replacement_and_clear_keep_a_borrowed_client_view() {
+        unsafe {
+            let mut owner = Box::new(ClientOwner {
+                node: std::mem::zeroed::<client>(),
+                message: None,
+                ttyname: None,
+                term_name: None,
+                cwd: None,
+                saved_status_screen: None,
+                term_cap_strings: Vec::new(),
+                term_cap_ptrs: Vec::new(),
+                tty_range: visible_range { px: 0, nx: 0 },
+            });
+            let c = &raw mut owner.node;
+            assert!((*c).cwd.is_null());
+
+            server_client_set_cwd(c, Some(CString::new(b"/work-\xff".to_vec()).unwrap()));
+            assert_eq!(CStr::from_ptr((*c).cwd).to_bytes(), b"/work-\xff");
+            assert_eq!(c, &raw mut owner.node);
+
+            server_client_set_cwd(c, Some(CString::new("").unwrap()));
+            assert!(!(*c).cwd.is_null());
+            assert_eq!(CStr::from_ptr((*c).cwd).to_bytes(), b"");
+
+            server_client_set_cwd(c, None);
+            assert!((*c).cwd.is_null());
+            assert!(owner.cwd.is_none());
+        }
+    }
+
+    #[test]
     fn term_caps_view_survives_growth_and_preserves_order_and_bytes() {
         unsafe {
             let mut owner = Box::new(ClientOwner {
@@ -330,6 +375,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -730,6 +776,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         message: None,
         ttyname: None,
         term_name: None,
+        cwd: None,
         saved_status_screen: None,
         term_cap_strings: Vec::new(),
         term_cap_ptrs: Vec::new(),
@@ -1158,7 +1205,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     input_cancel_requests(c);
     free((*c).title as *mut ::core::ffi::c_void);
     free((*c).path as *mut ::core::ffi::c_void);
-    free((*c).cwd as *mut ::core::ffi::c_void);
+    server_client_set_cwd(c, None);
     free((*c).exit_session as *mut ::core::ffi::c_void);
     free((*c).exit_message as *mut ::core::ffi::c_void);
     event_del(&raw mut (*c).repeat_timer);
@@ -4500,13 +4547,13 @@ unsafe extern "C" fn server_client_dispatch_identify(
                 return -(1 as ::core::ffi::c_int);
             }
             if access(data, X_OK) == 0 as ::core::ffi::c_int {
-                (*c).cwd = xstrdup(data);
+                server_client_set_cwd(c, Some(CStr::from_ptr(data).to_owned()));
             } else {
                 home = find_home();
                 if !home.is_null() {
-                    (*c).cwd = xstrdup(home);
+                    server_client_set_cwd(c, Some(CStr::from_ptr(home).to_owned()));
                 } else {
-                    (*c).cwd = xstrdup(b"/\0" as *const u8 as *const ::core::ffi::c_char);
+                    server_client_set_cwd(c, Some(CString::new("/").unwrap()));
                 }
             }
             log_debug(

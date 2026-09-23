@@ -64,8 +64,10 @@ def trace(binary, directory):
         # Key bindings execute from an attached client. Its file paths are
         # handled locally and the completion callback runs on a later event.
         attached_target = work + b"/attached-\xf7"
-        run(b"bind-key", b"-n", b"C-g", b"load-buffer", b"-b", b"attached", source)
-        run(b"bind-key", b"-n", b"C-h", b"save-buffer", b"-b", b"attached", attached_target)
+        # These relative paths resolve through the attached client's
+        # IDENTIFY_CWD value, including its non-UTF-8 byte.
+        run(b"bind-key", b"-n", b"C-g", b"load-buffer", b"-b", b"attached", b"source-\xff")
+        run(b"bind-key", b"-n", b"C-h", b"save-buffer", b"-b", b"attached", b"attached-\xf7")
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         client = subprocess.Popen(
