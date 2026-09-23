@@ -80,6 +80,7 @@ use crate::src::utf8::{utf8_copy, utf8_set};
 use crate::src::window::{
     window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_index,
 };
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -432,7 +433,6 @@ pub unsafe extern "C" fn window_make_pane_status(
             progress: 0,
         },
     };
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut pane_lines: pane_lines = PANE_LINES_SINGLE;
     let mut pane_status: ::core::ffi::c_int = 0;
@@ -452,7 +452,9 @@ pub unsafe extern "C" fn window_make_pane_status(
         (*wp).options,
         b"pane-border-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    expanded = format_expand_time(ft, fmt);
+    let expanded_raw = format_expand_time(ft, fmt);
+    let expanded = CStr::from_ptr(expanded_raw).to_owned();
+    free(expanded_raw.cast());
     memcpy(
         &raw mut old as *mut ::core::ffi::c_void,
         &raw mut (*wp).status_screen as *const ::core::ffi::c_void,
@@ -482,14 +484,12 @@ pub unsafe extern "C" fn window_make_pane_status(
         &raw mut ctx,
         &raw mut gc,
         width,
-        expanded,
+        expanded.as_ptr(),
         &raw mut (*sle).ranges,
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&raw mut ctx);
     format_free(ft);
-    free((*sle).expanded as *mut ::core::ffi::c_void);
-    (*sle).expanded = expanded;
     if grid_compare((*wp).status_screen.grid, old.grid) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old);
         return 0 as ::core::ffi::c_int;

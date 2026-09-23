@@ -125,12 +125,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_make_pane_status` retains its latest formatted pane-border text
-   in `border_status_line.expanded`, but in-tree pane code never reads that
-   cached value. Audit whether the pane instance has any external consumer;
-   if none, release the C-owned expansion after rendering and remove its
-   replacement/teardown frees. Other `style_line_entry` instances do read
-   their cached text for change detection, so keep the shared field.
+1. `window.old_layout` is saved during `select-layout` and released on
+   replacement, rollback, or window destruction. Audit its transaction paths
+   and whether the boxed window can hold a trailing owner without changing
+   layout restore behavior. This is less isolated than the pane fields.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -604,6 +602,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   formatted relative `-c`, actual process cwd, active-respawn error,
   respawn retention/replacement, empty `-c`, and raw `0xff` path bytes.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 384 — local pane-border expansion owner (2026-09-23)
+
+- `window_make_pane_status` now copies the C-owned `format_expand_time`
+  result into a local `CString`, libc-frees the producer allocation, and
+  lends the owned bytes through `format_draw`. The pane never reads its
+  `border_status_line.expanded` cache, so the redundant retained allocation,
+  replacement free, and teardown free are gone. The shared
+  `style_line_entry.expanded` field remains for status-line instances that
+  compare cached text.
+- Serialized workspace tests and binary build passed. A new PTY CLI check
+  rendered two successive pane-border markers, killed the pane, and passed
+  against the pinned 3.8-rc baseline. Changed-file rustfmt and diff checks
+  passed. No sanitizer ran.
 
 ## Historical migration index
 

@@ -3346,7 +3346,6 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     cmd_free_argv((*wp).argc, (*wp).argv);
     colour_palette_free(&raw mut (*wp).palette);
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);
-    free((*wp).border_status_line.expanded as *mut ::core::ffi::c_void);
     drop(Box::from_raw(wp as *mut WindowPaneOwned));
 }
 unsafe extern "C" fn window_pane_read_callback(
