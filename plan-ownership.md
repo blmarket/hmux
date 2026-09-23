@@ -125,11 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The explicit-name branch of `break-pane` still calls `clean_name` and
-   `window_replace_name_from_c_owned`, copying the C output into `WindowOwned`
-   before freeing it. Use `clean_name_cstring` and move directly into
-   `window_replace_name`; keep the default-name C producer on its existing
-   adapter. Compare explicit and default broken-pane names with pinned tmux.
+1. `cmd_new_session_exec` duplicates the default cwd from
+   `server_client_get_cwd` solely for `session_create`, then frees it on both
+   exits. `session_create` immediately copies the cwd into `SessionOwner.cwd`.
+   Borrow the default client cwd through that synchronous call while retaining
+   ownership for a formatted `-c` path. Check the intervening client-open
+   path before borrowing and compare no-`-c` creation with pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1203,6 +1204,16 @@ name error.
   with pinned tmux passed. That script covers explicit rename and terminal
   ESC-k rename as well as other window-name paths. Changed-file rustfmt and
   diff checks passed. No sanitizer ran.
+
+### Increment 423 — own explicit broken-pane name directly (2026-09-23)
+
+- The explicit `break-pane -n` branch now moves `clean_name_cstring` into
+  `WindowOwned.name` through `window_replace_name`. Its C allocation, copy,
+  and free are gone. The default-name branch still accepts the C-owned result
+  of `default_window_name`. Earlier `check_name` validation remains in place.
+- Serialized workspace tests, binary build, and the window-name CLI comparison
+  with pinned tmux passed, covering explicit and default broken-pane names.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

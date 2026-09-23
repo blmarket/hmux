@@ -81,11 +81,11 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::tmux::{check_name, clean_name};
+use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::{
     window_add_ref, window_count_panes, window_create, window_fire_pane_moved,
     window_get_pane_lines, window_lost_pane, window_pane_is_floating, window_remove_ref,
-    window_replace_name_from_c_owned, window_set_active_pane, window_set_name,
+    window_replace_name, window_replace_name_from_c_owned, window_set_active_pane, window_set_name,
     winlink_find_by_index, winlink_find_by_window, winlink_shuffle_up,
 };
 use crate::src::window_border::window_set_fill_cells;
@@ -334,10 +334,9 @@ unsafe extern "C" fn cmd_break_pane_exec(
         if name.is_null() {
             drop(window_replace_name_from_c_owned(w, default_window_name(w)));
         } else {
-            drop(window_replace_name_from_c_owned(
-                w,
-                clean_name(name, 0 as ::core::ffi::c_int),
-            ));
+            let cleaned = clean_name_cstring(std::ffi::CStr::from_ptr(name), 0)
+                .expect("check_name validated the explicit window name");
+            drop(window_replace_name(w, cleaned));
             options_set_number(
                 (*w).options,
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
