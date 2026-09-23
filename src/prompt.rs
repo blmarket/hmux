@@ -97,7 +97,7 @@ use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::tmux::{global_options, global_s_options};
 use crate::src::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr, utf8_fromcstr_vec, utf8_open, utf8_set,
-    utf8_strlen, utf8_strwidth, utf8_to_data, utf8_tocstr,
+    utf8_strlen, utf8_strwidth, utf8_to_data, utf8_tocstr, utf8_tocstr_cstring,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
@@ -1741,7 +1741,6 @@ unsafe extern "C" fn prompt_check_move(
     mut pr: *mut prompt,
     mut key: key_code,
 ) -> prompt_key_result {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
         return PROMPT_KEY_NOT_HANDLED;
     }
@@ -1754,18 +1753,16 @@ unsafe extern "C" fn prompt_check_move(
         }
         _ => return PROMPT_KEY_NOT_HANDLED,
     }
-    s = utf8_tocstr((*pr).buffer);
+    let s = utf8_tocstr_cstring((*pr).buffer);
     if prompt_fire_callback(
         pr,
-        s,
+        s.as_ptr(),
         PROMPT_KEY_MOVE,
         ::core::ptr::null_mut::<::core::ffi::c_int>(),
     ) != 0
     {
-        free(s as *mut ::core::ffi::c_void);
         return PROMPT_KEY_CLOSE;
     }
-    free(s as *mut ::core::ffi::c_void);
     return PROMPT_KEY_MOVE;
 }
 #[no_mangle]

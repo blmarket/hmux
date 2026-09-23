@@ -30,7 +30,7 @@ pub use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::tmux::global_options;
 use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1986,6 +1986,22 @@ pub unsafe extern "C" fn utf8_tocstr(mut src: *mut utf8_data) -> *mut ::core::ff
     *dst.offset(n as isize) = '\0' as i32 as ::core::ffi::c_char;
     return dst;
 }
+
+/// Copy the C-visible part of a sentinel-terminated cell stream into Rust-owned storage.
+/// The legacy utf8_tocstr copies all cell bytes, but C consumers stop at the first NUL.
+pub(crate) unsafe fn utf8_tocstr_cstring(mut src: *const utf8_data) -> CString {
+    let mut bytes = Vec::new();
+    while (*src).size != 0 {
+        let data = &(&(*src).data)[..(*src).size as usize];
+        if let Some(end) = data.iter().position(|&byte| byte == 0) {
+            bytes.extend_from_slice(&data[..end]);
+            break;
+        }
+        bytes.extend_from_slice(data);
+        src = src.add(1);
+    }
+    CString::new(bytes).expect("the first NUL ends the copied string")
+}
 #[no_mangle]
 pub unsafe extern "C" fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_int {
     let mut tmp: utf8_data = utf8_data {
@@ -2141,6 +2157,32 @@ pub const __WCHAR_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn utf8_tocstr_cstring_matches_legacy_c_view() {
+        unsafe {
+            for parts in [
+                vec![],
+                vec![vec![b'a'], vec![0xe2, 0x82, 0xac], vec![0xff]],
+                vec![vec![b'a', 0, b'b'], vec![b'c']],
+                vec![vec![b'a'], vec![0], vec![b'b']],
+            ] {
+                let mut cells = Vec::new();
+                for part in parts {
+                    let mut cell: utf8_data = std::mem::zeroed();
+                    cell.data[..part.len()].copy_from_slice(&part);
+                    cell.size = part.len() as u_char;
+                    cells.push(cell);
+                }
+                cells.push(std::mem::zeroed());
+
+                let legacy = utf8_tocstr(cells.as_mut_ptr());
+                let expected = CStr::from_ptr(legacy).to_bytes().to_vec();
+                free(legacy.cast());
+                assert_eq!(utf8_tocstr_cstring(cells.as_ptr()).as_bytes(), expected);
+            }
+        }
+    }
 
     #[test]
     fn utf8_index_tree_matches_index_comparator() {

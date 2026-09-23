@@ -126,7 +126,12 @@ with tempfile.TemporaryDirectory(prefix="prompt-mutable-", dir=root / "target") 
                 f"incremental restore did not emit saved input: {result.returncode}, "
                 f"{result.stdout!r}, {result.stderr!r}"
             )
-        os.write(master, b"\x03")
+        # Left calls prompt_check_move; command-prompt's MOVE callback closes it.
+        os.write(master, b"\x1b[D")
+        time.sleep(0.1)
+        os.write(master, b"z")
+        time.sleep(0.1)
+        assert run("show-options", "-gqv", "@prompt_saved") == b"=seed\n"
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
         if command is not None and command.poll() is None:
