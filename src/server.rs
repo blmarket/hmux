@@ -22,7 +22,9 @@ use crate::src::proc::{
 use crate::src::prompt_history::prompt_save_history;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_reinit, event_set};
 use crate::src::server_acl::{server_acl_init, server_acl_join};
-use crate::src::server_client::{server_client_create, server_client_loop, server_client_lost};
+use crate::src::server_client::{
+    server_client_create, server_client_loop, server_client_lost, server_client_set_exit_message,
+};
 use crate::src::server_fn::server_destroy_pane;
 pub use crate::src::session::sessions;
 use crate::src::session::{
@@ -38,7 +40,7 @@ use crate::src::window::{
     all_window_panes, window_pane_destroy_ready, window_pane_wait_finish, windows_minmax,
     windows_next,
 };
-use crate::src::xmalloc::{xasprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xvasprintf_cstring};
 
 use std::collections::VecDeque;
 use std::ffi::CString;
@@ -549,7 +551,8 @@ unsafe fn server_start_inner(
     }
     if !cause.is_null() {
         if !c.is_null() {
-            (*c).exit_message = cause;
+            server_client_set_exit_message(c, Some(std::ffi::CStr::from_ptr(cause).to_owned()));
+            free(cause as *mut ::core::ffi::c_void);
             (*c).retval = 1 as ::core::ffi::c_int;
             (*c).flags |= CLIENT_EXIT as uint64_t;
         } else {
@@ -775,8 +778,7 @@ unsafe extern "C" fn server_accept(
     }
     c = server_client_create(newfd);
     if server_acl_join(c) == 0 {
-        (*c).exit_message =
-            xstrdup(b"access not allowed\0" as *const u8 as *const ::core::ffi::c_char);
+        server_client_set_exit_message(c, Some(CString::new("access not allowed").unwrap()));
         (*c).retval = 1 as ::core::ffi::c_int;
         (*c).flags |= CLIENT_EXIT as uint64_t;
     }

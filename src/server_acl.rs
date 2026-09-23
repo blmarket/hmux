@@ -2,6 +2,7 @@ use crate::src::cmd_queue::cmdq_print;
 use crate::src::ffi::libc::{getgrgid, getpwuid, getuid};
 use crate::src::proc::{proc_get_peer_gid, proc_get_peer_uid};
 pub use crate::src::server::clients;
+use crate::src::server_client::server_client_set_exit_message;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__gid_t, __id_t, __uid_t, gid_t, id_t, uid_t};
 pub use crate::src::shared::account::{group, passwd};
@@ -60,7 +61,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::xstrdup;
+use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -184,8 +185,7 @@ unsafe extern "C" fn server_acl_update() {
     while !c.is_null() {
         entry = server_acl_check(c);
         if entry.is_null() {
-            (*c).exit_message =
-                xstrdup(b"access not allowed\0" as *const u8 as *const ::core::ffi::c_char);
+            server_client_set_exit_message(c, Some(CString::new("access not allowed").unwrap()));
             (*c).flags |= CLIENT_EXIT as uint64_t;
         } else if (*entry).flags & SERVER_ACL_READONLY != 0 {
             (*c).flags |= CLIENT_READONLY as uint64_t;

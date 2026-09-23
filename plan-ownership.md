@@ -125,11 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `client.exit_message` has five writers across control, access control,
-   and server startup/accept, one `MSG_EXIT` payload reader, and one free on
-   client loss. Its socket-error cause transfers a C allocation; copy its
-   bytes into the owner and free the original at that transfer. Preserve
-   null versus empty and last-writer behavior for repeated ACL updates.
+1. The client process's detached-session name is a private static string:
+   one validated `MSG_DETACH`/`MSG_DETACHKILL` writer duplicates it, and
+   `client_exit_message` borrows it for final output. A `CString` owner can
+   remove that allocation and release it after `client_main` prints the
+   message. The client-process exec shell/command pair is another nearby
+   candidate, but `execl` replaces the process on its normal path.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -484,6 +485,23 @@ libc allocation on success and leaves it with the caller on error, so a local
   and target resolution. Candidate and matching 3.8-rc baseline passed.
   Serialized workspace tests, binary build, changed-file rustfmt, and diff
   checks passed. No sanitizer was run.
+
+### Increment 376 — owned client exit message (2026-09-23)
+
+- `ClientOwner` now owns `client.exit_message` as `Option<CString>` until
+  client loss. Both control `too far behind` writers, the ACL-update writer,
+  denied accept, and startup socket error now use one setter. The startup
+  error copies its C-allocated cause and frees that allocation once at the
+  transfer point. `server_client_check_exit` still sends the exact borrowed
+  NUL-terminated bytes for `MSG_EXIT`; the public client layout is unchanged.
+  Repeated ACL updates now replace and release the previous message.
+- A focused owner test checks non-UTF-8 bytes, replacement, empty versus
+  absent, pointer stability, and clear. The existing exit-payload CLI
+  compares normal exit and startup socket error with the 3.8-rc baseline;
+  ACL entry CLI checks also passed against that baseline. A live denied
+  client was not exercised because this test user owns the server and cannot
+  revoke its own UID access. Serialized workspace tests, binary build,
+  changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
 ## Historical migration index
 

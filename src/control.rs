@@ -12,6 +12,7 @@ use crate::src::reactor::{
     evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
     evbuffer_read, evbuffer_readln,
 };
+use crate::src::server_client::server_client_set_exit_message;
 pub use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -99,7 +100,7 @@ use crate::src::window::{
     window_pane_find_by_id, window_pane_get_new_data, window_pane_update_used_data,
     winlink_find_by_window,
 };
-use crate::src::xmalloc::{xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -591,7 +592,7 @@ unsafe extern "C" fn control_check_reply_buffer(
         size,
     );
     if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {
-        (*c).exit_message = xstrdup(b"too far behind\0" as *const u8 as *const ::core::ffi::c_char);
+        server_client_set_exit_message(c, Some(CString::new("too far behind").unwrap()));
         (*c).flags |= CLIENT_EXIT as uint64_t;
         control_discard(c);
     }
@@ -780,7 +781,7 @@ unsafe extern "C" fn control_check_age(
         if age < CONTROL_MAXIMUM_AGE as uint64_t {
             return 0 as ::core::ffi::c_int;
         }
-        (*c).exit_message = xstrdup(b"too far behind\0" as *const u8 as *const ::core::ffi::c_char);
+        server_client_set_exit_message(c, Some(CString::new("too far behind").unwrap()));
         (*c).flags |= CLIENT_EXIT as uint64_t;
         control_discard(c);
     }
