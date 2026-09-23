@@ -3,6 +3,8 @@
 use super::abi::u_int;
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned from `hyperlinks_init` through the final `hyperlinks_free`.
+/// Copies retain the explicit reference count; URI nodes borrow this address.
 pub struct hyperlinks {
     pub next_inner: u_int,
     pub by_inner: hyperlinks_by_inner_tree,

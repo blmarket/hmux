@@ -2607,6 +2607,20 @@ legacy callers safe.
   wait-event CLI checks passed on candidate and pinned pre-migration binaries.
   Changed files pass rustfmt and diff checks. No sanitizer was run.
 
+### Increment 310 — boxed outer hyperlinks record (2026-09-23)
+
+- `hyperlinks_init` now boxes its zeroed `hyperlinks` record. Copies still
+  retain the same stable address through the explicit reference count;
+  `hyperlinks_free` still resets all URI nodes and both indexes before
+  consuming the `Box` on the final release. Global eviction removes URI
+  nodes through the same unlink path. The static style owner retains its
+  existing process lifetime.
+- `tests/hyperlinks_storage.rs` covered retained copies, reset, cross-owner
+  eviction, and index teardown; the OSC 8 pane test, full workspace tests,
+  and binary build passed. The hyperlink-fields CLI matched the pinned
+  pre-migration binary. Changed files pass rustfmt and diff checks. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2617,11 +2631,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Outer `hyperlinks` records in `src/hyperlinks.rs` have one constructor and
-   one final free, guarded by an explicit reference count. Audit copy/free
-   balancing, global URI eviction, and nested index teardown before boxing.
-   The separate `utf8_item` cache has no terminal free and needs a
-   whole-cache design.
+1. `screen_title_entry` in `src/screen.rs` has one constructor and three
+   terminal paths: stack cleanup, oldest-entry eviction, and pop. Preserve
+   intrusive TAILQ unlink order and the pop path's transfer of `text` to
+   `s.title`. The separate `screen_titles` header can follow once the leaf is
+   migrated; its tail pointer may point into its own head. The separate
+   `utf8_item` cache has no terminal free and needs a whole-cache design.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias

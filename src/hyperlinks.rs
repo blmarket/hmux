@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{free, strcmp};
+use crate::src::ffi::libc::strcmp;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::hyperlinks::{
     hyperlink_inner_entry, hyperlink_list_entry, hyperlink_uri_entry, hyperlinks,
@@ -7,7 +7,6 @@ pub use crate::src::shared::hyperlinks::{
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 use crate::src::utf8::utf8_stravis_cstring;
-use crate::src::xmalloc::xcalloc;
 use std::ffi::CString;
 
 // The C-layout record is the first field so tree and list pointers still point
@@ -185,7 +184,7 @@ pub unsafe extern "C" fn hyperlinks_get(
 #[no_mangle]
 pub unsafe extern "C" fn hyperlinks_init() -> *mut hyperlinks {
     let mut hl: *mut hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
-    hl = xcalloc(1 as size_t, ::core::mem::size_of::<hyperlinks>() as size_t) as *mut hyperlinks;
+    hl = Box::into_raw(Box::new(::core::mem::zeroed::<hyperlinks>()));
     (*hl).next_inner = 1 as u_int;
     (*hl).by_uri.storage = std::ptr::null_mut();
     (*hl).by_inner.storage = std::ptr::null_mut();
@@ -215,7 +214,7 @@ pub unsafe extern "C" fn hyperlinks_free(mut hl: *mut hyperlinks) {
     (*hl).references = (*hl).references.wrapping_sub(1);
     if (*hl).references == 0 as u_int {
         hyperlinks_reset(hl);
-        free(hl as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(hl));
     }
 }
 unsafe extern "C" fn run_static_initializers() {
