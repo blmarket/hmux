@@ -70,6 +70,15 @@ with tempfile.TemporaryDirectory(prefix="layout-cli-", dir=root / "target") as t
             assert diagnostic in failed.stderr, failed.stderr
             assert pane_geometry() == resized
 
+        run("select-layout", "even-vertical")
+        vertical = pane_geometry()
+        assert vertical != resized, vertical
+        failed = run("select-layout", "not-a-layout", ok=False)
+        assert failed.returncode != 0
+        assert pane_geometry() == vertical
+        run("select-layout", "-o")
+        assert pane_geometry() == resized
+
         too_many = (
             '{"V":2,"L":{"t":"h","w":79,"h":23,"x":0,"y":0,"c":['
             '{"t":"p","w":25,"h":23,"x":0,"y":0,"i":0},'

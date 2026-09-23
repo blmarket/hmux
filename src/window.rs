@@ -1285,6 +1285,30 @@ pub unsafe extern "C" fn window_update_activity(mut w: *mut window) {
     gettimeofday(&raw mut (*w).activity_time, NULL);
     alerts_queue(w, WINDOW_ACTIVITY);
 }
+
+/// The public window stays at offset zero; its previous layout string borrows
+/// storage from this containing owner until replacement or destruction.
+#[repr(C)]
+struct WindowOwned {
+    node: window,
+    old_layout: Option<CString>,
+}
+
+const _: () = assert!(::core::mem::offset_of!(WindowOwned, node) == 0);
+
+pub(crate) unsafe fn window_replace_old_layout(
+    w: *mut window,
+    layout: Option<CString>,
+) -> Option<CString> {
+    let owner = w.cast::<WindowOwned>();
+    let previous = ::core::mem::replace(&mut (*owner).old_layout, layout);
+    (*w).old_layout = (*owner)
+        .old_layout
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+    previous
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn window_create(
     mut sx: u_int,
@@ -1299,7 +1323,10 @@ pub unsafe extern "C" fn window_create(
     if ypixel == 0 as u_int {
         ypixel = DEFAULT_YPIXEL as u_int;
     }
-    w = Box::into_raw(Box::new(::core::mem::zeroed::<window>()));
+    w = Box::into_raw(Box::new(WindowOwned {
+        node: ::core::mem::zeroed::<window>(),
+        old_layout: None,
+    })) as *mut window;
     (*w).name = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes.tqh_first = ::core::ptr::null_mut::<window_pane>();
@@ -1358,7 +1385,7 @@ unsafe extern "C" fn window_destroy(mut w: *mut window) {
     windows_remove(&raw mut windows, w);
     layout_free_cell((*w).layout_root, 0 as ::core::ffi::c_int);
     layout_free_cell((*w).saved_layout_root, 0 as ::core::ffi::c_int);
-    free((*w).old_layout as *mut ::core::ffi::c_void);
+    drop(window_replace_old_layout(w, None));
     menu_destroy(w);
     window_destroy_panes(w);
     if event_initialized(&raw mut (*w).name_event) != 0 {
@@ -1372,7 +1399,7 @@ unsafe extern "C" fn window_destroy(mut w: *mut window) {
     }
     options_free((*w).options);
     free((*w).name as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(w));
+    drop(Box::from_raw(w.cast::<WindowOwned>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {

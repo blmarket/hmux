@@ -125,10 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window.old_layout` is saved during `select-layout` and released on
-   replacement, rollback, or window destruction. Audit its transaction paths
-   and whether the boxed window can hold a trailing owner without changing
-   layout restore behavior. This is less isolated than the pane fields.
+1. `window.name` has a bounded owner in the new `WindowOwned` box, but its
+   writers span spawn, break-pane, explicit rename, automatic rename, and
+   terminal title updates. Audit each returned C allocation and synchronous
+   rename notification before changing the public borrowed name pointer;
+   callbacks need the previous name alive through delivery.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -615,6 +616,20 @@ libc allocation on success and leaves it with the caller on error, so a local
 - Serialized workspace tests and binary build passed. A new PTY CLI check
   rendered two successive pane-border markers, killed the pane, and passed
   against the pinned 3.8-rc baseline. Changed-file rustfmt and diff checks
+  passed. No sanitizer ran.
+
+### Increment 385 — owned saved window layout (2026-09-23)
+
+- `WindowOwned` now keeps the saved `old_layout` as `Option<CString>` behind
+  the public window's borrowed pointer. `select-layout` copies and frees the
+  C-owned `layout_dump` result before replacing the owner, holds the prior
+  owner through `-o` parsing, restores it after parse failure, and releases
+  it before redraw on success. Window destruction clears the owner at the
+  former free point. Removed saved-layout manual frees and raw ownership
+  transfer without changing the public window layout.
+- Serialized workspace tests and binary build passed. The layout CLI added
+  a failed selection followed by `select-layout -o` and passed with both
+  candidate and pinned 3.8-rc baseline. Changed-file rustfmt and diff checks
   passed. No sanitizer ran.
 
 ## Historical migration index

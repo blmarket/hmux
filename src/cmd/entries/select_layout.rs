@@ -69,6 +69,8 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
+use crate::src::window::window_replace_old_layout;
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -170,7 +172,6 @@ unsafe extern "C" fn cmd_select_layout_exec(
     let mut w: *mut window = (*wl).window;
     let mut wp: *mut window_pane = (*target).wp;
     let mut layoutname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut oldlayout: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;
@@ -192,8 +193,18 @@ unsafe extern "C" fn cmd_select_layout_exec(
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
-    oldlayout = (*w).old_layout;
-    (*w).old_layout = layout_dump(w, (*w).layout_root, flags);
+    let dumped = layout_dump(w, (*w).layout_root, flags);
+    let new_layout = if dumped.is_null() {
+        None
+    } else {
+        let value = CStr::from_ptr(dumped).to_owned();
+        free(dumped.cast());
+        Some(value)
+    };
+    let mut oldlayout = window_replace_old_layout(w, new_layout);
+    let oldlayout_ptr = oldlayout
+        .as_ref()
+        .map_or(::core::ptr::null(), |value| value.as_ptr());
     if next != 0 || previous != 0 {
         if next != 0 {
             layout_set_next(w);
@@ -206,7 +217,7 @@ unsafe extern "C" fn cmd_select_layout_exec(
         if args_count(args) != 0 as u_int {
             layoutname = args_string(args, 0 as u_int);
         } else if args_has(args, 'o' as i32 as u_char) != 0 {
-            layoutname = oldlayout;
+            layoutname = oldlayout_ptr;
         } else {
             layoutname = ::core::ptr::null::<::core::ffi::c_char>();
         }
@@ -237,18 +248,17 @@ unsafe extern "C" fn cmd_select_layout_exec(
                             layoutname,
                         );
                         free(cause as *mut ::core::ffi::c_void);
-                        free((*w).old_layout as *mut ::core::ffi::c_void);
-                        (*w).old_layout = oldlayout;
+                        drop(window_replace_old_layout(w, oldlayout.take()));
                         return CMD_RETURN_ERROR;
                     }
                 } else {
-                    free(oldlayout as *mut ::core::ffi::c_void);
+                    drop(oldlayout);
                     return CMD_RETURN_NORMAL;
                 }
             }
         }
     }
-    free(oldlayout as *mut ::core::ffi::c_void);
+    drop(oldlayout);
     recalculate_sizes();
     server_redraw_window(w);
     events_fire_window(
