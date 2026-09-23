@@ -23,6 +23,11 @@ def trace(binary):
             assert result.returncode == 0, (args, result.returncode, result.stderr)
             return result.stdout
 
+        def fail(*args):
+            result = subprocess.run(base + list(args), env=env, capture_output=True, timeout=10)
+            assert result.returncode != 0, (args, result.returncode, result.stderr)
+            return result.stderr
+
         def names():
             return run("list-windows", "-t", "names", "-F", "#{window_index}|#{window_name}").splitlines()
 
@@ -55,9 +60,16 @@ def trace(binary):
                 assert time.monotonic() < deadline, after_terminal
                 time.sleep(0.05)
 
+            run("new-window", "-d", "-S", "-t", "names:", "-n", "second", "sleep 60")
+            assert names() == after_terminal
+            run("new-window", "-d", "-t", "names:", "-n", "duplicate", "sleep 60")
+            run("new-window", "-d", "-t", "names:", "-n", "duplicate", "sleep 60")
+            multiple = fail("new-window", "-d", "-S", "-t", "names:", "-n", "duplicate", "sleep 60")
+            spawn_error = fail("new-window", "-d", "-t", "names:0", "-n", "failed", "sleep 60")
+
             before_terminal[-1] = b"3|$DEFAULT"
             after_terminal[-2] = b"3|$DEFAULT"
-            return tuple(before_terminal + after_terminal)
+            return tuple(before_terminal + after_terminal + [multiple, spawn_error])
         finally:
             subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
 

@@ -79,10 +79,11 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::spawn::spawn_window;
-use crate::src::tmux::{check_name, clean_name};
+use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::{
     winlink_find_by_index, winlink_shuffle_up, winlinks_minmax, winlinks_next,
 };
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -155,7 +156,8 @@ unsafe extern "C" fn cmd_new_window_exec(
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut wname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut wname_owned: Option<CString> = None;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut fs: cmd_find_state = cmd_find_state {
@@ -198,7 +200,14 @@ unsafe extern "C" fn cmd_new_window_exec(
             free(expanded as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
-        wname = clean_name(expanded, 0 as ::core::ffi::c_int);
+        wname_owned = Some(
+            clean_name_cstring(CStr::from_ptr(expanded), 0)
+                .expect("check_name validated the window name"),
+        );
+        wname = wname_owned
+            .as_ref()
+            .expect("window name was cleaned")
+            .as_ptr();
         free(expanded as *mut ::core::ffi::c_void);
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
@@ -225,7 +234,6 @@ unsafe extern "C" fn cmd_new_window_exec(
                                 as *const ::core::ffi::c_char,
                             wname,
                         );
-                        free(wname as *mut ::core::ffi::c_void);
                         free(expanded as *mut ::core::ffi::c_void);
                         return CMD_RETURN_ERROR;
                     }
@@ -236,7 +244,6 @@ unsafe extern "C" fn cmd_new_window_exec(
         }
     }
     if !new_wl.is_null() {
-        free(wname as *mut ::core::ffi::c_void);
         if args_has(args, 'd' as i32 as u_char) != 0 {
             return CMD_RETURN_NORMAL;
         }
@@ -298,7 +305,6 @@ unsafe extern "C" fn cmd_new_window_exec(
             cmd_free_argv(sc.argc, sc.argv);
         }
         environ_free(sc.environ);
-        free(wname as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     } else {
         if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).curw {
@@ -327,7 +333,6 @@ unsafe extern "C" fn cmd_new_window_exec(
             cmd_free_argv(sc.argc, sc.argv);
         }
         environ_free(sc.environ);
-        free(wname as *mut ::core::ffi::c_void);
         return CMD_RETURN_NORMAL;
     };
 }

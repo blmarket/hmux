@@ -125,12 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_new_window_exec`'s `-n` path calls `clean_name` and carries its
-   C-owned output through `-S` matching, `spawn_context.name`, and several
-   early exits. Use `clean_name_cstring` with a local `Option<CString>`, lend
-   its pointer through synchronous spawn, and remove the four manual frees.
-   Preserve `check_name` and the separate formatted-input C owner. Compare
-   explicit names, `-S` matching, and spawn errors with pinned tmux.
+1. `cmd_new_session_exec` still keeps `clean_name` results for optional `-n`
+   window and `-s` session names as C allocations through attach, duplicate
+   name, spawn, and error paths. `session_create` and `spawn_window` copy these
+   names into their existing owners. Use local `Option<CString>` values from
+   `clean_name_cstring`, lend pointers only through synchronous calls, and
+   remove matching frees. Preserve the formatted-name input allocations and
+   early-return behavior. Compare explicit names, duplicate and attach paths,
+   and spawn errors with pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1252,6 +1254,18 @@ name error.
   CLI passed. The popup owner script also passed with pinned tmux, exercising
   explicit titles; the popup cwd script exercises the default title branch.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 427 — own new-window cleaned name (2026-09-23)
+
+- `cmd_new_window_exec` now keeps the cleaned `-n` name in a local `CString`
+  through `-S` matching, diagnostics, `spawn_context.name`, and hooks.
+  `spawn_window` copies the borrowed name into `WindowOwned.name` before
+  returning. Four C-owned cleanup paths are gone; the separately formatted
+  input remains C-owned until checked and freed.
+- Serialized workspace tests and binary build passed. The extended
+  window-name CLI comparison with pinned tmux passed for explicit names,
+  `-S` reuse, ambiguous duplicate names, and a spawn error. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
