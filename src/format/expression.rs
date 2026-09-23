@@ -2774,7 +2774,6 @@ pub(super) unsafe extern "C" fn format_replace(
     let mut marker: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut time_format: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut copy0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut condition: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut found: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -3692,18 +3691,23 @@ pub(super) unsafe extern "C" fn format_replace(
                         value = format_expand1(es, cp);
                         break;
                     } else {
-                        condition =
-                            xstrndup(cp, cp2.offset_from(cp) as ::core::ffi::c_long as size_t);
+                        // The delimiter is inside the NUL-terminated input, so
+                        // this slice contains only the condition's bytes.
+                        let condition = CString::new(std::slice::from_raw_parts(
+                            cp.cast::<u8>(),
+                            cp2.offset_from(cp) as usize,
+                        ))
+                        .expect("format condition contains no NUL");
                         format_log1(
                             es,
                             b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                             b"condition is: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                            condition,
+                            condition.as_ptr(),
                         );
-                        found = format_find(ft, condition, modifiers, time_format);
+                        found = format_find(ft, condition.as_ptr(), modifiers, time_format);
                         if found.is_null() {
-                            found = format_expand1(es, condition);
-                            if strcmp(found, condition) == 0 as ::core::ffi::c_int {
+                            found = format_expand1(es, condition.as_ptr());
+                            if strcmp(found, condition.as_ptr()) == 0 as ::core::ffi::c_int {
                                 free(found as *mut ::core::ffi::c_void);
                                 found = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
                                 format_log1(
@@ -3711,7 +3715,7 @@ pub(super) unsafe extern "C" fn format_replace(
                                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                                     b"condition '%s' not found; assuming false\0" as *const u8
                                         as *const ::core::ffi::c_char,
-                                    condition,
+                                    condition.as_ptr(),
                                 );
                             }
                         } else {
@@ -3720,7 +3724,7 @@ pub(super) unsafe extern "C" fn format_replace(
                                 b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                                 b"condition '%s' found: %s\0" as *const u8
                                     as *const ::core::ffi::c_char,
-                                condition,
+                                condition.as_ptr(),
                                 found,
                             );
                         }
@@ -3733,19 +3737,20 @@ pub(super) unsafe extern "C" fn format_replace(
                                 b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                                 b"condition '%s' is true\0" as *const u8
                                     as *const ::core::ffi::c_char,
-                                condition,
+                                condition.as_ptr(),
                             );
                             if cp2.is_null() {
                                 value = format_expand1(es, cp);
                             } else {
-                                right = xstrndup(
-                                    cp,
-                                    cp2.offset_from(cp) as ::core::ffi::c_long as size_t,
-                                );
-                                value = format_expand1(es, right);
-                                free(right as *mut ::core::ffi::c_void);
+                                let right = CString::new(std::slice::from_raw_parts(
+                                    cp.cast::<u8>(),
+                                    cp2.offset_from(cp) as usize,
+                                ))
+                                .expect("format branch contains no NUL");
+                                value = format_expand1(es, right.as_ptr());
+                                drop(right);
                             }
-                            free(condition as *mut ::core::ffi::c_void);
+                            drop(condition);
                             free(found as *mut ::core::ffi::c_void);
                             break;
                         } else {
@@ -3754,9 +3759,9 @@ pub(super) unsafe extern "C" fn format_replace(
                                 b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                                 b"condition '%s' is false\0" as *const u8
                                     as *const ::core::ffi::c_char,
-                                condition,
+                                condition.as_ptr(),
                             );
-                            free(condition as *mut ::core::ffi::c_void);
+                            drop(condition);
                             free(found as *mut ::core::ffi::c_void);
                             if cp2.is_null() {
                                 format_log1(

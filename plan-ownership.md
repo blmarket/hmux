@@ -1114,6 +1114,20 @@ legacy callers safe.
   isolated worktree. A live format smoke check succeeded but did not
   distinguish alignment; no sanitizer run was performed.
 
+### Increment 54 — conditional format scratch strings (2026-09-22)
+
+- The `?` branch of `format_replace` now owns both its condition token and
+  its selected true-branch substring as byte-preserving `CString` values.
+  This removes their `xstrndup`/`free` pairs. Explicit drops preserve the
+  original order before freeing `found`. `format_find`, nested
+  `format_expand1`, and `format_log1` consume the borrowed text
+  synchronously; `found` and `value` keep their C-owned return contract.
+- `tests/format_condition_scratch.rs` exercises public format expansion
+  with true, false, missing-key, fallback, empty, escaped-comma,
+  non-UTF-8, and nested conditions. Focused and workspace tests, binary
+  build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1128,12 +1142,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the conditional operand scratch in `format_replace`, then the
-   key-name scratch in `window_customize.rs`. Audit nested format callbacks
-   and UI prompt return paths before migration.
+2. Inspect the key-name scratch in `window_customize.rs` and other local
+   parser strings. Audit UI prompt return paths before migration.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–53. The remaining
+Current validation is recorded in increments 15–54. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–53 has its own local commit; none was pushed.
+Each of increments 15–54 has its own local commit; none was pushed.
