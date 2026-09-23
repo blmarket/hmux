@@ -112,15 +112,12 @@ unsafe extern "C" fn cmd_list_buffers_exec(
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
-    let mut l: *mut *mut paste_buffer = ::core::ptr::null_mut::<*mut paste_buffer>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_int = 0;
-    let mut i: u_int = 0;
-    let mut n: u_int = 0;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
@@ -143,16 +140,15 @@ unsafe extern "C" fn cmd_list_buffers_exec(
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    l = sort_get_buffers(&raw mut n, &raw mut sort_crit);
-    i = 0 as u_int;
-    while i < n {
+    let buffers = sort_get_buffers(&raw mut sort_crit);
+    for pb in buffers {
         ft = format_create(
             cmdq_get_client(item),
             item,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
-        format_defaults_paste_buffer(ft, *l.offset(i as isize));
+        format_defaults_paste_buffer(ft, pb);
         if !filter.is_null() {
             expanded = format_expand(ft, filter);
             flag = format_true(expanded);
@@ -170,7 +166,6 @@ unsafe extern "C" fn cmd_list_buffers_exec(
             free(line as *mut ::core::ffi::c_void);
         }
         format_free(ft);
-        i = i.wrapping_add(1);
     }
     return CMD_RETURN_NORMAL;
 }

@@ -298,9 +298,7 @@ unsafe extern "C" fn window_buffer_build(
     let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
     let mut item: *mut window_buffer_itemdata = ::core::ptr::null_mut::<window_buffer_itemdata>();
     let mut i: u_int = 0;
-    let mut n: u_int = 0;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut l: *mut *mut paste_buffer = ::core::ptr::null_mut::<*mut paste_buffer>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -308,14 +306,12 @@ unsafe extern "C" fn window_buffer_build(
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     window_buffer_clear_items(&mut (*data).item_list);
-    l = sort_get_buffers(&raw mut n, sort_crit);
-    i = 0 as u_int;
-    while i < n {
-        let name = CStr::from_ptr(paste_buffer_name(*l.offset(i as isize)));
+    let buffers = sort_get_buffers(sort_crit);
+    for pb in buffers {
+        let name = CStr::from_ptr(paste_buffer_name(pb));
         item = window_buffer_add_item(&mut (*data).item_list, name);
-        paste_buffer_data(*l.offset(i as isize), &raw mut (*item).size);
-        (*item).order = paste_buffer_order(*l.offset(i as isize));
-        i = i.wrapping_add(1);
+        paste_buffer_data(pb, &raw mut (*item).size);
+        (*item).order = paste_buffer_order(pb);
     }
     if cmd_find_valid_state(&raw mut (*data).fs) != 0 {
         s = (*data).fs.s;

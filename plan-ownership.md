@@ -2123,6 +2123,24 @@ legacy callers safe.
   build, attached prompt paste and completion CLI scenarios, changed-file
   rustfmt, and `git diff --check` passed. No sanitizer was run.
 
+### Increment 119 — sorted paste-buffer candidate list (2026-09-22)
+
+- `sort_get_buffers` now returns a local `Vec<*mut paste_buffer>` to its two
+  production callers, `window_buffer_build` and `cmd_list_buffers_exec`.
+  Removed its process-global raw list, `lsz` capacity counter, and
+  `xreallocarray` cache. Each caller owns the list through its traversal;
+  the paste-buffer objects themselves remain owned by the paste registry.
+- Sorting still uses the same comparator and `sort_qsort` on temporary
+  contiguous Vec storage, retaining order, reverse, and tie behavior. A
+  recursive sorted-buffer call gets its own list. The translated
+  `sort_get_buffers` symbol is no longer exported by the staticlib; no
+  in-tree or documented foreign caller was found.
+- Isolated validation: workspace tests with serialized test threads, binary
+  build, `git diff --check`, and a private-server CLI scenario covering empty,
+  order/name/size/reverse/filter, and deletion cases passed. Changed-file
+  rustfmt reports only three import layout differences also present in the
+  base commit. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2161,9 +2179,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–118. The remaining
+Current validation is recorded in increments 15–119. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–118 has its own local commit; none was pushed.
+Each of increments 15–119 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

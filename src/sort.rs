@@ -563,38 +563,19 @@ pub unsafe extern "C" fn sort_would_window_tree_swap(
         &raw mut wlb as *const ::core::ffi::c_void,
     ) != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_buffers(
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut paste_buffer {
+pub unsafe fn sort_get_buffers(sort_crit: *mut sort_criteria) -> Vec<*mut paste_buffer> {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut i: u_int = 0;
-    static mut l: *mut *mut paste_buffer =
-        ::core::ptr::null::<*mut paste_buffer>() as *mut *mut paste_buffer;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
+    let mut buffers = Vec::new();
     loop {
         pb = paste_walk(pb);
         if pb.is_null() {
             break;
         }
-        if lsz <= i {
-            lsz = lsz.wrapping_add(100 as u_int);
-            l = xreallocarray(
-                l as *mut ::core::ffi::c_void,
-                lsz as size_t,
-                ::core::mem::size_of::<*mut paste_buffer>() as size_t,
-            ) as *mut *mut paste_buffer;
-        }
-        let fresh0 = i;
-        i = i.wrapping_add(1);
-        let ref mut fresh1 = *l.offset(fresh0 as isize);
-        *fresh1 = pb;
+        buffers.push(pb);
     }
     sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
+        buffers.as_mut_ptr() as *mut ::core::ffi::c_void,
+        u_int::try_from(buffers.len()).expect("too many paste buffers to sort"),
         ::core::mem::size_of::<*mut paste_buffer>() as u_int,
         Some(
             sort_buffer_cmp
@@ -605,8 +586,7 @@ pub unsafe extern "C" fn sort_get_buffers(
         ),
         sort_crit,
     );
-    *n = i;
-    return l;
+    buffers
 }
 #[no_mangle]
 pub unsafe extern "C" fn sort_get_clients(
