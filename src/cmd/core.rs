@@ -729,7 +729,7 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: *mut cmd) -> CString {
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_new() -> *mut cmd_list {
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    cmdlist = xcalloc(1 as size_t, ::core::mem::size_of::<cmd_list>() as size_t) as *mut cmd_list;
+    cmdlist = Box::into_raw(Box::new(::core::mem::zeroed::<cmd_list>()));
     (*cmdlist).references = 1 as ::core::ffi::c_int;
     let fresh6 = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
@@ -799,7 +799,7 @@ pub unsafe extern "C" fn cmd_list_free(mut cmdlist: *mut cmd_list) {
         cmd = cmd1;
     }
     drop(Box::from_raw((*cmdlist).list));
-    free(cmdlist as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(cmdlist));
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_copy(

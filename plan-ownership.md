@@ -3124,6 +3124,18 @@ legacy callers safe.
   teardown. Both matched the pinned baseline. Full workspace tests, binary
   build, changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 346 — boxed command lists (2026-09-23)
+
+- `cmd_list_new` now Box-allocates the zeroed outer `cmd_list`; the final
+  `cmd_list_free` reference releases contained commands and the boxed queue
+  header before consuming this Box. The stable raw pointer and existing
+  explicit retain/release count remain. Removed the outer `xcalloc`/`free`
+  pair.
+- Command-list print and attached command-prompt CLI checks matched the
+  pinned baseline, covering list construction, sharing, copy, and teardown.
+  Full workspace tests, binary build, changed-file rustfmt, and diff checks
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3134,10 +3146,7 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_list` in `src/cmd/core.rs` still has one `xcalloc` constructor and
-   a final-reference libc free after its boxed queue header is released.
-   A Box can preserve its existing explicit reference count and stable
-   borrowed pointer. `args_value` has separate scalar constructors,
+1. `args_value` has separate scalar constructors,
    movable positional arrays, and external callers of exported
    `args_set`/`args_free_value`; a whole-type migration needs an ABI and
    ownership redesign across those paths.

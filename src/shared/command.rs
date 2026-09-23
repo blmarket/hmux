@@ -147,6 +147,7 @@ pub struct cmd_find_state {
 }
 
 #[repr(C)]
+/// Box-owned from `cmd_list_new` until the last explicit reference is freed.
 pub struct cmd_list {
     pub references: ::core::ffi::c_int,
     pub group: u_int,
