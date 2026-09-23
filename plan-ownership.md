@@ -1951,6 +1951,20 @@ legacy callers safe.
   covers mutation of the caller's name, removal during dispatch, and adding a
   new generation while dispatching. No sanitizer was run.
 
+### Increment 264 — if-shell callback data owner (2026-09-23)
+
+- `cmd_if_shell_data` now uses `Box` through its job callback lifetime, and
+  the record is no longer `Copy`. Successful job creation transfers the box to
+  the existing free callback; job creation failure reclaims it there. The
+  callback still releases nested command states and the client reference in
+  the previous order.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and
+  `scripts/if_shell_owner_cli_checks.py` passed on main. The pinned-baseline
+  comparison covered true/false jobs, a callback parse error, background
+  execution, and the `-F` branch. Job creation failure was source-audited but
+  not fault injected. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1961,8 +1975,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit small callback leaves such as `if-shell` callback data for complete
-   allocation, callback, and free ownership.
+1. Audit `wait-for`'s event watch record and the status saved-screen record
+   for complete registration, callback, and free ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
@@ -2000,7 +2014,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–258 above, with increment 228 explicitly retracted.
+recorded in increments 226–264 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.
