@@ -476,23 +476,18 @@ unsafe extern "C" fn prompt_fire_callback(
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_incremental_start(mut pr: *mut prompt) {
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
-        tmp = utf8_tocstr((*pr).buffer);
-        xasprintf(
-            &raw mut cp,
-            b"=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            tmp,
-        );
+        let input = utf8_tocstr_cstring((*pr).buffer);
+        let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
+        bytes.push(b'=');
+        bytes.extend_from_slice(input.as_bytes());
+        let callback_input = CString::new(bytes).expect("the first NUL ends the prompt input");
         prompt_fire_callback(
             pr,
-            cp,
+            callback_input.as_ptr(),
             PROMPT_KEY_HANDLED,
             ::core::ptr::null_mut::<::core::ffi::c_int>(),
         );
-        free(cp as *mut ::core::ffi::c_void);
-        free(tmp as *mut ::core::ffi::c_void);
     }
 }
 #[no_mangle]
