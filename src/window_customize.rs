@@ -1423,6 +1423,12 @@ unsafe extern "C" fn window_customize_build_options(
         mode_tree_remove((*data).data, top);
     }
 }
+fn window_customize_key_detail(value: &[u8]) -> CString {
+    let mut text = b"#[fg=themelightgrey]#[ignore]".to_vec();
+    text.extend_from_slice(value);
+    CString::new(text).expect("key detail contains no NUL")
+}
+
 unsafe extern "C" fn window_customize_build_keys(
     mut data: *mut window_customize_modedata,
     mut kt: *mut key_table,
@@ -1436,10 +1442,7 @@ unsafe extern "C" fn window_customize_build_keys(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut flag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut count: u_int = 0 as u_int;
     let mut title_bytes = b"Key Table - ".to_vec();
     title_bytes.extend_from_slice(CStr::from_ptr((*kt).name).to_bytes());
@@ -1523,12 +1526,8 @@ unsafe extern "C" fn window_customize_build_keys(
                 0 as ::core::ffi::c_int,
             ) as *mut mode_tree_item;
             free(expanded as *mut ::core::ffi::c_void);
-            tmp = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
-            xasprintf(
-                &raw mut text,
-                b"#[fg=themelightgrey]#[ignore]%s\0" as *const u8 as *const ::core::ffi::c_char,
-                tmp,
-            );
+            let tmp = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
+            let text = window_customize_key_detail(CStr::from_ptr(tmp).to_bytes());
             free(tmp as *mut ::core::ffi::c_void);
             mti = mode_tree_add_identity(
                 (*data).data,
@@ -1536,55 +1535,47 @@ unsafe extern "C" fn window_customize_build_keys(
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_identity((*kt).name, (*bd).key, 1),
                 b"Command\0" as *const u8 as *const ::core::ffi::c_char,
-                text,
+                text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
             ) as *mut mode_tree_item;
             mode_tree_draw_as_parent(mti);
             mode_tree_no_tag(mti);
-            free(text as *mut ::core::ffi::c_void);
-            if !(*bd).note.is_null() {
-                xasprintf(
-                    &raw mut text,
-                    b"#[fg=themelightgrey]#[ignore]%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*bd).note,
-                );
+            drop(text);
+            let text = if !(*bd).note.is_null() {
+                window_customize_key_detail(CStr::from_ptr((*bd).note).to_bytes())
             } else {
-                text = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-            }
+                CString::new(Vec::new()).expect("empty key note")
+            };
             mti = mode_tree_add_identity(
                 (*data).data,
                 child,
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_identity((*kt).name, (*bd).key, 2),
                 b"Note\0" as *const u8 as *const ::core::ffi::c_char,
-                text,
+                text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
             ) as *mut mode_tree_item;
             mode_tree_draw_as_parent(mti);
             mode_tree_no_tag(mti);
-            free(text as *mut ::core::ffi::c_void);
-            if (*bd).flags & KEY_BINDING_REPEAT != 0 {
-                flag = b"on\0" as *const u8 as *const ::core::ffi::c_char;
+            drop(text);
+            let flag = if (*bd).flags & KEY_BINDING_REPEAT != 0 {
+                b"on".as_slice()
             } else {
-                flag = b"off\0" as *const u8 as *const ::core::ffi::c_char;
-            }
-            xasprintf(
-                &raw mut text,
-                b"#[fg=themelightgrey]#[ignore]%s\0" as *const u8 as *const ::core::ffi::c_char,
-                flag,
-            );
+                b"off".as_slice()
+            };
+            let text = window_customize_key_detail(flag);
             mti = mode_tree_add_identity(
                 (*data).data,
                 child,
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_identity((*kt).name, (*bd).key, 3),
                 b"Repeat\0" as *const u8 as *const ::core::ffi::c_char,
-                text,
+                text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
             ) as *mut mode_tree_item;
             mode_tree_draw_as_parent(mti);
             mode_tree_no_tag(mti);
-            free(text as *mut ::core::ffi::c_void);
+            drop(text);
             count = count.wrapping_add(1);
             bd = key_bindings_next(kt, bd);
         }

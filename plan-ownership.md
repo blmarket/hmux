@@ -755,6 +755,21 @@ legacy callers safe.
   unsafe-permission failure output with the pinned baseline. A race-driven
   `lstat` failure was source audited but not E2E covered. No sanitizer was run.
 
+### Increment 180 — customize key detail scratch (2026-09-22)
+
+- `window_customize_build_keys` now owns Command, Note, and Repeat detail
+  text with byte-preserving local `CString`s through
+  `mode_tree_add_identity`. Removed three local `xasprintf` allocations, the
+  no-note `xstrdup`, and all four matching frees. The tree duplicates the
+  strings synchronously; the separate C-owned `cmd_list_print` result still
+  follows its allocation/free path.
+- In the isolated branch, library/binary build, the focused
+  `list_keys_ownership` test, changed-file rustfmt, Python syntax check, and
+  `git diff --check` passed. The new attached-client customize-mode CLI check
+  matched all six Command, Note, and Repeat rows against the pinned baseline,
+  including empty note, repeat on/off, and UTF-8 note/command text. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -765,10 +780,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_build_keys` still formats local command, note, and
-   repeat detail text with `xasprintf`/`xstrdup`, passes each to
-   `mode_tree_add_identity`, then frees it. The tree copies these strings;
-   the three branches can be audited as one small, byte-preserving owner.
+1. `window_customize_build_environment` still duplicates each environment
+   value for synchronous `format_add`, then frees it on both filter and
+   normal paths. Its displayed name is also a local `xasprintf`/`xstrdup`
+   allocation copied by `mode_tree_add_identity` and freed afterward. These
+   local owners can be migrated with the filter path checked explicitly.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -793,9 +809,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–177. The remaining
+Current validation is recorded in increments 15–180. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–177 has its own local commit; none was pushed.
+Each of increments 15–180 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -982,3 +998,11 @@ build, mode-tree-row, customize-key-table-title, and capture-pane-grid-cell
 CLI checks, changed-file rustfmt, and `git diff --check` passed on main.
 The mode-tree-row and capture-pane checks compared against the pinned
 baseline binary. No combined sanitizer was run.
+After increments 178–180 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, pane login-record, socket-label-base, and customize-key-detail CLI
+checks, changed-file rustfmt, Python syntax checks, and `git diff --check`
+passed on main. The socket-label-base and customize-key-detail checks
+compared with the pinned baseline binary; the login-record check confirmed
+matching pane IDs and label shape on both binaries. No combined sanitizer
+was run.
