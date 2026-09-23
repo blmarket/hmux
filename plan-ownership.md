@@ -1677,6 +1677,21 @@ legacy callers safe.
   tests, binary build, changed-file rustfmt, and `git diff --check` passed in
   the isolated worktree. No sanitizer run was performed.
 
+### Increment 92 — prompt history entries and list (2026-09-22)
+
+- `prompt_hlist` now owns each type's history as `Vec<CString>`. This removes
+  the separate count, pointer-array `xreallocarray`/`memmove`, entry `xstrdup`,
+  and manual frees on pruning and clearing. `prompt_history_get` and navigation
+  lend pointers into CString allocations; moving the Vec leaves these buffers
+  stable until that entry is pruned or cleared. Save/load order is unchanged.
+- `prompt_add_history` copies an incoming borrowed entry before pruning it,
+  avoiding the prior use-after-free if the argument aliases the oldest entry.
+  Limit-zero and duplicate-at-limit behavior remain. The focused test covers
+  pointer stability across growth, non-UTF-8 bytes, duplicates, pruning,
+  navigation, alias input, and save/reload. Focused test, `cargo check`,
+  changed-file rustfmt, and `git diff --check` passed in the isolated
+  worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1710,9 +1725,9 @@ non-string value.
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–91. The remaining
+Current validation is recorded in increments 15–92. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–91 has its own local commit; none was pushed.
+Each of increments 15–92 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

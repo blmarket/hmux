@@ -1,7 +1,6 @@
 pub use crate::src::ffi::libc::__ssize_t;
 use crate::src::ffi::libc::{
-    __errno_location, __getdelim, fclose, fopen, fputc, fputs, free, memmove, strcmp, strerror,
-    strsep,
+    __errno_location, __getdelim, fclose, fopen, fputc, fputs, free, strcmp, strerror, strsep,
 };
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
@@ -15,7 +14,8 @@ pub use crate::src::shared::stdio::{
     _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
 };
 use crate::src::tmux::{find_home, global_options};
-use crate::src::xmalloc::{xasprintf, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xasprintf, xstrdup};
+use std::ffi::{CStr, CString};
 
 #[inline]
 unsafe extern "C" fn getline(
@@ -25,9 +25,9 @@ unsafe extern "C" fn getline(
 ) -> __ssize_t {
     return __getdelim(__lineptr, __n, '\n' as i32, __stream);
 }
-static mut prompt_hlist: [*mut *mut ::core::ffi::c_char; 2] =
-    [::core::ptr::null::<*mut ::core::ffi::c_char>() as *mut *mut ::core::ffi::c_char; 2];
-static mut prompt_hsize: [u_int; 2] = [0; 2];
+// The C API borrows each string until that entry is pruned or cleared. Moving
+// CString values within the vector does not move their NUL-terminated buffers.
+static mut prompt_hlist: [Vec<CString>; PROMPT_NTYPES as usize] = [Vec::new(), Vec::new()];
 unsafe extern "C" fn prompt_find_history_file() -> *mut ::core::ffi::c_char {
     let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut history_file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -159,10 +159,11 @@ pub unsafe extern "C" fn prompt_save_history() {
     type_0 = 0 as u_int;
     while type_0 < PROMPT_NTYPES as u_int {
         i = 0 as u_int;
-        while i < prompt_hsize[type_0 as usize] {
+        let history = &*(&raw const prompt_hlist[type_0 as usize]);
+        while i < history.len() as u_int {
             fputs(prompt_type_string(type_0 as prompt_type), f);
             fputc(':' as i32, f);
-            fputs(*prompt_hlist[type_0 as usize].offset(i as isize), f);
+            fputs(history[i as usize].as_ptr(), f);
             fputc('\n' as i32, f);
             i = i.wrapping_add(1);
         }
@@ -178,15 +179,13 @@ pub unsafe extern "C" fn prompt_up_history(
     if type_0 >= PROMPT_NTYPES as u_int {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    if prompt_hsize[type_0 as usize] == 0 as u_int
-        || *idx.offset(type_0 as isize) == prompt_hsize[type_0 as usize]
-    {
+    let history = &*(&raw const prompt_hlist[type_0 as usize]);
+    if history.is_empty() || *idx.offset(type_0 as isize) == history.len() as u_int {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
     let ref mut fresh0 = *idx.offset(type_0 as isize);
     *fresh0 = (*fresh0).wrapping_add(1);
-    return *prompt_hlist[type_0 as usize]
-        .offset(prompt_hsize[type_0 as usize].wrapping_sub(*idx.offset(type_0 as isize)) as isize);
+    return history[history.len() - *idx.offset(type_0 as isize) as usize].as_ptr();
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_down_history(
@@ -196,7 +195,8 @@ pub unsafe extern "C" fn prompt_down_history(
     if type_0 >= PROMPT_NTYPES as u_int {
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    if prompt_hsize[type_0 as usize] == 0 as u_int || *idx.offset(type_0 as isize) == 0 as u_int {
+    let history = &*(&raw const prompt_hlist[type_0 as usize]);
+    if history.is_empty() || *idx.offset(type_0 as isize) == 0 as u_int {
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     let ref mut fresh1 = *idx.offset(type_0 as isize);
@@ -204,96 +204,54 @@ pub unsafe extern "C" fn prompt_down_history(
     if *idx.offset(type_0 as isize) == 0 as u_int {
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    return *prompt_hlist[type_0 as usize]
-        .offset(prompt_hsize[type_0 as usize].wrapping_sub(*idx.offset(type_0 as isize)) as isize);
+    return history[history.len() - *idx.offset(type_0 as isize) as usize].as_ptr();
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_add_history(
     mut line: *const ::core::ffi::c_char,
     mut type_0: u_int,
 ) {
-    let mut i: u_int = 0;
-    let mut oldsize: u_int = 0;
-    let mut newsize: u_int = 0;
-    let mut freecount: u_int = 0;
-    let mut hlimit: u_int = 0;
-    let mut new: u_int = 1 as u_int;
-    let mut movesize: size_t = 0;
     if type_0 >= PROMPT_NTYPES as u_int {
         return;
     }
-    oldsize = prompt_hsize[type_0 as usize];
-    if oldsize > 0 as u_int
-        && strcmp(
-            *prompt_hlist[type_0 as usize].offset(oldsize.wrapping_sub(1 as u_int) as isize),
-            line,
-        ) == 0 as ::core::ffi::c_int
-    {
-        new = 0 as u_int;
-    }
-    hlimit = options_get_number(
+    let history = &*(&raw const prompt_hlist[type_0 as usize]);
+    let oldsize = history.len() as u_int;
+    let new = !history
+        .last()
+        .is_some_and(|last| strcmp(last.as_ptr(), line) == 0);
+    let hlimit = options_get_number(
         global_options,
         b"prompt-history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
     if hlimit > oldsize {
-        if new == 0 as u_int {
+        if !new {
             return;
         }
-        newsize = oldsize.wrapping_add(new);
-    } else {
-        newsize = hlimit;
-        freecount = oldsize.wrapping_add(new).wrapping_sub(newsize);
-        if freecount > oldsize {
-            freecount = oldsize;
-        }
-        if freecount == 0 as u_int {
-            return;
-        }
-        i = 0 as u_int;
-        while i < freecount {
-            free(*prompt_hlist[type_0 as usize].offset(i as isize) as *mut ::core::ffi::c_void);
-            i = i.wrapping_add(1);
-        }
-        movesize = (oldsize.wrapping_sub(freecount) as usize)
-            .wrapping_mul(::core::mem::size_of::<*mut ::core::ffi::c_char>() as usize)
-            as size_t;
-        if movesize > 0 as size_t {
-            memmove(
-                (*(&raw mut prompt_hlist as *mut *mut *mut ::core::ffi::c_char)
-                    .offset(type_0 as isize))
-                .offset(0 as ::core::ffi::c_int as isize)
-                    as *mut *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
-                (*(&raw mut prompt_hlist as *mut *mut *mut ::core::ffi::c_char)
-                    .offset(type_0 as isize))
-                .offset(freecount as isize) as *mut *mut ::core::ffi::c_char
-                    as *const ::core::ffi::c_void,
-                movesize,
-            );
-        }
+    } else if oldsize + new as u_int - hlimit == 0 {
+        return;
     }
-    if newsize == 0 as u_int {
-        free(prompt_hlist[type_0 as usize] as *mut ::core::ffi::c_void);
-        prompt_hlist[type_0 as usize] = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    } else if newsize != oldsize {
-        prompt_hlist[type_0 as usize] = xreallocarray(
-            prompt_hlist[type_0 as usize] as *mut ::core::ffi::c_void,
-            newsize as size_t,
-            ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-        ) as *mut *mut ::core::ffi::c_char;
+
+    // `line` may borrow an existing entry. Copy it before pruning can drop
+    // that entry, including when the new entry comes from the oldest slot.
+    let added = (new && hlimit != 0).then(|| CStr::from_ptr(line).to_owned());
+    let history = &mut *(&raw mut prompt_hlist[type_0 as usize]);
+    if hlimit <= oldsize {
+        let freecount = (oldsize + new as u_int - hlimit).min(oldsize) as usize;
+        history.drain(..freecount);
     }
-    if new == 1 as u_int && newsize > 0 as u_int {
-        let ref mut fresh2 =
-            *prompt_hlist[type_0 as usize].offset(newsize.wrapping_sub(1 as u_int) as isize);
-        *fresh2 = xstrdup(line);
+    if hlimit == 0 {
+        // The old implementation freed the pointer list as well as its items.
+        *history = Vec::new();
+    } else if let Some(added) = added {
+        history.push(added);
     }
-    prompt_hsize[type_0 as usize] = newsize;
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_history_size(mut type_0: prompt_type) -> u_int {
     if type_0 as ::core::ffi::c_uint >= PROMPT_NTYPES as ::core::ffi::c_uint {
         return 0 as u_int;
     }
-    return prompt_hsize[type_0 as usize];
+    return (&*(&raw const prompt_hlist[type_0 as usize])).len() as u_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_history_get(
@@ -303,23 +261,16 @@ pub unsafe extern "C" fn prompt_history_get(
     if type_0 as ::core::ffi::c_uint >= PROMPT_NTYPES as ::core::ffi::c_uint {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    if idx >= prompt_hsize[type_0 as usize] {
+    let history = &*(&raw const prompt_hlist[type_0 as usize]);
+    if idx >= history.len() as u_int {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    return *prompt_hlist[type_0 as usize].offset(idx as isize);
+    return history[idx as usize].as_ptr();
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_history_clear(mut type_0: prompt_type) {
-    let mut idx: u_int = 0;
     if type_0 as ::core::ffi::c_uint >= PROMPT_NTYPES as ::core::ffi::c_uint {
         return;
     }
-    idx = 0 as u_int;
-    while idx < prompt_hsize[type_0 as usize] {
-        free(*prompt_hlist[type_0 as usize].offset(idx as isize) as *mut ::core::ffi::c_void);
-        idx = idx.wrapping_add(1);
-    }
-    free(prompt_hlist[type_0 as usize] as *mut ::core::ffi::c_void);
-    prompt_hlist[type_0 as usize] = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    prompt_hsize[type_0 as usize] = 0 as u_int;
+    *(&raw mut prompt_hlist[type_0 as usize]) = Vec::new();
 }
