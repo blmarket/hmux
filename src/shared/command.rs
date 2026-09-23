@@ -118,8 +118,8 @@ pub struct cmdq_item {
     pub entry: cmdq_item_entry,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by `cmd_list`; its intrusive tail points into this stable record.
 pub struct cmds {
     pub tqh_first: *mut cmd,
     pub tqh_last: *mut *mut cmd,
@@ -146,11 +146,11 @@ pub struct cmd_find_state {
     pub idx: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_list {
     pub references: ::core::ffi::c_int,
     pub group: u_int,
+    /// Box-owned queue header, released with the final `cmd_list_free` reference.
     pub list: *mut cmds,
 }
 

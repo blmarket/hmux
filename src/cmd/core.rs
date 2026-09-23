@@ -734,7 +734,7 @@ pub unsafe extern "C" fn cmd_list_new() -> *mut cmd_list {
     let fresh6 = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
     (*cmdlist).group = fresh6;
-    (*cmdlist).list = xcalloc(1 as size_t, ::core::mem::size_of::<cmds>() as size_t) as *mut cmds;
+    (*cmdlist).list = Box::into_raw(Box::new(::core::mem::zeroed::<cmds>()));
     (*(*cmdlist).list).tqh_first = ::core::ptr::null_mut::<cmd>();
     (*(*cmdlist).list).tqh_last = &raw mut (*(*cmdlist).list).tqh_first;
     return cmdlist;
@@ -798,7 +798,7 @@ pub unsafe extern "C" fn cmd_list_free(mut cmdlist: *mut cmd_list) {
         cmd_free(cmd);
         cmd = cmd1;
     }
-    free((*cmdlist).list as *mut ::core::ffi::c_void);
+    drop(Box::from_raw((*cmdlist).list));
     free(cmdlist as *mut ::core::ffi::c_void);
 }
 #[no_mangle]

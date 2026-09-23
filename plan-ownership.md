@@ -3099,6 +3099,19 @@ legacy callers safe.
   rustfmt, and diff checks passed. Other parser semantic values still have
   their pre-existing error-path cleanup gaps; no sanitizer was run.
 
+### Increment 344 — boxed command-list queue headers (2026-09-23)
+
+- `cmd_list_new` now Box-allocates its `cmds` intrusive queue header and
+  initializes the self-referential tail at the final address. The final
+  `cmd_list_free` reference drains commands, then consumes the Box. Append
+  and move operations continue transferring links between stable headers.
+  Removed the header's `xcalloc`/`free` pair and `Copy`/`Clone` derives from
+  the queue header and owning `cmd_list` record.
+- Command-list print and verbose parser CLI checks matched the pinned
+  baseline, including semicolon lists and nested commands. Full workspace
+  tests, binary build, changed-file rustfmt, and diff checks passed. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
