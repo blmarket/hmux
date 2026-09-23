@@ -1858,6 +1858,19 @@ legacy callers safe.
   floating-pane redraw check also passed with the pinned baseline. No
   sanitizer was run.
 
+### Increment 257 — display-panes preview screen owner (2026-09-23)
+
+- `window_panes_modedata.preview` now holds `Option<Box<screen>>` instead of a
+  separately malloc-allocated raw screen. The preview is created once during
+  mode initialization; draw paths take a short-lived raw pointer for their C
+  screen calls. At mode teardown, `screen_free` still precedes the box drop,
+  removing the preview `xmalloc`/`free` pair without changing its grid cleanup.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/display_panes_command_cli_checks.py` passed on main. The attached
+  display-panes check also passed with the pinned baseline. No sanitizer was
+  run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1868,10 +1881,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `session.tio`, tty key-event buffer ownership, and OSC 52 decode output
-   are under independent owner/caller audits. Prefer a complete small leaf
-   owner. The OSC 52 output may cross a C-owned paste boundary, so a local
-   Vec is useful only if its whole borrow/transfer path improves.
+1. A validated `session.tio` owner migration is committed as `9d4468d` in
+   `/tmp/hmux2-session-tio-owner`; review and integrate it as the next
+   increment, then remove that temporary worktree. Tty key-event ownership
+   is under a separate caller/queue audit. OSC 52 decode output transfers
+   directly into `paste_add`, which retains its C allocation until
+   `paste_free`; a local Vec would add a copy without removing the lifetime.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1903,7 +1918,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–256 above, with increment 228 explicitly retracted.
+recorded in increments 226–257 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

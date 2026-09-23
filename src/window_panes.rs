@@ -103,7 +103,7 @@ use crate::src::window::{
     winlink_find_by_window,
 };
 use crate::src::window_clock::window_clock_table;
-use crate::src::xmalloc::{xmalloc, xsnprintf};
+use crate::src::xmalloc::xsnprintf;
 use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -118,7 +118,7 @@ pub struct window_panes_modedata {
     pub source_session: u_int,
     pub source_window: u_int,
     pub screen: screen,
-    pub preview: *mut screen,
+    preview: Option<Box<screen>>,
     pub timer: event,
     pub state: *mut args_command_state,
     pub delay: u_int,
@@ -219,7 +219,6 @@ unsafe extern "C" fn window_panes_get_source(
 unsafe extern "C" fn window_panes_set_preview(mut data: *mut window_panes_modedata) {
     let mut wp: *mut window_pane = (*data).wp;
     let mut src: *mut screen = &raw mut (*wp).base;
-    let mut dst: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -232,8 +231,8 @@ unsafe extern "C" fn window_panes_set_preview(mut data: *mut window_panes_modeda
     };
     let mut sx: u_int = (*(*src).grid).sx;
     let mut sy: u_int = (*(*src).grid).sy;
-    dst = xmalloc(::core::mem::size_of::<screen>() as size_t) as *mut screen;
-    (*data).preview = dst;
+    (*data).preview = Some(Box::new(::core::mem::zeroed()));
+    let dst = (*data).preview.as_deref_mut().unwrap() as *mut screen;
     screen_init(dst, sx, sy, 0 as u_int);
     screen_write_start(&raw mut ctx, dst);
     screen_write_fast_copy(&raw mut ctx, src, 0 as u_int, (*(*src).grid).hsize, sx, sy);
@@ -1482,12 +1481,16 @@ unsafe extern "C" fn window_panes_draw_pane(
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    if !(*data).preview.is_null()
+    let preview = (*data)
+        .preview
+        .as_deref_mut()
+        .map_or(::core::ptr::null_mut(), |preview| preview as *mut screen);
+    if !preview.is_null()
         && wp == (*data).wp
-        && sx <= (*(*(*data).preview).grid).sx
-        && sy <= (*(*(*data).preview).grid).sy
+        && sx <= (*(*preview).grid).sx
+        && sy <= (*(*preview).grid).sy
     {
-        s = (*data).preview;
+        s = preview;
     }
     if osx <= dsx && osy <= dsy {
         screen_write_fast_copy(ctx, s, 0 as u_int, (*(*s).grid).hsize, sx, sy);
@@ -1648,7 +1651,7 @@ unsafe extern "C" fn window_panes_init(
         source_session: 0,
         source_window: 0,
         screen: ::core::mem::zeroed(),
-        preview: ::core::ptr::null_mut(),
+        preview: None,
         timer: ::core::mem::zeroed(),
         state: ::core::ptr::null_mut(),
         delay: 0,
@@ -1728,9 +1731,8 @@ unsafe extern "C" fn window_panes_free(mut wme: *mut window_mode_entry) {
         args_make_commands_free((*data).state);
     }
     window_panes_free_areas(data);
-    if !(*data).preview.is_null() {
-        screen_free((*data).preview);
-        free((*data).preview as *mut ::core::ffi::c_void);
+    if let Some(mut preview) = (*data).preview.take() {
+        screen_free(&raw mut *preview);
     }
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
