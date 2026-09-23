@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, free, strlen, strncmp, strtoll};
+use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, strlen, strncmp, strtoll};
 use crate::src::log::fatalx;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
@@ -16,7 +16,7 @@ pub use crate::src::shared::json::{
     json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::xmalloc::{xasprintf, xmalloc, xmemdup, xstrndup};
+use crate::src::xmalloc::{xasprintf, xmalloc, xmemdup};
 use std::ffi::CStr;
 use std::ffi::CString;
 
@@ -52,14 +52,22 @@ pub const TOK_OPENOBJECT: json_token_type = 0;
 pub const ERROR_CTX_LEN: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 pub const PARSE_DEPTH_MAX: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
 
-/// The public node borrows its key bytes from this stable box.
+/// The public node borrows its key and optional string value from this stable box.
 #[repr(C)]
 struct JsonNodeOwner {
     node: json_node,
     key: Option<CString>,
+    string: Option<CString>,
 }
 
 const _: () = assert!(::core::mem::offset_of!(JsonNodeOwner, node) == 0);
+
+unsafe fn json_set_string(node: *mut json_node, string: CString) {
+    let owner = &mut *node.cast::<JsonNodeOwner>();
+    owner.node.c2rust_unnamed.str_0 = ::core::ptr::null_mut();
+    owner.string = Some(string);
+    owner.node.c2rust_unnamed.str_0 = owner.string.as_ref().unwrap().as_ptr().cast_mut();
+}
 
 unsafe fn json_fields_insert(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
     if head.is_null() || elm.is_null() || (*elm).key.is_null() {
@@ -644,6 +652,7 @@ unsafe extern "C" fn json_create_node(
         } else {
             Some(CStr::from_ptr(key).to_owned())
         },
+        string: None,
     });
     owner.node.key = owner
         .key
@@ -675,9 +684,7 @@ pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
         return;
     }
     match (*node).type_0 as ::core::ffi::c_uint {
-        0 => {
-            free((*node).c2rust_unnamed.str_0 as *mut ::core::ffi::c_void);
-        }
+        0 => {}
         3 => {
             field = json_fields_minmax(&raw mut (*node).c2rust_unnamed.fields, RB_NEGINF);
             while !field.is_null() && {
@@ -717,7 +724,7 @@ unsafe extern "C" fn json_assign_value(
     let mut child: *mut json_node = val as *mut json_node;
     match (*node).type_0 as ::core::ffi::c_uint {
         0 => {
-            (*node).c2rust_unnamed.str_0 = val as *mut ::core::ffi::c_char;
+            json_set_string(node, CStr::from_ptr(val.cast()).to_owned());
         }
         1 => {
             (*node).c2rust_unnamed.num = *(val as *mut int64_t);
@@ -1061,7 +1068,6 @@ unsafe extern "C" fn json_parse_string(
 ) -> *mut json_node {
     let mut loc: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut start: *const ::core::ffi::c_char = (*pctx).input.offset((**tok).offset as isize);
-    let mut str: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut len: ::core::ffi::c_int = 0;
     if !((**tok).type_0 as ::core::ffi::c_uint
         != TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint)
@@ -1077,8 +1083,11 @@ unsafe extern "C" fn json_parse_string(
                 != TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint)
             {
                 *tok = (*tok).offset(1);
-                str = xstrndup(loc, len as size_t);
-                return json_create_node(parent, NODE_STRING, key, str as *mut ::core::ffi::c_void);
+                let bytes = ::core::slice::from_raw_parts(loc.cast::<u8>(), len as usize);
+                let string = CString::new(bytes).expect("JSON token contains no NUL");
+                let node = json_create_node(parent, NODE_STRING, key, ::core::ptr::null_mut());
+                json_set_string(node, string);
+                return node;
             }
         }
     }
@@ -1366,6 +1375,36 @@ mod json_fields_tests {
             assert!(json_fields_find(&mut head, removed_probe.as_ptr()).is_null());
             json_destroy_node(removed);
             free_tree(&mut head);
+        }
+    }
+}
+
+#[cfg(test)]
+mod json_string_owner_tests {
+    use super::*;
+
+    #[test]
+    fn parsed_high_byte_string_survives_input_release() {
+        unsafe {
+            let input = CString::new(b"{\"nested\":[{\"value\":\"\xff\"}]}".as_slice()).unwrap();
+            let root = json_parse(input.as_ptr(), ::core::ptr::null_mut());
+            assert!(!root.is_null());
+            drop(input);
+
+            let nested = json_find(root, c"nested".as_ptr());
+            let first = json_array_first(nested);
+            let mut raw = ::core::ptr::null();
+            assert_eq!(
+                json_find_string(
+                    first,
+                    c"value".as_ptr(),
+                    &raw mut raw,
+                    ::core::ptr::null_mut()
+                ),
+                0
+            );
+            assert_eq!(CStr::from_ptr(raw).to_bytes(), b"\xff");
+            json_destroy_node(root);
         }
     }
 }

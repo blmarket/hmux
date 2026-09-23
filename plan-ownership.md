@@ -125,15 +125,16 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. JSON node string values are the next bounded live owner. `JsonNodeOwner`
-   already boxes each public node and owns its optional key; it can also own
-   an optional `CString` value. `json_parse_string` is the sole string
-   producer, and `json_destroy_node` has the final free. The getters and
-   serializer borrow the string through the public union. Preserve token
-   bytes, including invalid UTF-8 and empty strings, and recursive cleanup.
-   `json_assign_value` also handles child nodes and numeric values, so only
-   its string path should change. Extend the JSON CLI check with empty and
-   high-byte strings against the pinned baseline.
+1. Terminal capability strings in `tty_code.value.string` are the next live
+   bounded owner. `TtyTermOwner` already boxes each term and owns its name;
+   indexed optional `CString` slots can own string codes while public union
+   pointers borrow them. Trace `tty_term_create`, `tty_term_apply`,
+   `tty_term_validate`, and `tty_term_free` together, including overrides from
+   `tty_features`. Preserve `tty_term_strip`'s 8191-byte limit and first-NUL
+   behavior. Removal currently retags a code to NONE without freeing its old
+   string, so clear the new owner on that path and record the leak correction.
+   Extend the attached-client terminal capability CLI check for replacement
+   and removal against the pinned baseline.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -876,6 +877,23 @@ libc allocation on success and leaves it with the caller on error, so a local
   passed. A CLI comparison against pinned 3.8-rc covers set, append with
   byte `0xff`, replace, unset, and an unaffected sibling item. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 401 — owned JSON node string values (2026-09-23)
+
+- `JsonNodeOwner` now holds optional `CString` string values alongside its
+  optional key. `json_parse_string` copies token bytes directly into that
+  owner and lends the public union pointer. `json_assign_value` copies a
+  borrowed string when its private string branch is used; number, boolean,
+  object, and array assignment remain as before. Recursive node destruction
+  drops the owner, removing the token `xstrndup` and final manual string free.
+- A focused parser test releases the input buffer before reading a nested raw
+  `0xff` string and destroying the tree. Serialized workspace tests and binary
+  build passed. The JSON CLI comparison against pinned 3.8-rc covers raw
+  `0xff` and UTF-8 values, empty-string rejection, recursive failure cleanup,
+  and successful parsing afterward. The parser accepts strings only as object
+  values, not direct array elements, and rejects empty strings before node
+  creation; these existing behaviors were retained. Changed-file rustfmt and
+  diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

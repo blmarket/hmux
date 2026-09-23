@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise recursive JSON node cleanup through display-message."""
+"""Compare JSON string values and recursive node cleanup with the baseline."""
 
 import os
 import pathlib
@@ -8,34 +8,49 @@ import tempfile
 
 
 root = pathlib.Path(__file__).resolve().parents[1]
-binary = pathlib.Path(os.environ.get("HMUX_BINARY", root / "target/debug/hmux2")).resolve()
+binary = os.fsencode(pathlib.Path(os.environ.get("HMUX_BINARY", root / "target/debug/hmux2")).resolve())
+baseline = os.environ.get("HMUX_BASELINE_BINARY")
 
-with tempfile.TemporaryDirectory(prefix="json-node-owner-", dir=root / "target") as tmp:
+
+def check(binary, socket):
     env = dict(os.environ, TERM="xterm-256color", LC_ALL="C", TMUX="", SHELL="/bin/sh")
-    base = [str(binary), "-S", str(pathlib.Path(tmp) / "socket"), "-f", "/dev/null"]
+    base = [binary, b"-S", os.fsencode(socket), b"-f", b"/dev/null"]
 
-    def run(*args, ok=True):
+    def run(*args):
         result = subprocess.run(base + list(args), env=env, capture_output=True, timeout=20)
-        if ok:
-            assert result.returncode == 0, (args, result.returncode, result.stderr)
-        return result
+        return result.returncode, result.stdout, result.stderr
 
     try:
-        run("new-session", "-d", "-s", "json-node", "sleep", "30")
-        valid = b'{"z":[{"b":true},{"c":[{"d":"text"}]}],"a":"x"}'
-        result = run("display-message", "-p", "-j", "-l", valid.decode())
-        assert result.stdout == b'{"a":"x","z":[{"b":true},{"c":[{"d":"text"}]}]}\n'
+        code, out, err = run(b"new-session", b"-d", b"-s", b"json-node", b"sleep", b"30")
+        assert code == 0, (code, out, err)
 
-        invalid = b'{"z":[{"b":true},]}'
-        result = run("display-message", "-p", "-j", "-l", invalid.decode(), ok=False)
-        assert result.returncode != 0
-        assert result.stderr
+        def display(value):
+            return run(b"display-message", b"-p", b"-j", b"-l", value)
 
-        # A parse failure must leave the server usable for another parse.
-        assert run("display-message", "-p", "-j", "-l", valid.decode()).stdout == (
-            b'{"a":"x","z":[{"b":true},{"c":[{"d":"text"}]}]}\n'
-        )
+        valid = b'{"z":[{"b":"\xff"},{"c":[{"d":"\xc2\xa3"}]}],"a":"x"}'
+        expected = b'{"a":"x","z":[{"b":"\xff"},{"c":[{"d":"\xc2\xa3"}]}]}\n'
+        result = display(valid)
+        assert result[0] == 0 and result[1] == expected, result
+
+        # Empty strings are rejected by the existing parser before a node exists.
+        empty = display(b'{"outer":[{"value":""}]}')
+        assert empty[0] != 0 and empty[2], empty
+
+        # Fail after creating several nested string nodes, then parse again on
+        # the same server to exercise recursive destruction and recovery.
+        invalid = display(b'{"outer":[{"left":"one"},{"right":{"deep":"two"}}],"broken":[{"leaf":"three"},]}')
+        assert invalid[0] != 0 and invalid[2], invalid
+        again = display(valid)
+        assert again[0] == 0 and again[1] == expected, again
+        return result, empty, invalid, again
     finally:
-        subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=20)
+        subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=20)
+
+
+with tempfile.TemporaryDirectory(prefix="json-node-owner-", dir=root / "target") as tmp:
+    candidate = check(binary, pathlib.Path(tmp, "candidate-socket"))
+    if baseline is not None:
+        reference = check(os.fsencode(pathlib.Path(baseline).resolve()), pathlib.Path(tmp, "baseline-socket"))
+        assert candidate == reference, (candidate, reference)
 
 print("JSON node owner CLI checks passed")
