@@ -128,19 +128,12 @@ pub struct window_switch_itemdata {
     pub type_0: window_switch_type,
     pub session: ::core::ffi::c_int,
     pub winlink: ::core::ffi::c_int,
-    pub text: *mut ::core::ffi::c_char,
+    pub text: CString,
     match_mask: Option<Vec<bitstr_t>>,
     pub score: u_int,
     pub order: u_int,
 }
 
-impl Drop for window_switch_itemdata {
-    fn drop(&mut self) {
-        unsafe {
-            free(self.text as *mut ::core::ffi::c_void);
-        }
-    }
-}
 pub type window_switch_type = ::core::ffi::c_uint;
 pub const WINDOW_SWITCH_TYPE_WINDOW: window_switch_type = 1;
 pub const WINDOW_SWITCH_TYPE_SESSION: window_switch_type = 0;
@@ -210,7 +203,7 @@ unsafe extern "C" fn window_switch_add_item(
         type_0: WINDOW_SWITCH_TYPE_SESSION,
         session: 0,
         winlink: 0,
-        text: ::core::ptr::null_mut(),
+        text: CString::default(),
         match_mask: None,
         score: 0,
         order: 0,
@@ -218,6 +211,15 @@ unsafe extern "C" fn window_switch_add_item(
     let ptr = &raw mut *item;
     (*data).item_list.push(item);
     ptr
+}
+unsafe fn window_switch_expand_text(
+    ft: *mut format_tree,
+    format: *const ::core::ffi::c_char,
+) -> CString {
+    let text = format_expand(ft, format);
+    let owned = CStr::from_ptr(text).to_owned();
+    free(text.cast());
+    owned
 }
 unsafe extern "C" fn window_switch_add_session(
     mut data: *mut window_switch_modedata,
@@ -246,7 +248,7 @@ unsafe extern "C" fn window_switch_add_session(
     let fresh7 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh7;
-    (*item).text = format_expand(ft, (*data).format.as_ptr());
+    (*item).text = window_switch_expand_text(ft, (*data).format.as_ptr());
     format_free(ft);
 }
 unsafe extern "C" fn window_switch_add_window(
@@ -276,7 +278,7 @@ unsafe extern "C" fn window_switch_add_window(
     let fresh4 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh4;
-    (*item).text = format_expand(ft, (*data).format.as_ptr());
+    (*item).text = window_switch_expand_text(ft, (*data).format.as_ptr());
     format_free(ft);
 }
 unsafe extern "C" fn window_switch_compare(
@@ -338,7 +340,8 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
         if *f as ::core::ffi::c_int == '\0' as i32 {
             m.push(item);
         } else {
-            (*item).match_mask = fuzzy_match_owned(f, (*item).text, sx, &raw mut (*item).score);
+            (*item).match_mask =
+                fuzzy_match_owned(f, (*item).text.as_ptr(), sx, &raw mut (*item).score);
             if (*item).match_mask.is_some() {
                 m.push(item);
             }
@@ -500,7 +503,7 @@ unsafe extern "C" fn window_switch_draw_screen(mut wme: *mut window_mode_entry) 
                 &raw mut ctx,
                 dgc,
                 sx,
-                (*item).text,
+                (*item).text.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
                 0 as ::core::ffi::c_int,
             );
@@ -510,7 +513,7 @@ unsafe extern "C" fn window_switch_draw_screen(mut wme: *mut window_mode_entry) 
                 &raw mut ctx,
                 &raw mut sgc,
                 sx,
-                (*item).text,
+                (*item).text.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
                 0 as ::core::ffi::c_int,
             );

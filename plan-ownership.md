@@ -125,12 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_switch_itemdata.text` is the next bounded live owner. Each item is
-   already boxed, with two `format_expand` producers, three borrowed readers,
-   and one custom `Drop` that only frees the C string. A `CString` field can
-   retire both producer allocations and the manual free while retaining the
-   existing item addresses used by the match list. The switch-mode CLI checks
-   cover rendering, filter rebuild, selection, and teardown.
+1. Internal `cmd_template_replace` callers in `mode_tree` and
+   `window_switch` synchronously borrow their result, then free it. The
+   existing private `cmd_template_replace_cstring` builds the same text as a
+   `CString`; exposing an owned internal path could retire those temporary
+   C allocations while keeping the exported malloc/free contract. Audit
+   parse-time retention and preserve debug logging for percent templates.
+   Choose-tree and switch-mode CLI checks cover the command paths.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -924,6 +925,18 @@ libc allocation on success and leaves it with the caller on error, so a local
   eviction, `set-buffer -w`, binary `load-buffer -w`, and editor replacement
   of binary data. Changed-file rustfmt and diff checks passed. No sanitizer
   ran.
+
+### Increment 404 — owned switch-mode row text (2026-09-23)
+
+- Boxed `window_switch_itemdata` now stores its formatted row text as a
+  `CString`. Both session and window `format_expand` results are copied into
+  the owner and their C allocations freed at the producer boundary. Filtering
+  and drawing borrow `as_ptr()` synchronously; the custom `Drop` and its manual
+  free are gone. The box still keeps each row address stable for `matches`.
+- Serialized workspace tests and the binary build passed. Pinned-baseline
+  switch-mode CLI checks passed for row rendering, incremental filter rebuild,
+  selection, cancel, and session/window target paths. Changed-file rustfmt
+  and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
