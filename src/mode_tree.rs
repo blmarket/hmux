@@ -120,7 +120,7 @@ use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
 use crate::src::window::window_zoom;
 use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xstrdup};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -2052,7 +2052,6 @@ unsafe extern "C" fn mode_tree_display_menu(
     let mut menu: *mut menu = ::core::ptr::null_mut::<menu>();
     let mut items: *const menu_item = ::core::ptr::null::<menu_item>();
     let mut mtm: *mut mode_tree_menu = ::core::ptr::null_mut::<mode_tree_menu>();
-    let mut title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: u_int = 0;
     if (*mtd).offset.wrapping_add(y) > mode_tree_line_count(mtd).wrapping_sub(1 as u_int) {
         line = (*mtd).current;
@@ -2060,18 +2059,16 @@ unsafe extern "C" fn mode_tree_display_menu(
         line = (*mtd).offset.wrapping_add(y);
     }
     mti = (*(*mtd).lines.as_mut_ptr().offset(line as isize)).item;
-    if outside == 0 {
+    let title = if outside == 0 {
         items = (*mtd).menu;
-        xasprintf(
-            &raw mut title,
-            b"#[align=centre]%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*mti).name,
-        );
+        let mut bytes = b"#[align=centre]".to_vec();
+        bytes.extend_from_slice(CStr::from_ptr((*mti).name).to_bytes());
+        CString::new(bytes).expect("mode tree item names contain no NUL")
     } else {
         items = &raw const mode_tree_menu_items as *const menu_item;
-        title = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    menu = menu_create(title);
+        c"".to_owned()
+    };
+    menu = menu_create(title.as_ptr());
     menu_add_items(
         menu,
         items,
@@ -2079,7 +2076,7 @@ unsafe extern "C" fn mode_tree_display_menu(
         c,
         ::core::ptr::null_mut::<cmd_find_state>(),
     );
-    free(title as *mut ::core::ffi::c_void);
+    drop(title);
     mtm = xmalloc(::core::mem::size_of::<mode_tree_menu>() as size_t) as *mut mode_tree_menu;
     (*mtm).data = mtd;
     (*mtm).c = c;

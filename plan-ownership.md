@@ -628,6 +628,19 @@ legacy callers safe.
   output comparison for a red cell and OSC 8 links with and without an ID.
   No sanitizer was run.
 
+### Increment 171 — mode-tree menu title scratch (2026-09-22)
+
+- `mode_tree_display_menu` now owns either the centered item title or the
+  empty generic-menu title in a local byte-preserving `CString`, removing
+  its `xasprintf`/`xstrdup` branches and matching free. `menu_create`
+  copies the title synchronously into its own `MenuOwner`; the temporary
+  drops at the former free point after `menu_add_items`.
+- The library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. The new attached-client `mode_tree_menu_title_cli_checks.py`
+  passed with the baseline and migrated binaries: right-clicking a tree row
+  rendered its item title, and right-clicking the preview rendered the
+  empty-title generic menu. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -638,9 +651,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `mode_tree_display_menu` in `src/mode_tree.rs` creates a temporary title
-   copied by `menu_create`, then frees it after adding items. A local
-   byte-preserving `CString` can own that title across the synchronous call.
+1. `mode_tree_draw` in `src/mode_tree.rs` formats a preview-box label from
+   item name, sort mode, and optional view name, then frees it after
+   synchronous drawing. Audit both formatting branches and own the label
+   bytes locally without changing width or display order.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -837,3 +851,9 @@ checks, changed-file rustfmt for `set_option.rs` and `window_switch.rs`, and
 `git diff --check` passed on main. `window.rs` still has its pre-existing
 mouse-import layout difference; the changed pane-search code follows
 rustfmt. No combined sanitizer was run.
+After increments 169–171 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, menu-owner, capture-pane-grid-cell, and mode-tree-menu-title CLI
+checks, changed-file rustfmt, and `git diff --check` passed on main. The
+capture-pane check compared complete output against the pinned baseline
+binary for both OSC 8 cases. No combined sanitizer was run.
