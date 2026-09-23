@@ -125,14 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_run_shell_data.cmd` is the next small live owner. The boxed callback
-   record already owns its cwd as `CString`; `cmd_run_shell_exec` has the sole
-   command writer from `format_expand`, and `cmd_run_shell_free` has the sole
-   free. An optional `CString` can preserve the `-C` and no-command branches.
-   Keep command borrows scoped before `cmdq_continue` can reenter. The
-   run-shell CLI covers immediate, delayed, cwd, command-list, and failure
-   paths. Event-payload item names are a broader later target because string
-   items already have a specialized owner and pointer free callbacks.
+1. `event_payload_item.name` is the next live leaf. All variant setters reach
+   the sole `xstrdup` in `event_payload_set_item`, and `event_payload_free_item`
+   has the sole name free. A unified offset-zero owner can hold the name and
+   replace the existing string-specific owner. Copy a borrowed old name before
+   replacing its item; preserve pointer-value free callbacks and duplicate-key
+   behavior. The payload unit and CLI checks cover the main paths.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -801,6 +799,18 @@ libc allocation on success and leaves it with the caller on error, so a local
   automatic, explicit, renamed, deleted, and evicted names and now checks
   rename/delete notifications. Changed-file rustfmt and diff checks passed.
   No sanitizer ran.
+
+### Increment 396 — owned run-shell command (2026-09-23)
+
+- `cmd_run_shell_data.cmd` is now an `Option<CString>` inside its boxed callback
+  record. `cmd_run_shell_exec` copies the `format_expand` result into that
+  owner and immediately frees the C producer allocation. Timer and job
+  callbacks borrow the command pointer; `-C` and no-command paths retain
+  absence. Removed the final manual command free in `cmd_run_shell_free`.
+- Serialized workspace tests and binary build passed. The run-shell CLI
+  comparison against pinned 3.8-rc passed for immediate output, actual format
+  expansion, cwd, command-list execution, delayed background execution, and
+  failure status. Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

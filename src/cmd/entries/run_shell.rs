@@ -96,7 +96,7 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 #[repr(C)]
 pub struct cmd_run_shell_data {
     pub client: *mut client,
-    pub cmd: *mut ::core::ffi::c_char,
+    pub cmd: Option<CString>,
     pub state: *mut args_command_state,
     pub cwd: CString,
     pub item: *mut cmdq_item,
@@ -278,7 +278,7 @@ unsafe extern "C" fn cmd_run_shell_exec(
     };
     cdata = Box::into_raw(Box::new(cmd_run_shell_data {
         client: ::core::ptr::null_mut(),
-        cmd: ::core::ptr::null_mut(),
+        cmd: None,
         state: ::core::ptr::null_mut(),
         cwd: CStr::from_ptr(cwd).to_owned(),
         item: ::core::ptr::null_mut(),
@@ -307,7 +307,11 @@ unsafe extern "C" fn cmd_run_shell_exec(
                 );
                 i = i.wrapping_add(1);
             }
-            (*cdata).cmd = format_expand(ft, cmd);
+            let expanded = format_expand(ft, cmd);
+            if !expanded.is_null() {
+                (*cdata).cmd = Some(CStr::from_ptr(expanded).to_owned());
+                free(expanded.cast());
+            }
             format_free(ft);
         }
     } else {
@@ -386,7 +390,10 @@ unsafe extern "C" fn cmd_run_shell_timer(
 ) {
     let mut cdata: *mut cmd_run_shell_data = arg as *mut cmd_run_shell_data;
     let mut c: *mut client = (*cdata).client;
-    let mut cmd: *const ::core::ffi::c_char = (*cdata).cmd;
+    let cmd = (*cdata)
+        .cmd
+        .as_ref()
+        .map_or(::core::ptr::null(), |cmd| cmd.as_ptr());
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
@@ -503,7 +510,10 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
     let mut cdata: *mut cmd_run_shell_data = job_get_data(job) as *mut cmd_run_shell_data;
     let mut event: *mut bufferevent = job_get_event(job);
     let mut item: *mut cmdq_item = (*cdata).item;
-    let mut cmd: *mut ::core::ffi::c_char = (*cdata).cmd;
+    let cmd = (*cdata)
+        .cmd
+        .as_ref()
+        .map_or(::core::ptr::null(), |cmd| cmd.as_ptr());
     let mut msg: Option<CString> = None;
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut size: size_t = 0;
@@ -576,5 +586,4 @@ unsafe extern "C" fn cmd_run_shell_free(mut data: *mut ::core::ffi::c_void) {
     if !(*cdata).state.is_null() {
         args_make_commands_free((*cdata).state);
     }
-    free((*cdata).cmd as *mut ::core::ffi::c_void);
 }

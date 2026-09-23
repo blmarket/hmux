@@ -29,6 +29,10 @@ def trace(binary):
             assert immediate.returncode == 0, immediate.stderr
             assert immediate.stdout == b"first\nlast\n", immediate.stdout
 
+            expanded = run("run-shell", "printf '#{session_name}'")
+            assert expanded.returncode == 0, expanded.stderr
+            assert expanded.stdout == b"shell-owner\n", expanded.stdout
+
             cwd = pathlib.Path(tmp) / "working-directory"
             cwd.mkdir()
             in_cwd = run("run-shell", "-c", str(cwd), "pwd")
@@ -51,7 +55,7 @@ def trace(binary):
             failure = run("run-shell", "exit 7")
             assert failure.returncode == 7, (failure.returncode, failure.stdout, failure.stderr)
             assert b"returned 7" in failure.stdout, failure.stdout
-            return immediate.stdout, in_cwd.stdout.replace(os.fsencode(tmp), b"<tmp>"), value.stdout, output_file.read_bytes(), failure.returncode
+            return immediate.stdout, expanded.stdout, in_cwd.stdout.replace(os.fsencode(tmp), b"<tmp>"), value.stdout, output_file.read_bytes(), failure.returncode
         finally:
             run("kill-server")
 
