@@ -574,20 +574,20 @@ pub unsafe extern "C" fn spawn_pane(
         }
         let value = cwd.as_ref().expect("spawn cwd was just set");
         if !value.as_bytes().starts_with(b"/") {
-            let mut combined = ::core::ptr::null_mut();
-            xasprintf(
-                &raw mut combined,
-                b"%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-                server_client_get_cwd(c, ts),
-                if value.as_bytes().is_empty() {
-                    b"\0" as *const u8 as *const ::core::ffi::c_char
-                } else {
-                    b"/\0" as *const u8 as *const ::core::ffi::c_char
-                },
-                value.as_ptr(),
-            );
-            cwd = Some(CStr::from_ptr(combined).to_owned());
-            free(combined.cast());
+            let base = server_client_get_cwd(c, ts);
+            // glibc's old %s formatter rendered a null base as "(null)".
+            let base = if base.is_null() {
+                b"(null)".as_slice()
+            } else {
+                CStr::from_ptr(base).to_bytes()
+            };
+            let mut combined = Vec::with_capacity(base.len() + value.as_bytes().len() + 1);
+            combined.extend_from_slice(base);
+            if !value.as_bytes().is_empty() {
+                combined.push(b'/');
+            }
+            combined.extend_from_slice(value.as_bytes());
+            cwd = Some(CString::new(combined).expect("combined cwd contains no NUL"));
         }
     } else if !(*sc).flags & SPAWN_RESPAWN != 0 {
         cwd = Some(CStr::from_ptr(server_client_get_cwd(c, ts)).to_owned());

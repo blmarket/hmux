@@ -21,7 +21,8 @@ def trace(binary):
         relative = first + b"/cwd"
         second = directory + b"/second"
         raw = directory + b"/raw-\xff"
-        for path in (first, relative, second, raw):
+        raw_relative = first + b"/raw-relative-\xfe"
+        for path in (first, relative, second, raw, raw_relative):
             os.mkdir(path)
         base = [binary, b"-S", directory + b"/socket", b"-f", b"/dev/null"]
 
@@ -73,11 +74,22 @@ def trace(binary):
             assert empty == first + b"\n", empty
             wait_current_path(pane, first)
 
+            raw_relative_pane = run(
+                b"split-window", b"-d", b"-P", b"-F", b"#{pane_id}",
+                b"-t", b"cwd:0.0", b"-c", b"raw-relative-\xfe", b"exec sleep 60",
+            ).strip()
+            raw_relative_start = start_path(raw_relative_pane)
+            assert raw_relative_start == raw_relative + b"\n", raw_relative_start
+            raw_relative_current = wait_current_path(raw_relative_pane, raw_relative)
+
             run(b"new-window", b"-d", b"-t", b"cwd:", b"-c", raw, b"exec sleep 60")
             raw_start = start_path(b"cwd:1.0")
             assert raw_start == raw + b"\n", raw_start
             raw_current = wait_current_path(b"cwd:1.0", raw)
-            outputs = initial, expanded, after_error, retained, replaced, empty, raw_start, raw_current
+            outputs = (
+                initial, expanded, after_error, retained, replaced, empty,
+                raw_relative_start, raw_relative_current, raw_start, raw_current,
+            )
             return tuple(output.replace(directory, b"$ROOT") for output in outputs)
         finally:
             subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=15)
