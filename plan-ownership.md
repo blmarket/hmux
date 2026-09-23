@@ -1073,6 +1073,19 @@ legacy callers safe.
   check matched the pinned baseline for empty and non-UTF-8 arrays, indexed
   values, scalar kinds, and a command-list hook. No sanitizer was run.
 
+### Increment 203 — JSON tokenizer token owner (2026-09-23)
+
+- `json_tokenize_input` now grows a `Vec<json_token>` through tokenization,
+  and `json_parse` owns it through recursive parsing. Removed the private
+  `json_tokens` raw size/capacity/pointer record, its malloc/realloc/free,
+  and explicit success/error token teardown. Tokenization borrows the prior
+  token only before an append; parser cursors borrow stable storage after all
+  appends. Exported `json_parse`, node, and C-owned error contracts remain.
+- Library/binary build, `json_scratch` and `remaining_json` tests, and
+  changed-file rustfmt and `git diff --check` passed. A new test crosses the
+  former 1,024-token capacity on success and parse error. The layout CLI
+  check passed on candidate and pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1083,9 +1096,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The private JSON tokenizer grows and frees a raw token array before
-   recursive parsing. Its token cursors are stable after tokenization, so
-   audit a `Vec<json_token>` owner through both parse and error teardown.
+1. `args_escape` builds escaped argument text and returns a C-owned string.
+   `args_print_add_value` uses it synchronously and frees it, while other
+   exported callers retain the libc-freeable contract. Migrate the private
+   print path to an owned escaped string and keep the C wrapper.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in

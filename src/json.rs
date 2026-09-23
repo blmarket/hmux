@@ -16,7 +16,7 @@ pub use crate::src::shared::json::{
     json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xmemdup, xrealloc, xstrdup, xstrndup};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xmemdup, xstrdup, xstrndup};
 use std::ffi::CStr;
 use std::ffi::CString;
 
@@ -31,13 +31,6 @@ pub struct json_parse_ctx {
     pub input: *const ::core::ffi::c_char,
     pub cause: *mut *mut ::core::ffi::c_char,
     pub depth: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct json_tokens {
-    pub size: ::core::ffi::c_int,
-    pub capacity: ::core::ffi::c_int,
-    pub toks: *mut json_token,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -135,7 +128,6 @@ pub unsafe extern "C" fn json_parse(
     mut input: *const ::core::ffi::c_char,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> *mut json_node {
-    let mut tokens: *mut json_tokens = ::core::ptr::null_mut::<json_tokens>();
     let mut pctx: json_parse_ctx = json_parse_ctx {
         input: ::core::ptr::null::<::core::ffi::c_char>(),
         cause: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -149,14 +141,14 @@ pub unsafe extern "C" fn json_parse(
         );
         return ::core::ptr::null_mut::<json_node>();
     }
-    tokens = json_tokenize_input(input, cause);
-    if tokens.is_null() {
-        return ::core::ptr::null_mut::<json_node>();
-    }
+    let tokens = match json_tokenize_input(input, cause) {
+        Some(tokens) => tokens,
+        None => return ::core::ptr::null_mut::<json_node>(),
+    };
     pctx.input = input;
     pctx.cause = cause;
     pctx.depth = 0 as ::core::ffi::c_int;
-    return json_parse_tokens(&raw mut tokens, &raw mut pctx);
+    json_parse_tokens(&tokens, &raw mut pctx)
 }
 #[no_mangle]
 pub unsafe extern "C" fn json_find(
@@ -462,18 +454,17 @@ unsafe extern "C" fn json_error(
         ellipsis,
     );
 }
-unsafe extern "C" fn json_tokenize_input(
+unsafe fn json_tokenize_input(
     mut input: *const ::core::ffi::c_char,
     mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut json_tokens {
+) -> Option<Vec<json_token>> {
     let mut current_block: u64;
-    let mut tokens: *mut json_tokens = ::core::ptr::null_mut::<json_tokens>();
+    let mut tokens = Vec::with_capacity(1024);
     let mut type_0: json_token_type = TOK_OPENOBJECT;
     let mut loc: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut start: *const ::core::ffi::c_char = input;
     let mut in_string: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut scan: ::core::ffi::c_int = 0;
-    tokens = json_create_tokens();
     loop {
         if !(*input as ::core::ffi::c_int != '\0' as i32) {
             current_block = 16924917904204750491;
@@ -516,14 +507,14 @@ unsafe extern "C" fn json_tokenize_input(
             }
         }
         if type_0 as ::core::ffi::c_uint == TOK_VALUE as ::core::ffi::c_int as ::core::ffi::c_uint {
-            scan = json_tokenize_value(tokens, loc);
+            scan = json_tokenize_value(&tokens, loc);
             if scan == -(1 as ::core::ffi::c_int) {
                 current_block = 2526103352432062781;
                 break;
             }
             input = input.offset((scan - 1 as ::core::ffi::c_int) as isize);
         }
-        json_add_token(tokens, type_0, start, loc, scan);
+        json_add_token(&mut tokens, type_0, start, loc, scan);
         if type_0 as ::core::ffi::c_uint == TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint {
             in_string = (in_string == 0) as ::core::ffi::c_int;
         }
@@ -536,30 +527,24 @@ unsafe extern "C" fn json_tokenize_input(
                 b"tokenization error\0" as *const u8 as *const ::core::ffi::c_char,
                 loc,
             );
-            json_destroy_tokens(tokens);
-            return ::core::ptr::null_mut::<json_tokens>();
+            return None;
         }
         _ => {
-            json_add_token(tokens, TOK_EOF, start, loc, 0 as ::core::ffi::c_int);
-            return tokens;
+            json_add_token(&mut tokens, TOK_EOF, start, loc, 0 as ::core::ffi::c_int);
+            return Some(tokens);
         }
     };
 }
-unsafe extern "C" fn json_tokenize_value(
-    mut tokens: *mut json_tokens,
+unsafe fn json_tokenize_value(
+    tokens: &[json_token],
     mut loc: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut prev: *mut json_token = ::core::ptr::null_mut::<json_token>();
     let mut i: ::core::ffi::c_int = 0;
     let mut scan: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*tokens).size == 0 as ::core::ffi::c_int {
+    let Some(prev) = tokens.last() else {
         return -(1 as ::core::ffi::c_int);
-    }
-    prev = (*tokens)
-        .toks
-        .offset(((*tokens).size - 1 as ::core::ffi::c_int) as isize) as *mut json_token;
-    if (*prev).type_0 as ::core::ffi::c_uint
-        == TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint
+    };
+    if prev.type_0 as ::core::ffi::c_uint == TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         while *loc.offset(scan as isize) as ::core::ffi::c_int != '"' as i32 {
             if *loc.offset(scan as isize) as ::core::ffi::c_int == '\0' as i32
@@ -597,7 +582,7 @@ unsafe extern "C" fn json_tokenize_value(
                 }
             }
         }
-    } else if (*prev).type_0 as ::core::ffi::c_uint
+    } else if prev.type_0 as ::core::ffi::c_uint
         == TOK_COLON as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         loop {
@@ -622,43 +607,18 @@ unsafe extern "C" fn json_tokenize_value(
     }
     return scan;
 }
-unsafe extern "C" fn json_create_tokens() -> *mut json_tokens {
-    let mut tokens: *mut json_tokens = ::core::ptr::null_mut::<json_tokens>();
-    tokens = xmalloc(::core::mem::size_of::<json_tokens>() as size_t) as *mut json_tokens;
-    (*tokens).size = 0 as ::core::ffi::c_int;
-    (*tokens).capacity = 1024 as ::core::ffi::c_int;
-    (*tokens).toks = xmalloc(
-        ((*tokens).capacity as size_t).wrapping_mul(::core::mem::size_of::<json_token>() as size_t),
-    ) as *mut json_token;
-    return tokens;
-}
-unsafe extern "C" fn json_destroy_tokens(mut tokens: *mut json_tokens) {
-    free((*tokens).toks as *mut ::core::ffi::c_void);
-    (*tokens).toks = ::core::ptr::null_mut::<json_token>();
-    free(tokens as *mut ::core::ffi::c_void);
-}
-unsafe extern "C" fn json_add_token(
-    mut tokens: *mut json_tokens,
-    mut type_0: json_token_type,
-    mut input: *const ::core::ffi::c_char,
-    mut loc: *const ::core::ffi::c_char,
-    mut len: ::core::ffi::c_int,
+unsafe fn json_add_token(
+    tokens: &mut Vec<json_token>,
+    type_0: json_token_type,
+    input: *const ::core::ffi::c_char,
+    loc: *const ::core::ffi::c_char,
+    len: ::core::ffi::c_int,
 ) {
-    let mut tok: *mut json_token = ::core::ptr::null_mut::<json_token>();
-    while (*tokens).size >= (*tokens).capacity {
-        (*tokens).capacity *= 2 as ::core::ffi::c_int;
-        (*tokens).toks = xrealloc(
-            (*tokens).toks as *mut ::core::ffi::c_void,
-            (::core::mem::size_of::<json_token>() as size_t)
-                .wrapping_mul((*tokens).capacity as size_t),
-        ) as *mut json_token;
-    }
-    let fresh0 = (*tokens).size;
-    (*tokens).size = (*tokens).size + 1;
-    tok = (*tokens).toks.offset(fresh0 as isize) as *mut json_token;
-    (*tok).type_0 = type_0;
-    (*tok).offset = loc.offset_from(input) as ::core::ffi::c_long as ::core::ffi::c_int;
-    (*tok).len = len;
+    tokens.push(json_token {
+        type_0,
+        offset: loc.offset_from(input) as ::core::ffi::c_long as ::core::ffi::c_int,
+        len,
+    });
 }
 unsafe extern "C" fn json_create_node(
     mut parent: *mut json_node,
@@ -763,11 +723,13 @@ unsafe extern "C" fn json_assign_value(
         }
     };
 }
-unsafe extern "C" fn json_parse_tokens(
-    mut tokens: *mut *mut json_tokens,
+unsafe fn json_parse_tokens(
+    tokens: &[json_token],
     mut pctx: *mut json_parse_ctx,
 ) -> *mut json_node {
-    let mut tok: *mut json_token = (**tokens).toks;
+    // The parser advances raw cursors over this immutable Vec after tokenization.
+    // No token is appended or moved until parsing returns.
+    let mut tok: *mut json_token = tokens.as_ptr() as *mut json_token;
     let mut jn: *mut json_node = ::core::ptr::null_mut::<json_node>();
     if (*tok).type_0 as ::core::ffi::c_uint
         == TOK_OPENOBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -788,8 +750,6 @@ unsafe extern "C" fn json_parse_tokens(
                     (*pctx).input.offset((*tok).offset as isize),
                 );
             } else {
-                json_destroy_tokens(*tokens);
-                *tokens = ::core::ptr::null_mut::<json_tokens>();
                 return jn;
             }
         }
@@ -803,8 +763,6 @@ unsafe extern "C" fn json_parse_tokens(
     if !jn.is_null() {
         json_destroy_node(jn);
     }
-    json_destroy_tokens(*tokens);
-    *tokens = ::core::ptr::null_mut::<json_tokens>();
     return ::core::ptr::null_mut::<json_node>();
 }
 unsafe fn json_parse_key(

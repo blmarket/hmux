@@ -53,3 +53,41 @@ fn object_key_errors_destroy_partial_objects() {
         }
     }
 }
+
+#[test]
+fn token_growth_keeps_late_keys_and_cleans_up_on_error() {
+    let fields = (0..350)
+        .map(|i| format!("\"key{i}\":{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    for (input, valid) in [
+        (format!("{{{fields}}}"), true),
+        (format!("{{{fields},\"bad\":}}"), false),
+    ] {
+        unsafe {
+            let input = CString::new(input).unwrap();
+            let mut cause = ptr::null_mut();
+            let object = json_parse(input.as_ptr(), &mut cause);
+            if valid {
+                assert!(!object.is_null());
+                assert!(cause.is_null());
+                drop(input);
+                for key in ["key0", "key255", "key349"] {
+                    let key = CString::new(key).unwrap();
+                    assert!(
+                        !json_find(object, key.as_ptr()).is_null(),
+                        "missing {key:?}"
+                    );
+                }
+                json_destroy_node(object);
+            } else {
+                assert!(object.is_null());
+                assert!(!cause.is_null());
+                assert!(CStr::from_ptr(cause)
+                    .to_bytes()
+                    .starts_with(b"unexpected value"));
+                libc::free(cause.cast());
+            }
+        }
+    }
+}
