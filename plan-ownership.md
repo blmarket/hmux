@@ -1600,6 +1600,18 @@ legacy callers safe.
   combined main branch passed `cargo test --workspace --quiet`, the binary
   build, changed-file rustfmt, and `git diff --check`.
 
+### Increment 87 — remove unused window-switch pointer tag (2026-09-22)
+
+- `window_switch_itemdata.tag` and its two pointer-to-integer assignments
+  were never read; selection uses the stored session ID and winlink index.
+  Removed the dead field and assignments, eliminating this mode's unused
+  address-derived tag. This is a cleanup of a false identity field, not an
+  ownership migration or a replacement ID scheme. No owner or teardown path
+  changed.
+- `cargo check --bin hmux2 --quiet`, changed-file rustfmt, and
+  `git diff --check` passed. No separate runtime test or sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1631,15 +1643,14 @@ non-string value.
    shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes. The
-   unused `window_switch_itemdata.tag` can be removed as cleanup, but doing
-   so alone migrates no ownership. For `window_tree` selection tags, the
-   smallest sound prerequisite is a typed semantic mode-tree key: session
+   `window_tree` selection tags still use addresses. Their smallest sound
+   prerequisite is a typed semantic mode-tree key: session
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–86. The remaining
+Current validation is recorded in increments 15–87. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–86 has its own local commit; none was pushed.
+Each of increments 15–87 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

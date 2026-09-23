@@ -131,7 +131,6 @@ pub struct window_switch_itemdata {
     pub type_0: window_switch_type,
     pub session: ::core::ffi::c_int,
     pub winlink: ::core::ffi::c_int,
-    pub tag: uint64_t,
     pub text: *mut ::core::ffi::c_char,
     pub match_0: *mut bitstr_t,
     pub score: u_int,
@@ -247,7 +246,6 @@ unsafe extern "C" fn window_switch_add_session(
     (*item).type_0 = WINDOW_SWITCH_TYPE_SESSION;
     (*item).session = (*s).id as ::core::ffi::c_int;
     (*item).winlink = -(1 as ::core::ffi::c_int);
-    (*item).tag = s as uint64_t;
     let fresh7 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh7;
@@ -278,7 +276,6 @@ unsafe extern "C" fn window_switch_add_window(
     (*item).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     (*item).session = (*(*wl).session).id as ::core::ffi::c_int;
     (*item).winlink = (*wl).idx;
-    (*item).tag = wl as uint64_t;
     let fresh4 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh4;
