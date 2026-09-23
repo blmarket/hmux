@@ -149,3 +149,39 @@ fn variadic_updates_can_read_the_previous_value_before_replacement() {
         Some(&b""[..])
     );
 }
+
+#[test]
+fn put_splits_first_equals_and_preserves_c_string_bytes() {
+    use hmux2::src::environ::environ_put;
+
+    let env = EnvironOwner::new();
+    unsafe {
+        environ_put(env.as_ptr(), b"plain=one=two\0".as_ptr().cast(), 7);
+        environ_put(env.as_ptr(), b"\xff=\xfe\0".as_ptr().cast(), 8);
+        environ_put(env.as_ptr(), b"=empty-name\0".as_ptr().cast(), 9);
+        environ_put(env.as_ptr(), b"no-equals\0".as_ptr().cast(), 10);
+        environ_put(
+            env.as_ptr(),
+            b"first=visible\0later=hidden\0".as_ptr().cast(),
+            11,
+        );
+    }
+    assert_eq!(
+        env.find_bytes(b"plain").unwrap().unwrap().value_bytes(),
+        Some(&b"one=two"[..])
+    );
+    assert_eq!(
+        env.find_bytes(b"\xff").unwrap().unwrap().value_bytes(),
+        Some(&b"\xfe"[..])
+    );
+    assert_eq!(
+        env.find_bytes(b"").unwrap().unwrap().value_bytes(),
+        Some(&b"empty-name"[..])
+    );
+    assert!(env.find_bytes(b"no-equals").unwrap().is_none());
+    assert_eq!(
+        env.find_bytes(b"first").unwrap().unwrap().value_bytes(),
+        Some(&b"visible"[..])
+    );
+    assert!(env.find_bytes(b"later").unwrap().is_none());
+}

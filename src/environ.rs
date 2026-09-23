@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv, strchr, strcspn, vasprintf};
+use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv, vasprintf};
 use crate::src::log::log_debug;
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
@@ -470,24 +470,20 @@ pub unsafe extern "C" fn environ_put(
     mut var: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
 ) {
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    value = strchr(var, '=' as i32);
-    if value.is_null() {
+    let var = CStr::from_ptr(var).to_bytes_with_nul();
+    let Some(equals) = var[..var.len() - 1].iter().position(|&byte| byte == b'=') else {
         return;
-    }
-    value = value.offset(1);
-    name = xstrdup(var);
-    *name.offset(strcspn(name, b"=\0" as *const u8 as *const ::core::ffi::c_char) as isize) =
-        '\0' as i32 as ::core::ffi::c_char;
+    };
+    let name = CString::new(&var[..equals]).expect("environment name contains no NUL");
+    let value = CStr::from_bytes_with_nul(&var[equals + 1..])
+        .expect("environment value ends at the input NUL");
     environ_set(
         env,
-        name,
+        name.as_ptr(),
         flags,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        value,
+        value.as_ptr(),
     );
-    free(name as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn environ_unset(

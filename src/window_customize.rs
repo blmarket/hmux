@@ -3479,7 +3479,6 @@ unsafe extern "C" fn window_customize_add_environment_callback(
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
@@ -3519,17 +3518,15 @@ unsafe extern "C" fn window_customize_add_environment_callback(
             );
             return PROMPT_CLOSE;
         }
-        name = xstrdup(s);
-        *name.offset(strcspn(name, b"=\0" as *const u8 as *const ::core::ffi::c_char) as isize) =
-            '\0' as i32 as ::core::ffi::c_char;
+        let name = CString::new(&CStr::from_ptr(s).to_bytes()[..value.offset_from(s) as usize])
+            .expect("environment name contains no NUL");
         environ_set(
             (*item).environ,
-            name,
+            name.as_ptr(),
             0 as ::core::ffi::c_int,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
             value.offset(1 as ::core::ffi::c_int as isize),
         );
-        free(name as *mut ::core::ffi::c_void);
     }
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
