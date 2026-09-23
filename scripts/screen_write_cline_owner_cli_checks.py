@@ -19,9 +19,14 @@ def trace(binary, directory):
     ready = directory / "ready"
     proceed = directory / "proceed"
     pane = (
-        "stty raw -echo; printf 'before\\n'; "
+        "stty raw -echo; "
+        "i=0; while [ $i -lt 12 ]; do "
+        "printf 'pre-%02d-abcdefghijklmnopqrstuvwxyz\\n' \"$i\"; "
+        "i=$((i+1)); done; "
         f"touch '{ready}'; while [ ! -e '{proceed}' ]; do sleep 0.02; done; "
-        "printf 'after\\n'; sleep 30"
+        "i=0; while [ $i -lt 10 ]; do "
+        "printf 'post-%02d-abcdefghijklmnopqrstuvwxyz\\n' \"$i\"; "
+        "i=$((i+1)); done; sleep 30"
     )
     base = [str(binary), "-S", str(socket), "-f", "/dev/null"]
 
@@ -41,12 +46,12 @@ def trace(binary, directory):
 
     try:
         run("new-session", "-d", "-x", "40", "-y", "8", "-s", "writer", pane)
-        before = capture_until(b"before")
+        before = capture_until(b"pre-11")
         assert ready.exists()
         run("resize-window", "-t", "writer:0", "-x", "30", "-y", "6")
         proceed.touch()
-        after = capture_until(b"after")
-        assert b"before" in after and b"after" in after
+        after = capture_until(b"post-09")
+        assert b"pre-11" in before and b"post-09" in after
         size = run("list-panes", "-t", "writer:0", "-F", "#{pane_width}x#{pane_height}")
         assert size == b"30x6\n", size
         return before, after, size

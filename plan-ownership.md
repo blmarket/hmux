@@ -2957,6 +2957,20 @@ legacy callers safe.
   candidate and baseline. Full workspace tests, binary build, changed-file
   rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 334 — boxed screen write-line data (2026-09-23)
+
+- `screen_write_collect_add` now lazily allocates each row's fixed-width data
+  as a boxed byte slice. `screen_write_free_list` consumes each non-null
+  slice using the current grid width before dropping the boxed row array.
+  Scrolling continues to rotate row pointers; resize frees the old list
+  before changing grid width. Removed the row-data `xmalloc`/`free` pair,
+  and removed `Copy` from `screen_write_cline` so the owner cannot be
+  duplicated by an ordinary value copy.
+- Expanded `scripts/screen_write_cline_owner_cli_checks.py` to compare
+  scrolling pane output before and after a width and height change against
+  the pinned baseline. Full workspace tests, binary build, changed-file
+  rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2967,13 +2981,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen_write_cline.data` in `src/screen_write.rs` is lazily allocated
-   for one collected row and released in `screen_write_free_list`. The
-   boxed parent rows have a fixed grid width until that list is freed;
-   scrolling rotates data pointers among rows without changing width.
-   Box each byte slice and use the current grid width to reconstruct it
-   during list teardown. Attached output, scrolling, and resize should
-   cover allocation, pointer rotation, and release.
+1. `window_copy_mode_data.backing` in `src/window_copy.rs` has two outer
+   screen constructors and two `screen_free`/`free` destruction paths,
+   including refresh replacement. A boxed screen can retain the stable
+   borrowed pointer; normal copy mode, view mode, refresh after resize,
+   and teardown should be checked against the baseline.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
@@ -2988,9 +3000,7 @@ non-string value.
    `args_set`/`args_free_value`; a whole-type migration needs an ABI and
    ownership redesign across those paths.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache
-   design; window-copy backing remains larger.
-   `window_copy_mode_data.backing` is larger:
-   its borrowed screen pointer is invalidated on refresh.
+   design.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

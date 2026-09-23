@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{free, memcpy, memset, strlen};
+use crate::src::ffi::libc::{memcpy, memset, strlen};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{
     grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
@@ -124,7 +124,7 @@ use crate::src::window::{
     window_pane_scrollbar_redraw, window_pane_send_resize,
 };
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf_cstring};
+use crate::src::xmalloc::{xcalloc, xvasprintf_cstring};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_16;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_15;
@@ -486,7 +486,9 @@ pub unsafe extern "C" fn screen_write_make_list(mut s: *mut screen) {
     if (*(*s).grid).sy == 0 {
         fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    let rows = vec![::core::mem::zeroed::<screen_write_cline>(); (*(*s).grid).sy as usize]
+    let rows = (0..(*(*s).grid).sy)
+        .map(|_| ::core::mem::zeroed::<screen_write_cline>())
+        .collect::<Vec<_>>()
         .into_boxed_slice();
     (*s).write_list = Box::into_raw(rows) as *mut screen_write_cline;
     y = 0 as u_int;
@@ -521,7 +523,12 @@ pub unsafe extern "C" fn screen_write_free_list(mut s: *mut screen) {
             screen_write_free_citem(ci);
             ci = ci1;
         }
-        free((*cl).data as *mut ::core::ffi::c_void);
+        if !(*cl).data.is_null() {
+            drop(Box::from_raw(::core::ptr::slice_from_raw_parts_mut(
+                (*cl).data,
+                (*(*s).grid).sx as usize,
+            )));
+        }
         y = y.wrapping_add(1);
     }
     let rows = ::core::ptr::slice_from_raw_parts_mut((*s).write_list, (*(*s).grid).sy as usize);
@@ -4489,8 +4496,13 @@ pub unsafe extern "C" fn screen_write_collect_add(
         .data
         .is_null()
     {
+        let width = (*(*(*ctx).s).grid).sx as usize;
+        if width == 0 {
+            fatalx(b"xmalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+        }
         let ref mut fresh11 = (*(*(*ctx).s).write_list.offset((*s).cy as isize)).data;
-        *fresh11 = xmalloc((*(*(*ctx).s).grid).sx as size_t) as *mut ::core::ffi::c_char;
+        *fresh11 = Box::into_raw(vec![0 as ::core::ffi::c_char; width].into_boxed_slice())
+            as *mut ::core::ffi::c_char;
     }
     let fresh12 = (*ci).used;
     (*ci).used = (*ci).used.wrapping_add(1);

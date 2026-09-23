@@ -5,11 +5,11 @@ use super::grid::grid_cell;
 use super::pane::window_pane;
 use super::screen::screen;
 use super::tty::tty_ctx;
-#[derive(Copy, Clone)]
 #[repr(C)]
 /// Element of the screen-owned boxed write-list slice. Each `items` tail
 /// borrows the final address of its own `tqh_first` field.
 pub struct screen_write_cline {
+    /// Optional boxed byte slice of current grid width; scrolling moves this owner.
     pub data: *mut ::core::ffi::c_char,
     pub items: screen_write_items,
 }
