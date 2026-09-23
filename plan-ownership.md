@@ -125,14 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Window-copy selection still allocates C byte buffers for both `paste_add`
-   and `paste_set`, although its source is already a `Vec<u8>`. The private
-   owned paste helpers can move those bytes after the clipboard event. The
-   selection CLI check covers copy, append, pipe, and binary append. Next,
-   `cmd_set_buffer_exec` can replace its xmalloc/xrealloc append builder
-   with a `Vec<u8>` while retaining its `-w` terminal selection snapshot.
-   The exported C adapters retain their success-consumes and error-retains
-   contracts.
+1. `cmd_set_buffer_exec` still builds appended bytes through xmalloc and
+   xrealloc before `paste_set` copies accepted data. A `Vec<u8>` builder can
+   move directly through `paste_set_owned`; preserve its early empty return,
+   named-buffer errors, and `-w` terminal selection snapshot. The exported
+   C adapters retain their success-consumes and error-retains contracts.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1061,6 +1058,18 @@ errors still leave the C producer allocation with the caller.
   including `ESC [ NUL`, empty-name error, named buffer, and newly checked
   automatic buffer. Changed-file rustfmt and diff checks passed. No
   sanitizer ran.
+
+### Increment 413 — owned window-copy selection paste data (2026-09-23)
+
+- `window_copy_copy_buffer` and `window_copy_append_selection` now move their
+  selected `Vec<u8>` bytes into `paste_add_owned` and `paste_set_owned` after
+  synchronous selection and `pane-set-clipboard` events. The shared
+  `window_copy_alloc_paste_data` xmalloc/copy helper and append error-path C
+  free are gone. Append still frees the separate name returned by
+  `paste_get_top`; paste errors without a cause are still ignored as before.
+- Serialized workspace tests and binary build passed. The pinned-baseline
+  CLI comparison passed for copy, append, pipe, and binary `P\0Q` append.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

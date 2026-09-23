@@ -29,7 +29,7 @@ use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
-use crate::src::paste::{paste_add, paste_buffer_data, paste_get_top, paste_set};
+use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
 use crate::src::reactor::{bufferevent_write, event_add, event_del, event_set};
 use crate::src::screen::{
     screen_check_selection, screen_clear_selection, screen_free, screen_hide_selection,
@@ -8520,12 +8520,6 @@ unsafe fn window_copy_get_selection(mut wme: *mut window_mode_entry) -> Option<V
     }
     return Some(buf);
 }
-unsafe fn window_copy_alloc_paste_data(buf: &[u8]) -> *mut ::core::ffi::c_char {
-    // paste_add and paste_set take ownership and free this allocation.
-    let data = xmalloc(buf.len().max(1)) as *mut ::core::ffi::c_char;
-    std::ptr::copy_nonoverlapping(buf.as_ptr(), data.cast(), buf.len());
-    data
-}
 unsafe fn window_copy_copy_buffer(
     mut wme: *mut window_mode_entry,
     mut prefix: *const ::core::ffi::c_char,
@@ -8570,7 +8564,7 @@ unsafe fn window_copy_copy_buffer(
         );
     }
     if set_paste != 0 {
-        paste_add(prefix, window_copy_alloc_paste_data(&buf), buf.len());
+        paste_add_owned(prefix, buf.into_boxed_slice());
     };
 }
 unsafe fn window_copy_pipe_run(
@@ -8689,17 +8683,11 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
         appended.extend_from_slice(&buf);
         buf = appended;
     }
-    let len = buf.len();
-    let data = window_copy_alloc_paste_data(&buf);
-    if paste_set(
-        data,
-        len,
+    let _ = paste_set_owned(
+        buf.into_boxed_slice(),
         bufname,
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-    ) != 0 as ::core::ffi::c_int
-    {
-        free(data.cast());
-    }
+    );
     free(bufname as *mut ::core::ffi::c_void);
 }
 unsafe fn window_copy_copy_line(
