@@ -86,7 +86,8 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
-use crate::src::xmalloc::{xasprintf, xstrdup};
+use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -314,9 +315,7 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut format: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut newvalue: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut old: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut type_0: monitor_type = MONITOR_SESSION;
     let mut id: ::core::ffi::c_int = 0;
     let mut scope: ::core::ffi::c_int = 0;
@@ -384,15 +383,25 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
                     }
                     o = options_get_only(oo, name);
                     if args_has(args, 'o' as i32 as u_char) == 0 || o.is_null() {
-                        if args_has(args, 'a' as i32 as u_char) != 0 && !o.is_null() {
-                            old = options_get_string(oo, name);
-                            xasprintf(
-                                &raw mut newvalue,
-                                b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                old,
-                                value,
-                            );
-                            value = newvalue;
+                        let newvalue = if args_has(args, 'a' as i32 as u_char) != 0 && !o.is_null()
+                        {
+                            let old = options_get_string(oo, name);
+                            // glibc printf renders a null %s argument as "(null)".
+                            let old_bytes = if old.is_null() {
+                                b"(null)".as_slice()
+                            } else {
+                                CStr::from_ptr(old).to_bytes()
+                            };
+                            let value_bytes = CStr::from_ptr(value).to_bytes();
+                            let mut bytes = Vec::with_capacity(old_bytes.len() + value_bytes.len());
+                            bytes.extend_from_slice(old_bytes);
+                            bytes.extend_from_slice(value_bytes);
+                            Some(CString::new(bytes).expect("C-string fragments contain no NUL"))
+                        } else {
+                            None
+                        };
+                        if let Some(newvalue) = &newvalue {
+                            value = newvalue.as_ptr();
                         }
                         options_set_string(
                             oo,
@@ -412,14 +421,12 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
                 }
                 hooks_monitor_add(item, oo, name, type_0, id, format, flags, &raw mut fs, s);
             }
-            free(newvalue as *mut ::core::ffi::c_void);
             free(expanded as *mut ::core::ffi::c_void);
             free(name as *mut ::core::ffi::c_void);
             free(format as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     }
-    free(newvalue as *mut ::core::ffi::c_void);
     free(expanded as *mut ::core::ffi::c_void);
     free(name as *mut ::core::ffi::c_void);
     free(format as *mut ::core::ffi::c_void);
