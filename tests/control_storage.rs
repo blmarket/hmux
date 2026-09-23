@@ -22,7 +22,7 @@ fn window_resize_replacement_and_pane_reset_release_indexes() {
         }
         assert!(state.windows.storage.is_null());
         for id in [u32::MAX, 2, 0] {
-            let pane = libc::calloc(1, std::mem::size_of::<control_pane>()) as *mut control_pane;
+            let pane = Box::into_raw(Box::new(std::mem::zeroed::<control_pane>()));
             (*pane).pane = id;
             assert!(control_panes_insert(&mut state.panes, pane).is_null());
         }

@@ -308,10 +308,7 @@ unsafe extern "C" fn control_add_pane(
     if !cp.is_null() {
         return cp;
     }
-    cp = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<control_pane>() as size_t,
-    ) as *mut control_pane;
+    cp = Box::into_raw(Box::new(::core::mem::zeroed::<control_pane>()));
     (*cp).pane = (*wp).id;
     control_panes_insert(&raw mut (*cs).panes, cp);
     memcpy(
@@ -446,7 +443,7 @@ pub unsafe extern "C" fn control_reset_offsets(mut c: *mut client) {
     } {
         control_discard_pane(c, cp);
         control_panes_remove(&raw mut (*cs).panes, cp);
-        free(cp as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(cp));
         cp = cp1;
     }
     (*cs).pending_list.tqh_first = ::core::ptr::null_mut::<control_pane>();

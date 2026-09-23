@@ -2717,6 +2717,20 @@ legacy callers safe.
   rustfmt differences in `src/control.rs` are its pre-existing import layout.
   Diff checks passed. No sanitizer was run.
 
+### Increment 318 — boxed control-pane records (2026-09-23)
+
+- `control_add_pane` now boxes each zeroed `control_pane` before inserting it
+  into the pane-ID index and initializing its block-list tail pointer into
+  the stable record. `control_reset_offsets` still discards all blocks,
+  removes each pane from the index, then consumes its Box. The pending list,
+  block tail, and index retain borrowed pointers under the existing control
+  callback lifecycle. The direct `tests/control_storage.rs` fixture now also
+  boxes its pane records because it invokes the production destructor.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, control
+  lines and control-window CLI checks on both candidate and pinned baseline,
+  changed-code rustfmt, and diff checks passed. `src/control.rs` retains only
+  its pre-existing import-layout rustfmt differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2728,9 +2742,16 @@ passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
 1. `cmd_load_buffer_data` in `src/cmd/entries/load_buffer.rs` has one
-   constructor and a terminal callback destructor. Audit its callback
-   lifecycle and the existing attached-client reference handling on
-   error/empty input separately before migration. `args_value` has several
+   constructor and a terminal callback destructor, but `file_fire_done_cb`
+   can skip that callback when a nonattached source client dies before the
+   read closes. A complete owner needs a cancellation cleanup callback in
+   the file layer that can free callback data without touching a possibly
+   invalid command-queue item. Its `-w` target-client reference also needs
+   release on empty input and read errors; the existing code releases it only
+   for nonempty success. Direct Box replacement was deferred rather than
+   retaining these leaks. `cmdq_state` has an explicit reference count with
+   many retain/release sites and needs a separate alias audit before changing
+   its owner. `args_value` has several
    constructors and external fixtures, so audit its scalar/array ownership
    together before selection.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache

@@ -81,6 +81,8 @@ pub struct control_state_pending_list {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by the control client until `control_reset_offsets` unlinks it.
+/// The pane-ID index and pending list borrow its stable address.
 pub struct control_pane {
     pub pane: u_int,
     pub offset: window_pane_offset,
