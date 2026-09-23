@@ -151,7 +151,6 @@ pub struct window_alerts_entry {
     pub tqe_prev: *mut *mut window,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_mode_entry {
     pub wp: *mut window_pane,

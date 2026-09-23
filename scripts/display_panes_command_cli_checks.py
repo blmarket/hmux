@@ -58,6 +58,13 @@ with tempfile.TemporaryDirectory(prefix="display-panes-command-", dir=root / "ta
         wait_until(lambda: bool(query("list-clients", "-F", "#{client_tty}").strip()), "client")
 
         run("select-pane", "-t", "panes:0.0")
+        invalid = subprocess.run(
+            base + ["display-panes", "-d", "invalid", "-t", "panes:0.0"],
+            env=env, capture_output=True, timeout=10,
+        )
+        assert invalid.returncode != 0 and b"delay" in invalid.stderr, invalid.stderr
+        assert run("display-message", "-p", "-t", "panes:0.0", "#{pane_mode}") == b"\n"
+
         run("display-panes", "-d", "5000", "-t", "panes:0.0",
             "set-option -g @chosen_pane '%1'")
         wait_until(

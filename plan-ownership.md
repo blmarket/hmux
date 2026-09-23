@@ -2898,6 +2898,22 @@ legacy callers safe.
   workspace tests, binary build, changed-file rustfmt, and diff checks
   passed. No sanitizer was run.
 
+### Increment 330 — boxed pane mode entries (2026-09-23)
+
+- `window_pane_set_mode` now inserts a stable Box-owned `window_mode_entry`
+  into the pane's intrusive mode list. Its init-failure path unlinks and
+  drops without calling `mode.free`; normal reset and pane teardown still
+  unlink, call `mode.free`, then drop. Removed the entry's `xcalloc` and all
+  three matching `free` calls, plus its unused `Copy`/`Clone` derive. Raw
+  pointers held by the list, mode data, and timer callbacks remain borrowed
+  views while the entry is linked.
+- The attached window-tree check matched the pinned baseline through mode
+  entry, deferred callbacks, and pane destruction with an active prompt.
+  The clock-mode timer/resize/reset check passed on both binaries. Extended
+  the display-panes CLI check with invalid `-d` to exercise the init-failure
+  unlink/drop path; it passed on both binaries. Full workspace tests, binary
+  build, changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2908,14 +2924,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_mode_entry` in `src/window.rs` has one constructor in
-   `window_pane_set_mode` and destruction on init failure, reset, and pane
-   teardown. It has intrusive mode-list links and mode callbacks; preserve
-   stable addresses and unlink/free order. Attached mode enter, reset, and
-   pane teardown can exercise the complete lifecycle.
-   `tty_term.codes` looks like a simple fixed-size array, but
-   `tty_features.rs` temporarily replaces `term.codes` with a borrowed Vec
-   view during feature probing. Audit that alias before changing its owner.
+1. `tty_term.codes` in `src/tty_term.rs` has one production allocation in
+   `tty_term_create` and one release in `tty_term_free`, after freeing each
+   owned capability string. `tty_term_ncodes()` is the fixed row count.
+   Box the array before callers take element pointers, and preserve string
+   cleanup before releasing the slice. The apparent borrowed Vec assignment
+   in `tty_features.rs` is confined to a test-only fake `tty_term` and never
+   calls the production destructor.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`

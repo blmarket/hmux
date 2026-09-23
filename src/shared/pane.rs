@@ -213,6 +213,7 @@ pub struct window_pane {
     pub screen: *mut screen,
     pub base: screen,
     pub status_screen: screen,
+    /// Intrusive list of stable Box-owned mode entries, drained before pane free.
     pub modes: window_pane_modes,
     pub searchstr: *mut ::core::ffi::c_char,
     pub searchregex: ::core::ffi::c_int,

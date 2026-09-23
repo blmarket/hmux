@@ -3212,7 +3212,7 @@ unsafe extern "C" fn window_pane_free_modes(mut wp: *mut window_pane) {
         }
         *(*wme).entry.tqe_prev = (*wme).entry.tqe_next;
         (*(*wme).mode).free.expect("non-null function pointer")(wme);
-        free(wme as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(wme));
     }
     (*wp).screen = &raw mut (*wp).base;
 }
@@ -3536,14 +3536,20 @@ pub unsafe extern "C" fn window_pane_set_mode(
         (*wp).modes.tqh_first = wme;
         (*wme).entry.tqe_prev = &raw mut (*wp).modes.tqh_first;
     } else {
-        wme = xcalloc(
-            1 as size_t,
-            ::core::mem::size_of::<window_mode_entry>() as size_t,
-        ) as *mut window_mode_entry;
-        (*wme).wp = wp;
-        (*wme).swp = swp;
-        (*wme).mode = mode;
-        (*wme).prefix = 1 as u_int;
+        // List links and mode callbacks retain this stable address.
+        wme = Box::into_raw(Box::new(window_mode_entry {
+            wp,
+            swp,
+            mode,
+            data: ::core::ptr::null_mut(),
+            screen: ::core::ptr::null_mut(),
+            prefix: 1,
+            kill: 0,
+            entry: window_mode_entry_entry {
+                tqe_next: ::core::ptr::null_mut(),
+                tqe_prev: ::core::ptr::null_mut(),
+            },
+        }));
         (*wme).entry.tqe_next = (*wp).modes.tqh_first;
         if !(*wme).entry.tqe_next.is_null() {
             (*(*wp).modes.tqh_first).entry.tqe_prev = &raw mut (*wme).entry.tqe_next;
@@ -3561,7 +3567,7 @@ pub unsafe extern "C" fn window_pane_set_mode(
                 (*wp).modes.tqh_last = (*wme).entry.tqe_prev;
             }
             *(*wme).entry.tqe_prev = (*wme).entry.tqe_next;
-            free(wme as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(wme));
             return 1 as ::core::ffi::c_int;
         }
     }
@@ -3612,7 +3618,7 @@ pub unsafe extern "C" fn window_pane_reset_mode(mut wp: *mut window_pane) {
     }
     *(*wme).entry.tqe_prev = (*wme).entry.tqe_next;
     (*(*wme).mode).free.expect("non-null function pointer")(wme);
-    free(wme as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(wme));
     next = (*wp).modes.tqh_first;
     if next.is_null() {
         (*wp).flags &= !PANE_UNSEENCHANGES;
