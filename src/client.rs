@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_free_values, args_from_vector};
+use crate::src::arguments::OwnedArgumentVector;
 use crate::src::cmd::{cmd_list_any_have, cmd_list_free, cmd_pack_argv};
 use crate::src::cmd_parse::cmd_parse_from_arguments;
 use crate::src::compat::systemd::systemd_activated;
@@ -401,7 +401,6 @@ pub unsafe extern "C" fn client_main(
     };
     let mut size: size_t = 0;
     let mut caps = Vec::new();
-    let mut values: *mut args_value = ::core::ptr::null_mut::<args_value>();
     if !shell_command.is_null() {
         msg = MSG_SHELL;
         flags |= CLIENT_STARTSERVER as uint64_t;
@@ -410,12 +409,13 @@ pub unsafe extern "C" fn client_main(
         flags |= CLIENT_STARTSERVER as uint64_t;
     } else {
         msg = MSG_COMMAND;
-        values = args_from_vector(argc, argv);
+        let mut values = OwnedArgumentVector::from_argv(argc, argv);
         pr = cmd_parse_from_arguments(
-            values,
+            values.as_mut_ptr(),
             argc as u_int,
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
+        drop(values);
         if (*pr).status as ::core::ffi::c_uint
             == CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -426,8 +426,6 @@ pub unsafe extern "C" fn client_main(
         } else {
             free((*pr).error as *mut ::core::ffi::c_void);
         }
-        args_free_values(values, argc as u_int);
-        free(values as *mut ::core::ffi::c_void);
     }
     client_proc = proc_start(b"client\0" as *const u8 as *const ::core::ffi::c_char);
     proc_set_signals(

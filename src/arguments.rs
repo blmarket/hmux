@@ -913,6 +913,43 @@ pub unsafe extern "C" fn args_from_vector(
     }
     return values;
 }
+/// Owns the temporary argument records used while parsing an argv message.
+/// The exported `args_from_vector` keeps its separate C allocation contract.
+pub(crate) struct OwnedArgumentVector {
+    values: Vec<args_value>,
+}
+
+impl OwnedArgumentVector {
+    pub(crate) unsafe fn from_argv(
+        argc: ::core::ffi::c_int,
+        argv: *mut *mut ::core::ffi::c_char,
+    ) -> Self {
+        let mut values = Vec::with_capacity(argc as usize);
+        for i in 0..argc {
+            let mut value = ::core::mem::zeroed::<args_value>();
+            value.type_0 = ARGS_STRING;
+            value.c2rust_unnamed.string = xstrdup(*argv.add(i as usize));
+            values.push(value);
+        }
+        Self { values }
+    }
+
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut args_value {
+        if self.values.is_empty() {
+            ::core::ptr::null_mut()
+        } else {
+            self.values.as_mut_ptr()
+        }
+    }
+}
+
+impl Drop for OwnedArgumentVector {
+    fn drop(&mut self) {
+        for value in &mut self.values {
+            unsafe { args_free_value(value) };
+        }
+    }
+}
 unsafe extern "C" fn args_print_add(
     buf: &mut Vec<u8>,
     mut fmt: *const ::core::ffi::c_char,

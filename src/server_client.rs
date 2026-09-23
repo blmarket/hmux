@@ -1,5 +1,5 @@
 use crate::src::alerts::alerts_check_session;
-use crate::src::arguments::{args_free_values, args_from_vector};
+use crate::src::arguments::OwnedArgumentVector;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::{cmd_free_argv, cmd_list_all_have, cmd_list_free, cmd_unpack_argv};
 use crate::src::cmd_find::{cmd_find_from_client, cmd_find_from_mouse};
@@ -4169,7 +4169,6 @@ unsafe extern "C" fn server_client_dispatch_command(
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
-    let mut values: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
@@ -4212,20 +4211,19 @@ unsafe extern "C" fn server_client_dispatch_command(
             );
             current_block = 13472856163611868459;
         } else {
-            values = args_from_vector(argc, argv);
+            let mut values = OwnedArgumentVector::from_argv(argc, argv);
             pr = cmd_parse_from_arguments(
-                values,
+                values.as_mut_ptr(),
                 argc as u_int,
                 ::core::ptr::null_mut::<cmd_parse_input>(),
             );
+            drop(values);
             match (*pr).status as ::core::ffi::c_uint {
                 0 => {
                     cause = (*pr).error;
                     current_block = 12680788052841528405;
                 }
                 1 | _ => {
-                    args_free_values(values, argc as u_int);
-                    free(values as *mut ::core::ffi::c_void);
                     cmd_free_argv(argc, argv);
                     if (*c).flags & CLIENT_READONLY as uint64_t != 0
                         && cmd_list_all_have((*pr).cmdlist, CMD_READONLY) == 0

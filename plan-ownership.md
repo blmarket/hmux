@@ -3236,6 +3236,23 @@ legacy callers safe.
   binary build, changed-file rustfmt, and diff checks passed. No sanitizer
   was run.
 
+### Increment 354 — owned client command argument temporaries (2026-09-23)
+
+- `client_main` and `server_client_dispatch_command` now construct an
+  `OwnedArgumentVector` for the duplicated argv strings passed to
+  `cmd_parse_from_arguments`. Its `Vec` owns the temporary records and its
+  destructor releases their string payloads immediately after parsing. Removed
+  both callers' `args_free_values` and array `free` pairs; the server parse-error
+  branch now releases these temporaries too. Parsing copies each string before
+  retaining commands, so neither caller needs the vector after the parse call.
+- Client command payload CLI checks now cover unknown commands and invalid
+  flags as well as normal, non-UTF-8, empty, and size-boundary payloads; they
+  matched the pinned baseline. Argument escape and parser print CLI checks,
+  full workspace tests, binary build, changed-file rustfmt, and diff checks
+  passed. Exported `args_from_vector` retains its C-owned allocation contract
+  for external callers; it has no remaining in-tree production caller. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3246,13 +3263,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The separate exported `args_from_vector` result still crosses a C-owned
-   array boundary; both client callers need coordinated cleanup, including
-   the parse-error branch in
-   `server_client_dispatch_command` that currently leaks the temporary array.
-   Disconnected file-reading clients can leave a waiting command-queue item
-   even after callback data is released; that needs a separate queue
-   cancellation design.
+1. Exported `args_from_vector` still returns a C-owned array to external
+   callers; no in-tree production caller uses it now. Disconnected file-reading
+   clients can leave a waiting command-queue item even after callback data is
+   released. A queue cancellation migration needs wait-owner detach hooks and
+   callback-data destruction before a disconnected client queue can be drained.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

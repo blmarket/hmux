@@ -33,6 +33,8 @@ def check(binary, socket):
             run(b"display-message", b"-p", b"X" * 16340),
             run(b"display-message", b"-p", b"X" * 16345),
             run(b"display-message", b"-p", b"X" * 16384),
+            run(b"not-a-command"),
+            run(b"display-message", b"-z"),
         ]
         assert results == [
             (0, b"normal\n", b""),
@@ -41,6 +43,8 @@ def check(binary, socket):
             (0, b"X" * 16340 + b"\n", b""),
             (1, b"", b"failed to send command\n"),
             (1, b"", b"command too long\n"),
+            (1, b"", b"unknown command: not-a-command\n"),
+            (1, b"", b"command display-message: unknown flag -z\n"),
         ], [(code, len(stdout), stderr) for code, stdout, stderr in results]
         return results
     finally:
