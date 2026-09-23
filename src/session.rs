@@ -88,7 +88,7 @@ use crate::src::window::{
     window_update_activity, window_update_focus, winlink_add, winlink_clear_flags,
     winlink_find_by_index, winlink_find_by_window, winlink_find_by_window_id, winlink_next,
     winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push, winlink_stack_remove,
-    winlinks_minmax, winlinks_next,
+    window_winlinks_first, window_winlinks_next, winlinks_minmax, winlinks_next,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc};
 use std::ffi::{CStr, CString};
@@ -869,12 +869,12 @@ pub unsafe extern "C" fn session_has(
     mut w: *mut window,
 ) -> ::core::ffi::c_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if (*wl).session == s {
             return 1 as ::core::ffi::c_int;
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
     return 0 as ::core::ffi::c_int;
 }

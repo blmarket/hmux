@@ -54,7 +54,6 @@ pub struct winlink {
     pub window: *mut window,
     pub flags: ::core::ffi::c_int,
     pub entry: winlink_entry,
-    pub wentry: winlink_wentry,
     pub sentry: winlink_sentry,
 }
 
@@ -136,11 +135,16 @@ pub struct window_entry {
     pub owner: *mut std::collections::BTreeMap<u_int, *mut window>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Default)]
+pub struct WindowWinlinksStorage {
+    pub(crate) ordered: Vec<*mut winlink>,
+    pub(crate) positions: std::collections::HashMap<*mut winlink, usize>,
+}
+
 #[repr(C)]
 pub struct window_winlinks {
-    pub tqh_first: *mut winlink,
-    pub tqh_last: *mut *mut winlink,
+    /// Ordered non-owning handles; session BTreeMaps own the RefBox allocations.
+    pub storage: Option<Box<WindowWinlinksStorage>>,
 }
 
 #[derive(Copy, Clone)]

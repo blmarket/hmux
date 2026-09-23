@@ -72,7 +72,8 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::window::{
-    window_find_by_id, window_pane_find_by_id, winlinks_minmax, winlinks_next,
+    window_find_by_id, window_pane_find_by_id, window_winlinks_first, window_winlinks_next,
+    winlinks_minmax, winlinks_next,
 };
 use crate::src::xmalloc::{xcalloc, xstrdup};
 
@@ -350,7 +351,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
         return;
     }
     w = (*wp).window as *mut window;
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if !((*wl).session != s) {
             ft = monitor_create_formats(c, s, wl, wp);
@@ -376,7 +377,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
                 &raw mut (*mp.cast::<MonitorPaneOwner>()).last,
             );
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
 }
 unsafe extern "C" fn monitor_check_all_panes_one(
@@ -456,7 +457,7 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
     if w.is_null() {
         return;
     }
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if !((*wl).session != s) {
             ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
@@ -482,7 +483,7 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
                 &raw mut (*mw.cast::<MonitorWindowOwner>()).last,
             );
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
 }
 unsafe extern "C" fn monitor_check_all_windows_one(

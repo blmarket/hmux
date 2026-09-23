@@ -120,7 +120,8 @@ use crate::src::sort::{
 use crate::src::style::style_apply;
 use crate::src::window::{
     window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_index,
-    window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
+    window_pane_reset_mode, window_winlinks_append, window_winlinks_remove, winlink_count,
+    winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
 use std::ffi::{CStr, CString};
 
@@ -1740,29 +1741,13 @@ unsafe extern "C" fn window_tree_swap(
         return 0 as ::core::ffi::c_int;
     }
     other_window = (*other_winlink).window;
-    if !(*other_winlink).wentry.tqe_next.is_null() {
-        (*(*other_winlink).wentry.tqe_next).wentry.tqe_prev = (*other_winlink).wentry.tqe_prev;
-    } else {
-        (*other_window).winlinks.tqh_last = (*other_winlink).wentry.tqe_prev;
-    }
-    *(*other_winlink).wentry.tqe_prev = (*other_winlink).wentry.tqe_next;
     cur_window = (*cur_winlink).window;
-    if !(*cur_winlink).wentry.tqe_next.is_null() {
-        (*(*cur_winlink).wentry.tqe_next).wentry.tqe_prev = (*cur_winlink).wentry.tqe_prev;
-    } else {
-        (*cur_window).winlinks.tqh_last = (*cur_winlink).wentry.tqe_prev;
-    }
-    *(*cur_winlink).wentry.tqe_prev = (*cur_winlink).wentry.tqe_next;
+    window_winlinks_remove(other_window, other_winlink);
+    window_winlinks_remove(cur_window, cur_winlink);
     (*other_winlink).window = cur_window;
-    (*other_winlink).wentry.tqe_next = ::core::ptr::null_mut::<winlink>();
-    (*other_winlink).wentry.tqe_prev = (*cur_window).winlinks.tqh_last;
-    *(*cur_window).winlinks.tqh_last = other_winlink;
-    (*cur_window).winlinks.tqh_last = &raw mut (*other_winlink).wentry.tqe_next;
+    window_winlinks_append(cur_window, other_winlink);
     (*cur_winlink).window = other_window;
-    (*cur_winlink).wentry.tqe_next = ::core::ptr::null_mut::<winlink>();
-    (*cur_winlink).wentry.tqe_prev = (*other_window).winlinks.tqh_last;
-    *(*other_window).winlinks.tqh_last = cur_winlink;
-    (*other_window).winlinks.tqh_last = &raw mut (*cur_winlink).wentry.tqe_next;
+    window_winlinks_append(other_window, cur_winlink);
     if (*cur_session).curw == cur_winlink {
         session_set_current(cur_session, other_winlink);
     } else if (*cur_session).curw == other_winlink {

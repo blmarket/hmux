@@ -3,6 +3,7 @@
 // retain their separate C ABI.
 use super::*;
 use crate::src::server_client::server_client_set_user;
+use crate::src::window::{window_winlinks_first, window_winlinks_next};
 use std::ffi::{CStr, CString};
 use std::fmt::Write as _;
 
@@ -242,13 +243,13 @@ unsafe fn format_cb_window_linked_sessions_list(mut ft: *mut format_tree) -> Opt
         return None;
     }
     w = (*(*ft).wl).window;
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if !names.is_empty() {
             names.push(b',');
         }
         names.extend_from_slice(std::ffi::CStr::from_ptr((*(*wl).session).name).to_bytes());
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
     if names.is_empty() {
         return None;
@@ -264,12 +265,12 @@ unsafe fn format_cb_window_active_sessions(mut ft: *mut format_tree) -> Option<C
         return None;
     }
     w = (*(*ft).wl).window;
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if (*(*wl).session).curw == wl {
             n = n.wrapping_add(1);
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
     value =
         Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"));
@@ -283,7 +284,7 @@ unsafe fn format_cb_window_active_sessions_list(mut ft: *mut format_tree) -> Opt
     }
     w = (*(*ft).wl).window;
     let mut names = Vec::<u8>::new();
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if (*(*wl).session).curw == wl {
             if !names.is_empty() {
@@ -291,7 +292,7 @@ unsafe fn format_cb_window_active_sessions_list(mut ft: *mut format_tree) -> Opt
             }
             names.extend_from_slice(std::ffi::CStr::from_ptr((*(*wl).session).name).to_bytes());
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
     if names.is_empty() {
         return None;

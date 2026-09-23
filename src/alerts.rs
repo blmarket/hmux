@@ -71,7 +71,8 @@ use crate::src::status::status_message_set;
 use crate::src::tty::tty_putcode;
 pub use crate::src::window::windows;
 use crate::src::window::{
-    window_add_ref, window_remove_ref, windows_minmax, windows_next, winlinks_minmax, winlinks_next,
+    window_add_ref, window_remove_ref, window_winlinks_first, window_winlinks_next,
+    windows_minmax, windows_next, winlinks_minmax, winlinks_next,
 };
 use std::collections::VecDeque;
 
@@ -313,12 +314,12 @@ unsafe extern "C" fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int
     {
         return 0 as ::core::ffi::c_int;
     }
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         (*(*wl).session).flags &= !SESSION_ALERTED;
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         s = (*wl).session;
         if (*s).curw != wl || (*s).attached == 0 as u_int {
@@ -343,7 +344,7 @@ unsafe extern "C" fn alerts_check_bell(mut w: *mut window) -> ::core::ffi::c_int
                 );
             }
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
     return 0x1 as ::core::ffi::c_int;
 }
@@ -360,12 +361,12 @@ unsafe extern "C" fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c
     {
         return 0 as ::core::ffi::c_int;
     }
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         (*(*wl).session).flags &= !SESSION_ALERTED;
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_ACTIVITY != 0) {
             s = (*wl).session;
@@ -392,7 +393,7 @@ unsafe extern "C" fn alerts_check_activity(mut w: *mut window) -> ::core::ffi::c
                 }
             }
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
     return 0x2 as ::core::ffi::c_int;
 }
@@ -409,12 +410,12 @@ unsafe extern "C" fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_
     {
         return 0 as ::core::ffi::c_int;
     }
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         (*(*wl).session).flags &= !SESSION_ALERTED;
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_SILENCE != 0) {
             s = (*wl).session;
@@ -441,7 +442,7 @@ unsafe extern "C" fn alerts_check_silence(mut w: *mut window) -> ::core::ffi::c_
                 }
             }
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
     return 0x4 as ::core::ffi::c_int;
 }

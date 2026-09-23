@@ -5,6 +5,7 @@ use crate::src::resize::recalculate_sizes;
 use crate::src::server::marked_pane;
 use crate::src::server_fn::server_redraw_session_group;
 use crate::src::session::{session_group_contains, session_group_synchronize_from, session_select};
+use crate::src::window::{window_winlinks_append, window_winlinks_remove};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -124,29 +125,13 @@ unsafe extern "C" fn cmd_swap_window_exec(
         return CMD_RETURN_NORMAL;
     }
     w_dst = (*wl_dst).window;
-    if !(*wl_dst).wentry.tqe_next.is_null() {
-        (*(*wl_dst).wentry.tqe_next).wentry.tqe_prev = (*wl_dst).wentry.tqe_prev;
-    } else {
-        (*w_dst).winlinks.tqh_last = (*wl_dst).wentry.tqe_prev;
-    }
-    *(*wl_dst).wentry.tqe_prev = (*wl_dst).wentry.tqe_next;
     w_src = (*wl_src).window;
-    if !(*wl_src).wentry.tqe_next.is_null() {
-        (*(*wl_src).wentry.tqe_next).wentry.tqe_prev = (*wl_src).wentry.tqe_prev;
-    } else {
-        (*w_src).winlinks.tqh_last = (*wl_src).wentry.tqe_prev;
-    }
-    *(*wl_src).wentry.tqe_prev = (*wl_src).wentry.tqe_next;
+    window_winlinks_remove(w_dst, wl_dst);
+    window_winlinks_remove(w_src, wl_src);
     (*wl_dst).window = w_src;
-    (*wl_dst).wentry.tqe_next = ::core::ptr::null_mut::<winlink>();
-    (*wl_dst).wentry.tqe_prev = (*w_src).winlinks.tqh_last;
-    *(*w_src).winlinks.tqh_last = wl_dst;
-    (*w_src).winlinks.tqh_last = &raw mut (*wl_dst).wentry.tqe_next;
+    window_winlinks_append(w_src, wl_dst);
     (*wl_src).window = w_dst;
-    (*wl_src).wentry.tqe_next = ::core::ptr::null_mut::<winlink>();
-    (*wl_src).wentry.tqe_prev = (*w_dst).winlinks.tqh_last;
-    *(*w_dst).winlinks.tqh_last = wl_src;
-    (*w_dst).winlinks.tqh_last = &raw mut (*wl_src).wentry.tqe_next;
+    window_winlinks_append(w_dst, wl_src);
     if marked_pane.wl == wl_src {
         marked_pane.wl = wl_dst;
     }

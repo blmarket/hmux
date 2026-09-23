@@ -94,7 +94,8 @@ use crate::src::window::{
     window_pane_scrollbar_visible, window_pane_send_resize, window_pane_send_theme_update,
     window_pane_set_mode, window_pane_status_get_range, window_pane_tree_minmax,
     window_pane_tree_next, window_redraw_active_switch, window_set_active_pane,
-    window_update_focus, windows_minmax, windows_next, winlink_find_by_index,
+    window_update_focus, window_winlinks_first, window_winlinks_next, windows_minmax,
+    windows_next, winlink_find_by_index,
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
@@ -3649,12 +3650,12 @@ unsafe extern "C" fn server_client_check_window_resize(mut w: *mut window) {
     if !(*w).flags & WINDOW_RESIZE != 0 {
         return;
     }
-    wl = (*w).winlinks.tqh_first;
+    wl = window_winlinks_first(w);
     while !wl.is_null() {
         if (*(*wl).session).attached != 0 as u_int && (*(*wl).session).curw == wl {
             break;
         }
-        wl = (*wl).wentry.tqe_next;
+        wl = window_winlinks_next(w, wl);
     }
     if wl.is_null() {
         return;

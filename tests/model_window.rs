@@ -10932,602 +10932,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::C2RustUnnamed_20",
         hmux2::src::alerts::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/arguments.rs::C2RustUnnamed_26",
         hmux2::src::arguments::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cfg.rs::C2RustUnnamed_20",
         hmux2::src::cfg::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/client.rs::C2RustUnnamed_33",
         hmux2::src::client::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd.rs::C2RustUnnamed_20",
         hmux2::src::cmd::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_attach_session.rs::C2RustUnnamed_20",
         hmux2::src::cmd_attach_session::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_bind_key.rs::C2RustUnnamed_20",
         hmux2::src::cmd_bind_key::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_break_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_break_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_capture_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_capture_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_choose_tree.rs::C2RustUnnamed_20",
         hmux2::src::cmd_choose_tree::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_command_prompt.rs::C2RustUnnamed_20",
         hmux2::src::cmd_command_prompt::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_confirm_before.rs::C2RustUnnamed_20",
         hmux2::src::cmd_confirm_before::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_copy_mode.rs::C2RustUnnamed_20",
         hmux2::src::cmd_copy_mode::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_detach_client.rs::C2RustUnnamed_20",
         hmux2::src::cmd_detach_client::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_display_menu.rs::C2RustUnnamed_20",
         hmux2::src::cmd_display_menu::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_display_message.rs::C2RustUnnamed_20",
         hmux2::src::cmd_display_message::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_find.rs::C2RustUnnamed_20",
         hmux2::src::cmd_find::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_find_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_find_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_if_shell.rs::C2RustUnnamed_20",
         hmux2::src::cmd_if_shell::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_join_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_join_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_kill_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_kill_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_kill_session.rs::C2RustUnnamed_20",
         hmux2::src::cmd_kill_session::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_kill_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_kill_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_list_buffers.rs::C2RustUnnamed_20",
         hmux2::src::cmd_list_buffers::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_list_clients.rs::C2RustUnnamed_20",
         hmux2::src::cmd_list_clients::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_list_commands.rs::C2RustUnnamed_20",
         hmux2::src::cmd_list_commands::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_list_keys.rs::C2RustUnnamed_20",
         hmux2::src::cmd_list_keys::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_list_panes.rs::C2RustUnnamed_20",
         hmux2::src::cmd_list_panes::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_list_sessions.rs::C2RustUnnamed_20",
         hmux2::src::cmd_list_sessions::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_list_windows.rs::C2RustUnnamed_20",
         hmux2::src::cmd_list_windows::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_load_buffer.rs::C2RustUnnamed_20",
         hmux2::src::cmd_load_buffer::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_lock_server.rs::C2RustUnnamed_20",
         hmux2::src::cmd_lock_server::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_move_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_move_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_new_session.rs::C2RustUnnamed_20",
         hmux2::src::cmd_new_session::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_new_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_new_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_parse.rs::C2RustUnnamed_21",
         hmux2::src::cmd_parse::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_paste_buffer.rs::C2RustUnnamed_20",
         hmux2::src::cmd_paste_buffer::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_pipe_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_pipe_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_queue.rs::C2RustUnnamed_20",
         hmux2::src::cmd_queue::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_refresh_client.rs::C2RustUnnamed_20",
         hmux2::src::cmd_refresh_client::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_rename_session.rs::C2RustUnnamed_20",
         hmux2::src::cmd_rename_session::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_rename_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_rename_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_resize_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_resize_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_resize_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_resize_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_respawn_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_respawn_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_respawn_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_respawn_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_rotate_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_rotate_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_run_shell.rs::C2RustUnnamed_20",
         hmux2::src::cmd_run_shell::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_save_buffer.rs::C2RustUnnamed_20",
         hmux2::src::cmd_save_buffer::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_select_layout.rs::C2RustUnnamed_20",
         hmux2::src::cmd_select_layout::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_select_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_select_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_select_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_select_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_send_keys.rs::C2RustUnnamed_20",
         hmux2::src::cmd_send_keys::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_server_access.rs::C2RustUnnamed_20",
         hmux2::src::cmd_server_access::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_set_buffer.rs::C2RustUnnamed_20",
         hmux2::src::cmd_set_buffer::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_set_environment.rs::C2RustUnnamed_20",
         hmux2::src::cmd_set_environment::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_set_option.rs::C2RustUnnamed_20",
         hmux2::src::cmd_set_option::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_show_environment.rs::C2RustUnnamed_20",
         hmux2::src::cmd_show_environment::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_show_messages.rs::C2RustUnnamed_20",
         hmux2::src::cmd_show_messages::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_show_options.rs::C2RustUnnamed_20",
         hmux2::src::cmd_show_options::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_source_file.rs::C2RustUnnamed_21",
         hmux2::src::cmd_source_file::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_split_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_split_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_swap_pane.rs::C2RustUnnamed_20",
         hmux2::src::cmd_swap_pane::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_swap_window.rs::C2RustUnnamed_20",
         hmux2::src::cmd_swap_window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_switch_client.rs::C2RustUnnamed_20",
         hmux2::src::cmd_switch_client::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_wait_for.rs::C2RustUnnamed_20",
         hmux2::src::cmd_wait_for::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/colour.rs::C2RustUnnamed_21",
         hmux2::src::colour::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/control.rs::C2RustUnnamed_20",
         hmux2::src::control::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/control_notify.rs::C2RustUnnamed_20",
         hmux2::src::control_notify::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/environ.rs::C2RustUnnamed_21",
         hmux2::src::environ::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/events.rs::C2RustUnnamed_20",
         hmux2::src::events::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/events_payload.rs::C2RustUnnamed_20",
         hmux2::src::events_payload::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/file.rs::C2RustUnnamed_21",
         hmux2::src::file::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/format.rs::C2RustUnnamed_21",
         hmux2::src::format::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/format_draw.rs::C2RustUnnamed_20",
         hmux2::src::format_draw::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/hooks.rs::C2RustUnnamed_20",
         hmux2::src::hooks::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/input.rs::C2RustUnnamed_20",
         hmux2::src::input::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/input_keys.rs::C2RustUnnamed_20",
         hmux2::src::input_keys::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/job.rs::C2RustUnnamed_21",
         hmux2::src::job::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/key_bindings.rs::C2RustUnnamed_20",
         hmux2::src::key_bindings::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/layout.rs::C2RustUnnamed_20",
         hmux2::src::layout::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/layout_custom.rs::C2RustUnnamed_21",
         hmux2::src::layout_custom::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/layout_set.rs::C2RustUnnamed_20",
         hmux2::src::layout_set::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/menu.rs::C2RustUnnamed_20",
         hmux2::src::menu::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/mode_tree.rs::C2RustUnnamed_20",
         hmux2::src::mode_tree::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/monitor.rs::C2RustUnnamed_20",
         hmux2::src::monitor::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/names.rs::C2RustUnnamed_21",
         hmux2::src::names::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/options.rs::C2RustUnnamed_23",
         hmux2::src::options::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/popup.rs::C2RustUnnamed_20",
         hmux2::src::popup::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/prompt.rs::C2RustUnnamed_20",
         hmux2::src::prompt::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/resize.rs::C2RustUnnamed_20",
         hmux2::src::resize::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/screen.rs::C2RustUnnamed_21",
         hmux2::src::screen::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/screen_redraw.rs::C2RustUnnamed_20",
         hmux2::src::screen_redraw::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/screen_write.rs::C2RustUnnamed_23",
         hmux2::src::screen_write::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/server.rs::C2RustUnnamed_21",
         hmux2::src::server::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/server_acl.rs::C2RustUnnamed_20",
         hmux2::src::server_acl::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/server_client.rs::C2RustUnnamed_21",
         hmux2::src::server_client::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/server_fn.rs::C2RustUnnamed_20",
         hmux2::src::server_fn::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/session.rs::C2RustUnnamed_20",
         hmux2::src::session::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/sort.rs::C2RustUnnamed_20",
         hmux2::src::sort::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/spawn.rs::C2RustUnnamed_20",
         hmux2::src::spawn::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/status.rs::C2RustUnnamed_20",
         hmux2::src::status::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/style.rs::C2RustUnnamed_20",
         hmux2::src::style::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/tty.rs::C2RustUnnamed_20",
         hmux2::src::tty::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/tty_acs.rs::C2RustUnnamed_20",
         hmux2::src::tty_acs::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/tty_draw.rs::C2RustUnnamed_20",
         hmux2::src::tty_draw::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/tty_features.rs::C2RustUnnamed_20",
         hmux2::src::tty_features::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/tty_keys.rs::C2RustUnnamed_21",
         hmux2::src::tty_keys::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/tty_term.rs::C2RustUnnamed_20",
         hmux2::src::tty_term::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window.rs::C2RustUnnamed_21",
         hmux2::src::window::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_border.rs::C2RustUnnamed_20",
         hmux2::src::window_border::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_buffer.rs::C2RustUnnamed_20",
         hmux2::src::window_buffer::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_client.rs::C2RustUnnamed_20",
         hmux2::src::window_client::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_clock.rs::C2RustUnnamed_20",
         hmux2::src::window_clock::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_copy.rs::C2RustUnnamed_20",
         hmux2::src::window_copy::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_customize.rs::C2RustUnnamed_20",
         hmux2::src::window_customize::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_panes.rs::C2RustUnnamed_20",
         hmux2::src::window_panes::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_switch.rs::C2RustUnnamed_20",
         hmux2::src::window_switch::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_tree.rs::C2RustUnnamed_20",
         hmux2::src::window_tree::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/window_visible.rs::C2RustUnnamed_20",
         hmux2::src::window_visible::window_winlinks,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/alerts.rs::windows",
@@ -11567,602 +11567,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::winlink",
         hmux2::src::alerts::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/arguments.rs::winlink",
         hmux2::src::arguments::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cfg.rs::winlink",
         hmux2::src::cfg::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/client.rs::winlink",
         hmux2::src::client::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd.rs::winlink",
         hmux2::src::cmd::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_attach_session.rs::winlink",
         hmux2::src::cmd_attach_session::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_bind_key.rs::winlink",
         hmux2::src::cmd_bind_key::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_break_pane.rs::winlink",
         hmux2::src::cmd_break_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_capture_pane.rs::winlink",
         hmux2::src::cmd_capture_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_choose_tree.rs::winlink",
         hmux2::src::cmd_choose_tree::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_command_prompt.rs::winlink",
         hmux2::src::cmd_command_prompt::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_confirm_before.rs::winlink",
         hmux2::src::cmd_confirm_before::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_copy_mode.rs::winlink",
         hmux2::src::cmd_copy_mode::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_detach_client.rs::winlink",
         hmux2::src::cmd_detach_client::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_display_menu.rs::winlink",
         hmux2::src::cmd_display_menu::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_display_message.rs::winlink",
         hmux2::src::cmd_display_message::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_find.rs::winlink",
         hmux2::src::cmd_find::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_find_window.rs::winlink",
         hmux2::src::cmd_find_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_if_shell.rs::winlink",
         hmux2::src::cmd_if_shell::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_join_pane.rs::winlink",
         hmux2::src::cmd_join_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_kill_pane.rs::winlink",
         hmux2::src::cmd_kill_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_kill_session.rs::winlink",
         hmux2::src::cmd_kill_session::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_kill_window.rs::winlink",
         hmux2::src::cmd_kill_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_list_buffers.rs::winlink",
         hmux2::src::cmd_list_buffers::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_list_clients.rs::winlink",
         hmux2::src::cmd_list_clients::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_list_commands.rs::winlink",
         hmux2::src::cmd_list_commands::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_list_keys.rs::winlink",
         hmux2::src::cmd_list_keys::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_list_panes.rs::winlink",
         hmux2::src::cmd_list_panes::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_list_sessions.rs::winlink",
         hmux2::src::cmd_list_sessions::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_list_windows.rs::winlink",
         hmux2::src::cmd_list_windows::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_load_buffer.rs::winlink",
         hmux2::src::cmd_load_buffer::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_lock_server.rs::winlink",
         hmux2::src::cmd_lock_server::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_move_window.rs::winlink",
         hmux2::src::cmd_move_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_new_session.rs::winlink",
         hmux2::src::cmd_new_session::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_new_window.rs::winlink",
         hmux2::src::cmd_new_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_parse.rs::winlink",
         hmux2::src::cmd_parse::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_paste_buffer.rs::winlink",
         hmux2::src::cmd_paste_buffer::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_pipe_pane.rs::winlink",
         hmux2::src::cmd_pipe_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_queue.rs::winlink",
         hmux2::src::cmd_queue::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_refresh_client.rs::winlink",
         hmux2::src::cmd_refresh_client::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_rename_session.rs::winlink",
         hmux2::src::cmd_rename_session::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_rename_window.rs::winlink",
         hmux2::src::cmd_rename_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_resize_pane.rs::winlink",
         hmux2::src::cmd_resize_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_resize_window.rs::winlink",
         hmux2::src::cmd_resize_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_respawn_pane.rs::winlink",
         hmux2::src::cmd_respawn_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_respawn_window.rs::winlink",
         hmux2::src::cmd_respawn_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_rotate_window.rs::winlink",
         hmux2::src::cmd_rotate_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_run_shell.rs::winlink",
         hmux2::src::cmd_run_shell::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_save_buffer.rs::winlink",
         hmux2::src::cmd_save_buffer::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_select_layout.rs::winlink",
         hmux2::src::cmd_select_layout::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_select_pane.rs::winlink",
         hmux2::src::cmd_select_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_select_window.rs::winlink",
         hmux2::src::cmd_select_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_send_keys.rs::winlink",
         hmux2::src::cmd_send_keys::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_server_access.rs::winlink",
         hmux2::src::cmd_server_access::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_set_buffer.rs::winlink",
         hmux2::src::cmd_set_buffer::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_set_environment.rs::winlink",
         hmux2::src::cmd_set_environment::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_set_option.rs::winlink",
         hmux2::src::cmd_set_option::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_show_environment.rs::winlink",
         hmux2::src::cmd_show_environment::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_show_messages.rs::winlink",
         hmux2::src::cmd_show_messages::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_show_options.rs::winlink",
         hmux2::src::cmd_show_options::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_source_file.rs::winlink",
         hmux2::src::cmd_source_file::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_split_window.rs::winlink",
         hmux2::src::cmd_split_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_swap_pane.rs::winlink",
         hmux2::src::cmd_swap_pane::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_swap_window.rs::winlink",
         hmux2::src::cmd_swap_window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_switch_client.rs::winlink",
         hmux2::src::cmd_switch_client::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/cmd_wait_for.rs::winlink",
         hmux2::src::cmd_wait_for::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/colour.rs::winlink",
         hmux2::src::colour::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/control.rs::winlink",
         hmux2::src::control::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/control_notify.rs::winlink",
         hmux2::src::control_notify::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/environ.rs::winlink",
         hmux2::src::environ::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/events.rs::winlink",
         hmux2::src::events::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/events_payload.rs::winlink",
         hmux2::src::events_payload::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/file.rs::winlink",
         hmux2::src::file::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/format.rs::winlink",
         hmux2::src::format::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/format_draw.rs::winlink",
         hmux2::src::format_draw::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/hooks.rs::winlink",
         hmux2::src::hooks::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/input.rs::winlink",
         hmux2::src::input::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/input_keys.rs::winlink",
         hmux2::src::input_keys::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/job.rs::winlink",
         hmux2::src::job::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/key_bindings.rs::winlink",
         hmux2::src::key_bindings::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/layout.rs::winlink",
         hmux2::src::layout::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/layout_custom.rs::winlink",
         hmux2::src::layout_custom::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/layout_set.rs::winlink",
         hmux2::src::layout_set::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/menu.rs::winlink",
         hmux2::src::menu::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/mode_tree.rs::winlink",
         hmux2::src::mode_tree::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/monitor.rs::winlink",
         hmux2::src::monitor::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/names.rs::winlink",
         hmux2::src::names::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/options.rs::winlink",
         hmux2::src::options::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/popup.rs::winlink",
         hmux2::src::popup::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/prompt.rs::winlink",
         hmux2::src::prompt::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/resize.rs::winlink",
         hmux2::src::resize::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/screen.rs::winlink",
         hmux2::src::screen::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/screen_redraw.rs::winlink",
         hmux2::src::screen_redraw::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/screen_write.rs::winlink",
         hmux2::src::screen_write::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/server.rs::winlink",
         hmux2::src::server::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/server_acl.rs::winlink",
         hmux2::src::server_acl::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/server_client.rs::winlink",
         hmux2::src::server_client::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/server_fn.rs::winlink",
         hmux2::src::server_fn::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/session.rs::winlink",
         hmux2::src::session::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/sort.rs::winlink",
         hmux2::src::sort::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/spawn.rs::winlink",
         hmux2::src::spawn::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/status.rs::winlink",
         hmux2::src::status::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/style.rs::winlink",
         hmux2::src::style::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/tty.rs::winlink",
         hmux2::src::tty::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/tty_acs.rs::winlink",
         hmux2::src::tty_acs::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/tty_draw.rs::winlink",
         hmux2::src::tty_draw::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/tty_features.rs::winlink",
         hmux2::src::tty_features::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/tty_keys.rs::winlink",
         hmux2::src::tty_keys::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/tty_term.rs::winlink",
         hmux2::src::tty_term::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window.rs::winlink",
         hmux2::src::window::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_border.rs::winlink",
         hmux2::src::window_border::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_buffer.rs::winlink",
         hmux2::src::window_buffer::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_client.rs::winlink",
         hmux2::src::window_client::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_clock.rs::winlink",
         hmux2::src::window_clock::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_copy.rs::winlink",
         hmux2::src::window_copy::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_customize.rs::winlink",
         hmux2::src::window_customize::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_panes.rs::winlink",
         hmux2::src::window_panes::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_switch.rs::winlink",
         hmux2::src::window_switch::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_tree.rs::winlink",
         hmux2::src::window_tree::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/window_visible.rs::winlink",
         hmux2::src::window_visible::winlink,
-        [idx, session, window, flags, entry, wentry, sentry]
+        [idx, session, window, flags, entry, sentry]
     );
     record!(
         "src/alerts.rs::C2RustUnnamed_18",

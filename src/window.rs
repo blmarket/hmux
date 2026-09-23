@@ -323,6 +323,73 @@ pub unsafe fn winlinks_prev(elm: *mut winlink) -> *mut winlink {
         })
 }
 
+/// Return the first winlink in a window's association order.
+pub unsafe fn window_winlinks_first(w: *mut window) -> *mut winlink {
+    if w.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*w)
+        .winlinks
+        .storage
+        .as_deref()
+        .and_then(|links| links.ordered.first().copied())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Return the next winlink in `w` after `wl`, or null when it is no longer in
+/// that window. Taking the owner explicitly keeps iteration correct if a
+/// callback moves `wl` to another window while the original list is traversed.
+pub unsafe fn window_winlinks_next(w: *mut window, wl: *mut winlink) -> *mut winlink {
+    if w.is_null() || wl.is_null() {
+        return std::ptr::null_mut();
+    }
+    let Some(links) = (*w).winlinks.storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    links
+        .positions
+        .get(&wl)
+        .and_then(|&position| links.ordered.get(position + 1).copied())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Append a non-owning winlink handle to the window's association order.
+pub unsafe fn window_winlinks_append(w: *mut window, wl: *mut winlink) {
+    assert!(!w.is_null() && !wl.is_null());
+    let links = (*w)
+        .winlinks
+        .storage
+        .get_or_insert_with(|| Box::default());
+    assert!(
+        !links.positions.contains_key(&wl),
+        "winlink is already present in this window"
+    );
+    let position = links.ordered.len();
+    links.ordered.push(wl);
+    links.positions.insert(wl, position);
+}
+
+/// Remove a non-owning winlink handle from its window's association order.
+pub unsafe fn window_winlinks_remove(w: *mut window, wl: *mut winlink) {
+    assert!(!w.is_null() && !wl.is_null());
+    let links = (*w)
+        .winlinks
+        .storage
+        .as_mut()
+        .expect("window winlink collection must be alive");
+    let position = links
+        .positions
+        .remove(&wl)
+        .expect("winlink must belong to its window");
+    links.ordered.remove(position);
+    for (position, link) in links.ordered.iter().enumerate().skip(position) {
+        links.positions.insert(*link, position);
+    }
+    if links.ordered.is_empty() {
+        (*w).winlinks.storage = None;
+    }
+}
+
 pub unsafe fn window_pane_tree_find(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
@@ -689,10 +756,6 @@ pub unsafe extern "C" fn winlink_find_by_index(
         entry: winlink_entry {
             owner: std::ptr::null_mut(),
         },
-        wentry: winlink_wentry {
-            tqe_next: ::core::ptr::null_mut::<winlink>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut winlink>(),
-        },
         sentry: winlink_sentry {
             tqe_next: ::core::ptr::null_mut::<winlink>(),
             tqe_prev: ::core::ptr::null_mut::<*mut winlink>(),
@@ -788,22 +851,14 @@ pub unsafe extern "C" fn winlink_add(
 #[no_mangle]
 pub unsafe extern "C" fn winlink_set_window(mut wl: *mut winlink, mut w: *mut window) {
     if !(*wl).window.is_null() {
-        if !(*wl).wentry.tqe_next.is_null() {
-            (*(*wl).wentry.tqe_next).wentry.tqe_prev = (*wl).wentry.tqe_prev;
-        } else {
-            (*(*wl).window).winlinks.tqh_last = (*wl).wentry.tqe_prev;
-        }
-        *(*wl).wentry.tqe_prev = (*wl).wentry.tqe_next;
+        window_winlinks_remove((*wl).window, wl);
         window_remove_ref(
             (*wl).window,
             b"winlink_set_window\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    (*wl).wentry.tqe_next = ::core::ptr::null_mut::<winlink>();
-    (*wl).wentry.tqe_prev = (*w).winlinks.tqh_last;
-    *(*w).winlinks.tqh_last = wl;
-    (*w).winlinks.tqh_last = &raw mut (*wl).wentry.tqe_next;
     (*wl).window = w;
+    window_winlinks_append(w, wl);
     window_add_ref(
         w,
         b"winlink_set_window\0" as *const u8 as *const ::core::ffi::c_char,
@@ -816,12 +871,7 @@ pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut win
     }
     let mut w: *mut window = (*wl).window;
     if !w.is_null() {
-        if !(*wl).wentry.tqe_next.is_null() {
-            (*(*wl).wentry.tqe_next).wentry.tqe_prev = (*wl).wentry.tqe_prev;
-        } else {
-            (*w).winlinks.tqh_last = (*wl).wentry.tqe_prev;
-        }
-        *(*wl).wentry.tqe_prev = (*wl).wentry.tqe_next;
+        window_winlinks_remove(w, wl);
         window_remove_ref(
             w,
             b"winlink_remove\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1267,8 +1317,7 @@ pub unsafe extern "C" fn window_find_by_id(mut id: u_int) -> *mut window {
         options: ::core::ptr::null_mut::<options>(),
         references: 0,
         winlinks: window_winlinks {
-            tqh_first: ::core::ptr::null_mut::<winlink>(),
-            tqh_last: ::core::ptr::null_mut::<*mut winlink>(),
+            storage: None,
         },
         entry: window_entry {
             owner: std::ptr::null_mut(),
@@ -1361,8 +1410,7 @@ pub unsafe extern "C" fn window_create(
         b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     (*w).references = 0 as u_int;
-    (*w).winlinks.tqh_first = ::core::ptr::null_mut::<winlink>();
-    (*w).winlinks.tqh_last = &raw mut (*w).winlinks.tqh_first;
+    (*w).winlinks.storage = None;
     let fresh0 = next_window_id;
     next_window_id = next_window_id.wrapping_add(1);
     (*w).id = fresh0;
@@ -4520,14 +4568,15 @@ pub unsafe extern "C" fn window_pane_stack_remove(
 #[no_mangle]
 pub unsafe extern "C" fn winlink_clear_flags(mut wl: *mut winlink) {
     let mut loop_0: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    (*(*wl).window).flags &= !WINDOW_ALERTFLAGS;
-    loop_0 = (*(*wl).window).winlinks.tqh_first;
+    let w = (*wl).window;
+    (*w).flags &= !WINDOW_ALERTFLAGS;
+    loop_0 = window_winlinks_first(w);
     while !loop_0.is_null() {
         if (*loop_0).flags & WINLINK_ALERTFLAGS != 0 as ::core::ffi::c_int {
             (*loop_0).flags &= !WINLINK_ALERTFLAGS;
             server_status_session((*loop_0).session);
         }
-        loop_0 = (*loop_0).wentry.tqe_next;
+        loop_0 = window_winlinks_next(w, loop_0);
     }
 }
 #[no_mangle]

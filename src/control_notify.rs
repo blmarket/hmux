@@ -8,7 +8,7 @@ use crate::src::ffi::libc::free;
 use crate::src::format::{format_create, format_defaults, format_expand, format_free};
 pub use crate::src::server::clients;
 pub use crate::src::shared::events::{event_payload, events_cb, events_sink};
-use crate::src::window::winlink_find_by_window_id;
+use crate::src::window::{window_winlinks_first, winlink_find_by_window_id};
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -141,7 +141,7 @@ unsafe extern "C" fn control_window_layout_changed_cb(
     }
     template = b"%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}\0"
         as *const u8 as *const ::core::ffi::c_char;
-    if (*w).winlinks.tqh_first.is_null() || (*w).layout_root.is_null() {
+    if window_winlinks_first(w).is_null() || (*w).layout_root.is_null() {
         return;
     }
     c = clients.tqh_first;
