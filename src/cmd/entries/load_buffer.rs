@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::{free, memcpy, strerror};
-use crate::src::file::file_read;
+use crate::src::file::file_read_with_cleanup;
 use crate::src::format::format_single_from_target;
 use crate::src::paste::paste_set;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
@@ -68,17 +68,27 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tty::tty_set_selection;
-use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
+use crate::src::xmalloc::xmalloc;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_load_buffer_data {
     pub client: *mut client,
     pub item: *mut cmdq_item,
-    pub name: *mut ::core::ffi::c_char,
+    pub name: Option<CString>,
+}
+
+unsafe fn cmd_load_buffer_release(cdata: Box<cmd_load_buffer_data>) {
+    if !cdata.client.is_null() {
+        server_client_unref(cdata.client);
+    }
+}
+
+unsafe extern "C" fn cmd_load_buffer_cancelled(data: *mut ::core::ffi::c_void) {
+    cmd_load_buffer_release(Box::from_raw(data.cast::<cmd_load_buffer_data>()));
 }
 #[no_mangle]
 pub static mut cmd_load_buffer_entry: cmd_entry = unsafe {
@@ -122,9 +132,9 @@ unsafe extern "C" fn cmd_load_buffer_done(
     if closed == 0 {
         return;
     }
-    let mut cdata: *mut cmd_load_buffer_data = data as *mut cmd_load_buffer_data;
-    let mut tc: *mut client = (*cdata).client;
-    let mut item: *mut cmdq_item = (*cdata).item;
+    let cdata = Box::from_raw(data.cast::<cmd_load_buffer_data>());
+    let mut tc: *mut client = cdata.client;
+    let mut item: *mut cmdq_item = cdata.item;
     let mut bdata: *mut ::core::ffi::c_void =
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
     let mut bsize: size_t = evbuffer_get_length(buffer);
@@ -143,7 +153,10 @@ unsafe extern "C" fn cmd_load_buffer_done(
         if paste_set(
             copy as *mut ::core::ffi::c_char,
             bsize,
-            (*cdata).name,
+            cdata
+                .name
+                .as_ref()
+                .map_or(::core::ptr::null(), |name| name.as_ptr()),
             &raw mut cause,
         ) != 0 as ::core::ffi::c_int
         {
@@ -165,13 +178,9 @@ unsafe extern "C" fn cmd_load_buffer_done(
                 bsize,
             );
         }
-        if !tc.is_null() {
-            server_client_unref(tc);
-        }
     }
+    cmd_load_buffer_release(cdata);
     cmdq_continue(item);
-    free((*cdata).name as *mut ::core::ffi::c_void);
-    free(cdata as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn cmd_load_buffer_exec(
     mut self_0: *mut cmd,
@@ -179,23 +188,22 @@ unsafe extern "C" fn cmd_load_buffer_exec(
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
-    let mut cdata: *mut cmd_load_buffer_data = ::core::ptr::null_mut::<cmd_load_buffer_data>();
+    let mut cdata = Box::new(cmd_load_buffer_data {
+        client: ::core::ptr::null_mut(),
+        item,
+        name: None,
+    });
     let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
     let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    cdata = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<cmd_load_buffer_data>() as size_t,
-    ) as *mut cmd_load_buffer_data;
-    (*cdata).item = item;
     if !bufname.is_null() {
-        (*cdata).name = xstrdup(bufname);
+        cdata.name = Some(CStr::from_ptr(bufname).to_owned());
     }
     if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
-        (*cdata).client = tc;
-        (*(*cdata).client).references += 1;
+        cdata.client = tc;
+        (*tc).references += 1;
     }
     path = format_single_from_target(item, args_string(args, 0 as u_int));
-    file_read(
+    file_read_with_cleanup(
         cmdq_get_client(item),
         path,
         Some(
@@ -209,7 +217,8 @@ unsafe extern "C" fn cmd_load_buffer_exec(
                     *mut ::core::ffi::c_void,
                 ) -> (),
         ),
-        cdata as *mut ::core::ffi::c_void,
+        Box::into_raw(cdata).cast(),
+        Some(cmd_load_buffer_cancelled),
     );
     free(path as *mut ::core::ffi::c_void);
     return CMD_RETURN_WAIT;
@@ -225,7 +234,7 @@ mod tests {
         let mut data = cmd_load_buffer_data {
             client: std::ptr::null_mut(),
             item: std::ptr::null_mut(),
-            name: std::ptr::null_mut(),
+            name: None,
         };
         let mut buffer = SegmentedBuf::from(vec![1; 4096]);
         let first = buffer.chunk().as_ptr();

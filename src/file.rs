@@ -156,6 +156,7 @@ static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 struct FileOwner {
     node: client_file,
     path: Option<CString>,
+    skipped_done_cleanup: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void)>,
 }
 
 const _: () = assert!(std::mem::offset_of!(FileOwner, node) == 0);
@@ -164,6 +165,7 @@ unsafe fn file_create_owner() -> *mut client_file {
     Box::into_raw(Box::new(FileOwner {
         node: std::mem::zeroed(),
         path: None,
+        skipped_done_cleanup: None,
     }))
     .cast()
 }
@@ -296,6 +298,8 @@ unsafe extern "C" fn file_fire_done_cb(
             (*cf).buffer,
             (*cf).data,
         );
+    } else if let Some(cleanup) = (*cf.cast::<FileOwner>()).skipped_done_cleanup {
+        cleanup((*cf).data);
     }
     file_free(cf);
 }
@@ -621,6 +625,17 @@ pub unsafe extern "C" fn file_read(
     mut cb: client_file_cb,
     mut cbdata: *mut ::core::ffi::c_void,
 ) -> *mut client_file {
+    file_read_with_cleanup(c, path, cb, cbdata, None)
+}
+
+/// Release callback data when a dead source client suppresses the done callback.
+pub(crate) unsafe fn file_read_with_cleanup(
+    mut c: *mut client,
+    mut path: *const ::core::ffi::c_char,
+    mut cb: client_file_cb,
+    mut cbdata: *mut ::core::ffi::c_void,
+    cleanup: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void)>,
+) -> *mut client_file {
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -630,8 +645,9 @@ pub unsafe extern "C" fn file_read(
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
+    cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
+    (*cf.cast::<FileOwner>()).skipped_done_cleanup = cleanup;
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
         file_set_path(cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
         if c.is_null()
@@ -644,7 +660,6 @@ pub unsafe extern "C" fn file_read(
             current_block = 17710118112003399050;
         }
     } else {
-        cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
         file_set_path(cf, file_get_path(c, path));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
             f = fopen(

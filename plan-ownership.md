@@ -3067,6 +3067,24 @@ legacy callers safe.
   parsing. Full workspace tests, binary build, changed-file rustfmt, and
   diff checks passed. No sanitizer was run.
 
+### Increment 342 — owned load-buffer callback data (2026-09-23)
+
+- `cmd_load_buffer_data` is now a Box with an optional `CString` buffer name.
+  The terminal callback releases its retained `-w` target-client reference
+  for nonempty success, empty input, and errors before consuming the Box.
+  The file layer's private `FileOwner` now accepts an optional cleanup
+  callback for the case where source-client loss suppresses the normal done
+  callback; load-buffer uses it to release the same Box and target reference
+  without touching the potentially invalid command-queue item. Existing
+  `file_read` callers retain their exported API and callback behavior.
+- Added `scripts/load_buffer_owner_cli_checks.py` for binary, empty, missing,
+  invalid-name, and pending-FIFO cancellation cases with a live target client;
+  observable output matched the pinned baseline. Existing file-path and
+  multi-message read/write CLI checks passed on both. Full workspace tests,
+  binary build, changed-file rustfmt, and diff checks passed. The separate
+  waiting command-queue item retained after a disconnected source remains
+  for a queue-cancellation migration. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3077,21 +3095,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_load_buffer_data`
-   in `src/cmd/entries/load_buffer.rs` has one
-   constructor and a terminal callback destructor, but `file_fire_done_cb`
-   can skip that callback when a nonattached source client dies before the
-   read closes. A complete owner needs a cancellation cleanup callback in
-   the file layer that can free callback data without touching a possibly
-   invalid command-queue item. Its `-w` target-client reference also needs
-   release on empty input and read errors; the existing code releases it only
-   for nonempty success. Direct Box replacement was deferred rather than
-   retaining these leaks. `args_value` has separate scalar constructors,
+1. `args_value` has separate scalar constructors,
    movable positional arrays, and external callers of exported
    `args_set`/`args_free_value`; a whole-type migration needs an ABI and
    ownership redesign across those paths.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache
-   design.
+   design. Disconnected file-reading clients can leave a waiting command-queue
+   item even after callback data is released; that needs a separate queue
+   cancellation design.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
