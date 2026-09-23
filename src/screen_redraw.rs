@@ -67,7 +67,7 @@ pub use crate::src::shared::redraw::{
     redraw_line, redraw_scene, redraw_span, redraw_span_data, redraw_span_data_c2rust_unnamed,
     redraw_span_data_c2rust_unnamed_b, redraw_span_data_c2rust_unnamed_m,
     redraw_span_data_c2rust_unnamed_p, redraw_span_data_c2rust_unnamed_sb,
-    redraw_span_data_c2rust_unnamed_st, redraw_span_entry, redraw_span_type, redraw_spans,
+    redraw_span_data_c2rust_unnamed_st, redraw_span_type, redraw_spans,
 };
 pub use crate::src::shared::screen::{
     screen, screen_sel, screen_titles, CURSOR_MODES, MODE_CURSOR, MODE_CURSOR_BLINKING,
@@ -1172,7 +1172,6 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
     let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut last: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
-    let mut span: *mut redraw_span = ::core::ptr::null_mut::<redraw_span>();
     let mut type_0: redraw_span_type = REDRAW_SPAN_PANE;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -1208,20 +1207,16 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
     if bctx.sy == 0 {
         fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    // The span-list tails point into their own rows, so fix row addresses first.
-    let lines = vec![::core::mem::zeroed::<redraw_line>(); bctx.sy as usize].into_boxed_slice();
+    // Keep row storage fixed for the lifetime of the scene; boxed spans keep
+    // their addresses stable as each collection grows during construction.
+    let lines = ::std::iter::repeat_with(redraw_line::default)
+        .take(bctx.sy as usize)
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
     (*scene).lines = Box::into_raw(lines) as *mut redraw_line;
     y = 0 as u_int;
     while y < bctx.sy {
         line = (*scene).lines.offset(y as isize) as *mut redraw_line;
-        type_0 = REDRAW_SPAN_PANE;
-        while (type_0 as ::core::ffi::c_uint) < REDRAW_SPAN_TYPES as ::core::ffi::c_uint {
-            (*line).spans[type_0 as usize].tqh_first = ::core::ptr::null_mut::<redraw_span>();
-            (*line).spans[type_0 as usize].tqh_last =
-                &raw mut (*(&raw mut (*line).spans as *mut redraw_spans).offset(type_0 as isize))
-                    .tqh_first;
-            type_0 += 1;
-        }
         x = 0 as u_int;
         while x < bctx.sx {
             x0 = x;
@@ -1237,19 +1232,12 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
             }
             bc = redraw_get_build_cell(&raw mut bctx, x0, y);
             type_0 = (*bc).data.type_0;
-            // The scene owns each stable span until redraw_free_scene unlinks it.
-            span = Box::into_raw(Box::new(redraw_span {
+            // The scene owns each stable span until its row collection is dropped.
+            (*line).spans[type_0 as usize].push(redraw_span {
                 x: x0,
                 width: x.wrapping_sub(x0),
                 data: (*bc).data,
-                entry: redraw_span_entry {
-                    tqe_next: ::core::ptr::null_mut(),
-                    tqe_prev: ::core::ptr::null_mut(),
-                },
-            }));
-            (*span).entry.tqe_prev = (*line).spans[type_0 as usize].tqh_last;
-            *(*line).spans[type_0 as usize].tqh_last = span;
-            (*line).spans[type_0 as usize].tqh_last = &raw mut (*span).entry.tqe_next;
+            });
         }
         y = y.wrapping_add(1);
     }
@@ -1262,38 +1250,10 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
 }
 #[no_mangle]
 pub unsafe extern "C" fn redraw_free_scene(mut scene: *mut redraw_scene) {
-    let mut spans: *mut redraw_spans = ::core::ptr::null_mut::<redraw_spans>();
-    let mut span: *mut redraw_span = ::core::ptr::null_mut::<redraw_span>();
-    let mut span1: *mut redraw_span = ::core::ptr::null_mut::<redraw_span>();
-    let mut y: u_int = 0;
-    let mut type_0: u_int = 0;
     if scene.is_null() {
         return;
     }
-    y = 0 as u_int;
-    while y < (*scene).sy {
-        type_0 = 0 as u_int;
-        while type_0 < REDRAW_SPAN_TYPES as u_int {
-            spans = (&raw mut (*(*scene).lines.offset(y as isize)).spans as *mut redraw_spans)
-                .offset(type_0 as isize) as *mut redraw_spans;
-            span = (*spans).tqh_first;
-            while !span.is_null() && {
-                span1 = (*span).entry.tqe_next;
-                1 as ::core::ffi::c_int != 0
-            } {
-                if !(*span).entry.tqe_next.is_null() {
-                    (*(*span).entry.tqe_next).entry.tqe_prev = (*span).entry.tqe_prev;
-                } else {
-                    (*spans).tqh_last = (*span).entry.tqe_prev;
-                }
-                *(*span).entry.tqe_prev = (*span).entry.tqe_next;
-                drop(Box::from_raw(span));
-                span = span1;
-            }
-            type_0 = type_0.wrapping_add(1);
-        }
-        y = y.wrapping_add(1);
-    }
+    // Dropping the boxed row slice drops each per-type collection and its spans.
     drop(Box::from_raw(::core::ptr::slice_from_raw_parts_mut(
         (*scene).lines,
         (*scene).sy as usize,
@@ -1856,7 +1816,6 @@ unsafe extern "C" fn redraw_draw_pane_lines(
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
     let mut spans: *mut redraw_spans = ::core::ptr::null_mut::<redraw_spans>();
-    let mut span: *mut redraw_span = ::core::ptr::null_mut::<redraw_span>();
     let mut cy: u_int = 0;
     let mut y: ::core::ffi::c_int = 0;
     let mut top: ::core::ffi::c_int = 0;
@@ -1881,27 +1840,19 @@ unsafe extern "C" fn redraw_draw_pane_lines(
             cy = y as u_int;
         }
         if flags & REDRAW_PANE != 0 {
-            spans = (&raw mut (*line).spans as *mut redraw_spans)
-                .offset(REDRAW_SPAN_PANE as ::core::ffi::c_int as isize)
-                as *mut redraw_spans;
-            span = (*spans).tqh_first;
-            while !span.is_null() {
+            spans = &raw mut (*line).spans[REDRAW_SPAN_PANE as usize];
+            for span in (*spans).iter_mut_ptr() {
                 if (*span).data.c2rust_unnamed.p.wp == wp {
                     redraw_draw_span(dctx, span, cy);
                 }
-                span = (*span).entry.tqe_next;
             }
         }
         if flags & REDRAW_PANE_SCROLLBAR != 0 {
-            spans = (&raw mut (*line).spans as *mut redraw_spans)
-                .offset(REDRAW_SPAN_SCROLLBAR as ::core::ffi::c_int as isize)
-                as *mut redraw_spans;
-            span = (*spans).tqh_first;
-            while !span.is_null() {
+            spans = &raw mut (*line).spans[REDRAW_SPAN_SCROLLBAR as usize];
+            for span in (*spans).iter_mut_ptr() {
                 if (*span).data.c2rust_unnamed.sb.wp == wp {
                     redraw_draw_span(dctx, span, cy);
                 }
-                span = (*span).entry.tqe_next;
             }
         }
         y += 1;
@@ -1914,7 +1865,6 @@ unsafe extern "C" fn redraw_draw_lines(
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
     let mut spans: *mut redraw_spans = ::core::ptr::null_mut::<redraw_spans>();
-    let mut span: *mut redraw_span = ::core::ptr::null_mut::<redraw_span>();
     let mut y: u_int = 0;
     let mut cy: u_int = 0;
     let mut type_0: u_int = 0;
@@ -2318,12 +2268,9 @@ unsafe extern "C" fn redraw_draw_lines(
             }
             match current_block_9 {
                 11194104282611034094 => {
-                    spans = (&raw mut (*line).spans as *mut redraw_spans).offset(type_0 as isize)
-                        as *mut redraw_spans;
-                    span = (*spans).tqh_first;
-                    while !span.is_null() {
+                    spans = &raw mut (*line).spans[type_0 as usize];
+                    for span in (*spans).iter_mut_ptr() {
                         redraw_draw_span(dctx, span, cy);
-                        span = (*span).entry.tqe_next;
                     }
                 }
                 _ => {}
@@ -2336,7 +2283,6 @@ unsafe extern "C" fn redraw_draw_lines(
 unsafe extern "C" fn redraw_draw_menu_lines(mut dctx: *mut redraw_draw_ctx) {
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut line: *mut redraw_line = ::core::ptr::null_mut::<redraw_line>();
-    let mut span: *mut redraw_span = ::core::ptr::null_mut::<redraw_span>();
     let mut y: u_int = 0;
     let mut cy: u_int = 0;
     y = 0 as u_int;
@@ -2347,10 +2293,8 @@ unsafe extern "C" fn redraw_draw_menu_lines(mut dctx: *mut redraw_draw_ctx) {
         } else {
             cy = y;
         }
-        span = (*line).spans[REDRAW_SPAN_MENU as ::core::ffi::c_int as usize].tqh_first;
-        while !span.is_null() {
+        for span in (*line).spans[REDRAW_SPAN_MENU as ::core::ffi::c_int as usize].iter_mut_ptr() {
             redraw_draw_span(dctx, span, cy);
-            span = (*span).entry.tqe_next;
         }
         y = y.wrapping_add(1);
     }
@@ -2384,36 +2328,30 @@ unsafe extern "C" fn redraw_pane_status_line(
 unsafe extern "C" fn redraw_pane_status_width(
     mut dctx: *mut redraw_draw_ctx,
     mut wp: *mut window_pane,
-    mut first: *mut *mut redraw_span,
+    mut spans_out: *mut *mut redraw_spans,
+    mut first_index: *mut usize,
 ) -> u_int {
     let mut scene: *mut redraw_scene = (*dctx).scene;
-    let mut span: *mut redraw_span = ::core::ptr::null_mut::<redraw_span>();
     let mut y: u_int = 0;
     let mut width: u_int = 0 as u_int;
     let mut end: u_int = 0;
     if redraw_pane_status_line(dctx, wp, &raw mut y) == 0 {
         return 0 as u_int;
     }
-    *first = ::core::ptr::null_mut::<redraw_span>();
-    span = (*(*scene).lines.offset(y as isize)).spans
-        [REDRAW_SPAN_STATUS as ::core::ffi::c_int as usize]
-        .tqh_first;
-    while !span.is_null() {
-        if (*span).data.c2rust_unnamed.st.wp == wp {
-            if (*first).is_null() {
-                *first = span;
+    let spans = &mut (*(*scene).lines.offset(y as isize)).spans
+        [REDRAW_SPAN_STATUS as ::core::ffi::c_int as usize];
+    *spans_out = spans;
+    *first_index = spans.entries.len();
+    for (index, span) in spans.entries.iter().enumerate() {
+        if span.data.c2rust_unnamed.st.wp == wp {
+            if *first_index == spans.entries.len() {
+                *first_index = index;
             }
-            end = (*span)
-                .data
-                .c2rust_unnamed
-                .st
-                .offset
-                .wrapping_add((*span).width);
+            end = span.data.c2rust_unnamed.st.offset.wrapping_add(span.width);
             if end > width {
                 width = end;
             }
         }
-        span = (*span).entry.tqe_next;
     }
     return width;
 }
@@ -2616,7 +2554,8 @@ unsafe extern "C" fn redraw_draw(
     let mut y: u_int = 0;
     let mut lines: u_int = 0;
     let mut j: u_int = 0;
-    let mut first: *mut redraw_span = ::core::ptr::null_mut::<redraw_span>();
+    let mut status_spans: *mut redraw_spans = ::core::ptr::null_mut::<redraw_spans>();
+    let mut first_status_span: usize = 0;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
     let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     let mut redraw: ::core::ffi::c_int = 0;
@@ -2671,9 +2610,14 @@ unsafe extern "C" fn redraw_draw(
             } else {
                 (*loop_0).flags &= !PANE_NEWSTATUS;
             }
-            width = redraw_pane_status_width(&raw mut dctx, loop_0, &raw mut first);
+            width = redraw_pane_status_width(
+                &raw mut dctx,
+                loop_0,
+                &raw mut status_spans,
+                &raw mut first_status_span,
+            );
             if !(width == 0 as u_int) {
-                if window_make_pane_status(loop_0, c, width, first) != 0 {
+                if window_make_pane_status(loop_0, c, width, status_spans, first_status_span) != 0 {
                     (*loop_0).flags |= PANE_NEWSTATUS;
                     redraw = 1 as ::core::ffi::c_int;
                 }
@@ -2783,41 +2727,47 @@ unsafe extern "C" fn redraw_draw(
 }
 #[no_mangle]
 pub unsafe extern "C" fn redraw_get_status_border_cell_type(
-    mut spanp: *mut *mut redraw_span,
+    mut spans: *const redraw_spans,
+    mut span_index: *mut usize,
     mut x: u_int,
 ) -> ::core::ffi::c_int {
-    let mut span: *mut redraw_span = *spanp;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut start: u_int = 0;
     let mut end: u_int = 0;
-    if span.is_null()
-        || (*span).data.type_0 as ::core::ffi::c_uint
+    if spans.is_null() || span_index.is_null() {
+        return 2 as ::core::ffi::c_int;
+    }
+    let entries = &(*spans).entries;
+    let mut index = *span_index;
+    if index >= entries.len()
+        || entries[index].data.type_0 as ::core::ffi::c_uint
             != REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return 2 as ::core::ffi::c_int;
     }
-    wp = (*span).data.c2rust_unnamed.st.wp;
-    while !span.is_null() {
-        if !((*span).data.type_0 as ::core::ffi::c_uint
+    wp = entries[index].data.c2rust_unnamed.st.wp;
+    while index < entries.len() {
+        let span = entries[index].as_ref();
+        if !(span.data.type_0 as ::core::ffi::c_uint
             != REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint)
         {
-            if !((*span).data.c2rust_unnamed.st.wp != wp) {
-                start = (*span).data.c2rust_unnamed.st.offset;
-                end = start.wrapping_add((*span).width);
+            if span.data.c2rust_unnamed.st.wp == wp {
+                start = span.data.c2rust_unnamed.st.offset;
+                end = start.wrapping_add(span.width);
                 if x >= start && x < end {
-                    *spanp = span;
-                    return (*span).data.c2rust_unnamed.st.cell_type;
+                    *span_index = index;
+                    return span.data.c2rust_unnamed.st.cell_type;
                 }
                 if start > x {
-                    *spanp = span;
+                    *span_index = index;
                     break;
                 }
             }
         }
-        span = (*span).entry.tqe_next;
+        index += 1;
     }
-    if span.is_null() {
-        *spanp = ::core::ptr::null_mut::<redraw_span>();
+    if index == entries.len() {
+        *span_index = entries.len();
     }
     return 2 as ::core::ffi::c_int;
 }

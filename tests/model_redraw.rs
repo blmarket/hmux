@@ -1,7 +1,7 @@
-//! Frozen pre-migration sizes, alignments, and every named field offset.
+//! Frozen layouts for ABI-facing records and Rust-owned models.
 use std::mem::{align_of, offset_of, size_of};
 #[test]
-fn original_copies_match() {
+fn model_layouts_match() {
     let mut records = Vec::new();
     macro_rules! record {
         ($label:literal, $ty:ty, [$($field:ident),*]) => {
@@ -617,7 +617,7 @@ fn original_copies_match() {
     record!(
         "src/screen_redraw.rs::redraw_span",
         hmux2::src::screen_redraw::redraw_span,
-        [x, width, data, entry]
+        [x, width, data]
     );
     record!(
         "src/window_border.rs::redraw_span",
@@ -673,11 +673,6 @@ fn original_copies_match() {
         [wp, offset, cell_type]
     );
     record!(
-        "src/screen_redraw.rs::C2RustUnnamed_34",
-        hmux2::src::screen_redraw::redraw_span_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
         "src/screen_redraw.rs::redraw_span_type",
         hmux2::src::screen_redraw::redraw_span_type,
         []
@@ -685,7 +680,7 @@ fn original_copies_match() {
     record!(
         "src/screen_redraw.rs::redraw_spans",
         hmux2::src::screen_redraw::redraw_spans,
-        [tqh_first, tqh_last]
+        [entries]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-redraw.txt"));

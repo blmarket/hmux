@@ -55,7 +55,7 @@ pub use crate::src::shared::pane::{
 };
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
-pub use crate::src::shared::redraw::{redraw_scene, redraw_span};
+pub use crate::src::shared::redraw::{redraw_scene, redraw_span, redraw_spans};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
@@ -361,7 +361,8 @@ pub unsafe extern "C" fn window_make_pane_status(
     mut wp: *mut window_pane,
     mut c: *mut client,
     mut width: u_int,
-    mut span: *mut redraw_span,
+    mut spans: *mut redraw_spans,
+    mut span_index: usize,
 ) -> ::core::ffi::c_int {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -463,7 +464,7 @@ pub unsafe extern "C" fn window_make_pane_status(
     pane_lines = window_pane_get_pane_lines(wp);
     i = 0 as u_int;
     while i < width {
-        cell_type = redraw_get_status_border_cell_type(&raw mut span, i);
+        cell_type = redraw_get_status_border_cell_type(spans, &raw mut span_index, i);
         window_get_border_cell(wp, pane_lines, cell_type, &raw mut gc);
         screen_write_cell(&raw mut ctx, &raw mut gc);
         i = i.wrapping_add(1);

@@ -21,17 +21,28 @@ pub struct redraw_scene {
     pub oy: u_int,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
+#[derive(Default)]
 pub struct redraw_line {
     pub spans: [redraw_spans; 7],
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
+#[derive(Default)]
 pub struct redraw_spans {
-    pub tqh_first: *mut redraw_span,
-    pub tqh_last: *mut *mut redraw_span,
+    /// Spans stay individually boxed so pointers handed to drawing helpers stay
+    /// valid even if appending another span grows this vector.
+    pub entries: Vec<Box<redraw_span>>,
+}
+
+impl redraw_spans {
+    pub fn push(&mut self, span: redraw_span) {
+        self.entries.push(Box::new(span));
+    }
+
+    pub fn iter_mut_ptr(&mut self) -> impl Iterator<Item = *mut redraw_span> + '_ {
+        self.entries
+            .iter_mut()
+            .map(|span| span.as_mut() as *mut redraw_span)
+    }
 }
 
 #[repr(C)]
@@ -39,14 +50,6 @@ pub struct redraw_span {
     pub x: u_int,
     pub width: u_int,
     pub data: redraw_span_data,
-    pub entry: redraw_span_entry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct redraw_span_entry {
-    pub tqe_next: *mut redraw_span,
-    pub tqe_prev: *mut *mut redraw_span,
 }
 
 #[derive(Copy, Clone)]
@@ -117,3 +120,39 @@ pub struct redraw_span_data_c2rust_unnamed_p {
 }
 
 pub type redraw_span_type = ::core::ffi::c_uint;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn span(x: u_int) -> redraw_span {
+        redraw_span {
+            x,
+            width: 1,
+            data: unsafe { ::core::mem::zeroed() },
+        }
+    }
+
+    #[test]
+    fn span_addresses_and_order_survive_vector_growth() {
+        let mut spans = redraw_spans::default();
+        spans.push(span(10));
+        let first = spans.entries[0].as_ref() as *const redraw_span;
+
+        for x in 11..128 {
+            spans.push(span(x));
+        }
+
+        assert_eq!(spans.entries[0].as_ref() as *const redraw_span, first);
+        assert_eq!(unsafe { (*first).x }, 10);
+        assert_eq!(spans.entries.first().unwrap().x, 10);
+        assert_eq!(spans.entries.last().unwrap().x, 127);
+        let xs = spans
+            .iter_mut_ptr()
+            .map(|span| unsafe { (*span).x })
+            .collect::<Vec<_>>();
+        assert_eq!(xs.len(), 118);
+        assert_eq!(xs.first(), Some(&10));
+        assert_eq!(xs.last(), Some(&127));
+    }
+}
