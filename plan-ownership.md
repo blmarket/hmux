@@ -2017,6 +2017,19 @@ legacy callers safe.
   The attached check covered styled rendering, menu replacement, selection,
   and overlay teardown. No sanitizer was run.
 
+### Increment 269 — choose-buffer editor owner (2026-09-23)
+
+- `window_buffer_editdata` now has one stable `Box` allocation and owns its
+  buffer name as `CString`. The spawn callback and mode keep borrowed pointers;
+  normal editor completion, spawn failure, and mode teardown release the box
+  at their existing finalization points. The record is no longer `Copy`.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and
+  `scripts/window_buffer_edit_owner_cli_checks.py` passed on main. The
+  attached-client comparison with the pinned baseline covered an editor that
+  updates the buffer and a mode reset while an editor is still running.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2027,8 +2040,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit `window_buffer_editdata` and the remaining `wait-for` channel/lock
-   records for complete callback and teardown ownership.
+1. Audit the remaining `wait-for` channel/lock records for complete wake,
+   flush, and teardown ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded

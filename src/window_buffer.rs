@@ -132,13 +132,14 @@ struct WindowBufferItemOwner {
     item: window_buffer_itemdata,
     _name: CString,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_buffer_editdata {
     pub wp_id: u_int,
     pub name: *mut ::core::ffi::c_char,
     pub pb: *mut paste_buffer,
     pub editor: *mut spawn_editor_state,
+    // The callback and mode teardown borrow `name` from this stable owner.
+    name_owner: CString,
 }
 
 #[inline]
@@ -827,9 +828,8 @@ unsafe extern "C" fn window_buffer_do_paste(
         );
     }
 }
-unsafe extern "C" fn window_buffer_finish_edit(mut ed: *mut window_buffer_editdata) {
-    free((*ed).name as *mut ::core::ffi::c_void);
-    free(ed as *mut ::core::ffi::c_void);
+unsafe extern "C" fn window_buffer_finish_edit(ed: *mut window_buffer_editdata) {
+    drop(Box::from_raw(ed));
 }
 unsafe extern "C" fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -1018,13 +1018,14 @@ unsafe extern "C" fn window_buffer_start_edit(
         return;
     }
     buf = paste_buffer_data(pb, &raw mut len);
-    ed = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_buffer_editdata>() as size_t,
-    ) as *mut window_buffer_editdata;
-    (*ed).wp_id = (*(*data).wp).id;
-    (*ed).name = xstrdup(paste_buffer_name(pb));
-    (*ed).pb = pb;
+    let name_owner = CStr::from_ptr(paste_buffer_name(pb)).to_owned();
+    ed = Box::into_raw(Box::new(window_buffer_editdata {
+        wp_id: (*(*data).wp).id,
+        name: name_owner.as_ptr() as *mut ::core::ffi::c_char,
+        pb,
+        editor: ::core::ptr::null_mut(),
+        name_owner,
+    }));
     (*ed).editor = spawn_editor(
         c,
         buf,
