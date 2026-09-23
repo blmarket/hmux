@@ -61,9 +61,7 @@ use crate::src::window::{
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
     window_update_activity,
 };
-use crate::src::xmalloc::{
-    xcalloc, xmalloc, xrealloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring,
-};
+use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::CString;
 
 pub use crate::src::shared::abi::__compar_fn_t;
@@ -5194,7 +5192,7 @@ unsafe extern "C" fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core:
     let mut start: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut id: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut id: Option<std::ffi::CString> = None;
     start = p;
     loop {
         end = strpbrk(start, b":;\0" as *const u8 as *const ::core::ffi::c_char);
@@ -5209,14 +5207,15 @@ unsafe extern "C" fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core:
                 3 as size_t,
             ) == 0 as ::core::ffi::c_int
         {
-            if !id.is_null() {
+            if id.is_some() {
                 current_block = 9416799868769213755;
                 break;
             }
-            id = xstrndup(
-                start.offset(3 as ::core::ffi::c_int as isize),
-                (end.offset_from(start) as ::core::ffi::c_long - 3 as ::core::ffi::c_long)
-                    as size_t,
+            let id_start = start.add(3).cast::<u8>();
+            let id_len = end.offset_from(start) as usize - 3;
+            id = Some(
+                std::ffi::CString::new(std::slice::from_raw_parts(id_start, id_len))
+                    .expect("OSC 8 ID ends before the first NUL"),
             );
         }
         if *end as ::core::ffi::c_int == ';' as i32 {
@@ -5231,11 +5230,11 @@ unsafe extern "C" fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core:
                 uri = end.offset(1 as ::core::ffi::c_int as isize);
                 if *uri as ::core::ffi::c_int == '\0' as i32 {
                     (*gc).link = 0 as u_int;
-                    free(id as *mut ::core::ffi::c_void);
                     return;
                 }
-                (*gc).link = hyperlinks_put(hl, uri, id);
-                if id.is_null() {
+                let id_ptr = id.as_ref().map_or(std::ptr::null(), |id| id.as_ptr());
+                (*gc).link = hyperlinks_put(hl, uri, id_ptr);
+                if id.is_none() {
                     log_debug(
                         b"hyperlink (anonymous) %s = %u\0" as *const u8
                             as *const ::core::ffi::c_char,
@@ -5245,12 +5244,11 @@ unsafe extern "C" fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core:
                 } else {
                     log_debug(
                         b"hyperlink (id=%s) %s = %u\0" as *const u8 as *const ::core::ffi::c_char,
-                        id,
+                        id_ptr,
                         uri,
                         (*gc).link,
                     );
                 }
-                free(id as *mut ::core::ffi::c_void);
                 return;
             }
         }
@@ -5260,7 +5258,6 @@ unsafe extern "C" fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core:
         b"bad OSC 8 %s\0" as *const u8 as *const ::core::ffi::c_char,
         p,
     );
-    free(id as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn input_set_progress_bar(
     mut ictx: *mut input_ctx,

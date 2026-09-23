@@ -1018,6 +1018,19 @@ legacy callers safe.
   and `git diff --check` passed in the isolated worktree. No live pane or
   sanitizer run was performed.
 
+### Increment 47 — OSC 8 hyperlink ID scratch (2026-09-22)
+
+- `input_osc_8` now holds its optional parsed ID in a local `CString` until
+  the parser returns, removing `xstrndup` and the normal, empty-URI, and
+  malformed-input frees. `hyperlinks_put` copies the ID with `utf8_stravis`
+  before returning; the compatibility pointer is borrowed only during that
+  call and synchronous logging. Null and empty IDs stay distinct.
+- `tests/osc8_hyperlink_id.rs` drives a live pane and checks capture output
+  for reused IDs, a different URI, empty ID, duplicate-ID parse error,
+  missing separator, and empty-URI closure. Workspace tests, binary build,
+  focused E2E test after formatting, rustfmt, and `git diff --check` passed
+  in the isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1032,11 +1045,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect OSC 8 hyperlink ID scratch and local format expansion strings,
-   auditing return and callback contracts first.
+2. Inspect local format expansion strings, auditing return and callback
+   contracts first.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–46. The remaining
+Current validation is recorded in increments 15–47. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–46 has its own local commit; none was pushed.
+Each of increments 15–47 has its own local commit; none was pushed.
