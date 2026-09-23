@@ -833,29 +833,23 @@ pub unsafe extern "C" fn clean_name(
     mut name: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new_name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if utf8_isvalid(name) == 0 {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    copy = xstrdup(name);
-    cp = copy;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if untrusted != 0
-            && *cp.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '#' as i32
-            && *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '(' as i32
-        {
-            *cp = '_' as i32 as ::core::ffi::c_char;
+    let mut copy = CStr::from_ptr(name).to_bytes_with_nul().to_vec();
+    if untrusted != 0 {
+        for i in 0..copy.len() - 1 {
+            if copy[i] == b'#' && copy[i + 1] == b'(' {
+                copy[i] = b'_';
+            }
         }
-        cp = cp.offset(1);
     }
     utf8_stravis(
         &raw mut new_name,
-        copy,
+        copy.as_ptr().cast(),
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
     );
-    free(copy as *mut ::core::ffi::c_void);
     return new_name;
 }
 #[no_mangle]

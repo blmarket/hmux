@@ -1,0 +1,44 @@
+use hmux2::src::tmux::clean_name;
+use std::ffi::{c_char, CStr};
+
+unsafe fn cleaned(input: &[u8], untrusted: bool) -> Option<Vec<u8>> {
+    let result = clean_name(input.as_ptr().cast::<c_char>(), i32::from(untrusted));
+    if result.is_null() {
+        return None;
+    }
+    let bytes = CStr::from_ptr(result).to_bytes().to_vec();
+    libc::free(result.cast());
+    Some(bytes)
+}
+
+#[test]
+fn clean_name_rewrites_only_untrusted_command_markers() {
+    unsafe {
+        let name = b"prefix#(command)# suffix\0";
+        assert_eq!(
+            cleaned(name, false),
+            Some(b"prefix#(command)# suffix".to_vec())
+        );
+        assert_eq!(
+            cleaned(name, true),
+            Some(b"prefix_(command)# suffix".to_vec())
+        );
+        assert_eq!(cleaned(b"#(#(x)\0", true), Some(b"_(_(x)".to_vec()));
+    }
+}
+
+#[test]
+fn clean_name_uses_first_nul_and_rejects_invalid_utf8() {
+    unsafe {
+        assert_eq!(
+            cleaned(b"before\0#(after)\0", true),
+            Some(b"before".to_vec())
+        );
+        assert_eq!(
+            cleaned("café#(x)\0".as_bytes(), true),
+            Some("café_(x)".as_bytes().to_vec())
+        );
+        assert_eq!(cleaned(b"bad\xff#(x)\0", false), None);
+        assert_eq!(cleaned(b"bad\xff#(x)\0", true), None);
+    }
+}
