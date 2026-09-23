@@ -992,6 +992,20 @@ legacy callers safe.
   worktree. Redraw pixels and log text were source-audited rather than
   asserted directly; no sanitizer run was performed.
 
+### Increment 45 — OSC 133 exit-status token (2026-09-22)
+
+- `input_osc_133_exit_status` now borrows the source through `CStr`, copies
+  only the first semicolon-delimited numeric token into a local `CString`,
+  and passes its pointer synchronously to `strtonum`. This removes the
+  `xstrdup`/`xstrndup` alternatives and their manual frees. Syntax checks,
+  accepted numeric range, and exported parser behavior remain unchanged.
+- A focused parser test covers missing/empty status, `=`, signed and spaced
+  values, bounds, malformed and non-UTF-8 tokens, following parameters, and
+  bytes after the first NUL. `tests/osc133_exit_status.rs` uses a live pane
+  emitting `OSC 133;D;42;k=v` and observes `pane_command_status=42`.
+  Workspace tests, binary build, rustfmt, and `git diff --check` passed in
+  the isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1006,11 +1020,13 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `input_osc_133_exit_status` scratch and local format expansion strings. Audit
-   each return and callback contract before changing its allocator.
+2. Inspect `input_csi_dispatch_sgr_colon`: its local copy is tokenized with
+   `strsep` and freed on success and two early error returns. A writable
+   NUL-terminated owner may remove those paths. Then inspect local format
+   expansion strings, auditing return and callback contracts first.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–44. The remaining
+Current validation is recorded in increments 15–45. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–44 has its own local commit; none was pushed.
+Each of increments 15–45 has its own local commit; none was pushed.

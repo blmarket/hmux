@@ -5437,47 +5437,72 @@ unsafe extern "C" fn input_osc_112(mut ictx: *mut input_ctx, mut p: *const ::cor
     }
 }
 unsafe extern "C" fn input_osc_133_exit_status(
-    mut p: *const ::core::ffi::c_char,
+    p: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut status: ::core::ffi::c_longlong = 0;
     if *p.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != ';' as i32
         || *p.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32
-        || strchr(p.offset(2 as ::core::ffi::c_int as isize), '=' as i32)
-            == p.offset(2 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_char
+        || *p.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '=' as i32
     {
         return 0 as ::core::ffi::c_int;
     }
-    end = strchr(p.offset(2 as ::core::ffi::c_int as isize), ';' as i32);
-    if end == p.offset(2 as ::core::ffi::c_int as isize) {
+
+    let tail = std::ffi::CStr::from_ptr(p.add(2)).to_bytes();
+    let end = tail
+        .iter()
+        .position(|&byte| byte == b';')
+        .unwrap_or(tail.len());
+    if end == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if end.is_null() {
-        copy = xstrdup(p.offset(2 as ::core::ffi::c_int as isize));
-    } else {
-        copy = xstrndup(
-            p.offset(2 as ::core::ffi::c_int as isize),
-            end.offset_from(p.offset(2 as ::core::ffi::c_int as isize)) as ::core::ffi::c_long
-                as size_t,
-        );
-    }
-    if !strchr(copy, '=' as i32).is_null() {
-        free(copy as *mut ::core::ffi::c_void);
+    let number = &tail[..end];
+    if number.contains(&b'=') {
         return 0 as ::core::ffi::c_int;
     }
-    status = strtonum(
-        copy,
+
+    // The token came from a C string, so it has no interior NUL. strtonum
+    // borrows this terminated copy only for the duration of the call.
+    let copy = CString::new(number).expect("OSC 133 status token contains no NUL");
+    let status = strtonum(
+        copy.as_ptr(),
         0 as ::core::ffi::c_longlong,
         255 as ::core::ffi::c_longlong,
         &raw mut errstr,
     );
-    free(copy as *mut ::core::ffi::c_void);
     if !errstr.is_null() {
         return 255 as ::core::ffi::c_int;
     }
     return status as ::core::ffi::c_int;
+}
+
+#[cfg(test)]
+mod osc_133_exit_status_tests {
+    use super::input_osc_133_exit_status;
+
+    #[test]
+    fn preserves_numeric_and_parameter_syntax() {
+        for (input, expected) in [
+            (b"D\0".as_slice(), 0),
+            (b"D;\0", 0),
+            (b"D;;42\0", 0),
+            (b"D;=42\0", 0),
+            (b"D;42=ignored\0", 0),
+            (b"D;42;k=v\0", 42),
+            (b"D;0\0", 0),
+            (b"D;255\0", 255),
+            (b"D;+7\0", 7),
+            (b"D; 7\0", 7),
+            (b"D;256\0", 255),
+            (b"D;-1\0", 255),
+            (b"D;abc\0", 255),
+            (b"D;4x\0", 255),
+            (b"D;12\0;99\0", 12),
+            (b"D;\xff\0", 255),
+        ] {
+            let actual = unsafe { input_osc_133_exit_status(input.as_ptr().cast()) };
+            assert_eq!(actual, expected, "input {input:?}");
+        }
+    }
 }
 unsafe extern "C" fn input_fire_command_event(
     mut wp: *mut window_pane,
