@@ -1185,6 +1185,21 @@ legacy callers safe.
   `git diff --check` passed in the isolated worktree. No sanitizer run was
   performed.
 
+### Increment 59 — format modifier key scratch (2026-09-22)
+
+- `format_replace` now owns its modifier-key copy as a local,
+  byte-preserving `CString`, removing `xstrndup` and both exit-path frees.
+  A bounded `strnlen` preserves `xstrndup`'s first-NUL behavior without
+  reading beyond `keylen`. `format_build_modifiers` advances a pointer into
+  the stable owner and copies modifier names and expanded arguments into
+  separate allocations. Explicit drops keep the old order after modifier
+  cleanup and before freeing `time_format`.
+- A public-format regression checks literal and combined modifiers,
+  nested modifier arguments, a high byte, and malformed repeat cleanup.
+  Workspace tests, binary build, changed-file rustfmt, and
+  `git diff --check` passed in the isolated worktree. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1199,12 +1214,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the `format_replace` mutable modifier copy (`copy0`) and
-   normalized option array-key scratch. Audit parser slices, early exits,
-   and callback reentrancy before changing ownership.
+2. Inspect normalized option array-key scratch, including the transferred
+   key returned by `options_parse`.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–58. The remaining
+Current validation is recorded in increments 15–59. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–58 has its own local commit; none was pushed.
+Each of increments 15–59 has its own local commit; none was pushed.

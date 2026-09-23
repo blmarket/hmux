@@ -2773,7 +2773,6 @@ pub(super) unsafe extern "C" fn format_replace(
     let mut cp2: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut marker: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut time_format: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut copy0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut found: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -2823,8 +2822,11 @@ pub(super) unsafe extern "C" fn format_replace(
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     (*sc).order = SORT_ORDER;
     (*sc).reversed = 0 as ::core::ffi::c_int;
-    copy0 = xstrndup(key, keylen);
-    copy = copy0;
+    // Match strndup's bounded scan, including an early NUL.
+    let key_end = libc::strnlen(key, keylen);
+    let copy0 = CString::new(std::slice::from_raw_parts(key.cast::<u8>(), key_end))
+        .expect("format key contains no NUL");
+    copy = copy0.as_ptr();
     list = format_build_modifiers(es, &raw mut copy, &raw mut count);
     i = 0 as u_int;
     while i < count {
@@ -3822,11 +3824,11 @@ pub(super) unsafe extern "C" fn format_replace(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
                     b"failed %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    copy0,
+                    copy0.as_ptr(),
                 );
                 free(sub as *mut ::core::ffi::c_void);
                 format_free_modifiers(list, count);
-                free(copy0 as *mut ::core::ffi::c_void);
+                drop(copy0);
                 free(time_format as *mut ::core::ffi::c_void);
                 return -(1 as ::core::ffi::c_int);
             }
@@ -3985,13 +3987,13 @@ pub(super) unsafe extern "C" fn format_replace(
         es,
         b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
         b"replaced '%s' with '%s'\0" as *const u8 as *const ::core::ffi::c_char,
-        copy0,
+        copy0.as_ptr(),
         value,
     );
     free(value as *mut ::core::ffi::c_void);
     free(sub as *mut ::core::ffi::c_void);
     format_free_modifiers(list, count);
-    free(copy0 as *mut ::core::ffi::c_void);
+    drop(copy0);
     free(time_format as *mut ::core::ffi::c_void);
     return 0 as ::core::ffi::c_int;
 }
