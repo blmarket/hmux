@@ -5,6 +5,7 @@ import fcntl
 import os
 import pathlib
 import pty
+import re
 import select
 import struct
 import subprocess
@@ -74,6 +75,9 @@ with tempfile.TemporaryDirectory(prefix="menu-owner-", dir=root / "target") as t
             "second row",
             "b",
             "set-option -g @choice second",
+            "L" * 150,  # trimmed label and key suffix
+            "c",
+            "set-option -g @choice long",
         )
 
         output = bytearray()
@@ -82,11 +86,12 @@ with tempfile.TemporaryDirectory(prefix="menu-owner-", dir=root / "target") as t
             ready, _, _ = select.select([master], [], [], 0.1)
             if ready:
                 output.extend(os.read(master, 65536))
-            if all(label in output for label in (b"Menu title", b"first row", b"second row")):
+            if all(label in output for label in (b"Menu title", b"first row", b"second row", b"L" * 30)):
                 break
         else:
             raise AssertionError(f"menu did not render: {output[-1000:]!r}")
         assert b"hidden" not in output, output[-1000:]
+        assert b"(c)" in output and re.search(rb"L{30,}>", output), output[-1000:]
 
         os.write(master, b"b")
         deadline = time.monotonic() + 5

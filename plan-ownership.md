@@ -597,6 +597,22 @@ legacy callers safe.
   `window_switch_target_cli_checks.py` passed with pre-migration and migrated
   binaries for `=alpha:` and `=alpha:7.` targets. No sanitizer was run.
 
+### Increment 169 — menu item name owner (2026-09-22)
+
+- `menu_add_item` now builds its rendered row name directly from the
+  `format_trim_right` result, optional truncation marker, and optional key
+  label as raw C-string bytes in a `CString`. It moves that owner into the
+  existing `MenuRowStrings` record, removing both name `xasprintf` branches,
+  their C allocation, and the immediate `menu_take_string` copy/free.
+  The formatted source, trimmed source, and optional key retain their
+  separate existing owners and cleanup; the row's borrowed pointer remains
+  valid until menu teardown.
+- The library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. The extended attached-client `menu_owner_cli_checks.py` passed
+  with the baseline and migrated binaries for ordinary rows, separators,
+  omitted rows, key labels, a truncated long row, selection, and teardown.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -607,12 +623,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `menu_add_item` in `src/menu.rs` formats a name into a C allocation,
-   then immediately copies it into an existing `MenuRowStrings` `CString`
-   owner through `menu_take_string` and frees the C source. Build the
-   byte-preserving `CString` directly, preserving the optional key suffix
-   and `format_trim_right`'s separate source allocation.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. `mode_tree_display_menu` in `src/mode_tree.rs` creates a temporary title
+   copied by `menu_create`, then frees it after adding items. A local
+   byte-preserving `CString` can own that title across the synchronous call.
+2. `cmd_capture_pane_cell` in `src/cmd/entries/capture_pane.rs` has local
+   formatted pieces used to form a C-owned returned line; each scratch
+   allocation/free pair can be owned locally after checking its byte and
+   embedded-NUL behavior.
+3. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -621,14 +639,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+4. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-4. The remaining address-based registries, other UI tags, and session/winlink
+5. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and

@@ -90,7 +90,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::window::window_update_focus;
-use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
+use crate::src::xmalloc::{xcalloc, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -176,7 +176,6 @@ pub unsafe extern "C" fn menu_add_item(
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut trimmed: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut width: u_int = 0;
     let mut max_width: u_int = 0;
     let mut line: ::core::ffi::c_int = 0;
@@ -245,26 +244,18 @@ pub unsafe extern "C" fn menu_add_item(
         suffix = b">\0" as *const u8 as *const ::core::ffi::c_char;
     }
     trimmed = format_trim_right(s, max_width);
+    let mut name = Vec::new();
+    name.extend_from_slice(CStr::from_ptr(trimmed).to_bytes());
+    name.extend_from_slice(CStr::from_ptr(suffix).to_bytes());
     if !key.is_null() {
-        xasprintf(
-            &raw mut name,
-            b"%s%s#[default] #[align=right](%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            trimmed,
-            suffix,
-            key,
-        );
-    } else {
-        xasprintf(
-            &raw mut name,
-            b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            trimmed,
-            suffix,
-        );
+        name.extend_from_slice(b"#[default] #[align=right](");
+        name.extend_from_slice(CStr::from_ptr(key).to_bytes());
+        name.push(b')');
     }
     free(trimmed as *mut ::core::ffi::c_void);
     {
         let owner = &mut *(menu as *mut MenuOwner);
-        owner.strings[index].name = Some(menu_take_string(name));
+        owner.strings[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
         owner.items[index].name = owner.strings[index].name.as_ref().unwrap().as_ptr();
     }
     free(s as *mut ::core::ffi::c_void);
