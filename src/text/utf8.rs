@@ -1058,7 +1058,6 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut width: u_int = 0;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
     let mut wc: wchar_t = 0;
     let mut wc_start: wchar_t = 0;
     let mut wc_end: wchar_t = 0;
@@ -1140,29 +1139,46 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
             wc = wc.wrapping_add(1);
         }
     } else {
+        let bytes = CStr::from_ptr(copy).to_bytes();
+        let mut first = utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
+        let mut offset = 0;
         utf8_no_width = 1 as ::core::ffi::c_int;
-        ud = utf8_fromcstr(copy);
+        if let Some(&byte) = bytes.first() {
+            let mut more = utf8_open(&raw mut first, byte);
+            if more == UTF8_MORE {
+                offset = 1;
+                while offset < bytes.len() && more == UTF8_MORE {
+                    more = utf8_append(&raw mut first, bytes[offset]);
+                    offset += 1;
+                }
+                if more != UTF8_DONE {
+                    // utf8_fromcstr retries the first byte after an invalid
+                    // or incomplete candidate, then emits it as one cell.
+                    offset = 0;
+                }
+            }
+            if more != UTF8_DONE {
+                utf8_set(&raw mut first, bytes[offset]);
+                offset += 1;
+            }
+        }
         utf8_no_width = 0 as ::core::ffi::c_int;
-        if (*ud.offset(0 as ::core::ffi::c_int as isize)).size as ::core::ffi::c_int
-            == 0 as ::core::ffi::c_int
-            || (*ud.offset(1 as ::core::ffi::c_int as isize)).size as ::core::ffi::c_int
-                != 0 as ::core::ffi::c_int
-        {
-            free(ud as *mut ::core::ffi::c_void);
+        if first.size == 0 || offset != bytes.len() {
             return;
         }
-        let first = &*ud.offset(0 as ::core::ffi::c_int as isize);
         let bytes = ::core::slice::from_raw_parts(first.data.as_ptr(), first.size as usize);
         let DecodeResult::Complete { codepoint, len } = decode_utf8(bytes) else {
-            free(ud as *mut ::core::ffi::c_void);
             return;
         };
         if len != first.size as usize {
-            free(ud as *mut ::core::ffi::c_void);
             return;
         }
         wc = codepoint as wchar_t;
-        free(ud as *mut ::core::ffi::c_void);
         utf8_insert_width_cache(wc, width);
     }
 }
@@ -2210,6 +2226,7 @@ mod tests {
                 &b"U+E011-U+E013=0\0"[..],
                 &b"\xee\x80\xa0=1\0"[..], // U+E020, as a UTF-8 character.
                 &b"U+E040=1\0U+E041=2\0"[..], // Stop at the first NUL.
+                &b"z=2\0"[..],            // A single ASCII cell also uses this path.
             ] {
                 utf8_add_to_width_cache(entry.as_ptr().cast());
             }
@@ -2221,6 +2238,7 @@ mod tests {
                 (0xE013, 0),
                 (0xE020, 1),
                 (0xE040, 1),
+                ('z' as i32, 2),
             ] {
                 let item = utf8_find_in_width_cache(codepoint);
                 assert!(!item.is_null(), "missing U+{codepoint:04X}");
@@ -2233,10 +2251,15 @@ mod tests {
                 &b"U+E030-U+E02F=1\0"[..], // Reversed range.
                 &b"ab=1\0"[..],            // More than one character.
                 &b"=1\0"[..],              // No character.
+                &b"\xee\x80\xa2z=1\0"[..], // Valid UTF-8 cell followed by ASCII.
+                &b"\xc3(=1\0"[..],         // Invalid continuation retries the first byte.
+                &b"\xe2\x82=1\0"[..],      // Incomplete UTF-8 retries the first byte.
+                &b"\xff=1\0"[..],          // Invalid single byte.
+                &b"\xc0\xaf=1\0"[..],      // Overlong sequence.
             ] {
                 utf8_add_to_width_cache(entry.as_ptr().cast());
             }
-            for codepoint in [0xE030, 0xE041, 'a' as i32, 'b' as i32] {
+            for codepoint in [0xE030, 0xE041, 0xE022, 'a' as i32, 'b' as i32, '(' as i32] {
                 assert!(
                     utf8_find_in_width_cache(codepoint).is_null(),
                     "unexpected U+{codepoint:04X}"
@@ -2244,7 +2267,7 @@ mod tests {
             }
             assert_eq!(utf8_no_width, 0);
 
-            for codepoint in [0xE010, 0xE011, 0xE012, 0xE013, 0xE020, 0xE040] {
+            for codepoint in [0xE010, 0xE011, 0xE012, 0xE013, 0xE020, 0xE040, 'z' as i32] {
                 let item = utf8_find_in_width_cache(codepoint);
                 utf8_width_cache_remove(&raw mut utf8_width_cache, item);
                 free(item.cast());

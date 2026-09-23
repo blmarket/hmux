@@ -1435,6 +1435,20 @@ legacy callers safe.
   binary build, changed-file rustfmt, and `git diff --check` passed in the
   isolated worktree. No sanitizer run was performed.
 
+### Increment 76 — width-cache character decode (2026-09-22)
+
+- `utf8_add_to_width_cache` now parses its character operand into a stack
+  `utf8_data`, removing the local `utf8_fromcstr` decoded array and four
+  manual frees. It retains the existing `utf8_no_width` toggle, retries
+  malformed candidates as the decoder did, and accepts only one complete
+  cell before inserting a width. Its already Rust-owned writable input
+  copy remains in place; the `U+` codepoint branch is unchanged.
+- The existing parser test now covers ASCII, a valid multibyte character
+  followed by another cell, malformed and truncated sequences, overlong
+  bytes, and first-NUL input. Focused and workspace tests, binary build,
+  changed-file rustfmt, and `git diff --check` passed in the isolated
+  worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1449,12 +1463,13 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `utf8_add_to_width_cache`'s local decoded array and other
-   bounded parser buffers. Remaining `xstrndup` callers return or transfer
-   C-owned strings; `window_copy` regex buffers grow through a shared C API.
+2. Inspect `cmd_source_file_exec`'s per-path glob pattern and
+   `cmd_command_prompt_exec`'s nonliteral split buffers. Remaining
+   `xstrndup` callers return or transfer C-owned strings; `window_copy`
+   regex buffers grow through a shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–75. The remaining
+Current validation is recorded in increments 15–76. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–75 has its own local commit; none was pushed.
+Each of increments 15–76 has its own local commit; none was pushed.
