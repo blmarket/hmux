@@ -1803,6 +1803,21 @@ legacy callers safe.
   control-client failed open, and pane cancellation after streamed input.
   No sanitizer was run.
 
+### Increment 253 — format draw range scratch owner (2026-09-23)
+
+- `format_draw` now owns its temporary `format_range` sequence in `Vec` and
+  its in-progress range in `Option`. This removes each range's `xcalloc` and
+  `free`, the intrusive queue links, manual unlinking, and early-return
+  cleanup. The output `style_range` list remains C-owned for its existing
+  caller contract. During integration, the final output loop was changed to
+  read range fields directly instead of casting a borrowed element to a raw
+  pointer.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/format_draw_style_cli_checks.py` passed on main. The CLI check
+  passed with the pinned baseline too, including clicks on two distinct user
+  status ranges. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1813,12 +1828,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. A validated local `format_draw` range scratch migration is committed as
-   `63f6d58` in `/tmp/hmux2-format-draw-range-owner`; review and integrate it
-   as the next increment, then remove that temporary worktree. It removes an
-   internal intrusive list and its `xcalloc`/`free` lifecycle while keeping
-   the C-owned `style_range` output boundary. An attached-client status-line
-   check clicked two user ranges and matched the pinned baseline.
+1. `MSG_WRITE_OPEN` and `MSG_READ_OPEN` temporary payload allocations in
+   `file.rs`, and pane-owned visible range storage, are under independent
+   ownership audits. Prefer a bounded message scratch migration if the send
+   path copies synchronously; keep the pane range owner for a later increment
+   if its callback and alias audit is wider.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1850,7 +1864,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–252 above, with increment 228 explicitly retracted.
+recorded in increments 226–253 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

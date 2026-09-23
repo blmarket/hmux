@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory(prefix="format-draw-style-", dir=root / "target
     def run(*args):
         result = subprocess.run(base + list(args), env=env, capture_output=True, timeout=10)
         assert result.returncode == 0, (args, result.returncode, result.stderr)
+        return result.stdout
 
     attached = None
     master = None
@@ -31,11 +32,17 @@ with tempfile.TemporaryDirectory(prefix="format-draw-style-", dir=root / "target
         run("new-session", "-d", "-s", "draw", "sleep", "30")
         run("set-option", "-g", "status-left-length", "80")
         run("set-option", "-g", "status-right", "")
+        run("set-option", "-g", "mouse", "on")
+        run(
+            "bind-key", "-n", "MouseDown1Status", "set-option", "-gF",
+            "@clicked", "#{mouse_status_range}",
+        )
         run(
             "set-option",
             "-g",
             "status-left",
-            "#[fg=red]REDMARK#[unknown-style]BADMARK#[fg=green]GREENMARK",
+            "#[fg=red,range=user|red]REDMARK#[unknown-style]BADMARK"
+            "#[fg=green,range=user|green]GREENMARK#[norange]",
         )
 
         master, slave = pty.openpty()
@@ -65,6 +72,19 @@ with tempfile.TemporaryDirectory(prefix="format-draw-style-", dir=root / "target
         last_text = output.index(b"GREENMARK", green)
         assert red < first_text < green < last_text
         assert attached.poll() is None
+
+        for column, expected in ((2, b"red\n"), (20, b"green\n")):
+            os.write(master, f"\x1b[<0;{column};24M".encode())
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                value = run("show-option", "-gv", "@clicked")
+                if value == expected:
+                    break
+                time.sleep(0.05)
+            assert value == expected, (column, value)
+            os.write(master, f"\x1b[<0;{column};24m".encode())
+            # Let the release settle before the next click is classified.
+            time.sleep(0.6)
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
         if attached is not None:

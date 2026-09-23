@@ -86,20 +86,8 @@ pub struct format_range {
     pub type_0: style_range_type,
     pub argument: u_int,
     pub string: [::core::ffi::c_char; 16],
-    pub entry: C2RustUnnamed_38,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_38 {
-    pub tqe_next: *mut format_range,
-    pub tqe_prev: *mut *mut format_range,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_ranges {
-    pub tqh_first: *mut format_range,
-    pub tqh_last: *mut *mut format_range,
-}
+type format_ranges = Vec<format_range>;
 pub const AFTER: C2RustUnnamed_39 = 7;
 pub const LIST_RIGHT: C2RustUnnamed_39 = 6;
 pub const LIST_LEFT: C2RustUnnamed_39 = 5;
@@ -131,15 +119,6 @@ unsafe extern "C" fn format_is_type(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn format_free_range(mut frs: *mut format_ranges, mut fr: *mut format_range) {
-    if !(*fr).entry.tqe_next.is_null() {
-        (*(*fr).entry.tqe_next).entry.tqe_prev = (*fr).entry.tqe_prev;
-    } else {
-        (*frs).tqh_last = (*fr).entry.tqe_prev;
-    }
-    *(*fr).entry.tqe_prev = (*fr).entry.tqe_next;
-    free(fr as *mut ::core::ffi::c_void);
-}
 unsafe extern "C" fn format_update_ranges(
     mut frs: *mut format_ranges,
     mut s: *mut screen,
@@ -147,38 +126,29 @@ unsafe extern "C" fn format_update_ranges(
     mut start: u_int,
     mut width: u_int,
 ) {
-    let mut fr: *mut format_range = ::core::ptr::null_mut::<format_range>();
-    let mut fr1: *mut format_range = ::core::ptr::null_mut::<format_range>();
     if frs.is_null() {
         return;
     }
-    fr = (*frs).tqh_first;
-    while !fr.is_null() && {
-        fr1 = (*fr).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !((*fr).s != s) {
-            if (*fr).end <= start || (*fr).start >= start.wrapping_add(width) {
-                format_free_range(frs, fr);
-            } else {
-                if (*fr).start < start {
-                    (*fr).start = start;
-                }
-                if (*fr).end > start.wrapping_add(width) {
-                    (*fr).end = start.wrapping_add(width);
-                }
-                if (*fr).start == (*fr).end {
-                    format_free_range(frs, fr);
-                } else {
-                    (*fr).start = (*fr).start.wrapping_sub(start);
-                    (*fr).end = (*fr).end.wrapping_sub(start);
-                    (*fr).start = (*fr).start.wrapping_add(offset);
-                    (*fr).end = (*fr).end.wrapping_add(offset);
-                }
-            }
+    (*frs).retain_mut(|fr| {
+        if fr.s != s {
+            return true;
         }
-        fr = fr1;
-    }
+        if fr.end <= start || fr.start >= start.wrapping_add(width) {
+            return false;
+        }
+        if fr.start < start {
+            fr.start = start;
+        }
+        if fr.end > start.wrapping_add(width) {
+            fr.end = start.wrapping_add(width);
+        }
+        if fr.start == fr.end {
+            return false;
+        }
+        fr.start = fr.start.wrapping_sub(start).wrapping_add(offset);
+        fr.end = fr.end.wrapping_sub(start).wrapping_add(offset);
+        true
+    });
 }
 unsafe extern "C" fn format_draw_put(
     mut octx: *mut screen_write_ctx,
@@ -1184,12 +1154,8 @@ pub unsafe extern "C" fn format_draw(
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut link_uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut more: utf8_state = UTF8_MORE;
-    let mut fr: *mut format_range = ::core::ptr::null_mut::<format_range>();
-    let mut fr1: *mut format_range = ::core::ptr::null_mut::<format_range>();
-    let mut frs: format_ranges = format_ranges {
-        tqh_first: ::core::ptr::null_mut::<format_range>(),
-        tqh_last: ::core::ptr::null_mut::<*mut format_range>(),
-    };
+    let mut fr: Option<format_range> = None;
+    let mut frs: format_ranges = Vec::new();
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     memcpy(
         &raw mut base_default as *mut ::core::ffi::c_void,
@@ -1203,8 +1169,6 @@ pub unsafe extern "C" fn format_draw(
     );
     base = &raw mut base_default;
     style_set(&raw mut sy, &raw mut current_default);
-    frs.tqh_first = ::core::ptr::null_mut::<format_range>();
-    frs.tqh_last = &raw mut frs.tqh_first;
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1339,14 +1303,7 @@ pub unsafe extern "C" fn format_draw(
                     b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
                     cp.offset(2 as ::core::ffi::c_int as isize),
                 );
-                fr = frs.tqh_first;
-                while !fr.is_null() && {
-                    fr1 = (*fr).entry.tqe_next;
-                    1 as ::core::ffi::c_int != 0
-                } {
-                    format_free_range(&raw mut frs, fr);
-                    fr = fr1;
-                }
+                frs.clear();
                 i = 0 as u_int;
                 while i < TOTAL as ::core::ffi::c_int as u_int {
                     screen_write_stop((&raw mut ctx as *mut screen_write_ctx).offset(i as isize)
@@ -1433,10 +1390,7 @@ pub unsafe extern "C" fn format_draw(
                     match sy.list as ::core::ffi::c_uint {
                         1 => {
                             if list_state != 0 as ::core::ffi::c_int {
-                                if !fr.is_null() {
-                                    free(fr as *mut ::core::ffi::c_void);
-                                    fr = ::core::ptr::null_mut::<format_range>();
-                                }
+                                fr = None;
                                 list_state = 0 as ::core::ffi::c_int;
                                 list_align = sy.align;
                             }
@@ -1458,10 +1412,7 @@ pub unsafe extern "C" fn format_draw(
                         }
                         0 => {
                             if list_state == 0 as ::core::ffi::c_int {
-                                if !fr.is_null() {
-                                    free(fr as *mut ::core::ffi::c_void);
-                                    fr = ::core::ptr::null_mut::<format_range>();
-                                }
+                                fr = None;
                                 if focus_start != -(1 as ::core::ffi::c_int)
                                     && focus_end == -(1 as ::core::ffi::c_int)
                                 {
@@ -1482,10 +1433,7 @@ pub unsafe extern "C" fn format_draw(
                         3 => {
                             if !(list_state != 0 as ::core::ffi::c_int) {
                                 if !(s[LIST_LEFT as ::core::ffi::c_int as usize].cx != 0 as u_int) {
-                                    if !fr.is_null() {
-                                        free(fr as *mut ::core::ffi::c_void);
-                                        fr = ::core::ptr::null_mut::<format_range>();
-                                    }
+                                    fr = None;
                                     if focus_start != -(1 as ::core::ffi::c_int)
                                         && focus_end == -(1 as ::core::ffi::c_int)
                                     {
@@ -1500,10 +1448,7 @@ pub unsafe extern "C" fn format_draw(
                             if !(list_state != 0 as ::core::ffi::c_int) {
                                 if !(s[LIST_RIGHT as ::core::ffi::c_int as usize].cx != 0 as u_int)
                                 {
-                                    if !fr.is_null() {
-                                        free(fr as *mut ::core::ffi::c_void);
-                                        fr = ::core::ptr::null_mut::<format_range>();
-                                    }
+                                    fr = None;
                                     if focus_start != -(1 as ::core::ffi::c_int)
                                         && focus_end == -(1 as ::core::ffi::c_int)
                                     {
@@ -1526,37 +1471,35 @@ pub unsafe extern "C" fn format_draw(
                         last = current;
                     }
                     if !srs.is_null() {
-                        if !fr.is_null() && format_is_type(fr, &raw mut sy) == 0 {
-                            if s[current as usize].cx != (*fr).start {
-                                (*fr).end = s[current as usize].cx;
-                                (*fr).entry.tqe_next = ::core::ptr::null_mut::<format_range>();
-                                (*fr).entry.tqe_prev = frs.tqh_last;
-                                *frs.tqh_last = fr;
-                                frs.tqh_last = &raw mut (*fr).entry.tqe_next;
-                            } else {
-                                free(fr as *mut ::core::ffi::c_void);
+                        if fr
+                            .as_mut()
+                            .is_some_and(|pending| format_is_type(pending, &raw mut sy) == 0)
+                        {
+                            let mut finished = fr.take().unwrap();
+                            if s[current as usize].cx != finished.start {
+                                finished.end = s[current as usize].cx;
+                                frs.push(finished);
                             }
-                            fr = ::core::ptr::null_mut::<format_range>();
                         }
-                        if fr.is_null()
+                        if fr.is_none()
                             && sy.range_type as ::core::ffi::c_uint
                                 != STYLE_RANGE_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
                         {
-                            fr = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<format_range>() as size_t,
-                            ) as *mut format_range;
-                            (*fr).index = current as u_int;
-                            (*fr).s =
-                                (&raw mut s as *mut screen).offset(current as isize) as *mut screen;
-                            (*fr).start = s[current as usize].cx;
-                            (*fr).type_0 = sy.range_type;
-                            (*fr).argument = sy.range_argument;
+                            let mut pending = format_range {
+                                index: current as u_int,
+                                s: (&raw mut s as *mut screen).offset(current as isize),
+                                start: s[current as usize].cx,
+                                end: 0,
+                                type_0: sy.range_type,
+                                argument: sy.range_argument,
+                                string: [0; 16],
+                            };
                             strlcpy(
-                                &raw mut (*fr).string as *mut ::core::ffi::c_char,
+                                &raw mut pending.string as *mut ::core::ffi::c_char,
                                 &raw mut sy.range_string as *mut ::core::ffi::c_char,
                                 ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
                             );
+                            fr = Some(pending);
                         }
                     }
                     cp = end.offset(1 as ::core::ffi::c_int as isize);
@@ -1566,7 +1509,7 @@ pub unsafe extern "C" fn format_draw(
     }
     match current_block {
         1830138855519935310 => {
-            free(fr as *mut ::core::ffi::c_void);
+            fr = None;
             i = 0 as u_int;
             while i < TOTAL as ::core::ffi::c_int as u_int {
                 screen_write_stop((&raw mut ctx as *mut screen_write_ctx).offset(i as isize)
@@ -1588,18 +1531,16 @@ pub unsafe extern "C" fn format_draw(
                     focus_end,
                 );
             }
-            fr = frs.tqh_first;
-            while !fr.is_null() {
+            for fr in &frs {
                 log_debug(
                     b"%s: range %d|%u is %s %u-%u\0" as *const u8 as *const ::core::ffi::c_char,
                     b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*fr).type_0 as ::core::ffi::c_uint,
-                    (*fr).argument,
-                    names[(*fr).index as usize],
-                    (*fr).start,
-                    (*fr).end,
+                    fr.type_0 as ::core::ffi::c_uint,
+                    fr.argument,
+                    names[fr.index as usize],
+                    fr.start,
+                    fr.end,
                 );
-                fr = (*fr).entry.tqe_next;
             }
             if fill != -(1 as ::core::ffi::c_int) {
                 memcpy(
@@ -1751,22 +1692,18 @@ pub unsafe extern "C" fn format_draw(
                 }
                 _ => {}
             }
-            fr = frs.tqh_first;
-            while !fr.is_null() && {
-                fr1 = (*fr).entry.tqe_next;
-                1 as ::core::ffi::c_int != 0
-            } {
+            for range in &frs {
                 sr = xcalloc(1 as size_t, ::core::mem::size_of::<style_range>() as size_t)
                     as *mut style_range;
-                (*sr).type_0 = (*fr).type_0;
-                (*sr).argument = (*fr).argument;
+                (*sr).type_0 = range.type_0;
+                (*sr).argument = range.argument;
                 strlcpy(
                     &raw mut (*sr).string as *mut ::core::ffi::c_char,
-                    &raw mut (*fr).string as *mut ::core::ffi::c_char,
+                    range.string.as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
                 );
-                (*sr).start = (*fr).start;
-                (*sr).end = (*fr).end;
+                (*sr).start = range.start;
+                (*sr).end = range.end;
                 (*sr).entry.tqe_next = ::core::ptr::null_mut::<style_range>();
                 (*sr).entry.tqe_prev = (*srs).tqh_last;
                 *(*srs).tqh_last = sr;
@@ -1841,8 +1778,6 @@ pub unsafe extern "C" fn format_draw(
                     }
                     0 | _ => {}
                 }
-                format_free_range(&raw mut frs, fr);
-                fr = fr1;
             }
         }
         _ => {}
