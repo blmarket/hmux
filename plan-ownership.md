@@ -125,14 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `job.cmd` is the next bounded live owner. `job_run` has two initial
-   writers (`xstrdup(cmd)` and `cmd_stringify_argv`); `job_transfer` and
-   `job_free` manually release the value before freeing the job record.
-   An offset-zero `JobOwner` can hold an optional `CString` and lend its
-   pointer to the public job. Use `cmd_stringify_argv_cstring` directly,
-   preserve null when no command is supplied, and keep the owner alive
-   through free callbacks. The run-shell and if-shell CLI comparisons cover
-   the main job paths; `job_transfer` has no in-tree caller.
+1. `cmd.file` is the next bounded live owner. `cmd_parse` and `cmd_copy`
+   each `xstrdup` the source filename, and `cmd_free` releases it. The
+   already boxed command can use a private offset-zero `CmdOwner` with an
+   optional `CString`; public `cmd.file` remains borrowed. Test parser
+   source errors and copy independence, including raw non-UTF-8 filename
+   bytes. `cmd_copy` is reached through `cmd_append_argv`.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -684,6 +682,23 @@ libc allocation on success and leaves it with the caller on error, so a local
   covers explicit and generated names, rename hooks, duplicate/invalid
   names, map lookup, sorted listing, and kill/recreate. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 389 — owned job command (2026-09-23)
+
+- `JobOwner` now boxes the public job at offset zero and holds its `cmd` as
+  `Option<CString>`. Shell-command jobs copy the borrowed command bytes
+  directly; argv jobs take the existing `cmd_stringify_argv_cstring` result
+  directly, retaining a null pointer only for its negative-count case.
+  `job_transfer` and `job_free` drop the owner after callbacks and resource
+  cleanup. Removed the command `xstrdup`, the C-owned stringify result, and
+  both manual command frees. No external job-command writer or retained
+  alias was found; `job_transfer` has no in-tree caller.
+- Serialized workspace tests and binary build passed. Run-shell and if-shell
+  CLI comparisons passed against pinned 3.8-rc. The popup CLI now starts a
+  null-command argv job, observes its stringified command through
+  `show-messages -J` while live, and covers completion and teardown; it
+  passed on both candidate and pinned baseline. Changed-file rustfmt and
+  diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

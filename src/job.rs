@@ -1,13 +1,13 @@
 use crate::src::cfg::cfg_finished;
-use crate::src::cmd::{cmd_copy_argv, cmd_log_argv, cmd_stringify_argv};
+use crate::src::cmd::{cmd_copy_argv, cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::cmd_queue::cmdq_print;
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::environ::{
     environ_copy, environ_for_session, environ_push, environ_set, EnvironOwner,
 };
 use crate::src::ffi::libc::{
-    _exit, chdir, close, closefrom, dup2, execl, execvp, fork, free, ioctl, kill, killpg, memset,
-    open, setenv, shutdown, sigfillset, sigprocmask, socketpair, strlcpy,
+    _exit, chdir, close, closefrom, dup2, execl, execvp, fork, ioctl, kill, killpg, memset, open,
+    setenv, shutdown, sigfillset, sigprocmask, socketpair, strlcpy,
 };
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::options_get_string;
@@ -91,7 +91,7 @@ pub use crate::src::shared::window::{
 use crate::src::tmux::{
     checkshell, find_home, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
 };
-use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const SHUT_RDWR: C2RustUnnamed = 2;
@@ -115,6 +115,16 @@ pub const O_RDWR: ::core::ffi::c_int = 0o2 as ::core::ffi::c_int;
 static mut all_jobs: joblist = joblist {
     lh_first: ::core::ptr::null::<job>() as *mut job,
 };
+
+/// The public job pointer borrows its command string from this stable box.
+#[repr(C)]
+struct JobOwner {
+    node: job,
+    cmd: Option<CString>,
+}
+
+const _: () = assert!(::core::mem::offset_of!(JobOwner, node) == 0);
+
 #[no_mangle]
 pub unsafe extern "C" fn job_run(
     mut cmd: *const ::core::ffi::c_char,
@@ -375,14 +385,22 @@ pub unsafe extern "C" fn job_run(
                     );
                     drop(env_owner.take());
                     drop(argv0);
-                    job = Box::into_raw(Box::new(::core::mem::zeroed::<job>()));
+                    let cmd_owner = if !cmd.is_null() {
+                        Some(CStr::from_ptr(cmd).to_owned())
+                    } else {
+                        cmd_stringify_argv_cstring(argc, argv)
+                    };
+                    let mut owner = Box::new(JobOwner {
+                        node: ::core::mem::zeroed::<job>(),
+                        cmd: cmd_owner,
+                    });
+                    owner.node.cmd = owner
+                        .cmd
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |cmd| cmd.as_ptr() as *mut _);
+                    job = Box::into_raw(owner).cast::<job>();
                     (*job).state = JOB_RUNNING;
                     (*job).flags = flags;
-                    if !cmd.is_null() {
-                        (*job).cmd = xstrdup(cmd);
-                    } else {
-                        (*job).cmd = cmd_stringify_argv(argc, argv);
-                    }
                     (*job).pid = pid;
                     if flags & JOB_PTY != 0 {
                         strlcpy(
@@ -482,14 +500,13 @@ pub unsafe extern "C" fn job_transfer(
         (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
     }
     *(*job).entry.le_prev = (*job).entry.le_next;
-    free((*job).cmd as *mut ::core::ffi::c_void);
     if (*job).freecb.is_some() && !(*job).data.is_null() {
         (*job).freecb.expect("non-null function pointer")((*job).data);
     }
     if !(*job).event.is_null() {
         bufferevent_free((*job).event);
     }
-    drop(Box::from_raw(job));
+    drop(Box::from_raw(job.cast::<JobOwner>()));
     return fd;
 }
 #[no_mangle]
@@ -503,7 +520,6 @@ pub unsafe extern "C" fn job_free(mut job: *mut job) {
         (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
     }
     *(*job).entry.le_prev = (*job).entry.le_next;
-    free((*job).cmd as *mut ::core::ffi::c_void);
     if (*job).freecb.is_some() && !(*job).data.is_null() {
         (*job).freecb.expect("non-null function pointer")((*job).data);
     }
@@ -516,7 +532,7 @@ pub unsafe extern "C" fn job_free(mut job: *mut job) {
     if (*job).fd != -(1 as ::core::ffi::c_int) {
         close((*job).fd);
     }
-    drop(Box::from_raw(job));
+    drop(Box::from_raw(job.cast::<JobOwner>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {

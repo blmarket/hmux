@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory(prefix="popup-owner-", dir=root / "target") as 
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
     client = None
     first_popup = None
+    argv_popup = None
     detached_popup = None
 
     def run(*args):
@@ -99,6 +100,19 @@ with tempfile.TemporaryDirectory(prefix="popup-owner-", dir=root / "target") as 
         time.sleep(0.4)
         assert run("list-clients", "-F", "#{client_tty}").strip() == tty.encode()
 
+        # Multiple positional arguments take job_run's argv path (null cmd).
+        argv_popup = subprocess.Popen(
+            base + ["display-popup", "-c", tty, "-E", "-T", "Argv popup",
+                    "/bin/sh", "-c", "printf 'ARGV_BODY\\n'; sleep 2"],
+            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        collect(b"Argv popup", b"ARGV_BODY")
+        jobs = run("show-messages", "-J")
+        assert b"/bin/sh" in jobs and b"ARGV_BODY" in jobs, jobs
+        argv_stdout, argv_stderr = argv_popup.communicate(timeout=5)
+        assert argv_popup.returncode == 0, (argv_stdout, argv_stderr)
+        assert run("list-clients", "-F", "#{client_tty}").strip() == tty.encode()
+
         # Losing the attached client releases an active popup through its
         # overlay callback while its job is still running.
         detached_popup = subprocess.Popen(
@@ -119,6 +133,9 @@ with tempfile.TemporaryDirectory(prefix="popup-owner-", dir=root / "target") as 
         if first_popup is not None and first_popup.poll() is None:
             first_popup.terminate()
             first_popup.wait(timeout=5)
+        if argv_popup is not None and argv_popup.poll() is None:
+            argv_popup.terminate()
+            argv_popup.wait(timeout=5)
         if client is not None:
             if client.poll() is None:
                 client.terminate()
