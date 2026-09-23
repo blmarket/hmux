@@ -486,11 +486,15 @@ pub unsafe extern "C" fn screen_write_make_list(mut s: *mut screen) {
     if (*(*s).grid).sy == 0 {
         fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    let rows = (0..(*(*s).grid).sy)
+    let mut rows = (0..(*(*s).grid).sy)
         .map(|_| ::core::mem::zeroed::<screen_write_cline>())
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    (*s).write_list = Box::into_raw(rows) as *mut screen_write_cline;
+    (*s).write_list = rows.as_mut_ptr();
+    (*s).titles
+        .as_mut()
+        .expect("initialized screen storage")
+        .write_rows = Some(rows);
     y = 0 as u_int;
     while y < (*(*s).grid).sy {
         let ref mut fresh0 = (*(*s).write_list.offset(y as isize)).items.tqh_first;
@@ -507,7 +511,15 @@ pub unsafe extern "C" fn screen_write_free_list(mut s: *mut screen) {
     let mut ci1: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
     let mut y: u_int = 0;
     y = 0 as u_int;
-    while y < (*(*s).grid).sy {
+    let rows = (*s)
+        .titles
+        .as_ref()
+        .expect("initialized screen storage")
+        .write_rows
+        .as_ref()
+        .expect("initialized write rows")
+        .len();
+    while (y as usize) < rows {
         cl = (*s).write_list.offset(y as isize) as *mut screen_write_cline;
         ci = (*cl).items.tqh_first;
         while !ci.is_null() && {
@@ -523,16 +535,15 @@ pub unsafe extern "C" fn screen_write_free_list(mut s: *mut screen) {
             screen_write_free_citem(ci);
             ci = ci1;
         }
-        if !(*cl).data.is_null() {
-            drop(Box::from_raw(::core::ptr::slice_from_raw_parts_mut(
-                (*cl).data,
-                (*(*s).grid).sx as usize,
-            )));
-        }
         y = y.wrapping_add(1);
     }
-    let rows = ::core::ptr::slice_from_raw_parts_mut((*s).write_list, (*(*s).grid).sy as usize);
-    drop(Box::from_raw(rows));
+    drop(
+        (*s).titles
+            .as_mut()
+            .expect("initialized screen storage")
+            .write_rows
+            .take(),
+    );
     (*s).write_list = ::core::ptr::null_mut::<screen_write_cline>();
 }
 unsafe extern "C" fn screen_write_init(mut ctx: *mut screen_write_ctx, mut s: *mut screen) {
@@ -3764,7 +3775,6 @@ unsafe extern "C" fn screen_write_collect_scroll(mut ctx: *mut screen_write_ctx,
     let mut s: *mut screen = (*ctx).s;
     let mut cl: *mut screen_write_cline = ::core::ptr::null_mut::<screen_write_cline>();
     let mut y: u_int = 0;
-    let mut saved: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ci: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
     log_debug(
         b"%s: at %u,%u (region %u-%u)\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3775,7 +3785,7 @@ unsafe extern "C" fn screen_write_collect_scroll(mut ctx: *mut screen_write_ctx,
         (*s).rlower,
     );
     screen_write_collect_clear(ctx, (*s).rupper, 1 as u_int);
-    saved = (*(*(*ctx).s).write_list.offset((*s).rupper as isize)).data;
+    let saved = std::mem::take(&mut (*(*(*ctx).s).write_list.offset((*s).rupper as isize)).data);
     y = (*s).rupper;
     while y < (*s).rlower {
         cl = (*(*ctx).s)
@@ -3792,7 +3802,7 @@ unsafe extern "C" fn screen_write_collect_scroll(mut ctx: *mut screen_write_ctx,
             (*cl).items.tqh_last = &raw mut (*cl).items.tqh_first;
         }
         let ref mut fresh5 = (*(*(*ctx).s).write_list.offset(y as isize)).data;
-        *fresh5 = (*cl).data;
+        *fresh5 = std::mem::take(&mut (*cl).data);
         y = y.wrapping_add(1);
     }
     let ref mut fresh6 = (*(*(*ctx).s).write_list.offset((*s).rlower as isize)).data;
@@ -4081,7 +4091,7 @@ unsafe extern "C" fn screen_write_collect_flush_line(
                                     ttyctx.flags |= TTY_CTX_WRAPPED;
                                 }
                                 ttyctx.c2rust_unnamed.data.data =
-                                    (*cl).data.offset(w_start as isize);
+                                    (*cl).data.as_mut_ptr().offset(w_start as isize);
                                 ttyctx.c2rust_unnamed.data.size = w_length as size_t;
                                 tty_write(
                                     Some(
@@ -4354,7 +4364,7 @@ pub unsafe extern "C" fn screen_write_collect_end(mut ctx: *mut screen_write_ctx
         b"screen_write_collect_end\0" as *const u8 as *const ::core::ffi::c_char,
         (*ci).used,
         (*ci).used as ::core::ffi::c_int,
-        (*cl).data.offset((*ci).x as isize),
+        (*cl).data.as_mut_ptr().offset((*ci).x as isize),
         (*s).cx,
         (*s).cy,
     );
@@ -4400,7 +4410,7 @@ pub unsafe extern "C" fn screen_write_collect_end(mut ctx: *mut screen_write_ctx
         (*s).cx,
         (*s).cy,
         &raw mut (*ci).gc,
-        (*cl).data.offset((*ci).x as isize),
+        (*cl).data.as_mut_ptr().offset((*ci).x as isize),
         (*ci).used as size_t,
     );
     if bnx != 0 as u_int {
@@ -4492,22 +4502,19 @@ pub unsafe extern "C" fn screen_write_collect_add(
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
     }
-    if (*(*(*ctx).s).write_list.offset((*s).cy as isize))
-        .data
-        .is_null()
-    {
+    if (&(*(*(*ctx).s).write_list.offset((*s).cy as isize)).data).is_empty() {
         let width = (*(*(*ctx).s).grid).sx as usize;
         if width == 0 {
             fatalx(b"xmalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
         }
         let ref mut fresh11 = (*(*(*ctx).s).write_list.offset((*s).cy as isize)).data;
-        *fresh11 = Box::into_raw(vec![0 as ::core::ffi::c_char; width].into_boxed_slice())
-            as *mut ::core::ffi::c_char;
+        fresh11.resize_with(width, || 0);
     }
     let fresh12 = (*ci).used;
     (*ci).used = (*ci).used.wrapping_add(1);
     *(*(*(*ctx).s).write_list.offset((*s).cy as isize))
         .data
+        .as_mut_ptr()
         .offset((*s).cx.wrapping_add(fresh12) as isize) =
         (*gc).data.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_char;
 }
@@ -5435,3 +5442,51 @@ unsafe extern "C" fn run_static_initializers() {
 #[cfg_attr(target_os = "windows", link_section = ".CRT$XIB")]
 #[cfg_attr(target_os = "macos", link_section = "__DATA,__mod_init_func")]
 static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
+
+#[cfg(test)]
+mod write_row_tests {
+    use super::*;
+
+    #[test]
+    fn scroll_moves_text_owners_and_teardown_uses_the_allocated_row_count() {
+        unsafe {
+            let mut grid = crate::src::grid::grid_create_box(4, 3, 0);
+            let mut s: screen = std::mem::zeroed();
+            s.grid = &raw mut *grid;
+            s.titles = Some(Box::new(crate::src::shared::screen::ScreenStorage {
+                title: std::ffi::CString::default(),
+                path: None,
+                stack: std::collections::VecDeque::new(),
+                tabs: Vec::new(),
+                grid: Some(grid),
+                saved_grid: None,
+                write_rows: None,
+            }));
+            s.rupper = 0;
+            s.rlower = 2;
+            screen_write_make_list(&raw mut s);
+            let mut pointers = Vec::new();
+            for y in 0..3 {
+                let row = &mut *s.write_list.add(y);
+                row.data
+                    .resize_with(4, || (b'A' + y as u8) as ::core::ffi::c_char);
+                pointers.push(row.data.as_ptr());
+            }
+            let mut ctx: screen_write_ctx = std::mem::zeroed();
+            ctx.s = &raw mut s;
+            for _ in 0..4 {
+                screen_write_collect_scroll(&raw mut ctx, 8);
+                pointers.rotate_left(1);
+                for (y, pointer) in pointers.iter().enumerate() {
+                    assert_eq!((*s.write_list.add(y)).data.as_ptr(), *pointer);
+                }
+            }
+            // Cleanup is tied to the allocation, even if dimensions have changed.
+            (*s.grid).sx = 1;
+            (*s.grid).sy = 1;
+            screen_write_free_list(&raw mut s);
+            assert!(s.write_list.is_null());
+            assert!(s.titles.as_ref().unwrap().write_rows.is_none());
+        }
+    }
+}

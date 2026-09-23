@@ -1,7 +1,7 @@
 //! Authoritative screen_write declarations, shared by the C translation units.
 
 use super::abi::u_int;
-use super::grid::grid_cell;
+use super::grid::{grid_cell, GridArray};
 use super::pane::window_pane;
 use super::screen::screen;
 use super::tty::tty_ctx;
@@ -9,8 +9,8 @@ use super::tty::tty_ctx;
 /// Element of the screen-owned boxed write-list slice. Each `items` tail
 /// borrows the final address of its own `tqh_first` field.
 pub struct screen_write_cline {
-    /// Optional boxed byte slice of current grid width; scrolling moves this owner.
-    pub data: *mut ::core::ffi::c_char,
+    /// Text bytes owned by this row; scrolling moves the collection.
+    pub data: GridArray<::core::ffi::c_char>,
     pub items: screen_write_items,
 }
 #[derive(Copy, Clone)]

@@ -58,6 +58,7 @@ pub struct screen {
     pub saved_flags: ::core::ffi::c_int,
     pub tabs: *mut bitstr_t,
     pub sel: Option<Box<screen_sel>>,
+    /// Borrowed from ScreenStorage; invalidated by resize or free.
     pub write_list: *mut screen_write_cline,
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
@@ -69,6 +70,7 @@ pub struct ScreenStorage {
     pub(crate) tabs: Vec<bitstr_t>,
     pub(crate) grid: Option<Box<grid>>,
     pub(crate) saved_grid: Option<Box<grid>>,
+    pub(crate) write_rows: Option<Box<[screen_write_cline]>>,
 }
 
 #[derive(Copy, Clone)]

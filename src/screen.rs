@@ -115,6 +115,7 @@ pub unsafe extern "C" fn screen_init(
             tabs: Vec::new(),
             grid: Some(grid),
             saved_grid: None,
+            write_rows: None,
         })),
     );
     screen_sync_text(s);
@@ -1224,6 +1225,12 @@ mod text_owner_tests {
             assert_eq!(screen_check_selection(&raw mut current, 1, 0), 0);
             assert_eq!(screen_check_selection(&raw mut current, 2, 0), 1);
 
+            crate::src::screen_write::screen_write_make_list(&raw mut current);
+            let rows = current.write_list;
+            (*rows).data.resize_with(17, || b'A' as std::ffi::c_char);
+            (*rows.add(1))
+                .data
+                .resize_with(17, || b'B' as std::ffi::c_char);
             // Alternate-screen owners must move with the screen, too.
             let original_grid = current.grid;
             assert_eq!(screen_alternate_on(&raw mut current, &raw mut cell, 1), 1);
@@ -1237,6 +1244,13 @@ mod text_owner_tests {
             screen_pop_title(&raw mut old);
             assert_eq!(CStr::from_ptr(old.title), c"original");
             assert_eq!(CStr::from_ptr(old.path), c"/tmp/path");
+            assert_eq!(old.write_list, rows);
+            assert_eq!((&(*old.write_list).data)[0], b'A' as std::ffi::c_char);
+            assert_eq!(
+                (&(*old.write_list.add(1)).data)[0],
+                b'B' as std::ffi::c_char
+            );
+            assert!(current.write_list.is_null());
             assert_eq!(old.grid, original_grid);
             assert_eq!(old.saved_grid, saved_grid);
             assert!(current.saved_grid.is_null());
@@ -1247,12 +1261,15 @@ mod text_owner_tests {
             assert!(old.titles.is_none());
             assert!(old.sel.is_none());
             assert!(old.tabs.is_null());
+            assert!(old.write_list.is_null());
             assert!(old.grid.is_null());
             assert!(old.saved_grid.is_null());
             assert_eq!(CStr::from_ptr(current.title), c"new");
 
             cell.data.data[0] = b'X';
             crate::src::grid::grid_set_cell(current.grid, 0, 0, &cell);
+            crate::src::screen_write::screen_write_make_list(&raw mut current);
+            (*current.write_list).data.resize_with(10, || 42);
             let original_grid = current.grid;
             for width in [6, 19, 10] {
                 assert_eq!(screen_alternate_on(&raw mut current, &raw mut cell, 1), 1);
@@ -1261,6 +1278,18 @@ mod text_owner_tests {
                 assert!(current.saved_grid.is_null());
                 assert!(current.titles.as_ref().unwrap().saved_grid.is_none());
                 assert_eq!(current.grid, original_grid);
+                assert_eq!(
+                    current
+                        .titles
+                        .as_ref()
+                        .unwrap()
+                        .write_rows
+                        .as_ref()
+                        .unwrap()
+                        .len(),
+                    2
+                );
+                assert!((&(*current.write_list).data).is_empty());
                 crate::src::grid::grid_get_cell(current.grid, 0, 0, &raw mut cell);
                 assert_eq!(cell.data.data[0], b'X');
                 assert_eq!(screen_alternate_off(&raw mut current, &raw mut cell, 1), 0);

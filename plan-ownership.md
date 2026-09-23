@@ -117,10 +117,11 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate screen write-list storage across collection, scrolling, flush,
-resize, and destruction, then migrate retained hyperlink ownership. Reuse the
-completed screen construction and move audit. Grid records, lines, and both
-compact/extended cell arrays now have Rust collection ownership.
+Next, migrate screen write command nodes together with active write contexts and
+the process-wide item pool. Row allocation and text payloads now have explicit
+owners; intrusive item queues and the raw context item remain the coupled
+boundary. Then migrate retained hyperlink ownership. Reuse the completed screen
+construction and move audit.
 
 Screen title/path strings and the bounded title stack now live in a nullable
 boxed `ScreenStorage` owner. Raw title/path pointers and `ntitles` are compatibility
@@ -145,6 +146,12 @@ construction and record layout. Lines are non-Copy; duplication deep-clones
 cells, moves use take/rotation, and reflow transfers the collection. Size fields
 retain their legacy logical rendering/format meanings; Vec owns allocation and
 capacity. No grid-array libc allocation/free or owning-record byte copies remain.
+
+ScreenStorage owns the boxed write-row slice; the screen write_list pointer is a
+borrowed compatibility view. Each row owns its text collection. Scroll operations
+move those owners and free_list uses the stored row count, independent of grid
+dimensions. Command nodes still use the intrusive freelist; row ownership alone
+does not complete their migration.
 
 Copy-mode lazy callbacks now return owned results directly into the entry cache.
 Both lookup and enumeration evaluate them without holding an owner borrow across
@@ -180,8 +187,8 @@ passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
 1. Screen text, title-stack, tabs, selection, grid records, and grid line/cell
-   arrays have Rust owners. Screen write-list and hyperlink storage still have
-   manual lifetime boundaries. Migrate each complete producer/consumer lifecycle; do not add
+   arrays, write rows, and row text have Rust owners. Write command nodes and
+   hyperlink storage still have manual lifetime boundaries. Migrate each complete producer/consumer lifecycle; do not add
    a blanket screen Drop until borrowed resource views and partial construction
    paths have been audited. Title/path compatibility pointers are borrows.
 2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
@@ -1817,6 +1824,26 @@ name error.
   copy-backing, copy-selection, copy-match, saved-status, pane-border, popup, and
   format-draw CLI checks passed on candidate and pinned tmux. No sanitizer ran.
 - Next: screen write-list storage and retained hyperlink ownership.
+
+### Batch — write-row and text payload ownership (2026-09-23)
+
+- ScreenStorage now retains the boxed write-row slice; screen.write_list borrows
+  its stable address. Each row owns its text collection. Scrolling transfers
+  payload owners with take, while collection, grid writes, and terminal flushing
+  borrow their bytes without holding owner references across callbacks.
+- Teardown walks the owned row count and drops the stored collections, removing
+  slice reconstruction from current grid dimensions. Resize still destroys the
+  old list before changing dimensions and builds fresh rows afterwards. Existing
+  layout fixtures and zero-initialized containing records remain valid.
+- Added coverage for repeated scroll transfer, dimension-independent cleanup,
+  screen moves with populated rows, and alternate-screen resize replacement.
+  All 402 serialized workspace tests, binary build, changed-file rustfmt, and
+  diff checks passed. Write-row resize, capture-pane, synchronized-redraw,
+  saved-status, popup, and format-draw checks passed on candidate and pinned
+  tmux. No sanitizer ran.
+- This completes row/payload ownership. Intrusive command queues, their global
+  freelist, and the active screen_write_ctx.item must migrate together next;
+  the current batch leaves their existing lifetime protocol intact.
 
 ## Historical migration index
 
