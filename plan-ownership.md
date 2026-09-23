@@ -1383,6 +1383,21 @@ legacy callers safe.
   bytes, repeated `t/f` modifiers, and conditional lookup. No sanitizer was
   run.
 
+### Increment 224 — argv stringification owner (2026-09-23)
+
+- Private `cmd_stringify_argv_cstring` now joins escaped argv bytes in a
+  `Vec<u8>` and returns `Option<CString>`, preserving the legacy null result
+  for negative argc. This removes the producer's `xrealloc`, `strlcat`,
+  length bookkeeping, and per-argument C result frees. Synchronous callers
+  in spawn events/logging, default window naming, and current-command
+  formatting borrow the owned result. The exported `cmd_stringify_argv`
+  remains libc-freeable for retained and callback results.
+- Workspace tests, library/binary build, and diff checks passed in the
+  isolated worktree. `scripts/cmd_stringify_owner_cli_checks.py` matched the
+  pinned baseline for empty argc, pane-created events, apostrophe/empty/
+  non-UTF-8 arguments, pane start commands, dead-pane current-command
+  fallback, and window naming. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1393,10 +1408,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_stringify_argv` still assembles escaped argv text with `xrealloc`,
-   `strlcat`, and per-argument frees. A private owned producer can serve its
-   synchronous spawn, name, and format callers while exported or retained
-   results keep a libc-freeable wrapper. The command-list cache in
+1. `format_cb_config_files` still assembles its comma-separated callback
+   result with `xrealloc` and a manual length. It can build local bytes and
+   return one libc-freeable copy at the callback boundary, preserving empty
+   path entries and non-UTF-8 bytes. The command-list cache in
    `args_value_as_string` is retained in its C-layout record and needs a
    record-owner migration.
    `file_get_path` remains deferred:
@@ -1433,9 +1448,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–223. The remaining
+Current validation is recorded in increments 15–224. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–223 has its own local commit; none was pushed.
+Each of increments 15–224 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

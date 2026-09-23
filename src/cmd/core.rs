@@ -1,5 +1,5 @@
 pub use crate::src::arguments::args_parse;
-use crate::src::arguments::{args_copy, args_escape, args_free, args_print_cstring};
+use crate::src::arguments::{args_copy, args_escape_cstring, args_free, args_print_cstring};
 use crate::src::cmd_attach_session::cmd_attach_session_entry;
 use crate::src::cmd_bind_key::cmd_bind_key_entry;
 use crate::src::cmd_break_pane::cmd_break_pane_entry;
@@ -443,38 +443,39 @@ pub unsafe extern "C" fn cmd_free_argv(
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_stringify_argv(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
+    argc: ::core::ffi::c_int,
+    argv: *mut *mut ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0 as size_t;
-    let mut i: ::core::ffi::c_int = 0;
-    if argc == 0 as ::core::ffi::c_int {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+    // The exported result is C-owned; retained users and callback results free it.
+    cmd_stringify_argv_cstring(argc, argv)
+        .map_or(::core::ptr::null_mut(), |text| xstrdup(text.as_ptr()))
+}
+
+pub(crate) unsafe fn cmd_stringify_argv_cstring(
+    argc: ::core::ffi::c_int,
+    argv: *mut *mut ::core::ffi::c_char,
+) -> Option<CString> {
+    // The original C function returned NULL for a negative count.
+    if argc < 0 {
+        return None;
     }
-    i = 0 as ::core::ffi::c_int;
-    while i < argc {
-        s = args_escape(*argv.offset(i as isize));
+    let mut bytes = Vec::new();
+    for i in 0..argc {
+        let argument = *argv.offset(i as isize);
+        let escaped = args_escape_cstring(CStr::from_ptr(argument));
         log_debug(
             b"%s: %u %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmd_stringify_argv\0" as *const u8 as *const ::core::ffi::c_char,
             i,
-            *argv.offset(i as isize),
-            s,
+            argument,
+            escaped.as_ptr(),
         );
-        len = len.wrapping_add(strlen(s).wrapping_add(1 as size_t));
-        buf = xrealloc(buf as *mut ::core::ffi::c_void, len) as *mut ::core::ffi::c_char;
-        if i == 0 as ::core::ffi::c_int {
-            *buf = '\0' as i32 as ::core::ffi::c_char;
-        } else {
-            strlcat(buf, b" \0" as *const u8 as *const ::core::ffi::c_char, len);
+        if i != 0 {
+            bytes.push(b' ');
         }
-        strlcat(buf, s, len);
-        free(s as *mut ::core::ffi::c_void);
-        i += 1;
+        bytes.extend_from_slice(escaped.as_bytes());
     }
-    return buf;
+    Some(CString::new(bytes).expect("escaped argv contains no interior NUL"))
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_get_entry(mut cmd: *mut cmd) -> *const cmd_entry {

@@ -1013,7 +1013,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
     }
     CString::new(buf).expect("printed arguments contain no interior NUL")
 }
-unsafe fn args_escape_cstring(s: &CStr) -> CString {
+pub(crate) unsafe fn args_escape_cstring(s: &CStr) -> CString {
     let source = s.to_bytes();
     if source.is_empty() {
         return CString::new(b"''".to_vec()).expect("literal has no NUL");

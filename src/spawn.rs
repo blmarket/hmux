@@ -1,4 +1,4 @@
-use crate::src::cmd::{cmd_copy_argv, cmd_free_argv, cmd_log_argv, cmd_stringify_argv};
+use crate::src::cmd::{cmd_copy_argv, cmd_free_argv, cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::cmd_find::cmd_find_from_winlink_pane;
 use crate::src::cmd_queue::{cmdq_get_client, cmdq_get_target};
 use crate::src::compat::fdforkpty::fdforkpty;
@@ -206,7 +206,6 @@ unsafe extern "C" fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp:
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cwd: *const ::core::ffi::c_char = (*wp).cwd;
     ep = event_payload_create();
     cmd_find_from_winlink_pane(&raw mut fs, (*sc).wl, wp, 0 as ::core::ffi::c_int);
@@ -227,15 +226,17 @@ unsafe extern "C" fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp:
         (*(*sc).wl).idx,
     );
     event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
-    if (*wp).argc != 0 as ::core::ffi::c_int {
-        cmd = cmd_stringify_argv((*wp).argc, (*wp).argv);
-    }
-    if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
+    let cmd = if (*wp).argc != 0 {
+        cmd_stringify_argv_cstring((*wp).argc, (*wp).argv)
+    } else {
+        None
+    };
+    if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         event_payload_set_string(
             ep,
             b"pane_command\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            cmd,
+            cmd.as_ptr(),
         );
     } else if !(*wp).shell.is_null() {
         event_payload_set_string(
@@ -245,7 +246,6 @@ unsafe extern "C" fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp:
             (*wp).shell,
         );
     }
-    free(cmd as *mut ::core::ffi::c_void);
     if !cwd.is_null() {
         event_payload_set_string(
             ep,
@@ -731,13 +731,14 @@ pub unsafe extern "C" fn spawn_pane(
         (*new_wp).shell,
     );
     if (*new_wp).argc != 0 as ::core::ffi::c_int {
-        cp = cmd_stringify_argv((*new_wp).argc, (*new_wp).argv);
+        let command = cmd_stringify_argv_cstring((*new_wp).argc, (*new_wp).argv);
         log_debug(
             b"%s: cmd=%s\0" as *const u8 as *const ::core::ffi::c_char,
             b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            cp,
+            command
+                .as_ref()
+                .map_or(::core::ptr::null(), |text| text.as_ptr()),
         );
-        free(cp as *mut ::core::ffi::c_void);
     }
     log_debug(
         b"%s: cwd=%s\0" as *const u8 as *const ::core::ffi::c_char,

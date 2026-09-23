@@ -1,6 +1,8 @@
 use crate::src::arguments::args_escape;
 use crate::src::cfg::cfg_files;
-use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv};
+use crate::src::cmd::{
+    cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv, cmd_stringify_argv_cstring,
+};
 use crate::src::cmd_queue::{
     cmdq_get_client, cmdq_get_event, cmdq_get_target, cmdq_get_target_client, cmdq_merge_formats,
     cmdq_print,

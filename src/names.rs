@@ -1,4 +1,4 @@
-use crate::src::cmd::cmd_stringify_argv;
+use crate::src::cmd::cmd_stringify_argv_cstring;
 use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, free, gettimeofday, memcpy, strchr, strcmp, strcspn, strlen,
     strncmp,
@@ -217,19 +217,15 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn default_window_name(mut w: *mut window) -> *mut ::core::ffi::c_char {
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*w).active.is_null() {
         return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    cmd = cmd_stringify_argv((*(*w).active).argc, (*(*w).active).argv);
-    if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
-        s = parse_window_name(cmd);
+    let cmd = cmd_stringify_argv_cstring((*(*w).active).argc, (*(*w).active).argv);
+    if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
+        parse_window_name(cmd.as_ptr())
     } else {
-        s = parse_window_name((*(*w).active).shell);
+        parse_window_name((*(*w).active).shell)
     }
-    free(cmd as *mut ::core::ffi::c_void);
-    return s;
 }
 unsafe extern "C" fn format_window_name(mut w: *mut window) -> *mut ::core::ffi::c_char {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();

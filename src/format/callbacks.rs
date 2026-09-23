@@ -472,23 +472,23 @@ unsafe extern "C" fn format_cb_current_command(
     mut ft: *mut format_tree,
 ) -> *mut ::core::ffi::c_void {
     let mut wp: *mut window_pane = (*ft).wp;
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if wp.is_null() || (*wp).shell.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    cmd = osdep_get_name((*wp).fd, &raw mut (*wp).tty as *mut ::core::ffi::c_char);
-    if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
+    let cmd = osdep_get_name((*wp).fd, &raw mut (*wp).tty as *mut ::core::ffi::c_char);
+    if !cmd.is_null() && *cmd != 0 {
+        let value = parse_window_name(cmd);
         free(cmd as *mut ::core::ffi::c_void);
-        cmd = cmd_stringify_argv((*wp).argc, (*wp).argv);
-        if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
-            free(cmd as *mut ::core::ffi::c_void);
-            cmd = xstrdup((*wp).shell);
-        }
+        return value as *mut ::core::ffi::c_void;
     }
-    value = parse_window_name(cmd);
     free(cmd as *mut ::core::ffi::c_void);
-    return value as *mut ::core::ffi::c_void;
+    let argv = cmd_stringify_argv_cstring((*wp).argc, (*wp).argv);
+    let source = argv
+        .as_ref()
+        .filter(|text| !text.as_bytes().is_empty())
+        .map_or((*wp).shell as *const _, |text| text.as_ptr());
+    let value = parse_window_name(source);
+    value as *mut ::core::ffi::c_void
 }
 unsafe extern "C" fn format_cb_current_path(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     let mut wp: *mut window_pane = (*ft).wp;
