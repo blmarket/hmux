@@ -38,6 +38,7 @@ pub struct screen {
     pub titles: Option<Box<ScreenStorage>>,
     /// Compatibility view of the stack length; ScreenStorage owns the elements.
     pub ntitles: u_int,
+    /// Borrowed from ScreenStorage for initialized screens.
     pub grid: *mut grid,
     pub cx: u_int,
     pub cy: u_int,
@@ -51,6 +52,7 @@ pub struct screen {
     pub default_mode: ::core::ffi::c_int,
     pub saved_cx: u_int,
     pub saved_cy: u_int,
+    /// Borrowed from ScreenStorage while alternate-screen mode is active.
     pub saved_grid: *mut grid,
     pub saved_cell: grid_cell,
     pub saved_flags: ::core::ffi::c_int,
@@ -65,6 +67,8 @@ pub struct ScreenStorage {
     pub(crate) path: Option<std::ffi::CString>,
     pub(crate) stack: std::collections::VecDeque<std::ffi::CString>,
     pub(crate) tabs: Vec<bitstr_t>,
+    pub(crate) grid: Option<Box<grid>>,
+    pub(crate) saved_grid: Option<Box<grid>>,
 }
 
 #[derive(Copy, Clone)]

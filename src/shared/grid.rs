@@ -23,10 +23,9 @@ pub struct grid_cell {
     pub link: u_int,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
-/// Box-owned by a screen or temporary reflow operation; `linedata` has its
-/// own allocation and is transferred from a reflow target before that Box drops.
+/// Owns its lines and their cell allocations. Screens and temporary reflow
+/// operations keep this record in a Box; raw grid pointers are scoped borrows.
 pub struct grid {
     pub flags: ::core::ffi::c_int,
     pub sx: u_int,

@@ -68,6 +68,35 @@ def capture(binary):
             results.append(run("show-buffer"))
             assert results[-2] == (0, b"", b"")
             assert results[-1] == (0, b"\033[\000", b"")
+            # Exercise saved-grid restoration and reflow of populated lines.
+            assert run("respawn-pane", "-k", "stty raw -echo; printf READY; cat") == (0, b"", b"")
+
+            def expect_row(expected):
+                deadline = time.monotonic() + 5
+                while True:
+                    actual = run("capture-pane", "-p", "-S", "0", "-E", "0")
+                    if actual == (0, expected + b"\n", b""):
+                        return
+                    assert time.monotonic() < deadline, (expected, actual)
+                    time.sleep(0.05)
+
+            expect_row(b"READY")
+            for width in (12, 40, 9, 30):
+                assert run("send-keys", "-l", "\x1b[?1049h\x1b[HALTERNATE") == (0, b"", b"")
+                expect_row(b"ALTERNATE")
+                results.append(run("capture-pane", "-a", "-p"))
+                assert run("resize-window", "-x", str(width), "-y", "5") == (0, b"", b"")
+                assert run("send-keys", "-l", "\x1b[?1049l") == (0, b"", b"")
+                expect_row(b"READY")
+                results.append(run("capture-pane", "-p"))
+            assert run("send-keys", "-l", "\x1b[H" + "abcdefghij" * 8) == (0, b"", b"")
+            expect_row(b"abcdefghij" * 3)
+            for width in (8, 43, 17, 30):
+                assert run("resize-window", "-x", str(width), "-y", "5") == (0, b"", b"")
+                results.append(run("capture-pane", "-p", "-S", "-", "-J"))
+            # Destruction with an alternate grid still active.
+            assert run("send-keys", "-l", "\x1b[?1049h\x1b[HLAST") == (0, b"", b"")
+            expect_row(b"LAST")
             return results
         finally:
             run("kill-server")

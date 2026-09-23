@@ -2949,9 +2949,8 @@ mod identity_tests {
             (*mtd).buildcb = Some(nested_build);
             let mut state = NestedBuildState { mtd, empty: false };
             (*mtd).modedata = (&raw mut state).cast();
-            (*mtd).screen.grid = Box::into_raw(Box::new(std::mem::zeroed::<grid>()));
-            (*(*mtd).screen.grid).sx = 80;
-            (*(*mtd).screen.grid).sy = 24;
+            let mut grid_owner = crate::src::grid::grid_create_box(80, 24, 0);
+            (*mtd).screen.grid = &raw mut *grid_owner;
 
             mode_tree_build(mtd);
             assert_eq!((*mtd).lines.len(), 65);
@@ -2970,7 +2969,8 @@ mod identity_tests {
             mode_tree_build(mtd);
             assert!((*mtd).lines.is_empty());
             mode_tree_free_items(&raw mut (*mtd).children);
-            drop(Box::from_raw((*mtd).screen.grid));
+            (*mtd).screen.grid = std::ptr::null_mut();
+            drop(grid_owner);
             mode_tree_remove_ref(mtd);
         }
     }
@@ -3006,9 +3006,8 @@ mod identity_tests {
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
             (*mtd).buildcb = Some(named_build);
             (*mtd).modedata = mtd.cast();
-            (*mtd).screen.grid = Box::into_raw(Box::new(std::mem::zeroed::<grid>()));
-            (*(*mtd).screen.grid).sx = 80;
-            (*(*mtd).screen.grid).sy = 24;
+            let mut grid_owner = crate::src::grid::grid_create_box(80, 24, 0);
+            (*mtd).screen.grid = &raw mut *grid_owner;
             mode_tree_build(mtd);
             assert_eq!(mode_tree_line_count(mtd), 2);
             (*mtd).current = 1;
@@ -3026,7 +3025,8 @@ mod identity_tests {
             );
             mode_tree_free_items(&raw mut (*mtd).children);
             mode_tree_clear_lines(mtd);
-            drop(Box::from_raw((*mtd).screen.grid));
+            (*mtd).screen.grid = std::ptr::null_mut();
+            drop(grid_owner);
             mode_tree_remove_ref(mtd);
         }
     }

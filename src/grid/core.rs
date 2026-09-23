@@ -484,29 +484,35 @@ pub unsafe extern "C" fn grid_free_lines(mut gd: *mut grid, mut py: u_int, mut n
         yy = yy.wrapping_add(1);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_create(mut sx: u_int, mut sy: u_int, mut hlimit: u_int) -> *mut grid {
-    let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
-    gd = Box::into_raw(Box::new(::core::mem::zeroed::<grid>()));
-    (*gd).sx = sx;
-    (*gd).sy = sy;
-    if hlimit != 0 as u_int {
-        (*gd).flags = GRID_HISTORY;
+pub(crate) unsafe fn grid_create_box(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
+    let mut owner = Box::new(::core::mem::zeroed::<grid>());
+    owner.sx = sx;
+    owner.sy = sy;
+    if hlimit != 0 {
+        owner.flags = GRID_HISTORY;
     }
-    (*gd).hlimit = hlimit;
-    if (*gd).sy != 0 as u_int {
-        (*gd).linedata = xcalloc(
-            (*gd).sy as size_t,
-            ::core::mem::size_of::<grid_line>() as size_t,
-        ) as *mut grid_line;
+    owner.hlimit = hlimit;
+    if sy != 0 {
+        owner.linedata =
+            xcalloc(sy as size_t, ::core::mem::size_of::<grid_line>() as size_t) as *mut grid_line;
     }
-    grid_check_is_clear(gd);
-    return gd;
+    grid_check_is_clear(&raw mut *owner);
+    owner
+}
+impl Drop for grid {
+    fn drop(&mut self) {
+        unsafe {
+            grid_free_lines(self, 0, self.hsize.wrapping_add(self.sy));
+            free(self.linedata.cast());
+        }
+    }
 }
 #[no_mangle]
-pub unsafe extern "C" fn grid_destroy(mut gd: *mut grid) {
-    grid_free_lines(gd, 0 as u_int, (*gd).hsize.wrapping_add((*gd).sy));
-    free((*gd).linedata as *mut ::core::ffi::c_void);
+pub unsafe extern "C" fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> *mut grid {
+    Box::into_raw(grid_create_box(sx, sy, hlimit))
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_destroy(gd: *mut grid) {
     drop(Box::from_raw(gd));
 }
 #[no_mangle]
@@ -2163,7 +2169,6 @@ unsafe extern "C" fn grid_reflow_split(
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_reflow(mut gd: *mut grid, mut sx: u_int) {
-    let mut target: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -2183,7 +2188,8 @@ pub unsafe extern "C" fn grid_reflow(mut gd: *mut grid, mut sx: u_int) {
     let mut width: u_int = 0;
     let mut i: u_int = 0;
     let mut at: u_int = 0;
-    target = grid_create((*gd).sx, 0 as u_int, 0 as u_int);
+    let mut target_owner = grid_create_box((*gd).sx, 0, 0);
+    let target = &raw mut *target_owner;
     yy = 0 as u_int;
     while yy < (*gd).hsize.wrapping_add((*gd).sy) {
         gl = (*gd).linedata.offset(yy as isize) as *mut grid_line;
@@ -2228,8 +2234,11 @@ pub unsafe extern "C" fn grid_reflow(mut gd: *mut grid, mut sx: u_int) {
         (*gd).hscrolled = (*gd).hsize;
     }
     free((*gd).linedata as *mut ::core::ffi::c_void);
-    (*gd).linedata = (*target).linedata;
-    drop(Box::from_raw(target));
+    // Reflow has transferred every live line to target. Move the allocation
+    // back without letting the temporary grid destroy the transferred cells.
+    (*gd).linedata = std::mem::replace(&mut (*target).linedata, std::ptr::null_mut());
+    (*target).sy = 0;
+    (*target).hsize = 0;
     (*gd).scroll_generation = (*gd).scroll_generation.wrapping_add(1);
 }
 #[no_mangle]

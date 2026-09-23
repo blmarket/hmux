@@ -4,6 +4,8 @@ mod core;
 pub mod reader;
 pub mod view;
 
+pub(crate) use self::core::grid_create_box;
+
 // Preserve the established family API without glob exports.
 pub use self::core::{
     grid_adjust_lines, grid_cell_attr_string, grid_cell_flags_string, grid_cells_equal,

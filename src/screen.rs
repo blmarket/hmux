@@ -1,6 +1,6 @@
 use crate::src::ffi::libc::{memcpy, snprintf, strlcat, strlen};
 use crate::src::grid::{
-    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_destroy,
+    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create_box,
     grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
 use crate::src::grid_view::{grid_view_clear, grid_view_delete_lines};
@@ -100,7 +100,8 @@ pub unsafe extern "C" fn screen_init(
     mut sy: u_int,
     mut hlimit: u_int,
 ) {
-    (*s).grid = grid_create(sx, sy, hlimit);
+    let mut grid = grid_create_box(sx, sy, hlimit);
+    (*s).grid = &raw mut *grid;
     (*s).saved_grid = ::core::ptr::null_mut::<grid>();
     // screen_init accepts fresh C storage. Write the nullable owner without
     // reading or dropping uninitialized memory. Reinitializing a live screen
@@ -112,6 +113,8 @@ pub unsafe extern "C" fn screen_init(
             path: None,
             stack: std::collections::VecDeque::new(),
             tabs: Vec::new(),
+            grid: Some(grid),
+            saved_grid: None,
         })),
     );
     screen_sync_text(s);
@@ -184,10 +187,12 @@ pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
     if !(*s).write_list.is_null() {
         screen_write_free_list(s);
     }
-    if !(*s).saved_grid.is_null() {
-        grid_destroy((*s).saved_grid);
+    if let Some(storage) = (*s).titles.as_mut() {
+        drop(storage.saved_grid.take());
+        drop(storage.grid.take());
     }
-    grid_destroy((*s).grid);
+    (*s).saved_grid = std::ptr::null_mut();
+    (*s).grid = std::ptr::null_mut();
     if !(*s).hyperlinks.is_null() {
         hyperlinks_free((*s).hyperlinks);
     }
@@ -761,7 +766,12 @@ pub unsafe extern "C" fn screen_alternate_on(
     }
     sx = (*(*s).grid).sx;
     sy = (*(*s).grid).sy;
-    (*s).saved_grid = grid_create(sx, sy, 0 as u_int);
+    let mut saved_grid = grid_create_box(sx, sy, 0);
+    (*s).saved_grid = &raw mut *saved_grid;
+    (*s).titles
+        .as_mut()
+        .expect("initialized screen storage")
+        .saved_grid = Some(saved_grid);
     grid_duplicate_lines(
         (*s).saved_grid,
         0 as u_int,
@@ -830,7 +840,13 @@ pub unsafe extern "C" fn screen_alternate_off(
         (*(*s).grid).flags |= GRID_HISTORY;
     }
     screen_resize(s, sx, sy, 1 as ::core::ffi::c_int);
-    grid_destroy((*s).saved_grid);
+    drop(
+        (*s).titles
+            .as_mut()
+            .expect("initialized screen storage")
+            .saved_grid
+            .take(),
+    );
     (*s).saved_grid = ::core::ptr::null_mut::<grid>();
     if (*s).cx > (*(*s).grid).sx.wrapping_sub(1 as u_int) {
         (*s).cx = (*(*s).grid).sx.wrapping_sub(1 as u_int);
@@ -1204,6 +1220,12 @@ mod text_owner_tests {
             assert_eq!(screen_check_selection(&raw mut current, 1, 0), 0);
             assert_eq!(screen_check_selection(&raw mut current, 2, 0), 1);
 
+            // Alternate-screen owners must move with the screen, too.
+            let original_grid = current.grid;
+            assert_eq!(screen_alternate_on(&raw mut current, &raw mut cell, 1), 1);
+            let saved_grid = current.saved_grid;
+            assert_eq!(screen_alternate_on(&raw mut current, &raw mut cell, 1), 0);
+            assert_eq!(current.saved_grid, saved_grid);
             let mut old = std::mem::replace(&mut current, std::mem::zeroed());
             screen_init(&raw mut current, 10, 2, 0);
             screen_set_title(&raw mut current, c"new".as_ptr(), 0);
@@ -1211,6 +1233,9 @@ mod text_owner_tests {
             screen_pop_title(&raw mut old);
             assert_eq!(CStr::from_ptr(old.title), c"original");
             assert_eq!(CStr::from_ptr(old.path), c"/tmp/path");
+            assert_eq!(old.grid, original_grid);
+            assert_eq!(old.saved_grid, saved_grid);
+            assert!(current.saved_grid.is_null());
             assert!(old.sel.is_some());
             assert!(current.sel.is_none());
             assert!(screen_has_tab(&raw const old, 16));
@@ -1218,7 +1243,24 @@ mod text_owner_tests {
             assert!(old.titles.is_none());
             assert!(old.sel.is_none());
             assert!(old.tabs.is_null());
+            assert!(old.grid.is_null());
+            assert!(old.saved_grid.is_null());
             assert_eq!(CStr::from_ptr(current.title), c"new");
+
+            cell.data.data[0] = b'X';
+            crate::src::grid::grid_set_cell(current.grid, 0, 0, &cell);
+            let original_grid = current.grid;
+            for width in [6, 19, 10] {
+                assert_eq!(screen_alternate_on(&raw mut current, &raw mut cell, 1), 1);
+                screen_resize(&raw mut current, width, 2, 1);
+                assert_eq!(screen_alternate_off(&raw mut current, &raw mut cell, 1), 1);
+                assert!(current.saved_grid.is_null());
+                assert!(current.titles.as_ref().unwrap().saved_grid.is_none());
+                assert_eq!(current.grid, original_grid);
+                crate::src::grid::grid_get_cell(current.grid, 0, 0, &raw mut cell);
+                assert_eq!(cell.data.data[0], b'X');
+                assert_eq!(screen_alternate_off(&raw mut current, &raw mut cell, 1), 0);
+            }
 
             screen_push_title(&raw mut current);
             screen_set_selection(

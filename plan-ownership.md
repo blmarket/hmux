@@ -117,12 +117,11 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate screen grid and saved-grid ownership across construction, alternate
-screen transitions, resize/reflow, borrowed temporary views, and destruction. Reuse the completed screen construction and
-move audit: screens and their containing status/popup/clock records are no
-longer Copy, and the three redraw snapshots explicitly transfer ownership.
-Keep write-list and hyperlink lifecycles in scope for subsequent screen resource
-batches rather than treating the completed storage as the whole screen migration.
+Next, migrate grid line and cell storage across growth, history collection,
+resize/reflow, duplication, and destruction. Grid records now have automatic
+cleanup and screen-owned Boxes; their nested raw arrays still have manual
+allocation and transfer boundaries. Reuse the completed screen construction and
+move audit. Screen write-list and hyperlink lifecycles also remain in scope.
 
 Screen title/path strings and the bounded title stack now live in a nullable
 boxed `ScreenStorage` owner. Raw title/path pointers and `ntitles` are compatibility
@@ -135,6 +134,12 @@ Tabs now live in a Vec inside ScreenStorage; input and format consumers use
 scoped access helpers. Selection is an Option<Box<screen_sel>> that moves with
 the screen and is cleared explicitly during reset and destruction. The raw tabs
 pointer remains a compatibility view. Existing layout fixtures are unchanged.
+
+ScreenStorage now also owns the active and optional saved grid as Boxes. Their
+raw screen fields are borrowed compatibility views. Grid is no longer Copy and
+cleans up its lines on drop; reflow retains an owned temporary and explicitly
+transfers its line allocation back. Only exported grid_create/grid_destroy
+adapters retain the raw owning contract, with no in-tree production callers.
 
 Copy-mode lazy callbacks now return owned results directly into the entry cache.
 Both lookup and enumeration evaluate them without holding an owner borrow across
@@ -169,9 +174,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Screen text, title-stack, tabs, and selection ownership is complete. Grid,
-   saved-grid, write-list, and hyperlink storage still have manual lifetime
-   boundaries. Migrate each complete producer/consumer lifecycle; do not add
+1. Screen text, title-stack, tabs, selection, and grid-record ownership is
+   complete. Grid line/cell arrays, screen write-list, and hyperlink storage
+   still have manual lifetime boundaries. Migrate each complete producer/consumer lifecycle; do not add
    a blanket screen Drop until borrowed resource views and partial construction
    paths have been audited. Title/path compatibility pointers are borrows.
 2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
@@ -1764,6 +1769,27 @@ name error.
   saved status, copy backing, and format-draw checks passed on candidate and
   pinned tmux. No sanitizer ran.
 - Next: grid and saved-grid ownership, including borrowed temporary screens.
+
+### Batch — screen grid owners and reflow transfers (2026-09-23)
+
+- Screen construction and alternate-screen entry now receive Box<grid> directly;
+  ScreenStorage retains active/saved owners through screen moves, resize, reset,
+  and destruction. Teardown drops saved then active grids and clears borrowed
+  compatibility pointers. Borrowed test screens retain independent owners.
+- Removed grid Copy/Clone and moved complete line/cell cleanup into Drop. Reflow
+  owns its temporary grid and explicitly relinquishes transferred lines before
+  dropping it. Exported create/destroy functions remain C ownership adapters;
+  production creation/cleanup no longer passes through them. Grid and screen
+  layout fixtures are unchanged. Nested line/cell arrays remain manual storage.
+- Extended lifecycle tests for moves with an active saved grid, repeated
+  alternate entry/exit, resize/reflow restoration, stable active-grid addresses,
+  and destruction. Expanded capture-pane comparisons cover alternate snapshots,
+  width changes with populated wrapped lines, and teardown while alternate mode
+  is active. All 400 serialized workspace tests, binary build, rustfmt, and diff
+  checks passed. Capture-pane, copy-backing, saved-status, copy-selection,
+  pane-border, popup, and format-draw checks passed on candidate and pinned tmux.
+  No sanitizer ran.
+- Next: grid line/cell collection ownership, then screen write lists/hyperlinks.
 
 ## Historical migration index
 
