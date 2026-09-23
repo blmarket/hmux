@@ -3,6 +3,51 @@
 // lifecycle.  It calls the parent facade for expansion, logging, and allocation.
 // Job addresses remain stable for process callbacks.
 use super::*;
+use std::ffi::{CStr, CString};
+
+// The public record stays at offset zero for job callbacks. Its string
+// pointers borrow from the owner until the cache entry is removed and the
+// process job has been freed.
+#[repr(C)]
+struct FormatJobOwner {
+    node: format_job,
+    cmd: CString,
+    expanded: Option<CString>,
+    out: Option<CString>,
+}
+
+const _: () = assert!(std::mem::offset_of!(FormatJobOwner, node) == 0);
+
+unsafe fn format_job_set_expanded(fj: *mut format_job, value: CString) {
+    let owner = &mut *fj.cast::<FormatJobOwner>();
+    owner.node.expanded = std::ptr::null();
+    owner.expanded = Some(value);
+    owner.node.expanded = owner.expanded.as_ref().unwrap().as_ptr();
+}
+
+unsafe fn format_job_set_out(fj: *mut format_job, value: CString) {
+    let owner = &mut *fj.cast::<FormatJobOwner>();
+    owner.node.out = std::ptr::null_mut();
+    owner.out = Some(value);
+    owner.node.out = owner.out.as_ref().unwrap().as_ptr().cast_mut();
+}
+
+// evbuffer_readline and xmalloc return libc allocations. Copy their visible
+// C-string bytes into the job owner before releasing the original allocation.
+unsafe fn format_job_set_out_from_malloc(fj: *mut format_job, value: *mut ::core::ffi::c_char) {
+    let owned = CStr::from_ptr(value).to_owned();
+    free(value.cast());
+    format_job_set_out(fj, owned);
+}
+
+unsafe fn format_job_message(fj: *mut format_job, suffix: &[u8]) -> CString {
+    let cmd = CStr::from_ptr((*fj).cmd).to_bytes();
+    let mut bytes = Vec::with_capacity(2 + cmd.len() + suffix.len());
+    bytes.extend_from_slice(b"<'");
+    bytes.extend_from_slice(cmd);
+    bytes.extend_from_slice(suffix);
+    CString::new(bytes).expect("C command and literal suffix contain no NUL")
+}
 
 static mut format_jobs: format_job_tree = format_job_tree {
     entries: std::collections::BTreeMap::new(),
@@ -25,8 +70,7 @@ pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
         return;
     }
     (*fj).updated = 1 as ::core::ffi::c_int;
-    free((*fj).out as *mut ::core::ffi::c_void);
-    (*fj).out = line;
+    format_job_set_out_from_malloc(fj, line);
     log_debug(
         b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"format_job_update\0" as *const u8 as *const ::core::ffi::c_char,
@@ -74,8 +118,7 @@ pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
         buf,
     );
     if *buf as ::core::ffi::c_int != '\0' as i32 || (*fj).updated == 0 {
-        free((*fj).out as *mut ::core::ffi::c_void);
-        (*fj).out = buf;
+        format_job_set_out_from_malloc(fj, buf);
     } else {
         free(buf as *mut ::core::ffi::c_void);
     }
@@ -133,8 +176,7 @@ pub(super) unsafe extern "C" fn format_job_get(
     next.flags &= !FORMAT_EXPAND_TIME;
     expanded = format_expand1(&raw mut next, cmd);
     if (*fj).expanded.is_null() || strcmp(expanded, (*fj).expanded) != 0 as ::core::ffi::c_int {
-        free((*fj).expanded as *mut ::core::ffi::c_void);
-        (*fj).expanded = xstrdup(expanded);
+        format_job_set_expanded(fj, CStr::from_ptr(expanded).to_owned());
         force = 1 as ::core::ffi::c_int;
     } else {
         force = (*ft).flags & FORMAT_FORCE;
@@ -160,21 +202,12 @@ pub(super) unsafe extern "C" fn format_job_get(
             -(1 as ::core::ffi::c_int),
         );
         if (*fj).job.is_null() {
-            free((*fj).out as *mut ::core::ffi::c_void);
-            xasprintf(
-                &raw mut (*fj).out,
-                b"<'%s' didn't start>\0" as *const u8 as *const ::core::ffi::c_char,
-                (*fj).cmd,
-            );
+            format_job_set_out(fj, format_job_message(fj, b"' didn't start>"));
         }
         (*fj).last = t;
         (*fj).updated = 0 as ::core::ffi::c_int;
     } else if !(*fj).job.is_null() && t - (*fj).last > 1 as time_t && (*fj).out.is_null() {
-        xasprintf(
-            &raw mut (*fj).out,
-            b"<'%s' not ready>\0" as *const u8 as *const ::core::ffi::c_char,
-            (*fj).cmd,
-        );
+        format_job_set_out(fj, format_job_message(fj, b"' not ready>"));
     }
     free(expanded as *mut ::core::ffi::c_void);
     if (*ft).flags & FORMAT_STATUS != 0 {
@@ -194,11 +227,25 @@ unsafe fn format_job_find_or_insert(
 ) -> *mut format_job {
     let key = (tag, std::ffi::CStr::from_ptr(cmd).to_bytes().to_vec());
     *(*jobs).entries.entry(key).or_insert_with(|| {
-        let fj = xcalloc(1, ::core::mem::size_of::<format_job>()) as *mut format_job;
-        (*fj).client = client;
-        (*fj).tag = tag;
-        (*fj).cmd = xstrdup(cmd);
-        fj
+        let command = CStr::from_ptr(cmd).to_owned();
+        let node = format_job {
+            client,
+            tag,
+            cmd: command.as_ptr(),
+            expanded: std::ptr::null(),
+            last: 0,
+            out: std::ptr::null_mut(),
+            updated: 0,
+            job: std::ptr::null_mut(),
+            status: 0,
+        };
+        Box::into_raw(Box::new(FormatJobOwner {
+            node,
+            cmd: command,
+            expanded: None,
+            out: None,
+        }))
+        .cast::<format_job>()
     })
 }
 
@@ -236,10 +283,7 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
         if !(*fj).job.is_null() {
             job_free((*fj).job);
         }
-        free((*fj).expanded as *mut ::core::ffi::c_void);
-        free((*fj).cmd as *mut ::core::ffi::c_void);
-        free((*fj).out as *mut ::core::ffi::c_void);
-        free(fj as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(fj.cast::<FormatJobOwner>()));
     }
 }
 #[no_mangle]
@@ -345,8 +389,8 @@ mod tests {
                 let cmd = CString::new(format!("job-{index}")).unwrap();
                 let fj = format_job_find_or_insert(&mut cache, null_mut(), 0, cmd.as_ptr());
                 (*fj).last = last;
-                (*fj).expanded = xstrdup(cmd.as_ptr());
-                (*fj).out = xstrdup(cmd.as_ptr());
+                format_job_set_expanded(fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
+                format_job_set_out(fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
                 if last > now || now - last < 3600 {
                     survivors.push((cmd, fj));
                 }
@@ -363,6 +407,31 @@ mod tests {
             format_job_tidy_at(&mut cache, 1, now);
             assert!(cache.entries.is_empty());
             format_job_tidy_at(&mut cache, 0, now);
+        }
+    }
+
+    #[test]
+    fn libc_output_crosses_into_job_owner_and_replacement_stays_address_stable() {
+        unsafe {
+            let mut cache = format_job_tree::default();
+            let cmd = CString::new(b"printf '\xff'".to_vec()).unwrap();
+            let fj = format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_ptr());
+            let output = xstrdup(b"first\0".as_ptr().cast());
+            format_job_set_out_from_malloc(fj, output);
+            assert_eq!(CStr::from_ptr((*fj).out).to_bytes(), b"first");
+            format_job_set_expanded(fj, CString::new(b"expanded\xff".to_vec()).unwrap());
+            format_job_set_out(fj, format_job_message(fj, b"' not ready>"));
+            assert_eq!(
+                CStr::from_ptr((*fj).out).to_bytes(),
+                b"<'printf '\xff'' not ready>"
+            );
+            assert_eq!(CStr::from_ptr((*fj).expanded).to_bytes(), b"expanded\xff");
+            assert_eq!(
+                fj,
+                format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_ptr())
+            );
+            format_job_tidy_at(&mut cache, 1, 0);
+            assert!(cache.entries.is_empty());
         }
     }
 }

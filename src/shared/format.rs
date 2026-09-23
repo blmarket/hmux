@@ -130,7 +130,7 @@ pub struct format_tree {
     pub tree: format_entry_tree,
 }
 
-// Jobs remain separately C-allocated because process callbacks retain their addresses.
+// Jobs live in stable Rust allocations because process callbacks retain their addresses.
 // Keys own the original command bytes, ordered exactly like tag followed by strcmp.
 #[derive(Default)]
 pub struct format_job_tree {

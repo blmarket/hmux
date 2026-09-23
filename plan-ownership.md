@@ -1466,6 +1466,20 @@ legacy callers safe.
   diff checks, and the capture-pane baseline CLI check passed. No sanitizer
   was run.
 
+### Increment 230 — format job record and retained string owner (2026-09-23)
+
+- The format-job cache now stores stable `FormatJobOwner` allocations with
+  the public `format_job` record at offset zero. Its command, expanded
+  command, and output pointers borrow `CString` fields. All update,
+  completion, timeout, and process-start failure paths replace those owned
+  values; cache tidy removes the entry, frees any active process job, then
+  drops the containing owner. The callback address and C-layout record remain
+  stable.
+- Four focused format-job tests, library/binary build, changed-file rustfmt,
+  and diff checks passed. The live attached-client job-output replacement CLI
+  check and existing job-name CLI check passed against both the migrated and
+  pinned baseline binaries. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
