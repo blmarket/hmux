@@ -1161,6 +1161,21 @@ legacy callers safe.
   A private-server command-log CLI check matched the pinned baseline for
   empty, non-UTF-8, and nested command arguments. No sanitizer was run.
 
+### Increment 209 — terminal override scratch value owner (2026-09-23)
+
+- `tty_term_apply` now keeps each loop-local decoded override as
+  `Option<CString>`; removals remain absent. `tty_term_override_value`
+  preserves invalid-escape fallback and the old first-NUL C-string view
+  when `strunvis` decodes an escaped NUL. Removed the initial/fallback
+  `xstrdup` and the loop-local frees. Stored terminal capabilities still use
+  their existing C-layout ownership and duplicate the temporary value.
+- Library/binary build, `tty_parse_features`, `model_terminal`, and
+  `model_tty` tests, changed-file rustfmt, Python syntax check, and
+  `git diff --check` passed. An attached-terminal PTY check matched the
+  pinned baseline byte for byte across seven capability rows, including
+  non-UTF-8, invalid escape, escaped NUL, empty, numeric, flag, and removal
+  cases. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1171,10 +1186,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `tty_term_apply` decodes each terminal override into a temporary C string
-   then duplicates it into a capability or discards it. Audit an optional
-   `CString` owner for that loop-local value, including invalid `strunvis`
-   fallback and escaped NUL, while retaining the C-layout capability store.
+1. `window_copy_vadd` formats a temporary string with `vasprintf`, passes
+   its first-NUL view to `input_parse_screen`, then frees it. Migrate that
+   temporary to the byte-preserving `xvasprintf_cstring` owner. An attached
+   client can reach `%.*s` with a middle NUL via a binary `show-buffer`
+   result, so test that exact first-NUL behavior against the baseline.
    `args_print` still has its own C-owned return and needs a separate
    producer lifetime audit.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`

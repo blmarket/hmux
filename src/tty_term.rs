@@ -1127,6 +1127,16 @@ unsafe extern "C" fn tty_term_override_next(
     value[n as usize] = '\0' as i32 as ::core::ffi::c_char;
     return &raw mut value as *mut ::core::ffi::c_char;
 }
+unsafe fn tty_term_override_value(source: &CStr) -> CString {
+    let mut decoded = source.to_bytes_with_nul().to_vec();
+    if strunvis(decoded.as_mut_ptr().cast(), source.as_ptr()) == -1 {
+        return source.to_owned();
+    }
+    // strunvis may decode an escape to NUL. The old C string consumers saw
+    // only the prefix through that byte, including when storing the value.
+    decoded.truncate(strlen(decoded.as_ptr().cast()) + 1);
+    CString::from_vec_with_nul(decoded).expect("strunvis terminates its output")
+}
 #[no_mangle]
 pub unsafe extern "C" fn tty_term_apply(
     mut term: *mut tty_term,
@@ -1137,7 +1147,6 @@ pub unsafe extern "C" fn tty_term_apply(
     let mut code: *mut tty_code = ::core::ptr::null_mut::<tty_code>();
     let mut offset: size_t = 0 as size_t;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = (*term).name;
@@ -1152,27 +1161,26 @@ pub unsafe extern "C" fn tty_term_apply(
         if *s as ::core::ffi::c_int == '\0' as i32 {
             continue;
         }
-        value = ::core::ptr::null_mut::<::core::ffi::c_char>();
         remove = 0 as ::core::ffi::c_int;
         cp = strchr(s, '=' as i32);
-        if !cp.is_null() {
+        let value = if !cp.is_null() {
             let fresh0 = cp;
             cp = cp.offset(1);
             *fresh0 = '\0' as i32 as ::core::ffi::c_char;
-            value = xstrdup(cp);
-            if strunvis(value, cp) == -(1 as ::core::ffi::c_int) {
-                free(value as *mut ::core::ffi::c_void);
-                value = xstrdup(cp);
-            }
+            Some(tty_term_override_value(CStr::from_ptr(cp)))
         } else if *s.offset(strlen(s).wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
             == '@' as i32
         {
             *s.offset(strlen(s).wrapping_sub(1 as size_t) as isize) =
                 '\0' as i32 as ::core::ffi::c_char;
             remove = 1 as ::core::ffi::c_int;
+            None
         } else {
-            value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-        }
+            Some(CString::default())
+        };
+        // The pointer only borrows the loop-local owner during logging and
+        // capability updates. Removed capabilities never inspect it.
+        let value = value.as_ref().map_or(::core::ptr::null(), |v| v.as_ptr());
         if quiet == 0 {
             if remove != 0 {
                 log_debug(
@@ -1236,7 +1244,6 @@ pub unsafe extern "C" fn tty_term_apply(
             }
             i = i.wrapping_add(1);
         }
-        free(value as *mut ::core::ffi::c_void);
     }
 }
 #[no_mangle]
