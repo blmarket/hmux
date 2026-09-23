@@ -272,6 +272,24 @@ legacy callers safe.
   conversion test, mutable/completion/input-format/paste CLI checks, and
   `git diff --check` passed. No sanitizer was run.
 
+### Increment 144 — copy-mode jump target cells (2026-09-22)
+
+- `window_copy_mode_data.jumpchar` now owns its decoded, size-zero-terminated
+  cells in a `Vec<utf8_data>`. All four jump commands replace that Vec; the
+  four cursor-search calls borrow its cells for their synchronous reads.
+  Removed the four replacement frees and the teardown free.
+- Audited the containing record: its sole allocation in
+  `window_copy_common_init` now uses a Box. The translated C fields retain
+  their zeroed initial state, while the Vec is initialized before the record
+  is used. Removed `Copy`/`Clone`; `window_copy_free` drops the Box after the
+  existing event, input, and screen teardown. `window_mode_entry.data`
+  remains a raw compatibility pointer to the stable Box allocation.
+- Isolated library/binary build, copy-regex test, changed-file rustfmt, and
+  `git diff --check` passed. New attached-client
+  `scripts/copy_jump_cli_checks.py` covers four jump commands, repeat and
+  reverse, Unicode targets, replacement, and mode teardown/reentry. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -282,9 +300,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_copy_mode_data.jumpchar` still holds a C-owned decoded cell
-   array across copy-mode commands and frees it on replacement and teardown.
-   It needs a containing-record lifecycle audit before adding a Vec owner.
+1. `cmdq_add_message` still allocates a local `[username]` suffix with
+   `xasprintf` or `xstrdup` and frees it after `server_add_message` copies
+   the formatted text. A byte-preserving `CString` can own that local suffix;
+   the separate `cmd_print` result remains C-owned by its producer.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -309,9 +328,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–141. The remaining
+Current validation is recorded in increments 15–144. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–141 has its own local commit; none was pushed.
+Each of increments 15–144 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -425,3 +444,11 @@ finds 26 `prompt_done_with_history` calls and only the `PROMPT_SINGLE`
 production `utf8_tocstr` call in `prompt.rs`. Changed-file rustfmt reports
 two import-layout differences already present in the exact pre-increment
 `5188b96` file. No combined sanitizer was run.
+After increments 142–144 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, prompt-mutable, prompt-input-format, prompt-completion, prompt-paste,
+and copy-jump CLI checks, and `git diff --check` passed on main. The workspace
+suite includes `osc8_hyperlink_id` and `copy_regex_cells`; there is no
+separate OSC 8 CLI script. Changed-file rustfmt passed for `grid/core.rs`
+and `window_copy.rs`. `prompt.rs` retains the two pre-existing import-layout
+differences documented above. No combined sanitizer was run.

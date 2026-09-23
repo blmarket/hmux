@@ -127,7 +127,7 @@ use crate::src::style::style_apply;
 use crate::src::tmux::{get_timer, global_options, global_w_options};
 use crate::src::tty::tty_window_offset;
 use crate::src::tty_acs::tty_acs_get;
-use crate::src::utf8::{utf8_copy, utf8_fromcstr, utf8_set, utf8_to_data};
+use crate::src::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
 use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_set_active_pane,
@@ -138,7 +138,6 @@ use std::borrow::Cow;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_copy_mode_data {
     pub screen: screen,
@@ -192,7 +191,7 @@ pub struct window_copy_mode_data {
     pub searchgen: u_char,
     pub timeout: ::core::ffi::c_int,
     pub jumptype: ::core::ffi::c_int,
-    pub jumpchar: *mut utf8_data,
+    pub jumpchar: Vec<utf8_data>,
     pub dragtimer: event,
     pub refresh_timer: event,
     pub refresh_active: ::core::ffi::c_int,
@@ -573,10 +572,13 @@ unsafe extern "C" fn window_copy_common_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
     let mut base: *mut screen = &raw mut (*wp).base;
-    data = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_copy_mode_data>() as size_t,
-    ) as *mut window_copy_mode_data;
+    // The C-translated fields start zeroed, as they did with xcalloc. Write
+    // the Rust-owned field before treating the allocation as initialized.
+    let mut storage = Box::<window_copy_mode_data>::new_uninit();
+    let uninit_data = storage.as_mut_ptr();
+    uninit_data.write_bytes(0, 1);
+    (&raw mut (*uninit_data).jumpchar).write(Vec::new());
+    data = Box::into_raw(storage.assume_init());
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).cursordrag = CURSORDRAG_NONE;
     (*data).lineflag = LINE_SEL_NONE;
@@ -595,7 +597,6 @@ unsafe extern "C" fn window_copy_common_init(
     (*data).searchx = (*data).searchy;
     (*data).searchall = 1 as ::core::ffi::c_int;
     (*data).jumptype = WINDOW_COPY_OFF as ::core::ffi::c_int;
-    (*data).jumpchar = ::core::ptr::null_mut::<utf8_data>();
     (*data).line_numbers = 1 as ::core::ffi::c_int;
     screen_init(
         &raw mut (*data).screen,
@@ -743,14 +744,13 @@ unsafe extern "C" fn window_copy_free(mut wme: *mut window_mode_entry) {
     event_del(&raw mut (*data).refresh_timer);
     free((*data).searchmark as *mut ::core::ffi::c_void);
     free((*data).searchstr as *mut ::core::ffi::c_void);
-    free((*data).jumpchar as *mut ::core::ffi::c_void);
     if !(*data).ictx.is_null() {
         input_free((*data).ictx);
     }
     screen_free((*data).backing);
     free((*data).backing as *mut ::core::ffi::c_void);
     screen_free(&raw mut (*data).screen);
-    free(data as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(data));
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_copy_add(
@@ -3202,8 +3202,7 @@ unsafe extern "C" fn window_copy_cmd_jump_backward(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPBACKWARD as ::core::ffi::c_int;
-        free((*data).jumpchar as *mut ::core::ffi::c_void);
-        (*data).jumpchar = utf8_fromcstr(arg0);
+        (*data).jumpchar = utf8_fromcstr_vec(arg0);
         while np != 0 as u_int {
             window_copy_cursor_jump_back(wme);
             np = np.wrapping_sub(1);
@@ -3220,8 +3219,7 @@ unsafe extern "C" fn window_copy_cmd_jump_forward(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPFORWARD as ::core::ffi::c_int;
-        free((*data).jumpchar as *mut ::core::ffi::c_void);
-        (*data).jumpchar = utf8_fromcstr(arg0);
+        (*data).jumpchar = utf8_fromcstr_vec(arg0);
         while np != 0 as u_int {
             window_copy_cursor_jump(wme);
             np = np.wrapping_sub(1);
@@ -3238,8 +3236,7 @@ unsafe extern "C" fn window_copy_cmd_jump_to_backward(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPTOBACKWARD as ::core::ffi::c_int;
-        free((*data).jumpchar as *mut ::core::ffi::c_void);
-        (*data).jumpchar = utf8_fromcstr(arg0);
+        (*data).jumpchar = utf8_fromcstr_vec(arg0);
         while np != 0 as u_int {
             window_copy_cursor_jump_to_back(wme);
             np = np.wrapping_sub(1);
@@ -3256,8 +3253,7 @@ unsafe extern "C" fn window_copy_cmd_jump_to_forward(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPTOFORWARD as ::core::ffi::c_int;
-        free((*data).jumpchar as *mut ::core::ffi::c_void);
-        (*data).jumpchar = utf8_fromcstr(arg0);
+        (*data).jumpchar = utf8_fromcstr_vec(arg0);
         while np != 0 as u_int {
             window_copy_cursor_jump_to(wme);
             np = np.wrapping_sub(1);
@@ -9336,7 +9332,7 @@ unsafe extern "C" fn window_copy_cursor_jump(mut wme: *mut window_mode_entry) {
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
     grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    if grid_reader_cursor_jump(&raw mut gr, (*data).jumpchar) != 0 {
+    if grid_reader_cursor_jump(&raw mut gr, (*data).jumpchar.as_ptr()) != 0 {
         grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
         window_copy_acquire_cursor_down(
             wme,
@@ -9368,7 +9364,7 @@ unsafe extern "C" fn window_copy_cursor_jump_back(mut wme: *mut window_mode_entr
     oldy = (*data).cy;
     grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
     grid_reader_cursor_left(&raw mut gr, 0 as ::core::ffi::c_int);
-    if grid_reader_cursor_jump_back(&raw mut gr, (*data).jumpchar) != 0 {
+    if grid_reader_cursor_jump_back(&raw mut gr, (*data).jumpchar.as_ptr()) != 0 {
         grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
         window_copy_acquire_cursor_up(wme, hsize, (*data).oy, oldy, px, py);
     }
@@ -9390,7 +9386,7 @@ unsafe extern "C" fn window_copy_cursor_jump_to(mut wme: *mut window_mode_entry)
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
     grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
-    if grid_reader_cursor_jump(&raw mut gr, (*data).jumpchar) != 0 {
+    if grid_reader_cursor_jump(&raw mut gr, (*data).jumpchar.as_ptr()) != 0 {
         grid_reader_cursor_left(&raw mut gr, 1 as ::core::ffi::c_int);
         grid_reader_get_cursor(&raw mut gr, &raw mut px, &raw mut py);
         window_copy_acquire_cursor_down(
@@ -9430,7 +9426,7 @@ unsafe extern "C" fn window_copy_cursor_jump_to_back(mut wme: *mut window_mode_e
     grid_reader_start(&raw mut gr, (*back_s).grid, px, py);
     grid_reader_cursor_left(&raw mut gr, 0 as ::core::ffi::c_int);
     grid_reader_cursor_left(&raw mut gr, 0 as ::core::ffi::c_int);
-    if grid_reader_cursor_jump_back(&raw mut gr, (*data).jumpchar) != 0 {
+    if grid_reader_cursor_jump_back(&raw mut gr, (*data).jumpchar.as_ptr()) != 0 {
         grid_reader_cursor_right(
             &raw mut gr,
             1 as ::core::ffi::c_int,
