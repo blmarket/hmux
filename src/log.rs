@@ -1,7 +1,7 @@
 use crate::src::compat::vis::stravis;
 use crate::src::ffi::libc::{
     __errno_location, exit, fclose, fflush, fopen, fprintf, free, getpid, gettimeofday, setvbuf,
-    snprintf, strerror, vasprintf,
+    snprintf, strerror,
 };
 pub use crate::src::reactor::event_log_cb;
 use crate::src::reactor::event_set_log_callback;
@@ -12,6 +12,7 @@ pub use crate::src::shared::stdio::{
 };
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::src::xmalloc::try_vasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -87,7 +88,6 @@ unsafe extern "C" fn log_vwrite(
     mut ap: ::core::ffi::VaList,
     mut prefix: *const ::core::ffi::c_char,
 ) {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tv: timeval = timeval {
         tv_sec: 0,
@@ -96,16 +96,18 @@ unsafe extern "C" fn log_vwrite(
     if log_file.is_null() {
         return;
     }
-    if vasprintf(&raw mut s, msg, ap) == -(1 as ::core::ffi::c_int) {
+    let Some(s) = try_vasprintf_cstring(msg, ap) else {
         return;
-    }
-    if stravis(&raw mut out, s, VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL)
-        == -(1 as ::core::ffi::c_int)
+    };
+    if stravis(
+        &raw mut out,
+        s.as_ptr(),
+        VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
+    ) == -(1 as ::core::ffi::c_int)
     {
-        free(s as *mut ::core::ffi::c_void);
         return;
     }
-    free(s as *mut ::core::ffi::c_void);
+    drop(s);
     gettimeofday(&raw mut tv, NULL);
     if fprintf(
         log_file,

@@ -2302,6 +2302,24 @@ legacy callers safe.
   baseline for ASCII and non-UTF-8 values (`OWNER_RAW=owner-\\377`). No
   sanitizer was run.
 
+### Increment 289 — fallible server log message owner (2026-09-23)
+
+- `log_vwrite` now holds its formatted message as a local `CString` through
+  `stravis` and drops it before writing the escaped result. The new
+  `try_vasprintf_cstring` adapter copies the libc-formatted first-NUL view,
+  frees the matching C allocation, and returns `None` on formatter failure;
+  this preserves `log_vwrite`'s silent return rather than making an out-of-
+  memory log attempt fatal. The caller's raw message pointer and two frees
+  are gone. The encoded output retains its existing C allocation.
+- A supported interior-NUL case exists here: a pane emits byte zero,
+  `input_c0_dispatch` logs it with `%c`, and `vasprintf` places a closing
+  quote after the zero byte. `stravis` sees only the prefix ending before
+  that zero. The new private `-vv` server E2E sends `printf '\000'` from a
+  pane and confirms the exact visible log payload `input_c0_dispatch: '` on
+  both candidate and pinned baseline. Library/binary build, full workspace
+  tests, changed-file rustfmt, Python syntax, and diff checks passed. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2312,13 +2330,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `log_vwrite` in `src/log.rs` still formats a local C-owned message with
-   `vasprintf`, passes its first-NUL view synchronously to `stravis`, and frees
-   it on success and encoding failure. A local `CString` can remove that pair
-   after auditing `%c` inputs and preserving its failure behavior. The
-   `window_copy_mode_data.backing` screen is a larger owner whose borrowed
-   pointer is invalidated on refresh. The redraw scene's line array has
-   self-referential intrusive list tails and needs its own alias audit.
+1. The `-L` socket label in `src/tmux.rs::main_0` is copied from argv with
+   `xstrdup`, replaced on repeated `-L`, used only by `make_label`, and freed.
+   A borrowed `&CStr` can follow argv's stable lifetime through that call,
+   removing the copy and free. `window_copy_mode_data.backing` is a larger
+   screen owner whose borrowed pointer is invalidated on refresh. The redraw
+   scene's line array has self-referential intrusive list tails and needs its
+   own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
@@ -2337,7 +2355,9 @@ non-string value.
    but C formatting stops at the first NUL: the formatted output is `A`, not
    a string with an interior NUL. This first-NUL behavior is covered by
    `scripts/window_copy_vadd_owner_cli_checks.py`. No supported path has been
-   found that puts an interior NUL in any `xvasprintf` output. The related
+   found that puts an interior NUL in any `xvasprintf` output. This audit did
+   not include `log_vwrite`'s direct `vasprintf`, which has the supported
+   interior-NUL case recorded in increment 289. The related
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.

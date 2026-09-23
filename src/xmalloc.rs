@@ -167,6 +167,24 @@ pub(crate) unsafe fn xvasprintf_cstring(
     value
 }
 
+/// Fallible variant for callers whose existing `vasprintf` failure path
+/// returns without aborting. The returned C-string view ends at the first NUL.
+pub(crate) unsafe fn try_vasprintf_cstring(
+    fmt: *const ::core::ffi::c_char,
+    ap: ::core::ffi::VaList,
+) -> Option<CString> {
+    let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    if vasprintf(&raw mut raw, fmt, ap) == -1 || raw.is_null() {
+        if !raw.is_null() {
+            free(raw.cast());
+        }
+        return None;
+    }
+    let value = CStr::from_ptr(raw).to_owned();
+    free(raw.cast());
+    Some(value)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn xsnprintf(
     mut str: *mut ::core::ffi::c_char,
