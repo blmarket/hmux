@@ -7,6 +7,8 @@ use super::grid::grid_cell;
 use super::prompt::{prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::style::{style, style_line_entry};
+use std::collections::VecDeque;
+use std::ffi::CString;
 
 #[repr(C)]
 pub struct status_line {
@@ -28,25 +30,50 @@ pub type status_prompt_input_cb = Option<
     ) -> prompt_result,
 >;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
+/// An owned server message. The message text and its display metadata share
+/// the lifetime of the containing [`message_list`].
 pub struct message_entry {
-    pub msg: *mut ::core::ffi::c_char,
+    pub msg: CString,
     pub msg_num: u_int,
     pub msg_time: timeval,
-    pub entry: message_entry_entry,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct message_entry_entry {
-    pub tqe_next: *mut message_entry,
-    pub tqe_prev: *mut *mut message_entry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
+/// The message log owns its records and stores them in insertion order.
 pub struct message_list {
-    pub tqh_first: *mut message_entry,
-    pub tqh_last: *mut *mut message_entry,
+    entries: VecDeque<message_entry>,
+}
+
+impl message_list {
+    pub const fn new() -> Self {
+        Self {
+            entries: VecDeque::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    pub fn push_back(&mut self, msg: CString, msg_num: u_int, msg_time: timeval) {
+        self.entries.push_back(message_entry {
+            msg,
+            msg_num,
+            msg_time,
+        });
+    }
+
+    /// Drop messages outside the configured rolling window.
+    pub fn trim(&mut self, message_next: u_int, limit: u_int) {
+        while self
+            .entries
+            .front()
+            .is_some_and(|msg| msg.msg_num.wrapping_add(limit) < message_next)
+        {
+            self.entries.pop_front();
+        }
+    }
+
+    pub fn iter_rev(&self) -> impl DoubleEndedIterator<Item = &message_entry> {
+        self.entries.iter().rev()
+    }
 }

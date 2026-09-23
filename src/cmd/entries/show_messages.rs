@@ -57,7 +57,7 @@ pub use crate::src::shared::screen_write::screen_write_cline;
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
-pub use crate::src::shared::status::{message_entry, message_entry_entry, message_list};
+pub use crate::src::shared::status::{message_entry, message_list};
 use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tty::*;
@@ -156,7 +156,6 @@ unsafe extern "C" fn cmd_show_messages_exec(
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
-    let mut msg: *mut message_entry = ::core::ptr::null_mut::<message_entry>();
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
@@ -175,29 +174,28 @@ unsafe extern "C" fn cmd_show_messages_exec(
         return CMD_RETURN_NORMAL;
     }
     ft = format_create_from_target(item);
-    msg = *(*(message_log.tqh_last as *mut message_list)).tqh_last;
-    while !msg.is_null() {
+    for msg in message_log.iter_rev() {
         format_add(
             ft,
             b"message_text\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*msg).msg,
+            msg.msg.as_ptr(),
         );
         format_add(
             ft,
             b"message_number\0" as *const u8 as *const ::core::ffi::c_char,
             b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*msg).msg_num,
+            msg.msg_num,
         );
+        let mut msg_time = msg.msg_time;
         format_add_tv(
             ft,
             b"message_time\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut (*msg).msg_time,
+            &raw mut msg_time,
         );
         s = format_expand(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
         cmdq_print(item, b"%s\0" as *const u8 as *const ::core::ffi::c_char, s);
         free(s as *mut ::core::ffi::c_void);
-        msg = *(*((*msg).entry.tqe_prev as *mut message_list)).tqh_last;
     }
     format_free(ft);
     return CMD_RETURN_NORMAL;

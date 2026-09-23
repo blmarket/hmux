@@ -30,7 +30,7 @@ pub use crate::src::session::sessions;
 use crate::src::session::{
     session_destroy, sessions_after, sessions_key, sessions_minmax, sessions_next,
 };
-pub use crate::src::shared::status::{message_entry, message_entry_entry, message_list};
+pub use crate::src::shared::status::{message_entry, message_list};
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::tmux::{get_timer, global_options, setblocking, socket_path, start_time};
 use crate::src::tty::tty_create_log;
@@ -42,27 +42,10 @@ use crate::src::window::{
 };
 use crate::src::xmalloc::{xasprintf, xvasprintf_cstring};
 
-use std::collections::VecDeque;
 use std::ffi::CString;
 
-// `message_log` and show-messages use the leading ABI-compatible node. Its
-// `msg` pointer borrows `text` until this boxed record is removed or cleared.
-#[repr(C)]
-struct OwnedMessageEntry {
-    node: message_entry,
-    text: CString,
-}
-
-const _: () = assert!(::core::mem::offset_of!(OwnedMessageEntry, node) == 0);
-
-// The boxes keep the public intrusive-list nodes at stable addresses. The
-// oldest owner always corresponds to `message_log.tqh_first`.
-static mut MESSAGE_OWNERS: VecDeque<Box<OwnedMessageEntry>> = VecDeque::new();
-
 unsafe fn server_clear_messages() {
-    message_log.tqh_first = ::core::ptr::null_mut();
-    message_log.tqh_last = &raw mut message_log.tqh_first;
-    (*(&raw mut MESSAGE_OWNERS)).clear();
+    message_log.clear();
 }
 
 use crate::src::shared::abi::*;
@@ -286,10 +269,8 @@ pub static mut marked_pane: cmd_find_state = cmd_find_state {
 };
 static mut message_next: u_int = 0;
 #[no_mangle]
-pub static mut message_log: message_list = message_list {
-    tqh_first: ::core::ptr::null::<message_entry>() as *mut message_entry,
-    tqh_last: ::core::ptr::null::<*mut message_entry>() as *mut *mut message_entry,
-};
+// Filled through `message_list` methods; the head owns the collection.
+pub static mut message_log: message_list = message_list::new();
 #[no_mangle]
 pub static mut current_time: time_t = 0;
 #[no_mangle]
@@ -948,8 +929,6 @@ unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ff
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_add_message(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
-    let mut msg: *mut message_entry = ::core::ptr::null_mut::<message_entry>();
-    let mut msg1: *mut message_entry = ::core::ptr::null_mut::<message_entry>();
     let mut ap: ::core::ffi::VaList;
     let mut limit: u_int = 0;
     ap = args.clone();
@@ -958,59 +937,17 @@ pub unsafe extern "C" fn server_add_message(mut fmt: *const ::core::ffi::c_char,
         b"message: %s\0" as *const u8 as *const ::core::ffi::c_char,
         s.as_ptr(),
     );
-    let mut owner = Box::new(OwnedMessageEntry {
-        node: message_entry {
-            msg: ::core::ptr::null_mut(),
-            msg_num: 0,
-            msg_time: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-            entry: message_entry_entry {
-                tqe_next: ::core::ptr::null_mut(),
-                tqe_prev: ::core::ptr::null_mut(),
-            },
-        },
-        text: s,
-    });
-    owner.node.msg = owner.text.as_ptr().cast_mut();
-    gettimeofday(&raw mut owner.node.msg_time, NULL);
     let fresh0 = message_next;
     message_next = message_next.wrapping_add(1);
-    owner.node.msg_num = fresh0;
-    msg = &raw mut owner.node;
-    (*(&raw mut MESSAGE_OWNERS)).push_back(owner);
-    (*msg).entry.tqe_next = ::core::ptr::null_mut::<message_entry>();
-    (*msg).entry.tqe_prev = message_log.tqh_last;
-    *message_log.tqh_last = msg;
-    message_log.tqh_last = &raw mut (*msg).entry.tqe_next;
+    let mut msg_time = timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
+    gettimeofday(&raw mut msg_time, NULL);
+    message_log.push_back(s, fresh0, msg_time);
     limit = options_get_number(
         global_options,
         b"message-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    msg = message_log.tqh_first;
-    while !msg.is_null() && {
-        msg1 = (*msg).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if (*msg).msg_num.wrapping_add(limit) >= message_next {
-            break;
-        }
-        if !(*msg).entry.tqe_next.is_null() {
-            (*(*msg).entry.tqe_next).entry.tqe_prev = (*msg).entry.tqe_prev;
-        } else {
-            message_log.tqh_last = (*msg).entry.tqe_prev;
-        }
-        *(*msg).entry.tqe_prev = (*msg).entry.tqe_next;
-        let owner = (*(&raw mut MESSAGE_OWNERS))
-            .pop_front()
-            .expect("message owner missing");
-        assert_eq!(
-            &raw const owner.node,
-            msg.cast_const(),
-            "message owner out of order"
-        );
-        drop(owner);
-        msg = msg1;
-    }
+    message_log.trim(message_next, limit);
 }

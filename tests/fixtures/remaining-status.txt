@@ -1,6 +1,0 @@
-src/cmd_show_messages.rs::message_entry 48 8 [0, 8, 16, 32]
-src/server.rs::message_entry 48 8 [0, 8, 16, 32]
-src/cmd_show_messages.rs::C2RustUnnamed_35 16 8 [0, 8]
-src/server.rs::C2RustUnnamed_36 16 8 [0, 8]
-src/cmd_show_messages.rs::message_list 16 8 [0, 8]
-src/server.rs::message_list 16 8 [0, 8]
