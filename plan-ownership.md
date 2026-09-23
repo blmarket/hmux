@@ -2058,6 +2058,19 @@ legacy callers safe.
   comparison covered normal edit, mode cancellation while the editor was
   running, and temporary-file removal after both paths. No sanitizer was run.
 
+### Increment 272 — popup overlay record and strings (2026-09-23)
+
+- `PopupOwner` now holds the stable C-layout `popup_data` prefix and owns its
+  optional title, style, and border-style strings as `CString`. The overlay
+  and job callbacks retain borrowed pointers. `popup_modify` copies a new
+  string before replacing the old one; the free callback releases the job,
+  input, ranges, screen, and palette before dropping the owner.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and `scripts/popup_owner_cli_checks.py`
+  passed on main. The attached-client check also passed with the pinned
+  baseline and covered rendering, modification, explicit close, job exit,
+  and client detachment. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
