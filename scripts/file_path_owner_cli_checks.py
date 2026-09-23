@@ -42,11 +42,13 @@ def trace(binary, directory):
         run(b"new-session", b"-d", b"-s", b"file-path-owner", b"sleep", b"60")
         run(b"load-buffer", b"-b", b"owned", source)
         assert run(b"show-buffer", b"-b", b"owned").stdout == payload
+        run(b"set-option", b"-g", b"@save-path", b"expanded-\xf8")
 
         paths = [
             (b"relative-\xfc", work + b"/relative-\xfc"),
             (b"~/home-relative-\xfb", home + b"/home-relative-\xfb"),
             (directory + b"/absolute-\xfa", directory + b"/absolute-\xfa"),
+            (b"#{@save-path}", work + b"/expanded-\xf8"),
         ]
         for requested, resolved in paths:
             run(b"save-buffer", b"-b", b"owned", requested)

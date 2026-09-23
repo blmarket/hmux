@@ -13,7 +13,7 @@ use crate::src::ffi::libc::{
     strlen, strncmp,
 };
 use crate::src::format::{
-    format_add, format_create_from_state, format_expand, format_free, format_pretty_time,
+    format_add, format_create_from_state, format_expand_cstring, format_free, format_pretty_time,
     format_true,
 };
 use crate::src::grid::grid_default_cell;
@@ -1039,7 +1039,6 @@ unsafe extern "C" fn window_customize_build_array(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut ai: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut count: u_int = 0 as u_int;
     ai = options_array_first(o);
@@ -1075,17 +1074,16 @@ unsafe extern "C" fn window_customize_build_array(
             (*item).oo = oo;
             window_customize_set_name(item, options_name(o));
             window_customize_set_item_array_key(item, array_key);
-            text = format_expand(ft, (*data).format.as_ptr());
+            let text = format_expand_cstring(ft, (*data).format.as_ptr());
             mode_tree_add_identity(
                 (*data).data,
                 top,
                 item as *mut ::core::ffi::c_void,
                 window_customize_option_identity(group, options_name(o), array_key),
                 name.as_ptr(),
-                text,
+                text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
             );
-            free(text as *mut ::core::ffi::c_void);
             drop(value);
             count = count.wrapping_add(1);
             ai = options_array_next(ai);
@@ -1109,8 +1107,6 @@ unsafe extern "C" fn window_customize_build_option(
     let mut name: *const ::core::ffi::c_char = options_name(o);
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut global: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut array: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut is_hook: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1251,12 +1247,10 @@ unsafe extern "C" fn window_customize_build_option(
         );
     }
     if !filter.is_null() {
-        expanded = format_expand(ft, filter);
-        if format_true(expanded) == 0 {
-            free(expanded as *mut ::core::ffi::c_void);
+        let expanded = format_expand_cstring(ft, filter);
+        if format_true(expanded.as_ptr()) == 0 {
             return 0 as u_int;
         }
-        free(expanded as *mut ::core::ffi::c_void);
     }
     item = window_customize_add_item(data);
     (*item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
@@ -1264,21 +1258,17 @@ unsafe extern "C" fn window_customize_build_option(
     (*item).oo = oo;
     (*item).scope = scope;
     window_customize_set_name(item, name);
-    if array != 0 {
-        text = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    } else {
-        text = format_expand(ft, (*data).format.as_ptr());
-    }
+    let text = (array == 0).then(|| format_expand_cstring(ft, (*data).format.as_ptr()));
     top = mode_tree_add_identity(
         (*data).data,
         top,
         item as *mut ::core::ffi::c_void,
         window_customize_option_identity(group, name, ::core::ptr::null()),
         name,
-        text,
+        text.as_ref()
+            .map_or(::core::ptr::null(), |text| text.as_ptr()),
         0 as ::core::ffi::c_int,
     ) as *mut mode_tree_item;
-    free(text as *mut ::core::ffi::c_void);
     if array == 0 {
         return 1 as u_int;
     }
@@ -1412,7 +1402,6 @@ unsafe extern "C" fn window_customize_build_keys(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut count: u_int = 0 as u_int;
     let mut title_bytes = b"Key Table - ".to_vec();
     title_bytes.extend_from_slice(CStr::from_ptr((*kt).name).to_bytes());
@@ -1469,13 +1458,10 @@ unsafe extern "C" fn window_customize_build_keys(
                 );
             }
             if !filter.is_null() {
-                expanded = format_expand(ft, filter);
-                if format_true(expanded) == 0 {
-                    free(expanded as *mut ::core::ffi::c_void);
+                let expanded = format_expand_cstring(ft, filter);
+                if format_true(expanded.as_ptr()) == 0 {
                     bd = key_bindings_next(kt, bd);
                     continue;
-                } else {
-                    free(expanded as *mut ::core::ffi::c_void);
                 }
             }
             item = window_customize_add_item(data);
@@ -1485,17 +1471,16 @@ unsafe extern "C" fn window_customize_build_keys(
             (*item).key = (*bd).key;
             let key_string = key_string_format((*item).key, false);
             window_customize_set_name(item, key_string.as_ptr());
-            expanded = format_expand(ft, (*data).format.as_ptr());
+            let expanded = format_expand_cstring(ft, (*data).format.as_ptr());
             child = mode_tree_add_identity(
                 (*data).data,
                 top,
                 item as *mut ::core::ffi::c_void,
                 window_customize_key_identity((*kt).name, (*bd).key, 0),
-                expanded,
+                expanded.as_ptr(),
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 0 as ::core::ffi::c_int,
             ) as *mut mode_tree_item;
-            free(expanded as *mut ::core::ffi::c_void);
             let tmp = cmd_list_print_cstring((*bd).cmdlist, 0);
             let text = window_customize_key_detail(tmp.as_bytes());
             mti = mode_tree_add_identity(
@@ -1568,8 +1553,6 @@ unsafe extern "C" fn window_customize_build_environment(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut global: ::core::ffi::c_int = 0;
     if (*data).hide_default != 0 {
         return;
@@ -1654,13 +1637,10 @@ unsafe extern "C" fn window_customize_build_environment(
             value.as_ptr(),
         );
         if !filter.is_null() {
-            expanded = format_expand(ft, filter);
-            if format_true(expanded) == 0 {
-                free(expanded as *mut ::core::ffi::c_void);
+            let expanded = format_expand_cstring(ft, filter);
+            if format_true(expanded.as_ptr()) == 0 {
                 envent = environ_next(envent);
                 continue;
-            } else {
-                free(expanded as *mut ::core::ffi::c_void);
             }
         }
         item = window_customize_add_item(data);
@@ -1669,15 +1649,16 @@ unsafe extern "C" fn window_customize_build_environment(
         (*item).environ = env;
         (*item).environ_flags = (*envent).flags;
         window_customize_set_name(item, (*envent).name);
+        let text;
         let name: Cow<'_, CStr> = if (*envent).value.is_null() {
             let entry_name = CStr::from_ptr((*envent).name);
             let mut bytes = Vec::with_capacity(entry_name.to_bytes().len() + 1);
             bytes.push(b'-');
             bytes.extend_from_slice(entry_name.to_bytes());
-            text = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            text = None;
             Cow::Owned(CString::new(bytes).expect("environment name contains no NUL"))
         } else {
-            text = format_expand(ft, (*data).format.as_ptr());
+            text = Some(format_expand_cstring(ft, (*data).format.as_ptr()));
             Cow::Borrowed(CStr::from_ptr((*envent).name))
         };
         mode_tree_add_identity(
@@ -1692,10 +1673,10 @@ unsafe extern "C" fn window_customize_build_environment(
                 ::core::ptr::null(),
             ),
             name.as_ptr(),
-            text,
+            text.as_ref()
+                .map_or(::core::ptr::null(), |text| text.as_ptr()),
             0 as ::core::ffi::c_int,
         );
-        free(text as *mut ::core::ffi::c_void);
         envent = environ_next(envent);
     }
 }
@@ -2021,7 +2002,6 @@ unsafe extern "C" fn window_customize_draw_option(
     let mut space: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut unit: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut label: [::core::ffi::c_char; 64] = [0; 64];
     let mut default_value: Option<CString> = None;
     let mut choices: [::core::ffi::c_char; 256] = ::core::mem::transmute::<
@@ -2353,8 +2333,8 @@ unsafe extern "C" fn window_customize_draw_option(
                                                             as ::core::ffi::c_int
                                                             as ::core::ffi::c_uint
                                                 {
-                                                    expanded = format_expand(ft, value);
-                                                    if strcmp(expanded, value)
+                                                    let expanded = format_expand_cstring(ft, value);
+                                                    if strcmp(expanded.as_ptr(), value)
                                                         != 0 as ::core::ffi::c_int
                                                     {
                                                         if window_customize_write_value(
@@ -2369,13 +2349,9 @@ unsafe extern "C" fn window_customize_draw_option(
                                                                 as *const ::core::ffi::c_char,
                                                             b"%s\0" as *const u8
                                                                 as *const ::core::ffi::c_char,
-                                                            expanded,
+                                                            expanded.as_ptr(),
                                                         ) == 0
                                                         {
-                                                            free(
-                                                                expanded
-                                                                    as *mut ::core::ffi::c_void,
-                                                            );
                                                             current_block = 4086289836260337793;
                                                         } else {
                                                             current_block = 479107131381816815;
@@ -2386,10 +2362,6 @@ unsafe extern "C" fn window_customize_draw_option(
                                                     match current_block {
                                                         4086289836260337793 => {}
                                                         _ => {
-                                                            free(
-                                                                expanded
-                                                                    as *mut ::core::ffi::c_void,
-                                                            );
                                                             current_block = 16108440464692313034;
                                                         }
                                                     }

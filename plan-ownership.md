@@ -1,7 +1,8 @@
-# Execute incremental ownership migration in hmux2
+# Execute ownership migration in subsystem batches
 
-Migrate the easiest remaining ownership boundaries first, preserving behavior,
-identity, and destruction semantics. Executing this prompt means making and
+Migrate related ownership boundaries together, preserving behavior, identity,
+and destruction semantics. Prioritize shared contracts that unblock many callers
+and remove repeated manual lifetime management. Executing this prompt means making and
 validating production code changes, not merely producing another inventory or a
 proposal. Creating this document alone does not execute it.
 
@@ -42,23 +43,20 @@ Choose the simplest type justified by actual ownership and aliasing:
 - Keep strings byte-preserving. Do not assume UTF-8, add lossy conversion, or
   change embedded-NUL handling. Preserve null versus empty where observable.
 
-## Start by finding the easiest current target
+## Select a coherent batch
 
-- Locally owned temporary strings that are created, used synchronously, and
-  freed in the same operation. Check whether all consumers only borrow them.
-- Small leaf records with one allocation/free pair and no retained observers.
-- Detached parser scratch buffers, argument-conversion temporaries, and simple
-  leaf strings in layout, JSON, format, or message code. Audit each actual
-  lifetime; these modules are not presumed uniformly easy.
-- The pane resize queue in `src/shared/pane.rs`, `src/window.rs`,
-  `src/server_client.rs`, and `src/screen_write.rs`. It already uses boxed
-  storage, so select it only if completing its lifetime removes meaningful
-  manual ownership. Its callback-adjacent cleanup makes it a later candidate
-  than a genuinely local string or leaf object.
-- Session/winlink ownership already has partial `RefBox` support. Defer this
-  graph work while simpler `CString`/`Box` targets remain.
+Read the current priorities and working diff, then choose one subsystem or
+shared producer/consumer contract. State its completion condition and affected
+callers before editing. Reuse existing audits unless source changes invalidate
+them; do not rediscover the whole repository for each allocation.
 
-## Implement one complete boundary at a time
+Group related local strings and leaf records in one pass. Prefer changing an
+internal return contract and its production callers over adding owners that
+immediately copy back into C storage. Retain adapters for required foreign
+contracts. Do not defer an enabling lifecycle change merely because isolated
+string conversions remain; bound graph work to one owner and its observers.
+
+## Complete each ownership boundary within the batch
 
 1. Trace every creation, mutation, ownership transfer, alias, and destruction
    path for the selected allocation, including errors and early returns.
@@ -66,11 +64,10 @@ Choose the simplest type justified by actual ownership and aliasing:
    Remove obsolete manual frees, counts/capacities, and pointer manipulation
    where the new type supplies those responsibilities. Prefer safe operations
    with private owner fields over public raw-pointer accessors.
-3. Try to preserve allocation / deallocation at a single migration - if we
-   migrate one allocation, corresponding deallocation should be also migrated
-   at the same commit. As compiler / runtime does not break for mixed C/Rust
-   alloc/deallocs (internally they both use the same malloc/free pair), it
-   should be your reasoning instead of test based.
+3. Migrate allocation and every corresponding deallocation together. Tests
+   cannot establish allocator compatibility; audit it explicitly. Never
+   libc-free Rust-owned storage or reconstruct a Rust owner from an allocation
+   that does not satisfy its allocator contract.
 4. Audit the containing record before adding a drop-bearing field. `repr(C)`
    alone is not the obstacle: `Copy`, bitwise copies, zero initialization,
    `xcalloc`, `realloc`, and `free` can bypass Rust invariants and destruction.
@@ -94,28 +91,40 @@ Choose the simplest type justified by actual ownership and aliasing:
    Changes exposed by a failing invariant require investigation and regression
    coverage, not weakening the assertion.
 
-## Continue and leave a resumable result
+## Validate and report per batch
 
-Unless the invocation specifies another scope, complete up to three small,
-independently validated ownership migrations per execution. Re-rank after each
-one: prefer the next simple owner rather than expanding into a difficult parent
-graph. Finish the current boundary and its validation before starting another.
-If a candidate requires a broad redesign, record why it was deferred and pick
-an easier independent candidate. Do not stop after discovery when an actionable
-small target exists. If no small target remains, document the evidence and the
-smallest prerequisite for the next migration rather than forcing a large rewrite.
+Unless the invocation specifies another scope, finish one coherent batch per
+execution, with no three-allocation cap. Stop at its completion condition. If a
+batch is too broad, finish an independently correct enabling contract and list
+its remaining callers and blockers rather than reverting to unrelated leaves.
 
-Update the execution log below after each completed increment. Include concrete
-source symbols, removed manual ownership responsibilities, tests/results, and
-remaining compatibility pointers. Keep the next-candidate list current so a
-later invocation resumes from source reality without repeating completed work.
+Use compilation and focused tests during editing. Run the full gate once on the
+completed batch: `RUST_TEST_THREADS=1 cargo test --workspace`, a binary build,
+relevant CLI/API checks with pinned-baseline comparisons where applicable,
+changed-file rustfmt with edition 2021, and `git diff --check`. After failures or
+further changes, rerun the checks needed to cover the final code. Serialize PTY
+checks that share server names or other resources.
 
-The final response must identify what actually migrated, why these were the
-easiest targets, validation results and limitations, and the next easiest target.
-Do not claim all raw pointers are gone or that a safe wrapper proves unexamined
-legacy callers safe.
+Reuse existing behavior tests; extend them for newly exposed lifetime, transfer,
+cancellation, or error paths. Do not create a new CLI script merely because
+another local string gains an owner. Keep one concise execution-log entry per
+batch and update priorities once. When commits are requested, use reviewable
+batches rather than one commit per allocation.
+
+Report boundaries completed, production callers migrated, manual cleanup
+removed, validation, and remaining compatibility contracts. Do not use increment
+count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
+
+Next, migrate the remaining choose-mode expansion consumers (buffer, client,
+switch, and tree) as a group using `format_expand_cstring`. Customize-mode
+expansion consumers and the save-buffer path now use the owned API. Internal
+expression helpers still use the C-return `format_expand1` adapter; their
+producer/consumer contracts are a separate batch. Exported `format_expand`,
+`format_expand_time`, and `format_single*` retain libc-freeable results.
+
+Remaining lifecycle and compatibility boundaries:
 
 The later layout-equivalence cleanup removed the detached
 `LayoutDescription` API and its API-only tests. `layout_parse` again builds
@@ -133,8 +142,8 @@ non-string value.
 2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. These string-return contracts are deferred
-   while live client fields remain. Revisit this ranking after each completed
-   boundary.
+   while production ownership boundaries remain. Revisit this ranking after
+   each completed batch.
 3. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
@@ -159,12 +168,10 @@ non-string value.
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-5. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
-   Changing only its formatted `save-buffer` path to `CString` would add a
-   copy solely to replace the C-owned `format_single_from_target` result.
-   The expansion output now has a local owner, but its exported result still
-   crosses the C-owned return boundary. Remaining `xstrndup` callers return
-   or transfer C-owned strings.
+5. `cmd_save_buffer_exec` borrows its static detached `show-buffer` path and
+   owns its formatted path through `format_single_from_target_cstring` until
+   the file owner has copied it. Remaining `xstrndup` callers return or transfer
+   C-owned strings.
 
 OSC 52 decoded output now moves directly from a `Vec<u8>` into the boxed paste
 owner on the query path. The exported `paste_add` still copies and consumes
@@ -1534,6 +1541,28 @@ name error.
   checks matched the pinned tmux binary. Serialized workspace tests, binary
   build, changed-file rustfmt, and diff check passed. No sanitizer ran.
 
+### Batch — owned format results and customize consumers (2026-09-23)
+
+- `format_expand1_cstring` moves the expansion byte buffer into a `CString`.
+  `format_expand_cstring` and the `format_single*_cstring` chain carry that
+  owner through tree destruction. All eight `window_customize` expansion
+  sites, modifier argument expansion, and the save-buffer path now use it;
+  removed their result frees and the C allocation/copy on those return paths.
+  Optional row text still distinguishes null from empty. Mode-tree insertion
+  and file setup copy borrowed text before the local owner drops.
+- Exported format APIs and the legacy internal `format_expand1` adapter still
+  return libc-freeable duplicates. Other expression helpers, format callbacks,
+  and choose-mode consumers retain their existing contracts for later batches.
+- Serialized workspace tests, binary build, changed-file rustfmt, and diff
+  checks passed. Eight existing CLI checks passed with the pinned tmux baseline:
+  expansion output, loops, format jobs, customize changed filtering, environment,
+  key details, scope text, and file paths. Added owned/C result lifetime and
+  empty/limit unit coverage, plus a formatted non-UTF-8 save path in the existing
+  file-path check. No sanitizer ran.
+- Execution now groups related boundaries, removes the three-small-migrations
+  cap, and runs full validation once per batch. Next: remaining choose-mode
+  expansion consumers using the shared owned API.
+
 ## Historical migration index
 
 Each retained increment was committed separately; increment 228 was reverted.
@@ -1795,7 +1824,7 @@ Numbers 6–139 were never individually recorded in this document.
 
 ## Validation history and known test conditions
 
-- Per-increment validation is in the corresponding commits and the archived detailed log. The current normal gate is serialized workspace tests, a binary build, relevant focused CLI or API checks, changed-file rustfmt with edition 2021, and git diff --check.
+- Per-increment validation is in the corresponding commits and the archived detailed log. The current gate runs once per completed batch: serialized workspace tests, a binary build, relevant focused CLI or API checks, changed-file rustfmt with edition 2021, and git diff --check.
 - A cached hmux-rt test binary once retained a deleted worktree path; cargo clean -p hmux-rt corrected it. Timestamp-based PTY tests have collided under parallel runs, so use RUST_TEST_THREADS=1 for the full suite.
 - Some generated translation files have pre-existing rustfmt import-order differences. Compare a formatting complaint with the pre-migration file before treating it as caused by a boundary change.
 - The pinned baseline customize-mode subprocess timed out during increment 365; candidate-only customize mutation checks passed and the spawned baseline test processes were terminated. No combined sanitizer run is recorded for the recent increments.

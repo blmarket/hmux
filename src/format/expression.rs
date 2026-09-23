@@ -662,16 +662,11 @@ pub(super) unsafe fn format_add_modifier(
     );
     list.push(fm);
 }
-// format_expand1 returns a C allocation; copy its C-string bytes into the
-// modifier owner, then release the return allocation at this boundary.
 unsafe fn format_expand_modifier_arg(
     es: *mut format_expand_state,
     value: *const ::core::ffi::c_char,
 ) -> CString {
-    let expanded = format_expand1(es, value);
-    let arg = CStr::from_ptr(expanded).to_owned();
-    free(expanded.cast());
-    arg
+    format_expand1_cstring(es, value)
 }
 pub(super) unsafe fn format_build_modifiers(
     mut es: *mut format_expand_state,
@@ -3594,9 +3589,17 @@ pub(super) unsafe fn format_replace(
     return 0 as ::core::ffi::c_int;
 }
 pub(super) unsafe extern "C" fn format_expand1(
+    es: *mut format_expand_state,
+    fmt: *const ::core::ffi::c_char,
+) -> *mut ::core::ffi::c_char {
+    // Legacy expression helpers still consume and libc-free their results.
+    xstrdup(format_expand1_cstring(es, fmt).as_ptr())
+}
+
+unsafe fn format_expand1_cstring(
     mut es: *mut format_expand_state,
     mut fmt: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
+) -> CString {
     let mut ft: *mut format_tree = (*es).ft;
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -3611,7 +3614,7 @@ pub(super) unsafe extern "C" fn format_expand1(
         || *fmt as ::core::ffi::c_int == '\0' as i32
         || format_check_time(es, ::core::ptr::null_mut::<u_int>()) == 0
     {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        return CString::default();
     }
     if (*es).loop_0 == FORMAT_LOOP_LIMIT as u_int {
         format_log1(
@@ -3620,7 +3623,7 @@ pub(super) unsafe extern "C" fn format_expand1(
             b"reached loop limit (%u)\0" as *const u8 as *const ::core::ffi::c_char,
             FORMAT_LOOP_LIMIT,
         );
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        return CString::default();
     }
     (*es).loop_0 = (*es).loop_0.wrapping_add(1);
     format_log1(
@@ -3646,7 +3649,7 @@ pub(super) unsafe extern "C" fn format_expand1(
                 b"format_expand1\0" as *const u8 as *const ::core::ffi::c_char,
                 b"format is too long\0" as *const u8 as *const ::core::ffi::c_char,
             );
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+            return CString::default();
         }
         if format_logging(ft) != 0
             && strcmp(&raw mut expanded as *mut ::core::ffi::c_char, fmt) != 0 as ::core::ffi::c_int
@@ -3819,16 +3822,13 @@ pub(super) unsafe extern "C" fn format_expand1(
             output.push(ch as u8);
         }
     }
-    // Callers of format_expand1 free its result with libc::free. Only the
-    // final handoff needs a C allocation; expansion itself owns its bytes.
-    let buf = xmalloc(output.len() + 1) as *mut ::core::ffi::c_char;
-    std::ptr::copy_nonoverlapping(output.as_ptr(), buf.cast::<u8>(), output.len());
-    *buf.add(output.len()) = 0;
+    // Literal bytes stop at NUL and replacements append their C-string view.
+    let buf = CString::new(output).expect("format expansion contains no NUL");
     format_log1(
         es,
         b"format_expand1\0" as *const u8 as *const ::core::ffi::c_char,
         b"result is: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        buf,
+        buf.as_ptr(),
     );
     (*es).loop_0 = (*es).loop_0.wrapping_sub(1);
     return buf;
@@ -3870,9 +3870,17 @@ pub unsafe extern "C" fn format_expand_time(
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_expand(
+    ft: *mut format_tree,
+    fmt: *const ::core::ffi::c_char,
+) -> *mut ::core::ffi::c_char {
+    xstrdup(format_expand_cstring(ft, fmt).as_ptr())
+}
+
+/// Own the expanded bytes independently of the tree. A null format is empty.
+pub(crate) unsafe fn format_expand_cstring(
     mut ft: *mut format_tree,
     mut fmt: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
+) -> CString {
     let mut es: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
         loop_0: 0,
@@ -3901,21 +3909,30 @@ pub unsafe extern "C" fn format_expand(
     es.ft = ft;
     es.flags = 0 as ::core::ffi::c_int;
     es.start_time = get_timer();
-    return format_expand1(&raw mut es, fmt);
+    return format_expand1_cstring(&raw mut es, fmt);
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_single(
+    item: *mut cmdq_item,
+    fmt: *const ::core::ffi::c_char,
+    c: *mut client,
+    s: *mut session,
+    wl: *mut winlink,
+    wp: *mut window_pane,
+) -> *mut ::core::ffi::c_char {
+    xstrdup(format_single_cstring(item, fmt, c, s, wl, wp).as_ptr())
+}
+
+pub(crate) unsafe fn format_single_cstring(
     mut item: *mut cmdq_item,
     mut fmt: *const ::core::ffi::c_char,
     mut c: *mut client,
     mut s: *mut session,
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
-) -> *mut ::core::ffi::c_char {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    ft = format_create_defaults(item, c, s, wl, wp);
-    expanded = format_expand(ft, fmt);
+) -> CString {
+    let ft = format_create_defaults(item, c, s, wl, wp);
+    let expanded = format_expand_cstring(ft, fmt);
     format_free(ft);
     return expanded;
 }
@@ -3926,20 +3943,95 @@ pub unsafe extern "C" fn format_single_from_state(
     mut c: *mut client,
     mut fs: *mut cmd_find_state,
 ) -> *mut ::core::ffi::c_char {
-    return format_single(item, fmt, c, (*fs).s, (*fs).wl, (*fs).wp);
+    xstrdup(format_single_from_state_cstring(item, fmt, c, fs).as_ptr())
+}
+
+pub(crate) unsafe fn format_single_from_state_cstring(
+    item: *mut cmdq_item,
+    fmt: *const ::core::ffi::c_char,
+    c: *mut client,
+    fs: *mut cmd_find_state,
+) -> CString {
+    format_single_cstring(item, fmt, c, (*fs).s, (*fs).wl, (*fs).wp)
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_single_from_target(
     mut item: *mut cmdq_item,
     mut fmt: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut tc: *mut client = cmdq_get_target_client(item);
-    return format_single_from_state(item, fmt, tc, cmdq_get_target(item));
+    xstrdup(format_single_from_target_cstring(item, fmt).as_ptr())
+}
+
+pub(crate) unsafe fn format_single_from_target_cstring(
+    item: *mut cmdq_item,
+    fmt: *const ::core::ffi::c_char,
+) -> CString {
+    let tc = cmdq_get_target_client(item);
+    format_single_from_state_cstring(item, fmt, tc, cmdq_get_target(item))
 }
 
 #[cfg(test)]
 mod format_choose_tests {
     use super::*;
+
+    #[test]
+    fn expanded_owners_and_c_results_outlive_their_inputs_and_tree() {
+        unsafe {
+            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            let input = CString::new(b"\xff:##:#,:#}:tail#".to_vec()).unwrap();
+            let owned = format_expand_cstring(ft, input.as_ptr());
+            let exported = format_expand(ft, input.as_ptr());
+            let timed = format_expand_time(ft, input.as_ptr());
+            drop(input);
+            format_free(ft);
+
+            assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
+            assert_eq!(CStr::from_ptr(exported), owned.as_c_str());
+            assert_eq!(CStr::from_ptr(timed), owned.as_c_str());
+            free(exported.cast());
+            free(timed.cast());
+            // Freeing the C adapters cannot invalidate the independent owner.
+            assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
+        }
+    }
+
+    #[test]
+    fn owned_expansion_preserves_empty_and_limit_results() {
+        unsafe {
+            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            assert!(format_expand_cstring(ft, std::ptr::null())
+                .as_bytes()
+                .is_empty());
+            assert!(format_expand_cstring(ft, c"".as_ptr())
+                .as_bytes()
+                .is_empty());
+            // The first NUL still terminates the input, including invalid bytes after it.
+            assert_eq!(
+                format_expand_cstring(ft, b"first\0\xffignored\0".as_ptr().cast()).as_bytes(),
+                b"first"
+            );
+            let mut es: format_expand_state = std::mem::zeroed();
+            es.ft = ft;
+            es.start_time = get_timer();
+            es.loop_0 = FORMAT_LOOP_LIMIT as u_int;
+            assert!(format_expand1_cstring(&raw mut es, c"limit".as_ptr())
+                .as_bytes()
+                .is_empty());
+            assert_eq!(es.loop_0, FORMAT_LOOP_LIMIT as u_int);
+            es.loop_0 = 0;
+            es.start_time = get_timer().wrapping_sub(FORMAT_TIME_LIMIT as uint64_t);
+            assert!(format_expand1_cstring(&raw mut es, c"timeout".as_ptr())
+                .as_bytes()
+                .is_empty());
+            es.start_time = get_timer();
+            es.flags = FORMAT_EXPAND_TIME;
+            let too_long = CString::new(format!("%Y{}", "x".repeat(8192))).unwrap();
+            assert!(format_expand1_cstring(&raw mut es, too_long.as_ptr())
+                .as_bytes()
+                .is_empty());
+            format_free(ft);
+        }
+    }
 
     #[test]
     fn split_operands_preserve_escapes_nesting_and_bytes() {

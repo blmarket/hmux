@@ -1,9 +1,9 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print_data};
-use crate::src::ffi::libc::{free, strerror};
+use crate::src::ffi::libc::strerror;
 use crate::src::file::file_write_with_cmdq_wait;
-use crate::src::format::format_single_from_target;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::fatalx;
 use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
 use crate::src::reactor::{evbuffer_add, evbuffer_free, evbuffer_new};
@@ -199,10 +199,12 @@ unsafe extern "C" fn cmd_save_buffer_exec(
             return CMD_RETURN_NORMAL;
         }
     }
-    let expanded_path =
-        (!show_buffer).then(|| format_single_from_target(item, args_string(args, 0 as u_int)));
+    let expanded_path = (!show_buffer)
+        .then(|| format_single_from_target_cstring(item, args_string(args, 0 as u_int)));
     let dash_path = CStr::from_bytes_with_nul(b"-\0").unwrap();
-    let path: *const ::core::ffi::c_char = expanded_path.map_or(dash_path.as_ptr(), |path| path);
+    let path: *const ::core::ffi::c_char = expanded_path
+        .as_ref()
+        .map_or(dash_path.as_ptr(), |path| path.as_ptr());
     if args_has(args, 'a' as i32 as u_char) != 0 {
         flags = O_APPEND;
     } else {
@@ -229,8 +231,5 @@ unsafe extern "C" fn cmd_save_buffer_exec(
         item,
         None,
     );
-    if let Some(expanded_path) = expanded_path {
-        free(expanded_path as *mut ::core::ffi::c_void);
-    }
     return CMD_RETURN_WAIT;
 }
