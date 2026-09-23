@@ -2215,6 +2215,24 @@ legacy callers safe.
   a two-step label/input update, Ctrl-R saved-input restore, and completion
   passed. No sanitizer was run.
 
+### Increment 124 — sorted client candidate list (2026-09-22)
+
+- `sort_get_clients` now returns a caller-owned `Vec<*mut client>` to
+  `cmd_list_clients_exec`, `format_loop_clients`, and `window_client_build`.
+  The process-global `xreallocarray` scratch list and capacity counter are
+  gone. Client objects remain owned by the client registry; each caller owns
+  only its sorted pointer list until its traversal ends.
+- Existing attached-client filtering, comparator, reverse order, and list
+  indexes are preserved. A nested client-format expansion gets a separate
+  list rather than overwriting the outer traversal. The translated
+  `sort_get_clients` symbol/signature is no longer exported by the staticlib;
+  no in-tree or documented foreign caller was found.
+- Isolated validation: serialized workspace tests, binary build,
+  `git diff --check`, and a private-server scenario with two attached control
+  clients, reverse sorting, nested `L` formatting, and client chooser passed.
+  Rustfmt reports one import-layout difference also present in the base
+  commit. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2252,9 +2270,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–123. The remaining
+Current validation is recorded in increments 15–124. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–123 has its own local commit; none was pushed.
+Each of increments 15–124 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

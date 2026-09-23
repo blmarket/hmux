@@ -2194,7 +2194,6 @@ pub(super) unsafe extern "C" fn format_loop_clients(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut l: *mut *mut client = ::core::ptr::null_mut::<*mut client>();
     let mut item: *mut cmdq_item = (*ft).item;
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
@@ -2222,15 +2221,16 @@ pub(super) unsafe extern "C" fn format_loop_clients(
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
     let mut i: ::core::ffi::c_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
     buffer = evbuffer_new();
     if buffer.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    l = sort_get_clients(&raw mut n as *mut u_int, sc);
+    let clients_sorted = sort_get_clients(sc);
+    let n = ::core::ffi::c_int::try_from(clients_sorted.len())
+        .expect("too many clients for format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
-        c = *l.offset(i as isize);
+        c = clients_sorted[i as usize];
         format_log1(
             es,
             b"format_loop_clients\0" as *const u8 as *const ::core::ffi::c_char,

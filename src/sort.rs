@@ -588,39 +588,20 @@ pub unsafe fn sort_get_buffers(sort_crit: *mut sort_criteria) -> Vec<*mut paste_
     );
     buffers
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_clients(
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut client {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut i: u_int = 0;
-    static mut l: *mut *mut client = ::core::ptr::null::<*mut client>() as *mut *mut client;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
-    c = clients.tqh_first;
+pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<*mut client> {
+    let mut clients_sorted = Vec::new();
+    let mut c = clients.tqh_first;
     while !c.is_null() {
         if !((*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !(!(*c).flags & CLIENT_ATTACHED as uint64_t != 0) {
-                if lsz <= i {
-                    lsz = lsz.wrapping_add(100 as u_int);
-                    l = xreallocarray(
-                        l as *mut ::core::ffi::c_void,
-                        lsz as size_t,
-                        ::core::mem::size_of::<*mut client>() as size_t,
-                    ) as *mut *mut client;
-                }
-                let fresh4 = i;
-                i = i.wrapping_add(1);
-                let ref mut fresh5 = *l.offset(fresh4 as isize);
-                *fresh5 = c;
+                clients_sorted.push(c);
             }
         }
         c = (*c).entry.tqe_next;
     }
     sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
+        clients_sorted.as_mut_ptr() as *mut ::core::ffi::c_void,
+        u_int::try_from(clients_sorted.len()).expect("too many clients to sort"),
         ::core::mem::size_of::<*mut client>() as u_int,
         Some(
             sort_client_cmp
@@ -631,8 +612,7 @@ pub unsafe extern "C" fn sort_get_clients(
         ),
         sort_crit,
     );
-    *n = i;
-    return l;
+    clients_sorted
 }
 #[no_mangle]
 pub unsafe extern "C" fn sort_get_sessions(

@@ -114,13 +114,11 @@ unsafe extern "C" fn cmd_list_clients_exec(
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    let mut l: *mut *mut client = ::core::ptr::null_mut::<*mut client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut i: u_int = 0;
-    let mut n: u_int = 0;
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_int = 0;
@@ -151,12 +149,11 @@ unsafe extern "C" fn cmd_list_clients_exec(
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    l = sort_get_clients(&raw mut n, &raw mut sort_crit);
+    let clients_sorted = sort_get_clients(&raw mut sort_crit);
     i = 0 as u_int;
-    while i < n {
-        if !((**l.offset(i as isize)).session.is_null()
-            || !s.is_null() && s != (**l.offset(i as isize)).session)
-        {
+    while (i as usize) < clients_sorted.len() {
+        let c = clients_sorted[i as usize];
+        if !((*c).session.is_null() || !s.is_null() && s != (*c).session) {
             ft = format_create(
                 cmdq_get_client(item),
                 item,
@@ -171,7 +168,7 @@ unsafe extern "C" fn cmd_list_clients_exec(
             );
             format_defaults(
                 ft,
-                *l.offset(i as isize),
+                c,
                 ::core::ptr::null_mut::<session>(),
                 ::core::ptr::null_mut::<winlink>(),
                 ::core::ptr::null_mut::<window_pane>(),

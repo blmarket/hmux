@@ -337,19 +337,16 @@ unsafe extern "C" fn window_client_build(
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
     let mut item: *mut window_client_itemdata = ::core::ptr::null_mut::<window_client_itemdata>();
     let mut i: u_int = 0;
-    let mut n: u_int = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut l: *mut *mut client = ::core::ptr::null_mut::<*mut client>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     (*data).items.clear();
-    l = sort_get_clients(&raw mut n, sort_crit);
+    let clients_sorted = sort_get_clients(sort_crit);
     i = 0 as u_int;
-    while i < n {
-        if !((**l.offset(i as isize)).session.is_null()
-            || (**l.offset(i as isize)).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0)
-        {
-            window_client_add_item(data, *l.offset(i as isize));
+    while (i as usize) < clients_sorted.len() {
+        let c = clients_sorted[i as usize];
+        if !((*c).session.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
+            window_client_add_item(data, c);
         }
         i = i.wrapping_add(1);
     }
