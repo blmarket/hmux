@@ -71,7 +71,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xmalloc, xstrdup};
+use crate::src::xmalloc::xstrdup;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -136,7 +136,7 @@ pub unsafe extern "C" fn key_bindings_get_table(
     if !table.is_null() || create == 0 {
         return table;
     }
-    table = xmalloc(::core::mem::size_of::<key_table>() as size_t) as *mut key_table;
+    table = Box::into_raw(Box::new(::core::mem::zeroed::<key_table>()));
     (*table).name = xstrdup(name);
     (*table).key_bindings.storage = std::ptr::null_mut();
     (*table).default_key_bindings.storage = std::ptr::null_mut();
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
         bd = bd1;
     }
     free((*table).name as *mut ::core::ffi::c_void);
-    free(table as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(table));
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_get(

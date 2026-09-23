@@ -2509,6 +2509,21 @@ legacy callers safe.
   binary build, and diff checks passed. Changed files retain the pre-existing
   rustfmt import-order difference in `key_bindings.rs`. No sanitizer was run.
 
+### Increment 303 — boxed key table records (2026-09-23)
+
+- `key_bindings_get_table` now boxes the stable, zeroed outer `key_table`
+  instead of using `xmalloc`; `key_bindings_unref_table` still removes live and
+  default bindings and frees the owned name before consuming the `Box` on the
+  final reference. Registry removal clears the borrowed index link; clients
+  may retain a table after removal through the existing reference count.
+  `activity_time` is set by `server_client_set_key_table` before its activity
+  comparison; zero initialization replaces previously unread xmalloc bytes.
+- The existing key-storage test covers table ordering and final unref after
+  registry removal. `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary
+  build, and diff checks passed. `scripts/key_cli_checks.py` passed separately
+  on candidate and pinned pre-migration binaries. `key_bindings.rs` retains its
+  pre-existing rustfmt import-order difference. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2519,8 +2534,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `key_table` or `monitor_item` records are the next small owner candidates;
-   audit their retain/release and callback lifetimes before selecting one.
+1. `monitor_item` records in `src/monitor.rs` are a next small owner candidate;
+   audit callback lifetimes and update the test fixture that currently creates
+   an item with libc `calloc` before changing the production destructor.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias

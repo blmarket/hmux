@@ -2165,6 +2165,8 @@ pub struct key_event {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned until its last reference is released. The registry and clients
+/// borrow its stable address; registry removal clears the `entry.owner` link.
 pub struct key_table {
     pub name: *const ::core::ffi::c_char,
     pub activity_time: timeval,
