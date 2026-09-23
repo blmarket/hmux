@@ -1274,6 +1274,19 @@ legacy callers safe.
   isolated worktree. Repository-wide rustfmt reports unrelated existing
   differences; no live rename or sanitizer run was performed.
 
+### Increment 65 — terminal feature-list parser copy (2026-09-22)
+
+- `tty_parse_features` now owns its writable, NUL-terminated feature list
+  as `Vec<u8>`, removing its `xstrdup`/`free` pair. `strsep` and trailing
+  `@` removal write within stable vector storage; feature comparisons and
+  logging borrow token pointers synchronously. Unknown-feature break and
+  first-NUL behavior are unchanged.
+- `tests/tty_parse_features.rs` exercises mixed `:` and `,` separators,
+  enable-then-remove, disabled suppression, unknown-feature break, and
+  first-NUL handling. Focused and workspace tests, binary build,
+  changed-file rustfmt, and `git diff --check` passed in the isolated
+  worktree. No live attached terminal or sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1288,12 +1301,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `tty_parse_features`' writable feature list and the width-cache
-   parser copy. Remaining `xstrndup` callers return or transfer C-owned
-   strings.
+2. Inspect the width-cache parser copy, then re-rank remaining local
+   scratch. Remaining `xstrndup` callers return or transfer C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–64. The remaining
+Current validation is recorded in increments 15–65. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–64 has its own local commit; none was pushed.
+Each of increments 15–65 has its own local commit; none was pushed.

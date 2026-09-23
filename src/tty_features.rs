@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{free, strcasecmp, strcmp, strlcat, strlen, strsep};
+use crate::src::ffi::libc::{strcasecmp, strcmp, strlcat, strlen, strsep};
 use crate::src::log::log_debug;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -58,7 +58,6 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
-use crate::src::xmalloc::xstrdup;
 use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
@@ -467,15 +466,15 @@ pub unsafe extern "C" fn tty_parse_features(
     let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut loop_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut remove: ::core::ffi::c_int = 0;
     log_debug(
         b"adding terminal features %s\0" as *const u8 as *const ::core::ffi::c_char,
         s,
     );
-    copy = xstrdup(s);
-    loop_0 = copy;
+    // strsep and the trailing-@ removal both write into this local copy.
+    let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
+    loop_0 = copy.as_mut_ptr().cast();
     loop {
         next = strsep(&raw mut loop_0, sep);
         if next.is_null() {
@@ -530,7 +529,6 @@ pub unsafe extern "C" fn tty_parse_features(
             }
         }
     }
-    free(copy as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_get_features(
