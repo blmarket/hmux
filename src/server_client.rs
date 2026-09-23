@@ -81,7 +81,7 @@ use crate::src::tty::{
     tty_update_client_offset, tty_update_mode, tty_window_offset,
 };
 use crate::src::tty_features::tty_get_features;
-use crate::src::tty_term::{tty_term_free_list, tty_term_has};
+use crate::src::tty_term::tty_term_has;
 use crate::src::utf8::{utf8_sanitize, utf8_stravisx};
 pub use crate::src::window::windows;
 use crate::src::window::{
@@ -98,9 +98,7 @@ use crate::src::window::{
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xreallocarray, xrecallocarray, xsnprintf, xstrdup,
-};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xrecallocarray, xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -119,10 +117,15 @@ pub use crate::src::shared::client::{
 // The public client record keeps its C layout. Only server_client_create
 // allocates clients, and server_client_free drops this containing owner.
 // message_string borrows the CString until the next replacement or clear.
+// term_caps borrows term_cap_ptrs, whose entries borrow term_cap_strings.
+// Both views are refreshed after every identify capability and cleared after
+// tty_free, before the client owner is eventually dropped.
 #[repr(C)]
 struct ClientOwner {
     node: client,
     message: Option<CString>,
+    term_cap_strings: Vec<CString>,
+    term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
 }
 
 const _: () = assert!(std::mem::offset_of!(ClientOwner, node) == 0);
@@ -137,9 +140,42 @@ pub(crate) unsafe fn server_client_set_message(c: *mut client, message: Option<C
     }
 }
 
+unsafe fn server_client_add_term_cap(c: *mut client, data: *const ::core::ffi::c_char) {
+    let owner = c as *mut ClientOwner;
+    // The pointer array can move on growth. Invalidate the public view first.
+    (*c).term_caps = ::core::ptr::null_mut();
+    (*c).term_ncaps = 0;
+    assert!((*owner).term_cap_strings.len() < u_int::MAX as usize);
+    (*owner)
+        .term_cap_strings
+        .push(CStr::from_ptr(data).to_owned());
+    let cap = (*owner)
+        .term_cap_strings
+        .last()
+        .unwrap()
+        .as_ptr()
+        .cast_mut();
+    (*owner).term_cap_ptrs.push(cap);
+    (*c).term_caps = (*owner).term_cap_ptrs.as_mut_ptr();
+    (*c).term_ncaps = (*owner).term_cap_ptrs.len() as u_int;
+}
+
+unsafe fn server_client_clear_term_caps(c: *mut client) {
+    let owner = c as *mut ClientOwner;
+    (*c).term_caps = ::core::ptr::null_mut();
+    (*c).term_ncaps = 0;
+    // Match tty_term_free_list's release order at client loss, even when
+    // other references delay the final ClientOwner drop.
+    (*owner).term_cap_strings = Vec::new();
+    (*owner).term_cap_ptrs = Vec::new();
+}
+
 #[cfg(test)]
 mod client_message_owner_tests {
-    use super::{client, server_client_set_message, ClientOwner};
+    use super::{
+        client, server_client_add_term_cap, server_client_clear_term_caps,
+        server_client_set_message, ClientOwner,
+    };
     use crate::src::status::status_message_clear;
     use std::ffi::{CStr, CString};
 
@@ -149,6 +185,8 @@ mod client_message_owner_tests {
             let mut owner = Box::new(ClientOwner {
                 node: std::mem::zeroed::<client>(),
                 message: None,
+                term_cap_strings: Vec::new(),
+                term_cap_ptrs: Vec::new(),
             });
             let c = &raw mut owner.node;
             assert!((*c).message_string.is_null());
@@ -168,6 +206,41 @@ mod client_message_owner_tests {
             assert!((*c).message_string.is_null());
             assert!(owner.message.is_none());
             assert_eq!((*c).status.references, 1);
+        }
+    }
+
+    #[test]
+    fn term_caps_view_survives_growth_and_preserves_order_and_bytes() {
+        unsafe {
+            let mut owner = Box::new(ClientOwner {
+                node: std::mem::zeroed::<client>(),
+                message: None,
+                term_cap_strings: Vec::new(),
+                term_cap_ptrs: Vec::new(),
+            });
+            let c = &raw mut owner.node;
+            let mut expected = Vec::new();
+            for i in 0..64 {
+                let value = if i % 3 == 0 {
+                    CString::new(b"dup=\xff".to_vec()).unwrap()
+                } else {
+                    CString::new(format!("cap{i}=value")).unwrap()
+                };
+                server_client_add_term_cap(c, value.as_ptr());
+                expected.push(value);
+                assert_eq!((*c).term_ncaps as usize, expected.len());
+                for (index, cap) in expected.iter().enumerate() {
+                    assert_eq!(
+                        CStr::from_ptr(*(*c).term_caps.add(index)).to_bytes(),
+                        cap.as_bytes()
+                    );
+                }
+            }
+            server_client_clear_term_caps(c);
+            assert!((*c).term_caps.is_null());
+            assert_eq!((*c).term_ncaps, 0);
+            assert!(owner.term_cap_strings.is_empty());
+            assert!(owner.term_cap_ptrs.is_empty());
         }
     }
 }
@@ -538,6 +611,8 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     c = &raw mut (*Box::into_raw(Box::new(ClientOwner {
         node: std::mem::zeroed::<client>(),
         message: None,
+        term_cap_strings: Vec::new(),
+        term_cap_ptrs: Vec::new(),
     })))
     .node;
     (*c).references = 1 as ::core::ffi::c_int;
@@ -952,7 +1027,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     free((*c).clipboard_panes as *mut ::core::ffi::c_void);
     free((*c).term_name as *mut ::core::ffi::c_void);
     free((*c).term_type as *mut ::core::ffi::c_void);
-    tty_term_free_list((*c).term_caps, (*c).term_ncaps);
+    server_client_clear_term_caps(c);
     status_free(c);
     input_cancel_requests(c);
     free((*c).title as *mut ::core::ffi::c_void);
@@ -4281,15 +4356,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
             {
                 return -(1 as ::core::ffi::c_int);
             }
-            (*c).term_caps = xreallocarray(
-                (*c).term_caps as *mut ::core::ffi::c_void,
-                (*c).term_ncaps.wrapping_add(1 as u_int) as size_t,
-                ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-            ) as *mut *mut ::core::ffi::c_char;
-            let fresh0 = (*c).term_ncaps;
-            (*c).term_ncaps = (*c).term_ncaps.wrapping_add(1);
-            let ref mut fresh1 = *(*c).term_caps.offset(fresh0 as isize);
-            *fresh1 = xstrdup(data);
+            server_client_add_term_cap(c, data);
             log_debug(
                 b"client %p IDENTIFY_TERMINFO %s\0" as *const u8 as *const ::core::ffi::c_char,
                 c,

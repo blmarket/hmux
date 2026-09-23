@@ -2141,6 +2141,25 @@ legacy callers safe.
   rustfmt reports only three import layout differences also present in the
   base commit. No sanitizer was run.
 
+### Increment 120 — server client terminal capability list (2026-09-22)
+
+- `ClientOwner` now holds server-side identify capabilities as
+  `Vec<CString>` and a `Vec<*mut c_char>` compatibility view for the existing
+  `client.term_caps`/`term_ncaps` fields. Removed the identify-path
+  `xreallocarray`, per-capability `xstrdup`, and `tty_term_free_list` call for
+  this server-side list. The public client record layout is unchanged.
+- Before each append the public pointer/count view is invalidated; it is
+  rebuilt after both Vecs finish growing. CString allocations keep entry
+  addresses stable when the owner Vec moves. `server_client_lost` invalidates
+  the view after `tty_free`, then releases strings and pointer storage at the
+  old free point and in the old order, even if other references keep the
+  ClientOwner alive. Duplicates, order, non-UTF-8 bytes, and first-NUL C views
+  are preserved. The client-side terminal-capability producer remains C-owned.
+- Isolated validation: a 64-entry view-growth/byte test, workspace tests with
+  serialized test threads, binary build, `git diff --check`, and an attached
+  custom-terminfo PTY scenario passed. Rustfmt reports only three import
+  layout differences also present in the base commit. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2164,6 +2183,9 @@ non-string value.
    nullable incremental `last` as separately allocated C strings. Audit
    `prompt_update` and incremental reset/read paths before moving those
    complete fields to CString/Option<CString>; preserve null versus empty.
+   The client-side `tty_term_read_list` capability array is also created,
+   sent in identify messages, and freed in `client_main`; audit the send's
+   synchronous copy before migrating that local lifetime.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2179,9 +2201,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–119. The remaining
+Current validation is recorded in increments 15–120. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–119 has its own local commit; none was pushed.
+Each of increments 15–120 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2235,3 +2257,11 @@ config-path, prompt-completion, prompt-paste, and format-loop CLI checks, and
 layout difference in `tmux.rs` at line 24; checking the exact file from
 pre-increment `b61432d` reports the same difference. No combined sanitizer
 was run.
+After increments 118–120 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the binary build,
+prompt-paste, prompt-completion, sorted-buffer, and server-term-capability CLI
+checks, and `git diff --check` passed on main. Changed-file rustfmt reports
+six import layout differences in `sort.rs`, `window_buffer.rs`,
+`cmd/entries/list_buffers.rs`, and `server_client.rs`; checking those exact
+files from pre-increment `32a39a5` reports the same six sites. No combined
+sanitizer was run.
