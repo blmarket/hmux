@@ -7,7 +7,7 @@ use crate::src::cmd_queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::ffi::libc::{free, strsep};
+use crate::src::ffi::libc::free;
 use crate::src::prompt::prompt_type;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args_command_state;
@@ -78,31 +78,67 @@ use crate::src::status::{status_prompt_set, status_prompt_update};
 use crate::src::window::{
     window_pane_has_prompt, window_pane_set_prompt, window_pane_update_prompt,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_command_prompt_cdata {
     pub item: *mut cmdq_item,
     pub state: *mut args_command_state,
     pub flags: ::core::ffi::c_int,
     pub prompt_type: prompt_type,
     pub wp: *mut window_pane,
-    pub prompts: *mut cmd_command_prompt_prompt,
-    pub count: u_int,
+    pub prompts: Vec<cmd_command_prompt_prompt>,
     pub current: u_int,
     pub argc: ::core::ffi::c_int,
     pub argv: *mut *mut ::core::ffi::c_char,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_command_prompt_prompt {
-    pub input: *mut ::core::ffi::c_char,
-    pub prompt: *mut ::core::ffi::c_char,
+    pub input: Option<CString>,
+    pub prompt: CString,
+}
+
+impl cmd_command_prompt_prompt {
+    fn input_ptr(&self) -> *const ::core::ffi::c_char {
+        self.input
+            .as_ref()
+            .map_or(::core::ptr::null(), |s| s.as_ptr())
+    }
+
+    fn pointers(&self) -> (*const ::core::ffi::c_char, *const ::core::ffi::c_char) {
+        (self.prompt.as_ptr(), self.input_ptr())
+    }
+}
+
+fn cmd_command_prompt_rows(
+    prompts: &[u8],
+    inputs: Option<&[u8]>,
+    literal: bool,
+    space: bool,
+) -> Vec<cmd_command_prompt_prompt> {
+    if literal {
+        return vec![cmd_command_prompt_prompt {
+            prompt: CString::new(prompts).expect("prompt has no embedded NUL"),
+            input: inputs.map(|s| CString::new(s).expect("input has no embedded NUL")),
+        }];
+    }
+
+    let mut input_parts = inputs.map(|s| s.split(|&byte| byte == b','));
+    prompts
+        .split(|&byte| byte == b',')
+        .map(|part| {
+            let mut prompt = part.to_vec();
+            if space {
+                prompt.push(b' ');
+            }
+            let input = input_parts.as_mut().and_then(Iterator::next).unwrap_or(b"");
+            cmd_command_prompt_prompt {
+                prompt: CString::new(prompt).expect("prompt has no embedded NUL"),
+                input: Some(CString::new(input).expect("input has no embedded NUL")),
+            }
+        })
+        .collect()
 }
 #[no_mangle]
 pub static mut cmd_command_prompt_entry: cmd_entry = unsafe {
@@ -157,17 +193,8 @@ unsafe extern "C" fn cmd_command_prompt_exec(
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut input: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cdata: *mut cmd_command_prompt_cdata =
-        ::core::ptr::null_mut::<cmd_command_prompt_cdata>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prompts: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut next_prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut inputs: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut next_input: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prompt_scratch = Vec::<u8>::new();
-    let mut input_scratch = Vec::<u8>::new();
+    let mut prompt_bytes = Vec::<u8>::new();
     let mut wp: *mut window_pane = (*target).wp;
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
@@ -184,10 +211,17 @@ unsafe extern "C" fn cmd_command_prompt_exec(
     if args_has(args, 'i' as i32 as u_char) != 0 {
         wait = 0 as ::core::ffi::c_int;
     }
-    cdata = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<cmd_command_prompt_cdata>() as size_t,
-    ) as *mut cmd_command_prompt_cdata;
+    let cdata = Box::into_raw(Box::new(cmd_command_prompt_cdata {
+        item: ::core::ptr::null_mut(),
+        state: ::core::ptr::null_mut(),
+        flags: 0,
+        prompt_type: PROMPT_TYPE_COMMAND,
+        wp: ::core::ptr::null_mut(),
+        prompts: Vec::new(),
+        current: 0,
+        argc: 0,
+        argv: ::core::ptr::null_mut(),
+    }));
     if wait != 0 {
         (*cdata).item = item;
     }
@@ -207,103 +241,24 @@ unsafe extern "C" fn cmd_command_prompt_exec(
     if s.is_null() {
         if count != 0 as u_int {
             tmp = args_make_commands_get_command((*cdata).state);
-            if literal {
-                xasprintf(
-                    &raw mut prompts,
-                    b"(%s)\0" as *const u8 as *const ::core::ffi::c_char,
-                    tmp,
-                );
-            } else {
-                prompt_scratch.push(b'(');
-                prompt_scratch.extend_from_slice(CStr::from_ptr(tmp).to_bytes());
-                prompt_scratch.extend_from_slice(b")\0");
-            }
+            prompt_bytes.push(b'(');
+            prompt_bytes.extend_from_slice(CStr::from_ptr(tmp).to_bytes());
+            prompt_bytes.push(b')');
             free(tmp as *mut ::core::ffi::c_void);
         } else {
-            if literal {
-                prompts = xstrdup(b":\0" as *const u8 as *const ::core::ffi::c_char);
-            } else {
-                prompt_scratch.extend_from_slice(b":\0");
-            }
-            space = 0 as ::core::ffi::c_int;
+            prompt_bytes.push(b':');
+            space = 0;
         }
     } else {
-        if literal {
-            prompts = xstrdup(s);
-        } else {
-            prompt_scratch.extend_from_slice(CStr::from_ptr(s).to_bytes_with_nul());
-        }
+        prompt_bytes.extend_from_slice(CStr::from_ptr(s).to_bytes());
     }
-    next_prompt = if literal {
-        prompts
-    } else {
-        prompt_scratch.as_mut_ptr().cast()
-    };
     s = args_get(args, 'I' as i32 as u_char);
-    if !s.is_null() {
-        if literal {
-            inputs = xstrdup(s);
-            next_input = inputs;
-        } else {
-            input_scratch.extend_from_slice(CStr::from_ptr(s).to_bytes_with_nul());
-            next_input = input_scratch.as_mut_ptr().cast();
-        }
+    let input_bytes = if s.is_null() {
+        None
     } else {
-        next_input = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    if literal {
-        (*cdata).prompts = xcalloc(
-            1 as size_t,
-            ::core::mem::size_of::<cmd_command_prompt_prompt>() as size_t,
-        ) as *mut cmd_command_prompt_prompt;
-        let ref mut fresh0 = (*(*cdata).prompts.offset(0 as ::core::ffi::c_int as isize)).prompt;
-        *fresh0 = prompts;
-        let ref mut fresh1 = (*(*cdata).prompts.offset(0 as ::core::ffi::c_int as isize)).input;
-        *fresh1 = inputs;
-        (*cdata).count = 1 as u_int;
-    } else {
-        loop {
-            prompt = strsep(
-                &raw mut next_prompt,
-                b",\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            if prompt.is_null() {
-                break;
-            }
-            (*cdata).prompts = xreallocarray(
-                (*cdata).prompts as *mut ::core::ffi::c_void,
-                (*cdata).count.wrapping_add(1 as u_int) as size_t,
-                ::core::mem::size_of::<cmd_command_prompt_prompt>() as size_t,
-            ) as *mut cmd_command_prompt_prompt;
-            if space == 0 {
-                tmp = xstrdup(prompt);
-            } else {
-                xasprintf(
-                    &raw mut tmp,
-                    b"%s \0" as *const u8 as *const ::core::ffi::c_char,
-                    prompt,
-                );
-            }
-            let ref mut fresh2 = (*(*cdata).prompts.offset((*cdata).count as isize)).prompt;
-            *fresh2 = tmp;
-            if !next_input.is_null() {
-                input = strsep(
-                    &raw mut next_input,
-                    b",\0" as *const u8 as *const ::core::ffi::c_char,
-                );
-                if input.is_null() {
-                    input = b"\0" as *const u8 as *const ::core::ffi::c_char;
-                }
-            } else {
-                input = b"\0" as *const u8 as *const ::core::ffi::c_char;
-            }
-            let ref mut fresh3 = (*(*cdata).prompts.offset((*cdata).count as isize)).input;
-            *fresh3 = xstrdup(input);
-            (*cdata).count = (*cdata).count.wrapping_add(1);
-        }
-        drop(input_scratch);
-        drop(prompt_scratch);
-    }
+        Some(CStr::from_ptr(s).to_bytes())
+    };
+    (*cdata).prompts = cmd_command_prompt_rows(&prompt_bytes, input_bytes, literal, space != 0);
     type_0 = args_get(args, 'T' as i32 as u_char);
     if !type_0.is_null() {
         (*cdata).prompt_type = prompt_type(type_0);
@@ -335,14 +290,15 @@ unsafe extern "C" fn cmd_command_prompt_exec(
     if args_has(args, 'C' as i32 as u_char) != 0 {
         (*cdata).flags |= PROMPT_NOFREEZE;
     }
+    let (prompt_ptr, input_ptr) = (&(*cdata).prompts)[0].pointers();
     if pane != 0 {
         (*cdata).flags |= PROMPT_ISPANE;
         window_pane_set_prompt(
             wp,
             tc,
             target,
-            (*(*cdata).prompts.offset(0 as ::core::ffi::c_int as isize)).prompt,
-            (*(*cdata).prompts.offset(0 as ::core::ffi::c_int as isize)).input,
+            prompt_ptr,
+            input_ptr,
             Some(
                 cmd_command_prompt_callback
                     as unsafe extern "C" fn(
@@ -361,8 +317,8 @@ unsafe extern "C" fn cmd_command_prompt_exec(
         status_prompt_set(
             tc,
             target,
-            (*(*cdata).prompts.offset(0 as ::core::ffi::c_int as isize)).prompt,
-            (*(*cdata).prompts.offset(0 as ::core::ffi::c_int as isize)).input,
+            prompt_ptr,
+            input_ptr,
             Some(
                 cmd_command_prompt_callback
                     as unsafe extern "C" fn(
@@ -395,8 +351,6 @@ unsafe extern "C" fn cmd_command_prompt_callback(
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    let mut prompt: *mut cmd_command_prompt_prompt =
-        ::core::ptr::null_mut::<cmd_command_prompt_prompt>();
     let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut argv: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -412,13 +366,13 @@ unsafe extern "C" fn cmd_command_prompt_callback(
             } else {
                 cmd_append_argv(&raw mut (*cdata).argc, &raw mut (*cdata).argv, s);
                 (*cdata).current = (*cdata).current.wrapping_add(1);
-                if (*cdata).current != (*cdata).count {
-                    prompt = (*cdata).prompts.offset((*cdata).current as isize)
-                        as *mut cmd_command_prompt_prompt;
+                if ((*cdata).current as usize) != (*cdata).prompts.len() {
+                    let (prompt_ptr, input_ptr) =
+                        (&(*cdata).prompts)[(*cdata).current as usize].pointers();
                     if !(*cdata).wp.is_null() {
-                        window_pane_update_prompt((*cdata).wp, (*prompt).prompt, (*prompt).input);
+                        window_pane_update_prompt((*cdata).wp, prompt_ptr, input_ptr);
                     } else {
-                        status_prompt_update(c, (*prompt).prompt, (*prompt).input);
+                        status_prompt_update(c, prompt_ptr, input_ptr);
                     }
                     return PROMPT_CONTINUE;
                 }
@@ -468,20 +422,42 @@ unsafe extern "C" fn cmd_command_prompt_callback(
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn cmd_command_prompt_free(mut data: *mut ::core::ffi::c_void) {
-    let mut cdata: *mut cmd_command_prompt_cdata = data as *mut cmd_command_prompt_cdata;
-    let mut i: u_int = 0;
-    if !(*cdata).item.is_null() {
-        cmdq_continue((*cdata).item);
-        (*cdata).item = ::core::ptr::null_mut::<cmdq_item>();
+    let mut cdata = Box::from_raw(data as *mut cmd_command_prompt_cdata);
+    if !cdata.item.is_null() {
+        cmdq_continue(cdata.item);
+        cdata.item = ::core::ptr::null_mut::<cmdq_item>();
     }
-    i = 0 as u_int;
-    while i < (*cdata).count {
-        free((*(*cdata).prompts.offset(i as isize)).prompt as *mut ::core::ffi::c_void);
-        free((*(*cdata).prompts.offset(i as isize)).input as *mut ::core::ffi::c_void);
-        i = i.wrapping_add(1);
+    cdata.prompts.clear();
+    cmd_free_argv(cdata.argc, cdata.argv);
+    args_make_commands_free(cdata.state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cmd_command_prompt_rows;
+
+    #[test]
+    fn split_prompts_keep_empty_fields_and_fill_missing_inputs() {
+        let rows = cmd_command_prompt_rows(b"first,,last,", Some(b"one,,three"), false, true);
+        let prompts: Vec<_> = rows.iter().map(|row| row.prompt.to_bytes()).collect();
+        let inputs: Vec<_> = rows
+            .iter()
+            .map(|row| row.input.as_ref().unwrap().to_bytes())
+            .collect();
+        assert_eq!(prompts, [b"first ".as_slice(), b" ", b"last ", b" "]);
+        assert_eq!(inputs, [b"one".as_slice(), b"", b"three", b""]);
     }
-    free((*cdata).prompts as *mut ::core::ffi::c_void);
-    cmd_free_argv((*cdata).argc, (*cdata).argv);
-    args_make_commands_free((*cdata).state);
-    free(cdata as *mut ::core::ffi::c_void);
+
+    #[test]
+    fn literal_prompt_keeps_commas_and_null_input() {
+        let rows = cmd_command_prompt_rows(b"first,second", None, true, true);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].prompt.to_bytes(), b"first,second");
+        assert!(rows[0].input_ptr().is_null());
+
+        let rows = cmd_command_prompt_rows(b":", Some(b""), true, false);
+        assert_eq!(rows[0].prompt.to_bytes(), b":");
+        assert!(!rows[0].input_ptr().is_null());
+        assert_eq!(rows[0].input.as_ref().unwrap().to_bytes(), b"");
+    }
 }

@@ -1918,6 +1918,25 @@ legacy callers safe.
   separator suppression, empty formatted-name filtering, selected command,
   and overlay teardown. No sanitizer was run.
 
+### Increment 107 — command-prompt rows (2026-09-22)
+
+- `cmd_command_prompt_cdata` is Box-owned through the prompt free callback.
+  Its `Vec<cmd_command_prompt_prompt>` replaces the raw prompt array and
+  count; each row owns a `CString` prompt and optional `CString` input.
+  Removed the row `xcalloc`/`xreallocarray`, per-row strdup/asprintf/free,
+  array free, and record xcalloc/free. The command argument/state cleanup
+  remains at the original free-callback point.
+- Literal `-l` without `-I` still passes a null input, while nonliteral rows
+  use an owned empty input where the old splitter did. Comma splitting,
+  empty fields, prompt order, and first-NUL C-string views are preserved.
+  Prompt and input pointers are captured before set/update callbacks; no
+  Rust row borrow crosses a call that can reenter prompt teardown. The raw
+  callback data pointer remains the compatibility boundary until freecb.
+- Validation in the isolated worktree: focused splitter/null-input tests,
+  workspace tests, binary build, changed-file rustfmt, and `git diff --check`
+  passed. An attached PTY scenario completed two prompt steps with initial
+  inputs and checked the resulting option value. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1939,8 +1958,7 @@ non-string value.
    callback return contract can change.
 2. `mode_tree_data.line_list` still uses `xreallocarray` and a manual count.
    Its C-zeroed record, many line aliases, and callback-driven rebuild need
-   one lifecycle audit before replacing the array with `Vec`. Command-prompt
-   rows also have a bounded callback-owned list of copied C strings.
+   one lifecycle audit before replacing the array with `Vec`.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1956,9 +1974,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–106. The remaining
+Current validation is recorded in increments 15–107. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–106 has its own local commit; none was pushed.
+Each of increments 15–107 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
