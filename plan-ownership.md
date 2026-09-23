@@ -1914,6 +1914,19 @@ legacy callers safe.
   with default yes, prompt replacement, and invalid-key cleanup. No sanitizer
   was run.
 
+### Increment 261 — clock mode data owner (2026-09-23)
+
+- `window_clock_mode_data` now has a stable `Box` allocation through the
+  screen and timer lifetime. `window_clock_free` cancels the timer, frees the
+  screen, then drops the box at the previous C free point. The timer callback
+  still rearms only while the mode is active.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and
+  `scripts/window_clock_owner_cli_checks.py` passed on main and the pinned
+  baseline. The attached PTY check entered clock mode twice, observed redraw,
+  resized the window, waited for timer redraw, and exited through a key.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1924,8 +1937,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit small callback and mode-data leaves such as `window_clock` for
-   complete allocation, callback, and free ownership.
+1. Audit small callback leaves such as `events_sink` and the shell-command
+   callback records for complete allocation, callback, and free ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
@@ -1940,8 +1953,8 @@ non-string value.
    but C formatting stops at the first NUL: the formatted output is `A`, not
    a string with an interior NUL. This first-NUL behavior is covered by
    `scripts/window_copy_vadd_owner_cli_checks.py`. No supported path has been
-   found that puts an interior NUL in any `xvasprintf` output. The related `format_find`
-   transforms also return C-owned strings to `format_replace`; local
+   found that puts an interior NUL in any `xvasprintf` output. The related
+   `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
 3. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.

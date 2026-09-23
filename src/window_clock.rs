@@ -1,5 +1,5 @@
 use crate::src::ffi::libc::{
-    clock_gettime, free, gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time,
+    clock_gettime, gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time,
 };
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
@@ -73,7 +73,6 @@ pub use crate::src::shared::window::{
 };
 use crate::src::style::style_apply;
 use crate::src::window::window_pane_reset_mode;
-use crate::src::xmalloc::xcalloc;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -722,10 +721,11 @@ unsafe extern "C" fn window_clock_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    data = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_clock_mode_data>() as size_t,
-    ) as *mut window_clock_mode_data;
+    data = Box::into_raw(Box::new(window_clock_mode_data {
+        screen: ::core::mem::zeroed(),
+        tim: 0,
+        timer: ::core::mem::zeroed(),
+    }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).tim = time(::core::ptr::null_mut::<time_t>());
     event_set(
@@ -753,7 +753,7 @@ unsafe extern "C" fn window_clock_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
     event_del(&raw mut (*data).timer);
     screen_free(&raw mut (*data).screen);
-    free(data as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_clock_resize(
     mut wme: *mut window_mode_entry,
