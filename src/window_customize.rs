@@ -161,7 +161,7 @@ pub struct window_customize_modedata {
     pub data: *mut mode_tree_data,
     pub editor: *mut spawn_editor_state,
     pub edit: *mut window_customize_editdata,
-    pub format: *mut ::core::ffi::c_char,
+    pub format: CString,
     pub hide_global: ::core::ffi::c_int,
     pub hide_default: ::core::ffi::c_int,
     pub prompt_flags: ::core::ffi::c_int,
@@ -1081,7 +1081,7 @@ unsafe extern "C" fn window_customize_build_array(
             (*item).oo = oo;
             window_customize_set_name(item, options_name(o));
             window_customize_set_item_array_key(item, array_key);
-            text = format_expand(ft, (*data).format);
+            text = format_expand(ft, (*data).format.as_ptr());
             mode_tree_add_identity(
                 (*data).data,
                 top,
@@ -1275,7 +1275,7 @@ unsafe extern "C" fn window_customize_build_option(
     if array != 0 {
         text = ::core::ptr::null_mut::<::core::ffi::c_char>();
     } else {
-        text = format_expand(ft, (*data).format);
+        text = format_expand(ft, (*data).format.as_ptr());
     }
     top = mode_tree_add_identity(
         (*data).data,
@@ -1493,7 +1493,7 @@ unsafe extern "C" fn window_customize_build_keys(
             (*item).key = (*bd).key;
             let key_string = key_string_format((*item).key, false);
             window_customize_set_name(item, key_string.as_ptr());
-            expanded = format_expand(ft, (*data).format);
+            expanded = format_expand(ft, (*data).format.as_ptr());
             child = mode_tree_add_identity(
                 (*data).data,
                 top,
@@ -1685,7 +1685,7 @@ unsafe extern "C" fn window_customize_build_environment(
             text = ::core::ptr::null_mut::<::core::ffi::c_char>();
             Cow::Owned(CString::new(bytes).expect("environment name contains no NUL"))
         } else {
-            text = format_expand(ft, (*data).format);
+            text = format_expand(ft, (*data).format.as_ptr());
             Cow::Borrowed(CStr::from_ptr((*envent).name))
         };
         mode_tree_add_identity(
@@ -2976,6 +2976,11 @@ unsafe extern "C" fn window_customize_init(
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
+    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+        CStr::from_ptr(WINDOW_CUSTOMIZE_DEFAULT_FORMAT.as_ptr()).to_owned()
+    } else {
+        CStr::from_ptr(args_get(args, 'F' as i32 as u_char)).to_owned()
+    };
     data = Box::into_raw(Box::new(window_customize_modedata {
         wp,
         dead: 0,
@@ -2983,7 +2988,7 @@ unsafe extern "C" fn window_customize_init(
         data: ::core::ptr::null_mut(),
         editor: ::core::ptr::null_mut(),
         edit: ::core::ptr::null_mut(),
-        format: ::core::ptr::null_mut(),
+        format,
         hide_global: 0,
         hide_default: 0,
         prompt_flags: 0,
@@ -2992,11 +2997,6 @@ unsafe extern "C" fn window_customize_init(
         change: WINDOW_CUSTOMIZE_UNSET,
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
-    if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
-        (*data).format = xstrdup(WINDOW_CUSTOMIZE_DEFAULT_FORMAT.as_ptr());
-    } else {
-        (*data).format = xstrdup(args_get(args, 'F' as i32 as u_char));
-    }
     if args_has(args, 'y' as i32 as u_char) != 0 {
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
@@ -3058,7 +3058,6 @@ unsafe extern "C" fn window_customize_destroy(mut data: *mut window_customize_mo
     for item in (*data).item_list.drain(..) {
         drop(item);
     }
-    free((*data).format as *mut ::core::ffi::c_void);
     drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_customize_free(mut wme: *mut window_mode_entry) {
@@ -5240,7 +5239,7 @@ mod item_owner_tests {
                 data: ::core::ptr::null_mut(),
                 editor: ::core::ptr::null_mut(),
                 edit: ::core::ptr::null_mut(),
-                format: ::core::ptr::null_mut(),
+                format: CString::new(Vec::new()).unwrap(),
                 hide_global: 0,
                 hide_default: 0,
                 prompt_flags: 0,

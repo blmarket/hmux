@@ -79,7 +79,13 @@ def check(binary_path, kind):
                 "-F", display,
             )
             run("send-keys", "-t", "scopeé:0.0", *(["Down"] * section), "Right")
-            return wait_for(expected)
+            rendered = wait_for(expected)
+            run("send-keys", "-t", "scopeé:0.0", "q")
+            deadline = time.monotonic() + 5
+            while run("display-message", "-p", "-t", "scopeé:0.0", "#{pane_in_mode}").strip() != b"0":
+                assert time.monotonic() < deadline, "customize mode did not close"
+                time.sleep(0.05)
+            return rendered
         finally:
             subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
             if client is not None:

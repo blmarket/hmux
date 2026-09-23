@@ -2085,6 +2085,19 @@ legacy callers safe.
   replacing, and detaching a client with an active prompt. No sanitizer was
   run.
 
+### Increment 274 — customize-mode format string (2026-09-23)
+
+- `window_customize_modedata` now stores its `-F` format as `CString` in the
+  existing stable `Box`. Synchronous `format_expand` calls borrow its C view;
+  the string remains valid through any deferred prompt or editor reference and
+  drops with the mode record at its final reference.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, `scripts/customize_option_cli_checks.py`,
+  and `scripts/customize_scope_text_cli_checks.py` passed on main. The scope
+  check also passed with the pinned baseline and covered custom `-F` output
+  for server, session, window, pane, and environment rows, followed by mode
+  teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
