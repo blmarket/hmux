@@ -125,12 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `session.cwd` has one creator, one attach-session replacement, and one
-   teardown free. `SessionOwner` can hold an `Option<CString>` while public
-   `session.cwd` borrows it. Preserve its early clear in `session_destroy`;
-   `format_single` returns a C-owned attach path that must be copied before
-   its producer allocation is freed. Check `#{session_path}` and new-window
-   cwd after initial `-c` and attach-session `-c`.
+1. `session.name` has a bounded `SessionOwner` target. Its writers are
+   explicit and generated creation plus `rename-session`; `session_free` has
+   the final free. Preserve bytewise generated prefixes, collision checks,
+   and remove-before-replace map order. Check synchronous rename hooks and
+   delayed final drop before changing the public borrowed name pointer.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -649,6 +648,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   against pinned 3.8-rc covers explicit rename, named and default spawn,
   named and default break-pane, and pane terminal rename. Event payload,
   waiter, and command-stringify CLI comparisons also passed. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 387 — owned session working directory (2026-09-23)
+
+- `SessionOwner` now holds `session.cwd` as `Option<CString>`, and the public
+  pointer borrows it until replacement or early destruction. `session_create`
+  copies the incoming C-string bytes directly into the owner, removing its
+  `xstrdup`. `attach-session -c` copies the C-owned `format_single` result,
+  frees that producer allocation, and replaces the owner after expansion,
+  preserving formats that read the previous session cwd. `session_destroy`
+  clears the owner at the old free point, before delayed session release.
+- Serialized workspace tests, binary build, and the pane-cwd CLI comparison
+  passed. A focused session-cwd CLI comparison covers initial and attached
+  cwd, session path formatting, and subsequent window creation. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index

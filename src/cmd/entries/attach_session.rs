@@ -13,8 +13,8 @@ use crate::src::server_client::{
     server_client_check_nested, server_client_detach, server_client_open, server_client_set_flags,
     server_client_set_key_table, server_client_set_session,
 };
-use crate::src::session::session_set_current;
 pub use crate::src::session::sessions;
+use crate::src::session::{session_set_current, session_set_cwd_from_c_owned};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::arguments::*;
@@ -194,8 +194,7 @@ pub unsafe extern "C" fn cmd_attach_session(
     }
     if !cflag.is_null() {
         cwd = format_single(item, cflag, c, s, wl, wp);
-        free((*s).cwd as *mut ::core::ffi::c_void);
-        (*s).cwd = cwd;
+        session_set_cwd_from_c_owned(s, cwd);
     }
     if !fflag.is_null() {
         server_client_set_flags(c, fflag);

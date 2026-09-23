@@ -92,6 +92,7 @@ use crate::src::window::{
     winlinks_minmax, winlinks_next,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -104,13 +105,34 @@ pub static mut next_session_id: u_int = 0;
 pub static mut session_groups: session_groups = session_groups { storage: None };
 
 /// The node stays at offset zero so existing session pointers retain their
-/// layout. Its `tio` pointer borrows the boxed value until session_destroy.
+/// layout. Its `tio` and `cwd` pointers borrow boxed owner values.
 #[repr(C)]
 struct SessionOwner {
     node: session,
     tio: Option<Box<termios>>,
+    cwd: Option<CString>,
 }
 const _: () = assert!(::core::mem::offset_of!(SessionOwner, node) == 0);
+
+/// `session.cwd` borrows this value until replacement or early destruction.
+pub(crate) unsafe fn session_set_cwd(s: *mut session, cwd: Option<CString>) {
+    let owner = s.cast::<SessionOwner>();
+    (*owner).cwd = cwd;
+    (*s).cwd = (*owner)
+        .cwd
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |cwd| cwd.as_ptr() as *mut _);
+}
+
+/// C producers return libc-owned strings, not CString-owned allocations.
+pub(crate) unsafe fn session_set_cwd_from_c_owned(
+    s: *mut session,
+    raw_cwd: *mut ::core::ffi::c_char,
+) {
+    let cwd = CStr::from_ptr(raw_cwd).to_owned();
+    free(raw_cwd.cast());
+    session_set_cwd(s, Some(cwd));
+}
 #[no_mangle]
 pub unsafe extern "C" fn session_cmp(
     mut s1: *mut session,
@@ -491,15 +513,16 @@ pub unsafe extern "C" fn session_create(
         } else {
             Some(Box::new(*tio))
         },
+        cwd: Some(CStr::from_ptr(cwd).to_owned()),
     });
     owner.node.tio = owner
         .tio
         .as_deref_mut()
         .map_or(::core::ptr::null_mut(), |tio| tio as *mut termios);
+    owner.node.cwd = owner.cwd.as_ref().unwrap().as_ptr() as *mut _;
     s = Box::into_raw(owner).cast::<session>();
     (*s).references = 1 as ::core::ffi::c_int;
     (*s).flags = 0 as ::core::ffi::c_int;
-    (*s).cwd = xstrdup(cwd);
     (*s).lastw.storage = None;
     (*s).lastw.reserved = std::ptr::null_mut();
     (*s).windows.storage = None;
@@ -656,7 +679,7 @@ pub unsafe extern "C" fn session_destroy(
         );
         winlink_remove(&raw mut (*s).windows, wl);
     }
-    free((*s).cwd as *mut ::core::ffi::c_void);
+    session_set_cwd(s, None);
     session_remove_ref(
         s,
         b"session_destroy\0" as *const u8 as *const ::core::ffi::c_char,
