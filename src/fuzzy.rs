@@ -1,6 +1,4 @@
-use crate::src::ffi::libc::{
-    __ctype_tolower_loc, calloc, free, memcmp, memcpy, memset, strchr, strlen,
-};
+use crate::src::ffi::libc::{__ctype_tolower_loc, calloc, free, memcmp, memset, strchr, strlen};
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 pub use crate::src::shared::abi::__int32_t;
@@ -10,7 +8,6 @@ use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
 use crate::src::style::{style_parse, style_set};
 use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
-use crate::src::xmalloc::xreallocarray;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -133,38 +130,18 @@ unsafe extern "C" fn fuzzy_align(mut align: style_align) -> style_align {
     }
     return align;
 }
-unsafe extern "C" fn fuzzy_add(
-    mut cs: *mut *mut fuzzy_char,
-    mut ncs: *mut u_int,
-    mut alloc: *mut u_int,
+unsafe fn fuzzy_add(
+    cs: &mut Vec<fuzzy_char>,
     mut a: style_align,
     mut ud: *const utf8_data,
     mut widths: *mut u_int,
 ) {
-    let mut fc: *mut fuzzy_char = ::core::ptr::null_mut::<fuzzy_char>();
-    if *ncs == *alloc {
-        *alloc = if *alloc == 0 as u_int {
-            64 as u_int
-        } else {
-            (*alloc).wrapping_mul(2 as u_int)
-        };
-        *cs = xreallocarray(
-            *cs as *mut ::core::ffi::c_void,
-            *alloc as size_t,
-            ::core::mem::size_of::<fuzzy_char>() as size_t,
-        ) as *mut fuzzy_char;
-    }
-    let fresh3 = *ncs;
-    *ncs = (*ncs).wrapping_add(1);
-    fc = (*cs).offset(fresh3 as isize) as *mut fuzzy_char;
-    (*fc).align = a;
-    memcpy(
-        &raw mut (*fc).ud as *mut ::core::ffi::c_void,
-        ud as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<utf8_data>() as size_t,
-    );
-    (*fc).width = (*ud).width as u_int;
-    (*fc).offset = *widths.offset(a as isize);
+    cs.push(fuzzy_char {
+        align: a,
+        ud: *ud,
+        width: (*ud).width as u_int,
+        offset: *widths.offset(a as isize),
+    });
     let ref mut fresh4 = *widths.offset(a as isize);
     *fresh4 = (*fresh4).wrapping_add((*ud).width as u_int);
 }
@@ -195,13 +172,11 @@ unsafe extern "C" fn fuzzy_decode_one(
     utf8_set(ud, *cp as u_char);
     return cp.offset(1 as ::core::ffi::c_int as isize);
 }
-unsafe extern "C" fn fuzzy_scan(
+unsafe fn fuzzy_scan(
     mut text: *const ::core::ffi::c_char,
-    mut ncs: *mut u_int,
     mut widths: *mut u_int,
-) -> *mut fuzzy_char {
-    let mut cs: *mut fuzzy_char = ::core::ptr::null_mut::<fuzzy_char>();
-    let mut alloc: u_int = 0 as u_int;
+) -> Vec<fuzzy_char> {
+    let mut cs = Vec::new();
     let mut n: u_int = 0;
     let mut leading: u_int = 0;
     let mut i: u_int = 0;
@@ -256,7 +231,6 @@ unsafe extern "C" fn fuzzy_scan(
         size: 0,
         width: 0,
     };
-    *ncs = 0 as u_int;
     memset(
         widths as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -281,39 +255,18 @@ unsafe extern "C" fn fuzzy_scan(
                 };
                 i = 0 as u_int;
                 while i < leading {
-                    fuzzy_add(
-                        &raw mut cs,
-                        ncs,
-                        &raw mut alloc,
-                        current,
-                        &raw mut hash,
-                        widths,
-                    );
+                    fuzzy_add(&mut cs, current, &raw mut hash, widths);
                     i = i.wrapping_add(1);
                 }
                 cp = cp.offset(n as isize);
             } else {
                 i = 0 as u_int;
                 while i < n.wrapping_div(2 as u_int) {
-                    fuzzy_add(
-                        &raw mut cs,
-                        ncs,
-                        &raw mut alloc,
-                        current,
-                        &raw mut hash,
-                        widths,
-                    );
+                    fuzzy_add(&mut cs, current, &raw mut hash, widths);
                     i = i.wrapping_add(1);
                 }
                 if n.wrapping_rem(2 as u_int) == 0 as u_int {
-                    fuzzy_add(
-                        &raw mut cs,
-                        ncs,
-                        &raw mut alloc,
-                        current,
-                        &raw mut bracket,
-                        widths,
-                    );
+                    fuzzy_add(&mut cs, current, &raw mut bracket, widths);
                     cp = cp.offset(n.wrapping_add(1 as u_int) as isize);
                 } else {
                     end = format_skip(
@@ -349,14 +302,7 @@ unsafe extern "C" fn fuzzy_scan(
             {
                 continue;
             }
-            fuzzy_add(
-                &raw mut cs,
-                ncs,
-                &raw mut alloc,
-                current,
-                &raw mut ud,
-                widths,
-            );
+            fuzzy_add(&mut cs, current, &raw mut ud, widths);
         }
     }
     return cs;
@@ -789,12 +735,12 @@ pub unsafe extern "C" fn fuzzy_match(
     mut width: u_int,
     mut score: *mut u_int,
 ) -> *mut bitstr_t {
-    let mut cs: *mut fuzzy_char = ::core::ptr::null_mut::<fuzzy_char>();
+    let mut cs: Vec<fuzzy_char>;
     let mut matched: Vec<::core::ffi::c_char>;
     let mut best: Vec<::core::ffi::c_char>;
     let mut tok: Vec<utf8_data>;
     let mut mask: *mut bitstr_t = ::core::ptr::null_mut::<bitstr_t>();
-    let mut ncs: u_int = 0;
+    let ncs: u_int;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut column: u_int = 0;
@@ -838,7 +784,8 @@ pub unsafe extern "C" fn fuzzy_match(
             cp = cp.offset(1);
         }
     }
-    cs = fuzzy_scan(text, &raw mut ncs, &raw mut widths as *mut u_int);
+    cs = fuzzy_scan(text, &raw mut widths as *mut u_int);
+    ncs = cs.len() as u_int;
     matched = vec![0; ncs.max(1) as usize];
     best = vec![0; ncs.max(1) as usize];
     tok = vec![
@@ -867,7 +814,7 @@ pub unsafe extern "C" fn fuzzy_match(
             sp,
             cp,
             tok.as_mut_ptr(),
-            cs,
+            cs.as_mut_ptr(),
             ncs,
             fold,
             &raw mut groupscore,
@@ -885,7 +832,7 @@ pub unsafe extern "C" fn fuzzy_match(
     if found == 0 {
         drop(best);
         drop(matched);
-        free(cs as *mut ::core::ffi::c_void);
+        drop(cs);
         return ::core::ptr::null_mut::<bitstr_t>();
     }
     wl = widths[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize];
@@ -936,7 +883,7 @@ pub unsafe extern "C" fn fuzzy_match(
     while i < ncs {
         if best[i as usize] != 0 {
             if !(fuzzy_column(
-                cs.offset(i as isize) as *mut fuzzy_char,
+                cs.as_ptr().add(i as usize),
                 &raw mut start as *mut u_int,
                 &raw mut src as *mut u_int,
                 &raw mut vis as *mut u_int,
@@ -944,7 +891,7 @@ pub unsafe extern "C" fn fuzzy_match(
             ) != 0 as ::core::ffi::c_int)
             {
                 j = 0 as u_int;
-                while j < (*cs.offset(i as isize)).width && column.wrapping_add(j) < width {
+                while j < cs[i as usize].width && column.wrapping_add(j) < width {
                     let ref mut fresh0 =
                         *mask.offset((column.wrapping_add(j) >> 3 as ::core::ffi::c_int) as isize);
                     *fresh0 = (*fresh0 as ::core::ffi::c_int
@@ -958,7 +905,7 @@ pub unsafe extern "C" fn fuzzy_match(
     }
     drop(best);
     drop(matched);
-    free(cs as *mut ::core::ffi::c_void);
+    drop(cs);
     if !score.is_null() {
         *score = if bestscore < 0 as ::core::ffi::c_int {
             0 as u_int
@@ -1026,6 +973,33 @@ mod tests {
             assert!(
                 fuzzy_match(c"abc".as_ptr(), c"abx".as_ptr(), 3, std::ptr::null_mut()).is_null()
             );
+        }
+    }
+
+    #[test]
+    fn fuzzy_match_crosses_scan_growth_boundary_and_stops_at_nul() {
+        let text = format!("{}zy\0q", "a".repeat(63));
+        unsafe {
+            let mask = fuzzy_match(
+                c"zy".as_ptr(),
+                text.as_ptr().cast(),
+                65,
+                std::ptr::null_mut(),
+            );
+            assert!(!mask.is_null());
+            assert_eq!(
+                std::slice::from_raw_parts(mask.cast::<u8>(), 9),
+                &[0, 0, 0, 0, 0, 0, 0, 0x80, 1]
+            );
+            free(mask.cast());
+
+            assert!(fuzzy_match(
+                c"q".as_ptr(),
+                text.as_ptr().cast(),
+                65,
+                std::ptr::null_mut()
+            )
+            .is_null());
         }
     }
 }

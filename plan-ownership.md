@@ -1612,6 +1612,19 @@ legacy callers safe.
   `git diff --check` passed. No separate runtime test or sanitizer run was
   performed.
 
+### Increment 88 — fuzzy scan character array (2026-09-22)
+
+- Private `fuzzy_scan` now returns `Vec<fuzzy_char>` and `fuzzy_add` pushes
+  each copied UTF-8 cell. Its sole caller, `fuzzy_match`, takes the count
+  from the Vec, lends a stable pointer only during matching, and drops the
+  owner at both former `free(cs)` sites. This removes the growable
+  `xreallocarray` buffer, manual count and capacity bookkeeping, and both
+  frees. Alignment widths, scan order, and the libc-owned result mask remain.
+- A focused test crosses the former 64-cell growth boundary and confirms
+  first-NUL behavior. Focused fuzzy tests, binary build, changed-file
+  rustfmt, and `git diff --check` passed in the isolated worktree. No
+  sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1631,10 +1644,9 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `fuzzy_scan` and its sole caller `fuzzy_match` still share a private
-   growable C array of `fuzzy_char` that is freed on match and no-match paths.
-   Migrating that producer and consumer together is the next small local
-   owner. `cmd_save_buffer_exec`'s `file_write` call copies its path
+2. `format_grid_word` and `format_grid_line` each have a local growable
+   UTF-8 cell array. Inspect them as the next small owners.
+   `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
@@ -1648,9 +1660,9 @@ non-string value.
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–87. The remaining
+Current validation is recorded in increments 15–88. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–87 has its own local commit; none was pushed.
+Each of increments 15–88 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
