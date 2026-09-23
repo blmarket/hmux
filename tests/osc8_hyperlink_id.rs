@@ -66,6 +66,8 @@ fn osc8_id_survives_parser_paths_and_remains_in_captured_links() {
         "\\033]8;id=orphan:foo\\007",
         "\\033]8;id=one:id=two;https://bad.example\\007D",
         "\\033]8;id=;https://empty.example\\007E\\033]8;;\\007",
+        "\\n\\033]8;id=alpha=42;https://a.example\\007F\\033]8;;\\007",
+        "\\033]8;id=other;https://next.example\\007G\\033]8;;\\007",
         "'; sleep 30",
     );
     let create = server.run(&["new-session", "-d", "-s", "osc8-test", script]);
@@ -114,6 +116,6 @@ fn osc8_id_survives_parser_paths_and_remains_in_captured_links() {
     assert!(links.status.success(), "capture failed: {:?}", links.stderr);
     assert_eq!(
         links.stdout,
-        b"https://a.example https://b.example https://empty.example\n"
+        b"https://a.example https://b.example https://empty.example\nhttps://next.example\n"
     );
 }

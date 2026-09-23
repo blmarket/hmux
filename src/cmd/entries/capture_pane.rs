@@ -426,12 +426,11 @@ unsafe extern "C" fn cmd_capture_pane_pending(
     }
     return buf;
 }
-unsafe extern "C" fn cmd_capture_pane_hyperlinks(
+unsafe fn cmd_capture_pane_hyperlinks(
     mut gd: *mut grid,
     mut s: *mut screen,
     mut py: u_int,
-    mut links: *mut u_int,
-    mut nlinks: *mut u_int,
+    links: &mut Vec<u_int>,
     mut len: *mut size_t,
 ) -> *mut ::core::ffi::c_char {
     let mut gl: *const grid_line = grid_peek_line(gd, py);
@@ -453,7 +452,6 @@ unsafe extern "C" fn cmd_capture_pane_hyperlinks(
     let mut line: *mut ::core::ffi::c_char =
         xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     let mut i: u_int = 0;
-    let mut j: u_int = 0;
     *len = 0 as size_t;
     if (*s).hyperlinks.is_null() || !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0
     {
@@ -463,14 +461,7 @@ unsafe extern "C" fn cmd_capture_pane_hyperlinks(
     while i < (*gl).cellused as u_int {
         grid_get_cell(gd, i, py, &raw mut gc);
         if !(gc.link == 0 as u_int) {
-            j = 0 as u_int;
-            while j < *nlinks {
-                if *links.offset(j as isize) == gc.link {
-                    break;
-                }
-                j = j.wrapping_add(1);
-            }
-            if !(j != *nlinks) {
+            if !links.contains(&gc.link) {
                 if !(hyperlinks_get(
                     (*s).hyperlinks,
                     gc.link,
@@ -479,12 +470,10 @@ unsafe extern "C" fn cmd_capture_pane_hyperlinks(
                     ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
                 ) == 0)
                 {
-                    if *nlinks == (*gd).sx {
+                    if links.len() == (*gd).sx as usize {
                         break;
                     }
-                    let fresh9 = *nlinks;
-                    *nlinks = (*nlinks).wrapping_add(1);
-                    *links.offset(fresh9 as isize) = gc.link;
+                    links.push(gc.link);
                     if *len != 0 as size_t {
                         line = cmd_capture_pane_append(
                             line,
@@ -519,8 +508,7 @@ unsafe extern "C" fn cmd_capture_pane_history(
     let mut show_flags: ::core::ffi::c_int = 0;
     let mut show_time: ::core::ffi::c_int = 0;
     let mut hyperlinks: ::core::ffi::c_int = 0;
-    let mut links: *mut u_int = ::core::ptr::null_mut::<u_int>();
-    let mut nlinks: u_int = 0 as u_int;
+    let mut links: Vec<u_int> = Vec::new();
     let mut i: u_int = 0;
     let mut sx: u_int = 0;
     let mut top: u_int = 0;
@@ -645,16 +633,12 @@ unsafe extern "C" fn cmd_capture_pane_history(
     show_time = args_has(args, 'I' as i32 as u_char);
     hyperlinks = args_has(args, 'H' as i32 as u_char);
     if hyperlinks != 0 {
-        links = xreallocarray(
-            NULL,
-            (*gd).sx as size_t,
-            ::core::mem::size_of::<u_int>() as size_t,
-        ) as *mut u_int;
+        links = Vec::with_capacity((*gd).sx as usize);
     }
     i = top;
     while i <= bottom {
         if hyperlinks != 0 {
-            line = cmd_capture_pane_hyperlinks(gd, s, i, links, &raw mut nlinks, &raw mut linelen);
+            line = cmd_capture_pane_hyperlinks(gd, s, i, &mut links, &raw mut linelen);
         } else {
             line = grid_string_cells(gd, 0 as u_int, i, sx, &raw mut gc, flags, s);
             linelen = strlen(line);
@@ -759,7 +743,7 @@ unsafe extern "C" fn cmd_capture_pane_history(
         }
         i = i.wrapping_add(1);
     }
-    free(links as *mut ::core::ffi::c_void);
+    drop(links);
     if buf.is_null() {
         buf = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     }

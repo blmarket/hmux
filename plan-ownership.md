@@ -1524,6 +1524,19 @@ legacy callers safe.
   non-ASCII inputs attempted before this path, so those checks do not prove
   byte preservation for such input. No sanitizer run was performed.
 
+### Increment 82 — capture-pane hyperlink ID scratch (2026-09-22)
+
+- `cmd_capture_pane_history` now owns its `-H` hyperlink deduplication IDs in
+  `Vec<u_int>`. `cmd_capture_pane_hyperlinks` borrows that Vec while scanning
+  each line. This removes the `xreallocarray` allocation, manual count and
+  indexed writes, and final `free`; the Vec drops at the former free point.
+  The original `gd.sx` bound, first-seen order, and cross-line deduplication
+  remain. The output line and buffer retain their existing C ownership.
+- The live OSC 8 test now covers an ID repeated across lines and a newly seen
+  ID on the next line. Focused `osc8_hyperlink_id` tests, changed-file rustfmt,
+  and `git diff --check` passed in the isolated worktree. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1549,9 +1562,9 @@ non-string value.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–81. The remaining
+Current validation is recorded in increments 15–82. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–81 has its own local commit; none was pushed.
+Each of increments 15–82 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
