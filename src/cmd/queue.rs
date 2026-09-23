@@ -5,7 +5,7 @@ use crate::src::arguments::{
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
 use crate::src::cmd::{
     cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_list_first, cmd_list_free,
-    cmd_list_next, cmd_print,
+    cmd_list_next, cmd_print_cstring,
 };
 use crate::src::cmd_find::{
     cmd_find_clear_state, cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
@@ -613,10 +613,9 @@ unsafe extern "C" fn cmdq_find_flag(
 unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
     let mut c: *mut client = (*item).client;
     let mut state: *mut cmdq_state = (*item).state;
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    tmp = cmd_print((*item).cmd);
+    let tmp = cmd_print_cstring((*item).cmd);
     if !c.is_null() {
         uid = proc_get_peer_uid((*c).peer);
         let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
@@ -643,23 +642,22 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
                 (*c).name,
                 user.as_ptr(),
                 key.as_ptr(),
-                tmp,
+                tmp.as_ptr(),
             );
         } else {
             server_add_message(
                 b"%s%s command: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 (*c).name,
                 user.as_ptr(),
-                tmp,
+                tmp.as_ptr(),
             );
         }
     } else {
         server_add_message(
             b"command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tmp,
+            tmp.as_ptr(),
         );
     }
-    free(tmp as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
@@ -683,20 +681,18 @@ unsafe extern "C" fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     };
     let mut flags: ::core::ffi::c_int = 0;
     let mut quiet: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if cfg_finished != 0 {
         cmdq_add_message(item);
     }
     if log_get_level() > 1 as ::core::ffi::c_int {
-        tmp = cmd_print(cmd);
+        let tmp = cmd_print_cstring(cmd);
         log_debug(
             b"%s %s: (%u) %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_fire_command\0" as *const u8 as *const ::core::ffi::c_char,
             name,
             (*item).group,
-            tmp,
+            tmp.as_ptr(),
         );
-        free(tmp as *mut ::core::ffi::c_void);
     }
     flags = ((*state).flags & CMDQ_STATE_CONTROL != 0) as ::core::ffi::c_int;
     cmdq_guard(

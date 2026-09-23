@@ -1,7 +1,7 @@
 //! Command construction, target lookup, parsing, queue execution, and command entries.
 
 mod core;
-pub(crate) use self::core::cmd_list_print_cstring;
+pub(crate) use self::core::{cmd_list_print_cstring, cmd_print_cstring};
 pub mod entries;
 pub mod find;
 pub mod parse;

@@ -1148,6 +1148,19 @@ legacy callers safe.
   the pinned baseline for empty, non-UTF-8, newline, and combined quote
   modifiers. No sanitizer was run.
 
+### Increment 208 — printed command string owner (2026-09-23)
+
+- Private `cmd_print_cstring` now assembles command name and printed argument
+  bytes in a `CString`, replacing its `xasprintf`/`xstrdup` branches. It
+  consumes and frees the still C-owned `args_print` result locally.
+  `cmd_list_print_cstring` and both synchronous command-queue logging paths
+  borrow this owner, removing their `cmd_print` result frees. Exported
+  `cmd_print` keeps a libc-freeable duplicate for C callers.
+- Library/binary build, two `cmd_list_print_owner` focused tests,
+  changed-file rustfmt, Python syntax check, and `git diff --check` passed.
+  A private-server command-log CLI check matched the pinned baseline for
+  empty, non-UTF-8, and nested command arguments. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1158,12 +1171,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_print` builds a C-owned command string from an `args_print` result.
-   Its new `cmd_list_print_cstring` caller copies and frees that result;
-   command queue logging also consumes it synchronously. Audit a private
-   owned `cmd_print` producer and those callers while retaining its exported
-   libc-freeable wrapper. `args_print` still has its own C-owned return, so
-   its producer boundary needs a separate lifetime audit.
+1. `tty_term_apply` decodes each terminal override into a temporary C string
+   then duplicates it into a capability or discards it. Audit an optional
+   `CString` owner for that loop-local value, including invalid `strunvis`
+   fallback and escaped NUL, while retaining the C-layout capability store.
+   `args_print` still has its own C-owned return and needs a separate
+   producer lifetime audit.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in

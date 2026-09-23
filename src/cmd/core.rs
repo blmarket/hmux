@@ -701,22 +701,30 @@ pub unsafe extern "C" fn cmd_copy(
     return new_cmd;
 }
 #[no_mangle]
-pub unsafe extern "C" fn cmd_print(mut cmd: *mut cmd) -> *mut ::core::ffi::c_char {
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    s = args_print((*cmd).args);
-    if *s as ::core::ffi::c_int != '\0' as i32 {
-        xasprintf(
-            &raw mut out,
-            b"%s %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*cmd).entry).name,
-            s,
-        );
-    } else {
-        out = xstrdup((*(*cmd).entry).name);
+pub unsafe extern "C" fn cmd_print(cmd: *mut cmd) -> *mut ::core::ffi::c_char {
+    let printed = cmd_print_cstring(cmd);
+    xstrdup(printed.as_ptr())
+}
+
+pub(crate) unsafe fn cmd_print_cstring(cmd: *mut cmd) -> CString {
+    let args = args_print((*cmd).args);
+    let arguments = CStr::from_ptr(args).to_bytes();
+    let name = CStr::from_ptr((*(*cmd).entry).name).to_bytes();
+    let mut buf = Vec::with_capacity(
+        name.len()
+            + if arguments.is_empty() {
+                0
+            } else {
+                arguments.len() + 1
+            },
+    );
+    buf.extend_from_slice(name);
+    if !arguments.is_empty() {
+        buf.push(b' ');
+        buf.extend_from_slice(arguments);
     }
-    free(s as *mut ::core::ffi::c_void);
-    return out;
+    free(args.cast());
+    CString::new(buf).expect("command print contains no interior NUL")
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_new() -> *mut cmd_list {
@@ -834,11 +842,8 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: *const cmd_list, flags: i32
     let mut buf = Vec::new();
     let mut cmd = (*(*cmdlist).list).tqh_first;
     while !cmd.is_null() {
-        // cmd_print's exported return remains libc-owned. Copy its C-string
-        // bytes into the Rust-owned result before releasing it.
-        let this = cmd_print(cmd);
-        buf.extend_from_slice(CStr::from_ptr(this).to_bytes());
-        free(this.cast());
+        let this = cmd_print_cstring(cmd);
+        buf.extend_from_slice(this.as_bytes());
 
         let next = (*cmd).qentry.tqe_next;
         if !next.is_null() {

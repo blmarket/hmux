@@ -4,12 +4,25 @@ use std::mem::size_of;
 use hmux2::src::arguments::{args_create, args_free, args_print, args_to_vector};
 use hmux2::src::cmd::entries::display_message::cmd_display_message_entry;
 use hmux2::src::cmd::{
-    cmd, cmd_free_argv, cmd_list_append, cmd_list_new, cmd_list_print, CMD_LIST_PRINT_ESCAPED,
-    CMD_LIST_PRINT_NO_GROUPS,
+    cmd, cmd_free, cmd_free_argv, cmd_list_append, cmd_list_new, cmd_list_print, cmd_print,
+    CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::ffi::libc::free;
 use hmux2::src::shared::arguments::{args_value, ARGS_COMMANDS};
 use hmux2::src::xmalloc::xcalloc;
+
+#[test]
+fn command_printer_keeps_exported_c_buffer_and_empty_arguments() {
+    unsafe {
+        let command = xcalloc(1, size_of::<cmd>()) as *mut cmd;
+        (*command).entry = &raw const cmd_display_message_entry;
+        (*command).args = args_create();
+        let printed = cmd_print(command);
+        assert_eq!(CStr::from_ptr(printed).to_bytes(), b"display-message");
+        free(printed.cast());
+        cmd_free(command);
+    }
+}
 
 #[test]
 fn list_printer_preserves_empty_and_group_separator_bytes() {
