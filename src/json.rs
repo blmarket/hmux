@@ -16,7 +16,7 @@ pub use crate::src::shared::json::{
     json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::xmalloc::{xasprintf, xmalloc, xmemdup, xstrdup, xstrndup};
+use crate::src::xmalloc::{xasprintf, xmalloc, xmemdup, xstrndup};
 use std::ffi::CStr;
 use std::ffi::CString;
 
@@ -51,6 +51,16 @@ pub const TOK_CLOSEOBJECT: json_token_type = 1;
 pub const TOK_OPENOBJECT: json_token_type = 0;
 pub const ERROR_CTX_LEN: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 pub const PARSE_DEPTH_MAX: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
+
+/// The public node borrows its key bytes from this stable box.
+#[repr(C)]
+struct JsonNodeOwner {
+    node: json_node,
+    key: Option<CString>,
+}
+
+const _: () = assert!(::core::mem::offset_of!(JsonNodeOwner, node) == 0);
+
 unsafe fn json_fields_insert(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
     if head.is_null() || elm.is_null() || (*elm).key.is_null() {
         return ::core::ptr::null_mut::<json_node>();
@@ -627,11 +637,20 @@ unsafe extern "C" fn json_create_node(
     mut val: *mut ::core::ffi::c_void,
 ) -> *mut json_node {
     let mut node: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    node = Box::into_raw(Box::new(::core::mem::zeroed::<json_node>()));
+    let mut owner = Box::new(JsonNodeOwner {
+        node: ::core::mem::zeroed::<json_node>(),
+        key: if key.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(key).to_owned())
+        },
+    });
+    owner.node.key = owner
+        .key
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |key| key.as_ptr() as *mut _);
+    node = Box::into_raw(owner).cast::<json_node>();
     (*node).parent = parent;
-    if !key.is_null() {
-        (*node).key = xstrdup(key);
-    }
     (*node).type_0 = type_0;
     if type_0 as ::core::ffi::c_uint == NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint {
         (*node).c2rust_unnamed.fields.entries =
@@ -689,10 +708,7 @@ pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
         }
         1 | 2 | _ => {}
     }
-    if !(*node).key.is_null() {
-        free((*node).key as *mut ::core::ffi::c_void);
-    }
-    drop(Box::from_raw(node));
+    drop(Box::from_raw(node.cast::<JsonNodeOwner>()));
 }
 unsafe extern "C" fn json_assign_value(
     mut node: *mut json_node,
@@ -1266,24 +1282,12 @@ mod json_fields_tests {
     use std::ffi::{CStr, CString};
 
     unsafe fn new_node(key: &CString) -> *mut json_node {
-        Box::into_raw(Box::new(json_node {
-            type_0: NODE_STRING,
-            key: key.as_ptr() as *mut ::core::ffi::c_char,
-            parent: ::core::ptr::null_mut::<json_node>(),
-            c2rust_unnamed: json_node_c2rust_unnamed {
-                str_0: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            },
-            oentry: json_node_oentry {
-                rbe_left: ::core::ptr::null_mut::<json_node>(),
-                rbe_right: ::core::ptr::null_mut::<json_node>(),
-                rbe_parent: ::core::ptr::null_mut::<json_node>(),
-                rbe_color: 0,
-            },
-            aentry: json_node_aentry {
-                tqe_next: ::core::ptr::null_mut::<json_node>(),
-                tqe_prev: ::core::ptr::null_mut::<*mut json_node>(),
-            },
-        }))
+        json_create_node(
+            ::core::ptr::null_mut(),
+            NODE_STRING,
+            key.as_ptr(),
+            ::core::ptr::null_mut(),
+        )
     }
 
     unsafe fn free_tree(head: &mut json_fields) {
@@ -1291,7 +1295,7 @@ mod json_fields_tests {
         while !item.is_null() {
             let next = json_fields_next(head, item);
             assert_eq!(json_fields_remove(head, item), item);
-            drop(Box::from_raw(item));
+            json_destroy_node(item);
             item = next;
         }
         drop(Box::from_raw(head.entries));
@@ -1317,11 +1321,12 @@ mod json_fields_tests {
                 assert!(json_fields_insert(&mut head, item).is_null());
                 items.push(item);
             }
+            drop(keys);
 
             let duplicate_key = CString::new(b"alpha".as_slice()).unwrap();
             let duplicate = new_node(&duplicate_key);
             assert_eq!(json_fields_insert(&mut head, duplicate), items[1]);
-            drop(Box::from_raw(duplicate));
+            json_destroy_node(duplicate);
 
             let probe_key = CString::new(b"alpha".as_slice()).unwrap();
             assert_eq!(json_fields_find(&mut head, probe_key.as_ptr()), items[1]);
@@ -1359,7 +1364,7 @@ mod json_fields_tests {
             assert_eq!(removed, items[2]);
             let removed_probe = CString::new(b"alpha-2".as_slice()).unwrap();
             assert!(json_fields_find(&mut head, removed_probe.as_ptr()).is_null());
-            drop(Box::from_raw(removed));
+            json_destroy_node(removed);
             free_tree(&mut head);
         }
     }

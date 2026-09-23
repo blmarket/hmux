@@ -3,9 +3,8 @@
 use super::abi::int64_t;
 use std::collections::BTreeMap;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
-/// Box-owned by the parser until `json_destroy_node` recursively consumes it.
+/// Box-owned with its key by the parser until recursive `json_destroy_node`.
 /// Parent, object-index, and array links borrow stable node addresses.
 pub struct json_node {
     pub type_0: json_node_type,

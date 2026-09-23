@@ -125,12 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `json_node.key` is the next bounded live owner. `json_create_node` is
-   the sole production writer (`xstrdup`), and recursive
-   `json_destroy_node` has the sole free. A private offset-zero owner can
-   hold an optional byte-preserving `CString` while the public key pointer
-   borrows it. Check field ordering, duplicate keys, parser temporaries,
-   and the bare node test fixture before changing destruction.
+1. `cmdq_item.name` is the next bounded live owner. Command and callback
+   constructors each `xasprintf` a label and the item pointer; `cmdq_remove`
+   has the sole production free before its Box drop. An offset-zero owner
+   can keep the formatted name after the box address is stable. Preserve
+   bytewise labels and pointer-bearing `%p` text. One options test manually
+   destroys a bare public item and must use owner-aware construction or
+   cleanup. This target is separate from disconnected-client queue
+   cancellation below.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -714,6 +716,21 @@ libc allocation on success and leaves it with the caller on error, so a local
   tests and binary build passed; lexer/source-file and verbose parser CLI
   comparisons passed against pinned 3.8-rc. Changed-file rustfmt and diff
   checks passed. No sanitizer ran.
+
+### Increment 391 — owned JSON node key (2026-09-23)
+
+- `JsonNodeOwner` now boxes each public `json_node` at offset zero and owns
+  an optional byte-preserving key `CString`. The public key pointer borrows
+  it through field-map insertion, serialization, recursive parsing, and
+  `json_destroy_node`. Removed `json_create_node`'s `xstrdup` and the
+  destructor's manual key free. The raw public node no longer derives
+  `Copy` or `Clone`.
+- The JSON field-ordering test now creates nodes through the production
+  constructor, drops its input key strings before reading the nodes, and
+  destroys duplicate and removed nodes through the production destructor.
+  Serialized workspace tests and binary build passed. JSON parse/recursive
+  cleanup and custom-layout CLI checks passed on candidate and pinned
+  3.8-rc. Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
