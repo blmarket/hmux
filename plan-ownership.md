@@ -125,15 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `paste_buffer.data` is the next live bounded owner. `PasteBufferOwner`
-   already boxes each stable buffer and owns its name. `paste_add`, `paste_set`,
-   and `paste_replace` accept C-allocated pointer-plus-size transfers; an
-   owned byte slice can hold exact binary data and lend the public pointer.
-   Copy and free each accepted producer allocation at the transfer boundary,
-   while preserving caller ownership on `paste_set` name errors. Zero-size
-   paths still consume the input. `paste_free` and `paste_replace` then lose
-   their manual data frees. Existing load-buffer CLI checks round-trip
-   `A\0B\xff`; editor and set-buffer checks cover replacement and lifecycle.
+1. `window_switch_itemdata.text` is the next bounded live owner. Each item is
+   already boxed, with two `format_expand` producers, three borrowed readers,
+   and one custom `Drop` that only frees the C string. A `CString` field can
+   retire both producer allocations and the manual free while retaining the
+   existing item addresses used by the match list. The switch-mode CLI checks
+   cover rendering, filter rebuild, selection, and teardown.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -911,6 +908,23 @@ libc allocation on success and leaves it with the caller on error, so a local
   creation cleanup. Changed-file rustfmt and diff checks passed. No sanitizer
   ran.
 
+### Increment 403 — owned paste buffer data (2026-09-23)
+
+- `PasteBufferOwner` now holds optional boxed bytes and lends the public
+  `paste_buffer.data` pointer with its exact size. `paste_add`, `paste_set`,
+  and `paste_replace` copy accepted C producer allocations into the owner and
+  free them at transfer. `paste_free` and replacement no longer free stored
+  data manually. Name errors in `paste_set` still leave input with the caller;
+  zero-size inputs are still consumed. The `set-buffer -w` caller retains a
+  clipboard-only copy after transfer, and `load-buffer -w` uses its live input
+  buffer after transfer, preserving success-only clipboard timing.
+- A focused test checks bytes across an interior NUL and high bytes before
+  and after replacement. Serialized workspace tests and binary build passed.
+  Pinned-baseline CLI comparisons passed for named buffer replacement and
+  eviction, `set-buffer -w`, binary `load-buffer -w`, and editor replacement
+  of binary data. Changed-file rustfmt and diff checks passed. No sanitizer
+  ran.
+
 ## Historical migration index
 
 Each retained increment was committed separately; increment 228 was reverted.
@@ -1165,7 +1179,10 @@ Numbers 6–139 were never individually recorded in this document.
 - args_set retains an out-of-repo Box record contract. Do not change that allocation path solely for in-repo callers.
 - utf8_sanitize preserves the first-NUL C-string view and the old fatal for a leading zero-width cell. Its Rust allocation failure diagnostic can differ from xreallocarray; a malformed complete UTF-8 rewind was corrected to retry from the candidate start.
 - log_vwrite, which calls vasprintf directly, has a supported interior-NUL E2E. No supported interior-NUL output was found in xvasprintf callers; the binary A\0B show-buffer E2E reaches window_copy_vadd but formats only A.
-- The old OSC 52 decoded allocation transfers to paste_add until paste_free. set-buffer data transfers to paste_set on success and remains with its caller on error. A local Vec alone would add a copy without retiring either transfer.
+- OSC 52 decoded allocations and set-buffer producer data transfer to the
+  paste owner, which copies and frees each accepted producer. `paste_set`
+  errors leave producer data with the caller. The public data pointer borrows
+  the owner until replacement or deletion.
 
 ## Validation history and known test conditions
 

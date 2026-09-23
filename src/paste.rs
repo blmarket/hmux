@@ -34,11 +34,12 @@ static mut paste_by_time: paste_time_tree = paste_time_tree {
     entries: std::collections::BTreeMap::new(),
 };
 
-/// The public buffer lends its name from this stable owner; data remains C-owned.
+/// The public buffer lends its name and data from this stable owner.
 #[repr(C)]
 struct PasteBufferOwner {
     node: paste_buffer,
     name: CString,
+    data: Option<Box<[u8]>>,
 }
 
 const _: () = assert!(::core::mem::offset_of!(PasteBufferOwner, node) == 0);
@@ -47,9 +48,29 @@ unsafe fn paste_new_owned(name: CString) -> *mut paste_buffer {
     let mut owner = Box::new(PasteBufferOwner {
         node: ::core::mem::zeroed::<paste_buffer>(),
         name,
+        data: None,
     });
     owner.node.name = owner.name.as_ptr() as *mut _;
     Box::into_raw(owner).cast::<paste_buffer>()
+}
+
+/// Accepted producer allocations are copied into the owner and released here.
+/// Copy before replacing the old owner data so source bytes remain readable.
+unsafe fn paste_take_data(pb: *mut paste_buffer, data: *mut ::core::ffi::c_char, size: size_t) {
+    let owned = if size == 0 {
+        None
+    } else {
+        Some(std::slice::from_raw_parts(data.cast::<u8>(), size).into())
+    };
+    let owner = &mut *pb.cast::<PasteBufferOwner>();
+    owner.data = owned;
+    owner.node.data = owner
+        .data
+        .as_mut()
+        .map_or(::core::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
+        .cast::<::core::ffi::c_char>();
+    owner.node.size = size;
+    free(data.cast());
 }
 
 unsafe fn paste_replace_name(pb: *mut paste_buffer, name: CString) -> CString {
@@ -253,7 +274,6 @@ pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
     if (*pb).automatic != 0 {
         paste_num_automatic = paste_num_automatic.wrapping_sub(1);
     }
-    free((*pb).data as *mut ::core::ffi::c_void);
     drop(Box::from_raw(pb.cast::<PasteBufferOwner>()));
 }
 #[no_mangle]
@@ -301,8 +321,7 @@ pub unsafe extern "C" fn paste_add(
             break;
         }
     }
-    (*pb).data = data;
-    (*pb).size = size;
+    paste_take_data(pb, data, size);
     (*pb).automatic = 1 as ::core::ffi::c_int;
     paste_num_automatic = paste_num_automatic.wrapping_add(1);
     (*pb).created = time(::core::ptr::null_mut::<time_t>());
@@ -427,8 +446,7 @@ pub unsafe extern "C" fn paste_set(
     let newname = CStr::from_ptr(raw_name).to_owned();
     free(raw_name.cast());
     pb = paste_new_owned(newname);
-    (*pb).data = data;
-    (*pb).size = size;
+    paste_take_data(pb, data, size);
     (*pb).automatic = 0 as ::core::ffi::c_int;
     let fresh1 = paste_next_order;
     paste_next_order = paste_next_order.wrapping_add(1);
@@ -452,9 +470,7 @@ pub unsafe extern "C" fn paste_replace(
     mut data: *mut ::core::ffi::c_char,
     mut size: size_t,
 ) {
-    free((*pb).data as *mut ::core::ffi::c_void);
-    (*pb).data = data;
-    (*pb).size = size;
+    paste_take_data(pb, data, size);
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
         (*pb).name,
@@ -491,6 +507,41 @@ pub unsafe extern "C" fn paste_make_sample(mut pb: *mut paste_buffer) -> *mut ::
 mod tests {
     use super::*;
     use std::ffi::CString;
+
+    unsafe fn allocated_bytes(bytes: &[u8]) -> *mut ::core::ffi::c_char {
+        let data = crate::src::xmalloc::xmalloc(bytes.len());
+        ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), data.cast::<u8>(), bytes.len());
+        data.cast()
+    }
+
+    #[test]
+    fn owned_data_preserves_binary_bytes_across_replacement() {
+        unsafe {
+            let mut cause = ::core::ptr::null_mut();
+            let name = c"owner-binary-data";
+            let first = b"A\0B\xff";
+            assert_eq!(
+                paste_set(
+                    allocated_bytes(first),
+                    first.len(),
+                    name.as_ptr(),
+                    &raw mut cause
+                ),
+                0
+            );
+            assert!(cause.is_null());
+            let pb = paste_get_name(name.as_ptr());
+            let mut len = 0;
+            let data = paste_buffer_data(pb, &raw mut len);
+            assert_eq!(std::slice::from_raw_parts(data.cast::<u8>(), len), first);
+
+            let second = b"\0\x80new";
+            paste_replace(pb, allocated_bytes(second), second.len());
+            let data = paste_buffer_data(pb, &raw mut len);
+            assert_eq!(std::slice::from_raw_parts(data.cast::<u8>(), len), second);
+            paste_free(pb);
+        }
+    }
 
     #[test]
     fn rename_accepts_borrowed_current_name() {

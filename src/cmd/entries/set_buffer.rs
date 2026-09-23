@@ -256,6 +256,11 @@ unsafe extern "C" fn cmd_set_buffer_exec(
             newsize,
         );
         bufsize = bufsize.wrapping_add(newsize);
+        let selection_data = if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
+            Some(std::slice::from_raw_parts(bufdata.cast::<u8>(), bufsize).to_vec())
+        } else {
+            None
+        };
         let name = bufname
             .as_ref()
             .map_or(::core::ptr::null(), |name| name.as_ptr());
@@ -266,12 +271,12 @@ unsafe extern "C" fn cmd_set_buffer_exec(
                 cause,
             );
         } else {
-            if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
+            if let Some(selection_data) = selection_data.as_ref() {
                 tty_set_selection(
                     &raw mut (*tc).tty,
                     b"\0" as *const u8 as *const ::core::ffi::c_char,
-                    bufdata,
-                    bufsize,
+                    selection_data.as_ptr().cast(),
+                    selection_data.len(),
                 );
             }
             return CMD_RETURN_NORMAL;

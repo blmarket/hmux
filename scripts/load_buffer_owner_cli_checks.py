@@ -56,6 +56,11 @@ def trace(binary):
                 time.sleep(0.02)
             target = os.fsdecode(target)
 
+            run("set-buffer", "-w", "-t", target, "-b", "set-clipboard", "prefix")
+            run("set-buffer", "-a", "-w", "-t", target, "-b", "set-clipboard", " suffix")
+            set_clipboard = run("show-buffer", "-b", "set-clipboard")
+            assert set_clipboard == b"prefix suffix", set_clipboard
+
             run("load-buffer", "-w", "-t", target, "-b", "filled", str(source))
             filled = run("show-buffer", "-b", "filled")
             assert filled == b"A\0B\xff", filled
@@ -89,7 +94,7 @@ def trace(binary):
             while run("list-clients", "-F", "#{client_name}") != b"":
                 assert time.monotonic() < deadline, "target client remained attached"
                 time.sleep(0.02)
-            return filled, empty_lookup.returncode, missing.returncode, invalid.returncode, cancelled.returncode
+            return set_clipboard, filled, empty_lookup.returncode, missing.returncode, invalid.returncode, cancelled.returncode
         finally:
             if pending is not None:
                 pending.terminate()
