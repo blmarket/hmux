@@ -3011,6 +3011,20 @@ legacy callers safe.
   teardown on both sides. Full workspace tests, binary build, changed-file
   rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 338 — boxed jobs (2026-09-23)
+
+- `job_run` now Box-allocates the zeroed job after the child is forked and
+  before publishing it to the global list and callbacks. Both terminal
+  paths, `job_free` and `job_transfer`, unlink the job and release its
+  attached resources before consuming the Box. Removed the job record's
+  `xcalloc`/`free` pair and `Copy`/`Clone` derives; its C-owned command
+  string retains its existing independent lifetime.
+- Run-shell job completion, failure, and delayed callbacks matched the
+  pinned baseline. The attached format-job CLI check passed on candidate
+  and baseline, including replacement and first-NUL display behavior.
+  Full workspace tests, binary build, changed-file rustfmt, and diff checks
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

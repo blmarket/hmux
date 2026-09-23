@@ -91,7 +91,7 @@ pub use crate::src::shared::window::{
 use crate::src::tmux::{
     checkshell, find_home, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
 };
-use crate::src::xmalloc::{xcalloc, xstrdup};
+use crate::src::xmalloc::xstrdup;
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const SHUT_RDWR: C2RustUnnamed = 2;
@@ -375,7 +375,7 @@ pub unsafe extern "C" fn job_run(
                     );
                     drop(env_owner.take());
                     drop(argv0);
-                    job = xcalloc(1 as size_t, ::core::mem::size_of::<job>() as size_t) as *mut job;
+                    job = Box::into_raw(Box::new(::core::mem::zeroed::<job>()));
                     (*job).state = JOB_RUNNING;
                     (*job).flags = flags;
                     if !cmd.is_null() {
@@ -489,7 +489,7 @@ pub unsafe extern "C" fn job_transfer(
     if !(*job).event.is_null() {
         bufferevent_free((*job).event);
     }
-    free(job as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(job));
     return fd;
 }
 #[no_mangle]
@@ -516,7 +516,7 @@ pub unsafe extern "C" fn job_free(mut job: *mut job) {
     if (*job).fd != -(1 as ::core::ffi::c_int) {
         close((*job).fd);
     }
-    free(job as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(job));
 }
 #[no_mangle]
 pub unsafe extern "C" fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {

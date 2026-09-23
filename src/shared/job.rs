@@ -14,8 +14,8 @@ pub const JOB_PTY: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 
 pub const JOB_DEFAULTSHELL: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by `job_run` until `job_free` or `job_transfer`.
 pub struct job {
     pub state: job_state,
     pub flags: ::core::ffi::c_int,
