@@ -2,14 +2,16 @@ use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and
 use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
 use crate::src::colour::colour_palette_clear;
-use crate::src::ffi::libc::{free, memset, strtol};
+use crate::src::ffi::libc::strtol;
 use crate::src::input::input_reset;
 use crate::src::key_bindings::{
     key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_unref_table,
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::options::options_get_number;
-use crate::src::server_client::{server_client_handle_key, server_client_handle_key_after};
+use crate::src::server_client::{
+    server_client_handle_key, server_client_handle_key_after, OwnedKeyEvent,
+};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -75,7 +77,6 @@ pub use crate::src::shared::window::{
 };
 use crate::src::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use crate::src::window::window_pane_key;
-use crate::src::xmalloc::xcalloc;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -153,19 +154,15 @@ unsafe extern "C" fn cmd_send_keys_inject_key(
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut event: *mut key_event = ::core::ptr::null_mut::<key_event>();
     let mut new_after: *mut cmdq_item = after;
     if args_has(args, 'K' as i32 as u_char) != 0 {
         if tc.is_null() {
             return item;
         }
-        event =
-            xcalloc(1 as size_t, ::core::mem::size_of::<key_event>() as size_t) as *mut key_event;
-        (*event).key = (key as ::core::ffi::c_ulonglong | KEYC_SENT) as key_code;
-        memset(
-            &raw mut (*event).m as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            ::core::mem::size_of::<mouse_event>() as size_t,
+        let event = OwnedKeyEvent::new(
+            (key as ::core::ffi::c_ulonglong | KEYC_SENT) as key_code,
+            ::core::mem::zeroed(),
+            None,
         );
         if after.is_null() {
             if server_client_handle_key(tc, event) != 0 as ::core::ffi::c_int {
@@ -176,8 +173,6 @@ unsafe extern "C" fn cmd_send_keys_inject_key(
         {
             return new_after;
         }
-        free((*event).buf as *mut ::core::ffi::c_void);
-        free(event as *mut ::core::ffi::c_void);
         return item;
     }
     wme = (*wp).modes.tqh_first;

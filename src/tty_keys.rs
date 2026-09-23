@@ -16,7 +16,9 @@ use crate::src::reactor::{
     evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized,
     event_pending, event_set,
 };
-use crate::src::server_client::{server_client_handle_key, server_client_update_theme_colours};
+use crate::src::server_client::{
+    server_client_handle_key, server_client_update_theme_colours, OwnedKeyEvent,
+};
 use crate::src::session::session_theme_changed;
 pub use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -1714,7 +1716,6 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
         sgr_type: 0,
         sgr_b: 0,
     };
-    let mut event: *mut key_event = ::core::ptr::null_mut::<key_event>();
     buf = evbuffer_pullup((*tty).in_0, -(1 as ::core::ffi::c_int) as ssize_t)
         as *const ::core::ffi::c_char;
     len = evbuffer_get_length((*tty).in_0);
@@ -2146,25 +2147,13 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     window_update_focus((*(*(*c).session).curw).window);
                 }
                 if key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-                    event = xcalloc(1 as size_t, ::core::mem::size_of::<key_event>() as size_t)
-                        as *mut key_event;
-                    (*event).key = key;
-                    memcpy(
-                        &raw mut (*event).m as *mut ::core::ffi::c_void,
-                        &raw mut m as *const ::core::ffi::c_void,
-                        ::core::mem::size_of::<mouse_event>() as size_t,
-                    );
-                    (*event).buf = xmalloc(size) as *mut ::core::ffi::c_char;
-                    (*event).len = size;
-                    memcpy(
-                        (*event).buf as *mut ::core::ffi::c_void,
-                        buf as *const ::core::ffi::c_void,
-                        (*event).len,
-                    );
-                    if server_client_handle_key(c, event) == 0 {
-                        free((*event).buf as *mut ::core::ffi::c_void);
-                        free(event as *mut ::core::ffi::c_void);
-                    }
+                    let bytes = if size == 0 {
+                        Vec::new()
+                    } else {
+                        ::core::slice::from_raw_parts(buf.cast::<u8>(), size).to_vec()
+                    };
+                    let event = OwnedKeyEvent::new(key, m, Some(bytes));
+                    server_client_handle_key(c, event);
                 }
                 evbuffer_drain((*tty).in_0, size);
                 return 1 as ::core::ffi::c_int;

@@ -2251,7 +2251,9 @@ unsafe extern "C" fn server_client_key_callback(
     mut data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     let mut current_block: u64;
-    let mut event: *mut key_event = data as *mut key_event;
+    // The queued callback owns the event and its bytes until this call returns.
+    let mut owned = Box::from_raw(data as *mut OwnedKeyEvent);
+    let mut event: *mut key_event = &raw mut owned.event;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut ec: *mut client = (*event).client;
     let mut key: key_code = (*event).key;
@@ -2690,10 +2692,37 @@ unsafe extern "C" fn server_client_key_callback(
     if !ec.is_null() {
         server_client_unref(ec);
     }
-    free((*event).buf as *mut ::core::ffi::c_void);
-    free(event as *mut ::core::ffi::c_void);
     return CMD_RETURN_NORMAL;
 }
+
+// key_event remains a plain C layout value because command states and overlay
+// callbacks copy or borrow it. Only queued events use this owner. The Vec keeps
+// buf alive across the command queue callback; those copies only inspect the
+// key and mouse fields after the callback has returned.
+pub struct OwnedKeyEvent {
+    event: key_event,
+    bytes: Option<Vec<u8>>,
+}
+
+impl OwnedKeyEvent {
+    pub fn new(key: key_code, m: mouse_event, mut bytes: Option<Vec<u8>>) -> Box<Self> {
+        let (buf, len) = match bytes.as_mut() {
+            Some(bytes) => (bytes.as_mut_ptr().cast(), bytes.len()),
+            None => (::core::ptr::null_mut(), 0),
+        };
+        Box::new(Self {
+            event: key_event {
+                client: ::core::ptr::null_mut(),
+                key,
+                m,
+                buf,
+                len,
+            },
+            bytes,
+        })
+    }
+}
+
 unsafe extern "C" fn server_client_handle_menu_key(
     mut c: *mut client,
     mut event: *mut key_event,
@@ -2777,12 +2806,13 @@ unsafe extern "C" fn server_client_handle_menu_key(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_handle_key0(
+unsafe fn server_client_handle_key0(
     mut c: *mut client,
-    mut event: *mut key_event,
+    mut owned: Box<OwnedKeyEvent>,
     mut after: *mut cmdq_item,
     mut next: *mut *mut cmdq_item,
 ) -> ::core::ffi::c_int {
+    let event: *mut key_event = &raw mut owned.event;
     let mut s: *mut session = (*c).session;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -2890,13 +2920,14 @@ unsafe extern "C" fn server_client_handle_key0(
             }
         }
     }
+    let queued_event = Box::into_raw(owned);
     item = cmdq_get_callback1(
         b"server_client_key_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(
             server_client_key_callback
                 as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
         ),
-        event as *mut ::core::ffi::c_void,
+        queued_event as *mut ::core::ffi::c_void,
     );
     if !after.is_null() {
         (*event).client = c;
@@ -2910,10 +2941,9 @@ unsafe extern "C" fn server_client_handle_key0(
     cmdq_append(c, item);
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_handle_key(
+pub unsafe fn server_client_handle_key(
     mut c: *mut client,
-    mut event: *mut key_event,
+    event: Box<OwnedKeyEvent>,
 ) -> ::core::ffi::c_int {
     return server_client_handle_key0(
         c,
@@ -2922,10 +2952,9 @@ pub unsafe extern "C" fn server_client_handle_key(
         ::core::ptr::null_mut::<*mut cmdq_item>(),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_handle_key_after(
+pub unsafe fn server_client_handle_key_after(
     mut c: *mut client,
-    mut event: *mut key_event,
+    event: Box<OwnedKeyEvent>,
     mut after: *mut cmdq_item,
     mut next: *mut *mut cmdq_item,
 ) -> ::core::ffi::c_int {
@@ -3464,21 +3493,14 @@ unsafe extern "C" fn server_client_click_timer(
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = data as *mut client;
-    let mut event: *mut key_event = ::core::ptr::null_mut::<key_event>();
     log_debug(b"click timer expired\0" as *const u8 as *const ::core::ffi::c_char);
     if (*c).flags & CLIENT_TRIPLECLICK as uint64_t != 0 {
-        event =
-            xcalloc(1 as size_t, ::core::mem::size_of::<key_event>() as size_t) as *mut key_event;
-        (*event).key = KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code;
-        memcpy(
-            &raw mut (*event).m as *mut ::core::ffi::c_void,
-            &raw mut (*c).click_event as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<mouse_event>() as size_t,
+        let event = OwnedKeyEvent::new(
+            KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code,
+            (*c).click_event,
+            None,
         );
-        if server_client_handle_key(c, event) == 0 {
-            free((*event).buf as *mut ::core::ffi::c_void);
-            free(event as *mut ::core::ffi::c_void);
-        }
+        server_client_handle_key(c, event);
     }
     (*c).flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
 }

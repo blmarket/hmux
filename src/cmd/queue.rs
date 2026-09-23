@@ -215,6 +215,11 @@ pub unsafe extern "C" fn cmdq_new_state(
             event as *const ::core::ffi::c_void,
             ::core::mem::size_of::<key_event>() as size_t,
         );
+        // Command state consumers use the key and mouse fields. The byte buffer
+        // belongs to the queued key callback and may be released before this
+        // state, so it must not retain that borrowed pointer.
+        (*state).event.buf = ::core::ptr::null_mut();
+        (*state).event.len = 0;
     } else {
         (*state).event.key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
     }

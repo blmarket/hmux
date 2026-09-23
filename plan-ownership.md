@@ -1885,6 +1885,21 @@ legacy callers safe.
   attached PTY check verified custom VINTR/VEOF settings across two panes and
   session teardown. No sanitizer was run.
 
+### Increment 259 — queued key-event owner (2026-09-23)
+
+- Terminal input, `send-keys -K`, and the click timer now create an
+  `OwnedKeyEvent` box. Terminal bytes live in its `Option<Vec<u8>>` until the
+  queued callback returns; rejected events drop immediately. The copied
+  command state clears its borrowed byte pointer and length because its
+  consumers inspect only the key and mouse fields. The C-layout `key_event`
+  remains a view for synchronous callbacks.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and the attached-PTY
+  `scripts/tty_key_event_owner_cli_checks.py` passed on main and the pinned
+  baseline. Both captured `[A^@B, AB, C, C]` for terminal `A\0B` and
+  `send-keys -K`. The click timer was source-audited but not live E2E tested.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1895,12 +1910,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. A tty key-event owner migration is committed as `6496538` in clean
-   `/tmp/hmux2-tty-key-event-owner`; review and integrate it as the next
-   increment, then remove that worktree. It covers terminal input,
-   `send-keys -K`, click timer, rejection, and queued callback completion.
-   Workspace tests and a pinned-baseline attached-client byte comparison
-   passed in isolation; the click-timer path has source audit but no live E2E.
+1. Audit small callback and mode-data leaves such as `window_clock` and
+   `confirm_before` for complete allocation, callback, and free ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
@@ -1910,10 +1921,12 @@ non-string value.
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
    flags, and layout's `%c` values are fixed nonzero characters; neither has
-   an identified user path to a middle NUL. `window_copy_vadd` does have one:
-   an attached-client `show-buffer` of a binary `A\0B` buffer reaches its
-   `%.*s` formatter. The first-NUL behavior is covered by
-   `scripts/window_copy_vadd_owner_cli_checks.py`. The related `format_find`
+   an identified user path to a middle NUL. An attached-client `show-buffer`
+   of a binary `A\0B` buffer does reach `window_copy_vadd`'s `%.*s` formatter,
+   but C formatting stops at the first NUL: the formatted output is `A`, not
+   a string with an interior NUL. This first-NUL behavior is covered by
+   `scripts/window_copy_vadd_owner_cli_checks.py`. No supported path has been
+   found that puts an interior NUL in any `xvasprintf` output. The related `format_find`
    transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
