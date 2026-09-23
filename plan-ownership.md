@@ -438,6 +438,18 @@ legacy callers safe.
   binaries for window-renamed and session-created hook formats, including
   `_name` keys and a Unicode window name. No sanitizer was run.
 
+### Increment 157 — pane tab-stop list scratch (2026-09-22)
+
+- `format_cb_pane_tabs` now writes comma-separated decimal tab positions
+  into a local Rust `String`, removing the callback file's final local
+  `evbuffer` allocation/free and append/pullup calls. It retains the tab-bit
+  traversal, no-pane null result, null for an empty list, and final C-owned
+  `xmemdup` callback result.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. New `scripts/pane_tabs_cli_checks.py` passed on old and new binaries
+  for default tab stops, all cleared stops, and two custom stops set by
+  terminal escape sequences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -448,10 +460,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_cb_pane_tabs` has the remaining local `evbuffer` assembly in the
-   format callbacks: a comma-separated numeric tab-stop list, duplicated
-   for the C-owned callback result. Audit tab-bit traversal and empty/null
-   behavior before replacing its intermediate buffer with Rust-owned text.
+1. `format_cb_start_command_list` still grows a C buffer with `xrealloc`
+   while concatenating shell-quoted pane arguments. Its callback requires
+   a C-owned return, but Rust-owned intermediate bytes may remove the manual
+   grow loop. Preserve quoting, spacing, no-pane/null, and argc-zero output.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -476,9 +488,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–156. The remaining
+Current validation is recorded in increments 15–157. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–156 has its own local commit; none was pushed.
+Each of increments 15–157 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
