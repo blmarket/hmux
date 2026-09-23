@@ -3830,7 +3830,6 @@ unsafe extern "C" fn window_customize_set_option(
     let mut name: *const ::core::ffi::c_char = (*item).name;
     let mut space: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut array_key: *const ::core::ffi::c_char = (*item).array_key;
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut fs: cmd_find_state = cmd_find_state {
@@ -3938,34 +3937,22 @@ unsafe extern "C" fn window_customize_set_option(
         {
             space = b", global\0" as *const u8 as *const ::core::ffi::c_char;
         }
+        let mut prompt_bytes = Vec::new();
+        prompt_bytes.extend_from_slice(b"(");
+        prompt_bytes.extend_from_slice(CStr::from_ptr(name).to_bytes());
         if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
             if array_key.is_null() {
-                xasprintf(
-                    &raw mut prompt,
-                    b"(%s[+]%s%s) \0" as *const u8 as *const ::core::ffi::c_char,
-                    name,
-                    space,
-                    text,
-                );
+                prompt_bytes.extend_from_slice(b"[+]");
             } else {
-                xasprintf(
-                    &raw mut prompt,
-                    b"(%s[%s]%s%s) \0" as *const u8 as *const ::core::ffi::c_char,
-                    name,
-                    array_key,
-                    space,
-                    text,
-                );
+                prompt_bytes.extend_from_slice(b"[");
+                prompt_bytes.extend_from_slice(CStr::from_ptr(array_key).to_bytes());
+                prompt_bytes.extend_from_slice(b"]");
             }
-        } else {
-            xasprintf(
-                &raw mut prompt,
-                b"(%s%s%s) \0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-                space,
-                text,
-            );
         }
+        prompt_bytes.extend_from_slice(CStr::from_ptr(space).to_bytes());
+        prompt_bytes.extend_from_slice(CStr::from_ptr(text).to_bytes());
+        prompt_bytes.extend_from_slice(b") ");
+        let prompt = CString::new(prompt_bytes).expect("option prompt contains no NUL");
         free(text as *mut ::core::ffi::c_void);
         value = options_to_string(o, array_key, 0 as ::core::ffi::c_int);
         new_item = window_customize_new_item();
@@ -3982,7 +3969,7 @@ unsafe extern "C" fn window_customize_set_option(
         mode_tree_set_prompt(
             (*data).data,
             c,
-            prompt,
+            prompt.as_ptr(),
             value,
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
@@ -4001,7 +3988,6 @@ unsafe extern "C" fn window_customize_set_option(
             ),
             new_item as *mut ::core::ffi::c_void,
         );
-        free(prompt as *mut ::core::ffi::c_void);
         free(value as *mut ::core::ffi::c_void);
     };
 }
