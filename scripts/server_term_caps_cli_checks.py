@@ -58,6 +58,7 @@ with tempfile.TemporaryDirectory(prefix="server-term-caps-", dir=root / "target"
 
         client_tty = run("list-clients", "-F", "#{client_tty}").strip().decode()
         assert client_tty, "attached terminal client is missing"
+        assert run("list-clients", "-F", "#{client_name}") == client_tty.encode() + b"\n"
         assert run("list-clients", "-F", "#{client_termname}") == b"hmux-owner-cap\n"
         user = pwd.getpwuid(os.getuid()).pw_name.encode()
         expected = user + b"|" + user + b"\n"

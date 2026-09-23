@@ -43,6 +43,9 @@ with tempfile.TemporaryDirectory(prefix="find-client-", dir=root / "target") as 
 
         client_name = listed.stdout.rstrip(b"\n")
         assert client_name
+        pid = run(b"list-clients", b"-F", b"#{client_pid}")
+        assert pid.returncode == 0, pid.stderr
+        assert client_name == b"client-" + pid.stdout.strip(), (client_name, pid.stdout)
         for target in (client_name, client_name + b":"):
             result = run(b"refresh-client", b"-t", target)
             assert (result.returncode, result.stdout, result.stderr) == (0, b"", b""), (
