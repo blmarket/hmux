@@ -1625,6 +1625,21 @@ legacy callers safe.
   rustfmt, and `git diff --check` passed in the isolated worktree. No
   sanitizer run was performed.
 
+### Increment 89 — format grid-line cell scratch (2026-09-22)
+
+- `format_grid_line` now collects copied `utf8_data` cells in a local Vec,
+  appends the same size-zero terminator, and drops the Vec after
+  `utf8_tocstr` has made the caller-owned C string. This removes its
+  per-cell `xreallocarray` growth, manual count, and matching free. Empty
+  lines still return null; tabs, padding, and UTF-8 cell bytes retain their
+  existing conversion paths and order.
+- A new grid test covers an empty line, ASCII, a tab, a wide UTF-8 cell with
+  padding, and returned-string lifetime after grid destruction. The focused
+  test and `git diff --check` passed in the isolated worktree. The new test
+  file passes rustfmt; whole-file rustfmt for `src/format.rs` reports
+  preexisting import-order differences outside this increment. No sanitizer
+  run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1644,8 +1659,8 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `format_grid_word` and `format_grid_line` each have a local growable
-   UTF-8 cell array. Inspect them as the next small owners.
+2. `format_grid_word` has the next similar local growable UTF-8 cell array.
+   Inspect it as the next small owner.
    `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1660,9 +1675,9 @@ non-string value.
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–88. The remaining
+Current validation is recorded in increments 15–89. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–88 has its own local commit; none was pushed.
+Each of increments 15–89 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

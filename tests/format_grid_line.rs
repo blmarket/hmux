@@ -1,0 +1,48 @@
+//! A grid line's temporary decoded cells must survive conversion to the
+//! caller-owned C string, including tabs, wide-cell padding, and UTF-8 bytes.
+
+use hmux2::src::format::format_grid_line;
+use hmux2::src::grid::{
+    grid_create, grid_default_cell, grid_destroy, grid_set_cell, grid_set_padding,
+};
+use hmux2::src::shared::grid::GRID_FLAG_TAB;
+use std::ffi::CStr;
+
+#[test]
+fn grid_line_converts_cells_and_leaves_returned_string_owned_by_caller() {
+    unsafe {
+        let gd = grid_create(8, 2, 0);
+        assert!(!gd.is_null());
+        assert!(format_grid_line(gd, 0).is_null());
+
+        let mut cell = grid_default_cell;
+        cell.data.data[0] = b'A';
+        grid_set_cell(gd, 0, 0, &cell);
+
+        cell.flags = GRID_FLAG_TAB as u8;
+        grid_set_cell(gd, 1, 0, &cell);
+
+        cell.flags = 0;
+        cell.data.data[..3].copy_from_slice("漢".as_bytes());
+        cell.data.size = 3;
+        cell.data.have = 3;
+        cell.data.width = 2;
+        grid_set_cell(gd, 2, 0, &cell);
+        grid_set_padding(gd, 3, 0, cell.bg);
+
+        cell.data.data = [0; 32];
+        cell.data.data[0] = b'Z';
+        cell.data.size = 1;
+        cell.data.have = 1;
+        cell.data.width = 1;
+        grid_set_cell(gd, 4, 0, &cell);
+
+        let result = format_grid_line(gd, 0);
+        assert!(!result.is_null());
+        assert_eq!(CStr::from_ptr(result).to_bytes(), "A\t漢Z".as_bytes());
+        grid_destroy(gd);
+        // The returned allocation must remain valid after the grid is gone.
+        assert_eq!(CStr::from_ptr(result).to_bytes(), "A\t漢Z".as_bytes());
+        libc::free(result.cast());
+    }
+}

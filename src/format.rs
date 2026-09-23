@@ -729,42 +729,32 @@ pub unsafe extern "C" fn format_grid_line(
         us: 0,
         link: 0,
     };
-    let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
+    let mut ud: Vec<utf8_data> = Vec::new();
     let mut x: u_int = 0;
-    let mut size: size_t = 0 as size_t;
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     x = 0 as u_int;
     while x < grid_line_length(gd, y) {
         grid_get_cell(gd, x, y, &raw mut gc);
         if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
-            ud = xreallocarray(
-                ud as *mut ::core::ffi::c_void,
-                size.wrapping_add(2 as size_t),
-                ::core::mem::size_of::<utf8_data>() as size_t,
-            ) as *mut utf8_data;
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-                let fresh8 = size;
-                size = size.wrapping_add(1);
-                utf8_set(
-                    ud.offset(fresh8 as isize) as *mut utf8_data,
-                    '\t' as i32 as u_char,
-                );
+                let mut tab = gc.data;
+                utf8_set(&raw mut tab, '\t' as i32 as u_char);
+                ud.push(tab);
             } else {
-                let fresh9 = size;
-                size = size.wrapping_add(1);
-                memcpy(
-                    ud.offset(fresh9 as isize) as *mut utf8_data as *mut ::core::ffi::c_void,
-                    &raw mut gc.data as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<utf8_data>() as size_t,
-                );
+                ud.push(gc.data);
             }
         }
         x = x.wrapping_add(1);
     }
-    if size != 0 as size_t {
-        (*ud.offset(size as isize)).size = 0 as u_char;
-        s = utf8_tocstr(ud);
-        free(ud as *mut ::core::ffi::c_void);
+    if !ud.is_empty() {
+        ud.push(utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        });
+        s = utf8_tocstr(ud.as_mut_ptr());
+        drop(ud);
     }
     return s;
 }
