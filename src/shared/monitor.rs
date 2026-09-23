@@ -51,7 +51,7 @@ pub struct monitor_items {
 
 #[repr(C)]
 /// Box-owned by its monitor set. The item index borrows its stable address
-/// and its name and format until `monitor_free_item` releases the record.
+/// and its name, format, and last value until `monitor_free_item` releases the record.
 pub struct monitor_item {
     pub name: *mut ::core::ffi::c_char,
     pub format: *mut ::core::ffi::c_char,
@@ -82,7 +82,7 @@ pub struct monitor_windows {
 #[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned by a monitor item. Its index and timer traversal borrow this
-/// stable address until removal, then release `last` before dropping the Box.
+/// stable address until removal; the private owner releases `last` on drop.
 pub struct monitor_window {
     pub window: u_int,
     pub idx: u_int,
@@ -107,7 +107,7 @@ pub struct monitor_panes {
 #[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned by a monitor item. Its index and timer traversal borrow this
-/// stable address until removal, then release `last` before dropping the Box.
+/// stable address until removal; the private owner releases `last` on drop.
 pub struct monitor_pane {
     pub pane: u_int,
     pub idx: u_int,

@@ -44,11 +44,11 @@ fn byte_names_composite_keys_and_nested_cleanup() {
         for name in [c"z", c"\xff", c"a"] {
             let item = find_item(set, name);
             for (id, idx) in [(2, 1), (1, 9), (1, 0), (u32::MAX, 0)] {
-                let pane = Box::into_raw(Box::new(std::mem::zeroed::<monitor_pane>()));
+                let pane = monitor_pane_new();
                 (*pane).pane = id;
                 (*pane).idx = idx;
                 monitor_panes_insert(&raw mut (*item).panes, pane);
-                let window = Box::into_raw(Box::new(std::mem::zeroed::<monitor_window>()));
+                let window = monitor_window_new();
                 (*window).window = id;
                 (*window).idx = idx;
                 monitor_windows_insert(&raw mut (*item).windows, window);

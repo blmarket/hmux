@@ -125,13 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Monitor cached `last` values are the next live bounded owner. `monitor_check_value`
-   replaces `format_expand` results in the boxed item, pane, and window
-   records; their teardown and generation sweeps free the raw strings. Add
-   private optional `CString` owners for all three leaf types and lend the
-   public pointers. Audit the report callback before publishing or dropping
-   an old value: it can reenter and destroy a monitor leaf. Existing monitor
-   leaf and non-UTF-8 CLI checks cover changes, sweeps, and teardown.
+1. Incoming OSC 52 decoding in `input_osc_52_parse` still allocates raw C
+   bytes. `input_osc_52` borrows them for terminal or pane selection and
+   transfers them to `paste_add`, or frees them on invalid/no-client paths.
+   The new private `paste_add_owned` can accept the exact decoded bytes after
+   synchronous selection and pane events. Keep the owned bytes alive through
+   `events_fire_pane`, which can reenter, and validate real incoming terminal
+   and pane OSC 52 paths with binary and invalid base64 replies.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -978,6 +978,25 @@ errors still leave the C producer allocation with the caller.
   invalid base64, and an empty reply. Existing set-buffer and load-buffer
   CLI comparisons passed. Changed-file rustfmt and diff checks passed. No
   sanitizer ran.
+
+### Increment 408 — owned monitor cached values (2026-09-23)
+
+- Private boxed owners for `monitor_item`, `monitor_pane`, and
+  `monitor_window` now hold optional `CString` cached values; public `last`
+  pointers borrow those strings. `monitor_check_value` copies each accepted
+  `format_expand` result, frees its C producer after any report callback,
+  and retains the previous owned value through that callback. Item teardown
+  and pane/window generation sweeps drop owners instead of freeing raw
+  `last` strings. Production pane/window constructors replace zeroed plain
+  boxes, including in the storage test.
+- A focused test covers equal-value suppression, non-UTF-8 previous/current
+  bytes, and removal of the item during its report callback. The report name
+  remains valid throughout that callback. Serialized workspace tests and
+  binary build passed. Pinned-baseline monitor leaf, hook string, and control
+  subscription CLI comparisons passed for changes and teardown. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran. During a reentrant
+  callback, the public cache pointer now shows the new value; report
+  `value`/`last` fields and notification order retain their prior meaning.
 
 ## Historical migration index
 
