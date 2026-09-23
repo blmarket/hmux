@@ -73,23 +73,30 @@ pub use crate::src::window::windows;
 use crate::src::window::{
     window_add_ref, window_remove_ref, windows_minmax, windows_next, winlinks_minmax, winlinks_next,
 };
+use std::collections::VecDeque;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_35 {
-    pub tqh_first: *mut window,
-    pub tqh_last: *mut *mut window,
-}
-
 pub const SESSION_ALERTED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 static mut alerts_fired: ::core::ffi::c_int = 0;
-static mut alerts_list: C2RustUnnamed_35 = C2RustUnnamed_35 {
-    tqh_first: ::core::ptr::null::<window>() as *mut window,
-    tqh_last: ::core::ptr::null::<*mut window>() as *mut *mut window,
-};
+static mut alerts_list: VecDeque<*mut window> = VecDeque::new();
+
+fn alerts_pop_front<T>(queue: &mut VecDeque<T>) -> Option<(T, bool)> {
+    let item = queue.pop_front()?;
+    // Leave appends made while processing an empty tail for the next callback.
+    Some((item, !queue.is_empty()))
+}
+
+fn alerts_enqueue<T>(queue: &mut VecDeque<T>, queued: &mut ::core::ffi::c_int, item: T) -> bool {
+    if *queued != 0 {
+        return false;
+    }
+    *queued = 1;
+    queue.push_back(item);
+    true
+}
+
 unsafe extern "C" fn alerts_timer(
     mut fd: ::core::ffi::c_int,
     mut events: ::core::ffi::c_short,
@@ -107,14 +114,16 @@ unsafe extern "C" fn alerts_callback(
     mut events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut w1: *mut window = ::core::ptr::null_mut::<window>();
     let mut alerts: ::core::ffi::c_int = 0;
-    w = alerts_list.tqh_first;
-    while !w.is_null() && {
-        w1 = (*w).alerts_entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
+    loop {
+        let next = {
+            let queue = &mut *::core::ptr::addr_of_mut!(alerts_list);
+            alerts_pop_front(queue)
+        };
+        let Some((w, has_next)) = next else {
+            break;
+        };
+        // Keep the membership flag set during checks to suppress duplicate requeues.
         alerts = alerts_check_all(w);
         log_debug(
             b"@%u alerts check, alerts %#x\0" as *const u8 as *const ::core::ffi::c_char,
@@ -122,18 +131,14 @@ unsafe extern "C" fn alerts_callback(
             alerts,
         );
         (*w).alerts_queued = 0 as ::core::ffi::c_int;
-        if !(*w).alerts_entry.tqe_next.is_null() {
-            (*(*w).alerts_entry.tqe_next).alerts_entry.tqe_prev = (*w).alerts_entry.tqe_prev;
-        } else {
-            alerts_list.tqh_last = (*w).alerts_entry.tqe_prev;
-        }
-        *(*w).alerts_entry.tqe_prev = (*w).alerts_entry.tqe_next;
         (*w).flags &= !WINDOW_ALERTFLAGS;
         window_remove_ref(
             w,
             b"alerts_callback\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        w = w1;
+        if !has_next {
+            break;
+        }
     }
     alerts_fired = 0 as ::core::ffi::c_int;
 }
@@ -262,12 +267,11 @@ pub unsafe extern "C" fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi
         );
     }
     if alerts_enabled(w, flags) != 0 {
-        if (*w).alerts_queued == 0 {
-            (*w).alerts_queued = 1 as ::core::ffi::c_int;
-            (*w).alerts_entry.tqe_next = ::core::ptr::null_mut::<window>();
-            (*w).alerts_entry.tqe_prev = alerts_list.tqh_last;
-            *alerts_list.tqh_last = w;
-            alerts_list.tqh_last = &raw mut (*w).alerts_entry.tqe_next;
+        let enqueued = {
+            let queue = &mut *::core::ptr::addr_of_mut!(alerts_list);
+            alerts_enqueue(queue, &mut (*w).alerts_queued, w)
+        };
+        if enqueued {
             window_add_ref(
                 w,
                 b"alerts_queue\0" as *const u8 as *const ::core::ffi::c_char,
@@ -483,14 +487,74 @@ unsafe extern "C" fn alerts_set_message(
         c = (*c).entry.tqe_next;
     }
 }
-unsafe extern "C" fn run_static_initializers() {
-    alerts_list = C2RustUnnamed_35 {
-        tqh_first: ::core::ptr::null_mut::<window>(),
-        tqh_last: &raw mut alerts_list.tqh_first,
-    };
+
+#[cfg(test)]
+mod alerts_list_tests {
+    use super::{alerts_enqueue, alerts_pop_front};
+    use std::collections::VecDeque;
+
+    fn run_callback<T>(queue: &mut VecDeque<T>, mut process: impl FnMut(T, &mut VecDeque<T>)) {
+        loop {
+            let Some((item, has_next)) = alerts_pop_front(queue) else {
+                break;
+            };
+            process(item, queue);
+            if !has_next {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn processes_items_appended_before_the_current_tail() {
+        let mut queue = VecDeque::from([1, 2]);
+        let mut seen = Vec::new();
+
+        run_callback(&mut queue, |item, queue| {
+            seen.push(item);
+            if item == 1 {
+                queue.push_back(3);
+            }
+        });
+
+        assert_eq!(seen, [1, 2, 3]);
+        assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn leaves_items_appended_while_processing_the_tail_for_next_callback() {
+        let mut queue = VecDeque::from([1]);
+        let mut seen = Vec::new();
+
+        run_callback(&mut queue, |item, queue| {
+            seen.push(item);
+            if item == 1 {
+                queue.push_back(2);
+            }
+        });
+
+        assert_eq!(seen, [1]);
+        assert_eq!(queue, VecDeque::from([2]));
+    }
+
+    #[test]
+    fn queue_flag_prevents_duplicate_membership_until_cleared() {
+        let mut queue = VecDeque::new();
+        let mut queued = 0;
+
+        assert!(alerts_enqueue(&mut queue, &mut queued, 1));
+        assert!(!alerts_enqueue(&mut queue, &mut queued, 2));
+        assert_eq!(queue, VecDeque::from([1]));
+        assert_eq!(queued, 1);
+
+        let (item, has_next) = alerts_pop_front(&mut queue).unwrap();
+        assert_eq!(item, 1);
+        assert!(!has_next);
+        assert!(!alerts_enqueue(&mut queue, &mut queued, 2));
+        assert!(queue.is_empty());
+
+        queued = 0;
+        assert!(alerts_enqueue(&mut queue, &mut queued, 3));
+        assert_eq!(queue, VecDeque::from([3]));
+    }
 }
-#[used]
-#[cfg_attr(target_os = "linux", link_section = ".init_array")]
-#[cfg_attr(target_os = "windows", link_section = ".CRT$XIB")]
-#[cfg_attr(target_os = "macos", link_section = "__DATA,__mod_init_func")]
-static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];

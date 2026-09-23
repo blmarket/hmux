@@ -123,7 +123,6 @@ pub struct window {
     pub outside_cell: grid_cell,
     pub flags: ::core::ffi::c_int,
     pub alerts_queued: ::core::ffi::c_int,
-    pub alerts_entry: window_alerts_entry,
     pub options: *mut options,
     pub references: u_int,
     pub winlinks: window_winlinks,

@@ -1264,10 +1264,6 @@ pub unsafe extern "C" fn window_find_by_id(mut id: u_int) -> *mut window {
         },
         flags: 0,
         alerts_queued: 0,
-        alerts_entry: window_alerts_entry {
-            tqe_next: ::core::ptr::null_mut::<window>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut window>(),
-        },
         options: ::core::ptr::null_mut::<options>(),
         references: 0,
         winlinks: window_winlinks {
