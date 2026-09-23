@@ -916,6 +916,18 @@ legacy callers safe.
   pinned baseline and confirmed cancellation preserves option values.
   No sanitizer was run.
 
+### Increment 192 — customize reset confirmation prompt scratch (2026-09-22)
+
+- `window_customize_key` now builds current-item and tagged reset
+  confirmation labels in local `CString` owners. Removed both `xasprintf`
+  allocations, matching frees, and the now-unused function-level prompt
+  pointer; `mode_tree_set_prompt` copies each prompt synchronously.
+- In the isolated branch, library/binary build, five focused option tests,
+  changed-file rustfmt, Python syntax check, and `git diff --check` passed.
+  The new attached-client CLI check matched both prompt variants with the
+  pinned baseline and confirmed accepting each removes the user option.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -926,9 +938,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Customize-mode prompt labels still have local `xasprintf`/free pairs
-   around `mode_tree_set_prompt`. Reset/unset confirmation prompts are the
-   next candidates after their branch-specific bytes are audited.
+1. `window_customize_scope_text` still returns a C-owned string built with
+   `xasprintf`/`xstrdup`. Its four callers use the result synchronously and
+   free it after `format_add` or prompt construction. Migrate the producer
+   and all four callers together to a byte-preserving `CString`; check the
+   pane, session, window, and empty scope branches against the baseline.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -953,9 +967,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–189. The remaining
+Current validation is recorded in increments 15–192. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–189 has its own local commit; none was pushed.
+Each of increments 15–192 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1167,6 +1181,13 @@ After increments 187–189 were integrated, `cargo clean -p hmux-rt` followed
 by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
 build, customize-new-user-prompt, customize-array-key-prompt, and
 customize-set-option-prompt attached-client CLI checks, changed-file rustfmt,
+Python syntax checks, and `git diff --check` passed on main. All three CLI
+checks also passed with the pinned baseline binary. No combined sanitizer
+was run.
+After increments 190–192 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, customize-set-key-prompt, customize-unset-prompt, and
+customize-reset-prompt attached-client CLI checks, changed-file rustfmt,
 Python syntax checks, and `git diff --check` passed on main. All three CLI
 checks also passed with the pinned baseline binary. No combined sanitizer
 was run.

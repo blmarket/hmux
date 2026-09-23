@@ -4928,7 +4928,6 @@ unsafe extern "C" fn window_customize_key(
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut finished: ::core::ffi::c_int = 0;
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tagged: u_int = 0;
     item = mode_tree_get_current((*data).data) as *mut window_customize_itemdata;
     if !(*data).editor.is_null() {
@@ -5044,17 +5043,17 @@ unsafe extern "C" fn window_customize_key(
                         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int
                             as ::core::ffi::c_uint)
                 {
-                    xasprintf(
-                        &raw mut prompt,
-                        b"Reset %s to default? \0" as *const u8 as *const ::core::ffi::c_char,
-                        (*item).name,
-                    );
+                    let mut prompt_bytes = b"Reset ".to_vec();
+                    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).name).to_bytes());
+                    prompt_bytes.extend_from_slice(b" to default? ");
+                    let reset_prompt =
+                        CString::new(prompt_bytes).expect("C string parts have no NUL");
                     (*data).references += 1;
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
                         (*data).data,
                         c,
-                        prompt,
+                        reset_prompt.as_ptr(),
                         b"\0" as *const u8 as *const ::core::ffi::c_char,
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
@@ -5074,24 +5073,19 @@ unsafe extern "C" fn window_customize_key(
                         ),
                         data as *mut ::core::ffi::c_void,
                     );
-                    free(prompt as *mut ::core::ffi::c_void);
                 }
             }
             68 => {
                 tagged = mode_tree_count_tagged((*data).data);
                 if !(tagged == 0 as u_int) {
-                    xasprintf(
-                        &raw mut prompt,
-                        b"Reset %u tagged to default? \0" as *const u8
-                            as *const ::core::ffi::c_char,
-                        tagged,
-                    );
+                    let reset_prompt = CString::new(format!("Reset {tagged} tagged to default? "))
+                        .expect("formatted number has no NUL");
                     (*data).references += 1;
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
                         (*data).data,
                         c,
-                        prompt,
+                        reset_prompt.as_ptr(),
                         b"\0" as *const u8 as *const ::core::ffi::c_char,
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
@@ -5111,7 +5105,6 @@ unsafe extern "C" fn window_customize_key(
                         ),
                         data as *mut ::core::ffi::c_void,
                     );
-                    free(prompt as *mut ::core::ffi::c_void);
                 }
             }
             117 => {
