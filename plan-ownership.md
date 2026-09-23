@@ -1398,6 +1398,23 @@ legacy callers safe.
   non-UTF-8 arguments, pane start commands, dead-pane current-command
   fallback, and window naming. No sanitizer was run.
 
+### Increment 225 — config-file format assembly owner (2026-09-23)
+
+- `format_cb_config_files` now joins `cfg_files()` bytes in a local `Vec<u8>`
+  and returns one NUL-terminated C allocation through `xmemdup`, preserving
+  the callback's libc-freeable contract. Removed its `xrealloc` growth,
+  manual length, and pointer writes. Index-based separators preserve empty
+  path entries at the first, middle, and last positions and non-UTF-8 bytes.
+- Library/binary build, changed-file rustfmt, and diff checks passed. The
+  expanded `scripts/config_paths_cli_checks.py` matched the pinned baseline
+  for ordinary, non-UTF-8, and mixed empty config paths. No sanitizer was
+  run.
+- Combined validation after increments 223–225: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt,
+  Python AST checks, and commit diff checks passed. The stripped time-format,
+  argv-stringification, and config-path CLI checks matched the pinned
+  baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1408,11 +1425,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_cb_config_files` still assembles its comma-separated callback
-   result with `xrealloc` and a manual length. It can build local bytes and
-   return one libc-freeable copy at the callback boundary, preserving empty
-   path entries and non-UTF-8 bytes. The command-list cache in
-   `args_value_as_string` is retained in its C-layout record and needs a
+1. `format_expand1` still grows its result with `xmalloc` and
+   `xreallocarray` across literal, modifier, and nested expansion paths.
+   Audit whether a private byte owner can cover the complete expansion and
+   retain one C-owned copy only at its exported return boundary. This is
+   broader than the local scratch migrations above. The command-list cache
+   in `args_value_as_string` is retained in its C-layout record and needs a
    record-owner migration.
    `file_get_path` remains deferred:
    `client_file.path` is a
@@ -1448,9 +1466,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–224. The remaining
+Current validation is recorded in increments 15–225. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–224 has its own local commit; none was pushed.
+Each of increments 15–225 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

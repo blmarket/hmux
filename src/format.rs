@@ -78,7 +78,9 @@ use crate::src::window::{
 };
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
-use crate::src::window_copy::{window_copy_get_hyperlink, window_copy_get_line, window_copy_get_word};
+use crate::src::window_copy::{
+    window_copy_get_hyperlink, window_copy_get_line, window_copy_get_word,
+};
 use crate::src::window_tree::window_tree_mode;
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xmemdup, xrealloc, xreallocarray, xsnprintf, xstrdup, xstrndup,
@@ -157,7 +159,9 @@ pub use crate::src::shared::pane::{
     PANE_CMDRUNNING, PANE_INPUTOFF, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUSDRAWN,
     PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
-pub use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
+pub use crate::src::shared::paste::{
+    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
+};
 pub use crate::src::shared::posix_io::FNM_CASEFOLD;
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;

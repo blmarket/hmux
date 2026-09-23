@@ -69,6 +69,20 @@ with tempfile.TemporaryDirectory(prefix="config-paths-", dir=root / "target") as
         b"override-two",
     )
 
+    mixed_socket = base_dir + b"/mixed-socket"
+    check_server(
+        [
+            b"-S", mixed_socket,
+            b"-f", b"",
+            b"-f", override1,
+            b"-f", b"",
+            b"-f", override2,
+            b"-f", b"",
+        ],
+        b"," + override1 + b",," + override2 + b",",
+        b"override-two",
+    )
+
     empty_options = [b"-S", base_dir + b"/empty-socket", b"-f", b""]
     try:
         run(empty_options, b"new-session", b"-d", b"-s", b"empty", b"sleep", b"60")

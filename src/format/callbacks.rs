@@ -1399,27 +1399,14 @@ unsafe extern "C" fn format_cb_client_theme(mut ft: *mut format_tree) -> *mut ::
     return ::core::ptr::null_mut::<::core::ffi::c_void>();
 }
 unsafe extern "C" fn format_cb_config_files(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut slen: size_t = 0 as size_t;
-    for path in cfg_files() {
-        let n = path.as_bytes().len().wrapping_add(1 as size_t);
-        s = xrealloc(
-            s as *mut ::core::ffi::c_void,
-            slen.wrapping_add(n).wrapping_add(1 as size_t),
-        ) as *mut ::core::ffi::c_char;
-        slen = slen.wrapping_add(xsnprintf(
-            s.offset(slen as isize),
-            n.wrapping_add(1 as size_t),
-            b"%s,\0" as *const u8 as *const ::core::ffi::c_char,
-            path.as_ptr(),
-        ) as size_t);
+    let mut paths = Vec::<u8>::new();
+    for (index, path) in cfg_files().iter().enumerate() {
+        if index != 0 {
+            paths.push(b',');
+        }
+        paths.extend_from_slice(path.as_bytes());
     }
-    if s.is_null() {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
-    }
-    *s.offset(slen.wrapping_sub(1 as size_t) as isize) = '\0' as i32 as ::core::ffi::c_char;
-    return s as *mut ::core::ffi::c_void;
+    xmemdup(paths.as_ptr().cast(), paths.len()) as *mut ::core::ffi::c_void
 }
 unsafe extern "C" fn format_cb_cursor_flag(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     if !(*ft).wp.is_null() {
