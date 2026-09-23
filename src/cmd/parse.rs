@@ -94,50 +94,32 @@ pub use crate::src::shared::window::{
 use crate::src::tmux::global_environ;
 use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xstrdup, xvasprintf_cstring};
 use libc;
+use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
-#[repr(C)]
-/// Box-owned header for a list of parser commands.
+/// Box-owned collection of parser commands. Each command is separately boxed
+/// so pointers held by the parser remain stable when the collection grows.
 pub struct cmd_parse_commands {
-    pub tqh_first: *mut cmd_parse_command,
-    pub tqh_last: *mut *mut cmd_parse_command,
+    pub items: Vec<Box<cmd_parse_command>>,
 }
-#[repr(C)]
-/// Box-owned parser command; its argument-list header is inline and stable.
+/// Box-owned parser command; its argument collection is inline and stable.
 pub struct cmd_parse_command {
     pub line: u_int,
     pub arguments: cmd_parse_arguments,
-    pub entry: C2RustUnnamed_39,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_39 {
-    pub tqe_next: *mut cmd_parse_command,
-    pub tqe_prev: *mut *mut cmd_parse_command,
-}
-#[repr(C)]
 /// Inline in commands, or Box-owned until a grammar action transfers its items.
 pub struct cmd_parse_arguments {
-    pub tqh_first: *mut cmd_parse_argument,
-    pub tqh_last: *mut *mut cmd_parse_argument,
+    pub items: VecDeque<Box<cmd_parse_argument>>,
 }
-#[repr(C)]
 /// Box-owned parser argument; payload ownership depends on `type_0`.
 pub struct cmd_parse_argument {
     pub type_0: cmd_parse_argument_type,
     pub string: *mut ::core::ffi::c_char,
     pub commands: *mut cmd_parse_commands,
     pub cmdlist: *mut cmd_list,
-    pub entry: C2RustUnnamed_40,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_40 {
-    pub tqe_next: *mut cmd_parse_argument,
-    pub tqe_prev: *mut *mut cmd_parse_argument,
 }
 pub type cmd_parse_argument_type = ::core::ffi::c_uint;
 pub const CMD_PARSE_PARSED_COMMANDS: cmd_parse_argument_type = 2;
@@ -158,25 +140,15 @@ pub struct cmd_parse_state {
     pub error: *mut ::core::ffi::c_char,
     pub commands: *mut cmd_parse_commands,
     pub scope: *mut cmd_parse_scope,
-    pub stack: C2RustUnnamed_41,
+    pub stack: *mut cmd_parse_scope_stack,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_41 {
-    pub tqh_first: *mut cmd_parse_scope,
-    pub tqh_last: *mut *mut cmd_parse_scope,
-}
-#[repr(C)]
 /// Box-owned while active or linked in the parser scope stack.
 pub struct cmd_parse_scope {
     pub flag: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_42,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_42 {
-    pub tqe_next: *mut cmd_parse_scope,
-    pub tqe_prev: *mut *mut cmd_parse_scope,
+/// Owner for scopes that are temporarily suspended while nested conditions parse.
+pub struct cmd_parse_scope_stack {
+    pub items: VecDeque<Box<cmd_parse_scope>>,
 }
 pub type yy_state_t = yytype_int8;
 pub type yytype_int8 = ::core::ffi::c_schar;
@@ -263,10 +235,7 @@ static mut parse_state: cmd_parse_state = cmd_parse_state {
     error: ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char,
     commands: ::core::ptr::null::<cmd_parse_commands>() as *mut cmd_parse_commands,
     scope: ::core::ptr::null::<cmd_parse_scope>() as *mut cmd_parse_scope,
-    stack: C2RustUnnamed_41 {
-        tqh_first: ::core::ptr::null::<cmd_parse_scope>() as *mut cmd_parse_scope,
-        tqh_last: ::core::ptr::null::<*mut cmd_parse_scope>() as *mut *mut cmd_parse_scope,
-    },
+    stack: ::core::ptr::null::<cmd_parse_scope_stack>() as *mut cmd_parse_scope_stack,
 };
 pub const YYEMPTY: ::core::ffi::c_int = -(2 as ::core::ffi::c_int);
 pub const YYEOF: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -330,7 +299,12 @@ unsafe extern "C" fn cmd_parse_print_commands(
 pub const YYFINAL: ::core::ffi::c_int = 20 as ::core::ffi::c_int;
 pub const YYLAST: ::core::ffi::c_int = 104 as ::core::ffi::c_int;
 unsafe fn cmd_parse_new_argument() -> *mut cmd_parse_argument {
-    Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_argument>()))
+    Box::into_raw(Box::new(cmd_parse_argument {
+        type_0: CMD_PARSE_STRING,
+        string: ::core::ptr::null_mut(),
+        commands: ::core::ptr::null_mut(),
+        cmdlist: ::core::ptr::null_mut(),
+    }))
 }
 unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
     match (*arg).type_0 as ::core::ffi::c_uint {
@@ -350,26 +324,13 @@ unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
 pub const YYNTOKENS: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const YYMAXUTOK: ::core::ffi::c_int = 266 as ::core::ffi::c_int;
 unsafe fn cmd_parse_new_arguments() -> *mut cmd_parse_arguments {
-    let args = Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_arguments>()));
-    (*args).tqh_last = &raw mut (*args).tqh_first;
-    args
+    Box::into_raw(Box::new(cmd_parse_arguments {
+        items: VecDeque::new(),
+    }))
 }
 unsafe extern "C" fn cmd_parse_free_arguments(mut args: *mut cmd_parse_arguments) {
-    let mut arg: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
-    let mut arg1: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
-    arg = (*args).tqh_first;
-    while !arg.is_null() && {
-        arg1 = (*arg).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*arg).entry.tqe_next.is_null() {
-            (*(*arg).entry.tqe_next).entry.tqe_prev = (*arg).entry.tqe_prev;
-        } else {
-            (*args).tqh_last = (*arg).entry.tqe_prev;
-        }
-        *(*arg).entry.tqe_prev = (*arg).entry.tqe_next;
-        cmd_parse_free_argument(arg);
-        arg = arg1;
+    while let Some(arg) = (*args).items.pop_front() {
+        cmd_parse_free_argument(Box::into_raw(arg));
     }
 }
 static mut yytranslate: [yytype_int8; 267] = [
@@ -642,66 +603,84 @@ static mut yytranslate: [yytype_int8; 267] = [
     11 as ::core::ffi::c_int as yytype_int8,
 ];
 unsafe fn cmd_parse_new_command(line: u_int) -> *mut cmd_parse_command {
-    let cmd = Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_command>()));
-    (*cmd).line = line;
-    (*cmd).arguments.tqh_last = &raw mut (*cmd).arguments.tqh_first;
-    cmd
+    Box::into_raw(Box::new(cmd_parse_command {
+        line,
+        arguments: cmd_parse_arguments {
+            items: VecDeque::new(),
+        },
+    }))
 }
 unsafe extern "C" fn cmd_parse_free_command(mut cmd: *mut cmd_parse_command) {
     cmd_parse_free_arguments(&raw mut (*cmd).arguments);
     drop(Box::from_raw(cmd));
 }
 unsafe extern "C" fn cmd_parse_new_commands() -> *mut cmd_parse_commands {
-    let mut cmds: *mut cmd_parse_commands = ::core::ptr::null_mut::<cmd_parse_commands>();
-    cmds = Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_commands>()));
-    (*cmds).tqh_first = ::core::ptr::null_mut::<cmd_parse_command>();
-    (*cmds).tqh_last = &raw mut (*cmds).tqh_first;
-    return cmds;
+    Box::into_raw(Box::new(cmd_parse_commands { items: Vec::new() }))
 }
 unsafe extern "C" fn cmd_parse_free_commands(mut cmds: *mut cmd_parse_commands) {
-    let mut cmd: *mut cmd_parse_command = ::core::ptr::null_mut::<cmd_parse_command>();
-    let mut cmd1: *mut cmd_parse_command = ::core::ptr::null_mut::<cmd_parse_command>();
-    cmd = (*cmds).tqh_first;
-    while !cmd.is_null() && {
-        cmd1 = (*cmd).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*cmd).entry.tqe_next.is_null() {
-            (*(*cmd).entry.tqe_next).entry.tqe_prev = (*cmd).entry.tqe_prev;
-        } else {
-            (*cmds).tqh_last = (*cmd).entry.tqe_prev;
-        }
-        *(*cmd).entry.tqe_prev = (*cmd).entry.tqe_next;
-        cmd_parse_free_command(cmd);
-        cmd = cmd1;
+    while let Some(cmd) = (*cmds).items.pop() {
+        cmd_parse_free_command(Box::into_raw(cmd));
     }
     drop(Box::from_raw(cmds));
+}
+unsafe fn cmd_parse_command_at(
+    cmds: *mut cmd_parse_commands,
+    index: usize,
+) -> *mut cmd_parse_command {
+    (&mut (*cmds).items)
+        .get_mut(index)
+        .map_or(::core::ptr::null_mut(), |cmd| &mut **cmd)
+}
+unsafe fn cmd_parse_arguments_first(args: *mut cmd_parse_arguments) -> *mut cmd_parse_argument {
+    (&mut (*args).items)
+        .front_mut()
+        .map_or(::core::ptr::null_mut(), |arg| &mut **arg)
+}
+unsafe fn cmd_parse_argument_at(
+    args: *mut cmd_parse_arguments,
+    index: usize,
+) -> *mut cmd_parse_argument {
+    (&mut (*args).items)
+        .get_mut(index)
+        .map_or(::core::ptr::null_mut(), |arg| &mut **arg)
+}
+unsafe fn cmd_parse_commands_append(dst: *mut cmd_parse_commands, src: *mut cmd_parse_commands) {
+    (*dst).items.append(&mut (*src).items);
+}
+unsafe fn cmd_parse_arguments_append(dst: *mut cmd_parse_arguments, src: *mut cmd_parse_arguments) {
+    (*dst).items.append(&mut (*src).items);
+}
+unsafe fn cmd_parse_commands_push(cmds: *mut cmd_parse_commands, cmd: *mut cmd_parse_command) {
+    (*cmds).items.push(Box::from_raw(cmd));
+}
+unsafe fn cmd_parse_arguments_push(args: *mut cmd_parse_arguments, arg: *mut cmd_parse_argument) {
+    (*args).items.push_back(Box::from_raw(arg));
+}
+unsafe fn cmd_parse_arguments_prepend(
+    args: *mut cmd_parse_arguments,
+    arg: *mut cmd_parse_argument,
+) {
+    (*args).items.push_front(Box::from_raw(arg));
+}
+unsafe fn cmd_parse_command_take_arguments(
+    cmd: *mut cmd_parse_command,
+    args: *mut cmd_parse_arguments,
+) {
+    cmd_parse_arguments_append(&raw mut (*cmd).arguments, args);
+    drop(Box::from_raw(args));
 }
 unsafe extern "C" fn cmd_parse_run_parser(
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> *mut cmd_parse_commands {
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-    let mut scope: *mut cmd_parse_scope = ::core::ptr::null_mut::<cmd_parse_scope>();
-    let mut scope1: *mut cmd_parse_scope = ::core::ptr::null_mut::<cmd_parse_scope>();
     let mut retval: ::core::ffi::c_int = 0;
     (*ps).commands = ::core::ptr::null_mut::<cmd_parse_commands>();
-    (*ps).stack.tqh_first = ::core::ptr::null_mut::<cmd_parse_scope>();
-    (*ps).stack.tqh_last = &raw mut (*ps).stack.tqh_first;
+    (*ps).stack = Box::into_raw(Box::new(cmd_parse_scope_stack {
+        items: VecDeque::new(),
+    }));
     retval = yyparse();
-    scope = (*ps).stack.tqh_first;
-    while !scope.is_null() && {
-        scope1 = (*scope).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*scope).entry.tqe_next.is_null() {
-            (*(*scope).entry.tqe_next).entry.tqe_prev = (*scope).entry.tqe_prev;
-        } else {
-            (*ps).stack.tqh_last = (*scope).entry.tqe_prev;
-        }
-        *(*scope).entry.tqe_prev = (*scope).entry.tqe_next;
-        drop(Box::from_raw(scope));
-        scope = scope1;
-    }
+    drop(Box::from_raw((*ps).stack));
+    (*ps).stack = ::core::ptr::null_mut();
     if !(*ps).scope.is_null() {
         drop(Box::from_raw((*ps).scope));
         (*ps).scope = ::core::ptr::null_mut();
@@ -833,12 +812,14 @@ unsafe extern "C" fn cmd_parse_log_commands(
     let mut arg: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
     let mut i: u_int = 0;
     let mut j: u_int = 0;
+    let command_count = (*cmds).items.len();
     i = 0 as u_int;
-    cmd = (*cmds).tqh_first;
-    while !cmd.is_null() {
+    while (i as usize) < command_count {
+        cmd = cmd_parse_command_at(cmds, i as usize);
         j = 0 as u_int;
-        arg = (*cmd).arguments.tqh_first;
-        while !arg.is_null() {
+        let argument_count = (*cmd).arguments.items.len();
+        while (j as usize) < argument_count {
+            arg = cmd_parse_argument_at(&raw mut (*cmd).arguments, j as usize);
             match (*arg).type_0 as ::core::ffi::c_uint {
                 0 => {
                     log_debug(
@@ -871,10 +852,8 @@ unsafe extern "C" fn cmd_parse_log_commands(
                 _ => {}
             }
             j = j.wrapping_add(1);
-            arg = (*arg).entry.tqe_next;
         }
         i = i.wrapping_add(1);
-        cmd = (*cmd).entry.tqe_next;
     }
 }
 static mut yydefact: [yytype_int8; 75] = [
@@ -1021,7 +1000,7 @@ unsafe extern "C" fn cmd_parse_expand_alias(
         0 as ::core::ffi::c_int,
         ::core::mem::size_of::<cmd_parse_result>() as size_t,
     );
-    first = (*cmd).arguments.tqh_first;
+    first = cmd_parse_arguments_first(&raw mut (*cmd).arguments);
     if first.is_null()
         || (*first).type_0 as ::core::ffi::c_uint
             != CMD_PARSE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1049,27 +1028,24 @@ unsafe extern "C" fn cmd_parse_expand_alias(
         (*pr).error = cause;
         return 1 as ::core::ffi::c_int;
     }
-    last = *(*((*cmds).tqh_last as *mut cmd_parse_commands)).tqh_last;
-    if last.is_null() {
+    let command_count = (*cmds).items.len();
+    if command_count == 0 {
         (*pr).status = CMD_PARSE_SUCCESS;
         (*pr).cmdlist = cmd_list_new();
         cmd_parse_free_commands(cmds);
         return 1 as ::core::ffi::c_int;
     }
-    if !(*first).entry.tqe_next.is_null() {
-        (*(*first).entry.tqe_next).entry.tqe_prev = (*first).entry.tqe_prev;
-    } else {
-        (*cmd).arguments.tqh_last = (*first).entry.tqe_prev;
-    }
-    *(*first).entry.tqe_prev = (*first).entry.tqe_next;
-    cmd_parse_free_argument(first);
-    if !(*cmd).arguments.tqh_first.is_null() {
-        *(*last).arguments.tqh_last = (*cmd).arguments.tqh_first;
-        (*(*cmd).arguments.tqh_first).entry.tqe_prev = (*last).arguments.tqh_last;
-        (*last).arguments.tqh_last = (*cmd).arguments.tqh_last;
-        (*cmd).arguments.tqh_first = ::core::ptr::null_mut::<cmd_parse_argument>();
-        (*cmd).arguments.tqh_last = &raw mut (*cmd).arguments.tqh_first;
-    }
+    last = cmd_parse_command_at(cmds, command_count - 1);
+    let first_argument = (*cmd)
+        .arguments
+        .items
+        .pop_front()
+        .expect("alias command has a first argument");
+    cmd_parse_free_argument(Box::into_raw(first_argument));
+    (*last)
+        .arguments
+        .items
+        .append(&mut (*cmd).arguments.items);
     cmd_parse_log_commands(
         cmds,
         b"cmd_parse_expand_alias\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1426,13 +1402,15 @@ unsafe extern "C" fn cmd_parse_build_command(
     mut pi: *mut cmd_parse_input,
     mut pr: *mut cmd_parse_result,
 ) {
-    let mut current_block: u64;
+    let mut current_block: u64 = 16207960823932980356;
     let mut arg: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
     let mut add: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut values = Vec::<args_value>::new();
     let mut count: u_int = 0 as u_int;
     let mut idx: u_int = 0;
+    let mut argument_index: usize = 0;
+    let argument_count = (*cmd).arguments.items.len();
     memset(
         pr as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -1441,12 +1419,8 @@ unsafe extern "C" fn cmd_parse_build_command(
     if cmd_parse_expand_alias(cmd, pi, pr) != 0 {
         return;
     }
-    arg = (*cmd).arguments.tqh_first;
-    loop {
-        if arg.is_null() {
-            current_block = 5143058163439228106;
-            break;
-        }
+    while argument_index < argument_count {
+        arg = cmd_parse_argument_at(&raw mut (*cmd).arguments, argument_index);
         values.push(::core::mem::zeroed::<args_value>());
         let value = values.as_mut_ptr().add(count as usize);
         match (*arg).type_0 as ::core::ffi::c_uint {
@@ -1477,7 +1451,10 @@ unsafe extern "C" fn cmd_parse_build_command(
             _ => {}
         }
         count = count.wrapping_add(1);
-        arg = (*arg).entry.tqe_next;
+        argument_index += 1;
+    }
+    if argument_index == argument_count {
+        current_block = 5143058163439228106;
     }
     match current_block {
         5143058163439228106 => {
@@ -1575,7 +1552,8 @@ unsafe extern "C" fn cmd_parse_build_commands(
         0 as ::core::ffi::c_int,
         ::core::mem::size_of::<cmd_parse_result>() as size_t,
     );
-    if (*cmds).tqh_first.is_null() {
+    let command_count = (*cmds).items.len();
+    if command_count == 0 {
         (*pr).status = CMD_PARSE_SUCCESS;
         (*pr).cmdlist = cmd_list_new();
         return;
@@ -1585,8 +1563,9 @@ unsafe extern "C" fn cmd_parse_build_commands(
         b"cmd_parse_build_commands\0" as *const u8 as *const ::core::ffi::c_char,
     );
     result = cmd_list_new();
-    cmd = (*cmds).tqh_first;
-    while !cmd.is_null() {
+    let mut command_index = 0usize;
+    while command_index < command_count {
+        cmd = cmd_parse_command_at(cmds, command_index);
         if !(*pi).flags & CMD_PARSE_ONEGROUP != 0 && (*cmd).line != line {
             if !current.is_null() {
                 cmd_parse_print_commands(pi, current);
@@ -1610,7 +1589,7 @@ unsafe extern "C" fn cmd_parse_build_commands(
         }
         cmd_list_append_all(current, (*pr).cmdlist);
         cmd_list_free((*pr).cmdlist);
-        cmd = (*cmd).entry.tqe_next;
+        command_index += 1;
     }
     if !current.is_null() {
         cmd_parse_print_commands(pi, current);
@@ -2112,42 +2091,9 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                         5 => {
                             yyval.commands =
                                 (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                            if !(*(*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands)
-                                .tqh_first
-                                .is_null()
-                            {
-                                *(*yyval.commands).tqh_last = (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_first;
-                                let ref mut fresh4 = (*(*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_first)
-                                    .entry
-                                    .tqe_prev;
-                                *fresh4 = (*yyval.commands).tqh_last;
-                                (*yyval.commands).tqh_last = (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_last;
-                                let ref mut fresh5 = (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_first;
-                                *fresh5 = ::core::ptr::null_mut::<cmd_parse_command>();
-                                let ref mut fresh6 = (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_last;
-                                *fresh6 = &raw mut (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_first;
-                            }
-                            drop(Box::from_raw(
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                            ));
+                            let rhs = (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
+                            cmd_parse_commands_append(yyval.commands, rhs);
+                            drop(Box::from_raw(rhs));
                         }
                         6 => {
                             yyval.commands = cmd_parse_new_commands();
@@ -2224,14 +2170,11 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             let mut ps_3: *mut cmd_parse_state = &raw mut parse_state;
                             let mut flags_0: ::core::ffi::c_int = (*(*ps_3).input).flags;
                             let mut flag: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-                            let mut scope: *mut cmd_parse_scope =
-                                ::core::ptr::null_mut::<cmd_parse_scope>();
                             if !(*ps_3).scope.is_null() {
                                 flag = (*(*ps_3).scope).flag;
-                                scope = (*ps_3).stack.tqh_first;
-                                while !scope.is_null() {
-                                    flag = (flag != 0 && (*scope).flag != 0) as ::core::ffi::c_int;
-                                    scope = (*scope).entry.tqe_next;
+                                let scopes = &(*(*ps_3).stack).items;
+                                for scope in scopes {
+                                    flag = (flag != 0 && scope.flag != 0) as ::core::ffi::c_int;
                                 }
                             }
                             if strlen((*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token)
@@ -2261,15 +2204,12 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             let mut ps_4: *mut cmd_parse_state = &raw mut parse_state;
                             let mut flags_1: ::core::ffi::c_int = (*(*ps_4).input).flags;
                             let mut flag_0: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-                            let mut scope_0: *mut cmd_parse_scope =
-                                ::core::ptr::null_mut::<cmd_parse_scope>();
                             if !(*ps_4).scope.is_null() {
                                 flag_0 = (*(*ps_4).scope).flag;
-                                scope_0 = (*ps_4).stack.tqh_first;
-                                while !scope_0.is_null() {
+                                let scopes = &(*(*ps_4).stack).items;
+                                for scope in scopes {
                                     flag_0 =
-                                        (flag_0 != 0 && (*scope_0).flag != 0) as ::core::ffi::c_int;
-                                    scope_0 = (*scope_0).entry.tqe_next;
+                                        (flag_0 != 0 && scope.flag != 0) as ::core::ffi::c_int;
                                 }
                             }
                             if strlen((*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token)
@@ -2296,11 +2236,8 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             }
                         }
                         17 => {
-                            let mut ps_5: *mut cmd_parse_state = &raw mut parse_state;
-                            let mut scope_1: *mut cmd_parse_scope =
-                                ::core::ptr::null_mut::<cmd_parse_scope>();
-                            scope_1 =
-                                Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_scope>()));
+                            let ps_5: *mut cmd_parse_state = &raw mut parse_state;
+                            let scope_1 = Box::into_raw(Box::new(cmd_parse_scope { flag: 0 }));
                             (*scope_1).flag = format_true(
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
                             );
@@ -2310,38 +2247,27 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                                     as *mut ::core::ffi::c_void,
                             );
                             if !(*ps_5).scope.is_null() {
-                                (*(*ps_5).scope).entry.tqe_next = (*ps_5).stack.tqh_first;
-                                if !(*(*ps_5).scope).entry.tqe_next.is_null() {
-                                    (*(*ps_5).stack.tqh_first).entry.tqe_prev =
-                                        &raw mut (*(*ps_5).scope).entry.tqe_next;
-                                } else {
-                                    (*ps_5).stack.tqh_last =
-                                        &raw mut (*(*ps_5).scope).entry.tqe_next;
-                                }
-                                (*ps_5).stack.tqh_first = (*ps_5).scope;
-                                (*(*ps_5).scope).entry.tqe_prev = &raw mut (*ps_5).stack.tqh_first;
+                                (*(*ps_5).stack)
+                                    .items
+                                    .push_front(Box::from_raw((*ps_5).scope));
                             }
                             (*ps_5).scope = scope_1;
                         }
                         18 => {
-                            let mut ps_6: *mut cmd_parse_state = &raw mut parse_state;
-                            let mut scope_2: *mut cmd_parse_scope =
-                                ::core::ptr::null_mut::<cmd_parse_scope>();
-                            scope_2 =
-                                Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_scope>()));
-                            (*scope_2).flag = ((*(*ps_6).scope).flag == 0) as ::core::ffi::c_int;
+                            let ps_6: *mut cmd_parse_state = &raw mut parse_state;
+                            let scope_2 = Box::into_raw(Box::new(cmd_parse_scope {
+                                flag: ((*(*ps_6).scope).flag == 0) as ::core::ffi::c_int,
+                            }));
                             drop(Box::from_raw((*ps_6).scope));
                             (*ps_6).scope = scope_2;
                         }
                         19 => {
-                            let mut ps_7: *mut cmd_parse_state = &raw mut parse_state;
-                            let mut scope_3: *mut cmd_parse_scope =
-                                ::core::ptr::null_mut::<cmd_parse_scope>();
-                            scope_3 =
-                                Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_scope>()));
-                            (*scope_3).flag = format_true(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
-                            );
+                            let ps_7: *mut cmd_parse_state = &raw mut parse_state;
+                            let scope_3 = Box::into_raw(Box::new(cmd_parse_scope {
+                                flag: format_true(
+                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
+                                ),
+                            }));
                             yyval.flag = (*scope_3).flag;
                             free(
                                 (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token
@@ -2351,18 +2277,18 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             (*ps_7).scope = scope_3;
                         }
                         20 => {
-                            let mut ps_8: *mut cmd_parse_state = &raw mut parse_state;
+                            let ps_8: *mut cmd_parse_state = &raw mut parse_state;
                             drop(Box::from_raw((*ps_8).scope));
-                            (*ps_8).scope = (*ps_8).stack.tqh_first;
-                            if !(*ps_8).scope.is_null() {
-                                if !(*(*ps_8).scope).entry.tqe_next.is_null() {
-                                    (*(*(*ps_8).scope).entry.tqe_next).entry.tqe_prev =
-                                        (*(*ps_8).scope).entry.tqe_prev;
-                                } else {
-                                    (*ps_8).stack.tqh_last = (*(*ps_8).scope).entry.tqe_prev;
-                                }
-                                *(*(*ps_8).scope).entry.tqe_prev = (*(*ps_8).scope).entry.tqe_next;
-                            }
+                            (*ps_8).scope = if (*(*ps_8).stack).items.is_empty() {
+                                ::core::ptr::null_mut()
+                            } else {
+                                Box::into_raw(
+                                    (*(*ps_8).stack)
+                                        .items
+                                        .pop_front()
+                                        .expect("nonempty scope stack"),
+                                )
+                            };
                         }
                         21 => {
                             if (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize)).flag != 0 {
@@ -2511,35 +2437,16 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             }
                         }
                         27 => {
-                            let mut ps_9: *mut cmd_parse_state = &raw mut parse_state;
+                            let ps_9: *mut cmd_parse_state = &raw mut parse_state;
+                            let parsed_command =
+                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command;
                             yyval.commands = cmd_parse_new_commands();
-                            if !(*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command)
-                                .arguments
-                                .tqh_first
-                                .is_null()
+                            if !(*parsed_command).arguments.items.is_empty()
                                 && ((*ps_9).scope.is_null() || (*(*ps_9).scope).flag != 0)
                             {
-                                let ref mut fresh7 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command)
-                                        .entry
-                                        .tqe_next;
-                                *fresh7 = ::core::ptr::null_mut::<cmd_parse_command>();
-                                let ref mut fresh8 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command)
-                                        .entry
-                                        .tqe_prev;
-                                *fresh8 = (*yyval.commands).tqh_last;
-                                *(*yyval.commands).tqh_last =
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command;
-                                (*yyval.commands).tqh_last = &raw mut (*(*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .command)
-                                    .entry
-                                    .tqe_next;
+                                cmd_parse_commands_push(yyval.commands, parsed_command);
                             } else {
-                                cmd_parse_free_command(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command,
-                                );
+                                cmd_parse_free_command(parsed_command);
                             }
                         }
                         28 => {
@@ -2549,74 +2456,26 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                         29 => {
                             yyval.commands =
                                 (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                            if !(*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands)
-                                .tqh_first
-                                .is_null()
-                            {
-                                *(*yyval.commands).tqh_last =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands)
-                                        .tqh_first;
-                                let ref mut fresh9 = (*(*(*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .commands)
-                                    .tqh_first)
-                                    .entry
-                                    .tqe_prev;
-                                *fresh9 = (*yyval.commands).tqh_last;
-                                (*yyval.commands).tqh_last =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands)
-                                        .tqh_last;
-                                let ref mut fresh10 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands)
-                                        .tqh_first;
-                                *fresh10 = ::core::ptr::null_mut::<cmd_parse_command>();
-                                let ref mut fresh11 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands)
-                                        .tqh_last;
-                                *fresh11 = &raw mut (*(*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .commands)
-                                    .tqh_first;
-                            }
-                            drop(Box::from_raw(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands,
-                            ));
+                            let rhs = (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands;
+                            cmd_parse_commands_append(yyval.commands, rhs);
+                            drop(Box::from_raw(rhs));
                         }
                         30 => {
-                            let mut ps_10: *mut cmd_parse_state = &raw mut parse_state;
-                            if !(*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command)
-                                .arguments
-                                .tqh_first
-                                .is_null()
+                            let ps_10: *mut cmd_parse_state = &raw mut parse_state;
+                            let parsed_command =
+                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command;
+                            if !(*parsed_command).arguments.items.is_empty()
                                 && ((*ps_10).scope.is_null() || (*(*ps_10).scope).flag != 0)
                             {
                                 yyval.commands =
                                     (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                                let ref mut fresh12 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command)
-                                        .entry
-                                        .tqe_next;
-                                *fresh12 = ::core::ptr::null_mut::<cmd_parse_command>();
-                                let ref mut fresh13 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command)
-                                        .entry
-                                        .tqe_prev;
-                                *fresh13 = (*yyval.commands).tqh_last;
-                                *(*yyval.commands).tqh_last =
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command;
-                                (*yyval.commands).tqh_last = &raw mut (*(*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .command)
-                                    .entry
-                                    .tqe_next;
+                                cmd_parse_commands_push(yyval.commands, parsed_command);
                             } else {
                                 yyval.commands = cmd_parse_new_commands();
                                 cmd_parse_free_commands(
                                     (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands,
                                 );
-                                cmd_parse_free_command(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command,
-                                );
+                                cmd_parse_free_command(parsed_command);
                             }
                         }
                         31 => {
@@ -2628,75 +2487,25 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             yyval.command = cmd_parse_new_command((*(*ps_11).input).line);
                         }
                         33 => {
-                            let mut ps_12: *mut cmd_parse_state = &raw mut parse_state;
-                            let mut arg: *mut cmd_parse_argument =
-                                ::core::ptr::null_mut::<cmd_parse_argument>();
+                            let ps_12: *mut cmd_parse_state = &raw mut parse_state;
                             yyval.command = cmd_parse_new_command((*(*ps_12).input).line);
-                            arg = cmd_parse_new_argument();
+                            let arg = cmd_parse_new_argument();
                             (*arg).type_0 = CMD_PARSE_STRING;
-                            (*arg).string = (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
-                            (*arg).entry.tqe_next = (*yyval.command).arguments.tqh_first;
-                            if !(*arg).entry.tqe_next.is_null() {
-                                (*(*yyval.command).arguments.tqh_first).entry.tqe_prev =
-                                    &raw mut (*arg).entry.tqe_next;
-                            } else {
-                                (*yyval.command).arguments.tqh_last =
-                                    &raw mut (*arg).entry.tqe_next;
-                            }
-                            (*yyval.command).arguments.tqh_first = arg;
-                            (*arg).entry.tqe_prev = &raw mut (*yyval.command).arguments.tqh_first;
+                            (*arg).string =
+                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
+                            cmd_parse_arguments_prepend(&raw mut (*yyval.command).arguments, arg);
                         }
                         34 => {
-                            let mut ps_13: *mut cmd_parse_state = &raw mut parse_state;
-                            let mut arg_0: *mut cmd_parse_argument =
-                                ::core::ptr::null_mut::<cmd_parse_argument>();
+                            let ps_13: *mut cmd_parse_state = &raw mut parse_state;
                             yyval.command = cmd_parse_new_command((*(*ps_13).input).line);
-                            if !(*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments)
-                                .tqh_first
-                                .is_null()
-                            {
-                                *(*yyval.command).arguments.tqh_last =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments)
-                                        .tqh_first;
-                                let ref mut fresh14 = (*(*(*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .arguments)
-                                    .tqh_first)
-                                    .entry
-                                    .tqe_prev;
-                                *fresh14 = (*yyval.command).arguments.tqh_last;
-                                (*yyval.command).arguments.tqh_last =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments)
-                                        .tqh_last;
-                                let ref mut fresh15 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments)
-                                        .tqh_first;
-                                *fresh15 = ::core::ptr::null_mut::<cmd_parse_argument>();
-                                let ref mut fresh16 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments)
-                                        .tqh_last;
-                                *fresh16 = &raw mut (*(*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .arguments)
-                                    .tqh_first;
-                            }
-                            drop(Box::from_raw(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments,
-                            ));
-                            arg_0 = cmd_parse_new_argument();
-                            (*arg_0).type_0 = CMD_PARSE_STRING;
-                            (*arg_0).string =
+                            let parsed_arguments =
+                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments;
+                            cmd_parse_command_take_arguments(yyval.command, parsed_arguments);
+                            let arg = cmd_parse_new_argument();
+                            (*arg).type_0 = CMD_PARSE_STRING;
+                            (*arg).string =
                                 (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).token;
-                            (*arg_0).entry.tqe_next = (*yyval.command).arguments.tqh_first;
-                            if !(*arg_0).entry.tqe_next.is_null() {
-                                (*(*yyval.command).arguments.tqh_first).entry.tqe_prev =
-                                    &raw mut (*arg_0).entry.tqe_next;
-                            } else {
-                                (*yyval.command).arguments.tqh_last =
-                                    &raw mut (*arg_0).entry.tqe_next;
-                            }
-                            (*yyval.command).arguments.tqh_first = arg_0;
-                            (*arg_0).entry.tqe_prev = &raw mut (*yyval.command).arguments.tqh_first;
+                            cmd_parse_arguments_prepend(&raw mut (*yyval.command).arguments, arg);
                         }
                         35 => {
                             if (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).flag != 0 {
@@ -2846,77 +2655,18 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                         }
                         41 => {
                             yyval.arguments = cmd_parse_new_arguments();
-                            let ref mut fresh17 =
-                                (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).argument)
-                                    .entry
-                                    .tqe_next;
-                            *fresh17 = (*yyval.arguments).tqh_first;
-                            if !(*fresh17).is_null() {
-                                (*(*yyval.arguments).tqh_first).entry.tqe_prev =
-                                    &raw mut (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize))
-                                        .argument)
-                                        .entry
-                                        .tqe_next;
-                            } else {
-                                (*yyval.arguments).tqh_last = &raw mut (*(*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .argument)
-                                    .entry
-                                    .tqe_next;
-                            }
-                            (*yyval.arguments).tqh_first =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).argument;
-                            let ref mut fresh18 =
-                                (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).argument)
-                                    .entry
-                                    .tqe_prev;
-                            *fresh18 = &raw mut (*yyval.arguments).tqh_first;
+                            cmd_parse_arguments_push(
+                                yyval.arguments,
+                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).argument,
+                            );
                         }
                         42 => {
-                            let ref mut fresh19 =
-                                (*(*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).argument)
-                                    .entry
-                                    .tqe_next;
-                            *fresh19 = (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize))
-                                .arguments)
-                                .tqh_first;
-                            if !(*fresh19).is_null() {
-                                let ref mut fresh20 = (*(*(*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .arguments)
-                                    .tqh_first)
-                                    .entry
-                                    .tqe_prev;
-                                *fresh20 = &raw mut (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .argument)
-                                    .entry
-                                    .tqe_next;
-                            } else {
-                                let ref mut fresh21 =
-                                    (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments)
-                                        .tqh_last;
-                                *fresh21 = &raw mut (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .argument)
-                                    .entry
-                                    .tqe_next;
-                            }
-                            let ref mut fresh22 =
-                                (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments)
-                                    .tqh_first;
-                            *fresh22 =
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).argument;
-                            let ref mut fresh23 =
-                                (*(*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).argument)
-                                    .entry
-                                    .tqe_prev;
-                            *fresh23 = &raw mut (*(*yyvsp
-                                .offset(0 as ::core::ffi::c_int as isize))
-                            .arguments)
-                                .tqh_first;
-                            yyval.arguments =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments;
+                            let args = (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments;
+                            cmd_parse_arguments_prepend(
+                                args,
+                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).argument,
+                            );
+                            yyval.arguments = args;
                         }
                         43 => {
                             yyval.argument = cmd_parse_new_argument();
@@ -2944,42 +2694,9 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                         47 => {
                             yyval.commands =
                                 (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                            if !(*(*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands)
-                                .tqh_first
-                                .is_null()
-                            {
-                                *(*yyval.commands).tqh_last = (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_first;
-                                let ref mut fresh24 = (*(*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_first)
-                                    .entry
-                                    .tqe_prev;
-                                *fresh24 = (*yyval.commands).tqh_last;
-                                (*yyval.commands).tqh_last = (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_last;
-                                let ref mut fresh25 = (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_first;
-                                *fresh25 = ::core::ptr::null_mut::<cmd_parse_command>();
-                                let ref mut fresh26 = (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_last;
-                                *fresh26 = &raw mut (*(*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .commands)
-                                    .tqh_first;
-                            }
-                            drop(Box::from_raw(
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                            ));
+                            let rhs = (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
+                            cmd_parse_commands_append(yyval.commands, rhs);
+                            drop(Box::from_raw(rhs));
                         }
                         _ => {}
                     }
@@ -3122,10 +2839,7 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
                 arg = cmd_parse_new_argument();
                 (*arg).type_0 = CMD_PARSE_STRING;
                 (*arg).string = copy;
-                (*arg).entry.tqe_next = ::core::ptr::null_mut::<cmd_parse_argument>();
-                (*arg).entry.tqe_prev = (*cmd).arguments.tqh_last;
-                *(*cmd).arguments.tqh_last = arg;
-                (*cmd).arguments.tqh_last = &raw mut (*arg).entry.tqe_next;
+                cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
             } else {
                 free(copy as *mut ::core::ffi::c_void);
             }
@@ -3136,27 +2850,18 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
             (*arg).type_0 = CMD_PARSE_PARSED_COMMANDS;
             (*arg).cmdlist = (*values.offset(i as isize)).c2rust_unnamed.cmdlist as *mut cmd_list;
             (*(*arg).cmdlist).references += 1;
-            (*arg).entry.tqe_next = ::core::ptr::null_mut::<cmd_parse_argument>();
-            (*arg).entry.tqe_prev = (*cmd).arguments.tqh_last;
-            *(*cmd).arguments.tqh_last = arg;
-            (*cmd).arguments.tqh_last = &raw mut (*arg).entry.tqe_next;
+            cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
         } else {
             fatalx(b"unknown argument type\0" as *const u8 as *const ::core::ffi::c_char);
         }
         if end != 0 {
-            (*cmd).entry.tqe_next = ::core::ptr::null_mut::<cmd_parse_command>();
-            (*cmd).entry.tqe_prev = (*cmds).tqh_last;
-            *(*cmds).tqh_last = cmd;
-            (*cmds).tqh_last = &raw mut (*cmd).entry.tqe_next;
+            cmd_parse_commands_push(cmds, cmd);
             cmd = cmd_parse_new_command((*pi).line);
         }
         i = i.wrapping_add(1);
     }
-    if !(*cmd).arguments.tqh_first.is_null() {
-        (*cmd).entry.tqe_next = ::core::ptr::null_mut::<cmd_parse_command>();
-        (*cmd).entry.tqe_prev = (*cmds).tqh_last;
-        *(*cmds).tqh_last = cmd;
-        (*cmds).tqh_last = &raw mut (*cmd).entry.tqe_next;
+    if !(*cmd).arguments.items.is_empty() {
+        cmd_parse_commands_push(cmds, cmd);
     } else {
         cmd_parse_free_command(cmd);
     }
@@ -3777,6 +3482,104 @@ unsafe fn yylex_token_tilde(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
     );
     buf.append(home, strlen(home));
     return 1 as ::core::ffi::c_int;
+}
+
+#[cfg(test)]
+mod parser_collection_tests {
+    use super::*;
+
+    unsafe fn parse_commands(input: &[u8]) -> Vec<Vec<Vec<u8>>> {
+        let mut pi: cmd_parse_input = ::core::mem::zeroed();
+        pi.line = 1;
+        let mut cause = ::core::ptr::null_mut();
+        let cmds = cmd_parse_do_buffer(input.as_ptr().cast(), input.len(), &mut pi, &mut cause);
+        assert!(!cmds.is_null(), "parser failed: {:?}",
+            if cause.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(cause).to_string_lossy().into_owned())
+            }
+        );
+        let result = (*cmds)
+            .items
+            .iter()
+            .map(|cmd| {
+                cmd.arguments
+                    .items
+                    .iter()
+                    .map(|arg| CStr::from_ptr(arg.string).to_bytes().to_vec())
+                    .collect()
+            })
+            .collect();
+        cmd_parse_free_commands(cmds);
+        result
+    }
+
+    #[test]
+    fn parser_collections_preserve_order_scope_and_element_addresses() {
+        unsafe {
+            let mut pi: cmd_parse_input = ::core::mem::zeroed();
+            pi.line = 1;
+            let malformed = b"%if 1\ndisplay-message unfinished\n";
+            let mut cause = ::core::ptr::null_mut();
+            let failed = cmd_parse_do_buffer(
+                malformed.as_ptr().cast(),
+                malformed.len(),
+                &mut pi,
+                &mut cause,
+            );
+            assert!(failed.is_null());
+            if !cause.is_null() {
+                free(cause.cast());
+            }
+
+            assert_eq!(
+                parse_commands(b"display-message alpha beta; display-message gamma\n"),
+                vec![
+                    vec![b"display-message".to_vec(), b"alpha".to_vec(), b"beta".to_vec()],
+                    vec![b"display-message".to_vec(), b"gamma".to_vec()],
+                ],
+            );
+            assert_eq!(
+                parse_commands(
+                    b"%if 1\ndisplay-message yes\n%else\ndisplay-message no\n%endif\n"
+                ),
+                vec![vec![b"display-message".to_vec(), b"yes".to_vec()]],
+            );
+            assert_eq!(
+                parse_commands(
+                    b"%if 0\ndisplay-message yes\n%else\ndisplay-message no\n%endif\n"
+                ),
+                vec![vec![b"display-message".to_vec(), b"no".to_vec()]],
+            );
+            assert_eq!(
+                parse_commands(
+                    b"%if 1\n%if 0\ndisplay-message inner-no\n%else\ndisplay-message inner-yes\n%endif\n%else\ndisplay-message outer-no\n%endif\n"
+                ),
+                vec![vec![b"display-message".to_vec(), b"inner-yes".to_vec()]],
+            );
+
+            let cmds = cmd_parse_new_commands();
+            let first_cmd = cmd_parse_new_command(1);
+            let first_arg = cmd_parse_new_argument();
+            cmd_parse_arguments_push(&raw mut (*first_cmd).arguments, first_arg);
+            cmd_parse_commands_push(cmds, first_cmd);
+            let command_ptr = cmd_parse_command_at(cmds, 0);
+            let argument_ptr = cmd_parse_argument_at(&raw mut (*command_ptr).arguments, 0);
+            for _ in 0..128 {
+                let cmd = cmd_parse_new_command(1);
+                let arg = cmd_parse_new_argument();
+                cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
+                cmd_parse_commands_push(cmds, cmd);
+            }
+            assert_eq!(cmd_parse_command_at(cmds, 0), command_ptr);
+            assert_eq!(
+                cmd_parse_argument_at(&raw mut (*command_ptr).arguments, 0),
+                argument_ptr
+            );
+            cmd_parse_free_commands(cmds);
+        }
+    }
 }
 unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi::c_char {
     let mut current_block: u64;
