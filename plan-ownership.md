@@ -136,10 +136,17 @@ non-string value.
    Reproduction: keep a `source-file -` or `split-window -d -I` client's
    stdin pipe open, kill that waiting client, and inspect the `-vv` server
    log: `lost client` has no matching `free client` while the server remains
-   responsive. Closing the pipe first hides the issue. Add an E2E that keeps
-   stdin open through client loss and verifies queue/client cleanup before
-   changing teardown. The smallest safe implementation includes the wait
-   owner, callback data, and queue drain together.
+   responsive. Closing the pipe first hides the issue.
+   `scripts/disconnected_file_client_cli_checks.py --observe` now reproduces
+   the `source-file -` case with a private socket, held-open stdin, bounded
+   cleanup, and a server responsiveness probe. It reports no matching free
+   on both the pinned tmux and candidate. Its default mode requires the
+   candidate to free the client and is ready for the teardown migration.
+   The smallest safe implementation includes the wait owner, callback data,
+   and queue drain together. The client queue runs serially, so a registered
+   file-backed waiter is the only fired waiting item at its head, but queued
+   callback payloads still need an ownership audit before generic draining.
+   Pane input also serves `display-message -I`.
 2. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
    title stack duplicates and transfers title text. `screen` is still a Copy
    C-layout record, so migrate the title/path/stack lifecycle together only
