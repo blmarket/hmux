@@ -928,6 +928,21 @@ legacy callers safe.
   pinned baseline and confirmed accepting each removes the user option.
   No sanitizer was run.
 
+### Increment 193 — customize scope-text owner (2026-09-22)
+
+- `window_customize_scope_text` now returns a byte-preserving `CString` for
+  pane, session, window, and empty scopes. Its four callers borrow the local
+  owner for `format_add` or copy its bytes into a prompt, then drop it at the
+  former free point. Removed three `xasprintf` allocations, the empty-scope
+  `xstrdup`, and all four matching frees. The helper is an internal Rust
+  function; its foreign calling convention was unnecessary.
+- Library/binary build, six focused option tests, changed-file rustfmt,
+  Python syntax check, and `git diff --check` passed. A new attached-client
+  CLI check matched server, UTF-8 session, window, pane, and session
+  environment scope labels with the pinned baseline. Existing environment
+  and set-option prompt checks also matched the baseline. No sanitizer was
+  run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -938,11 +953,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_scope_text` still returns a C-owned string built with
-   `xasprintf`/`xstrdup`. Its four callers use the result synchronously and
-   free it after `format_add` or prompt construction. Migrate the producer
-   and all four callers together to a byte-preserving `CString`; check the
-   pane, session, window, and empty scope branches against the baseline.
+1. `window_tree_get_target` still returns a C-owned target string assembled
+   by `xasprintf`. Its two callers pass it synchronously to
+   `mode_tree_run_command` and free it. Migrate the helper and both callers
+   together to `Option<CString>`, preserving the absent-target branch and
+   target bytes.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
