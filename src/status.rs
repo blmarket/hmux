@@ -731,7 +731,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
         },
         saved_flags: 0,
         tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: ::core::ptr::null_mut::<screen_sel>(),
+        sel: None,
         write_list: ::core::ptr::null_mut::<screen_write_cline>(),
         hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
         progress_bar: progress_bar {
@@ -1087,7 +1087,7 @@ pub unsafe extern "C" fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi
         },
         saved_flags: 0,
         tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: ::core::ptr::null_mut::<screen_sel>(),
+        sel: None,
         write_list: ::core::ptr::null_mut::<screen_write_cline>(),
         hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
         progress_bar: progress_bar {

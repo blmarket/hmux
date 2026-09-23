@@ -23,7 +23,7 @@ pub struct screen_sel {
 #[derive(Copy, Clone)]
 #[repr(C)]
 /// Legacy title-list layout retained for type compatibility. Runtime title
-/// storage is owned by ScreenText.
+/// storage is owned by ScreenStorage.
 pub struct screen_titles {
     pub tqh_first: *mut screen_title_entry,
     pub tqh_last: *mut *mut screen_title_entry,
@@ -35,8 +35,8 @@ pub struct screen_titles {
 pub struct screen {
     pub title: *mut ::core::ffi::c_char,
     pub path: *mut ::core::ffi::c_char,
-    pub titles: Option<Box<ScreenText>>,
-    /// Compatibility view of the stack length; ScreenText owns the elements.
+    pub titles: Option<Box<ScreenStorage>>,
+    /// Compatibility view of the stack length; ScreenStorage owns the elements.
     pub ntitles: u_int,
     pub grid: *mut grid,
     pub cx: u_int,
@@ -55,16 +55,16 @@ pub struct screen {
     pub saved_cell: grid_cell,
     pub saved_flags: ::core::ffi::c_int,
     pub tabs: *mut bitstr_t,
-    /// Box-owned by screen_set_selection; invalid after clear or screen_free.
-    pub sel: *mut screen_sel,
+    pub sel: Option<Box<screen_sel>>,
     pub write_list: *mut screen_write_cline,
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
 }
-pub struct ScreenText {
+pub struct ScreenStorage {
     pub(crate) title: std::ffi::CString,
     pub(crate) path: Option<std::ffi::CString>,
     pub(crate) stack: std::collections::VecDeque<std::ffi::CString>,
+    pub(crate) tabs: Vec<bitstr_t>,
 }
 
 #[derive(Copy, Clone)]

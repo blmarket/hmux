@@ -4455,7 +4455,7 @@ pub unsafe extern "C" fn screen_write_collect_add(
         collect = 0 as ::core::ffi::c_int;
     } else if (*s).mode & MODE_INSERT != 0 {
         collect = 0 as ::core::ffi::c_int;
-    } else if !(*s).sel.is_null() {
+    } else if !(*s).sel.is_none() {
         collect = 0 as ::core::ffi::c_int;
     }
     if collect == 0 {

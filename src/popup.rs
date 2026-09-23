@@ -388,7 +388,7 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
         },
         saved_flags: 0,
         tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: ::core::ptr::null_mut::<screen_sel>(),
+        sel: None,
         write_list: ::core::ptr::null_mut::<screen_write_cline>(),
         hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
         progress_bar: progress_bar {

@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{calloc, free, memcpy, snprintf, strlcat, strlen};
+use crate::src::ffi::libc::{memcpy, snprintf, strlcat, strlen};
 use crate::src::grid::{
     grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_destroy,
     grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
@@ -107,10 +107,11 @@ pub unsafe extern "C" fn screen_init(
     // requires screen_free or an explicit move of the old screen first.
     std::ptr::write(
         &raw mut (*s).titles,
-        Some(Box::new(crate::src::shared::screen::ScreenText {
+        Some(Box::new(crate::src::shared::screen::ScreenStorage {
             title: std::ffi::CString::default(),
             path: None,
             stack: std::collections::VecDeque::new(),
+            tabs: Vec::new(),
         })),
     );
     screen_sync_text(s);
@@ -121,7 +122,7 @@ pub unsafe extern "C" fn screen_init(
     (*s).ccolour = -(1 as ::core::ffi::c_int);
     (*s).default_ccolour = -(1 as ::core::ffi::c_int);
     (*s).tabs = ::core::ptr::null_mut::<bitstr_t>();
-    (*s).sel = ::core::ptr::null_mut::<screen_sel>();
+    std::ptr::write(&raw mut (*s).sel, None);
     (*s).write_list = ::core::ptr::null_mut::<screen_write_cline>();
     (*s).hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
     screen_reinit(s, 1 as ::core::ffi::c_int);
@@ -169,10 +170,11 @@ pub unsafe extern "C" fn screen_reset_hyperlinks(mut s: *mut screen) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
-    if !(*s).sel.is_null() {
-        drop(Box::from_raw((*s).sel));
+    drop((*s).sel.take());
+    if let Some(storage) = (*s).titles.as_mut() {
+        drop(std::mem::take(&mut storage.tabs));
     }
-    free((*s).tabs as *mut ::core::ffi::c_void);
+    (*s).tabs = std::ptr::null_mut();
     if let Some(text) = (*s).titles.as_mut() {
         drop(text.path.take());
         drop(std::mem::take(&mut text.title));
@@ -193,23 +195,45 @@ pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
     drop((*s).titles.take());
 }
 #[no_mangle]
-pub unsafe extern "C" fn screen_reset_tabs(mut s: *mut screen) {
-    let mut i: u_int = 0;
-    free((*s).tabs as *mut ::core::ffi::c_void);
-    (*s).tabs = calloc(
-        ((*(*s).grid).sx.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as size_t,
-        ::core::mem::size_of::<bitstr_t>() as size_t,
-    ) as *mut bitstr_t;
-    if (*s).tabs.is_null() {
-        fatal(b"bit_alloc failed\0" as *const u8 as *const ::core::ffi::c_char);
+pub unsafe extern "C" fn screen_reset_tabs(s: *mut screen) {
+    let width = (*(*s).grid).sx as usize;
+    let storage = (*s).titles.as_mut().expect("initialized screen storage");
+    storage.tabs = vec![0; width.div_ceil(8)];
+    for column in (8..width).step_by(8) {
+        storage.tabs[column / 8] |= 1 << (column % 8);
     }
-    i = 8 as u_int;
-    while i < (*(*s).grid).sx {
-        let ref mut fresh0 = *(*s).tabs.offset((i >> 3 as ::core::ffi::c_int) as isize);
-        *fresh0 = (*fresh0 as ::core::ffi::c_int | (1 as ::core::ffi::c_int) << (i & 0x7 as u_int))
-            as bitstr_t;
-        i = i.wrapping_add(8 as u_int);
+    // Compatibility view, valid until reset/resize or screen_free. Internal
+    // readers and writers use the owned collection through the helpers below.
+    (*s).tabs = storage.tabs.as_mut_ptr();
+}
+pub(crate) unsafe fn screen_has_tab(s: *const screen, column: u_int) -> bool {
+    let tabs = &(*s)
+        .titles
+        .as_ref()
+        .expect("initialized screen storage")
+        .tabs;
+    tabs[column as usize / 8] & (1 << (column % 8)) != 0
+}
+pub(crate) unsafe fn screen_set_tab(s: *mut screen, column: u_int, set: bool) {
+    let tabs = &mut (*s)
+        .titles
+        .as_mut()
+        .expect("initialized screen storage")
+        .tabs;
+    let byte = &mut tabs[column as usize / 8];
+    let mask = 1 << (column % 8);
+    if set {
+        *byte |= mask;
+    } else {
+        *byte &= !mask;
     }
+}
+pub(crate) unsafe fn screen_clear_tabs(s: *mut screen) {
+    (*s).titles
+        .as_mut()
+        .expect("initialized screen storage")
+        .tabs
+        .fill(0);
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_set_default_cursor(mut s: *mut screen, mut oo: *mut options) {
@@ -532,23 +556,20 @@ pub unsafe extern "C" fn screen_set_selection(
         clipx,
         cell: *gc,
     };
-    if (*s).sel.is_null() {
-        (*s).sel = Box::into_raw(Box::new(selection));
+    if let Some(existing) = (*s).sel.as_mut() {
+        **existing = selection;
     } else {
-        *(*s).sel = selection;
+        (*s).sel = Some(Box::new(selection));
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_clear_selection(mut s: *mut screen) {
-    if !(*s).sel.is_null() {
-        drop(Box::from_raw((*s).sel));
-    }
-    (*s).sel = ::core::ptr::null_mut::<screen_sel>();
+    drop((*s).sel.take());
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_hide_selection(mut s: *mut screen) {
-    if !(*s).sel.is_null() {
-        (*(*s).sel).hidden = 1 as ::core::ffi::c_int;
+    if let Some(selection) = (*s).sel.as_mut() {
+        selection.hidden = 1;
     }
 }
 #[no_mangle]
@@ -557,9 +578,11 @@ pub unsafe extern "C" fn screen_check_selection(
     mut px: u_int,
     mut py: u_int,
 ) -> ::core::ffi::c_int {
-    let mut sel: *mut screen_sel = (*s).sel;
+    let Some(sel) = (*s).sel.as_ref() else {
+        return 0;
+    };
     let mut xx: u_int = 0;
-    if sel.is_null() || (*sel).hidden != 0 {
+    if sel.hidden != 0 {
         return 0 as ::core::ffi::c_int;
     }
     if px < (*sel).clipx {
@@ -662,12 +685,15 @@ pub unsafe extern "C" fn screen_select_cell(
     mut dst: *mut grid_cell,
     mut src: *const grid_cell,
 ) -> ::core::ffi::c_int {
-    if (*s).sel.is_null() || (*(*s).sel).hidden != 0 {
+    let Some(selection) = (*s).sel.as_ref() else {
+        return 0;
+    };
+    if selection.hidden != 0 {
         return 0 as ::core::ffi::c_int;
     }
     memcpy(
         dst as *mut ::core::ffi::c_void,
-        &raw mut (*(*s).sel).cell as *const ::core::ffi::c_void,
+        &raw const selection.cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     if (*dst).fg == 8 as ::core::ffi::c_int || (*dst).fg == 9 as ::core::ffi::c_int {
@@ -1136,6 +1162,48 @@ mod text_owner_tests {
             );
             assert_eq!(CStr::from_ptr(current.title), c"original");
 
+            assert!(screen_has_tab(&raw const current, 8));
+            screen_set_tab(&raw mut current, 3, true);
+            assert!(screen_has_tab(&raw const current, 3));
+            screen_set_tab(&raw mut current, 8, false);
+            assert!(!screen_has_tab(&raw const current, 8));
+            screen_clear_tabs(&raw mut current);
+            assert!((0..10).all(|x| !screen_has_tab(&raw const current, x)));
+            screen_resize(&raw mut current, 17, 2, 0);
+            assert!(screen_has_tab(&raw const current, 8));
+            assert!(screen_has_tab(&raw const current, 16));
+            assert!(!screen_has_tab(&raw const current, 3));
+            let mut cell = crate::src::grid::grid_default_cell;
+            screen_set_selection(
+                &raw mut current,
+                1,
+                0,
+                4,
+                1,
+                0,
+                0,
+                MODEKEY_EMACS,
+                &raw mut cell,
+            );
+            assert_eq!(screen_check_selection(&raw mut current, 1, 0), 1);
+            assert_eq!(screen_check_selection(&raw mut current, 0, 0), 0);
+            assert_eq!(screen_check_selection(&raw mut current, 4, 1), 0);
+            screen_hide_selection(&raw mut current);
+            assert_eq!(screen_check_selection(&raw mut current, 1, 0), 0);
+            screen_set_selection(
+                &raw mut current,
+                1,
+                0,
+                4,
+                1,
+                1,
+                2,
+                MODEKEY_EMACS,
+                &raw mut cell,
+            );
+            assert_eq!(screen_check_selection(&raw mut current, 1, 0), 0);
+            assert_eq!(screen_check_selection(&raw mut current, 2, 0), 1);
+
             let mut old = std::mem::replace(&mut current, std::mem::zeroed());
             screen_init(&raw mut current, 10, 2, 0);
             screen_set_title(&raw mut current, c"new".as_ptr(), 0);
@@ -1143,13 +1211,32 @@ mod text_owner_tests {
             screen_pop_title(&raw mut old);
             assert_eq!(CStr::from_ptr(old.title), c"original");
             assert_eq!(CStr::from_ptr(old.path), c"/tmp/path");
+            assert!(old.sel.is_some());
+            assert!(current.sel.is_none());
+            assert!(screen_has_tab(&raw const old, 16));
             screen_free(&raw mut old);
             assert!(old.titles.is_none());
+            assert!(old.sel.is_none());
+            assert!(old.tabs.is_null());
             assert_eq!(CStr::from_ptr(current.title), c"new");
 
             screen_push_title(&raw mut current);
+            screen_set_selection(
+                &raw mut current,
+                1,
+                0,
+                4,
+                1,
+                0,
+                0,
+                MODEKEY_EMACS,
+                &raw mut cell,
+            );
+            screen_clear_tabs(&raw mut current);
             screen_reinit(&raw mut current, 0);
             assert_eq!(current.ntitles, 0);
+            assert!(current.sel.is_none());
+            assert!(screen_has_tab(&raw const current, 8));
             assert_eq!(CStr::from_ptr(current.title), c"new");
             screen_free(&raw mut current);
             assert!(current.titles.is_none());

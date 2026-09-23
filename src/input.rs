@@ -28,6 +28,7 @@ use crate::src::reactor::{
     bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length,
     evbuffer_new, event_add, event_del, event_set,
 };
+use crate::src::screen::{screen_clear_tabs, screen_has_tab, screen_set_tab};
 use crate::src::screen::{
     screen_pop_title, screen_push_title, screen_set_cursor_colour, screen_set_cursor_style,
     screen_set_path, screen_set_progress_bar, screen_set_title,
@@ -2902,11 +2903,7 @@ unsafe extern "C" fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi:
                         }
                     }
                     cx = cx.wrapping_add(1);
-                    if *(*s).tabs.offset((cx >> 3 as ::core::ffi::c_int) as isize)
-                        as ::core::ffi::c_int
-                        & (1 as ::core::ffi::c_int) << (cx & 0x7 as u_int)
-                        != 0
-                    {
+                    if screen_has_tab(s, cx) {
                         break;
                     }
                     if !(cx < (*(*s).grid).sx.wrapping_sub(1 as u_int)) {
@@ -3002,12 +2999,7 @@ unsafe extern "C" fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
         }
         5 => {
             if (*s).cx < (*(*s).grid).sx {
-                let ref mut fresh0 = *(*s)
-                    .tabs
-                    .offset(((*s).cx >> 3 as ::core::ffi::c_int) as isize);
-                *fresh0 = (*fresh0 as ::core::ffi::c_int
-                    | (1 as ::core::ffi::c_int) << ((*s).cx & 0x7 as u_int))
-                    as bitstr_t;
+                screen_set_tab(s, (*s).cx, true);
             }
         }
         8 => {
@@ -3113,12 +3105,7 @@ unsafe extern "C" fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
                 } {
                     loop {
                         cx = cx.wrapping_sub(1);
-                        if !(cx > 0 as u_int
-                            && *(*s).tabs.offset((cx >> 3 as ::core::ffi::c_int) as isize)
-                                as ::core::ffi::c_int
-                                & (1 as ::core::ffi::c_int) << (cx & 0x7 as u_int)
-                                == 0)
-                        {
+                        if !(cx > 0 as u_int && !screen_has_tab(s, cx)) {
                             break;
                         }
                     }
@@ -3788,27 +3775,11 @@ unsafe extern "C" fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
                 -1 => {}
                 0 => {
                     if (*s).cx < (*(*s).grid).sx {
-                        let ref mut fresh11 = *(*s)
-                            .tabs
-                            .offset(((*s).cx >> 3 as ::core::ffi::c_int) as isize);
-                        *fresh11 = (*fresh11 as ::core::ffi::c_int
-                            & !((1 as ::core::ffi::c_int) << ((*s).cx & 0x7 as u_int)))
-                            as bitstr_t;
+                        screen_set_tab(s, (*s).cx, false);
                     }
                 }
                 3 => {
-                    let mut _name: *mut bitstr_t = (*s).tabs;
-                    let mut _start: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-                    let mut _stop: ::core::ffi::c_int =
-                        (*(*s).grid).sx.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-                    while _start <= _stop {
-                        let ref mut fresh12 =
-                            *_name.offset((_start >> 3 as ::core::ffi::c_int) as isize);
-                        *fresh12 = (*fresh12 as ::core::ffi::c_int
-                            & !((1 as ::core::ffi::c_int) << (_start & 0x7 as ::core::ffi::c_int)))
-                            as bitstr_t;
-                        _start += 1;
-                    }
+                    screen_clear_tabs(s);
                 }
                 _ => {
                     log_debug(

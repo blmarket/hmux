@@ -117,20 +117,24 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate screen tab and selection storage across allocation, resize/reset,
-borrowed access, and destruction. Reuse the completed screen construction and
+Next, migrate screen grid and saved-grid ownership across construction, alternate
+screen transitions, resize/reflow, borrowed temporary views, and destruction. Reuse the completed screen construction and
 move audit: screens and their containing status/popup/clock records are no
 longer Copy, and the three redraw snapshots explicitly transfer ownership.
-Keep the remaining grid, saved-grid, write-list, and hyperlink lifecycles in
-scope for subsequent screen resource batches rather than treating text ownership
-as completion of the screen migration.
+Keep write-list and hyperlink lifecycles in scope for subsequent screen resource
+batches rather than treating the completed storage as the whole screen migration.
 
 Screen title/path strings and the bounded title stack now live in a nullable
-boxed `ScreenText` owner. Raw title/path pointers and `ntitles` are compatibility
+boxed `ScreenStorage` owner. Raw title/path pointers and `ntitles` are compatibility
 views updated by the screen implementation; no caller owns or frees them.
 Nullable boxed storage preserves zero-initialized containing records and the
 existing screen layout, with explicit initialization and teardown. Legacy title
 list declarations remain for type-layout compatibility but have no live owners.
+
+Tabs now live in a Vec inside ScreenStorage; input and format consumers use
+scoped access helpers. Selection is an Option<Box<screen_sel>> that moves with
+the screen and is cleared explicitly during reset and destruction. The raw tabs
+pointer remains a compatibility view. Existing layout fixtures are unchanged.
 
 Copy-mode lazy callbacks now return owned results directly into the entry cache.
 Both lookup and enumeration evaluate them without holding an owner borrow across
@@ -165,7 +169,7 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Screen text and title-stack ownership is complete. Tabs, selection, grid,
+1. Screen text, title-stack, tabs, and selection ownership is complete. Grid,
    saved-grid, write-list, and hyperlink storage still have manual lifetime
    boundaries. Migrate each complete producer/consumer lifecycle; do not add
    a blanket screen Drop until borrowed resource views and partial construction
@@ -1741,6 +1745,25 @@ name error.
   copy-backing CLI checks passed on candidate and pinned tmux. No sanitizer ran.
 - Remaining screen tab, selection, grid, write-list, and hyperlink ownership is
   not complete; tabs and selection are the next shared lifetime boundaries.
+
+### Batch — owned screen tabs and selection (2026-09-23)
+
+- Tab bytes now live in a Vec in ScreenStorage. Input tab navigation, setting,
+  clearing, and format enumeration access it through scoped helpers. Reset and
+  resize replace the collection and update its compatibility pointer; screen
+  teardown releases it before the grids and clears that pointer.
+- Selection now uses Option<Box<screen_sel>> throughout creation, hide, clear,
+  redraw, copy-mode queries, and destruction. Updates retain the existing box
+  address. Explicit screen transfers move both owners; zeroed construction and
+  existing layout fixtures remain valid.
+- Extended lifecycle coverage for custom tabs, resize defaults, hidden and
+  rectangular selections, screen transfers, reset, and teardown. All 400
+  serialized workspace tests, binary build, changed-file rustfmt, and diff
+  checks passed. Expanded tab CLI coverage checks forward/backward navigation,
+  clear-current, resize, and terminal reset. Tabs, copy selection, copy match,
+  saved status, copy backing, and format-draw checks passed on candidate and
+  pinned tmux. No sanitizer ran.
+- Next: grid and saved-grid ownership, including borrowed temporary screens.
 
 ## Historical migration index
 
