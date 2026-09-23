@@ -119,7 +119,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
 use crate::src::window::window_zoom;
-use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
+use crate::src::xmalloc::{xasprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -2952,7 +2952,7 @@ mod identity_tests {
             (*mtd).buildcb = Some(nested_build);
             let mut state = NestedBuildState { mtd, empty: false };
             (*mtd).modedata = (&raw mut state).cast();
-            (*mtd).screen.grid = xcalloc(1, std::mem::size_of::<grid>() as size_t).cast();
+            (*mtd).screen.grid = Box::into_raw(Box::new(std::mem::zeroed::<grid>()));
             (*(*mtd).screen.grid).sx = 80;
             (*(*mtd).screen.grid).sy = 24;
 
@@ -2973,7 +2973,7 @@ mod identity_tests {
             mode_tree_build(mtd);
             assert!((*mtd).lines.is_empty());
             mode_tree_free_items(&raw mut (*mtd).children);
-            free((*mtd).screen.grid.cast());
+            drop(Box::from_raw((*mtd).screen.grid));
             mode_tree_remove_ref(mtd);
         }
     }
@@ -3009,7 +3009,7 @@ mod identity_tests {
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
             (*mtd).buildcb = Some(named_build);
             (*mtd).modedata = mtd.cast();
-            (*mtd).screen.grid = xcalloc(1, std::mem::size_of::<grid>() as size_t).cast();
+            (*mtd).screen.grid = Box::into_raw(Box::new(std::mem::zeroed::<grid>()));
             (*(*mtd).screen.grid).sx = 80;
             (*(*mtd).screen.grid).sy = 24;
             mode_tree_build(mtd);
@@ -3029,7 +3029,7 @@ mod identity_tests {
             );
             mode_tree_free_items(&raw mut (*mtd).children);
             mode_tree_clear_lines(mtd);
-            free((*mtd).screen.grid.cast());
+            drop(Box::from_raw((*mtd).screen.grid));
             mode_tree_remove_ref(mtd);
         }
     }

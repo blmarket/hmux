@@ -487,7 +487,7 @@ pub unsafe extern "C" fn grid_free_lines(mut gd: *mut grid, mut py: u_int, mut n
 #[no_mangle]
 pub unsafe extern "C" fn grid_create(mut sx: u_int, mut sy: u_int, mut hlimit: u_int) -> *mut grid {
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
-    gd = xcalloc(1 as size_t, ::core::mem::size_of::<grid>() as size_t) as *mut grid;
+    gd = Box::into_raw(Box::new(::core::mem::zeroed::<grid>()));
     (*gd).sx = sx;
     (*gd).sy = sy;
     if hlimit != 0 as u_int {
@@ -507,7 +507,7 @@ pub unsafe extern "C" fn grid_create(mut sx: u_int, mut sy: u_int, mut hlimit: u
 pub unsafe extern "C" fn grid_destroy(mut gd: *mut grid) {
     grid_free_lines(gd, 0 as u_int, (*gd).hsize.wrapping_add((*gd).sy));
     free((*gd).linedata as *mut ::core::ffi::c_void);
-    free(gd as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(gd));
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_compare(mut ga: *mut grid, mut gb: *mut grid) -> ::core::ffi::c_int {
@@ -2229,7 +2229,7 @@ pub unsafe extern "C" fn grid_reflow(mut gd: *mut grid, mut sx: u_int) {
     }
     free((*gd).linedata as *mut ::core::ffi::c_void);
     (*gd).linedata = (*target).linedata;
-    free(target as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(target));
     (*gd).scroll_generation = (*gd).scroll_generation.wrapping_add(1);
 }
 #[no_mangle]

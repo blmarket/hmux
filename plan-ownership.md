@@ -2775,6 +2775,22 @@ legacy callers safe.
   follows rustfmt; `src/layout/core.rs` retains its pre-existing import
   grouping difference. No sanitizer was run.
 
+### Increment 322 — boxed grid records (2026-09-23)
+
+- `grid_create` now boxes the outer zeroed `grid`. `grid_destroy` still frees
+  line payloads and the C-owned `linedata` array before consuming the Box.
+  `grid_reflow` still transfers its temporary target's `linedata` to the
+  original grid and then consumes only the target's outer Box. Screen and
+  alternate-screen pointers remain borrowed compatibility aliases. The two
+  mode-tree unit fixtures that allocate dummy grids now use matched Box
+  allocation/release; they do not call `grid_destroy` because their line
+  arrays are intentionally absent.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, layout
+  CLI with width resize on both candidate and pinned baseline, byte-for-byte
+  capture-pane grid-cell CLI comparison, grid-file rustfmt, and diff checks
+  passed. `src/mode_tree.rs` retains only its pre-existing import-layout
+  rustfmt differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2785,12 +2801,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `grid` in `src/grid/core.rs` has one production constructor,
-   `grid_create`, with terminal releases in `grid_destroy` and the direct
-   outer-record free in `grid_reflow` after transferring `linedata` to the
-   original grid. Migrate both releases together; do not destroy the moved
-   line data. Mode-tree unit fixtures allocate dummy grids with their own
-   matched C allocation/free pair. `cmd_load_buffer_data`
+1. `cmdq_item` in `src/cmd/queue.rs` has two constructors,
+   `cmdq_get_command` and `cmdq_get_callback1`, and one final release in
+   `cmdq_remove`. Audit queue links, callback and command item paths, and
+   two direct test-fixture frees before migrating both constructors and the
+   destructor together. `cmdq_state` is another small record but its
+   explicit reference count requires a retain/release audit.
+   `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
    can skip that callback when a nonattached source client dies before the

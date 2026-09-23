@@ -25,6 +25,8 @@ pub struct grid_cell {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by a screen or temporary reflow operation; `linedata` has its
+/// own allocation and is transferred from a reflow target before that Box drops.
 pub struct grid {
     pub flags: ::core::ffi::c_int,
     pub sx: u_int,
