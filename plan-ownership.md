@@ -1781,6 +1781,22 @@ legacy callers safe.
   rustfmt, and `git diff --check` passed in the isolated worktree. No
   sanitizer run was performed.
 
+### Increment 99 — customize-tree item list and detached items (2026-09-22)
+
+- `window_customize_modedata` is Box-owned until its existing callback
+  reference count reaches zero. It owns a `Vec<Box<CustomizeItemOwner>>`,
+  whose stable first-field C item pointers are lent to mode-tree rows.
+  `table`, `name`, and `array_key` are borrowed views into private
+  byte-preserving `Option<CString>` fields. All detached prompt allocation
+  sites and the editor copy use the same boxed owner, then release it once
+  in their existing callback path. Rebuild and final destruction drain list
+  items in the original forward order. This removes the list's manual
+  realloc/count/free and the items' xcalloc/xstrdup/free lifecycle.
+- Two focused tests cover detached string copies and last-reference release
+  after mode close. Workspace tests, binary build, customize-option CLI
+  checks, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1800,9 +1816,10 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `window_customize`'s item list and detached prompt/editor clones still
-   have paired manual allocations and frees. Their reference-counted mode
-   data must outlive callbacks; migrate all clone paths with the list owner.
+2. `window_tree`'s item list still grows with `xreallocarray` and frees
+   individual rows on filtering, rebuild, and mode teardown. Audit its
+   remove-last behavior and mode-tree `itemdata` aliases before moving the
+   list and row owners together.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1818,9 +1835,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–98. The remaining
+Current validation is recorded in increments 15–99. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–98 has its own local commit; none was pushed.
+Each of increments 15–99 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1831,3 +1848,7 @@ After increments 94–96 were integrated, the workspace suite, binary build,
 changed-file `rustfmt --edition 2021 --check`, and `git diff --check` passed
 on main. The direct `rustfmt` invocation requires the crate's 2021 edition
 for the C string literals in the session-group test.
+After increments 97–99 were integrated, `cargo test --workspace --quiet`,
+`cargo build --bin hmux2 --quiet`, the customize-option CLI checks,
+changed-file `rustfmt --edition 2021 --check`, and `git diff --check` passed
+on main.
