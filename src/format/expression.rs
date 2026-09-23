@@ -46,48 +46,19 @@ pub(super) unsafe extern "C" fn format_quote_shell(
     *at = '\0' as i32 as ::core::ffi::c_char;
     return out;
 }
-pub(super) unsafe extern "C" fn format_quote_shell_single(
-    mut s: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut at: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    out = xmalloc(
-        strlen(s)
-            .wrapping_mul(4 as size_t)
-            .wrapping_add(3 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    at = out;
-    let fresh0 = at;
-    at = at.offset(1);
-    *fresh0 = '\'' as i32 as ::core::ffi::c_char;
-    cp = s;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if *cp as ::core::ffi::c_int == '\'' as i32 {
-            let fresh1 = at;
-            at = at.offset(1);
-            *fresh1 = '\'' as i32 as ::core::ffi::c_char;
-            let fresh2 = at;
-            at = at.offset(1);
-            *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-            let fresh3 = at;
-            at = at.offset(1);
-            *fresh3 = '\'' as i32 as ::core::ffi::c_char;
-            let fresh4 = at;
-            at = at.offset(1);
-            *fresh4 = '\'' as i32 as ::core::ffi::c_char;
+pub(super) unsafe fn format_quote_shell_single(s: *const ::core::ffi::c_char) -> CString {
+    let input = CStr::from_ptr(s).to_bytes();
+    let mut quoted = Vec::with_capacity(input.len().saturating_mul(4).saturating_add(2));
+    quoted.push(b'\'');
+    for &byte in input {
+        if byte == b'\'' {
+            quoted.extend_from_slice(&[b'\'', b'\\', b'\'', b'\'']);
         } else {
-            let fresh5 = at;
-            at = at.offset(1);
-            *fresh5 = *cp;
+            quoted.push(byte);
         }
-        cp = cp.offset(1);
     }
-    let fresh6 = at;
-    at = at.offset(1);
-    *fresh6 = '\'' as i32 as ::core::ffi::c_char;
-    *at = '\0' as i32 as ::core::ffi::c_char;
-    return out;
+    quoted.push(b'\'');
+    CString::new(quoted).expect("shell-quoted C string contains no NUL")
 }
 pub(super) unsafe extern "C" fn format_quote_style(
     mut s: *const ::core::ffi::c_char,
@@ -509,7 +480,8 @@ pub(super) unsafe extern "C" fn format_find(
     }
     if modifiers & FORMAT_QUOTE_SHELL_SQ as uint64_t != 0 {
         saved = found;
-        found = format_quote_shell_single(saved);
+        let quoted = format_quote_shell_single(saved);
+        found = xstrdup(quoted.as_ptr());
         free(saved as *mut ::core::ffi::c_void);
     }
     if modifiers & FORMAT_QUOTE_STYLE as uint64_t != 0 {

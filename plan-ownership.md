@@ -475,6 +475,20 @@ legacy callers safe.
   OSC 52 output from `set-buffer -w` for text and `load-buffer -w` for
   binary `A\0B`. No sanitizer was run.
 
+### Increment 160 — single-quote shell format scratch (2026-09-22)
+
+- The internal `format_quote_shell_single` helper now returns a
+  byte-preserving `CString`. `format_cb_start_command_list` borrows each
+  quoted argument directly, removing its per-argument C allocation/free.
+  `format_replace_modifier` still makes one C-owned copy for its transform
+  chain and frees the prior value at the same point. The helper has no
+  exported ABI and has no other callers.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. Extended `scripts/format_start_command_list_cli_checks.py` passed
+  with old and new binaries for the `q,s` modifier's plain, apostrophe,
+  non-UTF-8, and empty values, alongside the existing pane argv cases.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -485,12 +499,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_cb_start_command_list` still calls the C-owned
-   `format_quote_shell_single` helper once per argument and frees each result
-   after copying its bytes. The helper has one other caller in
-   `format_replace_modifier`, where the result enters a C-owned transform
-   chain. Audit a CString-returning internal variant for the callback while
-   preserving that chain's C-owned return contract.
+1. `cmd_parse_log_commands` still creates a recursive logging prefix with
+   local `xasprintf("%s %u:%u")`, passes it to a synchronous recursive call,
+   then frees it. Audit exact C-string bytes and recursion lifetime before
+   replacing that temporary with `CString`.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -515,9 +527,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–159. The remaining
+Current validation is recorded in increments 15–160. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–159 has its own local commit; none was pushed.
+Each of increments 15–160 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

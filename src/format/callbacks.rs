@@ -452,8 +452,7 @@ unsafe extern "C" fn format_cb_start_command_list(
         if i != 0 {
             command.push(b' ');
         }
-        command.extend_from_slice(std::ffi::CStr::from_ptr(quoted).to_bytes());
-        free(quoted.cast());
+        command.extend_from_slice(quoted.as_bytes());
     }
     // The format tree owns and frees callback results, so copy once at its boundary.
     xmemdup(command.as_ptr().cast(), command.len()) as *mut ::core::ffi::c_void

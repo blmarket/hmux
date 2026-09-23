@@ -39,6 +39,15 @@ with tempfile.TemporaryDirectory(prefix="format-start-command-", dir=root / "tar
         long_arg = b"a" * 4096
         run(b"new-window", b"-d", b"-t", b"start:", b"/bin/sh", b"-c", b"exec sleep 60", long_arg)
         assert pane_command(b"start:4") == b"'/bin/sh' '-c' 'exec sleep 60' '" + long_arg + b"'\n"
+
+        for value, expected in (
+            (b"abc", b"'abc'\n"),
+            (b"a'b", b"'a'\\''b'\n"),
+            (b"\xff", b"'\xff'\n"),
+            (b"", b"''\n"),
+        ):
+            run(b"set-option", b"-g", b"@quoted", value)
+            assert run(b"display-message", b"-p", b"#{q,s:@quoted}") == expected
     finally:
         subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=20)
 
