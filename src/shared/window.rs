@@ -78,8 +78,8 @@ pub struct winlink_entry {
     pub owner: *mut std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned window record; references remain managed by window_add_ref/remove_ref.
 pub struct window {
     pub id: u_int,
     pub latest: *mut ::core::ffi::c_void,

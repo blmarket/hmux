@@ -65,7 +65,7 @@ use crate::src::style::{
 use crate::src::tmux::{clean_name, global_options, global_w_options, setblocking};
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
-use crate::src::xmalloc::{xcalloc, xmalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xmalloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::abi::ssize_t;
@@ -1299,7 +1299,7 @@ pub unsafe extern "C" fn window_create(
     if ypixel == 0 as u_int {
         ypixel = DEFAULT_YPIXEL as u_int;
     }
-    w = xcalloc(1 as size_t, ::core::mem::size_of::<window>() as size_t) as *mut window;
+    w = Box::into_raw(Box::new(::core::mem::zeroed::<window>()));
     (*w).name = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes.tqh_first = ::core::ptr::null_mut::<window_pane>();
@@ -1372,7 +1372,7 @@ unsafe extern "C" fn window_destroy(mut w: *mut window) {
     }
     options_free((*w).options);
     free((*w).name as *mut ::core::ffi::c_void);
-    free(w as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(w));
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {

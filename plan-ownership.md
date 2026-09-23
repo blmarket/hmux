@@ -3163,6 +3163,20 @@ legacy callers safe.
   matched the pinned baseline. Full workspace tests, binary build,
   changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 349 — boxed window records (2026-09-23)
+
+- `window_create` now allocates the zeroed outer `window` in a Box at its
+  final stable address. `window_destroy`, reached when the existing explicit
+  reference count falls to zero, consumes that Box after removing the window
+  index entry and releasing its panes, layouts, timers, options, and strings.
+  Removed the outer `xcalloc`/`free` pair and the record's `Copy`/`Clone`
+  derives. The window-ID index and existing raw observers remain; this does
+  not convert the session/window graph or its reference count.
+- Session create/link/rename/kill snapshots matched the pinned baseline.
+  Per-window control-client resize/disconnect checks passed on both binaries.
+  Full workspace tests, binary build, changed-file rustfmt, and diff checks
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3173,14 +3187,16 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_value` has separate scalar constructors,
-   movable positional arrays, and external callers of exported
-   `args_set`/`args_free_value`; a whole-type migration needs an ABI and
-   ownership redesign across those paths.
-   The separate `utf8_item` cache has no terminal free and needs a whole-cache
-   design. Disconnected file-reading clients can leave a waiting command-queue
-   item even after callback data is released; that needs a separate queue
-   cancellation design.
+1. `args_value` has linked flag records and separately movable positional
+   arrays. A bounded Box migration can cover the three flag-record producers
+   and their two record-free sites, but must also update the allocation
+   contract of exported `args_set` and its C-allocated integration-test
+   producers. Keep positional arrays and their payload-only
+   `args_free_value` path separate. The `utf8_item` cache has no terminal free:
+   a complete migration would make its index map own boxed items while its
+   data map borrows their stable pointers for process lifetime. Disconnected
+   file-reading clients can leave a waiting command-queue item even after
+   callback data is released; that needs a separate queue cancellation design.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
