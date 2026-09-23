@@ -364,6 +364,18 @@ legacy callers safe.
   and new binaries for single and duplicate links, a UTF-8 session name,
   unlink, and session teardown. No sanitizer was run.
 
+### Increment 151 — window active-session list scratch (2026-09-22)
+
+- `format_cb_window_active_sessions_list` now assembles the filtered,
+  comma-separated session-name bytes in a local `Vec<u8>`. Removed its
+  `evbuffer` allocation/free and append/pullup calls; the final `xmemdup`
+  still supplies the C-owned callback result. The `session.curw == wl`
+  filter, winlink order, and null result for an empty byte list remain.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. New `scripts/format_active_sessions_cli_checks.py` passed against
+  old and new binaries for inactive links, active links, duplicate links,
+  Unicode names, and an empty result. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -374,10 +386,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_cb_window_active_sessions_list` still assembles a comma-separated
-   subset of linked session names in a local `evbuffer`, then duplicates the
-   bytes for its C-owned callback result. Audit its active-window filter and
-   null/empty behavior before replacing the intermediate buffer with `Vec`.
+1. `format_cb_window_active_clients_list` still assembles a comma-separated
+   subset of client names in a local `evbuffer` before duplicating the result
+   for its C-owned callback. Audit the client's active-window filter and
+   traversal before replacing the intermediate buffer with `Vec`.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -402,9 +414,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–150. The remaining
+Current validation is recorded in increments 15–151. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–150 has its own local commit; none was pushed.
+Each of increments 15–151 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

@@ -308,45 +308,25 @@ unsafe extern "C" fn format_cb_window_active_sessions_list(
 ) -> *mut ::core::ffi::c_void {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut size: ::core::ffi::c_int = 0;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*ft).wl.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     w = (*(*ft).wl).window;
-    buffer = evbuffer_new();
-    if buffer.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
-    }
+    let mut names = Vec::<u8>::new();
     wl = (*w).winlinks.tqh_first;
     while !wl.is_null() {
         if (*(*wl).session).curw == wl {
-            if evbuffer_get_length(buffer) > 0 as size_t {
-                evbuffer_add(
-                    buffer,
-                    b",\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-                    1 as size_t,
-                );
+            if !names.is_empty() {
+                names.push(b',');
             }
-            evbuffer_add_printf(
-                buffer,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*(*wl).session).name,
-            );
+            names.extend_from_slice(std::ffi::CStr::from_ptr((*(*wl).session).name).to_bytes());
         }
         wl = (*wl).wentry.tqe_next;
     }
-    size = evbuffer_get_length(buffer) as ::core::ffi::c_int;
-    if size != 0 as ::core::ffi::c_int {
-        value = xmemdup(
-            evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t)
-                as *const ::core::ffi::c_void,
-            size as size_t,
-        );
+    if names.is_empty() {
+        return ::core::ptr::null_mut();
     }
-    evbuffer_free(buffer);
-    return value as *mut ::core::ffi::c_void;
+    xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void
 }
 unsafe extern "C" fn format_cb_window_active_clients(
     mut ft: *mut format_tree,
