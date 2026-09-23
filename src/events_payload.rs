@@ -76,7 +76,7 @@ use crate::src::window::{
     window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
     window_remove_ref, winlink_find_by_index,
 };
-use crate::src::xmalloc::{xcalloc, xmemdup, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xmemdup, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -94,7 +94,7 @@ pub const EVENT_PAYLOAD_STRING: event_payload_type = 0;
 
 // The public item pointer addresses the first field of this private owner.
 // Its union string pointer borrows `string` until replacement or payload free.
-// Other item variants still use their C allocation and destruction paths.
+// Other item variants own their records directly as Box<event_payload_item>.
 #[repr(C)]
 struct EventPayloadStringItem {
     item: event_payload_item,
@@ -272,8 +272,13 @@ unsafe fn event_payload_free_item(epi: *mut event_payload_item) {
         // Only string items are created as EventPayloadStringItem boxes.
         drop(Box::from_raw(epi.cast::<EventPayloadStringItem>()));
     } else {
-        free(epi as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(epi));
     }
+}
+
+unsafe fn event_payload_new_item() -> *mut event_payload_item {
+    // Every field is C-style pointer or integer storage, including the union.
+    Box::into_raw(Box::new(::core::mem::zeroed::<event_payload_item>()))
 }
 unsafe extern "C" fn event_payload_set_item(
     mut ep: *mut event_payload,
@@ -468,10 +473,7 @@ pub unsafe extern "C" fn event_payload_set_time(
     mut value: time_t,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
+    epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_TIME;
     (*epi).c2rust_unnamed.time = value;
     event_payload_set_item(ep, name, epi);
@@ -483,10 +485,7 @@ pub unsafe extern "C" fn event_payload_set_int(
     mut value: ::core::ffi::c_int,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
+    epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_INT;
     (*epi).c2rust_unnamed.number = value;
     event_payload_set_item(ep, name, epi);
@@ -498,10 +497,7 @@ pub unsafe extern "C" fn event_payload_set_uint(
     mut value: u_int,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
+    epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_UINT;
     (*epi).c2rust_unnamed.unsigned_number = value;
     event_payload_set_item(ep, name, epi);
@@ -514,10 +510,7 @@ pub unsafe extern "C" fn event_payload_set_client(
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     (*c).references += 1;
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
+    epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_CLIENT;
     (*epi).c2rust_unnamed.client = c;
     event_payload_set_item(ep, name, epi);
@@ -533,10 +526,7 @@ pub unsafe extern "C" fn event_payload_set_session(
         s,
         b"event_payload_set_session\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
+    epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_SESSION;
     (*epi).c2rust_unnamed.session = s;
     event_payload_set_item(ep, name, epi);
@@ -552,10 +542,7 @@ pub unsafe extern "C" fn event_payload_set_window(
         w,
         b"event_payload_set_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
+    epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_WINDOW;
     (*epi).c2rust_unnamed.window = w;
     event_payload_set_item(ep, name, epi);
@@ -571,10 +558,7 @@ pub unsafe extern "C" fn event_payload_set_pane(
         wp,
         b"event_payload_set_pane\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
+    epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_PANE;
     (*epi).c2rust_unnamed.pane = wp;
     event_payload_set_item(ep, name, epi);
@@ -588,10 +572,7 @@ pub unsafe extern "C" fn event_payload_set_pointer(
     mut print_cb: event_payload_print_cb,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
+    epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_POINTER;
     (*epi).c2rust_unnamed.pointer.ptr = ptr;
     (*epi).c2rust_unnamed.pointer.free_cb = free_cb;

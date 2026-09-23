@@ -35,6 +35,20 @@ with tempfile.TemporaryDirectory(prefix="event-payload-formats-", dir=root / "ta
         )
         run(b"new-session", b"-d", b"-s", b"beta", b"sleep", b"60")
         assert run(b"show-options", b"-gqv", b"@session-event") == b"beta\n"
+
+        run(
+            b"set-hook", b"-g", b"window-linked",
+            b'set-option -gF @link-event "#{hook_window_index}|#{hook_session_name}"',
+        )
+        run(b"link-window", b"-s", b"alpha:0", b"-t", b"beta:3")
+        assert run(b"show-options", b"-gqv", b"@link-event") == b"3|beta\n"
+
+        run(
+            b"set-hook", b"-g", b"window-resized",
+            b'set-option -gF @resize-event "#{hook_width}|#{hook_height}"',
+        )
+        run(b"resize-window", b"-t", b"beta:3", b"-x", b"70", b"-y", b"18")
+        assert run(b"show-options", b"-gqv", b"@resize-event") == b"70|18\n"
     finally:
         subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=20)
 

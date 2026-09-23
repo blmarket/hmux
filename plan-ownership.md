@@ -2928,6 +2928,22 @@ legacy callers safe.
   for `src/tty_term.rs`, and diff checks passed. `src/shared/tty.rs` retains
   its pre-existing test-import formatting difference. No sanitizer was run.
 
+### Increment 332 — boxed non-string event payload items (2026-09-23)
+
+- The eight TIME/INT/UINT/CLIENT/SESSION/WINDOW/PANE/POINTER setters now
+  allocate `event_payload_item` through one boxed, zero-initialized helper.
+  `event_payload_free_item` releases retained values and the C-owned name,
+  then drops the Box for these variants. Removed eight `xcalloc` calls and
+  their shared libc `free`. The separate `EventPayloadStringItem` Box still
+  owns the string variant; replacement and payload teardown keep their
+  existing removal/free order. The item type no longer derives `Copy`.
+- Extended `scripts/event_payload_formats_cli_checks.py` with live
+  `window-linked` integer index and `window-resized` unsigned dimensions;
+  it passed on candidate and pinned baseline. The existing unit test covers
+  string/int/pointer replacement and pointer callback release. Full workspace
+  tests, binary build, changed-file rustfmt with the crate edition, and diff
+  checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2938,12 +2954,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The remaining non-string `event_payload_item` variants in
-   `src/events_payload.rs` have eight repetitive constructors and one
-   `event_payload_free_item` destructor. Each item stays at a stable address
-   in a payload map; replacement and payload teardown share that destructor.
-   Keep the separately Box-owned string variant and release values and names
-   before dropping each other record.
+1. `tty_term.name` in `src/tty_term.rs` is duplicated once in
+   `tty_term_create`, borrowed by terminal matching, logging, and
+   `show-messages -T`, then freed in `tty_term_free`. A private Box owner
+   with `tty_term` at offset zero can hold the name as `CString` while
+   preserving the existing term pointer and intrusive-list address.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`

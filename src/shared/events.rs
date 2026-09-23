@@ -23,7 +23,6 @@ pub type event_payload_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c
 pub type event_payload_print_cb =
     Option<unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut evbuffer) -> ()>;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct event_payload_item {
     pub name: *mut ::core::ffi::c_char,
@@ -73,7 +72,7 @@ pub struct event_payload_item_entry {
     pub rbe_color: ::core::ffi::c_int,
 }
 
-/// Rust-owned ordering storage for an event payload's C-allocated items.
+/// Rust-owned ordering storage for an event payload's Box-owned items.
 /// Keys retain the original C string bytes so ordering matches `strcmp`.
 #[derive(Default)]
 pub struct event_payload_tree_storage {
