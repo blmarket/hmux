@@ -114,7 +114,7 @@ use crate::src::tty::{
     tty_update_window_offset, tty_window_offset, tty_write,
 };
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
-use crate::src::utf8::{utf8_append, utf8_copy, utf8_fromcstr, utf8_open, utf8_set};
+use crate::src::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};
 use crate::src::utf8_combined::{
     hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
     utf8_should_combine,
@@ -720,7 +720,6 @@ pub unsafe extern "C" fn screen_write_text(
     let mut idx: u_int = 0 as u_int;
     let mut at: u_int = 0;
     let mut left: u_int = 0;
-    let mut text: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -741,10 +740,11 @@ pub unsafe extern "C" fn screen_write_text(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     ap = args.clone();
-    text = {
+    let cells = {
         let tmp = xvasprintf_cstring(fmt, ap);
-        utf8_fromcstr(tmp.as_ptr())
+        utf8_fromcstr_vec(tmp.as_ptr())
     };
+    let text = cells.as_ptr();
     left = cx.wrapping_add(width).wrapping_sub((*s).cx);
     loop {
         at = 0 as u_int;
@@ -820,10 +820,8 @@ pub unsafe extern "C" fn screen_write_text(
         && (more == 0 || (*s).cx == cx.wrapping_add(width))
         || (*text.offset(idx as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
     {
-        free(text as *mut ::core::ffi::c_void);
         return 0 as ::core::ffi::c_int;
     }
-    free(text as *mut ::core::ffi::c_void);
     if more == 0 || (*s).cx == cx.wrapping_add(width) {
         screen_write_cursormove(
             ctx,

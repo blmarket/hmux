@@ -2396,6 +2396,19 @@ legacy callers safe.
   `git diff --check` passed. Changed-file rustfmt reports two import layout
   differences already present at `0c279d5`. No sanitizer was run.
 
+### Increment 134 — screen text decoded cells (2026-09-22)
+
+- `screen_write_text` now decodes its local formatted `CString` into a scoped
+  `Vec<utf8_data>` via `utf8_fromcstr_vec`. The old size-zero sentinel pointer
+  walk and cell output order remain. Removed the `utf8_fromcstr` allocation
+  and both manual frees on success and early return.
+- The formatted value is copied before it drops; the cells remain live through
+  every `screen_write_cell` call. Only a local borrowed pointer indexes the
+  Vec, and no caller keeps it after `screen_write_text` returns.
+- Isolated validation: library/binary build, focused decoder equivalence
+  test, customize-option CLI check, changed-file rustfmt, and
+  `git diff --check` passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2406,15 +2419,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen_write_text` still creates a temporary `utf8_fromcstr` array from
-   its local formatted `CString`. It walks the cells synchronously, then
-   manually frees the array on two return paths. The shared
-   `utf8_fromcstr_vec` can own that scratch lifetime.
-2. `cmd_send_keys_inject_string` still creates a temporary
+1. `cmd_send_keys_inject_string` still creates a temporary
    `utf8_fromcstr` array for literal keys and manually frees it after the
    key loop. The shared decoder can own those cells; audit callback
    reentrancy and key ordering.
-3. The only direct `xvasprintf` production caller outside the `xmalloc`
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -2423,7 +2432,7 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-4. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
