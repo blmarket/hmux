@@ -1316,6 +1316,22 @@ legacy callers safe.
   `scripts/options_array_key_cli_checks.py` passed in the isolated worktree.
   No sanitizer run was performed.
 
+### Increment 68 — client-target lookup copy (2026-09-22)
+
+- `cmd_find_client` now reads the first-NUL target bytes, removes one
+  optional trailing colon, and owns the lookup/error string as `CString`.
+  This replaces `xstrdup`, the writable terminator, and the matching `free`.
+  Client names and terminal paths borrow the string only during synchronous
+  comparisons; the error formatter copies it before the owner drops at the
+  former free point. The NULL-target branch still uses the current client.
+- `scripts/find_client_cli_checks.py` checks a live control client's name
+  with and without a trailing colon and exact missing-client errors for
+  empty, colon-only, non-UTF-8, and internal-colon inputs. Workspace tests,
+  binary build, CLI check, changed-file rustfmt, and `git diff --check`
+  passed in the isolated worktree. The CLI cannot pass embedded NUL in an
+  argument; CStr retains the previous first-NUL behavior. No sanitizer run
+  was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1330,12 +1346,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `server_client_set_flags`' writable comma-list copy,
-   `cmd_find_client`'s trailing-colon scratch, and other local parser buffers.
-   Remaining `xstrndup` callers return or transfer C-owned strings.
+2. Inspect `server_client_set_flags`' writable comma-list copy and other
+   local parser buffers. Remaining `xstrndup` callers return or transfer
+   C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–67. The remaining
+Current validation is recorded in increments 15–68. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–67 has its own local commit; none was pushed.
+Each of increments 15–68 has its own local commit; none was pushed.

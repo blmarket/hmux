@@ -21,6 +21,7 @@ use crate::src::window::{
     winlinks_next,
 };
 use crate::src::xmalloc::{xreallocarray, xstrdup};
+use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -1758,26 +1759,21 @@ pub unsafe extern "C" fn cmd_find_client(
     mut quiet: ::core::ffi::c_int,
 ) -> *mut client {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut size: size_t = 0;
     if target.is_null() {
         return cmd_find_current_client(item, quiet);
     }
-    copy = xstrdup(target);
-    size = strlen(copy);
-    if size != 0 as size_t
-        && *copy.offset(size.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int == ':' as i32
-    {
-        *copy.offset(size.wrapping_sub(1 as size_t) as isize) = '\0' as i32 as ::core::ffi::c_char;
-    }
+    let target_bytes = CStr::from_ptr(target).to_bytes();
+    let trimmed = target_bytes.strip_suffix(b":").unwrap_or(target_bytes);
+    let copy = CString::new(trimmed).expect("client target came from a C string");
+    let copy_ptr = copy.as_ptr();
     c = clients.tqh_first;
     while !c.is_null() {
         if !(*c).session.is_null() {
-            if strcmp(copy, (*c).name) == 0 as ::core::ffi::c_int {
+            if strcmp(copy_ptr, (*c).name) == 0 as ::core::ffi::c_int {
                 break;
             }
             if !(*(*c).ttyname as ::core::ffi::c_int == '\0' as i32) {
-                if strcmp(copy, (*c).ttyname) == 0 as ::core::ffi::c_int {
+                if strcmp(copy_ptr, (*c).ttyname) == 0 as ::core::ffi::c_int {
                     break;
                 }
                 if !(strncmp(
@@ -1788,7 +1784,7 @@ pub unsafe extern "C" fn cmd_find_client(
                 ) != 0 as ::core::ffi::c_int)
                 {
                     if strcmp(
-                        copy,
+                        copy_ptr,
                         (*c).ttyname
                             .offset(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize
                                 as isize)
@@ -1806,10 +1802,10 @@ pub unsafe extern "C" fn cmd_find_client(
         cmdq_error(
             item,
             b"can't find client: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            copy,
+            copy_ptr,
         );
     }
-    free(copy as *mut ::core::ffi::c_void);
+    drop(copy);
     log_debug(
         b"%s: target %s, return %p\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_find_client\0" as *const u8 as *const ::core::ffi::c_char,
