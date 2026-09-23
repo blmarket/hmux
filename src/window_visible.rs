@@ -60,7 +60,6 @@ use crate::src::window::{
     window_pane_get_pane_lines, window_pane_is_floating, window_pane_is_visible,
     window_pane_scrollbar_reserve,
 };
-use crate::src::xmalloc::xcalloc;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -97,10 +96,14 @@ pub unsafe extern "C" fn window_visible_ranges(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
+    static mut sr_range: visible_range = visible_range {
+        px: 0 as u_int,
+        nx: 0 as u_int,
+    };
     static mut sr: visible_ranges = visible_ranges {
-        ranges: ::core::ptr::null::<visible_range>() as *mut visible_range,
+        ranges: &raw mut sr_range,
         used: 0 as u_int,
-        size: 0 as u_int,
+        size: 1 as u_int,
     };
     let mut found_self: ::core::ffi::c_int = 0;
     let mut sb_w: ::core::ffi::c_int = 0;
@@ -133,15 +136,8 @@ pub unsafe extern "C" fn window_visible_ranges(
                     if !r.is_null() {
                         return r;
                     }
-                    if sr.ranges.is_null() {
-                        sr.ranges = xcalloc(
-                            1 as size_t,
-                            ::core::mem::size_of::<visible_range>() as size_t,
-                        ) as *mut visible_range;
-                    }
                     (*sr.ranges.offset(0 as ::core::ffi::c_int as isize)).px = px as u_int;
                     (*sr.ranges.offset(0 as ::core::ffi::c_int as isize)).nx = width;
-                    sr.size = 1 as u_int;
                     sr.used = 1 as u_int;
                     return &raw mut sr;
                 }
@@ -308,13 +304,6 @@ pub unsafe extern "C" fn window_visible_ranges(
         }
     }
     if r.is_null() {
-        if sr.ranges.is_null() {
-            sr.ranges = xcalloc(
-                1 as size_t,
-                ::core::mem::size_of::<visible_range>() as size_t,
-            ) as *mut visible_range;
-        }
-        sr.size = 1 as u_int;
         sr.used = 0 as u_int;
         return &raw mut sr;
     }

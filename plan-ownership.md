@@ -1776,6 +1776,18 @@ legacy callers safe.
   baseline with a long OSC title followed by a short title after returning
   to ground. No sanitizer was run.
 
+### Increment 251 — fallback visible range storage (2026-09-23)
+
+- `window_visible_ranges` now uses one static `visible_range` for its
+  null-range fallback instead of lazily `xcalloc`-allocating a process-lifetime
+  slot in two branches. The returned `visible_ranges` ABI shape, `used` and
+  `size` values, and shared mutable fallback behavior remain the same. Pane
+  range storage is a separate owner and is unchanged.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, pinned-baseline attached-client
+  `window_copy_vadd_owner_cli_checks.py`, and `layout_cli_checks.py` passed.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1786,10 +1798,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_pane_input_data`, a `format_draw` range allocation, and the
-   `window_visible` range cache are under isolated owner/caller audits. Choose
-   the next small boundary that removes a complete manual lifetime without
-   changing ABI or reentrant behavior.
+1. `window_pane_input_data` and a `format_draw` range allocation are under
+   isolated owner/caller audits. Choose the next small boundary that removes
+   a complete manual lifetime without changing ABI or reentrant behavior.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1821,7 +1832,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–250 above, with increment 228 explicitly retracted.
+recorded in increments 226–251 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.
