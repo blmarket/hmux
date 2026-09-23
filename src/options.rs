@@ -214,17 +214,20 @@ unsafe extern "C" fn options_value_free(mut o: *mut options_entry, mut ov: *mut 
         cmd_list_free((*ov).cmdlist);
     }
 }
-unsafe extern "C" fn options_value_to_string(
-    mut o: *mut options_entry,
-    mut ov: *mut options_value,
-    mut numeric: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn options_value_to_cstring(
+    o: *mut options_entry,
+    ov: *mut options_value,
+    numeric: ::core::ffi::c_int,
+) -> CString {
     if !(*o).tableentry.is_null()
         && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return cmd_list_print((*ov).cmdlist, 0 as ::core::ffi::c_int);
+        let printed = cmd_list_print((*ov).cmdlist, 0);
+        // cmd_list_print still has a C-owned result for its other callers.
+        let value = CStr::from_ptr(printed).to_owned();
+        free(printed.cast());
+        return value;
     }
     if !(*o).tableentry.is_null()
         && ((*(*o).tableentry).type_0 as ::core::ffi::c_uint
@@ -238,52 +241,37 @@ unsafe extern "C" fn options_value_to_string(
             || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
                 == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint)
     {
-        match (*(*o).tableentry).type_0 as ::core::ffi::c_uint {
-            1 => {
-                xasprintf(
-                    &raw mut s,
-                    b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*ov).number,
-                );
-            }
-            2 => {
-                let key_string = key_string_format((*ov).number as key_code, false);
-                s = xstrdup(key_string.as_ptr());
-            }
-            3 => {
-                s = xstrdup(colour_format((*ov).number as ::core::ffi::c_int).as_ptr());
-            }
+        return match (*(*o).tableentry).type_0 as ::core::ffi::c_uint {
+            1 => CString::new((*ov).number.to_string()).expect("decimal number has no NUL"),
+            2 => key_string_format((*ov).number as key_code, false),
+            3 => colour_format((*ov).number as ::core::ffi::c_int),
             4 => {
                 if numeric != 0 {
-                    xasprintf(
-                        &raw mut s,
-                        b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*ov).number,
-                    );
+                    CString::new((*ov).number.to_string()).expect("decimal number has no NUL")
                 } else {
-                    s = xstrdup(if (*ov).number != 0 {
+                    CStr::from_ptr(if (*ov).number != 0 {
                         b"on\0" as *const u8 as *const ::core::ffi::c_char
                     } else {
                         b"off\0" as *const u8 as *const ::core::ffi::c_char
-                    });
+                    })
+                    .to_owned()
                 }
             }
             5 => {
-                s = xstrdup(*(*(*o).tableentry).choices.offset((*ov).number as isize));
+                CStr::from_ptr(*(*(*o).tableentry).choices.offset((*ov).number as isize)).to_owned()
             }
             _ => {
                 fatalx(b"not a number option type\0" as *const u8 as *const ::core::ffi::c_char);
             }
-        }
-        return s;
+        };
     }
     if (*o).tableentry.is_null()
         || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return xstrdup((*ov).string);
+        return CStr::from_ptr((*ov).string).to_owned();
     }
-    return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+    c"".to_owned()
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_create(mut parent: *mut options) -> *mut options {
@@ -891,49 +879,46 @@ pub unsafe extern "C" fn options_is_string(mut o: *mut options_entry) -> ::core:
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_to_string(
-    mut o: *mut options_entry,
-    mut key: *const ::core::ffi::c_char,
-    mut numeric: ::core::ffi::c_int,
+    o: *mut options_entry,
+    key: *const ::core::ffi::c_char,
+    numeric: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut result: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut last: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    // Preserve the exported malloc/free contract while internal callers keep
+    // their string's Rust owner for the duration of their use.
+    xstrdup(options_to_cstring(o, key, numeric).as_ptr())
+}
+
+pub(crate) unsafe fn options_to_cstring(
+    o: *mut options_entry,
+    key: *const ::core::ffi::c_char,
+    numeric: ::core::ffi::c_int,
+) -> CString {
     if !(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if key.is_null() {
-            a = options_array_first(o);
+            let mut result = Vec::new();
+            let mut a = options_array_first(o);
+            let mut first = true;
             while !a.is_null() {
-                next = options_value_to_string(o, &raw mut (*a).value, numeric);
-                if last.is_null() {
-                    result = next;
-                } else {
-                    xasprintf(
-                        &raw mut result,
-                        b"%s %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        last,
-                        next,
-                    );
-                    free(last as *mut ::core::ffi::c_void);
-                    free(next as *mut ::core::ffi::c_void);
+                let value = options_value_to_cstring(o, &raw mut (*a).value, numeric);
+                if !first {
+                    result.push(b' ');
                 }
-                last = result;
+                result.extend_from_slice(value.as_bytes());
+                first = false;
                 a = options_array_next(a);
             }
-            if result.is_null() {
-                return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-            }
-            return result;
+            return CString::new(result).expect("option values have no NUL");
         }
         let Some(new_key) = options_array_correct_key(key) else {
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+            return c"".to_owned();
         };
-        a = options_array_item(o, new_key.as_ptr());
+        let a = options_array_item(o, new_key.as_ptr());
         if a.is_null() {
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+            return c"".to_owned();
         }
-        return options_value_to_string(o, &raw mut (*a).value, numeric);
+        return options_value_to_cstring(o, &raw mut (*a).value, numeric);
     }
-    return options_value_to_string(o, &raw mut (*o).value, numeric);
+    options_value_to_cstring(o, &raw mut (*o).value, numeric)
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_parse(

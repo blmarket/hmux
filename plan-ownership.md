@@ -1058,6 +1058,21 @@ legacy callers safe.
   including mkdir permission failure, non-directory, unsafe permissions, and
   success. No sanitizer was run.
 
+### Increment 202 — option value rendering scratch owner (2026-09-23)
+
+- Private `options_value_to_cstring` now owns numeric, flag, key, colour,
+  choice, string, and command-list renderings. `options_to_cstring` joins
+  array items in one `Vec<u8>` and handles indexed and empty values. This
+  removed repeated array `xasprintf` and intermediate frees; the sole
+  `show-options` caller of the private owner no longer duplicates and frees
+  a C result. Exported `options_to_string` still returns a libc-freeable
+  duplicate. `cmd_list_print` remains C-owned for its other callers, so its
+  option rendering is copied and freed at that producer boundary.
+- Library/binary build, five `options_storage` tests, changed-file rustfmt,
+  Python syntax check, and `git diff --check` passed. A private-server CLI
+  check matched the pinned baseline for empty and non-UTF-8 arrays, indexed
+  values, scalar kinds, and a command-list hook. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1068,12 +1083,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `options_to_string` joins array items by repeatedly allocating a result
-   and manually freeing its previous result and next item. Its private
-   `options_value_to_string` producer has numeric, string, choice, and
-   command-list branches. Audit whether an owned internal value API can
-   remove those intermediate frees while keeping exported
-   `options_to_string`'s C-owned return and byte behavior.
+1. The private JSON tokenizer grows and frees a raw token array before
+   recursive parsing. Its token cursors are stable after tokenization, so
+   audit a `Vec<json_token>` owner through both parse and error teardown.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in

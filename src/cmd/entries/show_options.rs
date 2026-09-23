@@ -15,7 +15,7 @@ use crate::src::options::{
     options_array_first, options_array_item_key, options_array_next, options_first, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_only,
     options_is_array, options_is_string, options_match_command, options_name, options_next,
-    options_scope_from_flags, options_scope_from_name, options_to_string,
+    options_scope_from_flags, options_scope_from_name, options_to_cstring, options_to_string,
 };
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
@@ -323,16 +323,11 @@ unsafe extern "C" fn cmd_show_options_exec(
         }
     };
 }
-/// `options_to_string` still returns a malloc-owned C string for its other
-/// callers. Keep only its first-NUL view and release that allocation here.
 unsafe fn cmd_show_options_value(
     o: *mut options_entry,
     array_key: *const ::core::ffi::c_char,
 ) -> CString {
-    let raw = options_to_string(o, array_key, 0);
-    let value = CStr::from_ptr(raw).to_owned();
-    free(raw.cast());
-    value
+    options_to_cstring(o, array_key, 0)
 }
 
 unsafe extern "C" fn cmd_show_options_print(
