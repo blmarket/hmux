@@ -34,6 +34,8 @@ use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Dynamic entries are Box-owned while indexed; static defaults have
+/// `allocated == 0` and must never be passed to `Box::from_raw`.
 pub struct utf8_width_item {
     pub wc: wchar_t,
     pub width: u_int,
@@ -1037,18 +1039,16 @@ unsafe extern "C" fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) 
         wc as u_int,
         width,
     );
-    uw = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<utf8_width_item>() as size_t,
-    ) as *mut utf8_width_item;
-    (*uw).wc = wc;
-    (*uw).width = width;
-    (*uw).allocated = 1 as ::core::ffi::c_int;
+    uw = Box::into_raw(Box::new(utf8_width_item {
+        wc,
+        width,
+        allocated: 1,
+    }));
     old = utf8_width_cache_insert(&raw mut utf8_width_cache, uw);
     if !old.is_null() {
         utf8_width_cache_remove(&raw mut utf8_width_cache, old);
         if (*old).allocated != 0 {
-            free(old as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(old));
         }
         utf8_width_cache_insert(&raw mut utf8_width_cache, uw);
     }
@@ -1196,7 +1196,7 @@ pub unsafe extern "C" fn utf8_update_width_cache() {
     } {
         utf8_width_cache_remove(&raw mut utf8_width_cache, uw);
         if (*uw).allocated != 0 {
-            free(uw as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(uw));
         }
         uw = uw1;
     }
@@ -2368,7 +2368,7 @@ mod tests {
             for codepoint in [0xE010, 0xE011, 0xE012, 0xE013, 0xE020, 0xE040, 'z' as i32] {
                 let item = utf8_find_in_width_cache(codepoint);
                 utf8_width_cache_remove(&raw mut utf8_width_cache, item);
-                free(item.cast());
+                drop(Box::from_raw(item));
             }
         }
     }

@@ -2580,6 +2580,21 @@ legacy callers safe.
   workspace tests, binary build, rustfmt, and diff checks passed. No sanitizer
   was run.
 
+### Increment 308 — boxed dynamic UTF-8 width entries (2026-09-23)
+
+- `utf8_insert_width_cache` now boxes each dynamic `utf8_width_item` with an
+  explicit initializer. Duplicate-key replacement and
+  `utf8_update_width_cache` still remove entries before reclaiming them; the
+  `allocated` check keeps all 162 static default entries outside Box cleanup.
+  The width lookup borrows entries synchronously. Updated the parser test's
+  cleanup of production-allocated entries to use the matching Box owner.
+- Added `scripts/utf8_width_cache_cli_checks.py`, which observes width
+  `1 → 2 → 1 → 2 → 1` for a private-use codepoint across override, duplicate
+  replacement, and unset. It matched the pinned pre-migration binary.
+  Focused cache tests, full workspace tests, binary build, and diff checks
+  passed. `utf8.rs` retains exactly its pre-existing rustfmt differences. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2590,10 +2605,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Dynamic `utf8_width_item` records in `src/text/utf8.rs` are the next small
-   leaf owner. `utf8_insert_width_cache` allocates them; duplicate replacement
-   and `utf8_update_width_cache` free them. Static default entries share the
-   map and must remain outside Box cleanup; preserve the `allocated` flag.
+1. Outer `event_payload` records in `src/events_payload.rs` are the next
+   small owner. `event_payload_create` allocates one record and
+   `event_payload_free` is its final release after item-map teardown and
+   target-reference release. Callback consumers borrow it during
+   `events_fire`; preserve the C layout and cleanup order. The separate
+   `utf8_item` cache has no terminal free and needs a whole-cache design.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias
