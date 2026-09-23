@@ -347,7 +347,7 @@ unsafe extern "C" fn format_draw_left(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -504,7 +504,7 @@ unsafe extern "C" fn format_draw_centre(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -654,7 +654,7 @@ unsafe extern "C" fn format_draw_right(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -1023,15 +1023,17 @@ pub unsafe extern "C" fn format_draw(
         }
     }; 8];
     let mut hl: *mut hyperlinks = (*os).hyperlinks;
-    let mut ctx: [screen_write_ctx; 8] = [screen_write_ctx {
-        wp: ::core::ptr::null_mut::<window_pane>(),
-        s: ::core::ptr::null_mut::<screen>(),
-        flags: 0,
-        init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
-        scrolled: 0,
-        bg: 0,
+    let mut ctx: [screen_write_ctx; 8] = [const {
+        screen_write_ctx {
+            wp: ::core::ptr::null_mut::<window_pane>(),
+            s: ::core::ptr::null_mut::<screen>(),
+            flags: 0,
+            init_ctx_cb: None,
+            arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
+            item: None,
+            scrolled: 0,
+            bg: 0,
+        }
     }; 8];
     let mut ocx: u_int = (*os).cx;
     let mut ocy: u_int = (*os).cy;

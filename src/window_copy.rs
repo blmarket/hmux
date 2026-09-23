@@ -640,7 +640,7 @@ unsafe extern "C" fn window_copy_init(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -769,7 +769,7 @@ pub unsafe extern "C" fn window_copy_vadd(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -779,7 +779,7 @@ pub unsafe extern "C" fn window_copy_vadd(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -1459,7 +1459,7 @@ unsafe extern "C" fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -6523,7 +6523,7 @@ unsafe extern "C" fn window_copy_search(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -6861,7 +6861,7 @@ unsafe extern "C" fn window_copy_search_marks(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -7878,7 +7878,7 @@ unsafe extern "C" fn window_copy_redraw_lines(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -8035,7 +8035,7 @@ unsafe extern "C" fn window_copy_update_cursor(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -8506,7 +8506,7 @@ unsafe fn window_copy_copy_buffer(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -8622,7 +8622,7 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -9604,7 +9604,7 @@ unsafe extern "C" fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut 
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -9715,7 +9715,7 @@ unsafe extern "C" fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mu
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };

@@ -225,7 +225,7 @@ unsafe extern "C" fn window_panes_set_preview(mut data: *mut window_panes_modeda
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };
@@ -1509,7 +1509,7 @@ unsafe extern "C" fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };

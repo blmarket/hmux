@@ -117,11 +117,10 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate screen write command nodes together with active write contexts and
-the process-wide item pool. Row allocation and text payloads now have explicit
-owners; intrusive item queues and the raw context item remain the coupled
-boundary. Then migrate retained hyperlink ownership. Reuse the completed screen
-construction and move audit.
+Next, migrate retained hyperlink ownership across screen creation/reset, format
+rendering, copy-mode borrowing/retention, and destruction. Reuse the completed
+screen construction and move audit. Write rows, text buffers, queued commands,
+active contexts, and the reuse pool now have explicit Rust owners.
 
 Screen title/path strings and the bounded title stack now live in a nullable
 boxed `ScreenStorage` owner. Raw title/path pointers and `ntitles` are compatibility
@@ -150,8 +149,12 @@ capacity. No grid-array libc allocation/free or owning-record byte copies remain
 ScreenStorage owns the boxed write-row slice; the screen write_list pointer is a
 borrowed compatibility view. Each row owns its text collection. Scroll operations
 move those owners and free_list uses the stored row count, independent of grid
-dimensions. Command nodes still use the intrusive freelist; row ownership alone
-does not complete their migration.
+dimensions. Command queues own their forward Box chain; tail/back links borrow
+owning slots within the stable boxed rows/nodes. Active contexts own their current
+command, and detached commands move into a thread-local VecDeque for FIFO reuse
+on the event-loop thread. No raw global freelist or command allocation remains.
+Write contexts and their containing input contexts are no longer Copy; fresh
+initialization and stop/drop preserve the existing record layouts.
 
 Copy-mode lazy callbacks now return owned results directly into the entry cache.
 Both lookup and enumeration evaluate them without holding an owner borrow across
@@ -187,8 +190,9 @@ passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
 1. Screen text, title-stack, tabs, selection, grid records, and grid line/cell
-   arrays, write rows, and row text have Rust owners. Write command nodes and
-   hyperlink storage still have manual lifetime boundaries. Migrate each complete producer/consumer lifecycle; do not add
+   arrays, write rows/text, and command nodes have Rust owners. Hyperlink storage
+   still has manual lifetime boundaries. Migrate each complete producer/consumer
+   lifecycle; do not add
    a blanket screen Drop until borrowed resource views and partial construction
    paths have been audited. Title/path compatibility pointers are borrows.
 2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
@@ -1844,6 +1848,31 @@ name error.
 - This completes row/payload ownership. Intrusive command queues, their global
   freelist, and the active screen_write_ctx.item must migrate together next;
   the current batch leaves their existing lifetime protocol intact.
+
+### Batch — write command queues, active contexts, and reuse pool (2026-09-23)
+
+- Queued commands now own their forward Box chain. Queue helpers transfer boxes
+  on insertion, removal, and append while maintaining borrowed tail/back slots
+  and stable node addresses. Iterative queue destruction avoids recursive drops.
+  Trimming preserves interval splitting, order, and wrapped-line propagation.
+- Active screen_write_ctx.item is Option<Box>; stop takes and recycles it.
+  Removed Copy/Clone from command/link/queue/context records and input_ctx.
+  Updated every context literal and independent format-draw array initializer.
+  Audited the existing boxed input owner and paired parser start/stop paths;
+  fresh context initialization uses ptr::write rather than an owning-record
+  memset. All existing layout fixtures remain unchanged.
+- The event-loop thread's FIFO VecDeque owns detached reusable boxes, replacing
+  the raw global freelist, calloc, and static initializer. Pool/queue borrows do
+  not span terminal callbacks; popup initialization only prepares the terminal
+  context, and copy-mode initialization is empty. Remaining queue pointers are
+  internal slot/traversal borrows, not separate owning contracts.
+- Extended lifecycle regression coverage for splitting, full/partial trimming,
+  wrapped propagation, empty-queue restoration, and active-item recycling. All
+  402 serialized workspace tests, binary build, changed-file rustfmt, and diff
+  checks passed. Write-row resize, capture-pane, synchronized-redraw, popup,
+  copy-backing, format-draw, and saved-status checks passed on candidate and
+  pinned tmux. No sanitizer ran.
+- Next: retained hyperlink ownership.
 
 ## Historical migration index
 

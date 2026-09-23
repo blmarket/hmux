@@ -2505,7 +2505,7 @@ unsafe extern "C" fn redraw_draw_pane_prompt(
         flags: 0,
         init_ctx_cb: None,
         arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        item: ::core::ptr::null_mut::<screen_write_citem>(),
+        item: None,
         scrolled: 0,
         bg: 0,
     };

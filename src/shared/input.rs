@@ -17,7 +17,6 @@ pub const INPUT_BUF_DEFAULT_SIZE: ::core::ffi::c_int = 1048576 as ::core::ffi::c
 
 pub type input_request_type = ::core::ffi::c_uint;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct input_ctx {
     pub wp: *mut window_pane,
