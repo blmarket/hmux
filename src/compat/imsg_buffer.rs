@@ -10,7 +10,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{
     __socklen_t, __uint16_t, __uint32_t, socklen_t, ssize_t, uint16_t, uint32_t,
 };
-pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ERANGE};
+pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 pub use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
 pub use crate::src::shared::message::{ibuf, ibuf_entry, ibufqueue, ibufqueue_bufs, msgbuf};
 pub use crate::src::shared::posix_io::iovec;
@@ -1289,13 +1289,19 @@ unsafe extern "C" fn ibufq_init(mut bufq: *mut ibufqueue) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_new() -> *mut ibufqueue {
-    let mut bufq: *mut ibufqueue = ::core::ptr::null_mut::<ibufqueue>();
-    bufq = calloc(1 as size_t, ::core::mem::size_of::<ibufqueue>() as size_t) as *mut ibufqueue;
-    if bufq.is_null() {
-        return ::core::ptr::null_mut::<ibufqueue>();
-    }
-    ibufq_init(bufq);
-    return bufq;
+    let Ok(mut bufq) = Box::try_new(ibufqueue {
+        bufs: ibufqueue_bufs {
+            tqh_first: ::core::ptr::null_mut(),
+            tqh_last: ::core::ptr::null_mut(),
+        },
+        queued: 0,
+    }) else {
+        *__errno_location() = ENOMEM;
+        return ::core::ptr::null_mut();
+    };
+    // The intrusive tail pointer must point into the final heap allocation.
+    ibufq_init(&raw mut *bufq);
+    Box::into_raw(bufq)
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_free(mut bufq: *mut ibufqueue) {
@@ -1303,7 +1309,7 @@ pub unsafe extern "C" fn ibufq_free(mut bufq: *mut ibufqueue) {
         return;
     }
     ibufq_flush(bufq);
-    free(bufq as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(bufq));
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_pop(mut bufq: *mut ibufqueue) -> *mut ibuf {

@@ -12,6 +12,7 @@
 #![allow(clippy::self_assignment)]
 #![allow(clippy::while_immutable_condition)]
 #![feature(c_variadic)]
+#![feature(allocator_api)]
 #![feature(extern_types)]
 #![feature(label_break_value)]
 #![feature(raw_ref_op)]

@@ -125,11 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `ibufq_new`/`ibufq_free` in `src/compat/imsg_buffer.rs` form a bounded,
-   fallible allocation and flush/free pair. No in-tree caller currently uses
-   this exported API, so a focused API test is needed to validate null,
-   empty, and queued cases. Preserve the C-visible pointer and failure
-   contract while moving the record allocation and release together.
+1. `spawn_pane` in `src/spawn.rs` builds a relative cwd with
+   `xasprintf("%s%s%s")`, copies it into its existing `CString`, then frees
+   the C result. Build the same first-NUL byte views directly into the local
+   owner. Existing pane-cwd CLI checks cover formatted relative `-c`, empty
+   cwd, and byte paths against pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1360,6 +1360,21 @@ name error.
   compared exact sequences for modifier values 2 through 8 across function,
   arrow, and edit keys with pinned tmux. Changed-file rustfmt and diff checks
   passed. No sanitizer ran.
+
+### Increment 435 — box standalone imsg buffer queues (2026-09-23)
+
+- `ibufq_new` now uses fallible `Box::try_new`, initializes its intrusive tail
+  pointer only after the record reaches its final heap address, and returns
+  the same C-visible pointer. Allocation failure still returns null with
+  `ENOMEM`. `ibufq_free` flushes linked buffers before reconstructing and
+  dropping the Box, removing the standalone queue's `calloc`/`free` pair.
+  Embedded queues inside `msgbuf` retain their separate lifecycle.
+- Serialized workspace tests and binary build passed. A focused API test
+  checks null free, empty initialization, push/pop, concat links and counts,
+  flush, and queued-buffer cleanup on free. There is no in-tree production
+  caller of standalone `ibufq_new`/`ibufq_free`, so no binary E2E reaches this
+  constructor. Allocation failure was not fault-injected. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
