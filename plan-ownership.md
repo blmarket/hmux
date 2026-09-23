@@ -2806,6 +2806,20 @@ legacy callers safe.
   code follows rustfmt; queue and fixture files retain only pre-existing
   import-layout differences. No sanitizer was run.
 
+### Increment 324 — boxed command queue states (2026-09-23)
+
+- `cmdq_new_state` now boxes the zeroed `cmdq_state`. `cmdq_link_state`
+  remains the sole explicit retain operation; `cmdq_free_state` still drops
+  the optional format tree and consumes the Box only after the reference
+  count reaches zero. Command items, callback items, hooks, control clients,
+  and other callers retain their existing counted raw-pointer contract.
+  Copied key events still clear their borrowed byte-buffer pointer.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build,
+  command-queue, control-lines, and key CLI checks on candidate and pinned
+  baseline, wait-channel CLI comparison, and diff checks passed. Changed
+  code follows rustfmt; `src/cmd/queue.rs` retains its pre-existing import
+  grouping differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2816,11 +2830,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmdq_state` in `src/cmd/queue.rs` has one constructor,
-   `cmdq_new_state`, and one terminal release at zero references in
-   `cmdq_free_state`. `cmdq_link_state` is the sole retain operation; audit
-   its copied key event, optional formats owner, and command/callback state
-   lifetimes before migrating the allocation pair.
+1. `screen_write_cline` in `src/screen_write.rs` is a dynamic array sized
+   to the current grid height. `screen_write_make_list` allocates it;
+   `screen_write_free_list` frees per-line data/items before the array.
+   `screen_resize_cursor` frees it before changing grid height and rebuilds
+   it afterward, using the nonnull pointer as a rebuild marker. Audit that
+   pointer contract and initialize each row's intrusive tail only after a
+   boxed slice has its final address.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`

@@ -101,7 +101,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::status::status_message_set;
 use crate::src::utf8::utf8_sanitize;
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -206,7 +206,7 @@ pub unsafe extern "C" fn cmdq_new_state(
     mut flags: ::core::ffi::c_int,
 ) -> *mut cmdq_state {
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    state = xcalloc(1 as size_t, ::core::mem::size_of::<cmdq_state>() as size_t) as *mut cmdq_state;
+    state = Box::into_raw(Box::new(::core::mem::zeroed::<cmdq_state>()));
     (*state).references = 1 as ::core::ffi::c_int;
     (*state).flags = flags;
     if !event.is_null() {
@@ -258,7 +258,7 @@ pub unsafe extern "C" fn cmdq_free_state(mut state: *mut cmdq_state) {
     if !(*state).formats.is_null() {
         format_free((*state).formats);
     }
-    free(state as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(state));
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_add_format(

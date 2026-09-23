@@ -189,6 +189,8 @@ pub struct cmd_entry {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned while its explicit `references` count is nonzero; queue items
+/// and callers hold counted raw pointers released through `cmdq_free_state`.
 pub struct cmdq_state {
     pub references: ::core::ffi::c_int,
     pub flags: ::core::ffi::c_int,
