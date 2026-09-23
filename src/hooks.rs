@@ -18,7 +18,7 @@ use crate::src::events_payload::{
     event_payload_set_session, event_payload_set_string, event_payload_set_target,
     event_payload_set_window,
 };
-use crate::src::ffi::libc::{free, memset, strcmp};
+use crate::src::ffi::libc::{free, memset};
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_expand, format_free,
     format_log_debug, format_merge,
@@ -106,30 +106,40 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::global_s_options;
-use crate::src::xmalloc::{xcalloc, xstrdup};
+use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct hooks_event {
-    pub name: *mut ::core::ffi::c_char,
-    pub sink: *mut events_sink,
-    pub entry: C2RustUnnamed_35,
+struct hooks_event {
+    // The registry owns this C string for as long as its event is registered.
+    name: CString,
+    // events_add_sink owns the sink; this pointer records the registered sink
+    // and is retained for the same lifetime as the registry entry.
+    sink: *mut events_sink,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_35 {
-    pub tqe_next: *mut hooks_event,
-    pub tqe_prev: *mut *mut hooks_event,
+
+#[derive(Default)]
+struct HooksEvents {
+    // Boxes keep each event record stable when the owning vector grows.
+    events: Vec<Box<hooks_event>>,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct hooks_events {
-    pub tqh_first: *mut hooks_event,
-    pub tqh_last: *mut *mut hooks_event,
+
+impl HooksEvents {
+    fn contains(&self, name: &CStr) -> bool {
+        self.events
+            .iter()
+            .any(|event| event.name.as_bytes() == name.to_bytes())
+    }
+
+    fn insert(&mut self, name: CString, sink: *mut events_sink) -> bool {
+        if self.contains(name.as_c_str()) {
+            return false;
+        }
+        self.events.push(Box::new(hooks_event { name, sink }));
+        true
+    }
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -154,10 +164,7 @@ pub struct hooks_monitor {
     pub format: CString,
 }
 
-static mut hooks_events: hooks_events = hooks_events {
-    tqh_first: ::core::ptr::null::<hooks_event>() as *mut hooks_event,
-    tqh_last: ::core::ptr::null::<*mut hooks_event>() as *mut *mut hooks_event,
-};
+static mut hooks_events: HooksEvents = HooksEvents { events: Vec::new() };
 unsafe extern "C" fn hooks_insert_one(
     mut item: *mut cmdq_item,
     mut hd: *mut hooks_data,
@@ -426,17 +433,13 @@ unsafe extern "C" fn hooks_event_cb(
 }
 #[no_mangle]
 pub unsafe extern "C" fn hooks_add_event(mut name: *const ::core::ffi::c_char) {
-    let mut he: *mut hooks_event = ::core::ptr::null_mut::<hooks_event>();
-    he = hooks_events.tqh_first;
-    while !he.is_null() {
-        if strcmp((*he).name, name) == 0 as ::core::ffi::c_int {
-            return;
-        }
-        he = (*he).entry.tqe_next;
+    let event_name = CStr::from_ptr(name);
+    let events = &raw const hooks_events;
+    if (*events).contains(event_name) {
+        return;
     }
-    he = xcalloc(1 as size_t, ::core::mem::size_of::<hooks_event>() as size_t) as *mut hooks_event;
-    (*he).name = xstrdup(name);
-    (*he).sink = events_add_sink(
+
+    let sink = events_add_sink(
         name,
         Some(
             hooks_event_cb
@@ -448,24 +451,15 @@ pub unsafe extern "C" fn hooks_add_event(mut name: *const ::core::ffi::c_char) {
         ),
         NULL,
     );
-    (*he).entry.tqe_next = ::core::ptr::null_mut::<hooks_event>();
-    (*he).entry.tqe_prev = hooks_events.tqh_last;
-    *hooks_events.tqh_last = he;
-    hooks_events.tqh_last = &raw mut (*he).entry.tqe_next;
+    let events = &raw mut hooks_events;
+    (*events).insert(event_name.to_owned(), sink);
 }
 #[no_mangle]
 pub unsafe extern "C" fn hooks_is_event(
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut he: *mut hooks_event = ::core::ptr::null_mut::<hooks_event>();
-    he = hooks_events.tqh_first;
-    while !he.is_null() {
-        if strcmp((*he).name, name) == 0 as ::core::ffi::c_int {
-            return 1 as ::core::ffi::c_int;
-        }
-        he = (*he).entry.tqe_next;
-    }
-    return 0 as ::core::ffi::c_int;
+    let events = &raw const hooks_events;
+    return (*events).contains(CStr::from_ptr(name)) as ::core::ffi::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn hooks_valid_event_name(
@@ -814,14 +808,37 @@ pub unsafe extern "C" fn hooks_monitor_get_fire_time(mut o: *mut options_entry) 
     }
     return monitor_get_fire_time((*hm).set, options_name(o));
 }
-unsafe extern "C" fn run_static_initializers() {
-    hooks_events = hooks_events {
-        tqh_first: ::core::ptr::null_mut::<hooks_event>(),
-        tqh_last: &raw mut hooks_events.tqh_first,
-    };
+
+#[cfg(test)]
+mod hooks_events_tests {
+    use super::*;
+
+    #[test]
+    fn registry_owns_stable_c_names_and_deduplicates_by_bytes() {
+        let mut registry = HooksEvents::default();
+        let name = CString::new(vec![b'@', 0xff]).unwrap();
+        let sink = 1usize as *mut events_sink;
+        assert!(registry.insert(name, sink));
+
+        let event_address = &*registry.events[0] as *const hooks_event;
+        let name_address = registry.events[0].name.as_ptr();
+        assert_eq!(registry.events[0].sink, sink);
+
+        for i in 0..128 {
+            let other = CString::new(format!("event-{i}")).unwrap();
+            assert!(registry.insert(other, ::core::ptr::null_mut()));
+        }
+
+        // The first owner and its C string stay at stable addresses as the
+        // collection grows, and arbitrary non-UTF-8 event names are preserved.
+        assert_eq!(&*registry.events[0] as *const hooks_event, event_address);
+        assert_eq!(registry.events[0].name.as_ptr(), name_address);
+        assert_eq!(registry.events[0].sink, sink);
+        assert_eq!(
+            unsafe { CStr::from_ptr(name_address) }.to_bytes(),
+            [b'@', 0xff]
+        );
+        assert!(registry.contains(CStr::from_bytes_with_nul(b"@\xff\0").unwrap()));
+        assert!(!registry.insert(CString::new(vec![b'@', 0xff]).unwrap(), sink));
+    }
 }
-#[used]
-#[cfg_attr(target_os = "linux", link_section = ".init_array")]
-#[cfg_attr(target_os = "windows", link_section = ".CRT$XIB")]
-#[cfg_attr(target_os = "macos", link_section = "__DATA,__mod_init_func")]
-static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
