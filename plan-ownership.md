@@ -1752,6 +1752,20 @@ legacy callers safe.
   `customize-mode` smoke entered options mode, but its render capture did
   not prove row behavior. No sanitizer run was performed.
 
+### Increment 97 — choose-client item list and rows (2026-09-22)
+
+- `window_client_modedata` now owns a `Vec<Box<window_client_itemdata>>`.
+  Each stable boxed row owns its tty name as `CString` and releases its
+  retained client in `Drop` before releasing the name, matching the former
+  `window_client_free_item` order. The mode data itself is Box-owned so the
+  Vec drops at teardown after `mode_tree_free`. This removes the list's
+  `xreallocarray`, per-item `xcalloc`, copied-name `xstrdup`, manual item
+  frees, count, and list free. The client pointer tag is unchanged.
+- A focused test covers stable row pointers across list growth, name
+  snapshot lifetime, and clearing/rebuilding the list. The focused test,
+  workspace suite, binary build, changed-file rustfmt, and `git diff
+  --check` passed in the isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1790,9 +1804,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–96. The remaining
+Current validation is recorded in increments 15–97. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–96 has its own local commit; none was pushed.
+Each of increments 15–97 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

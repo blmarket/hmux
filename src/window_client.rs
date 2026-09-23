@@ -96,14 +96,14 @@ use crate::src::sort::sort_get_clients;
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::style::style_apply;
 use crate::src::window::window_pane_reset_mode;
-use crate::src::xmalloc::{xcalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_client_modedata {
     pub wp: *mut window_pane,
@@ -113,14 +113,31 @@ pub struct window_client_modedata {
     pub command: *mut ::core::ffi::c_char,
     pub hide_preview_this_pane: ::core::ffi::c_int,
     pub preview_is_info: ::core::ffi::c_int,
-    pub item_list: *mut *mut window_client_itemdata,
-    pub item_size: u_int,
+    // Boxes keep the mode-tree itemdata pointers stable when the list grows.
+    pub items: Vec<Box<window_client_itemdata>>,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_client_itemdata {
     pub c: *mut client,
-    pub ttyname: *mut ::core::ffi::c_char,
+    pub ttyname: CString,
+}
+
+impl window_client_itemdata {
+    fn new(c: *mut client, ttyname: &CStr) -> Self {
+        Self {
+            c,
+            ttyname: ttyname.to_owned(),
+        }
+    }
+}
+
+impl Drop for window_client_itemdata {
+    fn drop(&mut self) {
+        // The item retains its client until its borrowed mode-tree row is gone.
+        if !self.c.is_null() {
+            unsafe { server_client_unref(self.c) };
+        }
+        // CString is released after unref, matching the former free path.
+    }
 }
 
 pub const WINDOW_CLIENT_DEFAULT_COMMAND: [::core::ffi::c_char; 22] = unsafe {
@@ -272,29 +289,44 @@ pub static mut window_client_mode: window_mode = unsafe {
 };
 static mut window_client_order_seq: [sort_order; 5] =
     [SORT_NAME, SORT_SIZE, SORT_CREATION, SORT_ACTIVITY, SORT_END];
-unsafe extern "C" fn window_client_add_item(
-    mut data: *mut window_client_modedata,
-) -> *mut window_client_itemdata {
-    let mut item: *mut window_client_itemdata = ::core::ptr::null_mut::<window_client_itemdata>();
-    (*data).item_list = xreallocarray(
-        (*data).item_list as *mut ::core::ffi::c_void,
-        (*data).item_size.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<*mut window_client_itemdata>() as size_t,
-    ) as *mut *mut window_client_itemdata;
-    let fresh1 = (*data).item_size;
-    (*data).item_size = (*data).item_size.wrapping_add(1);
-    let ref mut fresh2 = *(*data).item_list.offset(fresh1 as isize);
-    *fresh2 = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_client_itemdata>() as size_t,
-    ) as *mut window_client_itemdata;
-    item = *fresh2;
-    return item;
+unsafe fn window_client_add_item(data: *mut window_client_modedata, c: *mut client) {
+    let item = Box::new(window_client_itemdata::new(c, CStr::from_ptr((*c).ttyname)));
+    (*c).references += 1;
+    (*data).items.push(item);
 }
-unsafe extern "C" fn window_client_free_item(mut item: *mut window_client_itemdata) {
-    server_client_unref((*item).c);
-    free((*item).ttyname as *mut ::core::ffi::c_void);
-    free(item as *mut ::core::ffi::c_void);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_items_keep_stable_mode_tree_pointers_and_snapshot_ttynames() {
+        let ttyname = CString::new(b"/dev/pts/7".as_slice()).unwrap();
+        let mut items = Vec::<Box<window_client_itemdata>>::new();
+        items.push(Box::new(window_client_itemdata::new(
+            ::core::ptr::null_mut(),
+            ttyname.as_c_str(),
+        )));
+        let first = &*items[0] as *const window_client_itemdata;
+        drop(ttyname);
+
+        for _ in 0..256 {
+            items.push(Box::new(window_client_itemdata::new(
+                ::core::ptr::null_mut(),
+                c"another terminal",
+            )));
+        }
+        assert_eq!(&*items[0] as *const _, first);
+        assert_eq!(unsafe { (*first).ttyname.as_bytes() }, b"/dev/pts/7");
+
+        items.clear();
+        assert!(items.is_empty());
+        items.push(Box::new(window_client_itemdata::new(
+            ::core::ptr::null_mut(),
+            c"replacement",
+        )));
+        assert_eq!(items[0].ttyname.as_bytes(), b"replacement");
+    }
 }
 unsafe extern "C" fn window_client_build(
     mut modedata: *mut ::core::ffi::c_void,
@@ -310,32 +342,24 @@ unsafe extern "C" fn window_client_build(
     let mut l: *mut *mut client = ::core::ptr::null_mut::<*mut client>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    i = 0 as u_int;
-    while i < (*data).item_size {
-        window_client_free_item(*(*data).item_list.offset(i as isize));
-        i = i.wrapping_add(1);
-    }
-    free((*data).item_list as *mut ::core::ffi::c_void);
-    (*data).item_list = ::core::ptr::null_mut::<*mut window_client_itemdata>();
-    (*data).item_size = 0 as u_int;
+    (*data).items.clear();
     l = sort_get_clients(&raw mut n, sort_crit);
     i = 0 as u_int;
     while i < n {
         if !((**l.offset(i as isize)).session.is_null()
             || (**l.offset(i as isize)).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0)
         {
-            item = window_client_add_item(data);
-            (*item).c = *l.offset(i as isize);
-            (*item).ttyname = xstrdup((**l.offset(i as isize)).ttyname);
-            let ref mut fresh0 = (**l.offset(i as isize)).references;
-            *fresh0 += 1;
+            window_client_add_item(data, *l.offset(i as isize));
         }
         i = i.wrapping_add(1);
     }
     let mut current_block_21: u64;
     i = 0 as u_int;
-    while i < (*data).item_size {
-        item = *(*data).item_list.offset(i as isize);
+    while (i as usize) < (*data).items.len() {
+        item = {
+            let slot = (*data).items.as_ptr().add(i as usize);
+            Box::as_ref(&*slot) as *const window_client_itemdata as *mut window_client_itemdata
+        };
         c = (*item).c;
         if !filter.is_null() {
             cp = format_single(
@@ -727,10 +751,16 @@ unsafe extern "C" fn window_client_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_client_modedata = ::core::ptr::null_mut::<window_client_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    data = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_client_modedata>() as size_t,
-    ) as *mut window_client_modedata;
+    data = Box::into_raw(Box::new(window_client_modedata {
+        wp: ::core::ptr::null_mut(),
+        data: ::core::ptr::null_mut(),
+        format: ::core::ptr::null_mut(),
+        key_format: ::core::ptr::null_mut(),
+        command: ::core::ptr::null_mut(),
+        hide_preview_this_pane: 0,
+        preview_is_info: 0,
+        items: Vec::new(),
+    }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
     (*data).hide_preview_this_pane =
@@ -819,21 +849,15 @@ unsafe extern "C" fn window_client_init(
 }
 unsafe extern "C" fn window_client_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
-    let mut i: u_int = 0;
     if data.is_null() {
         return;
     }
     mode_tree_free((*data).data);
-    i = 0 as u_int;
-    while i < (*data).item_size {
-        window_client_free_item(*(*data).item_list.offset(i as isize));
-        i = i.wrapping_add(1);
-    }
-    free((*data).item_list as *mut ::core::ffi::c_void);
+    (*data).items.clear();
     free((*data).format as *mut ::core::ffi::c_void);
     free((*data).key_format as *mut ::core::ffi::c_void);
     free((*data).command as *mut ::core::ffi::c_void);
-    free(data as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_client_resize(
     mut wme: *mut window_mode_entry,
@@ -933,7 +957,7 @@ unsafe extern "C" fn window_client_key(
                 c,
                 ::core::ptr::null_mut::<cmd_find_state>(),
                 (*data).command,
-                (*item).ttyname,
+                (*item).ttyname.as_ptr(),
             );
             finished = 1 as ::core::ffi::c_int;
         }
