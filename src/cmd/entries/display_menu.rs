@@ -1245,7 +1245,9 @@ unsafe extern "C" fn cmd_display_popup_exec(
     let mut shellcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut style: *const ::core::ffi::c_char = args_get(args, 's' as i32 as u_char);
     let mut border_style: *const ::core::ffi::c_char = args_get(args, 'S' as i32 as u_char);
-    let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut formatted_cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
+    let mut default_cwd: Option<std::ffi::CString> = None;
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut argv: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -1350,9 +1352,17 @@ unsafe extern "C" fn cmd_display_popup_exec(
                         } else {
                             value = args_get(args, 'd' as i32 as u_char);
                             if !value.is_null() {
-                                cwd = format_single_from_target(item, value);
+                                formatted_cwd = format_single_from_target(item, value);
+                                cwd = formatted_cwd;
                             } else {
-                                cwd = xstrdup(server_client_get_cwd(tc, s));
+                                default_cwd = Some(
+                                    std::ffi::CStr::from_ptr(server_client_get_cwd(tc, s))
+                                        .to_owned(),
+                                );
+                                cwd = default_cwd
+                                    .as_ref()
+                                    .expect("default cwd was copied")
+                                    .as_ptr();
                             }
                             if count == 0 as u_int {
                                 shellcmd = options_get_string(
@@ -1479,7 +1489,7 @@ unsafe extern "C" fn cmd_display_popup_exec(
                     ) != 0 as ::core::ffi::c_int)
                     {
                         environ_free(env);
-                        free(cwd as *mut ::core::ffi::c_void);
+                        free(formatted_cwd as *mut ::core::ffi::c_void);
                         free(title as *mut ::core::ffi::c_void);
                         cmd_free_argv(argc, argv);
                         return CMD_RETURN_WAIT;
@@ -1495,14 +1505,14 @@ unsafe extern "C" fn cmd_display_popup_exec(
             free(cause as *mut ::core::ffi::c_void);
             cmd_free_argv(argc, argv);
             environ_free(env);
-            free(cwd as *mut ::core::ffi::c_void);
+            free(formatted_cwd as *mut ::core::ffi::c_void);
             free(title as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         _ => {
             cmd_free_argv(argc, argv);
             environ_free(env);
-            free(cwd as *mut ::core::ffi::c_void);
+            free(formatted_cwd as *mut ::core::ffi::c_void);
             free(title as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }

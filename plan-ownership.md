@@ -125,12 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_display_popup_exec` in `src/cmd/entries/display_menu.rs` duplicates
-   the default cwd from `server_client_get_cwd` before passing it to
-   `popup_display`, then frees it on all exits. `popup_display` passes cwd to
-   synchronous `job_run`. Audit callback/reentrancy before borrowing the
-   client/session cwd through that call, while keeping the formatted `-d`
-   path C-owned. Compare popup job cwd with pinned tmux.
+1. `cmd_display_popup_exec` still duplicates a literal empty default title
+   before `popup_display` or `popup_modify`, then frees it on all exits.
+   Both consumers synchronously copy title into `PopupOwner`. Borrow the
+   literal for the default branch while keeping formatted `-T` title C-owned.
+   Compare default and explicit title rendering with pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1226,6 +1225,20 @@ name error.
 - Serialized workspace tests and binary build passed. The extended session
   cwd CLI comparison with pinned tmux covers detached creation without `-c`,
   explicit `-c`, attach replacement, and inherited pane cwd. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 425 — own popup default cwd snapshot (2026-09-23)
+
+- `cmd_display_popup_exec` now copies the default client/session cwd once into
+  a local `CString` at its original capture point. `popup_display` passes that
+  borrowed pointer to synchronous `job_run`, whose child uses a forked memory
+  snapshot; no job or popup record retains cwd. The default-path C allocation
+  and its three manual frees are gone. The formatted `-d` result still uses
+  C-owned output and is freed on all exits. Keeping an owned snapshot avoids
+  relying on cwd pointer stability during later title/style processing.
+- Serialized workspace tests, binary build, existing popup owner CLI, and a
+  new popup cwd CLI passed. The new CLI checks actual child `$PWD` for default
+  and explicit `-d` paths with both candidate and pinned tmux. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
