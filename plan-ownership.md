@@ -125,14 +125,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. String-valued option array item payloads are the next bounded live owner.
-   `OwnedOptionArrayItem` already boxes each public item and owns its key; it
-   can also own an optional `CString` value while the public union lends the
-   pointer. `options_array_set` creates or appends the string, and
-   `options_value_free` has its manual free. Build new bytes before releasing
-   the previous owner because append or replacement input may alias it.
-   Preserve command-list free behavior and the exported pointer view.
-   Compare append, replacement, and unset against the pinned baseline.
+1. JSON node string values are the next bounded live owner. `JsonNodeOwner`
+   already boxes each public node and owns its optional key; it can also own
+   an optional `CString` value. `json_parse_string` is the sole string
+   producer, and `json_destroy_node` has the final free. The getters and
+   serializer borrow the string through the public union. Preserve token
+   bytes, including invalid UTF-8 and empty strings, and recursive cleanup.
+   `json_assign_value` also handles child nodes and numeric values, so only
+   its string path should change. Extend the JSON CLI check with empty and
+   high-byte strings against the pinned baseline.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -859,6 +860,22 @@ libc allocation on success and leaves it with the caller on error, so a local
   sends repeated valid and malformed colon SGR sequences, compares styled
   captures with pinned 3.8-rc, and destroys the parser while colon parameters
   remain. Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 400 — owned option array string values (2026-09-23)
+
+- `OwnedOptionArrayItem` now holds an optional `CString` alongside its key.
+  The public `options_value.string` pointer borrows that owner until item
+  removal or replacement. `options_array_set` copies direct input bytes or
+  assembles append bytes before touching the previous owner, so input may
+  alias the current value. Removed its `xstrdup`/`xasprintf` string producer
+  and the string branch's manual free in `options_value_free`; command-list
+  cleanup stays there. `options_array_free` drops the item owner after map
+  removal, releasing the string with the item.
+- A focused unit test covers append and replacement using the old borrowed
+  pointer with non-UTF-8 bytes. Serialized workspace tests and binary build
+  passed. A CLI comparison against pinned 3.8-rc covers set, append with
+  byte `0xff`, replace, unset, and an unaffected sibling item. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

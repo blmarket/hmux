@@ -131,12 +131,13 @@ struct OwnedOptionEntry {
 
 const _: () = assert!(std::mem::offset_of!(OwnedOptionEntry, record) == 0);
 
-// The public item key borrows this CString until options_array_free removes
-// the item from its map and drops the containing owner.
+// The public item key and optional string value borrow these CStrings until
+// removal or value replacement.
 #[repr(C)]
 struct OwnedOptionArrayItem {
     record: options_array_item,
     key: CString,
+    string: Option<CString>,
 }
 
 const _: () = assert!(std::mem::offset_of!(OwnedOptionArrayItem, record) == 0);
@@ -149,6 +150,13 @@ unsafe fn set_scalar_string(o: *mut options_entry, value: CString) {
     let owned = &mut *owned_option(o);
     // Formatting has completed, so callers may have supplied the old value
     // as a %s argument. Replace its owner before publishing the new pointer.
+    owned.string = Some(value);
+    owned.record.value.string = owned.string.as_ref().unwrap().as_ptr().cast_mut();
+}
+
+unsafe fn set_array_string(a: *mut options_array_item, value: CString) {
+    let owned = &mut *a.cast::<OwnedOptionArrayItem>();
+    owned.record.value.string = ::core::ptr::null_mut();
     owned.string = Some(value);
     owned.record.value.string = owned.string.as_ref().unwrap().as_ptr().cast_mut();
 }
@@ -208,14 +216,6 @@ unsafe extern "C" fn options_parent_table_entry(
     return (*o).tableentry;
 }
 unsafe extern "C" fn options_value_free(mut o: *mut options_entry, mut ov: *mut options_value) {
-    if (*o).tableentry.is_null()
-        || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
-            == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        // Only array items call this branch. Scalar strings live beside their
-        // ABI record in OwnedOptionEntry and drop with that record.
-        free((*ov).string as *mut ::core::ffi::c_void);
-    }
     if !(*o).tableentry.is_null()
         && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -582,6 +582,7 @@ unsafe extern "C" fn options_array_new(
     let mut owner = Box::new(OwnedOptionArrayItem {
         record: ::core::mem::zeroed(),
         key: CStr::from_ptr(key).to_owned(),
+        string: None,
     });
     owner.record.key = owner.key.as_ptr().cast_mut();
     owner.record.owner = o;
@@ -652,7 +653,6 @@ pub unsafe extern "C" fn options_array_set(
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut new: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
     let mut number: ::core::ffi::c_longlong = 0;
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
@@ -708,22 +708,20 @@ pub unsafe extern "C" fn options_array_set(
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         a = options_array_item(o, new_key.as_ptr());
-        if !a.is_null() && append != 0 {
-            xasprintf(
-                &raw mut new,
-                b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*a).value.string,
-                value,
-            );
+        let owned_value = if !a.is_null() && append != 0 {
+            let previous = CStr::from_ptr((*a).value.string).to_bytes();
+            let suffix = CStr::from_ptr(value).to_bytes();
+            let mut bytes = Vec::with_capacity(previous.len() + suffix.len());
+            bytes.extend_from_slice(previous);
+            bytes.extend_from_slice(suffix);
+            CString::new(bytes).expect("C string parts contain no NUL")
         } else {
-            new = xstrdup(value);
-        }
+            CStr::from_ptr(value).to_owned()
+        };
         if a.is_null() {
             a = options_array_new(o, new_key.as_ptr());
-        } else {
-            options_value_free(o, &raw mut (*a).value);
         }
-        (*a).value.string = new;
+        set_array_string(a, owned_value);
         return 0 as ::core::ffi::c_int;
     }
     if (*(*o).tableentry).type_0 as ::core::ffi::c_uint
@@ -2191,4 +2189,62 @@ pub unsafe extern "C" fn options_remove_or_default(
         return -(1 as ::core::ffi::c_int);
     }
     return 0 as ::core::ffi::c_int;
+}
+
+#[cfg(test)]
+mod array_string_owner_tests {
+    use super::*;
+
+    #[test]
+    fn append_and_replace_accept_the_previous_items_string_pointer() {
+        unsafe {
+            let oo = options_create(::core::ptr::null_mut());
+            let mut table: options_table_entry = ::core::mem::zeroed();
+            table.name = c"sample-array".as_ptr();
+            table.type_0 = OPTIONS_TABLE_STRING;
+            table.flags = OPTIONS_TABLE_IS_ARRAY;
+            let o = options_empty(oo, &raw const table);
+            let key = c"7";
+            let initial = CString::new(vec![b'a', 0xff]).unwrap();
+            assert_eq!(
+                options_array_set(
+                    o,
+                    key.as_ptr(),
+                    initial.as_ptr(),
+                    0,
+                    ::core::ptr::null_mut()
+                ),
+                0
+            );
+
+            let old = (*options_array_get(o, key.as_ptr())).string;
+            assert_eq!(
+                options_array_set(o, key.as_ptr(), old, 1, ::core::ptr::null_mut()),
+                0
+            );
+            let doubled = (*options_array_get(o, key.as_ptr())).string;
+            assert_eq!(CStr::from_ptr(doubled).to_bytes(), b"a\xffa\xff");
+            assert_eq!(
+                options_array_set(o, key.as_ptr(), doubled, 0, ::core::ptr::null_mut()),
+                0
+            );
+            assert_eq!(
+                CStr::from_ptr((*options_array_get(o, key.as_ptr())).string).to_bytes(),
+                b"a\xffa\xff"
+            );
+
+            assert_eq!(
+                options_array_set(
+                    o,
+                    key.as_ptr(),
+                    ::core::ptr::null(),
+                    0,
+                    ::core::ptr::null_mut()
+                ),
+                0
+            );
+            assert!(options_array_get(o, key.as_ptr()).is_null());
+            options_free(oo);
+        }
+    }
 }
