@@ -2760,6 +2760,21 @@ legacy callers safe.
   rustfmt; `src/style/colour.rs` retains its pre-existing import-order
   difference. No sanitizer was run.
 
+### Increment 321 — boxed layout cells (2026-09-23)
+
+- `layout_create_cell` now boxes each zeroed `layout_cell` before its child
+  list tail points into the stable record. `layout_free_cell` still detaches
+  and recursively releases children, clears pane back-pointers where
+  appropriate, and consumes the Box only where the old terminal free ran.
+  The `only_nodes` path keeps pane leaves for reparenting, and zoom/saved
+  roots retain their existing borrowed aliases.
+- Extended `scripts/layout_cli_checks.py` with zoom/unzoom and pane close,
+  alongside existing layout replacement and invalid custom-layout cases.
+  It passed on candidate and pinned baseline. Full workspace tests, binary
+  build, JSON CLI on both binaries, and diff checks passed. Changed code
+  follows rustfmt; `src/layout/core.rs` retains its pre-existing import
+  grouping difference. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2770,10 +2785,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `layout_cell` in `src/layout/core.rs` and `grid` in `src/grid/core.rs`
-   each have one production allocator and recursive or nested cleanup;
-   audit the child and pane aliases, `only_nodes` layout behavior, and grid
-   test fixtures before choosing the next one. `cmd_load_buffer_data`
+1. `grid` in `src/grid/core.rs` has one production constructor,
+   `grid_create`, with terminal releases in `grid_destroy` and the direct
+   outer-record free in `grid_reflow` after transferring `linedata` to the
+   original grid. Migrate both releases together; do not destroy the moved
+   line data. Mode-tree unit fixtures allocate dummy grids with their own
+   matched C allocation/free pair. `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
    can skip that callback when a nonattached source client dies before the

@@ -62,6 +62,8 @@ mod tests {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by the layout tree until `layout_free_cell` consumes it.
+/// Parent/child links and pane back-pointers borrow stable cell addresses.
 pub struct layout_cell {
     pub type_0: layout_type,
     pub flags: ::core::ffi::c_int,

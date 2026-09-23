@@ -98,6 +98,15 @@ with tempfile.TemporaryDirectory(prefix="layout-cli-", dir=root / "target") as t
         assert failed.returncode != 0
         assert "size mismatch after applying layout" in failed.stderr, failed.stderr
         assert pane_geometry() == resized
+
+        run("resize-pane", "-Z", "-t", "layout:0.0")
+        assert run("display-message", "-p", "-t", "layout:0", "#{window_zoomed_flag}").stdout == "1\n"
+        run("resize-pane", "-Z", "-t", "layout:0.0")
+        assert run("display-message", "-p", "-t", "layout:0", "#{window_zoomed_flag}").stdout == "0\n"
+        assert pane_geometry() == resized
+
+        run("kill-pane", "-t", "layout:0.1")
+        assert len(pane_geometry().splitlines()) == 1
         assert initial != resized
     finally:
         subprocess.run(

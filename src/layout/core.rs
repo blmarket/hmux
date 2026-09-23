@@ -2,7 +2,7 @@ use crate::src::arguments::{
     args_has, args_percentage_and_expand_result, args_strtonum_and_expand_result,
 };
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::{free, memcpy};
+use crate::src::ffi::libc::memcpy;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::screen_redraw::redraw_invalidate_scene;
 use crate::src::shared::abi::*;
@@ -71,7 +71,7 @@ use crate::src::window::{
     window_pane_get_pane_status, window_pane_is_floating, window_pane_scrollbar_reserve,
     window_push_zoom,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
+use crate::src::xmalloc::{xasprintf, xstrdup};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -85,7 +85,7 @@ unsafe extern "C" fn layout_geometry_init(mut lg: *mut layout_geometry) {
 #[no_mangle]
 pub unsafe extern "C" fn layout_create_cell(mut lcparent: *mut layout_cell) -> *mut layout_cell {
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    lc = xcalloc(1 as size_t, ::core::mem::size_of::<layout_cell>() as size_t) as *mut layout_cell;
+    lc = Box::into_raw(Box::new(::core::mem::zeroed::<layout_cell>()));
     (*lc).type_0 = LAYOUT_WINDOWPANE;
     (*lc).parent = lcparent;
     (*lc).cells.tqh_first = ::core::ptr::null_mut::<layout_cell>();
@@ -136,7 +136,7 @@ pub unsafe extern "C" fn layout_free_cell(
         }
         _ => {}
     }
-    free(lc as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(lc));
 }
 #[no_mangle]
 pub unsafe extern "C" fn layout_print_cell(
