@@ -36,6 +36,11 @@ def check(binary, socket):
             printed = run(b"show-options", b"-gv", b"@printed")
             assert printed == expected, (args, printed, expected)
             outputs.append(printed)
+        run(b"set-hook", b"-g", b"after-display-message", b'set-option -gF @flags "#{hook_flag_F}|#{hook_flag_p}|#{hook_flag_v}"')
+        run(b"display-message", b"-p", b"-v", b"-F", b"tag")
+        flags = run(b"show-options", b"-gv", b"@flags")
+        assert flags == b"tag|1|1\n", flags
+        outputs.append(flags)
         return outputs
     finally:
         subprocess.run(command + [b"kill-server"], env=env, capture_output=True, timeout=15)

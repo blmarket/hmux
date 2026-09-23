@@ -852,7 +852,7 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
             free(value as *mut ::core::ffi::c_void);
             value = value1;
         }
-        free(entry as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(entry));
         entry = entry1;
     }
     if !(*args).tree.entries.is_null() {
@@ -1114,8 +1114,7 @@ pub unsafe extern "C" fn args_set(
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     entry = args_find(args, flag);
     if entry.is_null() {
-        entry =
-            xcalloc(1 as size_t, ::core::mem::size_of::<args_entry>() as size_t) as *mut args_entry;
+        entry = Box::into_raw(Box::new(::core::mem::zeroed::<args_entry>()));
         (*entry).flag = flag;
         (*entry).count = 1 as u_int;
         (*entry).flags = flags;

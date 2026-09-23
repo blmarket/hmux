@@ -76,6 +76,8 @@ pub struct args_tree_storage {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by the enclosing args tree. Its value-list tail may point into
+/// this stable record; `args_free` unlinks values before dropping the Box.
 pub struct args_entry {
     pub flag: u_char,
     pub values: args_values,
