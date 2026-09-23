@@ -105,6 +105,23 @@ fn sources_absolute_relative_and_glob_paths_and_reports_no_match() {
     assert_eq!(server.option("@glob_a"), b"yes\n");
     assert_eq!(server.option("@glob_b"), b"yes\n");
 
+    fs::write(
+        server.directory.join("order-a.conf"),
+        "set-option -g @source_order first\n",
+    )
+    .expect("write first ordered file");
+    fs::write(
+        server.directory.join("order-b.conf"),
+        "set-option -g @source_order second\n",
+    )
+    .expect("write second ordered file");
+    let ordered = server.run(&["source-file", "order-a.conf", "order-b.conf"]);
+    assert!(
+        ordered.status.success(),
+        "multiple source files: {ordered:?}"
+    );
+    assert_eq!(server.option("@source_order"), b"second\n");
+
     let missing = server.run(&["source-file", "missing-*.conf"]);
     assert!(
         !missing.status.success(),

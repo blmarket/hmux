@@ -80,14 +80,12 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xcalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_source_file_data {
     pub item: *mut cmdq_item,
     pub client: *mut client,
@@ -95,8 +93,7 @@ pub struct cmd_source_file_data {
     pub after: *mut cmdq_item,
     pub retval: cmd_retval,
     pub current: u_int,
-    pub files: *mut *mut ::core::ffi::c_char,
-    pub nfiles: u_int,
+    pub files: Vec<CString>,
 }
 
 pub const GLOB_NOSPACE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -130,18 +127,13 @@ pub static mut cmd_source_file_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_source_file_free_data(mut cdata: *mut cmd_source_file_data) {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < (*cdata).nfiles {
-        free(*(*cdata).files.offset(i as isize) as *mut ::core::ffi::c_void);
-        i = i.wrapping_add(1);
+unsafe fn cmd_source_file_free_data(cdata: *mut cmd_source_file_data) {
+    let mut cdata = Box::from_raw(cdata);
+    // Preserve the old order: release path copies before dropping the client reference.
+    drop(std::mem::take(&mut cdata.files));
+    if !cdata.client.is_null() {
+        server_client_unref(cdata.client);
     }
-    free((*cdata).files as *mut ::core::ffi::c_void);
-    if !(*cdata).client.is_null() {
-        server_client_unref((*cdata).client);
-    }
-    free(cdata as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn cmd_source_file_complete_cb(
     mut item: *mut cmdq_item,
@@ -239,10 +231,11 @@ unsafe extern "C" fn cmd_source_file_done(
     }
     (*cdata).current = (*cdata).current.wrapping_add(1);
     n = (*cdata).current;
-    if n < (*cdata).nfiles {
+    if (n as usize) < (*cdata).files.len() {
+        let next_path = (&(*cdata).files)[n as usize].as_ptr();
         file_read(
             c,
-            *(*cdata).files.offset(n as isize),
+            next_path,
             Some(
                 cmd_source_file_done
                     as unsafe extern "C" fn(
@@ -261,24 +254,13 @@ unsafe extern "C" fn cmd_source_file_done(
         cmdq_continue(item);
     };
 }
-unsafe extern "C" fn cmd_source_file_add(
-    mut cdata: *mut cmd_source_file_data,
-    mut path: *const ::core::ffi::c_char,
-) {
+unsafe fn cmd_source_file_add(cdata: *mut cmd_source_file_data, path: *const ::core::ffi::c_char) {
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_source_file_add\0" as *const u8 as *const ::core::ffi::c_char,
         path,
     );
-    (*cdata).files = xreallocarray(
-        (*cdata).files as *mut ::core::ffi::c_void,
-        (*cdata).nfiles.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-    ) as *mut *mut ::core::ffi::c_char;
-    let fresh0 = (*cdata).nfiles;
-    (*cdata).nfiles = (*cdata).nfiles.wrapping_add(1);
-    let ref mut fresh1 = *(*cdata).files.offset(fresh0 as isize);
-    *fresh1 = xstrdup(path);
+    (*cdata).files.push(CStr::from_ptr(path).to_owned());
 }
 unsafe fn cmd_source_file_quote_for_glob(path: *const ::core::ffi::c_char) -> CString {
     let mut quoted = Vec::new();
@@ -350,12 +332,15 @@ unsafe extern "C" fn cmd_source_file_exec(
             (*c).source_file_depth,
         );
     }
-    cdata = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<cmd_source_file_data>() as size_t,
-    ) as *mut cmd_source_file_data;
-    (*cdata).item = item;
-    (*cdata).client = c;
+    cdata = Box::into_raw(Box::new(cmd_source_file_data {
+        item,
+        client: c,
+        flags: 0,
+        after: ::core::ptr::null_mut(),
+        retval: CMD_RETURN_NORMAL,
+        current: 0,
+        files: Vec::new(),
+    }));
     if !c.is_null() {
         (*c).references += 1;
     }
@@ -439,10 +424,11 @@ unsafe extern "C" fn cmd_source_file_exec(
     free(expanded as *mut ::core::ffi::c_void);
     (*cdata).after = item;
     (*cdata).retval = retval;
-    if (*cdata).nfiles != 0 as u_int {
+    if !(*cdata).files.is_empty() {
+        let first_path = (&(*cdata).files)[0].as_ptr();
         file_read(
             c,
-            *(*cdata).files.offset(0 as ::core::ffi::c_int as isize),
+            first_path,
             Some(
                 cmd_source_file_done
                     as unsafe extern "C" fn(
