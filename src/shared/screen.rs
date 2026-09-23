@@ -50,6 +50,7 @@ pub struct screen {
     pub saved_cell: grid_cell,
     pub saved_flags: ::core::ffi::c_int,
     pub tabs: *mut bitstr_t,
+    /// Box-owned by screen_set_selection; invalid after clear or screen_free.
     pub sel: *mut screen_sel,
     pub write_list: *mut screen_write_cline,
     pub hyperlinks: *mut hyperlinks,

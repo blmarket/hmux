@@ -51,12 +51,12 @@ pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{
-    screen, screen_sel, screen_title_entry, screen_title_link, screen_titles, ALL_MODES,
-    EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR, MODE_CURSOR_BLINKING,
+    ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR, MODE_CURSOR_BLINKING,
     MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON, MODE_INSERT, MODE_KCURSOR,
     MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
     MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8, MODE_ORIGIN, MODE_SYNC,
-    MODE_THEME_UPDATES, MODE_WRAP,
+    MODE_THEME_UPDATES, MODE_WRAP, screen, screen_sel, screen_title_entry, screen_title_link,
+    screen_titles,
 };
 pub use crate::src::shared::screen_write::screen_write_cline;
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
@@ -74,7 +74,7 @@ use crate::src::style::style_apply;
 use crate::src::tmux::{clean_name, global_options};
 use crate::src::tty_acs::tty_acs_get;
 use crate::src::utf8::{utf8_copy, utf8_to_data};
-use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
+use crate::src::xmalloc::{xmalloc, xstrdup};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -170,7 +170,9 @@ pub unsafe extern "C" fn screen_reset_hyperlinks(mut s: *mut screen) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
-    free((*s).sel as *mut ::core::ffi::c_void);
+    if !(*s).sel.is_null() {
+        drop(Box::from_raw((*s).sel));
+    }
     free((*s).tabs as *mut ::core::ffi::c_void);
     free((*s).path as *mut ::core::ffi::c_void);
     free((*s).title as *mut ::core::ffi::c_void);
@@ -547,27 +549,28 @@ pub unsafe extern "C" fn screen_set_selection(
     mut modekeys: ::core::ffi::c_int,
     mut gc: *mut grid_cell,
 ) {
+    let selection = screen_sel {
+        hidden: 0,
+        rectangle: rectangle as ::core::ffi::c_int,
+        modekeys,
+        sx,
+        sy,
+        ex,
+        ey,
+        clipx,
+        cell: *gc,
+    };
     if (*s).sel.is_null() {
-        (*s).sel =
-            xcalloc(1 as size_t, ::core::mem::size_of::<screen_sel>() as size_t) as *mut screen_sel;
+        (*s).sel = Box::into_raw(Box::new(selection));
+    } else {
+        *(*s).sel = selection;
     }
-    memcpy(
-        &raw mut (*(*s).sel).cell as *mut ::core::ffi::c_void,
-        gc as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    (*(*s).sel).hidden = 0 as ::core::ffi::c_int;
-    (*(*s).sel).rectangle = rectangle as ::core::ffi::c_int;
-    (*(*s).sel).modekeys = modekeys;
-    (*(*s).sel).sx = sx;
-    (*(*s).sel).sy = sy;
-    (*(*s).sel).ex = ex;
-    (*(*s).sel).ey = ey;
-    (*(*s).sel).clipx = clipx;
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_clear_selection(mut s: *mut screen) {
-    free((*s).sel as *mut ::core::ffi::c_void);
+    if !(*s).sel.is_null() {
+        drop(Box::from_raw((*s).sel));
+    }
     (*s).sel = ::core::ptr::null_mut::<screen_sel>();
 }
 #[no_mangle]

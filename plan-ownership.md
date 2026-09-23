@@ -2350,6 +2350,21 @@ legacy callers safe.
   prompt creation, update, typed input, clearing, and teardown. The formatted
   prompt-input CLI check also passed. No sanitizer was run.
 
+### Increment 292 — boxed screen selection (2026-09-23)
+
+- `screen_set_selection` now allocates its stable `screen_sel` with `Box` and
+  replaces the complete record on later selection updates. `screen_clear_selection`
+  and `screen_free` consume that allocation with `Box::from_raw`, removing its
+  `xcalloc` and both manual frees. `screen.sel` remains the compatibility pointer;
+  it is invalid after clear or screen teardown. The screen bitwise-copy paths in
+  status and border rendering transfer the old screen to a temporary, then
+  reinitialize the original before freeing the temporary, so the selection has
+  one owner.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build,
+  changed-file rustfmt, and diff checks passed. The copy-selection and
+  copy-match CLI checks matched the pinned baseline, covering selection
+  replacement, clear, and mode teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2360,14 +2375,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen.sel` in `src/screen.rs` is a small leaf `screen_sel` record.
-   `screen_set_selection` allocates it once, while clearing or freeing the
-   screen releases it. A stable `Box` can remove that `xcalloc`/`free` pair
-   after checking screen copy sites and selection teardown; the raw pointer
-   remains a compatibility view. `window_copy_mode_data.backing` is a larger
-   screen owner whose borrowed pointer is invalidated on refresh. The redraw
-   scene's line array has self-referential intrusive list tails and needs its
-   own alias audit.
+1. `window_copy_mode_data.searchmark` is a contained byte array in an already
+   boxed mode record. Search refresh, regex failure, clear, and mode teardown
+   currently free it manually; no pointer escapes `window_copy.rs`. A boxed
+   slice can own it while the raw pointer remains a synchronous view. Preserve
+   `xcalloc`'s zero-dimension and overflow fatal behavior. The larger
+   `window_copy_mode_data.backing` screen owner has a borrowed pointer
+   invalidated on refresh. The redraw scene's line array has self-referential
+   intrusive list tails and needs its own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
