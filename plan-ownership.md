@@ -1797,6 +1797,22 @@ legacy callers safe.
   checks, changed-file rustfmt, and `git diff --check` passed in the
   isolated worktree. No sanitizer run was performed.
 
+### Increment 100 — pane border rendering scratch maps (2026-09-22)
+
+- `window_panes_draw_borders` and `window_panes_draw_floating_border` now own
+  their zero-filled byte maps in local `Vec<u8>` values. The synchronous border
+  mark helpers borrow a stable pointer while each map stays allocated. This
+  removes both `xcalloc`/`free` pairs; checked multiplication retains the old
+  allocation overflow check, and byte lookup keeps the existing u32 index
+  calculation.
+- `window_panes_modedata.areas` remains C-owned because moving its array into
+  the mode record requires changing that record's zeroed allocation and final
+  destruction together. The local map change has no retained compatibility
+  pointer or ABI change.
+- Validation in the isolated worktree: workspace tests, binary build,
+  changed-file rustfmt, and `git diff --check` passed. No sanitizer or live
+  attached-terminal border scenario was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

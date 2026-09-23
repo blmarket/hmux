@@ -924,27 +924,24 @@ unsafe extern "C" fn window_panes_draw_borders(
         us: 0,
         link: 0,
     };
-    let mut map: *mut u_char = ::core::ptr::null_mut::<u_char>();
     let mut xx: u_int = 0;
     let mut yy: u_int = 0;
     let mut cell_type: ::core::ffi::c_int = 0;
     if dsx == 0 as u_int || dsy == 0 as u_int {
         return;
     }
-    map = xcalloc(dsx as size_t, dsy as size_t) as *mut u_char;
-    window_panes_mark_borders_cell(map, lc, osx, osy, dsx, dsy);
-    window_panes_mark_pane_status_borders(map, w, lc, osx, osy, dsx, dsy);
-    window_panes_mark_border_joins_cell(map, lc, osx, osy, dsx, dsy);
+    let map_size = (dsx as usize).checked_mul(dsy as usize).unwrap();
+    let mut map = vec![0; map_size];
+    window_panes_mark_borders_cell(map.as_mut_ptr(), lc, osx, osy, dsx, dsy);
+    window_panes_mark_pane_status_borders(map.as_mut_ptr(), w, lc, osx, osy, dsx, dsy);
+    window_panes_mark_border_joins_cell(map.as_mut_ptr(), lc, osx, osy, dsx, dsy);
     yy = 0 as u_int;
     while yy < dsy {
         xx = 0 as u_int;
         while xx < dsx {
-            if !(*map.offset(yy.wrapping_mul(dsx).wrapping_add(xx) as isize) as ::core::ffi::c_int
-                == 0 as ::core::ffi::c_int)
-            {
-                cell_type = window_panes_border_cell_type(
-                    *map.offset(yy.wrapping_mul(dsx).wrapping_add(xx) as isize),
-                );
+            let border = map[yy.wrapping_mul(dsx).wrapping_add(xx) as usize];
+            if border != 0 {
+                cell_type = window_panes_border_cell_type(border);
                 memcpy(
                     &raw mut border_gc as *mut ::core::ffi::c_void,
                     gc as *const ::core::ffi::c_void,
@@ -968,7 +965,6 @@ unsafe extern "C" fn window_panes_draw_borders(
         }
         yy = yy.wrapping_add(1);
     }
-    free(map as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_panes_draw_floating_border(
     mut ctx: *mut screen_write_ctx,
@@ -993,7 +989,6 @@ unsafe extern "C" fn window_panes_draw_floating_border(
         us: 0,
         link: 0,
     };
-    let mut map: *mut u_char = ::core::ptr::null_mut::<u_char>();
     let mut xx: u_int = 0;
     let mut yy: u_int = 0;
     let mut x: ::core::ffi::c_int = 0;
@@ -1018,21 +1013,47 @@ unsafe extern "C" fn window_panes_draw_floating_border(
     {
         return;
     }
-    map = xcalloc(dsx as size_t, dsy as size_t) as *mut u_char;
-    window_panes_mark_hline(map, dsx, dsy, x, x2 + 1 as ::core::ffi::c_int, y);
-    window_panes_mark_hline(map, dsx, dsy, x, x2 + 1 as ::core::ffi::c_int, y2);
-    window_panes_mark_vline(map, dsx, dsy, x, y, y2 + 1 as ::core::ffi::c_int);
-    window_panes_mark_vline(map, dsx, dsy, x2, y, y2 + 1 as ::core::ffi::c_int);
+    let map_size = (dsx as usize).checked_mul(dsy as usize).unwrap();
+    let mut map = vec![0; map_size];
+    window_panes_mark_hline(
+        map.as_mut_ptr(),
+        dsx,
+        dsy,
+        x,
+        x2 + 1 as ::core::ffi::c_int,
+        y,
+    );
+    window_panes_mark_hline(
+        map.as_mut_ptr(),
+        dsx,
+        dsy,
+        x,
+        x2 + 1 as ::core::ffi::c_int,
+        y2,
+    );
+    window_panes_mark_vline(
+        map.as_mut_ptr(),
+        dsx,
+        dsy,
+        x,
+        y,
+        y2 + 1 as ::core::ffi::c_int,
+    );
+    window_panes_mark_vline(
+        map.as_mut_ptr(),
+        dsx,
+        dsy,
+        x2,
+        y,
+        y2 + 1 as ::core::ffi::c_int,
+    );
     yy = 0 as u_int;
     while yy < dsy {
         xx = 0 as u_int;
         while xx < dsx {
-            if !(*map.offset(yy.wrapping_mul(dsx).wrapping_add(xx) as isize) as ::core::ffi::c_int
-                == 0 as ::core::ffi::c_int)
-            {
-                cell_type = window_panes_border_cell_type(
-                    *map.offset(yy.wrapping_mul(dsx).wrapping_add(xx) as isize),
-                );
+            let border = map[yy.wrapping_mul(dsx).wrapping_add(xx) as usize];
+            if border != 0 {
+                cell_type = window_panes_border_cell_type(border);
                 memcpy(
                     &raw mut border_gc as *mut ::core::ffi::c_void,
                     gc as *const ::core::ffi::c_void,
@@ -1056,7 +1077,6 @@ unsafe extern "C" fn window_panes_draw_floating_border(
         }
         yy = yy.wrapping_add(1);
     }
-    free(map as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_panes_clear_floating_area(
     mut ctx: *mut screen_write_ctx,
