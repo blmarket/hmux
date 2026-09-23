@@ -122,7 +122,6 @@ use crate::src::window::{
     window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_index,
     window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -136,9 +135,10 @@ pub struct window_tree_modedata {
     pub dead: ::core::ffi::c_int,
     pub references: ::core::ffi::c_int,
     pub data: *mut mode_tree_data,
-    pub format: *mut ::core::ffi::c_char,
-    pub key_format: *mut ::core::ffi::c_char,
-    pub command: *mut ::core::ffi::c_char,
+    // Callback references keep this boxed record alive until the final destroy.
+    pub format: CString,
+    pub key_format: CString,
+    pub command: CString,
     pub squash_groups: ::core::ffi::c_int,
     pub hide_preview_this_pane: ::core::ffi::c_int,
     pub preview_is_info: ::core::ffi::c_int,
@@ -443,7 +443,7 @@ unsafe extern "C" fn window_tree_build_pane(
         0 as ::core::ffi::c_int,
     );
     format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
-    text = format_expand(ft, (*data).format);
+    text = format_expand(ft, (*data).format.as_ptr());
     let name = CString::new(idx.to_string()).expect("pane index contains NUL");
     format_free(ft);
     mti = mode_tree_add_identity(
@@ -521,7 +521,7 @@ unsafe extern "C" fn window_tree_build_window(
         wl,
         ::core::ptr::null_mut::<window_pane>(),
     );
-    text = format_expand(ft, (*data).format);
+    text = format_expand(ft, (*data).format.as_ptr());
     let name = CString::new(((*wl).idx as u_int).to_string()).expect("window index contains NUL");
     format_free(ft);
     if (*data).type_0 as ::core::ffi::c_uint
@@ -600,7 +600,7 @@ unsafe extern "C" fn window_tree_build_session(
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
     );
-    text = format_expand(ft, (*data).format);
+    text = format_expand(ft, (*data).format.as_ptr());
     format_free(ft);
     if (*data).type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1692,7 +1692,7 @@ unsafe extern "C" fn window_tree_get_key(
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         line,
     );
-    expanded = format_expand(ft, (*data).key_format);
+    expanded = format_expand(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(KEYC_UNKNOWN);
     free(expanded as *mut ::core::ffi::c_void);
     format_free(ft);
@@ -1835,14 +1835,29 @@ unsafe extern "C" fn window_tree_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
+    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+        WINDOW_TREE_DEFAULT_FORMAT.as_ptr()
+    } else {
+        args_get(args, 'F' as i32 as u_char)
+    };
+    let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
+        WINDOW_TREE_DEFAULT_KEY_FORMAT.as_ptr()
+    } else {
+        args_get(args, 'K' as i32 as u_char)
+    };
+    let command = if args.is_null() || args_count(args) == 0 as u_int {
+        WINDOW_TREE_DEFAULT_COMMAND.as_ptr()
+    } else {
+        args_string(args, 0 as u_int)
+    };
     data = Box::into_raw(Box::new(window_tree_modedata {
         wp: ::core::ptr::null_mut(),
         dead: 0,
         references: 0,
         data: ::core::ptr::null_mut(),
-        format: ::core::ptr::null_mut(),
-        key_format: ::core::ptr::null_mut(),
-        command: ::core::ptr::null_mut(),
+        format: CStr::from_ptr(format).to_owned(),
+        key_format: CStr::from_ptr(key_format).to_owned(),
+        command: CStr::from_ptr(command).to_owned(),
         squash_groups: 0,
         hide_preview_this_pane: 0,
         preview_is_info: 0,
@@ -1873,21 +1888,6 @@ unsafe extern "C" fn window_tree_init(
         fs as *const ::core::ffi::c_void,
         ::core::mem::size_of::<cmd_find_state>() as size_t,
     );
-    if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
-        (*data).format = xstrdup(WINDOW_TREE_DEFAULT_FORMAT.as_ptr());
-    } else {
-        (*data).format = xstrdup(args_get(args, 'F' as i32 as u_char));
-    }
-    if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
-        (*data).key_format = xstrdup(WINDOW_TREE_DEFAULT_KEY_FORMAT.as_ptr());
-    } else {
-        (*data).key_format = xstrdup(args_get(args, 'K' as i32 as u_char));
-    }
-    if args.is_null() || args_count(args) == 0 as u_int {
-        (*data).command = xstrdup(WINDOW_TREE_DEFAULT_COMMAND.as_ptr());
-    } else {
-        (*data).command = xstrdup(args_string(args, 0 as u_int));
-    }
     (*data).squash_groups = (args_has(args, 'G' as i32 as u_char) == 0) as ::core::ffi::c_int;
     (*data).hide_preview_this_pane = args_has(args, 'h' as i32 as u_char);
     if args_has(args, 'y' as i32 as u_char) != 0 {
@@ -1972,9 +1972,6 @@ unsafe extern "C" fn window_tree_destroy(mut data: *mut window_tree_modedata) {
     if (*data).references != 0 as ::core::ffi::c_int {
         return;
     }
-    free((*data).format as *mut ::core::ffi::c_void);
-    free((*data).key_format as *mut ::core::ffi::c_void);
-    free((*data).command as *mut ::core::ffi::c_void);
     drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_tree_free(mut wme: *mut window_mode_entry) {
@@ -2584,7 +2581,7 @@ unsafe extern "C" fn window_tree_key(
                 mode_tree_run_command(
                     c,
                     ::core::ptr::null_mut::<cmd_find_state>(),
-                    (*data).command,
+                    (*data).command.as_ptr(),
                     name.as_ptr(),
                 );
             }

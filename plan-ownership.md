@@ -2112,6 +2112,21 @@ legacy callers safe.
   selection command, cancel/recreate, and detachment with a live mode.
   No sanitizer was run.
 
+### Increment 276 — choose-tree mode strings (2026-09-23)
+
+- `window_tree_modedata` now owns its format, key format, and command as
+  `CString` fields in the existing stable `Box`. Row formatting, key parsing,
+  and command execution borrow C views. The three `xstrdup` allocations and
+  matching frees are gone; deferred prompt callbacks keep the mode record and
+  its strings alive until the last reference is released.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check,
+  `scripts/window_tree_strings_owner_cli_checks.py`, and
+  `scripts/window_tree_target_cli_checks.py` passed on main. The attached
+  string check also passed on the pinned baseline and covered custom `-F`,
+  `-K`, and command values, empty and accepted prompts, deferred command
+  execution, and teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2122,14 +2137,20 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The remaining address-based registries, other UI tags, and session/winlink
+1. `window_buffer_modedata` still owns its command, row format, and key format
+   with `xstrdup`/`free` despite already having a stable `Box`. The analogous
+   choose-client and choose-tree strings above provide the next small pattern.
+   `window_switch_modedata` likewise owns a row format and command, plus a
+   mutable filter that needs copy-before-replace during prompt callbacks.
+   `mode_tree_prompt` is another small `xcalloc`/`free` callback record.
+2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
    PIDs can repeat, and creation timestamps are not unique by contract. Its
    pointer tag must wait for a client owner/observer migration; a new tag-only
    generated ID would violate the agreed type policy.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+3. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -2143,7 +2164,7 @@ non-string value.
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-3. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+4. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
