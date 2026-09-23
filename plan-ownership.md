@@ -125,13 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `input_key_build` in `src/input_keys.rs` creates modified-key entries by
-   separately allocating a C string and entry record, then stores their
-   pointers in a global numeric tree without teardown. A private boxed
-   entry/string owner held by that tree could remove both manual allocations.
-   Audit duplicate insertion, static default entries, and lookup pointer
-   stability before changing the tree. Compare generated key output with
-   pinned tmux and keep numeric traversal tests.
+1. `ibufq_new`/`ibufq_free` in `src/compat/imsg_buffer.rs` form a bounded,
+   fallible allocation and flush/free pair. No in-tree caller currently uses
+   this exported API, so a focused API test is needed to validate null,
+   empty, and queued cases. Preserve the C-visible pointer and failure
+   contract while moving the record allocation and release together.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -146,10 +144,9 @@ non-string value.
    responsive. Closing the pipe first hides the issue.
 3. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
-   uses their raw-output paths now. `ibufq_new`/`ibufq_free` are a small
-   standalone allocation pair, but have no in-tree production caller. The
-   exported contracts are deferred while live client fields remain. Revisit
-   this ranking after each completed boundary.
+   uses their raw-output paths now. These string-return contracts are deferred
+   while live client fields remain. Revisit this ranking after each completed
+   boundary.
 4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
@@ -1348,6 +1345,21 @@ name error.
   passed with candidate and pinned tmux. The control notification fallback
   for a non-pane `pane` value was not directly exercised by CLI. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 434 — own generated modified-key entries (2026-09-23)
+
+- `input_key_tree` now retains boxed `InputKeyGenerated` records with owned
+  `CString` data for the sequences created by `input_key_build`. The public
+  entry lends its data pointer, and the numeric tree lends its entry pointer;
+  both stay stable as the owner vector grows. Static default entries remain
+  borrowed. Duplicate insertion keeps the first entry and drops the rejected
+  owner. Removed generated-entry `xstrdup` and `xcalloc`; these entries still
+  live for the server process, matching the old no-teardown lifecycle.
+- Serialized workspace tests and binary build passed. A unit test checks
+  generated pointer stability, bytes, and duplicate behavior. A new pane CLI
+  compared exact sequences for modifier values 2 through 8 across function,
+  arrow, and edit keys with pinned tmux. Changed-file rustfmt and diff checks
+  passed. No sanitizer ran.
 
 ## Historical migration index
 

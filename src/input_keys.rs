@@ -1,5 +1,5 @@
 use crate::src::cmd::cmd_mouse_at;
-use crate::src::ffi::libc::{strchr, strcspn, strlen};
+use crate::src::ffi::libc::{strchr, strlen};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_debug, log_get_level};
 use crate::src::options::options_get_number;
@@ -75,7 +75,8 @@ pub use crate::src::shared::window::{
 use crate::src::tmux::global_options;
 use crate::src::utf8::{utf8_to_data, utf8_towc};
 use crate::src::window::window_pane_is_visible;
-use crate::src::xmalloc::{xcalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::xsnprintf;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -90,6 +91,14 @@ pub struct input_key_entry {
 #[derive(Default)]
 pub struct input_key_tree {
     entries: std::collections::BTreeMap<key_code, *mut input_key_entry>,
+    generated: Vec<Box<InputKeyGenerated>>,
+}
+
+// The public entry borrows the CString beside it. The tree keeps these boxes
+// for its lifetime, so growing the owner vector does not move entry pointers.
+struct InputKeyGenerated {
+    entry: input_key_entry,
+    data: CString,
 }
 pub const MOTION_MOUSE_MODES: ::core::ffi::c_int = MODE_MOUSE_BUTTON | MODE_MOUSE_ALL;
 
@@ -115,6 +124,37 @@ unsafe fn input_key_tree_insert(
             ::core::ptr::null_mut::<input_key_entry>()
         }
     }
+}
+
+unsafe fn input_key_tree_insert_generated(
+    head: *mut input_key_tree,
+    mut generated: Box<InputKeyGenerated>,
+) {
+    let entry = &raw mut generated.entry;
+    if input_key_tree_insert(head, entry).is_null() {
+        (*head).generated.push(generated);
+    }
+}
+
+unsafe fn input_key_generated(
+    template: *const ::core::ffi::c_char,
+    key: key_code,
+    j: u_int,
+) -> Box<InputKeyGenerated> {
+    let mut bytes = CStr::from_ptr(template).to_bytes().to_vec();
+    let modifier = bytes
+        .iter()
+        .position(|byte| *byte == b'_')
+        .expect("modified key template has no placeholder");
+    bytes[modifier] = b'0' + j as u8;
+    let data = CString::new(bytes).expect("modified key template contains an interior NUL");
+    Box::new(InputKeyGenerated {
+        entry: input_key_entry {
+            key,
+            data: data.as_ptr(),
+        },
+        data,
+    })
 }
 
 unsafe fn input_key_tree_minmax(
@@ -149,6 +189,7 @@ unsafe fn input_key_tree_next(
 #[no_mangle]
 pub static mut input_key_tree: input_key_tree = input_key_tree {
     entries: std::collections::BTreeMap::new(),
+    generated: Vec::new(),
 };
 
 static mut input_key_defaults: [input_key_entry; 85] = [
@@ -521,10 +562,8 @@ unsafe extern "C" fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> siz
 #[no_mangle]
 pub unsafe extern "C" fn input_key_build() {
     let mut ike: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
-    let mut new: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
     let mut i: u_int = 0;
     let mut j: u_int = 0;
-    let mut data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: key_code = 0;
     i = 0 as u_int;
     while (i as usize)
@@ -542,17 +581,9 @@ pub unsafe extern "C" fn input_key_build() {
                     .wrapping_div(::core::mem::size_of::<key_code>() as usize)
             {
                 key = ((*ike).key as ::core::ffi::c_ulonglong & !KEYC_BUILD_MODIFIERS) as key_code;
-                data = xstrdup((*ike).data);
-                *data.offset(
-                    strcspn(data, b"_\0" as *const u8 as *const ::core::ffi::c_char) as isize,
-                ) = ('0' as i32 as u_int).wrapping_add(j) as ::core::ffi::c_char;
-                new = xcalloc(
-                    1 as size_t,
-                    ::core::mem::size_of::<input_key_entry>() as size_t,
-                ) as *mut input_key_entry;
-                (*new).key = key | input_key_modifiers[j as usize];
-                (*new).data = data;
-                input_key_tree_insert(&raw mut input_key_tree, new);
+                let generated =
+                    input_key_generated((*ike).data, key | input_key_modifiers[j as usize], j);
+                input_key_tree_insert_generated(&raw mut input_key_tree, generated);
                 j = j.wrapping_add(1);
             }
         }
@@ -1173,6 +1204,33 @@ unsafe extern "C" fn input_key_mouse(mut wp: *mut window_pane, mut m: *mut mouse
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_entries_keep_stable_data_and_first_duplicate() {
+        unsafe {
+            let mut tree = input_key_tree::default();
+            input_key_tree_insert_generated(
+                &raw mut tree,
+                input_key_generated(c"\x1b[1;_A".as_ptr(), 7, 2),
+            );
+            let first = input_key_tree_find(&raw mut tree, 7);
+            assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
+
+            for key in 10..110 {
+                input_key_tree_insert_generated(
+                    &raw mut tree,
+                    input_key_generated(c"\x1b[1;_B".as_ptr(), key, 3),
+                );
+            }
+            input_key_tree_insert_generated(
+                &raw mut tree,
+                input_key_generated(c"\x1b[1;_C".as_ptr(), 7, 4),
+            );
+            assert_eq!(tree.generated.len(), 101);
+            assert_eq!(input_key_tree_find(&raw mut tree, 7), first);
+            assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
+        }
+    }
 
     #[test]
     fn input_key_tree_matches_numeric_rb_semantics() {
