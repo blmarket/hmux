@@ -7,7 +7,18 @@ pub use crate::src::shared::hyperlinks::{
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 use crate::src::utf8::utf8_stravis;
-use crate::src::xmalloc::{xasprintf, xcalloc};
+use crate::src::xmalloc::xcalloc;
+use std::ffi::CString;
+
+// The C-layout record is the first field so tree and list pointers still point
+// at hyperlinks_uri. The external ID remains valid until hyperlinks_remove.
+#[repr(C)]
+struct HyperlinkUriOwner {
+    node: hyperlinks_uri,
+    external_id: CString,
+}
+
+const _: () = assert!(std::mem::offset_of!(HyperlinkUriOwner, node) == 0);
 
 pub const MAX_HYPERLINKS: ::core::ffi::c_int = 5000 as ::core::ffi::c_int;
 pub const MAX_HYPERLINK_URI: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
@@ -59,9 +70,8 @@ unsafe extern "C" fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
     hyperlinks_by_inner_tree_remove(&raw mut (*hl).by_inner, hlu);
     hyperlinks_by_uri_tree_remove(&raw mut (*hl).by_uri, hlu);
     free((*hlu).internal_id as *mut ::core::ffi::c_void);
-    free((*hlu).external_id as *mut ::core::ffi::c_void);
     free((*hlu).uri as *mut ::core::ffi::c_void);
-    free(hlu as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(hlu.cast::<HyperlinkUriOwner>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn hyperlinks_put(
@@ -89,7 +99,6 @@ pub unsafe extern "C" fn hyperlinks_put(
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     let mut uri: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut internal_id: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut external_id: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if internal_id_in.is_null() {
         internal_id_in = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -111,20 +120,17 @@ pub unsafe extern "C" fn hyperlinks_put(
     }
     let fresh0 = hyperlinks_next_external_id;
     hyperlinks_next_external_id = hyperlinks_next_external_id + 1;
-    xasprintf(
-        &raw mut external_id,
-        b"tmux%llX\0" as *const u8 as *const ::core::ffi::c_char,
-        fresh0,
-    );
-    hlu = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<hyperlinks_uri>() as size_t,
-    ) as *mut hyperlinks_uri;
+    let mut owner = Box::new(HyperlinkUriOwner {
+        node: std::mem::zeroed(),
+        external_id: CString::new(format!("tmux{:X}", fresh0 as u64))
+            .expect("generated hyperlink ID contains no NUL"),
+    });
+    owner.node.external_id = owner.external_id.as_ptr();
+    hlu = Box::into_raw(owner).cast();
     let fresh1 = (*hl).next_inner;
     (*hl).next_inner = (*hl).next_inner.wrapping_add(1);
     (*hlu).inner = fresh1;
     (*hlu).internal_id = internal_id;
-    (*hlu).external_id = external_id;
     (*hlu).uri = uri;
     (*hlu).tree = hl;
     hyperlinks_by_uri_tree_insert(&raw mut (*hl).by_uri, hlu);

@@ -22,17 +22,22 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
             hyperlinks_put(a, c"https://example.com".as_ptr(), std::ptr::null())
         );
         let mut uri = std::ptr::null();
+        let mut external_id = std::ptr::null();
         assert_eq!(
-            hyperlinks_get(a, first, &mut uri, null_mut(), null_mut()),
+            hyperlinks_get(a, first, &mut uri, null_mut(), &mut external_id),
             1
         );
         assert_eq!(CStr::from_ptr(uri), c"https://example.com");
+        assert_eq!(CStr::from_ptr(external_id), c"tmux1");
+        let first_external_id = external_id;
         let shared = hyperlinks_copy(a);
         hyperlinks_free(a);
         assert_eq!(
-            hyperlinks_get(shared, first, &mut uri, null_mut(), null_mut()),
+            hyperlinks_get(shared, first, &mut uri, null_mut(), &mut external_id),
             1
         );
+        assert_eq!(external_id, first_external_id);
+        assert_eq!(CStr::from_ptr(external_id), c"tmux1");
         for _ in 0..MAX_HYPERLINKS {
             hyperlinks_put(b, c"new".as_ptr(), c"".as_ptr());
         }
@@ -48,9 +53,10 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
         assert!((*b).by_uri.storage.is_null());
         let again = hyperlinks_put(b, c"again".as_ptr(), c"id".as_ptr());
         assert_eq!(
-            hyperlinks_get(b, again, &mut uri, null_mut(), null_mut()),
+            hyperlinks_get(b, again, &mut uri, null_mut(), &mut external_id),
             1
         );
+        assert_eq!(CStr::from_ptr(external_id), c"tmux138D");
         hyperlinks_free(shared);
         hyperlinks_free(b);
     }

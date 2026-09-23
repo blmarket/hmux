@@ -1454,6 +1454,18 @@ legacy callers safe.
   copy-view baseline checks passed for increments 226–227 before this
   correction. Revalidate the corrected main tree with the next integrations.
 
+### Increment 229 — hyperlink external ID record owner (2026-09-23)
+
+- `hyperlinks_put` now allocates a stable `HyperlinkUriOwner` containing the
+  public C-layout record at offset zero and the generated external ID in a
+  `CString`. `hyperlinks_uri.external_id` borrows that string until
+  `hyperlinks_remove` unlinks and drops the owner. This removes the
+  `xasprintf`/`free` pair for the ID and the `xcalloc`/`free` pair for the
+  record while preserving the `tmux%llX` bytes.
+- Focused hyperlink storage and real-pane OSC 8 tests, changed-file rustfmt,
+  diff checks, and the capture-pane baseline CLI check passed. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1493,9 +1505,8 @@ non-string value.
    PIDs can repeat, and creation timestamps are not unique by contract.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
-   `hyperlinks_put`'s formatted external ID also remains C-owned in the public
-   `hyperlinks_uri.external_id` field and is libc-freed by
-   `hyperlinks_remove`; it needs a record-owner or ABI migration.
+   Other URI and internal ID fields in `hyperlinks_uri` still use their C-owned
+   allocations and must be migrated with their full record lifecycle.
 
 Current validation is recorded in increments 15–225. The remaining
 address-based registries and UI tags above are separate migration candidates.
