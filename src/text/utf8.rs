@@ -1754,6 +1754,9 @@ pub(crate) unsafe fn utf8_stravisx_bytes(
     srclen: size_t,
     flag: ::core::ffi::c_int,
 ) -> Vec<u8> {
+    if srclen == 0 {
+        return Vec::new();
+    }
     let capacity = srclen
         .checked_mul(4)
         .and_then(|size| size.checked_add(1))

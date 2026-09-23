@@ -82,7 +82,7 @@ use crate::src::tty::{
 };
 use crate::src::tty_features::tty_get_features;
 use crate::src::tty_term::tty_term_has;
-use crate::src::utf8::{utf8_sanitize_cstring, utf8_stravisx};
+use crate::src::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
 pub use crate::src::window::windows;
 use crate::src::window::{
     all_window_panes, window_get_active_at, window_pane_clear_resizes, window_pane_contains,
@@ -5394,13 +5394,15 @@ pub unsafe extern "C" fn server_client_print(
     let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut empty: ::core::ffi::c_char = '\0' as i32 as ::core::ffi::c_char;
+    let mut escaped = Vec::new();
     if parse == 0 {
-        utf8_stravisx(
-            &raw mut msg,
+        escaped = utf8_stravisx_bytes(
             data as *const ::core::ffi::c_char,
             size,
             VIS_OCTAL | VIS_CSTYLE | VIS_NOSLASH,
         );
+        escaped.push(0);
+        msg = escaped.as_mut_ptr().cast();
     } else if size == 0 as size_t {
         msg = &raw mut empty;
     } else {
@@ -5492,9 +5494,6 @@ pub unsafe extern "C" fn server_client_print(
                 );
             }
         }
-    }
-    if parse == 0 {
-        free(msg as *mut ::core::ffi::c_void);
     }
 }
 unsafe extern "C" fn server_client_report_theme(mut c: *mut client, mut theme: client_theme) {

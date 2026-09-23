@@ -125,12 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `server_client_print` still uses exported `utf8_stravisx` for its
-   `parse == 0` control-client message path, then frees the local C string.
-   The private length-aware escape helper can own that result with a trailing
-   NUL for its synchronous `%s` consumers. Preserve the separate `parse !=
-   0` evbuffer path and test a real control-client `display-message` event
-   with non-UTF-8 and escaped bytes against pinned tmux.
+1. `format_trim_right` already builds its result in a `Vec<u8>` before
+   copying it to a C return. `menu_add_item` immediately copies that return
+   into its owned menu text and frees it. A private byte-return trim helper
+   can remove the intermediate C allocation while the exported formatter
+   retains its C-owned result. Then inspect `window_tree_draw_label`'s
+   analogous left-trim call: its zero-width early return currently skips
+   `free(new_label)`, so an owned local would close a live leak. Validate
+   with focused trim tests and the menu/mode-tree CLI comparisons.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1104,6 +1106,22 @@ name error.
   follows the paste on the same stream after the first bytes arrive to
   avoid an asynchronous ordering race. Changed-file rustfmt and diff
   checks passed. No sanitizer ran.
+
+### Increment 416 — owned server-client escaped message (2026-09-23)
+
+- `server_client_print(parse=0)` now owns escaped bytes in a `Vec<u8>` with
+  a trailing NUL while its logging, control output, file output, and view
+  calls borrow the pointer. The former `utf8_stravisx` allocation and final
+  C free are removed. `utf8_stravisx_bytes` returns an empty vector before
+  touching a possibly null zero-length evbuffer data pointer. The separate
+  `parse != 0` evbuffer path is unchanged; exported `utf8_stravisx` still
+  returns C-owned storage.
+- Serialized workspace tests and binary build passed. A real control-client
+  `display-message -c` comparison against pinned tmux passed for plain,
+  empty, and tab/LF/CR/BS/ESC/DEL/`0xff` messages. The test frames literal
+  LF output with a following distinct control message and compares exact
+  bytes. Command argv cannot contain an interior NUL. Changed-file rustfmt
+  and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
