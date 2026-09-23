@@ -125,11 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_set_buffer_exec` still builds appended bytes through xmalloc and
-   xrealloc before `paste_set` copies accepted data. A `Vec<u8>` builder can
-   move directly through `paste_set_owned`; preserve its early empty return,
-   named-buffer errors, and `-w` terminal selection snapshot. The exported
-   C adapters retain their success-consumes and error-retains contracts.
+1. `cmd_paste_buffer_paste` still uses `utf8_stravisx` to allocate escaped
+   bytes, writes its exact returned length to `bufferevent_write`, then
+   frees the allocation. A private length-aware Vec escape helper can own
+   this local result while keeping exported `utf8_stravisx` C-owned. Check
+   binary input and the `paste-buffer -p` output against pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -184,8 +184,10 @@ owner on the query path. The exported `paste_add` still copies and consumes
 its C input. The real terminal clipboard-query E2E covers binary `A\0B\xff`,
 invalid base64, and empty replies.
 
-`set-buffer` payloads copy into the paste owner on success; `paste_set` name
-errors still leave the C producer allocation with the caller.
+In-tree `set-buffer`, `load-buffer`, capture-pane, and window-copy payloads
+now move through the private paste owner. Exported `paste_set` still copies
+its C producer on success and leaves that allocation with the caller on a
+name error.
 
 ## Recent migration detail
 
@@ -1070,6 +1072,21 @@ errors still leave the C producer allocation with the caller.
 - Serialized workspace tests and binary build passed. The pinned-baseline
   CLI comparison passed for copy, append, pipe, and binary `P\0Q` append.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 414 — owned set-buffer byte builder (2026-09-23)
+
+- `cmd_set_buffer_exec` now builds replacement and appended bytes in a
+  `Vec<u8>` and moves them through `paste_set_owned`. Its xmalloc, xrealloc,
+  memcpy, success transfer, and error-path C free are gone. The append path
+  copies an existing named buffer before the replacement event; a separate
+  `-w` snapshot remains alive for terminal selection after the paste event.
+  Empty input still returns before modifying a buffer.
+- Serialized workspace tests and binary build passed. The pinned-baseline
+  set-buffer CLI comparison passed for named and automatic buffers, rename,
+  append, eviction, invalid names, and an attached-PTY binary `A\0B\xff`
+  append whose `-w` OSC 52 output is checked byte for byte. Empty input and
+  invalid name produce no clipboard output. Changed-file rustfmt and diff
+  checks passed. No sanitizer ran.
 
 ## Historical migration index
 

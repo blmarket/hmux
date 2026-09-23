@@ -1,10 +1,10 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::ffi::libc::{free, memcpy, strlen};
+use crate::src::ffi::libc::free;
 use crate::src::paste::{
     paste_buffer_data, paste_buffer_name, paste_free, paste_get_name, paste_get_top, paste_rename,
-    paste_set,
+    paste_set_owned,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
@@ -70,7 +70,6 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tty::tty_set_selection;
-use crate::src::xmalloc::{xmalloc, xrealloc};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -142,11 +141,8 @@ unsafe extern "C" fn cmd_set_buffer_exec(
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufname: Option<CString> = None;
-    let mut bufdata: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut bufdata = Vec::new();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut olddata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut bufsize: size_t = 0 as size_t;
-    let mut newsize: size_t = 0;
     if !args_get(args, 'b' as i32 as u_char).is_null() {
         bufname = Some(CStr::from_ptr(args_get(args, 'b' as i32 as u_char)).to_owned());
         pb = paste_get_name(bufname.as_ref().unwrap().as_ptr());
@@ -233,38 +229,30 @@ unsafe extern "C" fn cmd_set_buffer_exec(
             b"no data specified\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else {
-        newsize = strlen(args_string(args, 0 as u_int));
-        if newsize == 0 as size_t {
+        let new_data = CStr::from_ptr(args_string(args, 0 as u_int)).to_bytes();
+        if new_data.is_empty() {
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'a' as i32 as u_char) != 0 && !pb.is_null() {
-            olddata = paste_buffer_data(pb, &raw mut bufsize);
-            bufdata = xmalloc(bufsize) as *mut ::core::ffi::c_char;
-            memcpy(
-                bufdata as *mut ::core::ffi::c_void,
-                olddata as *const ::core::ffi::c_void,
-                bufsize,
-            );
+            let mut oldsize = 0;
+            let olddata = paste_buffer_data(pb, &raw mut oldsize);
+            if oldsize != 0 {
+                bufdata
+                    .extend_from_slice(std::slice::from_raw_parts(olddata.cast::<u8>(), oldsize));
+            }
         }
-        bufdata = xrealloc(
-            bufdata as *mut ::core::ffi::c_void,
-            bufsize.wrapping_add(newsize),
-        ) as *mut ::core::ffi::c_char;
-        memcpy(
-            bufdata.offset(bufsize as isize) as *mut ::core::ffi::c_void,
-            args_string(args, 0 as u_int) as *const ::core::ffi::c_void,
-            newsize,
-        );
-        bufsize = bufsize.wrapping_add(newsize);
+        bufdata.extend_from_slice(new_data);
         let selection_data = if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
-            Some(std::slice::from_raw_parts(bufdata.cast::<u8>(), bufsize).to_vec())
+            Some(bufdata.clone())
         } else {
             None
         };
         let name = bufname
             .as_ref()
             .map_or(::core::ptr::null(), |name| name.as_ptr());
-        if paste_set(bufdata, bufsize, name, &raw mut cause) != 0 as ::core::ffi::c_int {
+        if paste_set_owned(bufdata.into_boxed_slice(), name, &raw mut cause)
+            != 0 as ::core::ffi::c_int
+        {
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -282,7 +270,6 @@ unsafe extern "C" fn cmd_set_buffer_exec(
             return CMD_RETURN_NORMAL;
         }
     }
-    free(bufdata as *mut ::core::ffi::c_void);
     free(cause as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }
