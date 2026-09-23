@@ -93,15 +93,16 @@ pub const EVENT_PAYLOAD_TIME: event_payload_type = 1;
 pub const EVENT_PAYLOAD_STRING: event_payload_type = 0;
 
 // The public item pointer addresses the first field of this private owner.
-// Its union string pointer borrows `string` until replacement or payload free.
-// Other item variants own their records directly as Box<event_payload_item>.
+// Its name and optional union string pointer borrow these fields until
+// replacement or payload free.
 #[repr(C)]
-struct EventPayloadStringItem {
+struct EventPayloadItemOwner {
     item: event_payload_item,
-    string: CString,
+    name: Option<CString>,
+    string: Option<CString>,
 }
 
-const _: () = assert!(std::mem::offset_of!(EventPayloadStringItem, item) == 0);
+const _: () = assert!(std::mem::offset_of!(EventPayloadItemOwner, item) == 0);
 
 unsafe fn event_payload_name_key(name: *const ::core::ffi::c_char) -> Vec<u8> {
     std::ffi::CStr::from_ptr(name).to_bytes().to_vec()
@@ -267,18 +268,17 @@ unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) 
 }
 unsafe fn event_payload_free_item(epi: *mut event_payload_item) {
     event_payload_free_value(epi);
-    free((*epi).name as *mut ::core::ffi::c_void);
-    if (*epi).type_0 == EVENT_PAYLOAD_STRING {
-        // Only string items are created as EventPayloadStringItem boxes.
-        drop(Box::from_raw(epi.cast::<EventPayloadStringItem>()));
-    } else {
-        drop(Box::from_raw(epi));
-    }
+    drop(Box::from_raw(epi.cast::<EventPayloadItemOwner>()));
 }
 
 unsafe fn event_payload_new_item() -> *mut event_payload_item {
     // Every field is C-style pointer or integer storage, including the union.
-    Box::into_raw(Box::new(::core::mem::zeroed::<event_payload_item>()))
+    Box::into_raw(Box::new(EventPayloadItemOwner {
+        item: ::core::mem::zeroed::<event_payload_item>(),
+        name: None,
+        string: None,
+    }))
+    .cast()
 }
 unsafe extern "C" fn event_payload_set_item(
     mut ep: *mut event_payload,
@@ -286,7 +286,10 @@ unsafe extern "C" fn event_payload_set_item(
     mut new: *mut event_payload_item,
 ) {
     let mut old: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    (*new).name = xstrdup(name);
+    // `name` may borrow the item being replaced, so copy before its callback.
+    let owner = &mut *new.cast::<EventPayloadItemOwner>();
+    owner.name = Some(CStr::from_ptr(name).to_owned());
+    owner.item.name = owner.name.as_ref().unwrap().as_ptr().cast_mut();
     old = event_payload_tree_insert(&raw mut (*ep).items, new);
     if !old.is_null() {
         event_payload_tree_remove(&raw mut (*ep).items, old);
@@ -448,22 +451,11 @@ pub unsafe extern "C" fn event_payload_set_string(
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();
     let string = xvasprintf_cstring(fmt, ap);
-    let string_ptr = string.as_ptr().cast_mut();
-    let epi = Box::into_raw(Box::new(EventPayloadStringItem {
-        item: event_payload_item {
-            name: ::core::ptr::null_mut(),
-            type_0: EVENT_PAYLOAD_STRING,
-            c2rust_unnamed: event_payload_item_c2rust_unnamed { string: string_ptr },
-            entry: event_payload_item_entry {
-                rbe_left: ::core::ptr::null_mut(),
-                rbe_right: ::core::ptr::null_mut(),
-                rbe_parent: ::core::ptr::null_mut(),
-                rbe_color: 0,
-            },
-        },
-        string,
-    }))
-    .cast::<event_payload_item>();
+    let epi = event_payload_new_item();
+    (*epi).type_0 = EVENT_PAYLOAD_STRING;
+    let owner = &mut *epi.cast::<EventPayloadItemOwner>();
+    owner.string = Some(string);
+    owner.item.c2rust_unnamed.string = owner.string.as_ref().unwrap().as_ptr().cast_mut();
     event_payload_set_item(ep, name, epi);
 }
 #[no_mangle]
@@ -1007,6 +999,26 @@ mod tests {
                 CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())),
                 c""
             );
+            event_payload_free(ep);
+        }
+    }
+
+    #[test]
+    fn replacement_accepts_the_previous_items_borrowed_name() {
+        unsafe {
+            let ep = event_payload_create();
+            let name = CString::new(vec![b'k', 0xff]).unwrap();
+            event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), c"old".as_ptr());
+            let old_name = event_payload_item_name(event_payload_first(ep));
+            event_payload_set_int(ep, old_name, 42);
+
+            let replacement = event_payload_first(ep);
+            assert_eq!(
+                CStr::from_ptr(event_payload_item_name(replacement)).to_bytes(),
+                name.as_bytes()
+            );
+            assert_eq!((*replacement).c2rust_unnamed.number, 42);
+            assert_eq!(event_payload_next(replacement), ::core::ptr::null_mut());
             event_payload_free(ep);
         }
     }

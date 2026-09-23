@@ -125,12 +125,16 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `event_payload_item.name` is the next live leaf. All variant setters reach
-   the sole `xstrdup` in `event_payload_set_item`, and `event_payload_free_item`
-   has the sole name free. A unified offset-zero owner can hold the name and
-   replace the existing string-specific owner. Copy a borrowed old name before
-   replacing its item; preserve pointer-value free callbacks and duplicate-key
-   behavior. The payload unit and CLI checks cover the main paths.
+1. `status_line.entries[i].expanded` is the next bounded live owner. Its sole
+   persistent writer is `status_redraw`: an unchanged expansion is freed
+   immediately, while a changed expansion replaces a stored raw pointer.
+   `status_free` has the final free. The containing `client` already has an
+   offset-zero `ClientOwner`, which can hold five optional `CString` values
+   and lend the public entry pointers. Preserve comparison and `format_draw`
+   ordering before replacement, and clear owners during `status_free` rather
+   than only at final client destruction. ClientOwner test fixtures need the
+   added field. A CLI redraw check should cover unchanged then changed status
+   text and client teardown against the pinned baseline.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -811,6 +815,23 @@ libc allocation on success and leaves it with the caller on error, so a local
   comparison against pinned 3.8-rc passed for immediate output, actual format
   expansion, cwd, command-list execution, delayed background execution, and
   failure status. Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 397 — owned event payload item names (2026-09-23)
+
+- `EventPayloadItemOwner` now boxes every public payload item at offset zero,
+  owns its byte-preserving name as `CString`, and holds an optional string
+  value. All setters reach the single name-copy boundary in
+  `event_payload_set_item`; the public name pointer borrows that owner through
+  map lookup, format addition, iteration, and final removal. The old name is
+  copied before a replacement can free its item. Removed the name `xstrdup`
+  and final manual free, while preserving value release callbacks before
+  owner destruction and the existing duplicate-key replacement sequence.
+- A focused unit test replaces an item using its own borrowed non-UTF-8 name;
+  the existing tests cover string values, integer replacement, pointer free
+  callbacks, and iteration order. Serialized workspace tests and binary build
+  passed. Event payload format, hook monitor string, client command payload,
+  and server exit payload CLI checks passed against pinned 3.8-rc.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
