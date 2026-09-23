@@ -1332,6 +1332,21 @@ legacy callers safe.
   argument; CStr retains the previous first-NUL behavior. No sanitizer run
   was performed.
 
+### Increment 69 — client flag-list scratch (2026-09-22)
+
+- `server_client_set_flags` now owns its writable comma-list as `Vec<u8>`
+  from `CStr::to_bytes_with_nul`, replacing `xstrdup` and the matching
+  `free`. `strsep` still mutates the stable buffer, and the flag parser,
+  logging, and reset call borrow tokens only during the loop. The Vec drops
+  at the former free point before `proc_send`; first-NUL and non-UTF-8
+  bytes retain their C-string behavior.
+- `tests/client_flag_list.rs` runs a private server with a live control
+  client. It verifies setting two comma-delimited flags, ignoring empty and
+  unknown tokens, and clearing only `ignore-size` with `!ignore-size`.
+  Focused and workspace tests, binary build, changed-file rustfmt, and
+  staged `git diff --check` passed in the isolated worktree. No sanitizer
+  run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1346,12 +1361,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `server_client_set_flags`' writable comma-list copy and other
-   local parser buffers. Remaining `xstrndup` callers return or transfer
-   C-owned strings.
+2. Inspect `tty_keys_clipboard`'s local base64 copy and other bounded parser
+   buffers. Its decoded output has a separate transfer path. Remaining
+   `xstrndup` callers return or transfer C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–68. The remaining
+Current validation is recorded in increments 15–69. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–68 has its own local commit; none was pushed.
+Each of increments 15–69 has its own local commit; none was pushed.

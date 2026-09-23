@@ -101,7 +101,7 @@ use crate::src::window_visible::{window_position_is_visible, window_visible_rang
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xreallocarray, xrecallocarray, xsnprintf, xstrdup,
 };
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
@@ -4546,12 +4546,11 @@ pub unsafe extern "C" fn server_client_set_flags(
     mut flags: *const ::core::ffi::c_char,
 ) {
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: uint64_t = 0;
     let mut not: ::core::ffi::c_int = 0;
-    copy = xstrdup(flags);
-    s = copy;
+    let mut copy = CStr::from_ptr(flags).to_bytes_with_nul().to_vec();
+    s = copy.as_mut_ptr().cast();
     loop {
         next = strsep(
             &raw mut s,
@@ -4608,7 +4607,7 @@ pub unsafe extern "C" fn server_client_set_flags(
             control_reset_offsets(c);
         }
     }
-    free(copy as *mut ::core::ffi::c_void);
+    drop(copy);
     proc_send(
         (*c).peer,
         MSG_FLAGS,
