@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{free, strcasecmp, strcmp, strcspn, strlcat, strlen, strsep};
+use crate::src::ffi::libc::{free, strcasecmp, strcmp, strlcat, strlen, strsep};
 use crate::src::log::log_debug;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -59,6 +59,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
 use crate::src::xmalloc::xstrdup;
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
@@ -574,7 +575,6 @@ pub unsafe extern "C" fn tty_feature_present(
     let mut capability: *const *const ::core::ffi::c_char =
         ::core::ptr::null::<*const ::core::ffi::c_char>();
     let mut i: u_int = 0;
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if strcmp(name, b"utf8\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
     {
         return ((*(*(*term).tty).client).flags & CLIENT_UTF8 as uint64_t != 0 as uint64_t)
@@ -609,14 +609,13 @@ pub unsafe extern "C" fn tty_feature_present(
     }
     capability = (*tf).capabilities;
     while !(*capability).is_null() {
-        copy = xstrdup(*capability);
-        *copy.offset(strcspn(copy, b"=\0" as *const u8 as *const ::core::ffi::c_char) as isize) =
-            '\0' as i32 as ::core::ffi::c_char;
-        if tty_term_has_name(term, copy) == 0 {
-            free(copy as *mut ::core::ffi::c_void);
+        let mut copy = CStr::from_ptr(*capability).to_bytes_with_nul().to_vec();
+        if let Some(equal) = copy.iter().position(|&byte| byte == b'=') {
+            copy[equal] = 0;
+        }
+        if tty_term_has_name(term, copy.as_ptr().cast()) == 0 {
             return 0 as ::core::ffi::c_int;
         }
-        free(copy as *mut ::core::ffi::c_void);
         capability = capability.offset(1);
     }
     return 1 as ::core::ffi::c_int;
@@ -673,6 +672,38 @@ pub unsafe extern "C" fn tty_apply_features(mut term: *mut tty_term) -> ::core::
     }
     (*term).applied_features |= feat;
     return 1 as ::core::ffi::c_int;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::src::shared::tty::{
+        tty_code, TTYC_AX, TTYC_MS, TTYC_SETAB, TTYC_SETAF, TTYC_SETRGBB, TTYC_SETRGBF,
+    };
+    use crate::src::tty_term::{tty_term_ncodes, TTYCODE_FLAG, TTYCODE_NONE, TTYCODE_STRING};
+
+    #[test]
+    fn feature_presence_checks_capability_names_before_values() {
+        unsafe {
+            let mut codes = vec![std::mem::zeroed::<tty_code>(); tty_term_ncodes() as usize];
+            let mut term = std::mem::zeroed::<tty_term>();
+            term.codes = codes.as_mut_ptr();
+
+            codes[TTYC_MS as usize].type_0 = TTYCODE_STRING;
+            assert_eq!(tty_feature_present(&mut term, c"clipboard".as_ptr()), 1);
+            codes[TTYC_MS as usize].type_0 = TTYCODE_NONE;
+            assert_eq!(tty_feature_present(&mut term, c"clipboard".as_ptr()), 0);
+
+            term.flags = TERM_256COLOURS | TERM_RGBCOLOURS;
+            codes[TTYC_AX as usize].type_0 = TTYCODE_FLAG;
+            for code in [TTYC_SETRGBF, TTYC_SETRGBB, TTYC_SETAB, TTYC_SETAF] {
+                codes[code as usize].type_0 = TTYCODE_STRING;
+            }
+            assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr()), 1);
+            codes[TTYC_SETAF as usize].type_0 = TTYCODE_NONE;
+            assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr()), 0);
+        }
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_default_features(

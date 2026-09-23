@@ -1230,6 +1230,19 @@ legacy callers safe.
   rustfmt reports unrelated existing differences; no live CLI or sanitizer
   run was performed.
 
+### Increment 62 — terminal capability-name scratch (2026-09-22)
+
+- `tty_feature_present` now owns each writable, NUL-terminated capability
+  copy as `Vec<u8>`, removing its per-item `xstrdup` and both frees. It
+  replaces the first `=` with NUL, then lends the prefix to synchronous
+  `tty_term_has_name`, which only compares it. The separate
+  `tty_parse_features` ownership boundary is unchanged.
+- A focused feature-presence test covers `Ms=value`, no-`=` `AX`, a missing
+  later `setaf=value`, and the early-return path. Workspace tests, binary
+  build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. No live attached terminal or sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1244,13 +1257,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the shared unexpanded splitter used by the three format loops,
-   then terminal capability-name scratch. Their nested expansions and
-   cleanup paths need a reentrancy audit. Remaining `xstrndup` callers
-   return or transfer C-owned strings.
+2. Inspect the shared unexpanded splitter used by the three format loops.
+   Its nested expansions and cleanup paths need a reentrancy audit.
+   Remaining `xstrndup` callers return or transfer C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–61. The remaining
+Current validation is recorded in increments 15–62. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–61 has its own local commit; none was pushed.
+Each of increments 15–62 has its own local commit; none was pushed.
