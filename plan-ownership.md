@@ -1157,6 +1157,21 @@ legacy callers safe.
   rustfmt, and `git diff --check` passed in the isolated worktree. The live
   steps are not yet a committed test script; no sanitizer run was performed.
 
+### Increment 57 — customize-mode user-option name scratch (2026-09-22)
+
+- `window_customize_add_option_callback` now owns its parsed option-name
+  prefix as a byte-preserving `CString`, removing `xstrndup`/`free`.
+  `strcspn` stops before the first space, tab, or NUL. `options_match`
+  copies the input through `options_parse` and returns independently
+  C-owned name and optional array key; the local owner drops at the
+  original free point.
+- `scripts/customize_option_cli_checks.py` uses a private socket and
+  attached customize-mode prompt to set `@probe` to a value with spaces,
+  then checks `show-options`. It passed four runs in the isolated
+  worktree. Workspace tests, binary build, changed-file rustfmt, Python
+  compilation, and `git diff --check` passed. The live check covers the
+  valid prompt path; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1171,11 +1186,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the user-option name scratch in `window_customize.rs`, then
-   other local parser strings. Audit UI prompt return paths.
+2. Inspect the `format_replace` mutable modifier copy (`copy0`) and other
+   local parser strings. Audit parser slices, early exits, and callback
+   reentrancy before changing the owner.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–56. The remaining
+Current validation is recorded in increments 15–57. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–56 has its own local commit; none was pushed.
+Each of increments 15–57 has its own local commit; none was pushed.

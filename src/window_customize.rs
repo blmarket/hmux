@@ -3389,7 +3389,6 @@ unsafe extern "C" fn window_customize_add_option_callback(
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut array_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -3432,9 +3431,10 @@ unsafe extern "C" fn window_customize_add_option_callback(
         );
         return PROMPT_CLOSE;
     }
-    copy = xstrndup(s, namelen);
-    name = options_match(copy, &raw mut array_key, &raw mut ambiguous);
-    free(copy as *mut ::core::ffi::c_void);
+    let copy = std::ffi::CString::new(std::slice::from_raw_parts(s.cast::<u8>(), namelen))
+        .expect("strcspn stops at the first NUL");
+    name = options_match(copy.as_ptr(), &raw mut array_key, &raw mut ambiguous);
+    drop(copy);
     if name.is_null() || *name as ::core::ffi::c_int != '@' as i32 || !array_key.is_null() {
         what = if (*item).option_type as ::core::ffi::c_uint
             == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
