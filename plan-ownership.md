@@ -388,6 +388,19 @@ legacy callers safe.
   old and new binaries for empty, multiple, linked-window, and detached
   client cases. No sanitizer was run.
 
+### Increment 153 — window-tree numeric row names (2026-09-22)
+
+- `window_tree_build_pane` and `window_tree_build_window` now own their
+  decimal mode-tree row names in local `CString`s. Removed two `xasprintf`
+  allocations and matching frees. `mode_tree_add_identity` duplicates each
+  borrowed name synchronously; pane indexes still format as `%u`, and the
+  signed window index is cast to `u_int` to preserve its former `%u` bytes.
+  The separately allocated row text remains with its existing producer.
+- Isolated library/binary build, five mode-tree unit tests, changed-file
+  rustfmt, and `git diff --check` passed. An attached-client E2E created a
+  split pane and second window, then entered and exited `choose-tree`.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -426,9 +439,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–152. The remaining
+Current validation is recorded in increments 15–153. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–152 has its own local commit; none was pushed.
+Each of increments 15–153 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -561,3 +574,10 @@ by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
 build, attached-client-list, Linux proc lookup, and linked-session-list CLI
 checks, changed-file rustfmt, Python syntax checks for the three new scripts,
 and `git diff --check` passed on main. No combined sanitizer was run.
+After increments 151–153 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, active-session-list and active-client-list CLI checks, changed-file
+rustfmt, and `git diff --check` passed on main. A private-socket scenario
+created a split pane and second window and entered `choose-tree`; the
+attached-client entry/exit check was run in increment 153's isolated
+validation. No combined sanitizer was run.

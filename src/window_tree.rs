@@ -123,6 +123,7 @@ use crate::src::window::{
     window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
 use crate::src::xmalloc::{xasprintf, xstrdup};
+use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -426,7 +427,6 @@ unsafe extern "C" fn window_tree_build_pane(
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -444,11 +444,7 @@ unsafe extern "C" fn window_tree_build_pane(
     );
     format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
     text = format_expand(ft, (*data).format);
-    xasprintf(
-        &raw mut name,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        idx,
-    );
+    let name = CString::new(idx.to_string()).expect("pane index contains NUL");
     format_free(ft);
     mti = mode_tree_add_identity(
         (*data).data,
@@ -457,12 +453,11 @@ unsafe extern "C" fn window_tree_build_pane(
         // A pane may appear under linked windows. Its global pane ID keeps
         // the same shared selection/tag behavior as the former pane pointer.
         ModeTreeIdentity::pane((*wp).id),
-        name,
+        name.as_ptr(),
         text,
         -(1 as ::core::ffi::c_int),
     ) as *mut mode_tree_item;
     free(text as *mut ::core::ffi::c_void);
-    free(name as *mut ::core::ffi::c_void);
     mode_tree_align(mti, 1 as ::core::ffi::c_int);
 }
 unsafe extern "C" fn window_tree_filter_pane(
@@ -499,7 +494,6 @@ unsafe extern "C" fn window_tree_build_window(
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut found: u_int = 0;
@@ -528,11 +522,7 @@ unsafe extern "C" fn window_tree_build_window(
         ::core::ptr::null_mut::<window_pane>(),
     );
     text = format_expand(ft, (*data).format);
-    xasprintf(
-        &raw mut name,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wl).idx,
-    );
+    let name = CString::new(((*wl).idx as u_int).to_string()).expect("window index contains NUL");
     format_free(ft);
     if (*data).type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -548,12 +538,11 @@ unsafe extern "C" fn window_tree_build_window(
         parent,
         item as *mut ::core::ffi::c_void,
         ModeTreeIdentity::winlink((*s).id, (*wl).idx),
-        name,
+        name.as_ptr(),
         text,
         expanded,
     ) as *mut mode_tree_item;
     free(text as *mut ::core::ffi::c_void);
-    free(name as *mut ::core::ffi::c_void);
     mode_tree_align(mti, 1 as ::core::ffi::c_int);
     let l = sort_get_panes_window((*wl).window, sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes in window tree");
