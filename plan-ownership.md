@@ -531,6 +531,19 @@ legacy callers safe.
   the two pre-existing import-layout differences in `prompt.rs`. No sanitizer
   was run.
 
+### Increment 164 — run-shell status message scratch (2026-09-22)
+
+- `cmd_run_shell_callback` now owns its optional nonzero-exit or signal
+  message in a local byte-preserving `CString`. Removed both `xasprintf`
+  branches and the matching free. `cmd_run_shell_print` borrows the message
+  synchronously and formats its output before the local owner is dropped;
+  `cdata.cmd` remains owned by the existing callback data lifecycle.
+- Isolated library/binary build, `run_shell_partial_line` integration test,
+  changed-file rustfmt, and `git diff --check` passed. Private-socket E2E
+  output matched the pre-migration binary for `exit 7`, `kill -TERM $$`, and
+  a command containing byte `0xff`. The view-pane output path was source
+  audited but not live tested. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -541,10 +554,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_panes_run_command`'s pane-ID text and
-   `cmd_run_shell_callback`'s status message each have a local
-   `xasprintf`/free pair with synchronous consumers. Audit and migrate each
-   complete boundary separately.
+1. `window_panes_run_command`'s pane-ID text has a local `xasprintf`/free
+   pair passed to synchronous `args_make_commands`. Audit and migrate that
+   complete boundary.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual

@@ -87,7 +87,8 @@ pub use crate::src::shared::window::{
 use crate::src::status::status_message_set;
 use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xcalloc, xsnprintf, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -217,6 +218,22 @@ unsafe extern "C" fn cmd_run_shell_print(mut job: *mut job, mut msg: *const ::co
         msg,
     );
 }
+
+unsafe fn cmd_run_shell_status_message(
+    cmd: *const ::core::ffi::c_char,
+    suffix: &[u8],
+    code: ::core::ffi::c_int,
+) -> CString {
+    let cmd = CStr::from_ptr(cmd).to_bytes();
+    let code = code.to_string();
+    let mut message = Vec::with_capacity(1 + cmd.len() + suffix.len() + code.len());
+    message.push(b'\'');
+    message.extend_from_slice(cmd);
+    message.extend_from_slice(suffix);
+    message.extend_from_slice(code.as_bytes());
+    CString::new(message).expect("run-shell command and status text contain no NUL")
+}
+
 unsafe extern "C" fn cmd_run_shell_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
@@ -481,7 +498,7 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
     let mut event: *mut bufferevent = job_get_event(job);
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut cmd: *mut ::core::ffi::c_char = (*cdata).cmd;
-    let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut msg: Option<CString> = None;
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
@@ -511,12 +528,7 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         retcode = (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int;
         if retcode != 0 as ::core::ffi::c_int {
-            xasprintf(
-                &raw mut msg,
-                b"'%s' returned %d\0" as *const u8 as *const ::core::ffi::c_char,
-                cmd,
-                retcode,
-            );
+            msg = Some(cmd_run_shell_status_message(cmd, b"' returned ", retcode));
         }
     } else if ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
         as ::core::ffi::c_schar as ::core::ffi::c_int
@@ -524,20 +536,18 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
         > 0 as ::core::ffi::c_int
     {
         retcode = status & 0x7f as ::core::ffi::c_int;
-        xasprintf(
-            &raw mut msg,
-            b"'%s' terminated by signal %d\0" as *const u8 as *const ::core::ffi::c_char,
+        msg = Some(cmd_run_shell_status_message(
             cmd,
+            b"' terminated by signal ",
             retcode,
-        );
+        ));
         retcode += 128 as ::core::ffi::c_int;
     } else {
         retcode = 0 as ::core::ffi::c_int;
     }
-    if !msg.is_null() {
-        cmd_run_shell_print(job, msg);
+    if let Some(msg) = msg.as_ref() {
+        cmd_run_shell_print(job, msg.as_ptr());
     }
-    free(msg as *mut ::core::ffi::c_void);
     if !item.is_null() {
         if !cmdq_get_client(item).is_null() && (*cmdq_get_client(item)).session.is_null() {
             (*cmdq_get_client(item)).retval = retcode;
