@@ -3379,6 +3379,25 @@ legacy callers safe.
   rustfmt, and `git diff --check` passed. Rust allocation failure diagnostics
   can differ from the former `xreallocarray` fatal; no sanitizer was run.
 
+### Increment 363 — file-owned load-buffer callback data (2026-09-23)
+
+- `file_read_with_owned_data` now installs a boxed `load-buffer` payload in
+  `FileOwner` before any terminal event can run. The existing
+  `client_file.data` pointer borrows that stable payload for progress and
+  terminal callbacks. `file_fire_done_cb` takes and drops the payload after
+  callback delivery or suppression, replacing the raw Box handoff and the
+  separate skipped-done cleanup hook. `cmd_load_buffer_done` borrows its
+  data; `cmd_load_buffer_data` releases its retained target-client reference
+  on drop, with explicit release before `cmdq_continue` on normal completion
+  to preserve the previous order. Exported file callback layouts and
+  signatures remain unchanged.
+- The load-buffer attached-client CLI check passed against the pinned
+  baseline for binary data, empty/error cases, and a pending FIFO read whose
+  source client disconnects. `RUST_TEST_THREADS=1 cargo test --workspace
+  --quiet`, the binary build, changed-file rustfmt, and `git diff --check`
+  passed. The broader disconnected-client command queue remains unretired;
+  no sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3389,13 +3408,7 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `load-buffer` callback data is the next small live ownership boundary:
-   `FileOwner` already has a skipped-done cleanup hook, and its load-buffer
-   payload can be owned through normal and suppressed completion. Retain the
-   callback ABI's borrowed data pointer and the target-client reference until
-   the terminal event consumes the payload. Do not opt `source-file` or pane
-   stdin into the same cleanup before queue cancellation is coordinated.
-2. Disconnected file-reading clients can leave a waiting command-queue item.
+1. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
    `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
@@ -3403,20 +3416,20 @@ non-string value.
    one coordinated boundary. A closed file may still invoke its normal
    callback after client loss. Terminal event scheduling is now idempotent;
    further progress callbacks and terminal error ordering still need audit.
-3. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
+2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. `ibufq_new`/`ibufq_free` are a small
    standalone allocation pair, but have no in-tree production caller. The
    current leaf audit found no comparably small live caller boundary after
    the fuzzy mask migration. Revisit this ranking after each graph step.
-4. The remaining address-based registries, other UI tags, and session/winlink
+3. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
    PIDs can repeat, and creation timestamps are not unique by contract. Its
    pointer tag must wait for a client owner/observer migration; a new tag-only
    generated ID would violate the agreed type policy.
-5. The only direct `xvasprintf` production caller outside the `xmalloc`
+4. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -3433,7 +3446,7 @@ non-string value.
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-6. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+5. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still

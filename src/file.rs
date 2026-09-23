@@ -81,6 +81,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::find_home;
 use crate::src::xmalloc::xmalloc;
+use std::any::Any;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -156,7 +157,7 @@ static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 struct FileOwner {
     node: client_file,
     path: Option<CString>,
-    skipped_done_cleanup: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void)>,
+    callback_data: Option<Box<dyn Any>>,
     terminal_scheduled: bool,
 }
 
@@ -166,7 +167,7 @@ unsafe fn file_create_owner() -> *mut client_file {
     Box::into_raw(Box::new(FileOwner {
         node: std::mem::zeroed(),
         path: None,
-        skipped_done_cleanup: None,
+        callback_data: None,
         terminal_scheduled: false,
     }))
     .cast()
@@ -289,6 +290,9 @@ unsafe extern "C" fn file_fire_done_cb(
 ) {
     let mut cf: *mut client_file = arg as *mut client_file;
     let mut c: *mut client = (*cf).c;
+    // The callback borrows this payload. Keep it alive through delivery and
+    // consume it even when a dead source suppresses the terminal callback.
+    let callback_data = (*cf.cast::<FileOwner>()).callback_data.take();
     if (*cf).cb.is_some()
         && ((*cf).closed != 0 || c.is_null() || !(*c).flags & CLIENT_DEAD as uint64_t != 0)
     {
@@ -300,9 +304,8 @@ unsafe extern "C" fn file_fire_done_cb(
             (*cf).buffer,
             (*cf).data,
         );
-    } else if let Some(cleanup) = (*cf.cast::<FileOwner>()).skipped_done_cleanup {
-        cleanup((*cf).data);
     }
+    drop(callback_data);
     file_free(cf);
 }
 #[no_mangle]
@@ -635,16 +638,27 @@ pub unsafe extern "C" fn file_read(
     mut cb: client_file_cb,
     mut cbdata: *mut ::core::ffi::c_void,
 ) -> *mut client_file {
-    file_read_with_cleanup(c, path, cb, cbdata, None)
+    file_read_impl(c, path, cb, cbdata, None)
 }
 
-/// Release callback data when a dead source client suppresses the done callback.
-pub(crate) unsafe fn file_read_with_cleanup(
+/// The file owns the payload until its terminal event. `client_file.data` is
+/// only a borrowed pointer for the existing callback ABI, including progress.
+pub(crate) unsafe fn file_read_with_owned_data<T: 'static>(
+    c: *mut client,
+    path: *const ::core::ffi::c_char,
+    cb: client_file_cb,
+    mut data: Box<T>,
+) -> *mut client_file {
+    let borrowed = (&mut *data as *mut T).cast();
+    file_read_impl(c, path, cb, borrowed, Some(data))
+}
+
+unsafe fn file_read_impl(
     mut c: *mut client,
     mut path: *const ::core::ffi::c_char,
     mut cb: client_file_cb,
     mut cbdata: *mut ::core::ffi::c_void,
-    cleanup: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void)>,
+    callback_data: Option<Box<dyn Any>>,
 ) -> *mut client_file {
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -656,7 +670,7 @@ pub(crate) unsafe fn file_read_with_cleanup(
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
     cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
-    (*cf.cast::<FileOwner>()).skipped_done_cleanup = cleanup;
+    (*cf.cast::<FileOwner>()).callback_data = callback_data;
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         file_set_path(cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;

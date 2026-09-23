@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::{free, memcpy, strerror};
-use crate::src::file::file_read_with_cleanup;
+use crate::src::file::file_read_with_owned_data;
 use crate::src::format::format_single_from_target;
 use crate::src::paste::paste_set;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
@@ -81,14 +81,19 @@ pub struct cmd_load_buffer_data {
     pub name: Option<CString>,
 }
 
-unsafe fn cmd_load_buffer_release(cdata: Box<cmd_load_buffer_data>) {
-    if !cdata.client.is_null() {
-        server_client_unref(cdata.client);
+impl cmd_load_buffer_data {
+    unsafe fn release_client(&mut self) {
+        if !self.client.is_null() {
+            let client = std::mem::replace(&mut self.client, std::ptr::null_mut());
+            server_client_unref(client);
+        }
     }
 }
 
-unsafe extern "C" fn cmd_load_buffer_cancelled(data: *mut ::core::ffi::c_void) {
-    cmd_load_buffer_release(Box::from_raw(data.cast::<cmd_load_buffer_data>()));
+impl Drop for cmd_load_buffer_data {
+    fn drop(&mut self) {
+        unsafe { self.release_client() }
+    }
 }
 #[no_mangle]
 pub static mut cmd_load_buffer_entry: cmd_entry = unsafe {
@@ -132,7 +137,7 @@ unsafe extern "C" fn cmd_load_buffer_done(
     if closed == 0 {
         return;
     }
-    let cdata = Box::from_raw(data.cast::<cmd_load_buffer_data>());
+    let cdata = &mut *data.cast::<cmd_load_buffer_data>();
     let mut tc: *mut client = cdata.client;
     let mut item: *mut cmdq_item = cdata.item;
     let mut bdata: *mut ::core::ffi::c_void =
@@ -179,7 +184,7 @@ unsafe extern "C" fn cmd_load_buffer_done(
             );
         }
     }
-    cmd_load_buffer_release(cdata);
+    cdata.release_client();
     cmdq_continue(item);
 }
 unsafe extern "C" fn cmd_load_buffer_exec(
@@ -203,7 +208,7 @@ unsafe extern "C" fn cmd_load_buffer_exec(
         (*tc).references += 1;
     }
     path = format_single_from_target(item, args_string(args, 0 as u_int));
-    file_read_with_cleanup(
+    file_read_with_owned_data(
         cmdq_get_client(item),
         path,
         Some(
@@ -217,8 +222,7 @@ unsafe extern "C" fn cmd_load_buffer_exec(
                     *mut ::core::ffi::c_void,
                 ) -> (),
         ),
-        Box::into_raw(cdata).cast(),
-        Some(cmd_load_buffer_cancelled),
+        cdata,
     );
     free(path as *mut ::core::ffi::c_void);
     return CMD_RETURN_WAIT;
