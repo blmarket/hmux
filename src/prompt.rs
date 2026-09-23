@@ -1,8 +1,6 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{
-    free, memcpy, memmove, memset, qsort, strchr, strcmp, strlcat, strlen, strncmp,
-};
+use crate::src::ffi::libc::{free, memcpy, memmove, memset, strchr, strcmp, strlcat, strlen, strncmp};
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time, format_free,
 };
@@ -102,6 +100,8 @@ use crate::src::utf8::{
     utf8_strwidth, utf8_to_data, utf8_tocstr,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
+use std::ffi::{CStr, CString};
+use std::mem::MaybeUninit;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -310,11 +310,14 @@ pub unsafe extern "C" fn prompt_set_options(mut pd: *mut prompt_create_data, mut
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mut prompt {
-    let mut pr: *mut prompt = ::core::ptr::null_mut::<prompt>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut input: *const ::core::ffi::c_char = (*pd).input;
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    pr = xcalloc(1 as size_t, ::core::mem::size_of::<prompt>() as size_t) as *mut prompt;
+    let mut allocation = Box::new(MaybeUninit::<prompt>::zeroed());
+    let pr = allocation.as_mut_ptr();
+    // The remaining C-style fields accept zero; initialize the owned Rust field before use.
+    (&raw mut (*pr).completion).write(prompt_completion::default());
+    let pr = Box::into_raw(allocation) as *mut prompt;
     if !(*pd).fs.is_null() {
         ft = format_create_from_state(
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -394,7 +397,7 @@ pub unsafe extern "C" fn prompt_free(mut pr: *mut prompt) {
         free((*pr).buffer as *mut ::core::ffi::c_void);
         free((*pr).copied as *mut ::core::ffi::c_void);
         prompt_clear_complete(pr);
-        free(pr as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(pr));
     }
 }
 unsafe extern "C" fn prompt_fire_callback(
@@ -578,7 +581,12 @@ unsafe extern "C" fn prompt_draw_complete(
     let mut avail: u_int = 0;
     let mut width: u_int = 0;
     let mut i: u_int = 0;
-    if (*pr).complete_display.is_null() {
+    let display = (*pr)
+        .completion
+        .display
+        .as_ref()
+        .map_or(::core::ptr::null(), |s| s.as_ptr());
+    if display.is_null() {
         return;
     }
     if (*pr).index != utf8_strlen((*pr).buffer) {
@@ -601,7 +609,7 @@ unsafe extern "C" fn prompt_draw_complete(
         0 as ::core::ffi::c_int,
     );
     width = 0 as u_int;
-    ud = utf8_fromcstr((*pr).complete_display);
+    ud = utf8_fromcstr(display);
     i = 0 as u_int;
     while (*ud.offset(i as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
         if width.wrapping_add((*ud.offset(i as isize)).width as u_int) > avail {
@@ -776,12 +784,14 @@ unsafe extern "C" fn prompt_layout(
         (*pl).cursor_x = (*pl).label_width.wrapping_add(pcursor).wrapping_sub(offset);
     }
     (*pl).content_width = (*pl).label_width.wrapping_add((*pl).input_width);
-    if !(*pr).complete_display.is_null()
-        && (*pr).index == utf8_strlen((*pr).buffer)
-        && (*pl).cursor_x < aw
-    {
+    let display = (*pr)
+        .completion
+        .display
+        .as_ref()
+        .map_or(::core::ptr::null(), |s| s.as_ptr());
+    if !display.is_null() && (*pr).index == utf8_strlen((*pr).buffer) && (*pl).cursor_x < aw {
         avail = aw.wrapping_sub((*pl).cursor_x);
-        width = utf8_cstrwidth((*pr).complete_display);
+        width = utf8_cstrwidth(display);
         if width > avail {
             width = avail;
         }
@@ -830,7 +840,12 @@ unsafe extern "C" fn prompt_mouse_complete(
     let mut i: u_int = 0;
     let mut start: u_int = 0;
     let mut width: u_int = 0;
-    if (*pr).complete_display.is_null() || (*pr).complete_size == 0 as u_int {
+    let display = (*pr)
+        .completion
+        .display
+        .as_ref()
+        .map_or(::core::ptr::null(), |s| s.as_ptr());
+    if display.is_null() || (*pr).completion.names.is_empty() {
         return PROMPT_KEY_NOT_HANDLED;
     }
     if (*pr).index != utf8_strlen((*pr).buffer) {
@@ -841,7 +856,7 @@ unsafe extern "C" fn prompt_mouse_complete(
     }
     avail = aw.wrapping_sub(cx.wrapping_sub(ax));
     clicked = x.wrapping_sub(cx);
-    width = utf8_cstrwidth((*pr).complete_display);
+    width = utf8_cstrwidth(display);
     if width > avail {
         width = avail;
     }
@@ -850,16 +865,18 @@ unsafe extern "C" fn prompt_mouse_complete(
     }
     end = 0 as u_int;
     i = 0 as u_int;
-    while i < (*pr).complete_size {
+    while (i as usize) < (*pr).completion.names.len() {
         start = end.wrapping_add(1 as u_int);
-        end = start.wrapping_add(utf8_cstrwidth(*(*pr).complete_list.offset(i as isize)));
+        end = start.wrapping_add(utf8_cstrwidth(
+            (&(*pr).completion.names)[i as usize].as_ptr(),
+        ));
         if clicked < start || clicked >= end {
             i = i.wrapping_add(1);
         } else {
             xasprintf(
                 &raw mut replace,
                 b"%s \0" as *const u8 as *const ::core::ffi::c_char,
-                *(*pr).complete_list.offset(i as isize),
+                (&(*pr).completion.names)[i as usize].as_ptr(),
             );
             if prompt_replace_complete(pr, replace) != 0 {
                 prompt_clear_complete(pr);
@@ -11301,36 +11318,13 @@ pub unsafe extern "C" fn prompt_key(
     }
     return result;
 }
-unsafe extern "C" fn prompt_complete_add(
-    mut list: *mut *mut *mut ::core::ffi::c_char,
-    mut size: *mut u_int,
-    mut s: *const ::core::ffi::c_char,
-) {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < *size {
-        if strcmp(*(*list).offset(i as isize), s) == 0 as ::core::ffi::c_int {
-            return;
-        }
-        i = i.wrapping_add(1);
+unsafe fn prompt_complete_add(list: &mut Vec<CString>, s: &CStr) {
+    if !list.iter().any(|name| name.as_bytes() == s.to_bytes()) {
+        list.push(s.to_owned());
     }
-    *list = xreallocarray(
-        *list as *mut ::core::ffi::c_void,
-        (*size).wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-    ) as *mut *mut ::core::ffi::c_char;
-    let fresh0 = *size;
-    *size = (*size).wrapping_add(1);
-    let ref mut fresh1 = *(*list).offset(fresh0 as isize);
-    *fresh1 = xstrdup(s);
 }
-unsafe extern "C" fn prompt_complete_commands(
-    mut size: *mut u_int,
-    mut s: *const ::core::ffi::c_char,
-) -> *mut *mut ::core::ffi::c_char {
-    let mut list: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn prompt_complete_commands(s: *const ::core::ffi::c_char) -> Vec<CString> {
+    let mut list = Vec::new();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmdent: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
@@ -11338,11 +11332,10 @@ unsafe extern "C" fn prompt_complete_commands(
     let mut valuelen: size_t = 0;
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    *size = 0 as u_int;
     cmdent = &raw mut cmd_table as *mut *const cmd_entry;
     while !(*cmdent).is_null() {
         if strncmp((**cmdent).name, s, slen) == 0 as ::core::ffi::c_int {
-            prompt_complete_add(&raw mut list, size, (**cmdent).name);
+            prompt_complete_add(&mut list, CStr::from_ptr((**cmdent).name));
         }
         cmdent = cmdent.offset(1);
     }
@@ -11358,14 +11351,9 @@ unsafe extern "C" fn prompt_complete_commands(
             if !cp.is_null() {
                 valuelen = cp.offset_from(value) as ::core::ffi::c_long as size_t;
                 if !(slen > valuelen || strncmp(value, s, slen) != 0 as ::core::ffi::c_int) {
-                    xasprintf(
-                        &raw mut tmp,
-                        b"%.*s\0" as *const u8 as *const ::core::ffi::c_char,
-                        valuelen as ::core::ffi::c_int,
-                        value,
-                    );
-                    prompt_complete_add(&raw mut list, size, tmp);
-                    free(tmp as *mut ::core::ffi::c_void);
+                    let alias = CString::new(&CStr::from_ptr(value).to_bytes()[..valuelen])
+                        .expect("alias prefix contains no NUL");
+                    prompt_complete_add(&mut list, alias.as_c_str());
                 }
             }
             a = options_array_next(a);
@@ -11373,25 +11361,22 @@ unsafe extern "C" fn prompt_complete_commands(
     }
     return list;
 }
-unsafe extern "C" fn prompt_complete_prefix(
-    mut list: *mut *mut ::core::ffi::c_char,
-    mut size: u_int,
-) -> *mut ::core::ffi::c_char {
+unsafe fn prompt_complete_prefix(list: &[CString]) -> *mut ::core::ffi::c_char {
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut j: size_t = 0;
-    if list.is_null() || size == 0 as u_int {
+    if list.is_empty() {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    out = xstrdup(*list.offset(0 as ::core::ffi::c_int as isize));
+    out = xstrdup(list[0].as_ptr());
     i = 1 as u_int;
-    while i < size {
+    while (i as usize) < list.len() {
         j = 0 as size_t;
         while *out.offset(j as isize) as ::core::ffi::c_int != '\0' as i32
-            && *(*list.offset(i as isize)).offset(j as isize) as ::core::ffi::c_int != '\0' as i32
+            && *list[i as usize].as_ptr().offset(j as isize) as ::core::ffi::c_int != '\0' as i32
         {
             if *out.offset(j as isize) as ::core::ffi::c_int
-                != *(*list.offset(i as isize)).offset(j as isize) as ::core::ffi::c_int
+                != *list[i as usize].as_ptr().offset(j as isize) as ::core::ffi::c_int
             {
                 break;
             }
@@ -11402,62 +11387,27 @@ unsafe extern "C" fn prompt_complete_prefix(
     }
     return out;
 }
-unsafe extern "C" fn prompt_complete_sort(
-    mut a: *const ::core::ffi::c_void,
-    mut b: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut aa: *mut *const ::core::ffi::c_char = a as *mut *const ::core::ffi::c_char;
-    let mut bb: *mut *const ::core::ffi::c_char = b as *mut *const ::core::ffi::c_char;
-    return strcmp(*aa, *bb);
-}
 unsafe extern "C" fn prompt_clear_complete(mut pr: *mut prompt) {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < (*pr).complete_size {
-        free(*(*pr).complete_list.offset(i as isize) as *mut ::core::ffi::c_void);
-        i = i.wrapping_add(1);
-    }
-    free((*pr).complete_list as *mut ::core::ffi::c_void);
-    (*pr).complete_list = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    (*pr).complete_size = 0 as u_int;
-    free((*pr).complete_display as *mut ::core::ffi::c_void);
-    (*pr).complete_display = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    (*pr).completion.names = Vec::new();
+    (*pr).completion.display = None;
 }
-unsafe extern "C" fn prompt_store_complete(
-    mut pr: *mut prompt,
-    mut list: *mut *mut ::core::ffi::c_char,
-    mut size: u_int,
-) {
-    let mut display: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
+unsafe fn prompt_store_complete(mut pr: *mut prompt, list: Vec<CString>) {
     prompt_clear_complete(pr);
-    (*pr).complete_list = list;
-    (*pr).complete_size = size;
-    display = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-    i = 0 as u_int;
-    while i < size {
-        xasprintf(
-            &raw mut cp,
-            b"%s %s\0" as *const u8 as *const ::core::ffi::c_char,
-            display,
-            *list.offset(i as isize),
-        );
-        free(display as *mut ::core::ffi::c_void);
-        display = cp;
-        i = i.wrapping_add(1);
+    (*pr).completion.names = list;
+    let mut display = Vec::new();
+    for name in &(*pr).completion.names {
+        display.push(b' ');
+        display.extend_from_slice(name.as_bytes());
     }
-    (*pr).complete_display = display;
+    (*pr).completion.display = Some(CString::new(display).expect("names contain no NUL"));
 }
 unsafe extern "C" fn prompt_complete(
     mut pr: *mut prompt,
     mut word: *const ::core::ffi::c_char,
     mut offset: u_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut list: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
+    let mut list: Vec<CString>;
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut size: u_int = 0 as u_int;
     let mut i: u_int = 0;
     if (*pr).type_0 as ::core::ffi::c_uint
         != PROMPT_TYPE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -11466,55 +11416,37 @@ unsafe extern "C" fn prompt_complete(
     {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    list = prompt_complete_commands(&raw mut size, word);
-    if size == 0 as u_int {
-        free(list as *mut ::core::ffi::c_void);
+    list = prompt_complete_commands(word);
+    if list.is_empty() {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    qsort(
-        list as *mut ::core::ffi::c_void,
-        size as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-        Some(
-            prompt_complete_sort
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
+    list.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
     i = 0 as u_int;
-    while i < size {
+    while (i as usize) < list.len() {
         log_debug(
             b"complete %u: %s\0" as *const u8 as *const ::core::ffi::c_char,
             i,
-            *list.offset(i as isize),
+            list[i as usize].as_ptr(),
         );
         i = i.wrapping_add(1);
     }
-    if size == 1 as u_int {
+    if list.len() == 1 {
         xasprintf(
             &raw mut out,
             b"%s \0" as *const u8 as *const ::core::ffi::c_char,
-            *list.offset(0 as ::core::ffi::c_int as isize),
+            list[0].as_ptr(),
         );
     } else {
-        out = prompt_complete_prefix(list, size);
+        out = prompt_complete_prefix(&list);
     }
     if !out.is_null() && strcmp(word, out) == 0 as ::core::ffi::c_int {
         free(out as *mut ::core::ffi::c_void);
         out = ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    if !out.is_null() || size <= 1 as u_int {
-        i = 0 as u_int;
-        while i < size {
-            free(*list.offset(i as isize) as *mut ::core::ffi::c_void);
-            i = i.wrapping_add(1);
-        }
-        free(list as *mut ::core::ffi::c_void);
+    if !out.is_null() || list.len() <= 1 {
         return out;
     }
-    prompt_store_complete(pr, list, size);
+    prompt_store_complete(pr, list);
     return ::core::ptr::null_mut::<::core::ffi::c_char>();
 }
 #[no_mangle]

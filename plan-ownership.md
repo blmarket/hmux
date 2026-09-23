@@ -2086,6 +2086,27 @@ legacy callers safe.
   `-f`, non-UTF-8 and empty paths, and socket-label resolution. No sanitizer
   was run.
 
+### Increment 117 — prompt command completion names and display (2026-09-22)
+
+- The prompt record now owns completion names in `Vec<CString>` and its
+  rendered display in `Option<CString>`. `prompt_complete_add`/`commands`,
+  sorting, prefix calculation, drawing, mouse selection, storage, and clear
+  use these owners. Removed the raw completion list/count, its `xreallocarray`
+  and element/list frees, and the repeated display `xasprintf`/free chain.
+- `prompt_create` allocates the record in a Box, establishes the existing
+  zero state for legacy fields, and explicitly initializes the drop-bearing
+  completion field before use; `prompt_free` drops the Box after the existing
+  free callback and legacy field cleanup. The record is no longer `Copy`.
+  `prompt_clear_complete` releases names and Vec backing before display,
+  preserving the old clear point and order. Mouse selection copies its name
+  into a separate C-owned replacement before a possible clear. The internal
+  prompt layout fixture changed from 344 to 360 bytes.
+- Isolated validation: workspace tests with serialized test threads, binary
+  build, changed-file rustfmt, `git diff --check`, and attached prompt
+  completion/paste CLI scenarios passed. The completion scenario covers a
+  duplicate alias, unique and ambiguous matches, sorted display, clear after
+  typing, and cancel after display. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2105,11 +2126,11 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `prompt_complete_commands` builds an owned completion-name array that
-   `prompt_complete` either frees immediately or transfers to
-   `prompt.complete_list`; `prompt_clear_complete` frees the retained list.
-   Audit prompt record allocation/destruction and callback reentrancy before
-   migrating the whole list lifetime.
+2. The Box-owned prompt record still has several separately allocated
+   immutable C strings, including `message_format`, `style_str`, and
+   `command_style_str`. Audit each field's producer, callback reads, and
+   prompt teardown, then migrate a complete leaf field or a related group to
+   CString without changing null versus empty semantics.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2125,9 +2146,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–116. The remaining
+Current validation is recorded in increments 15–117. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–116 has its own local commit; none was pushed.
+Each of increments 15–117 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2173,4 +2194,11 @@ by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the binary build,
 pane-navigation, prompt-paste, and format-loop CLI checks, changed-file
 rustfmt, and `git diff --check` passed on main. Serial test threads avoid the
 known timestamp-based PTY test-directory collision. No combined sanitizer
+was run.
+After increments 115–117 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the binary build,
+config-path, prompt-completion, prompt-paste, and format-loop CLI checks, and
+`git diff --check` passed on main. Changed-file rustfmt reports one import
+layout difference in `tmux.rs` at line 24; checking the exact file from
+pre-increment `b61432d` reports the same difference. No combined sanitizer
 was run.

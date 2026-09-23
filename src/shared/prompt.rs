@@ -1,6 +1,7 @@
 //! Authoritative prompt domains.
 
 use super::abi::{size_t, u_int};
+use std::ffi::CString;
 use super::command::cmd_find_state;
 use super::display::screen_cursor_style;
 use super::grid::{grid_cell, utf8_data};
@@ -64,7 +65,12 @@ mod tests {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Default)]
+pub struct prompt_completion {
+    pub names: Vec<CString>,
+    pub display: Option<CString>,
+}
+
 #[repr(C)]
 pub struct prompt {
     pub string: *mut ::core::ffi::c_char,
@@ -93,9 +99,7 @@ pub struct prompt {
     pub closed: ::core::ffi::c_int,
     pub hindex: [u_int; 2],
     pub copied: *mut utf8_data,
-    pub complete_list: *mut *mut ::core::ffi::c_char,
-    pub complete_size: u_int,
-    pub complete_display: *mut ::core::ffi::c_char,
+    pub completion: prompt_completion,
 }
 
 #[derive(Copy, Clone)]
