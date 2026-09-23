@@ -27,6 +27,7 @@ pub use crate::src::shared::socket::{
 };
 use crate::src::tmux::socket_path;
 use crate::src::xmalloc::{xasprintf, xstrdup};
+use std::ffi::CString;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -133,7 +134,6 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
     let mut bus: *mut sd_bus = ::core::ptr::null_mut::<sd_bus>();
     let mut slot: *mut sd_bus_slot = ::core::ptr::null_mut::<sd_bus_slot>();
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut desc: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut slice: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut unit: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut uuid: sd_id128_t = sd_id128 { bytes: [0; 16] };
@@ -289,21 +289,18 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                             } else {
                                 pid = getpid() as pid_t;
                                 parent_pid = getppid() as pid_t;
-                                xasprintf(
-                                    &raw mut desc,
-                                    b"tmux child pane %ld launched by process %ld\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                    pid as ::core::ffi::c_long,
-                                    parent_pid as ::core::ffi::c_long,
-                                );
+                                let desc = CString::new(format!(
+                                    "tmux child pane {} launched by process {}",
+                                    pid as ::core::ffi::c_long, parent_pid as ::core::ffi::c_long
+                                ))
+                                .expect("systemd pane description contains no NUL");
                                 r = sd_bus_message_append(
                                     m,
                                     b"(sv)\0" as *const u8 as *const ::core::ffi::c_char,
                                     b"Description\0" as *const u8 as *const ::core::ffi::c_char,
                                     b"s\0" as *const u8 as *const ::core::ffi::c_char,
-                                    desc,
+                                    desc.as_ptr(),
                                 );
-                                free(desc as *mut ::core::ffi::c_void);
                                 if r < 0 as ::core::ffi::c_int {
                                     xasprintf(
                                         cause,
