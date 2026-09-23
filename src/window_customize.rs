@@ -1436,28 +1436,25 @@ unsafe extern "C" fn window_customize_build_keys(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut count: u_int = 0 as u_int;
-    xasprintf(
-        &raw mut title,
-        b"Key Table - %s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*kt).name,
-    );
+    let mut title_bytes = b"Key Table - ".to_vec();
+    title_bytes.extend_from_slice(CStr::from_ptr((*kt).name).to_bytes());
+    let title = CString::new(title_bytes).expect("key table name contains no NUL");
     top = mode_tree_add_identity(
         (*data).data,
         ::core::ptr::null_mut::<mode_tree_item>(),
         NULL,
         ModeTreeIdentity::named(CUSTOMIZE_KEY_TABLE, 0, 0, (*kt).name, ::core::ptr::null()),
-        title,
+        title.as_ptr(),
         ::core::ptr::null::<::core::ffi::c_char>(),
         0 as ::core::ffi::c_int,
     ) as *mut mode_tree_item;
     mode_tree_no_tag(top);
-    free(title as *mut ::core::ffi::c_void);
+    drop(title);
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),

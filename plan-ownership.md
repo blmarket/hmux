@@ -699,6 +699,18 @@ legacy callers safe.
   positive-width padding is source audited but lacks that E2E case. No
   sanitizer was run.
 
+### Increment 176 — customize key-table title scratch (2026-09-22)
+
+- `window_customize_build_keys` now builds the key-table title in a local,
+  byte-preserving `CString`. Removed its `xasprintf` allocation and matching
+  `free`. `mode_tree_add_identity` copies the title synchronously, so the
+  temporary `as_ptr()` does not escape; the key-table name remains borrowed.
+- In the isolated branch, library/binary build, serialized
+  `key_bindings_storage` tests, changed-file rustfmt, and `git diff --check`
+  passed. The new attached-client `customize_key_table_title_cli_checks.py`
+  rendered a custom key table containing UTF-8 `é` on both the pre-change
+  main binary and the migrated binary. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -709,13 +721,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_build_keys` formats a local key-table title with
-   `xasprintf`, passes it to `mode_tree_add_identity`, then frees it. The tree
-   copies the title, so a byte-preserving local `CString` can own it.
-2. `cmd_capture_pane_grid` formats a header and each grid-row description
+1. `cmd_capture_pane_grid` formats a header and each grid-row description
    with `xasprintf`, appends their bytes synchronously, then frees them.
    A Rust-owned header and row byte vector can remove those local frees.
-3. The only direct `xvasprintf` production caller outside the `xmalloc`
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -724,14 +733,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-4. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-5. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
