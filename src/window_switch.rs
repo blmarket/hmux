@@ -99,14 +99,13 @@ use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::window::{window_pane_reset_mode, window_zoom, winlink_find_by_index};
-use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xasprintf, xstrdup};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_switch_modedata {
     pub wp: *mut window_pane,
@@ -118,14 +117,12 @@ pub struct window_switch_modedata {
     pub filter: *mut ::core::ffi::c_char,
     pub prompt: *mut prompt,
     pub prompt_cx: u_int,
-    pub item_list: *mut *mut window_switch_itemdata,
-    pub item_size: u_int,
-    pub matches: *mut *mut window_switch_itemdata,
-    pub matches_size: u_int,
+    // Matches only borrow rows; boxes keep their addresses stable as the list grows.
+    item_list: Vec<Box<window_switch_itemdata>>,
+    matches: Vec<*mut window_switch_itemdata>,
     pub current: u_int,
     pub offset: u_int,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_switch_itemdata {
     pub type_0: window_switch_type,
@@ -135,6 +132,15 @@ pub struct window_switch_itemdata {
     pub match_0: *mut bitstr_t,
     pub score: u_int,
     pub order: u_int,
+}
+
+impl Drop for window_switch_itemdata {
+    fn drop(&mut self) {
+        unsafe {
+            free(self.match_0 as *mut ::core::ffi::c_void);
+            free(self.text as *mut ::core::ffi::c_void);
+        }
+    }
 }
 pub type window_switch_type = ::core::ffi::c_uint;
 pub const WINDOW_SWITCH_TYPE_WINDOW: window_switch_type = 1;
@@ -198,29 +204,21 @@ pub static mut window_switch_mode: window_mode = unsafe {
         get_screen: None,
     }
 };
-unsafe extern "C" fn window_switch_free_item(mut item: *mut window_switch_itemdata) {
-    free((*item).match_0 as *mut ::core::ffi::c_void);
-    free((*item).text as *mut ::core::ffi::c_void);
-    free(item as *mut ::core::ffi::c_void);
-}
 unsafe extern "C" fn window_switch_add_item(
     mut data: *mut window_switch_modedata,
 ) -> *mut window_switch_itemdata {
-    let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
-    (*data).item_list = xreallocarray(
-        (*data).item_list as *mut ::core::ffi::c_void,
-        (*data).item_size.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<*mut window_switch_itemdata>() as size_t,
-    ) as *mut *mut window_switch_itemdata;
-    let fresh5 = (*data).item_size;
-    (*data).item_size = (*data).item_size.wrapping_add(1);
-    let ref mut fresh6 = *(*data).item_list.offset(fresh5 as isize);
-    *fresh6 = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_switch_itemdata>() as size_t,
-    ) as *mut window_switch_itemdata;
-    item = *fresh6;
-    return item;
+    let mut item = Box::new(window_switch_itemdata {
+        type_0: WINDOW_SWITCH_TYPE_SESSION,
+        session: 0,
+        winlink: 0,
+        text: ::core::ptr::null_mut(),
+        match_0: ::core::ptr::null_mut(),
+        score: 0,
+        order: 0,
+    });
+    let ptr = &raw mut *item;
+    (*data).item_list.push(item);
+    ptr
 }
 unsafe extern "C" fn window_switch_add_session(
     mut data: *mut window_switch_modedata,
@@ -304,13 +302,11 @@ unsafe extern "C" fn window_switch_compare(
 }
 unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) {
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
-    let mut m: *mut *mut window_switch_itemdata =
-        ::core::ptr::null_mut::<*mut window_switch_itemdata>();
+    let mut m: Vec<*mut window_switch_itemdata> = Vec::new();
     let mut f: *const ::core::ffi::c_char = (*data).filter;
     let mut ns: u_int = 0;
     let mut nw: u_int = 0;
     let mut i: u_int = 0;
-    let mut n: u_int = 0 as u_int;
     let mut order: u_int = 0 as u_int;
     let mut sx: u_int = (*(*data).screen.grid).sx;
     let mut sl: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
@@ -322,14 +318,7 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
     };
     sort_crit.order = SORT_NAME;
     sort_crit.reversed = 0 as ::core::ffi::c_int;
-    i = 0 as u_int;
-    while i < (*data).item_size {
-        window_switch_free_item(*(*data).item_list.offset(i as isize));
-        i = i.wrapping_add(1);
-    }
-    free((*data).item_list as *mut ::core::ffi::c_void);
-    (*data).item_list = ::core::ptr::null_mut::<*mut window_switch_itemdata>();
-    (*data).item_size = 0 as u_int;
+    (*data).item_list.clear();
     match (*data).type_0 as ::core::ffi::c_uint {
         0 => {
             sl = sort_get_sessions(&raw mut ns, &raw mut sort_crit);
@@ -350,38 +339,22 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
         _ => {}
     }
     i = 0 as u_int;
-    while i < (*data).item_size {
-        item = *(*data).item_list.offset(i as isize);
+    while (i as usize) < (*data).item_list.len() {
+        item = &raw mut *(&mut (*data).item_list)[i as usize];
         if *f as ::core::ffi::c_int == '\0' as i32 {
-            m = xreallocarray(
-                m as *mut ::core::ffi::c_void,
-                n.wrapping_add(1 as u_int) as size_t,
-                ::core::mem::size_of::<*mut window_switch_itemdata>() as size_t,
-            ) as *mut *mut window_switch_itemdata;
-            let fresh0 = n;
-            n = n.wrapping_add(1);
-            let ref mut fresh1 = *m.offset(fresh0 as isize);
-            *fresh1 = item;
+            m.push(item);
         } else {
             (*item).match_0 = fuzzy_match(f, (*item).text, sx, &raw mut (*item).score);
             if !(*item).match_0.is_null() {
-                m = xreallocarray(
-                    m as *mut ::core::ffi::c_void,
-                    n.wrapping_add(1 as u_int) as size_t,
-                    ::core::mem::size_of::<*mut window_switch_itemdata>() as size_t,
-                ) as *mut *mut window_switch_itemdata;
-                let fresh2 = n;
-                n = n.wrapping_add(1);
-                let ref mut fresh3 = *m.offset(fresh2 as isize);
-                *fresh3 = item;
+                m.push(item);
             }
         }
         i = i.wrapping_add(1);
     }
-    if n > 1 as u_int {
+    if m.len() > 1 {
         qsort(
-            m as *mut ::core::ffi::c_void,
-            n as size_t,
+            m.as_mut_ptr() as *mut ::core::ffi::c_void,
+            m.len() as size_t,
             ::core::mem::size_of::<*mut window_switch_itemdata>() as size_t,
             Some(
                 window_switch_compare
@@ -392,9 +365,7 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
             ),
         );
     }
-    free((*data).matches as *mut ::core::ffi::c_void);
     (*data).matches = m;
-    (*data).matches_size = n;
 }
 unsafe extern "C" fn window_switch_visible(mut data: *mut window_switch_modedata) -> u_int {
     let mut sy: u_int = (*(*data).screen.grid).sy;
@@ -408,13 +379,13 @@ unsafe extern "C" fn window_switch_set_current(
     mut current: u_int,
 ) {
     let mut visible: u_int = window_switch_visible(data);
-    if (*data).matches_size == 0 as u_int {
+    if (*data).matches.is_empty() {
         (*data).current = 0 as u_int;
         (*data).offset = 0 as u_int;
         return;
     }
-    if current > (*data).matches_size.wrapping_sub(1 as u_int) {
-        current = (*data).matches_size.wrapping_sub(1 as u_int);
+    if (current as usize) >= (*data).matches.len() {
+        current = ((*data).matches.len() - 1) as u_int;
     }
     (*data).current = current;
     if (*data).current < (*data).offset {
@@ -520,10 +491,10 @@ unsafe extern "C" fn window_switch_draw_screen(mut wme: *mut window_mode_entry) 
     i = 0 as u_int;
     while i < visible {
         idx = (*data).offset.wrapping_add(i);
-        if idx >= (*data).matches_size {
+        if (idx as usize) >= (*data).matches.len() {
             break;
         }
-        item = *(*data).matches.offset(idx as isize);
+        item = (&(*data).matches)[idx as usize];
         screen_write_cursormove(
             &raw mut ctx,
             0 as ::core::ffi::c_int,
@@ -652,10 +623,21 @@ unsafe extern "C" fn window_switch_init(
         freecb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
     };
-    data = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_switch_modedata>() as size_t,
-    ) as *mut window_switch_modedata;
+    data = Box::into_raw(Box::new(window_switch_modedata {
+        wp: ::core::ptr::null_mut(),
+        screen: ::core::mem::zeroed(),
+        zoomed: 0,
+        format: ::core::ptr::null_mut(),
+        command: ::core::ptr::null_mut(),
+        type_0: WINDOW_SWITCH_TYPE_SESSION,
+        filter: ::core::ptr::null_mut(),
+        prompt: ::core::ptr::null_mut(),
+        prompt_cx: 0,
+        item_list: Vec::new(),
+        matches: Vec::new(),
+        current: 0,
+        offset: 0,
+    }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
     if args_has(args, 'w' as i32 as u_char) != 0 {
@@ -717,23 +699,17 @@ unsafe extern "C" fn window_switch_init(
 }
 unsafe extern "C" fn window_switch_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
-    let mut i: u_int = 0;
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window((*(*wme).wp).window as *mut window);
     }
-    i = 0 as u_int;
-    while i < (*data).item_size {
-        window_switch_free_item(*(*data).item_list.offset(i as isize));
-        i = i.wrapping_add(1);
-    }
-    free((*data).item_list as *mut ::core::ffi::c_void);
-    free((*data).matches as *mut ::core::ffi::c_void);
+    (*data).item_list.clear();
+    (*data).matches.clear();
     free((*data).filter as *mut ::core::ffi::c_void);
     prompt_free((*data).prompt);
     free((*data).format as *mut ::core::ffi::c_void);
     free((*data).command as *mut ::core::ffi::c_void);
     screen_free(&raw mut (*data).screen);
-    free(data as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_switch_resize(
     mut wme: *mut window_mode_entry,
@@ -768,10 +744,10 @@ unsafe extern "C" fn window_switch_run_command(
     let mut command: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut status: cmd_parse_status = CMD_PARSE_ERROR;
-    if (*data).matches_size == 0 as u_int {
+    if (*data).matches.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
-    item = *(*data).matches.offset((*data).current as isize);
+    item = (&(*data).matches)[(*data).current as usize];
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
@@ -901,7 +877,7 @@ unsafe extern "C" fn window_switch_key(
     let mut current: u_int = (*data).current;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let mut size: u_int = (*data).matches_size;
+    let mut size: u_int = (*data).matches.len() as u_int;
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -1004,7 +980,7 @@ unsafe extern "C" fn window_switch_key(
                 return;
             }
             current = (*data).current;
-            size = (*data).matches_size;
+            size = (*data).matches.len() as u_int;
         }
         match key {
             8589934619 => {

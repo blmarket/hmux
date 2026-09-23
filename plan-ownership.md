@@ -1813,6 +1813,23 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check` passed. No sanitizer or live
   attached-terminal border scenario was run.
 
+### Increment 101 — switch-mode item and match lists (2026-09-22)
+
+- `window_switch_modedata` is Box-owned and holds stable boxed item rows and a
+  `Vec` of borrowed match pointers. Rebuild, sort, drawing, selection, and
+  teardown now use these containers. Removed both list `xreallocarray` paths,
+  manual counts, row and mode `xcalloc`, item/free loops, and array frees.
+  Each row's `Drop` releases its still-C-owned fuzzy bitset before its format
+  text, as the former free helper did.
+- Match pointers remain temporary aliases into boxed rows; the C `qsort`
+  callback sorts those pointer entries. The prompt callback and mode entry
+  still use raw mode-data pointers. Rebuild and teardown release rows before
+  match aliases, preserving the old order; prompt teardown still precedes
+  final mode-data destruction.
+- Validation in the isolated worktree: workspace tests, binary build,
+  changed-file rustfmt, and `git diff --check` passed. No dedicated live
+  interactive switch-mode scenario or sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
