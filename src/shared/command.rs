@@ -154,8 +154,8 @@ pub struct cmd_list {
     pub list: *mut cmds,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned from `cmd_parse` or `cmd_copy` through `cmd_free`.
 pub struct cmd {
     pub entry: *const cmd_entry,
     pub args: *mut args,

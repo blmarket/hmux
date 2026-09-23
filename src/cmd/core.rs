@@ -669,7 +669,7 @@ pub unsafe extern "C" fn cmd_parse(
         free(error as *mut ::core::ffi::c_void);
         return ::core::ptr::null_mut::<cmd>();
     }
-    cmd = xcalloc(1 as size_t, ::core::mem::size_of::<cmd>() as size_t) as *mut cmd;
+    cmd = Box::into_raw(Box::new(::core::mem::zeroed::<cmd>()));
     (*cmd).entry = entry;
     (*cmd).args = args;
     (*cmd).parse_flags = parse_flags;
@@ -683,7 +683,7 @@ pub unsafe extern "C" fn cmd_parse(
 pub unsafe extern "C" fn cmd_free(mut cmd: *mut cmd) {
     free((*cmd).file as *mut ::core::ffi::c_void);
     args_free((*cmd).args);
-    free(cmd as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(cmd));
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_copy(
@@ -692,7 +692,7 @@ pub unsafe extern "C" fn cmd_copy(
     mut argv: *mut *mut ::core::ffi::c_char,
 ) -> *mut cmd {
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    new_cmd = xcalloc(1 as size_t, ::core::mem::size_of::<cmd>() as size_t) as *mut cmd;
+    new_cmd = Box::into_raw(Box::new(::core::mem::zeroed::<cmd>()));
     (*new_cmd).entry = (*cmd).entry;
     (*new_cmd).args = args_copy((*cmd).args, argc, argv);
     if !(*cmd).file.is_null() {
