@@ -1428,6 +1428,19 @@ legacy callers safe.
   bytes, and a trailing `#`; format job and loop CLI checks also passed. No
   sanitizer was run.
 
+### Increment 227 — client file path record owner (2026-09-23)
+
+- Both file-record constructors now allocate a containing `FileOwner` with a
+  `client_file` at offset zero. Its `Option<CString>` owns every assigned path;
+  the public `client_file.path` remains a borrowed C pointer until the final
+  `file_free`, after callbacks and references have finished. `file_get_path`
+  builds the path from byte slices, preserving `~/`, absolute and relative
+  paths, and non-UTF-8 bytes.
+- Workspace tests, library/binary build, changed-file rustfmt, and diff checks
+  passed. `scripts/file_path_owner_cli_checks.py` matched the pinned baseline
+  for read/write callbacks, missing-path errors, `-` streams, binary contents,
+  and non-UTF-8 paths. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1440,12 +1453,6 @@ non-string value.
 
 1. The command-list cache in `args_value_as_string` is retained in its
    C-layout record and needs a record-owner migration.
-   `file_get_path` remains deferred:
-   `client_file.path` is a
-   public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
-   `CString::into_raw`/`from_raw` round trip leaves manual ownership in
-   place; changing the field needs an explicit opaque-record ABI decision
-   or a fully audited sidecar owner and callback teardown.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual

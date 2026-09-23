@@ -1,6 +1,6 @@
 use crate::src::ffi::libc::{
     __errno_location, close, dup, fclose, ferror, fopen, fread, free, fwrite, memcpy, open, strcmp,
-    strlen, strncmp,
+    strlen,
 };
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_send;
@@ -80,7 +80,8 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::find_home;
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xrealloc, xstrdup};
+use crate::src::xmalloc::{xmalloc, xrealloc};
+use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -148,43 +149,52 @@ pub const EVBUFFER_ERROR: ::core::ffi::c_int = BEV_EVENT_ERROR;
 
 static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 
-unsafe extern "C" fn file_get_path(
-    mut c: *mut client,
-    mut file: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut full_path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if strncmp(
-        file,
-        b"~/\0" as *const u8 as *const ::core::ffi::c_char,
-        2 as size_t,
-    ) != 0 as ::core::ffi::c_int
-    {
-        path = xstrdup(file);
+// Keep the exported client_file layout: its path is a borrowed view of this
+// containing owner's CString until the final file_free, including deferred
+// read/write callbacks and references held by queued events.
+#[repr(C)]
+struct FileOwner {
+    node: client_file,
+    path: Option<CString>,
+}
+
+const _: () = assert!(std::mem::offset_of!(FileOwner, node) == 0);
+
+unsafe fn file_create_owner() -> *mut client_file {
+    Box::into_raw(Box::new(FileOwner {
+        node: std::mem::zeroed(),
+        path: None,
+    }))
+    .cast()
+}
+
+unsafe fn file_set_path(cf: *mut client_file, path: CString) {
+    let owner = &mut *cf.cast::<FileOwner>();
+    owner.node.path = std::ptr::null_mut();
+    owner.path = Some(path);
+    owner.node.path = owner.path.as_ref().unwrap().as_ptr().cast_mut();
+}
+
+unsafe fn file_get_path(c: *mut client, file: *const ::core::ffi::c_char) -> CString {
+    let file = CStr::from_ptr(file).to_bytes();
+    let path = if file.starts_with(b"~/") {
+        let home = find_home();
+        let home = if home.is_null() {
+            &[][..]
+        } else {
+            CStr::from_ptr(home).to_bytes()
+        };
+        [home, &file[1..]].concat()
     } else {
-        home = find_home();
-        if home.is_null() {
-            home = b"\0" as *const u8 as *const ::core::ffi::c_char;
-        }
-        xasprintf(
-            &raw mut path,
-            b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            home,
-            file.offset(1 as ::core::ffi::c_int as isize),
-        );
-    }
-    if *path as ::core::ffi::c_int == '/' as i32 {
-        return path;
-    }
-    xasprintf(
-        &raw mut full_path,
-        b"%s/%s\0" as *const u8 as *const ::core::ffi::c_char,
-        server_client_get_cwd(c, ::core::ptr::null_mut::<session>()),
-        path,
-    );
-    free(path as *mut ::core::ffi::c_void);
-    return full_path;
+        file.to_vec()
+    };
+    let full_path = if path.first() == Some(&b'/') {
+        path
+    } else {
+        let cwd = CStr::from_ptr(server_client_get_cwd(c, std::ptr::null_mut())).to_bytes();
+        [cwd, b"/", path.as_slice()].concat()
+    };
+    CString::new(full_path).expect("C string path fragments contain no NUL")
 }
 #[no_mangle]
 pub unsafe extern "C" fn file_cmp(
@@ -208,7 +218,7 @@ pub unsafe extern "C" fn file_create_with_peer(
     mut cbdata: *mut ::core::ffi::c_void,
 ) -> *mut client_file {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    cf = xcalloc(1 as size_t, ::core::mem::size_of::<client_file>() as size_t) as *mut client_file;
+    cf = file_create_owner();
     (*cf).c = ::core::ptr::null_mut::<client>();
     (*cf).references = 1 as ::core::ffi::c_int;
     (*cf).stream = stream;
@@ -234,7 +244,7 @@ pub unsafe extern "C" fn file_create_with_client(
     if !c.is_null() && (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         c = ::core::ptr::null_mut::<client>();
     }
-    cf = xcalloc(1 as size_t, ::core::mem::size_of::<client_file>() as size_t) as *mut client_file;
+    cf = file_create_owner();
     (*cf).c = c;
     (*cf).references = 1 as ::core::ffi::c_int;
     (*cf).stream = stream;
@@ -259,14 +269,14 @@ pub unsafe extern "C" fn file_free(mut cf: *mut client_file) {
         return;
     }
     evbuffer_free((*cf).buffer);
-    free((*cf).path as *mut ::core::ffi::c_void);
     if !(*cf).tree.is_null() {
         client_files_remove((*cf).tree as *mut client_files, cf);
     }
     if !(*cf).c.is_null() {
         server_client_unref((*cf).c);
     }
-    free(cf as *mut ::core::ffi::c_void);
+    (*cf).path = std::ptr::null_mut();
+    drop(Box::from_raw(cf.cast::<FileOwner>()));
 }
 unsafe extern "C" fn file_fire_done_cb(
     mut fd: ::core::ffi::c_int,
@@ -377,7 +387,7 @@ pub unsafe extern "C" fn file_vprint(
     cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
-        (*cf).path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
+        file_set_path(cf, CString::new("-").unwrap());
         evbuffer_add_vprintf((*cf).buffer, fmt, ap);
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
@@ -431,7 +441,7 @@ pub unsafe extern "C" fn file_print_buffer(
     cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
-        (*cf).path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
+        file_set_path(cf, CString::new("-").unwrap());
         evbuffer_add((*cf).buffer, data, size);
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
@@ -487,7 +497,7 @@ pub unsafe extern "C" fn file_error(
     cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None, NULL);
-        (*cf).path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
+        file_set_path(cf, CString::new("-").unwrap());
         evbuffer_add_vprintf((*cf).buffer, fmt, ap);
         msg.stream = 2 as ::core::ffi::c_int;
         msg.fd = STDERR_FILENO;
@@ -526,7 +536,7 @@ pub unsafe extern "C" fn file_write(
     let mut mode: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
-        (*cf).path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
+        file_set_path(cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
         if c.is_null()
             || (*c).flags & CLIENT_ATTACHED as uint64_t != 0
@@ -539,7 +549,7 @@ pub unsafe extern "C" fn file_write(
         }
     } else {
         cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
-        (*cf).path = file_get_path(c, path);
+        file_set_path(cf, file_get_path(c, path));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
             if flags & O_APPEND != 0 {
                 mode = b"ab\0" as *const u8 as *const ::core::ffi::c_char;
@@ -618,7 +628,7 @@ pub unsafe extern "C" fn file_read(
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
-        (*cf).path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
+        file_set_path(cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
         if c.is_null()
             || (*c).flags & CLIENT_ATTACHED as uint64_t != 0
@@ -631,7 +641,7 @@ pub unsafe extern "C" fn file_read(
         }
     } else {
         cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
-        (*cf).path = file_get_path(c, path);
+        file_set_path(cf, file_get_path(c, path));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
             f = fopen(
                 (*cf).path,
