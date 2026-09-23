@@ -1762,6 +1762,20 @@ legacy callers safe.
   `capture_pane_grid_cell_cli_checks.py`, and `format_search_cli_checks.py`
   passed on main after increments 247–249. No sanitizer was run.
 
+### Increment 250 — input parser buffer owner (2026-09-23)
+
+- `InputCtxOwner` now owns the growable parser `Vec<u8>` alongside its stable
+  C-layout `input_ctx` prefix. `input_buf` and `input_space` remain borrowed
+  ABI views refreshed after growth or shrink. `input_init` and `input_free`
+  allocate and drop the full owner, removing the context `xcalloc`/`free`
+  and buffer `xmalloc`/`xrealloc`/`free` lifecycle together.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, `input_reply_cli_checks.py`, and
+  `input_osc_104_cli_checks.py` passed. The new
+  `input_buffer_owner_cli_checks.py` passed on both main and the pinned
+  baseline with a long OSC title followed by a short title after returning
+  to ground. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1772,12 +1786,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. A validated `input_ctx.input_buf` owner migration is committed as
-   `db1e116` in `/tmp/hmux2-input-buffer-owner`; review and integrate it as
-   the next increment, then remove that temporary worktree. It keeps the
-   public C-layout context at a stable address and owns the parser buffer in
-   its enclosing Rust record. The new OSC-title CLI check and workspace tests
-   passed in the isolated worktree.
+1. `window_pane_input_data`, a `format_draw` range allocation, and the
+   `window_visible` range cache are under isolated owner/caller audits. Choose
+   the next small boundary that removes a complete manual lifetime without
+   changing ABI or reentrant behavior.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1809,7 +1821,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–249 above, with increment 228 explicitly retracted.
+recorded in increments 226–250 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

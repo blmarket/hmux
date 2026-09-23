@@ -61,7 +61,7 @@ use crate::src::window::{
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
     window_update_activity,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xsnprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xmalloc, xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::CString;
 
 pub use crate::src::shared::abi::__compar_fn_t;
@@ -159,6 +159,73 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub const INPUT_END_BEL: input_end_type = 1;
 pub const INPUT_END_ST: input_end_type = 0;
+
+// input_ctx keeps its C layout and stable address. input_buf is a borrowed
+// view of this owner's Vec, refreshed whenever the Vec may move. The parser
+// never keeps an input_buf pointer across a buffer resize or input_ground.
+#[repr(C)]
+struct InputCtxOwner {
+    ctx: input_ctx,
+    buffer: Vec<u8>,
+}
+const _: () = assert!(::core::mem::offset_of!(InputCtxOwner, ctx) == 0);
+
+impl InputCtxOwner {
+    fn new() -> *mut input_ctx {
+        let mut owner = Box::new(Self {
+            ctx: unsafe { ::core::mem::zeroed() },
+            buffer: vec![0; INPUT_BUF_START as usize],
+        });
+        owner.sync_buffer();
+        Box::into_raw(owner).cast()
+    }
+
+    fn sync_buffer(&mut self) {
+        self.ctx.input_buf = self.buffer.as_mut_ptr();
+        self.ctx.input_space = self.buffer.len();
+    }
+
+    fn shrink_buffer(&mut self) {
+        if self.buffer.len() > INPUT_BUF_START as usize {
+            self.buffer.truncate(INPUT_BUF_START as usize);
+            self.buffer.shrink_to_fit();
+            self.sync_buffer();
+        }
+    }
+}
+
+#[cfg(test)]
+mod input_buffer_ownership_tests {
+    use super::*;
+
+    #[test]
+    fn parser_buffer_grows_preserves_bytes_and_shrinks() {
+        unsafe {
+            let ictx = InputCtxOwner::new();
+            assert_eq!((*ictx).input_space, INPUT_BUF_START as usize);
+            for ch in (0..96).map(|i| if i == 17 { 0 } else { b'a' + (i % 26) }) {
+                (*ictx).ch = ch as i32;
+                input_input(ictx);
+                assert_eq!(
+                    (*ictx).input_buf,
+                    (*ictx.cast::<InputCtxOwner>()).buffer.as_mut_ptr()
+                );
+            }
+            assert_eq!((*ictx).input_len, 96);
+            assert_eq!(*(*ictx).input_buf.add(17), 0);
+            assert_eq!(*(*ictx).input_buf.add(96), 0);
+            assert_eq!((*ictx).input_space, 128);
+
+            (*ictx.cast::<InputCtxOwner>()).shrink_buffer();
+            assert_eq!((*ictx).input_space, INPUT_BUF_START as usize);
+            assert_eq!(
+                (*ictx).input_buf,
+                (*ictx.cast::<InputCtxOwner>()).buffer.as_mut_ptr()
+            );
+            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+        }
+    }
+}
 
 // Every request variant is allocated through input_make_request. The public
 // intrusive-list node stays at a stable address; queued replies borrow bytes
@@ -2266,13 +2333,11 @@ pub unsafe extern "C" fn input_init(
     mut c: *mut client,
 ) -> *mut input_ctx {
     let mut ictx: *mut input_ctx = ::core::ptr::null_mut::<input_ctx>();
-    ictx = xcalloc(1 as size_t, ::core::mem::size_of::<input_ctx>() as size_t) as *mut input_ctx;
+    ictx = InputCtxOwner::new();
     (*ictx).wp = wp;
     (*ictx).event = bev;
     (*ictx).palette = palette;
     (*ictx).c = c;
-    (*ictx).input_space = INPUT_BUF_START as size_t;
-    (*ictx).input_buf = xmalloc(INPUT_BUF_START as size_t) as *mut u_char;
     (*ictx).since_ground = evbuffer_new();
     if (*ictx).since_ground.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -2333,11 +2398,10 @@ pub unsafe extern "C" fn input_free(mut ictx: *mut input_ctx) {
         ir = ir1;
     }
     event_del(&raw mut (*ictx).request_timer);
-    free((*ictx).input_buf as *mut ::core::ffi::c_void);
     evbuffer_free((*ictx).since_ground);
     event_del(&raw mut (*ictx).ground_timer);
     screen_write_stop_sync((*ictx).wp);
-    free(ictx as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_int) {
@@ -2664,13 +2728,7 @@ unsafe extern "C" fn input_ground(mut ictx: *mut input_ctx) {
         (*ictx).since_ground,
         evbuffer_get_length((*ictx).since_ground),
     );
-    if (*ictx).input_space > INPUT_BUF_START as size_t {
-        (*ictx).input_space = INPUT_BUF_START as size_t;
-        (*ictx).input_buf = xrealloc(
-            (*ictx).input_buf as *mut ::core::ffi::c_void,
-            INPUT_BUF_START as size_t,
-        ) as *mut u_char;
-    }
+    (*ictx.cast::<InputCtxOwner>()).shrink_buffer();
 }
 unsafe extern "C" fn input_print(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -2724,16 +2782,16 @@ unsafe extern "C" fn input_parameter(mut ictx: *mut input_ctx) -> ::core::ffi::c
 }
 unsafe extern "C" fn input_input(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut available: size_t = 0;
-    available = (*ictx).input_space;
+    let owner = ictx.cast::<InputCtxOwner>();
+    available = (*owner).buffer.len();
     while (*ictx).input_len.wrapping_add(1 as size_t) >= available {
         available = available.wrapping_mul(2 as size_t);
         if available > input_buffer_size {
             (*ictx).flags |= INPUT_DISCARD;
             return 0 as ::core::ffi::c_int;
         }
-        (*ictx).input_buf =
-            xrealloc((*ictx).input_buf as *mut ::core::ffi::c_void, available) as *mut u_char;
-        (*ictx).input_space = available;
+        (*owner).buffer.resize(available, 0);
+        (*owner).sync_buffer();
     }
     let fresh1 = (*ictx).input_len;
     (*ictx).input_len = (*ictx).input_len.wrapping_add(1);
