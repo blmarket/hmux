@@ -1287,6 +1287,20 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check` passed in the isolated
   worktree. No live attached terminal or sanitizer run was performed.
 
+### Increment 66 — UTF-8 width-cache parser copy (2026-09-22)
+
+- `utf8_add_to_width_cache` now owns its writable, NUL-terminated input
+  copy as `Vec<u8>`, removing `xstrdup` and all early/success-path frees.
+  The stable buffer is split at `=`; `strtonum`, `strtoull`, and
+  `utf8_fromcstr` borrow it synchronously. Cache entries retain only
+  numeric codepoint and width values. `errno`, `utf8_no_width`, and the
+  separate decoded-array free order are unchanged.
+- A focused unit test covers single codepoints, ranges, UTF-8 characters,
+  invalid widths/ranges/strings, missing `=`, and first-NUL handling;
+  it removes entries inserted during the test. Workspace tests, binary
+  build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1301,11 +1315,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the width-cache parser copy, then re-rank remaining local
-   scratch. Remaining `xstrndup` callers return or transfer C-owned strings.
+2. Inspect `server_client_set_flags`' writable comma-list copy and other
+   local parser scratch. Remaining `xstrndup` callers return or transfer
+   C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–65. The remaining
+Current validation is recorded in increments 15–66. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–65 has its own local commit; none was pushed.
+Each of increments 15–66 has its own local commit; none was pushed.

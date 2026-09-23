@@ -30,6 +30,7 @@ pub use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::tmux::global_options;
 use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
+use std::ffi::CStr;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1053,7 +1054,6 @@ unsafe extern "C" fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) 
     }
 }
 unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) {
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut width: u_int = 0;
@@ -1063,10 +1063,12 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
     let mut wc_start: wchar_t = 0;
     let mut wc_end: wchar_t = 0;
     let mut n: ::core::ffi::c_ulonglong = 0;
-    copy = xstrdup(s);
+    // The parser writes a NUL at '=', then only borrows the two parts during
+    // this call. Keep the original C terminator and allocation stable.
+    let mut copy_bytes = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
+    let copy = copy_bytes.as_mut_ptr().cast::<::core::ffi::c_char>();
     cp = strchr(copy, '=' as i32);
     if cp.is_null() {
-        free(copy as *mut ::core::ffi::c_void);
         return;
     }
     let fresh0 = cp;
@@ -1079,7 +1081,6 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
         &raw mut errstr,
     ) as u_int;
     if !errstr.is_null() {
-        free(copy as *mut ::core::ffi::c_void);
         return;
     }
     if strncmp(
@@ -1099,7 +1100,6 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
             || n > WCHAR_MAX as ::core::ffi::c_ulonglong
             || *__errno_location() == ERANGE && n == ULLONG_MAX
         {
-            free(copy as *mut ::core::ffi::c_void);
             return;
         }
         wc_start = n as wchar_t;
@@ -1111,7 +1111,6 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
                 2 as size_t,
             ) != 0 as ::core::ffi::c_int
             {
-                free(copy as *mut ::core::ffi::c_void);
                 return;
             }
             *__errno_location() = 0 as ::core::ffi::c_int;
@@ -1126,13 +1125,11 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
                 || *__errno_location() == ERANGE && n == ULLONG_MAX
                 || (n as wchar_t) < wc_start
             {
-                free(copy as *mut ::core::ffi::c_void);
                 return;
             }
             wc_end = n as wchar_t;
         } else {
             if *endptr as ::core::ffi::c_int != '\0' as i32 {
-                free(copy as *mut ::core::ffi::c_void);
                 return;
             }
             wc_end = wc_start;
@@ -1152,26 +1149,22 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
                 != 0 as ::core::ffi::c_int
         {
             free(ud as *mut ::core::ffi::c_void);
-            free(copy as *mut ::core::ffi::c_void);
             return;
         }
         let first = &*ud.offset(0 as ::core::ffi::c_int as isize);
         let bytes = ::core::slice::from_raw_parts(first.data.as_ptr(), first.size as usize);
         let DecodeResult::Complete { codepoint, len } = decode_utf8(bytes) else {
             free(ud as *mut ::core::ffi::c_void);
-            free(copy as *mut ::core::ffi::c_void);
             return;
         };
         if len != first.size as usize {
             free(ud as *mut ::core::ffi::c_void);
-            free(copy as *mut ::core::ffi::c_void);
             return;
         }
         wc = codepoint as wchar_t;
         free(ud as *mut ::core::ffi::c_void);
         utf8_insert_width_cache(wc, width);
     }
-    free(copy as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn utf8_update_width_cache() {
@@ -2189,6 +2182,56 @@ mod tests {
 
             assert_eq!(utf8_width_cache_remove(&raw mut cache, first), first);
             assert!(utf8_width_cache_find(&raw mut cache, 7).is_null());
+        }
+    }
+
+    #[test]
+    fn utf8_width_cache_parses_entries_and_ignores_invalid_ones() {
+        unsafe {
+            for entry in [
+                &b"U+E010=2\0"[..],
+                &b"U+E011-U+E013=0\0"[..],
+                &b"\xee\x80\xa0=1\0"[..], // U+E020, as a UTF-8 character.
+                &b"U+E040=1\0U+E041=2\0"[..], // Stop at the first NUL.
+            ] {
+                utf8_add_to_width_cache(entry.as_ptr().cast());
+            }
+
+            for (codepoint, expected) in [
+                (0xE010, 2),
+                (0xE011, 0),
+                (0xE012, 0),
+                (0xE013, 0),
+                (0xE020, 1),
+                (0xE040, 1),
+            ] {
+                let item = utf8_find_in_width_cache(codepoint);
+                assert!(!item.is_null(), "missing U+{codepoint:04X}");
+                assert_eq!((*item).width, expected, "wrong width for U+{codepoint:04X}");
+            }
+
+            for entry in [
+                &b"U+E030\0"[..],          // No separator.
+                &b"U+E030=3\0"[..],        // Width out of range.
+                &b"U+E030-U+E02F=1\0"[..], // Reversed range.
+                &b"ab=1\0"[..],            // More than one character.
+                &b"=1\0"[..],              // No character.
+            ] {
+                utf8_add_to_width_cache(entry.as_ptr().cast());
+            }
+            for codepoint in [0xE030, 0xE041, 'a' as i32, 'b' as i32] {
+                assert!(
+                    utf8_find_in_width_cache(codepoint).is_null(),
+                    "unexpected U+{codepoint:04X}"
+                );
+            }
+            assert_eq!(utf8_no_width, 0);
+
+            for codepoint in [0xE010, 0xE011, 0xE012, 0xE013, 0xE020, 0xE040] {
+                let item = utf8_find_in_width_cache(codepoint);
+                utf8_width_cache_remove(&raw mut utf8_width_cache, item);
+                free(item.cast());
+            }
         }
     }
 }
