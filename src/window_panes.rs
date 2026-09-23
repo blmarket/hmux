@@ -103,14 +103,13 @@ use crate::src::window::{
     winlink_find_by_window,
 };
 use crate::src::window_clock::window_clock_table;
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xsnprintf};
+use crate::src::xmalloc::{xasprintf, xmalloc, xsnprintf};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_panes_modedata {
     pub wp: *mut window_pane,
@@ -124,8 +123,7 @@ pub struct window_panes_modedata {
     pub delay: u_int,
     pub ignore_keys: ::core::ffi::c_int,
     pub zoomed: ::core::ffi::c_int,
-    pub areas: *mut window_panes_area,
-    pub areas_size: u_int,
+    areas: Vec<window_panes_area>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -244,9 +242,7 @@ unsafe extern "C" fn window_panes_set_preview(mut data: *mut window_panes_modeda
     (*dst).cy = (*src).cy;
 }
 unsafe extern "C" fn window_panes_free_areas(mut data: *mut window_panes_modedata) {
-    free((*data).areas as *mut ::core::ffi::c_void);
-    (*data).areas = ::core::ptr::null_mut::<window_panes_area>();
-    (*data).areas_size = 0 as u_int;
+    (*data).areas = Vec::new();
 }
 unsafe extern "C" fn window_panes_add_area(
     mut data: *mut window_panes_modedata,
@@ -256,20 +252,13 @@ unsafe extern "C" fn window_panes_add_area(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut area: *mut window_panes_area = ::core::ptr::null_mut::<window_panes_area>();
-    (*data).areas = xreallocarray(
-        (*data).areas as *mut ::core::ffi::c_void,
-        (*data).areas_size.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<window_panes_area>() as size_t,
-    ) as *mut window_panes_area;
-    let fresh1 = (*data).areas_size;
-    (*data).areas_size = (*data).areas_size.wrapping_add(1);
-    area = (*data).areas.offset(fresh1 as isize) as *mut window_panes_area;
-    (*area).id = (*wp).id;
-    (*area).x = x;
-    (*area).y = y;
-    (*area).sx = sx;
-    (*area).sy = sy;
+    (*data).areas.push(window_panes_area {
+        id: (*wp).id,
+        x,
+        y,
+        sx,
+        sy,
+    });
 }
 unsafe extern "C" fn window_panes_pane_floating(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut lc: *mut layout_cell = (*wp).saved_layout_cell;
@@ -1652,10 +1641,20 @@ unsafe extern "C" fn window_panes_init(
             }
         };
     }
-    data = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_panes_modedata>() as size_t,
-    ) as *mut window_panes_modedata;
+    data = Box::into_raw(Box::new(window_panes_modedata {
+        wp: ::core::ptr::null_mut(),
+        session: ::core::ptr::null_mut(),
+        source_session: 0,
+        source_window: 0,
+        screen: ::core::mem::zeroed(),
+        preview: ::core::ptr::null_mut(),
+        timer: ::core::mem::zeroed(),
+        state: ::core::ptr::null_mut(),
+        delay: 0,
+        ignore_keys: 0,
+        zoomed: 0,
+        areas: Vec::new(),
+    }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
     (*data).session = s;
@@ -1733,7 +1732,7 @@ unsafe extern "C" fn window_panes_free(mut wme: *mut window_mode_entry) {
         free((*data).preview as *mut ::core::ffi::c_void);
     }
     screen_free(&raw mut (*data).screen);
-    free(data as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_panes_resize(
     mut wme: *mut window_mode_entry,
@@ -1779,17 +1778,12 @@ unsafe extern "C" fn window_panes_find_pane(
     mut x: u_int,
     mut y: u_int,
 ) -> *mut window_pane {
-    let mut area: *mut window_panes_area = ::core::ptr::null_mut::<window_panes_area>();
-    let mut i: u_int = 0;
-    i = (*data).areas_size;
-    while i > 0 as u_int {
-        area = (*data).areas.offset(i.wrapping_sub(1 as u_int) as isize) as *mut window_panes_area;
-        if !(x < (*area).x || x >= (*area).x.wrapping_add((*area).sx)) {
-            if !(y < (*area).y || y >= (*area).y.wrapping_add((*area).sy)) {
-                return window_pane_find_by_id((*area).id);
+    for area in (*data).areas.iter().rev() {
+        if !(x < area.x || x >= area.x.wrapping_add(area.sx)) {
+            if !(y < area.y || y >= area.y.wrapping_add(area.sy)) {
+                return window_pane_find_by_id(area.id);
             }
         }
-        i = i.wrapping_sub(1);
     }
     return ::core::ptr::null_mut::<window_pane>();
 }

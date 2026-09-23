@@ -1849,6 +1849,21 @@ legacy callers safe.
   scenario exercised choose-tree with an all-filter fallback, filter clear
   and rebuild, then quit/teardown. No sanitizer run was performed.
 
+### Increment 103 — display-panes area list (2026-09-22)
+
+- `window_panes_modedata` is Box-owned from mode init through timer deletion,
+  screen/preview teardown, and final drop. Its private `Vec<window_panes_area>`
+  replaces the raw area pointer, manual count, `xreallocarray`, and list free.
+  `window_panes_draw_screen` replaces old area storage at the previous reset
+  point, while `window_panes_find_pane` still searches in reverse display
+  order. Area records remain plain numeric values; no retained pointer into
+  the Vec or foreign ABI changed.
+- Validation in the isolated worktree: cargo check, workspace tests, binary
+  build, changed-file rustfmt, and `git diff --check` passed. A private-socket
+  two-pane scenario exercised display-panes, resize/redraw, and timer teardown.
+  Mouse hit testing was source-audited but not driven with mouse input; no
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1868,10 +1883,11 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `window_panes_modedata.areas` still grows with `xreallocarray` and frees
-   at mode teardown. Move its allocation and record lifecycle together,
-   following the Box-owned UI mode patterns from increments 99, 101, and
-   102. The two shorter-lived border maps are complete in increment 100.
+2. `cmd_source_file_data.files` still uses a raw array and copied path strings
+   across queued file-read callbacks; its sole record allocation/free pair
+   can move with the array. `layout_parse_ctx.cctxs` is a local scratch array
+   with last-entry replacement and C sorting. Both have isolated ownership
+   paths suitable for separate increments.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1887,9 +1903,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–102. The remaining
+Current validation is recorded in increments 15–103. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–102 has its own local commit; none was pushed.
+Each of increments 15–103 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
