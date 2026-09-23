@@ -5116,26 +5116,23 @@ unsafe extern "C" fn window_customize_key(
             }
             117 => {
                 if !item.is_null() {
+                    let mut prompt_bytes = b"Unset ".to_vec();
+                    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).name).to_bytes());
                     if !(*item).array_key.is_null() {
-                        xasprintf(
-                            &raw mut prompt,
-                            b"Unset %s[%s]? \0" as *const u8 as *const ::core::ffi::c_char,
-                            (*item).name,
-                            (*item).array_key,
-                        );
-                    } else {
-                        xasprintf(
-                            &raw mut prompt,
-                            b"Unset %s? \0" as *const u8 as *const ::core::ffi::c_char,
-                            (*item).name,
-                        );
+                        prompt_bytes.push(b'[');
+                        prompt_bytes
+                            .extend_from_slice(CStr::from_ptr((*item).array_key).to_bytes());
+                        prompt_bytes.push(b']');
                     }
+                    prompt_bytes.extend_from_slice(b"? ");
+                    let prompt =
+                        CString::new(prompt_bytes).expect("C strings have no interior NUL");
                     (*data).references += 1;
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
                         (*data).data,
                         c,
-                        prompt,
+                        prompt.as_ptr(),
                         b"\0" as *const u8 as *const ::core::ffi::c_char,
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
@@ -5155,23 +5152,18 @@ unsafe extern "C" fn window_customize_key(
                         ),
                         data as *mut ::core::ffi::c_void,
                     );
-                    free(prompt as *mut ::core::ffi::c_void);
                 }
             }
             85 => {
                 tagged = mode_tree_count_tagged((*data).data);
                 if !(tagged == 0 as u_int) {
-                    xasprintf(
-                        &raw mut prompt,
-                        b"Unset %u tagged? \0" as *const u8 as *const ::core::ffi::c_char,
-                        tagged,
-                    );
+                    let prompt = CString::new(format!("Unset {tagged} tagged? ")).unwrap();
                     (*data).references += 1;
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
                         (*data).data,
                         c,
-                        prompt,
+                        prompt.as_ptr(),
                         b"\0" as *const u8 as *const ::core::ffi::c_char,
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
@@ -5191,7 +5183,6 @@ unsafe extern "C" fn window_customize_key(
                         ),
                         data as *mut ::core::ffi::c_void,
                     );
-                    free(prompt as *mut ::core::ffi::c_void);
                 }
             }
             72 => {

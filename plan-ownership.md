@@ -904,6 +904,18 @@ legacy callers safe.
   displayed both prompt variants and matched the pinned baseline, including
   UTF-8 command and note values. No sanitizer was run.
 
+### Increment 191 — customize unset confirmation prompt scratch (2026-09-22)
+
+- `window_customize_key` now builds the current scalar/array-entry and tagged
+  unset confirmation labels in local `CString` owners. Removed the three
+  `xasprintf` allocations and matching frees; `mode_tree_set_prompt` copies
+  the prompt synchronously. Option names and array keys retain their bytes.
+- In the isolated branch, library/binary build, six focused option tests,
+  changed-file rustfmt, and `git diff --check` passed. The new attached-client
+  CLI check matched the scalar, array-entry, and tagged prompts with the
+  pinned baseline and confirmed cancellation preserves option values.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
