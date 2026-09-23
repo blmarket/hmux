@@ -1176,6 +1176,22 @@ legacy callers safe.
   non-UTF-8, invalid escape, escaped NUL, empty, numeric, flag, and removal
   cases. No sanitizer was run.
 
+### Increment 210 — parsed window-copy text owner (2026-09-23)
+
+- `window_copy_vadd` now holds its parse-branch formatted text in a local
+  `CString` through `input_parse_screen`, removing its `vasprintf` allocation
+  and matching `free`. `xvasprintf_cstring` preserves arbitrary bytes through
+  the first NUL, matching the old `strlen(text)` length. The exported
+  variadic `window_copy_add`/`window_copy_vadd` signatures remain unchanged.
+- Library/binary build, `run_shell_partial_line` test, changed-file rustfmt,
+  Python syntax check, and `git diff --check` passed. The private-server
+  view-mode CLI check matched the pinned baseline for ANSI, UTF-8, invalid
+  bytes, and an exact interior-NUL scenario: load `A\0B` with `load-buffer`,
+  invoke `show-buffer` from an attached client, then copy the view-mode
+  line. The loaded buffer has all three bytes; the copied line is `A\n` on
+  both binaries because `server_client_print` passes `%.*s` into
+  `window_copy_vadd` and the first-NUL view is parsed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1186,13 +1202,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_copy_vadd` formats a temporary string with `vasprintf`, passes
-   its first-NUL view to `input_parse_screen`, then frees it. Migrate that
-   temporary to the byte-preserving `xvasprintf_cstring` owner. An attached
-   client can reach `%.*s` with a middle NUL via a binary `show-buffer`
-   result, so test that exact first-NUL behavior against the baseline.
-   `args_print` still has its own C-owned return and needs a separate
-   producer lifetime audit.
+1. `args_print` still builds its output with manual xcalloc/xrealloc and
+   returns C-owned memory. Its two in-repo callers in `cmd_print_cstring`
+   and command-queue logging consume and free the result synchronously.
+   Audit a private owned printer and those callers while keeping the
+   exported libc-freeable wrapper and exact variadic formatting behavior.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
@@ -1201,12 +1215,13 @@ non-string value.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
-   ownership. The migrated `xvasprintf_cstring` callers have no identified
-   user path that emits a middle NUL: `args_print_add`'s `%c` values are
-   validated nonzero option flags, and layout's `%c` values are fixed
-   nonzero characters. A synthetic variadic FFI call could emit one, but it
-   would not be a supported E2E scenario. Revisit the direct caller when the
-   callback return contract can change.
+   ownership. `args_print_add`'s `%c` values are validated nonzero option
+   flags, and layout's `%c` values are fixed nonzero characters; neither has
+   an identified user path to a middle NUL. `window_copy_vadd` does have one:
+   an attached-client `show-buffer` of a binary `A\0B` buffer reaches its
+   `%.*s` formatter. The first-NUL behavior is covered by
+   `scripts/window_copy_vadd_owner_cli_checks.py`. Revisit the remaining
+   direct caller when the callback return contract can change.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1225,9 +1240,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–207. The remaining
+Current validation is recorded in increments 15–210. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–207 has its own local commit; none was pushed.
+Each of increments 15–210 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1486,3 +1501,10 @@ build, set-buffer-name, command-list-print, and format-quote CLI checks,
 changed-file rustfmt, Python syntax checks, and `git diff --check` passed on
 main. All three CLI checks matched the pinned baseline byte for byte. No
 combined sanitizer was run.
+After increments 208–210 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, command-print, terminal-override, and window-copy-vadd CLI checks,
+changed-file rustfmt, Python syntax checks, and `git diff --check` passed on
+main. All three CLI checks matched the pinned baseline byte for byte; the
+window-copy check includes the attached-client `A\0B` first-NUL scenario.
+No combined sanitizer was run.

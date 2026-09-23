@@ -5,7 +5,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::{
     __ctype_tolower_loc, abs, free, llabs, memcmp, memcpy, memmove, memset, regcomp, regexec,
-    regfree, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp, vasprintf,
+    regfree, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::format::{
     format_add, format_add_cb, format_create_defaults, format_expand, format_free, format_get_pane,
@@ -132,7 +132,7 @@ use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_set_active_pane,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf_cstring};
 use std::borrow::Cow;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -814,7 +814,6 @@ pub unsafe extern "C" fn window_copy_vadd(
     };
     let mut old_hsize: u_int = 0;
     let mut old_cy: u_int = 0;
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     old_hsize = (*(*(*data).backing).grid).hsize;
     screen_write_start(&raw mut backing_ctx, backing);
     if (*data).backing_written != 0 {
@@ -825,7 +824,7 @@ pub unsafe extern "C" fn window_copy_vadd(
     }
     old_cy = (*backing).cy;
     if parse != 0 {
-        vasprintf(&raw mut text, fmt, ap);
+        let text = xvasprintf_cstring(fmt, ap);
         input_parse_screen(
             (*data).ictx,
             backing,
@@ -834,10 +833,9 @@ pub unsafe extern "C" fn window_copy_vadd(
                     as unsafe extern "C" fn(*mut screen_write_ctx, *mut tty_ctx) -> (),
             ),
             data as *mut ::core::ffi::c_void,
-            text as *const u_char,
-            strlen(text),
+            text.as_ptr() as *const u_char,
+            text.as_bytes().len(),
         );
-        free(text as *mut ::core::ffi::c_void);
     } else {
         memcpy(
             &raw mut gc as *mut ::core::ffi::c_void,
