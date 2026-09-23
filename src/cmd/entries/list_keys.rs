@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_list_print};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
-use crate::src::ffi::libc::{free, memcpy};
+use crate::src::ffi::libc::free;
 use crate::src::format::{format_add, format_create, format_defaults, format_expand, format_free};
 use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat};
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
@@ -77,7 +77,6 @@ use crate::src::sort::{
 use crate::src::status::status_message_set;
 use crate::src::tmux::global_s_options;
 use crate::src::utf8::utf8_cstrwidth;
-use crate::src::xmalloc::xreallocarray;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -168,49 +167,25 @@ unsafe extern "C" fn cmd_list_keys_get_table_width(
     }
     return tablewidth;
 }
-unsafe extern "C" fn cmd_list_keys_get_root_and_prefix(
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut key_binding {
-    let mut tables: [*const ::core::ffi::c_char; 2] = [
+unsafe fn cmd_list_keys_get_root_and_prefix(
+    sort_crit: *mut sort_criteria,
+) -> Vec<*mut key_binding> {
+    let tables: [*const ::core::ffi::c_char; 2] = [
         b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
         b"root\0" as *const u8 as *const ::core::ffi::c_char,
     ];
-    let mut t: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut lt: *mut *mut key_binding = ::core::ptr::null_mut::<*mut key_binding>();
-    let mut i: u_int = 0;
-    let mut ltsz: u_int = 0;
-    let mut len: u_int = 0 as u_int;
-    let mut offset: u_int = 0 as u_int;
-    static mut l: *mut *mut key_binding =
-        ::core::ptr::null::<*mut key_binding>() as *mut *mut key_binding;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[*const ::core::ffi::c_char; 2]>() as usize)
-            .wrapping_div(::core::mem::size_of::<*const ::core::ffi::c_char>() as usize)
-    {
-        t = key_bindings_get_table(tables[i as usize], 0 as ::core::ffi::c_int);
-        lt = sort_get_key_bindings_table(t, &raw mut ltsz, sort_crit);
-        len = len.wrapping_add(ltsz);
-        if lsz <= len {
-            lsz = len.wrapping_add(100 as u_int);
-            l = xreallocarray(
-                l as *mut ::core::ffi::c_void,
-                lsz as size_t,
-                ::core::mem::size_of::<*mut key_binding>() as size_t,
-            ) as *mut *mut key_binding;
+    let mut bindings = Vec::new();
+    for name in tables {
+        let table = key_bindings_get_table(name, 0);
+        let mut count = 0;
+        let sorted = sort_get_key_bindings_table(table, &raw mut count, sort_crit);
+        if count != 0 {
+            // The sorter reuses its scratch array, so copy each table before
+            // requesting the next one.
+            bindings.extend_from_slice(std::slice::from_raw_parts(sorted, count as usize));
         }
-        memcpy(
-            l.offset(offset as isize) as *mut ::core::ffi::c_void,
-            lt as *const ::core::ffi::c_void,
-            (ltsz as size_t).wrapping_mul(::core::mem::size_of::<*mut key_binding>() as size_t),
-        );
-        offset = offset.wrapping_add(ltsz);
-        i = i.wrapping_add(1);
     }
-    *n = len;
-    return l;
+    bindings
 }
 unsafe extern "C" fn cmd_list_keys_filter_key_list(
     mut filter_notes: ::core::ffi::c_int,
@@ -329,6 +304,7 @@ unsafe extern "C" fn cmd_list_keys_exec(
         reversed: 0,
         order_seq: ::core::ptr::null_mut::<sort_order>(),
     };
+    let mut root_and_prefix = None;
     keystr = args_string(args, 0 as u_int);
     if !keystr.is_null() {
         only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
@@ -376,7 +352,14 @@ unsafe extern "C" fn cmd_list_keys_exec(
     if !table.is_null() {
         l = sort_get_key_bindings_table(table, &raw mut n, &raw mut sort_crit);
     } else if notes_only != 0 {
-        l = cmd_list_keys_get_root_and_prefix(&raw mut n, &raw mut sort_crit);
+        root_and_prefix = Some(cmd_list_keys_get_root_and_prefix(&raw mut sort_crit));
+        let bindings = root_and_prefix.as_mut().unwrap();
+        n = bindings.len() as u_int;
+        l = if bindings.is_empty() {
+            ::core::ptr::null_mut()
+        } else {
+            bindings.as_mut_ptr()
+        };
     } else {
         l = sort_get_key_bindings(&raw mut n, &raw mut sort_crit);
     }
@@ -462,5 +445,6 @@ unsafe extern "C" fn cmd_list_keys_exec(
         i = i.wrapping_add(1);
     }
     format_free(ft);
+    drop(root_and_prefix);
     return CMD_RETURN_NORMAL;
 }

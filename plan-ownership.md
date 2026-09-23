@@ -1640,6 +1640,31 @@ legacy callers safe.
   preexisting import-order differences outside this increment. No sanitizer
   run was performed.
 
+### Increment 90 — list-keys prefix/root merge storage (2026-09-22)
+
+- Private `cmd_list_keys_get_root_and_prefix` now returns a Vec of binding
+  pointers instead of reusing a process-static `xreallocarray` buffer with a
+  manual capacity. It copies each table's sorted scratch output before
+  asking the sorter for the next table, preserving prefix-then-root order.
+  Its sole caller, `cmd_list_keys_exec`, retains the Vec through filtering,
+  width and repeat scans, formatting, and output, then drops it after
+  `format_free`. An empty Vec supplies a null compatibility pointer when the
+  count is zero. The `-T` and all-key paths retain their existing sort
+  buffers.
+- A live private-server test covers both tables, repeated listing, key
+  filtering, `-T`, and one empty table. Focused test, binary check,
+  changed-file rustfmt, and `git diff --check` passed in the isolated
+  worktree. Listing with both prefix and root tables empty exits the server
+  on both the unmodified baseline and migrated binary; that existing failure
+  is outside this owner change and is not covered by the new test.
+  `key_bindings_get_table` can return null after a table is removed, while
+  `sort_get_key_bindings_table` dereferences its table argument; this is the
+  likely cause and needs a separate behavior fix. After all three owner
+  increments, the combined main branch passed `cargo test --workspace
+  --quiet`, the binary build, formatting checks for changed files other
+  than `src/format.rs`, and `git diff --check`. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1675,9 +1700,9 @@ non-string value.
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–89. The remaining
+Current validation is recorded in increments 15–90. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–89 has its own local commit; none was pushed.
+Each of increments 15–90 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
