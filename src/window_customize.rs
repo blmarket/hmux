@@ -3470,20 +3470,13 @@ unsafe extern "C" fn window_customize_add_option(
 ) {
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut what: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    what = if type_0 as ::core::ffi::c_uint
+    let prompt = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        b"hook\0" as *const u8 as *const ::core::ffi::c_char
+        c"New user hook: "
     } else {
-        b"option\0" as *const u8 as *const ::core::ffi::c_char
+        c"New user option: "
     };
-    xasprintf(
-        &raw mut prompt,
-        b"New user %s: \0" as *const u8 as *const ::core::ffi::c_char,
-        what,
-    );
     new_item = window_customize_new_item();
     (*new_item).data = data as *mut window_customize_modedata;
     (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
@@ -3494,7 +3487,7 @@ unsafe extern "C" fn window_customize_add_option(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        prompt,
+        prompt.as_ptr(),
         b"@\0" as *const u8 as *const ::core::ffi::c_char,
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
@@ -3513,7 +3506,6 @@ unsafe extern "C" fn window_customize_add_option(
         ),
         new_item as *mut ::core::ffi::c_void,
     );
-    free(prompt as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_customize_add_environment_callback(
     mut c: *mut client,

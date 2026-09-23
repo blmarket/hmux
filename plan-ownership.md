@@ -853,6 +853,18 @@ legacy callers safe.
   prompts with the pinned baseline, including UTF-8 session/name text and
   an empty global value. No sanitizer was run.
 
+### Increment 187 — customize new-user prompt scratch (2026-09-22)
+
+- `window_customize_add_option` now borrows one of two static `CStr` prompt
+  labels, `New user option: ` or `New user hook: `, through
+  `mode_tree_set_prompt`. Removed the local `xasprintf` allocation and
+  matching `free`; `prompt_create` copies either label synchronously. The
+  option/hook decision and default `@` input are unchanged.
+- Library/binary build, focused window_customize tests, changed-file
+  rustfmt, and `git diff --check` passed. The new private attached-client
+  customize-mode CLI check displayed both prompts and matched the pinned
+  baseline binary. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -864,9 +876,10 @@ passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
 1. Customize-mode prompt labels still have local `xasprintf`/free pairs
-   around `mode_tree_set_prompt`. `window_customize_add_user`'s `New user
-   ...` prompt is the next small owner candidate; the option-change and
-   reset/unset prompts follow after their branch-specific bytes are audited.
+   around `mode_tree_set_prompt`. The option-change prompt's scalar and
+   array branches, and the array-key prompt, are the next local owner
+   candidates. Reset/unset prompts follow after their branch-specific bytes
+   are audited.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
