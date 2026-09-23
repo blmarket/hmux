@@ -82,8 +82,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::xstrdup;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -324,6 +323,18 @@ unsafe extern "C" fn cmd_show_options_exec(
         }
     };
 }
+/// `options_to_string` still returns a malloc-owned C string for its other
+/// callers. Keep only its first-NUL view and release that allocation here.
+unsafe fn cmd_show_options_value(
+    o: *mut options_entry,
+    array_key: *const ::core::ffi::c_char,
+) -> CString {
+    let raw = options_to_string(o, array_key, 0);
+    let value = CStr::from_ptr(raw).to_owned();
+    free(raw.cast());
+    value
+}
+
 unsafe extern "C" fn cmd_show_options_print(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
@@ -336,7 +347,7 @@ unsafe extern "C" fn cmd_show_options_print(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut name: *const ::core::ffi::c_char = options_name(o);
     let mut template: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let value: CString;
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tv: timeval = timeval {
         tv_sec: 0 as __time_t,
@@ -349,7 +360,7 @@ unsafe extern "C" fn cmd_show_options_print(
     let mut has_value: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut oe: *const options_table_entry = options_table_entry(o);
     if !array_key.is_null() {
-        value = options_to_string(o, array_key, 0 as ::core::ffi::c_int);
+        value = cmd_show_options_value(o, array_key);
     } else if options_is_array(o) != 0 {
         a = options_array_first(o);
         if !a.is_null() {
@@ -363,14 +374,10 @@ unsafe extern "C" fn cmd_show_options_print(
         if template.is_null() && args_has(args, 'v' as i32 as u_char) != 0 {
             return;
         }
-        value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        value = CString::default();
         has_value = 0 as ::core::ffi::c_int;
     } else {
-        value = options_to_string(
-            o,
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            0 as ::core::ffi::c_int,
-        );
+        value = cmd_show_options_value(o, ::core::ptr::null());
     }
     if template.is_null() {
         template = SHOW_OPTIONS_TEMPLATE.as_ptr();
@@ -391,7 +398,7 @@ unsafe extern "C" fn cmd_show_options_print(
         ft,
         b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        value,
+        value.as_ptr(),
     );
     format_add(
         ft,
@@ -486,7 +493,7 @@ unsafe extern "C" fn cmd_show_options_print(
         line,
     );
     free(line as *mut ::core::ffi::c_void);
-    free(value as *mut ::core::ffi::c_void);
+    drop(value);
 }
 unsafe extern "C" fn cmd_show_hooks_print_monitor(
     mut self_0: *mut cmd,

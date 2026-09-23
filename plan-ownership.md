@@ -1570,6 +1570,21 @@ legacy callers safe.
   `git diff --check` passed in the isolated worktree. No sanitizer run was
   performed.
 
+### Increment 85 — show-options local value (2026-09-22)
+
+- `cmd_show_options_print` now keeps its value as a local `CString`. Empty
+  arrays use `CString::default()` instead of `xstrdup("")`; scalar and keyed
+  array values copy the first-NUL view returned by C-owned
+  `options_to_string`, then free that foreign allocation at the boundary.
+  `format_add` copies the borrowed value synchronously, and the local owner
+  drops after `free(line)` at the former value-free point. Recursive array
+  traversal and the empty-array `-v` return still occur before value creation.
+- A new live test covers string and number scalar values, empty arrays under
+  default, `-v`, and custom templates, recursive two-item arrays, and a
+  keyed item. The focused test, binary build, changed-file rustfmt, and
+  `git diff --check` passed in the isolated worktree. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1589,10 +1604,12 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. Inspect `cmd_show_options_print`'s local value and `cmd_save_buffer_exec`'s
-   path for another small string boundary. Remaining `xstrndup` callers
-   return or transfer C-owned strings; `window_copy` regex buffers grow
-   through a shared C API.
+2. `cmd_save_buffer_exec`'s `file_write` call copies the path synchronously,
+   but changing only its local expanded path to `CString` would add a copy
+   solely to replace the C-owned `format_single_from_target` result. Revisit
+   with the format expansion producer. Remaining `xstrndup` callers return
+   or transfer C-owned strings; `window_copy` regex buffers grow through a
+   shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes. The
    unused `window_switch_itemdata.tag` can be removed as cleanup, but doing
@@ -1601,9 +1618,9 @@ non-string value.
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–84. The remaining
+Current validation is recorded in increments 15–85. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–84 has its own local commit; none was pushed.
+Each of increments 15–85 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
