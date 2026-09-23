@@ -12,7 +12,7 @@ pub use crate::src::shared::stdio::{
 };
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::xmalloc::xasprintf;
+use std::ffi::{CStr, CString};
 
 pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
@@ -34,19 +34,21 @@ pub unsafe extern "C" fn log_get_level() -> ::core::ffi::c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn log_open(mut name: *const ::core::ffi::c_char) {
-    let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if log_level == 0 as ::core::ffi::c_int {
         return;
     }
     log_close();
-    xasprintf(
-        &raw mut path,
-        b"tmux-%s-%ld.log\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
-        getpid() as ::core::ffi::c_long,
-    );
-    log_file = fopen(path, b"a\0" as *const u8 as *const ::core::ffi::c_char) as *mut FILE;
-    free(path as *mut ::core::ffi::c_void);
+    let pid = (getpid() as ::core::ffi::c_long).to_string();
+    let mut path = b"tmux-".to_vec();
+    path.extend_from_slice(CStr::from_ptr(name).to_bytes());
+    path.push(b'-');
+    path.extend_from_slice(pid.as_bytes());
+    path.extend_from_slice(b".log");
+    let path = CString::new(path).expect("log filename components contain no interior NUL");
+    log_file = fopen(
+        path.as_ptr(),
+        b"a\0" as *const u8 as *const ::core::ffi::c_char,
+    ) as *mut FILE;
     if log_file.is_null() {
         return;
     }

@@ -303,6 +303,17 @@ legacy callers safe.
   same-UID command messages and message retention; a peer with a different
   UID was not available for an attached-client test. No sanitizer was run.
 
+### Increment 146 — debug log filename (2026-09-22)
+
+- `log_open` now owns `tmux-{name}-{pid}.log` in a local, byte-preserving
+  `CString` through synchronous `fopen`. Removed the local `xasprintf`
+  allocation/free pair. The internal `proc_start` callers supply the fixed
+  `server` and `client` names; `log_toggle` uses the process name copied
+  from that input. The file and its `FILE *` lifecycle are unchanged.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. A detached `-vv` server created a nonempty
+  `tmux-server-<pid>.log` and shut down successfully. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -337,9 +348,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–145. The remaining
+Current validation is recorded in increments 15–146. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–145 has its own local commit; none was pushed.
+Each of increments 15–146 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
