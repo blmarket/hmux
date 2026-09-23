@@ -2538,6 +2538,21 @@ legacy callers safe.
   files retain the pre-existing `monitor.rs` rustfmt import-order difference.
   No sanitizer was run.
 
+### Increment 305 — boxed monitor pane leaves (2026-09-23)
+
+- `monitor_check_pane` and `monitor_check_all_panes_one` now box their zeroed
+  `monitor_pane` leaves. Both `monitor_free_item` and
+  `monitor_sweep_all_panes` still remove each index entry and free its `last`
+  string before consuming the `Box`. Updated the existing storage-test pane
+  fixture to match the production allocation contract. The semantic
+  `(pane id, winlink index)` map continues to borrow stable leaf pointers.
+- Added `scripts/monitor_leaf_cli_checks.py`: session-scoped pane and window
+  monitors run through timer checks, session-name changes, leaf creation,
+  removal, and a subsequent generation. It passed on candidate and pinned
+  pre-migration binaries. Full workspace tests, binary build, Python syntax,
+  and diff checks passed. Changed files retain only the pre-existing
+  `monitor.rs` rustfmt import-order difference. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2548,11 +2563,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `monitor_pane`, then symmetric `monitor_window`, records in `src/monitor.rs`
-   are small leaf owners. Each has two constructors and both sweep/final
-   cleanup paths. Their storage-test fixtures currently use libc `calloc` and
-   must follow their production allocator contract. A session-scoped monitor
-   hook plus `#{hook_fire_count}` can cover actual timer checks and sweeps.
+1. Symmetric `monitor_window` records in `src/monitor.rs` are the next small
+   leaf owners. They have two constructors and both sweep/final cleanup paths;
+   their storage-test fixtures still use libc `calloc`. The session-scoped
+   monitor leaf CLI covers timer checks and a window generation sweep.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias

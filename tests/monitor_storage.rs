@@ -10,8 +10,7 @@ fn byte_names_composite_keys_and_nested_cleanup() {
             (*item).name = libc::strdup(name.as_ptr());
             monitor_items_insert(&mut (*set).items, item);
             for (id, idx) in [(2, 1), (1, 9), (1, 0), (u32::MAX, 0)] {
-                let pane =
-                    libc::calloc(1, std::mem::size_of::<monitor_pane>()) as *mut monitor_pane;
+                let pane = Box::into_raw(Box::new(std::mem::zeroed::<monitor_pane>()));
                 (*pane).pane = id;
                 (*pane).idx = idx;
                 monitor_panes_insert(&mut (*item).panes, pane);

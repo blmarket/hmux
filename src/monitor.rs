@@ -168,7 +168,7 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
     } {
         monitor_panes_remove(&raw mut (*me).panes, mp);
         free((*mp).last as *mut ::core::ffi::c_void);
-        free(mp as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(mp));
         mp = mp1;
     }
     mw = monitor_windows_minmax(&raw mut (*me).windows, RB_NEGINF);
@@ -309,10 +309,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
             find.idx = (*wl).idx as u_int;
             mp = monitor_panes_find(&raw mut (*me).panes, &raw mut find);
             if mp.is_null() {
-                mp = xcalloc(
-                    1 as size_t,
-                    ::core::mem::size_of::<monitor_pane>() as size_t,
-                ) as *mut monitor_pane;
+                mp = Box::into_raw(Box::new(::core::mem::zeroed::<monitor_pane>()));
                 (*mp).pane = (*wp).id;
                 (*mp).idx = (*wl).idx as u_int;
                 monitor_panes_insert(&raw mut (*me).panes, mp);
@@ -346,10 +343,7 @@ unsafe extern "C" fn monitor_check_all_panes_one(
     find.idx = (*wl).idx as u_int;
     mp = monitor_panes_find(&raw mut (*me).panes, &raw mut find);
     if mp.is_null() {
-        mp = xcalloc(
-            1 as size_t,
-            ::core::mem::size_of::<monitor_pane>() as size_t,
-        ) as *mut monitor_pane;
+        mp = Box::into_raw(Box::new(::core::mem::zeroed::<monitor_pane>()));
         (*mp).pane = (*wp).id;
         (*mp).idx = (*wl).idx as u_int;
         monitor_panes_insert(&raw mut (*me).panes, mp);
@@ -368,7 +362,7 @@ unsafe extern "C" fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut gene
         if !((*mp).generation == generation) {
             monitor_panes_remove(&raw mut (*me).panes, mp);
             free((*mp).last as *mut ::core::ffi::c_void);
-            free(mp as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(mp));
         }
         mp = mp1;
     }
