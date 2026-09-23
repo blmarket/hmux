@@ -926,6 +926,19 @@ legacy callers safe.
   `git diff --check` passed in the isolated worktree. No sanitizer run was
   performed.
 
+### Increment 40 — escaped status message scratch (2026-09-22)
+
+- `status_message_escape` now returns a byte-preserving `CString` to its sole
+  caller. `status_message_redraw` borrows that pointer only while `format_add`
+  copies it, removing the scratch `xmalloc` and matching `free`. The client
+  message owner and format-entry ABI remain unchanged.
+- The focused regression checks repeated `#`, an empty string, and non-UTF-8
+  bytes. `cargo test --lib status_message_escape_tests`, the binary build,
+  `scripts/status_message_cli_checks.py`, changed-file rustfmt, and
+  `git diff --check` passed. The CLI exercises status messages but does not
+  directly select the ignore-styles branch; the focused test covers the
+  escape helper. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -940,14 +953,13 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Next inspect `status_message_escape`: its sole caller in
-   `status_message_redraw` frees the returned `#`-escaped scratch string
-   immediately after `format_add` copies it. A local `CString` return should
-   remove that matched allocation/free pair without changing client layout.
-   Then inspect other local format expansion scratch strings.
+2. Inspect `input_reply_clipboard`'s local base64 output allocation/free and
+   `format_add_window_neighbour`'s local formatted key scratch. Both have
+   synchronous C consumers and no apparent retained observer. Then inspect
+   other local format expansion scratch strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–39. The remaining
+Current validation is recorded in increments 15–40. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–39 has its own local commit; none was pushed.
+Each of increments 15–40 has its own local commit; none was pushed.

@@ -30,6 +30,7 @@ use crate::src::style::{
 };
 use crate::src::tmux::global_s_options;
 use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf_cstring};
+use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -509,36 +510,31 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
     );
     return (force != 0 || changed != 0) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn status_message_escape(
-    mut s: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut p: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut n: size_t = 0 as size_t;
-    cp = s;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if *cp as ::core::ffi::c_int == '#' as i32 {
-            n = n.wrapping_add(1);
+unsafe fn status_message_escape(s: *const ::core::ffi::c_char) -> CString {
+    let source = CStr::from_ptr(s).to_bytes();
+    let extra = source.iter().filter(|&&byte| byte == b'#').count();
+    let mut escaped = Vec::with_capacity(source.len() + extra);
+    for &byte in source {
+        if byte == b'#' {
+            escaped.push(b'#');
         }
-        cp = cp.offset(1);
+        escaped.push(byte);
     }
-    out = xmalloc(strlen(s).wrapping_add(n).wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
-    p = out;
-    cp = s;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if *cp as ::core::ffi::c_int == '#' as i32 {
-            let fresh0 = p;
-            p = p.offset(1);
-            *fresh0 = '#' as i32 as ::core::ffi::c_char;
+    CString::new(escaped).expect("C string has no interior NUL")
+}
+
+#[cfg(test)]
+mod status_message_escape_tests {
+    use super::status_message_escape;
+
+    #[test]
+    fn doubles_hash_without_changing_other_bytes() {
+        unsafe {
+            let escaped = status_message_escape(b"#\xff##tail\0".as_ptr().cast());
+            assert_eq!(escaped.as_bytes(), b"##\xff####tail");
+            assert!(status_message_escape(c"".as_ptr()).as_bytes().is_empty());
         }
-        let fresh1 = p;
-        p = p.offset(1);
-        *fresh1 = *cp;
-        cp = cp.offset(1);
     }
-    *p = '\0' as i32 as ::core::ffi::c_char;
-    return out;
 }
 #[no_mangle]
 pub unsafe extern "C" fn status_message_set(
@@ -760,7 +756,6 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut msgfmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*c).tty.sx == 0 as u_int || (*c).tty.sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -793,14 +788,13 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
         ft,
     );
     if (*c).message_ignore_styles != 0 {
-        msg = status_message_escape((*c).message_string);
+        let msg = status_message_escape((*c).message_string);
         format_add(
             ft,
             b"message\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg,
+            msg.as_ptr(),
         );
-        free(msg as *mut ::core::ffi::c_void);
     } else {
         format_add(
             ft,
