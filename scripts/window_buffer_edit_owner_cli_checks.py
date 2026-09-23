@@ -25,11 +25,15 @@ def exercise(binary_path):
         editor = directory / "editor.sh"
         ready = directory / "ready"
         release = directory / "release"
+        complete_path = directory / "complete-path"
+        cancel_path = directory / "cancel-path"
         editor.write_text(
             "#!/bin/sh\n"
             "if [ \"$1\" = complete ]; then\n"
+            f"  printf '%s' \"$2\" > '{complete_path}'\n"
             "  printf '\\ncompleted' >> \"$2\"\n"
             "else\n"
+            f"  printf '%s' \"$2\" > '{cancel_path}'\n"
             f"  touch '{ready}'\n"
             f"  while [ ! -e '{release}' ]; do sleep 0.05; done\n"
             "  printf '\\nignored' >> \"$2\"\n"
@@ -74,6 +78,11 @@ def exercise(binary_path):
                 "editor completion",
             )
             completed = run("show-buffer", "-b", "complete")
+            wait_for(
+                lambda: complete_path.exists()
+                and not pathlib.Path(complete_path.read_text()).exists(),
+                "completed editor temporary file cleanup",
+            )
 
             run("set-buffer", "-b", "cancel", "unchanged")
             run("set-option", "-g", "editor", f"{editor} cancel")
@@ -92,6 +101,11 @@ def exercise(binary_path):
             )
             canceled = run("show-buffer", "-b", "cancel")
             assert canceled == b"unchanged", canceled
+            wait_for(
+                lambda: cancel_path.exists()
+                and not pathlib.Path(cancel_path.read_text()).exists(),
+                "canceled editor temporary file cleanup",
+            )
             return completed, canceled
         finally:
             release.touch()

@@ -46,7 +46,7 @@ use crate::src::window::{
     winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -127,6 +127,32 @@ use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 pub type off_t = __off_t;
 
 pub type uintmax_t = ::libc::uintmax_t;
+
+// The C-facing state is the prefix because panes and editor callers retain
+// its pointer until completion. The path allocation belongs to this box.
+#[repr(C)]
+struct SpawnEditorOwner {
+    state: spawn_editor_state,
+    path: CString,
+}
+
+impl SpawnEditorOwner {
+    fn new(path: CString, cb: spawn_finish_edit_cb, arg: *mut ::core::ffi::c_void) -> Box<Self> {
+        Box::new(Self {
+            state: spawn_editor_state {
+                path: path.as_ptr() as *mut ::core::ffi::c_char,
+                pid: 0,
+                cb,
+                arg,
+            },
+            path,
+        })
+    }
+
+    fn into_state_ptr(self: Box<Self>) -> *mut spawn_editor_state {
+        Box::into_raw(self) as *mut spawn_editor_state
+    }
+}
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -977,10 +1003,9 @@ pub unsafe extern "C" fn spawn_pane(
     }
     return new_wp;
 }
-unsafe extern "C" fn spawn_editor_free(mut es: *mut spawn_editor_state) {
-    unlink((*es).path);
-    free((*es).path as *mut ::core::ffi::c_void);
-    free(es as *mut ::core::ffi::c_void);
+unsafe extern "C" fn spawn_editor_free(es: *mut spawn_editor_state) {
+    let owner = Box::from_raw(es as *mut SpawnEditorOwner);
+    unlink(owner.path.as_ptr());
 }
 #[no_mangle]
 pub unsafe extern "C" fn spawn_cancel_editor(mut es: *mut spawn_editor_state) {
@@ -1151,13 +1176,7 @@ pub unsafe extern "C" fn spawn_editor(
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     fclose(f);
-    es = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<spawn_editor_state>() as size_t,
-    ) as *mut spawn_editor_state;
-    (*es).path = xstrdup(&raw mut path as *mut ::core::ffi::c_char);
-    (*es).cb = cb;
-    (*es).arg = arg;
+    es = SpawnEditorOwner::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb, arg).into_state_ptr();
     lg.sx = (*w).sx.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
     lg.sy = (*w).sy.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
     lg.xoff = (*w)
@@ -1343,12 +1362,13 @@ mod tests {
                 assert_eq!(fs::read(path.to_str().unwrap()).unwrap(), original);
 
                 fs::write(path.to_str().unwrap(), b"edited by child").unwrap();
-                let state = xcalloc(1, ::core::mem::size_of::<spawn_editor_state>() as size_t)
-                    as *mut spawn_editor_state;
-                (*state).path = xstrdup(path.as_ptr());
                 let result = Box::into_raw(Box::new(Vec::<u8>::new()));
-                (*state).cb = Some(capture_editor_result);
-                (*state).arg = result as *mut ::core::ffi::c_void;
+                let state = SpawnEditorOwner::new(
+                    path.to_owned(),
+                    Some(capture_editor_result),
+                    result as *mut ::core::ffi::c_void,
+                )
+                .into_state_ptr();
                 let wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
                 (*wp).editor = state;
                 (*wp).flags = PANE_STATUSREADY;

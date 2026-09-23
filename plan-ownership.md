@@ -2044,6 +2044,20 @@ legacy callers safe.
   waiters, lock handoff/unlock, and server flush of waiters and lockers.
   No sanitizer was run.
 
+### Increment 271 — spawned editor state and path (2026-09-23)
+
+- `SpawnEditorOwner` now holds the stable C-layout `spawn_editor_state` prefix
+  in a `Box` and owns its temporary path as `CString`. Panes and editor mode
+  data retain the existing borrowed state pointer. Editor completion, canceled
+  callback, and spawn failure unlink the path before dropping the owner; the
+  callback and PID ABI remain unchanged.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and attached-client
+  `scripts/window_buffer_edit_owner_cli_checks.py` and
+  `scripts/spawn_editor_command_cli_checks.py` passed. The pinned baseline
+  comparison covered normal edit, mode cancellation while the editor was
+  running, and temporary-file removal after both paths. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
