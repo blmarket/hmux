@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{calloc, free, memcpy, memset, strlen};
+use crate::src::ffi::libc::{free, memcpy, memset, strlen};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{
     grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
@@ -367,15 +367,15 @@ unsafe extern "C" fn screen_write_should_draw_lines(
                     y = 0 as u_int;
                     ny = sy;
                 }
-                free(bs as *mut ::core::ffi::c_void);
-                (*wp).sync_dirty = calloc(
-                    (sy.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as size_t,
-                    ::core::mem::size_of::<bitstr_t>() as size_t,
-                ) as *mut bitstr_t;
-                bs = (*wp).sync_dirty;
-                if bs.is_null() {
+                screen_write_clear_dirty(wp);
+                let bytes = (sy.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize;
+                let mut dirty = Vec::<bitstr_t>::new();
+                if dirty.try_reserve_exact(bytes).is_err() {
                     fatal(b"bit_alloc failed\0" as *const u8 as *const ::core::ffi::c_char);
                 }
+                dirty.resize(bytes, 0);
+                (*wp).sync_dirty = Box::into_raw(dirty.into_boxed_slice()) as *mut bitstr_t;
+                bs = (*wp).sync_dirty;
                 (*wp).sync_dirty_size = sy;
             }
             let mut _name: *mut bitstr_t = bs;
@@ -1985,7 +1985,10 @@ unsafe extern "C" fn screen_write_flush_dirty(mut wp: *mut window_pane) {
 #[no_mangle]
 pub unsafe extern "C" fn screen_write_clear_dirty(mut wp: *mut window_pane) {
     if !wp.is_null() && !(*wp).sync_dirty.is_null() {
-        free((*wp).sync_dirty as *mut ::core::ffi::c_void);
+        let bytes =
+            ((*wp).sync_dirty_size.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize;
+        let dirty = ::core::ptr::slice_from_raw_parts_mut((*wp).sync_dirty, bytes);
+        drop(Box::from_raw(dirty));
         (*wp).sync_dirty = ::core::ptr::null_mut::<bitstr_t>();
         (*wp).sync_dirty_size = 0 as u_int;
     }

@@ -2837,6 +2837,23 @@ legacy callers safe.
   code follows rustfmt; `src/screen_write.rs` retains its pre-existing
   import-layout differences. No sanitizer was run.
 
+### Increment 326 — boxed synchronized-output dirty bitmap (2026-09-23)
+
+- `screen_write_should_draw_lines` now allocates the pane's dirty bitmap as
+  a boxed byte slice. On size mismatch it releases the old slice through
+  `screen_write_clear_dirty` using the old `sync_dirty_size` row count, then
+  allocates the new byte count and marks all rows dirty as before.
+  `screen_write_clear_dirty` also handles flush, redraw, and pane teardown,
+  clearing the pointer and row count after consuming the Box. The raw
+  pointer remains a borrowed compatibility view for bit operations.
+- Added `scripts/sync_dirty_owner_cli_checks.py` with an attached PTY client.
+  It confirms synchronized pane output stays off the terminal until sync
+  ends, then repeats after a window height change. It passed on candidate
+  and pinned baseline. Full workspace tests, binary build, screen write-line
+  comparison, and diff checks passed. Changed code follows rustfmt;
+  `src/screen_write.rs` retains its pre-existing import-layout differences.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2847,12 +2864,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_pane.sync_dirty` in `src/screen_write.rs` is a synchronized-output
-   bitmap with a recorded size. Audit the initial allocation, resize
-   replacement, and `screen_write_clear_dirty` release together before
-   using a boxed slice. `redraw_scene.lines` in `src/screen_redraw.rs` is
-   another array with an immutable row count and intrusive tails that must
-   be initialized only after allocation reaches its final address.
+1. `redraw_scene.lines` in `src/screen_redraw.rs` has one constructor and
+   one destructor with an immutable `scene.sy` row count. Each row has an
+   intrusive span-list tail pointing into itself; box the slice before
+   initializing those tails. Attached redraw after resize/split/close
+   should cover cache invalidation and rebuild.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
