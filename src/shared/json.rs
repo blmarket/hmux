@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by the parser until `json_destroy_node` recursively consumes it.
+/// Parent, object-index, and array links borrow stable node addresses.
 pub struct json_node {
     pub type_0: json_node_type,
     pub key: *mut ::core::ffi::c_char,
@@ -53,7 +55,7 @@ pub struct json_fields {
     pub entries: *mut json_fields_storage,
 }
 
-/// Rust-owned ordering storage for an object's C-allocated field nodes.
+/// Rust-owned ordering storage for an object's Box-owned field nodes.
 #[derive(Default)]
 pub struct json_fields_storage {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut json_node>,

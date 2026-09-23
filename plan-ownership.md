@@ -2688,6 +2688,20 @@ legacy callers safe.
   `src/cmd/queue.rs` retains its pre-existing import-order difference. No
   sanitizer was run.
 
+### Increment 316 — boxed JSON parser nodes (2026-09-23)
+
+- `json_create_node` now boxes each zeroed `json_node` before initializing
+  the array tail link into that stable address. `json_destroy_node` still
+  releases string values and keys, removes object children from the index,
+  unlinks array children, and recursively destroys them before consuming the
+  node Box. Parent pointers, object lookups, and array iteration remain
+  borrowed aliases; object index storage retains its separate Box owner.
+- Added `scripts/json_node_owner_cli_checks.py` for nested arrays/objects,
+  malformed partial-array cleanup, and a subsequent successful parse through
+  `display-message -j`. It passed on the candidate and pinned baseline.
+  Full workspace tests, binary build, layout CLI on both binaries, rustfmt,
+  and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2698,11 +2712,16 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `json_node` in `src/json.rs` has one allocator, `json_create_node`, and
-   one recursive destructor, `json_destroy_node`. Audit the object and array
-   child links, error cleanup, and any borrowed node pointers before moving
-   this recursive owner. `args_value` has several constructors and external
-   fixtures, so audit its scalar/array ownership together before selection.
+1. `control_window` in `src/control.rs` has one allocation in
+   `control_set_window_size` and two final release paths,
+   `control_clear_window_size` and `control_stop`. It is a leaf record keyed
+   by an existing window ID; audit the live control-client set/clear protocol
+   before migration. `cmd_load_buffer_data` in
+   `src/cmd/entries/load_buffer.rs` has one constructor and a terminal
+   callback destructor, but its existing attached-client reference handling
+   on error/empty input needs separate review. `args_value` has several
+   constructors and external fixtures, so audit its scalar/array ownership
+   together before selection.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache
    design; window-copy backing remains larger.
    `window_copy_mode_data.backing` is larger:

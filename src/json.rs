@@ -16,7 +16,7 @@ pub use crate::src::shared::json::{
     json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xmemdup, xstrdup, xstrndup};
+use crate::src::xmalloc::{xasprintf, xmalloc, xmemdup, xstrdup, xstrndup};
 use std::ffi::CStr;
 use std::ffi::CString;
 
@@ -627,7 +627,7 @@ unsafe extern "C" fn json_create_node(
     mut val: *mut ::core::ffi::c_void,
 ) -> *mut json_node {
     let mut node: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    node = xcalloc(1 as size_t, ::core::mem::size_of::<json_node>() as size_t) as *mut json_node;
+    node = Box::into_raw(Box::new(::core::mem::zeroed::<json_node>()));
     (*node).parent = parent;
     if !key.is_null() {
         (*node).key = xstrdup(key);
@@ -692,7 +692,7 @@ pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
     if !(*node).key.is_null() {
         free((*node).key as *mut ::core::ffi::c_void);
     }
-    free(node as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(node));
 }
 unsafe extern "C" fn json_assign_value(
     mut node: *mut json_node,
