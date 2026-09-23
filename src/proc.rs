@@ -6,7 +6,7 @@ use crate::src::compat::imsg::{
 use crate::src::compat::setproctitle::setproctitle;
 pub use crate::src::ffi::libc::utsname;
 use crate::src::ffi::libc::{
-    close, daemon, fork, free, getpid, memset, sigaction, sigemptyset, socketpair, uname,
+    close, daemon, fork, getpid, memset, sigaction, sigemptyset, socketpair, uname,
 };
 use crate::src::ffi::utf8proc::utf8proc_version;
 use crate::src::log::{fatal, log_debug, log_open, log_toggle};
@@ -505,7 +505,7 @@ pub unsafe extern "C" fn proc_add_peer(
     mut arg: *mut ::core::ffi::c_void,
 ) -> *mut tmuxpeer {
     let mut peer: *mut tmuxpeer = ::core::ptr::null_mut::<tmuxpeer>();
-    peer = xcalloc(1 as size_t, ::core::mem::size_of::<tmuxpeer>() as size_t) as *mut tmuxpeer;
+    peer = Box::into_raw(Box::new(::core::mem::zeroed::<tmuxpeer>()));
     (*peer).parent = tp;
     (*peer).dispatchcb = dispatchcb;
     (*peer).arg = arg;
@@ -559,7 +559,7 @@ pub unsafe extern "C" fn proc_remove_peer(mut peer: *mut tmuxpeer) {
     event_del(&raw mut (*peer).event);
     imsgbuf_clear(&raw mut (*peer).ibuf);
     close((*peer).ibuf.fd);
-    free(peer as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(peer));
 }
 #[no_mangle]
 pub unsafe extern "C" fn proc_kill_peer(mut peer: *mut tmuxpeer) {

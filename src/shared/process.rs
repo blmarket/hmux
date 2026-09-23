@@ -4,8 +4,8 @@ use super::abi::{gid_t, uid_t};
 use super::event::event;
 use super::message::{ibuf, imsg, imsgbuf};
 
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Owned by the parent process's peer list until `proc_remove_peer`.
 pub struct tmuxpeer {
     pub parent: *mut tmuxproc,
     pub ibuf: imsgbuf,

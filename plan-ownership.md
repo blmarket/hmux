@@ -2998,6 +2998,19 @@ legacy callers safe.
   binary build, changed-file rustfmt, and diff checks passed. No sanitizer
   was run.
 
+### Increment 337 — boxed process peers (2026-09-23)
+
+- `proc_add_peer` now fixes each zeroed `tmuxpeer` in a Box before its event
+  callback, parent list, and client/server observers receive the pointer.
+  `proc_remove_peer` unlinks it and clears its event, message buffer, and fd
+  before consuming the Box. Removed the peer `xcalloc`/`free` pair and its
+  `Copy`/`Clone` derives; `tmuxproc` and its process-long lifetime are
+  unchanged.
+- The control-lines CLI check attached, disconnected, and reattached a
+  client on candidate and pinned baseline, covering peer creation and
+  teardown on both sides. Full workspace tests, binary build, changed-file
+  rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
