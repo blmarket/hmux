@@ -117,13 +117,17 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate the four copy-mode callbacks registered through `format_add_cb`
-in `src/window_copy.rs`, their entry storage, and lazy evaluation together.
-Introduce an owned internal callback registration contract while retaining the
-exported C callback ABI. Remove the in-tree callback result copy/free bridge
-without extending an entry borrow across callback execution; preserve lazy
-caching and replacement behavior. Existing entry-owner and copy-mode checks
-cover these paths, and owned grid result APIs are now available.
+Next, migrate the screen title/path/title-stack lifecycle described below.
+Audit every by-value screen copy and embedded owner construction/destruction
+before adding drop-bearing fields or removing `Copy`. Complete those enabling
+lifecycle changes with the fields and stack in one coherent batch where possible.
+This is the next structural owner boundary after the format callback contracts.
+
+Copy-mode lazy callbacks now return owned results directly into the entry cache.
+Both lookup and enumeration evaluate them without holding an owner borrow across
+callback execution. All four production registrations use `format_add_owned_cb`;
+`format_add_cb` and its C-result copy/free bridge remain only for the exported
+compatibility API and its tests.
 
 All 214 built-in callbacks now use an immutable typed table: 201 return
 `Option<CString>` and 13 return `Option<time_t>`. Lookup and enumeration consume
@@ -1684,6 +1688,27 @@ name error.
   passed on candidate and pinned tmux. No sanitizer ran.
 - Exported user callback registration still accepts libc-owned results; its
   four copy-mode production callbacks and lazy-entry storage are next.
+
+### Batch — owned copy-mode callbacks and lazy format caching (2026-09-23)
+
+- Added owned callback registration to the boxed format-entry owner and migrated
+  all four production registrations: cursor word, line, hyperlink, and search
+  match. Lookup and enumeration share lazy evaluation, move returned CString
+  values into the cache, and cache absent results as empty strings as before.
+  Literal, timestamp, and external-callback replacement clear the owned callback.
+  No Rust owner borrow survives callback execution; reentrant replacement of
+  the same entry keeps the previous result-caching behavior.
+- Copy-mode callbacks consume the owned grid APIs. Removed the internal
+  malloc-return search-match adapter; the format result retains the first-NUL
+  view while byte-oriented selection consumers keep their existing helper.
+  Exported callback registration and C-compatible grid APIs remain available.
+- Serialized workspace tests (399), binary build, rustfmt, and diff checks
+  passed. Added lazy/absent caching and reentrant replacement coverage, including
+  replacement by all entry kinds. Expanded copy-match CLI checks exercise all
+  four callbacks through lookup and enumeration; hyperlink checks cover a
+  nonempty escaped URI in copy mode. Copy-match, hyperlink, selection, backing
+  screen, vadd, and expansion-output CLI checks passed on candidate and pinned
+  tmux. No sanitizer ran.
 
 ## Historical migration index
 

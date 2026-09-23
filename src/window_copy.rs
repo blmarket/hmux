@@ -8,8 +8,8 @@ use crate::src::ffi::libc::{
     regfree, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::format::{
-    format_add, format_add_cb, format_create_defaults, format_expand, format_free, format_get_pane,
-    format_grid_hyperlink, format_grid_line, format_grid_word, format_single,
+    format_add, format_add_owned_cb, format_create_defaults, format_expand, format_free,
+    format_get_pane, format_grid_hyperlink_cstring, format_single,
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{
@@ -1246,43 +1246,35 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
         (*wp).screen,
     );
 }
-unsafe extern "C" fn window_copy_cursor_hyperlink_cb(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = format_get_pane(ft);
     let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid;
-    return format_grid_hyperlink(
+    return format_grid_hyperlink_cstring(
         gd,
         (*data).cx,
         (*gd).hsize.wrapping_add((*data).cy),
         &raw mut (*data).screen,
-    ) as *mut ::core::ffi::c_void;
+    );
 }
-unsafe extern "C" fn window_copy_cursor_word_cb(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn window_copy_cursor_word_cb(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = format_get_pane(ft);
     let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    return window_copy_get_word(wp, (*data).cx, (*data).cy) as *mut ::core::ffi::c_void;
+    return window_copy_get_word_cstring(wp, (*data).cx, (*data).cy);
 }
-unsafe extern "C" fn window_copy_cursor_line_cb(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn window_copy_cursor_line_cb(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = format_get_pane(ft);
     let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    return window_copy_get_line(wp, (*data).cy) as *mut ::core::ffi::c_void;
+    return window_copy_get_line_cstring(wp, (*data).cy);
 }
-unsafe extern "C" fn window_copy_search_match_cb(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn window_copy_search_match_cb(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = format_get_pane(ft);
     let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    return window_copy_match_at_cursor(data) as *mut ::core::ffi::c_void;
+    return window_copy_match_at_cursor_cstring(data);
 }
 unsafe extern "C" fn window_copy_formats(
     mut wme: *mut window_mode_entry,
@@ -1472,37 +1464,13 @@ unsafe extern "C" fn window_copy_formats(
             (*data).searchmore,
         );
     }
-    format_add_cb(
+    format_add_owned_cb(ft, c"search_match", window_copy_search_match_cb);
+    format_add_owned_cb(ft, c"copy_cursor_word", window_copy_cursor_word_cb);
+    format_add_owned_cb(ft, c"copy_cursor_line", window_copy_cursor_line_cb);
+    format_add_owned_cb(
         ft,
-        b"search_match\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(
-            window_copy_search_match_cb
-                as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-        ),
-    );
-    format_add_cb(
-        ft,
-        b"copy_cursor_word\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(
-            window_copy_cursor_word_cb
-                as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-        ),
-    );
-    format_add_cb(
-        ft,
-        b"copy_cursor_line\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(
-            window_copy_cursor_line_cb
-                as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-        ),
-    );
-    format_add_cb(
-        ft,
-        b"copy_cursor_hyperlink\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(
-            window_copy_cursor_hyperlink_cb
-                as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-        ),
+        c"copy_cursor_hyperlink",
+        window_copy_cursor_hyperlink_cb,
     );
 }
 unsafe extern "C" fn window_copy_get_screen(mut wme: *mut window_mode_entry) -> *mut screen {
@@ -7254,18 +7222,14 @@ unsafe fn window_copy_match_at_cursor_bytes(
     }
     Some(output)
 }
-unsafe extern "C" fn window_copy_match_at_cursor(
-    data: *mut window_copy_mode_data,
-) -> *mut ::core::ffi::c_char {
-    let Some(output) = window_copy_match_at_cursor_bytes(data) else {
-        return ::core::ptr::null_mut();
-    };
-    // The format callback owns a libc-freeable C string. Keep all grid bytes,
-    // including interior NUL, before the final terminator.
-    let buf = xmalloc(output.len() + 1) as *mut ::core::ffi::c_char;
-    std::ptr::copy_nonoverlapping(output.as_ptr(), buf.cast::<u8>(), output.len());
-    *buf.add(output.len()) = 0;
-    return buf;
+unsafe fn window_copy_match_at_cursor_cstring(data: *mut window_copy_mode_data) -> Option<CString> {
+    let mut output = window_copy_match_at_cursor_bytes(data)?;
+    // Format strings use the first-NUL view; copy-selection consumers still
+    // use the full byte result from window_copy_match_at_cursor_bytes.
+    if let Some(end) = output.iter().position(|&byte| byte == 0) {
+        output.truncate(end);
+    }
+    Some(CString::new(output).expect("format match contains no NUL"))
 }
 unsafe extern "C" fn window_copy_update_style(
     mut wme: *mut window_mode_entry,

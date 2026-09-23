@@ -313,11 +313,7 @@ pub(super) unsafe fn format_find(
                 if (*fe).time != 0 as time_t {
                     t = (*fe).time;
                 } else {
-                    if (*fe).value.is_null() && (*fe).cb.is_some() {
-                        let value = (*fe).cb.expect("non-null function pointer")(ft)
-                            as *mut ::core::ffi::c_char;
-                        format_entry_cache_callback(fe, value);
-                    }
+                    format_entry_ensure_value(ft, fe);
                     found = Some(CStr::from_ptr((*fe).value).to_owned());
                 }
             } else {

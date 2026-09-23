@@ -212,6 +212,7 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
  * small logging/state helpers used by more than one group.
  */
 mod tree;
+pub(crate) use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
     format_add, format_add_cb, format_add_tv, format_create, format_each, format_free,

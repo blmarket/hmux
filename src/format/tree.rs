@@ -13,6 +13,7 @@ struct FormatEntryOwner {
     entry: format_entry,
     key: CString,
     value: Option<CString>,
+    owned_cb: Option<unsafe fn(*mut format_tree) -> Option<CString>>,
 }
 const _: () = assert!(::core::mem::offset_of!(FormatEntryOwner, entry) == 0);
 
@@ -34,6 +35,7 @@ unsafe fn format_entry_new(key: *const ::core::ffi::c_char) -> *mut format_entry
         entry,
         key,
         value: None,
+        owned_cb: None,
     });
     Box::into_raw(owner) as *mut format_entry
 }
@@ -47,8 +49,8 @@ unsafe fn format_entry_set_value(fe: *mut format_entry, value: Option<CString>) 
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr() as *mut _);
 }
 
-/// Callback results have the existing malloc/free contract. Copy their C
-/// string view into the entry owner, then release the callback allocation.
+/// Legacy C callback results have the exported malloc/free contract. Copy
+/// their string view into the entry owner, then release the C allocation.
 pub(super) unsafe fn format_entry_cache_callback(
     fe: *mut format_entry,
     value: *mut ::core::ffi::c_char,
@@ -61,6 +63,22 @@ pub(super) unsafe fn format_entry_cache_callback(
         owned
     };
     format_entry_set_value(fe, Some(owned));
+}
+
+/// Evaluate without retaining an owner borrow: callbacks may add or replace
+/// entries in this tree. As with the C API, callbacks must not destroy the tree.
+pub(super) unsafe fn format_entry_ensure_value(ft: *mut format_tree, fe: *mut format_entry) {
+    if !(*fe).value.is_null() {
+        return;
+    }
+    let owned_cb = (*(fe as *mut FormatEntryOwner)).owned_cb;
+    if let Some(callback) = owned_cb {
+        let value = callback(ft).unwrap_or_default();
+        format_entry_set_value(fe, Some(value));
+    } else if let Some(callback) = (*fe).cb {
+        let value = callback(ft) as *mut ::core::ffi::c_char;
+        format_entry_cache_callback(fe, value);
+    }
 }
 
 unsafe fn format_entry_tree_key(elm: *mut format_entry) -> Vec<u8> {
@@ -301,11 +319,7 @@ pub unsafe extern "C" fn format_each(
                 arg,
             );
         } else {
-            if (*fe).value.is_null() && (*fe).cb.is_some() {
-                let value =
-                    (*fe).cb.expect("non-null function pointer")(ft) as *mut ::core::ffi::c_char;
-                format_entry_cache_callback(fe, value);
-            }
+            format_entry_ensure_value(ft, fe);
             cb.expect("non-null function pointer")((*fe).key, (*fe).value, arg);
         }
         fe = format_entry_tree_next(&raw mut (*ft).tree, fe);
@@ -327,6 +341,7 @@ pub unsafe extern "C" fn format_add(
         drop(Box::from_raw(fe as *mut FormatEntryOwner));
         fe = fe_now;
     }
+    (*(fe as *mut FormatEntryOwner)).owned_cb = None;
     (*fe).cb = None;
     (*fe).time = 0 as time_t;
     ap = args.clone();
@@ -346,6 +361,7 @@ pub unsafe extern "C" fn format_add_tv(
         drop(Box::from_raw(fe as *mut FormatEntryOwner));
         fe = fe_now;
     }
+    (*(fe as *mut FormatEntryOwner)).owned_cb = None;
     (*fe).cb = None;
     (*fe).time = (*tv).tv_sec as time_t;
     format_entry_set_value(fe, None);
@@ -364,8 +380,29 @@ pub unsafe extern "C" fn format_add_cb(
         drop(Box::from_raw(fe as *mut FormatEntryOwner));
         fe = fe_now;
     }
+    (*(fe as *mut FormatEntryOwner)).owned_cb = None;
     (*fe).cb = cb;
     (*fe).time = 0 as time_t;
+    format_entry_set_value(fe, None);
+}
+
+/// Internal lazy callbacks transfer their result directly into the entry cache.
+pub(crate) unsafe fn format_add_owned_cb(
+    ft: *mut format_tree,
+    key: &CStr,
+    cb: unsafe fn(*mut format_tree) -> Option<CString>,
+) {
+    let new = format_entry_new(key.as_ptr());
+    let existing = format_entry_tree_insert(&raw mut (*ft).tree, new);
+    let fe = if existing.is_null() {
+        new
+    } else {
+        drop(Box::from_raw(new as *mut FormatEntryOwner));
+        existing
+    };
+    (*fe).cb = None;
+    (*(fe as *mut FormatEntryOwner)).owned_cb = Some(cb);
+    (*fe).time = 0;
     format_entry_set_value(fe, None);
 }
 
@@ -376,6 +413,63 @@ mod tests {
 
     unsafe extern "C" fn cached_test_value(_ft: *mut format_tree) -> *mut ::core::ffi::c_void {
         xstrdup(b"cached\xff\0".as_ptr() as *const ::core::ffi::c_char) as *mut ::core::ffi::c_void
+    }
+
+    #[test]
+    fn owned_callbacks_cache_absence_and_allow_reentrant_replacement() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        unsafe fn replace_during_callback(ft: *mut format_tree) -> Option<CString> {
+            CALLS.fetch_add(1, Ordering::Relaxed);
+            format_add(ft, c"owned".as_ptr(), c"temporary".as_ptr());
+            Some(CString::new(b"owned\xff".to_vec()).unwrap())
+        }
+        unsafe fn absent(_ft: *mut format_tree) -> Option<CString> {
+            CALLS.fetch_add(1, Ordering::Relaxed);
+            None
+        }
+        unsafe {
+            CALLS.store(0, Ordering::Relaxed);
+            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            let mut probe: format_entry = std::mem::zeroed();
+            probe.key = c"owned".as_ptr().cast_mut();
+            format_add_owned_cb(ft, c"owned", replace_during_callback);
+            let entry = format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe);
+            assert!((*entry).value.is_null());
+            assert_eq!(CALLS.load(Ordering::Relaxed), 0);
+            format_entry_ensure_value(ft, entry);
+            format_entry_ensure_value(ft, entry);
+            assert_eq!(CALLS.load(Ordering::Relaxed), 1);
+            assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"owned\xff");
+
+            format_add_owned_cb(ft, c"owned", absent);
+            format_entry_ensure_value(ft, entry);
+            format_entry_ensure_value(ft, entry);
+            assert_eq!(CALLS.load(Ordering::Relaxed), 2);
+            assert_eq!(CStr::from_ptr((*entry).value), c"");
+
+            format_add_owned_cb(ft, c"owned", replace_during_callback);
+            format_add(ft, c"owned".as_ptr(), c"literal".as_ptr());
+            format_entry_ensure_value(ft, entry);
+            assert_eq!(CStr::from_ptr((*entry).value), c"literal");
+            assert!((*(entry as *mut FormatEntryOwner)).owned_cb.is_none());
+
+            format_add_owned_cb(ft, c"owned", replace_during_callback);
+            let mut tv = timeval {
+                tv_sec: 123,
+                tv_usec: 0,
+            };
+            format_add_tv(ft, c"owned".as_ptr(), &raw mut tv);
+            assert_eq!((*entry).time, 123);
+            assert!((*(entry as *mut FormatEntryOwner)).owned_cb.is_none());
+
+            format_add_owned_cb(ft, c"owned", replace_during_callback);
+            format_add_cb(ft, c"owned".as_ptr(), Some(cached_test_value));
+            format_entry_ensure_value(ft, entry);
+            assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"cached\xff");
+            assert_eq!(CALLS.load(Ordering::Relaxed), 2);
+            format_free(ft);
+        }
     }
 
     #[test]

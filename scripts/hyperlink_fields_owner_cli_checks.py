@@ -39,13 +39,18 @@ def capture(binary):
                 time.sleep(0.05)
             escaped = run("capture-pane", "-p", "-e", "-S", "0").split(b"\n", 1)[0]
             uris = run("capture-pane", "-p", "-H", "-S", "0")
-            return escaped, uris
+            run("copy-mode")
+            run("send-keys", "-X", "history-top")
+            run("send-keys", "-X", "start-of-line")
+            cursor_uri = run("display-message", "-p", "#{copy_cursor_hyperlink}")
+            return escaped, uris, cursor_uri
         finally:
             subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
 
 
 expected = (
     b"\x1b]8;id=alpha\\377;https://a.example/\\377\x1b\\A\x1b]8;;\x1b\\",
+    b"https://a.example/\\377\n",
     b"https://a.example/\\377\n",
 )
 assert capture(baseline) == expected

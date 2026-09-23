@@ -36,6 +36,12 @@ def trace(binary):
             run("copy-mode")
             run("send-keys", "-X", "search-forward", "alpha")
             first = run("display-message", "-p", "#{search_match}")
+            cursor = run("display-message", "-p", "#{copy_cursor_word}|#{copy_cursor_line}|#{copy_cursor_hyperlink}|#{search_match}|#{search_match}")
+            assert cursor == b"alpha|alpha||alpha|alpha\n", cursor
+            # Enumeration invokes the same lazy callbacks and caches their results.
+            listed = dict(line.split(b"=", 1) for line in run("display-message", "-a").splitlines() if b"=" in line)
+            for key, expected in [(b"copy_cursor_word", b"alpha"), (b"copy_cursor_line", b"alpha"), (b"copy_cursor_hyperlink", b""), (b"search_match", b"alpha")]:
+                assert listed[key] == expected, (key, listed.get(key))
             first_cached = run("display-message", "-p", "#{pane_search_string}")
             run("send-keys", "-X", "search-forward", "-F", "#{pane_search_string}")
             formatted_cached = run("display-message", "-p", "#{pane_search_string}")
