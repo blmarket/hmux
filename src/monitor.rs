@@ -185,7 +185,7 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
     monitor_items_remove(&raw mut (*ms).items, me);
     free((*me).name as *mut ::core::ffi::c_void);
     free((*me).format as *mut ::core::ffi::c_void);
-    free(me as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(me));
 }
 unsafe extern "C" fn monitor_report(
     mut ms: *mut monitor_set,
@@ -824,10 +824,7 @@ pub unsafe extern "C" fn monitor_add(
     if !me.is_null() {
         monitor_free_item(ms, me);
     }
-    me = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<monitor_item>() as size_t,
-    ) as *mut monitor_item;
+    me = Box::into_raw(Box::new(::core::mem::zeroed::<monitor_item>()));
     (*me).name = xstrdup(name);
     (*me).format = xstrdup(format);
     (*me).type_0 = type_0;

@@ -2524,6 +2524,20 @@ legacy callers safe.
   on candidate and pinned pre-migration binaries. `key_bindings.rs` retains its
   pre-existing rustfmt import-order difference. No sanitizer was run.
 
+### Increment 304 — boxed monitor item records (2026-09-23)
+
+- `monitor_add` now boxes its zeroed `monitor_item`; `monitor_free_item` still
+  releases nested pane/window records and owned strings, removes the index
+  entry, and then consumes the outer `Box`. Replacement, explicit removal, and
+  monitor-set destruction all use this helper. The index borrows the stable
+  pointer only until removal; no Rust borrow crosses monitor callbacks.
+  Updated the storage-test fixture whose items are freed by that helper.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, and diff
+  checks passed. The monitor-string CLI check matched the pinned baseline;
+  hook-append checks passed separately on candidate and baseline. Changed
+  files retain the pre-existing `monitor.rs` rustfmt import-order difference.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2534,9 +2548,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `monitor_item` records in `src/monitor.rs` are a next small owner candidate;
-   audit callback lifetimes and update the test fixture that currently creates
-   an item with libc `calloc` before changing the production destructor.
+1. `monitor_pane`, then symmetric `monitor_window`, records in `src/monitor.rs`
+   are small leaf owners. Each has two constructors and both sweep/final
+   cleanup paths. Their storage-test fixtures currently use libc `calloc` and
+   must follow their production allocator contract. A session-scoped monitor
+   hook plus `#{hook_fire_count}` can cover actual timer checks and sweeps.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias

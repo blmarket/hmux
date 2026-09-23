@@ -6,7 +6,7 @@ fn byte_names_composite_keys_and_nested_cleanup() {
     unsafe {
         let set = monitor_create_client(null_mut(), None, null_mut());
         for name in [c"z", c"\xff", c"a"] {
-            let item = libc::calloc(1, std::mem::size_of::<monitor_item>()) as *mut monitor_item;
+            let item = Box::into_raw(Box::new(std::mem::zeroed::<monitor_item>()));
             (*item).name = libc::strdup(name.as_ptr());
             monitor_items_insert(&mut (*set).items, item);
             for (id, idx) in [(2, 1), (1, 9), (1, 0), (u32::MAX, 0)] {
