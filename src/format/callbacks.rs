@@ -59,44 +59,24 @@ unsafe extern "C" fn format_cb_session_attached_list(
 ) -> *mut ::core::ffi::c_void {
     let mut s: *mut session = (*ft).s;
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut size: ::core::ffi::c_int = 0;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if s.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    buffer = evbuffer_new();
-    if buffer.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
-    }
+    let mut names = Vec::<u8>::new();
     loop_0 = clients.tqh_first;
     while !loop_0.is_null() {
         if (*loop_0).session == s {
-            if evbuffer_get_length(buffer) > 0 as size_t {
-                evbuffer_add(
-                    buffer,
-                    b",\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-                    1 as size_t,
-                );
+            if !names.is_empty() {
+                names.push(b',');
             }
-            evbuffer_add_printf(
-                buffer,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*loop_0).name,
-            );
+            names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
         }
         loop_0 = (*loop_0).entry.tqe_next;
     }
-    size = evbuffer_get_length(buffer) as ::core::ffi::c_int;
-    if size != 0 as ::core::ffi::c_int {
-        value = xmemdup(
-            evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t)
-                as *const ::core::ffi::c_void,
-            size as size_t,
-        );
+    if names.is_empty() {
+        return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    evbuffer_free(buffer);
-    return value as *mut ::core::ffi::c_void;
+    xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void
 }
 unsafe extern "C" fn format_cb_session_alert(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     let mut s: *mut session = (*ft).s;

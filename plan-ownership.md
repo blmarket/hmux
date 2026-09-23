@@ -326,6 +326,19 @@ legacy callers safe.
   with both old and new callbacks for default, empty, multiple, blinking,
   and cleared modes. No sanitizer was run.
 
+### Increment 148 — session attached-client list scratch (2026-09-22)
+
+- `format_cb_session_attached_list` now builds client-name bytes and commas
+  in a local `Vec<u8>`, borrowing each C-string name without UTF-8 conversion.
+  Removed the intermediate `evbuffer_new`/`evbuffer_free` lifecycle and its
+  append/pullup calls. One `xmemdup` still produces the C-owned callback
+  result, and an empty list still returns null. Global client traversal order
+  and the rule that an empty name contributes no bytes remain unchanged.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. New `scripts/session_attached_list_cli_checks.py` passed with both
+  the old and new binaries for empty, multiple, other-session, and detached
+  client cases. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -336,11 +349,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_cb_session_attached_list` still allocates an `evbuffer`, appends
-   client-name bytes and separators, duplicates the result with `xmemdup`,
-   then frees the buffer. Its callback requires a C-owned result, but a
-   Rust-owned intermediate could remove the evbuffer lifetime. Preserve the
-   null result when the list is empty and the current byte order/format.
+1. `format_cb_window_linked_sessions_list` has the same local `evbuffer`
+   assembly pattern for session names linked to a window. A Rust-owned
+   intermediate may remove its buffer allocation/free while retaining a
+   C-owned callback result and null for an empty list; audit window/winlink
+   traversal and duplicate links before changing it.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -365,9 +378,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–147. The remaining
+Current validation is recorded in increments 15–148. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–147 has its own local commit; none was pushed.
+Each of increments 15–148 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
