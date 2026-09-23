@@ -125,10 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmdq_get_error` still duplicates callback text into a raw pointer that
-   `cmdq_error_callback` frees only when it runs. Moving that text into the
-   existing `CmdqItemOwner` would release it on both normal removal and a
-   future aborted queue drain, while preserving the exported constructor.
+1. The remaining owned callback payloads need cancellation-aware queue-item
+   ownership before a disconnected client's file-backed wait can be drained.
+   `control_error` consumes a parser-owned C error string; key callbacks own
+   a boxed event and sometimes a client reference; mode-tree and window-tree
+   callbacks hold counted references; source-file completion owns its data
+   and depth. Preserve each callback's normal release and add a destruction
+   path for an unfired item. `cmdq_get_error` now provides the first owned
+   queue-item payload example.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1509,6 +1513,19 @@ name error.
 - Candidate and pinned tmux passed customize array-name and changed-only
   CLI checks. Serialized workspace tests, binary build, changed-file
   rustfmt, and diff check passed. No sanitizer ran.
+
+### Increment 445 — own queued error callback text (2026-09-23)
+
+- `CmdqItemOwner` now owns `cmdq_get_error`'s duplicated message as a
+  `CString`; `cmdq_error_callback` borrows it. Normal queue removal and
+  `cmdq_free_detached` both drop the item owner, so the message is also
+  released if the callback never fires. The exported constructor still
+  returns a stable `cmdq_item` with a borrowed `data` pointer.
+- A focused test changes the source buffer after creating an error item,
+  checks exact non-UTF-8 message bytes, then frees the detached item.
+  Serialized workspace tests, binary build, changed-file rustfmt, and
+  diff check passed. No sanitizer ran. The broader disconnected-client
+  queue cleanup is still pending.
 
 ## Historical migration index
 

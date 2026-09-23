@@ -101,7 +101,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::status::status_message_set;
 use crate::src::utf8::utf8_sanitize_cstring;
-use crate::src::xmalloc::{xsnprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -110,11 +110,13 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;
 
-/// The public queue item borrows its printable name from this stable box.
+/// The public queue item borrows its printable name and, for an error
+/// callback, its message from this stable box.
 #[repr(C)]
 struct CmdqItemOwner {
     node: cmdq_item,
     name: Option<CString>,
+    error: Option<CString>,
 }
 
 const _: () = assert!(::core::mem::offset_of!(CmdqItemOwner, node) == 0);
@@ -123,6 +125,7 @@ unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_it
     let mut owner = Box::new(CmdqItemOwner {
         node: ::core::mem::zeroed::<cmdq_item>(),
         name: None,
+        error: None,
     });
     let item = &raw mut owner.node;
     let label = if label.is_null() {
@@ -882,25 +885,28 @@ unsafe extern "C" fn cmdq_error_callback(
     mut item: *mut cmdq_item,
     mut data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
-    let mut error: *mut ::core::ffi::c_char = data as *mut ::core::ffi::c_char;
+    let error: *const ::core::ffi::c_char = data.cast();
     cmdq_error(
         item,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         error,
     );
-    free(error as *mut ::core::ffi::c_void);
     return CMD_RETURN_NORMAL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> *mut cmdq_item {
-    return cmdq_get_callback1(
+    let item = cmdq_get_callback1(
         b"cmdq_error_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(
             cmdq_error_callback
                 as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
         ),
-        xstrdup(error) as *mut ::core::ffi::c_void,
+        ::core::ptr::null_mut(),
     );
+    let owner = &mut *item.cast::<CmdqItemOwner>();
+    owner.error = Some(CStr::from_ptr(error).to_owned());
+    owner.node.data = owner.error.as_ref().unwrap().as_ptr().cast_mut().cast();
+    item
 }
 unsafe extern "C" fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
     return (*item).cb.expect("non-null function pointer")(item, (*item).data);

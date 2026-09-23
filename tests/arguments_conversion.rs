@@ -10,7 +10,9 @@ use hmux2::src::arguments::{
     parse_percentage, ArgumentValueError,
 };
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
-use hmux2::src::cmd_queue::{cmdq_free_detached, cmdq_get_callback1, cmdq_get_name};
+use hmux2::src::cmd_queue::{
+    cmdq_free_detached, cmdq_get_callback1, cmdq_get_error, cmdq_get_name,
+};
 use hmux2::src::ffi::libc::{free, snprintf};
 use hmux2::src::shared::arguments::{
     args, args_parse, args_value, ARGS_COMMANDS, ARGS_PARSE_COMMANDS, ARGS_STRING,
@@ -192,6 +194,21 @@ fn callback_queue_name_keeps_non_utf8_label_and_item_pointer() {
         assert_eq!(
             CStr::from_ptr(cmdq_get_name(item)).to_bytes(),
             CStr::from_ptr(expected.as_ptr()).to_bytes()
+        );
+        cmdq_free_detached(item);
+    }
+}
+
+#[test]
+fn detached_error_callback_keeps_its_message_after_input_changes() {
+    unsafe {
+        let mut source = b"raw\xff error\0".to_vec();
+        let item = cmdq_get_error(source.as_ptr().cast());
+        source.fill(0);
+
+        assert_eq!(
+            CStr::from_ptr((*item).data.cast()).to_bytes(),
+            b"raw\xff error"
         );
         cmdq_free_detached(item);
     }
