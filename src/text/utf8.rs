@@ -1807,10 +1807,16 @@ pub unsafe extern "C" fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::co
 }
 #[no_mangle]
 pub unsafe extern "C" fn utf8_sanitize(
-    mut src: *const ::core::ffi::c_char,
+    src: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut dst: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut n: size_t = 0 as size_t;
+    let sanitized = utf8_sanitize_cstring(src);
+    xstrdup(sanitized.as_ptr())
+}
+
+/// The input is a NUL-terminated C string. The result is ASCII and retains
+/// the old sanitizer's first-NUL view and underscore width for UTF-8 cells.
+pub(crate) unsafe fn utf8_sanitize_cstring(mut src: *const ::core::ffi::c_char) -> CString {
+    let mut dst = Vec::new();
     let mut more: utf8_state = UTF8_MORE;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -1818,13 +1824,8 @@ pub unsafe extern "C" fn utf8_sanitize(
         size: 0,
         width: 0,
     };
-    let mut i: u_int = 0;
     while *src as ::core::ffi::c_int != '\0' as i32 {
-        dst = xreallocarray(
-            dst as *mut ::core::ffi::c_void,
-            n.wrapping_add(1 as size_t),
-            ::core::mem::size_of::<::core::ffi::c_char>() as size_t,
-        ) as *mut ::core::ffi::c_char;
+        let candidate_start = src;
         more = utf8_open(&raw mut ud, *src as u_char);
         if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
             loop {
@@ -1839,43 +1840,30 @@ pub unsafe extern "C" fn utf8_sanitize(
             }
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                dst = xreallocarray(
-                    dst as *mut ::core::ffi::c_void,
-                    n.wrapping_add(ud.width as size_t),
-                    ::core::mem::size_of::<::core::ffi::c_char>() as size_t,
-                ) as *mut ::core::ffi::c_char;
-                i = 0 as u_int;
-                while i < ud.width as u_int {
-                    let fresh6 = n;
-                    n = n.wrapping_add(1);
-                    *dst.offset(fresh6 as isize) = '_' as i32 as ::core::ffi::c_char;
-                    i = i.wrapping_add(1);
+                // xreallocarray rejected the old zero-sized request when a
+                // leading zero-width UTF-8 cell had produced no bytes yet.
+                if dst.is_empty() && ud.width == 0 {
+                    fatalx(b"xreallocarray: zero size\0".as_ptr().cast());
                 }
+                dst.resize(dst.len() + ud.width as usize, b'_');
                 continue;
             } else {
-                src = src.offset(-(ud.have as ::core::ffi::c_int as isize));
+                // Retry each byte after an invalid or truncated candidate.
+                // Rewinding by `have` could step before the input for a
+                // complete-length invalid sequence.
+                src = candidate_start;
             }
         }
         if *src as ::core::ffi::c_int > 0x1f as ::core::ffi::c_int
             && (*src as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
         {
-            let fresh7 = n;
-            n = n.wrapping_add(1);
-            *dst.offset(fresh7 as isize) = *src;
+            dst.push(*src as u8);
         } else {
-            let fresh8 = n;
-            n = n.wrapping_add(1);
-            *dst.offset(fresh8 as isize) = '_' as i32 as ::core::ffi::c_char;
+            dst.push(b'_');
         }
         src = src.offset(1);
     }
-    dst = xreallocarray(
-        dst as *mut ::core::ffi::c_void,
-        n.wrapping_add(1 as size_t),
-        ::core::mem::size_of::<::core::ffi::c_char>() as size_t,
-    ) as *mut ::core::ffi::c_char;
-    *dst.offset(n as isize) = '\0' as i32 as ::core::ffi::c_char;
-    return dst;
+    CString::new(dst).expect("sanitized bytes contain no interior NUL")
 }
 #[no_mangle]
 pub unsafe extern "C" fn utf8_strlen(mut s: *const utf8_data) -> size_t {
@@ -2180,6 +2168,29 @@ pub const __WCHAR_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_owns_printable_ascii_and_preserves_legacy_widths() {
+        unsafe {
+            for (input, expected) in [
+                (&b"\0"[..], &b""[..]),
+                (&b"A\x01 \x7fB\0"[..], &b"A_ _B"[..]),
+                (&b"caf\xc3\xa9\0"[..], &b"caf_"[..]),
+                (&b"\xe4\xb8\xad\0"[..], &b"__"[..]),
+                (&b"\xff\0"[..], &b"_"[..]),
+                (&b"\xe2\x82\0"[..], &b"__"[..]),
+                (&b"\xe2(\xa1\0"[..], &b"_(_"[..]),
+                (&b"A\0B\0"[..], &b"A"[..]),
+            ] {
+                let input = input.as_ptr().cast();
+                assert_eq!(utf8_sanitize_cstring(input).as_bytes(), expected);
+                let exported = utf8_sanitize(input);
+                assert!(!exported.is_null());
+                assert_eq!(CStr::from_ptr(exported).to_bytes(), expected);
+                free(exported.cast());
+            }
+        }
+    }
 
     #[test]
     fn utf8_tocstr_cstring_matches_legacy_c_view() {

@@ -82,7 +82,7 @@ use crate::src::tty::{
 };
 use crate::src::tty_features::tty_get_features;
 use crate::src::tty_term::tty_term_has;
-use crate::src::utf8::{utf8_sanitize, utf8_stravisx};
+use crate::src::utf8::{utf8_sanitize_cstring, utf8_stravisx};
 pub use crate::src::window::windows;
 use crate::src::window::{
     all_window_panes, window_get_active_at, window_pane_clear_resizes, window_pane_contains,
@@ -4829,7 +4829,6 @@ pub unsafe extern "C" fn server_client_print(
     let mut size: size_t = evbuffer_get_length(evb);
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut sanitized: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut empty: ::core::ffi::c_char = '\0' as i32 as ::core::ffi::c_char;
@@ -4862,21 +4861,20 @@ pub unsafe extern "C" fn server_client_print(
     if !c.is_null() {
         if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
-                sanitized = utf8_sanitize(msg);
+                let sanitized = utf8_sanitize_cstring(msg);
                 if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                     control_write(
                         c,
                         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        sanitized,
+                        sanitized.as_ptr(),
                     );
                 } else {
                     file_print(
                         c,
                         b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                        sanitized,
+                        sanitized.as_ptr(),
                     );
                 }
-                free(sanitized as *mut ::core::ffi::c_void);
             } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                 control_write(c, b"%s\0" as *const u8 as *const ::core::ffi::c_char, msg);
             } else {

@@ -100,7 +100,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::status::status_message_set;
-use crate::src::utf8::utf8_sanitize;
+use crate::src::utf8::utf8_sanitize_cstring;
 use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
@@ -1067,9 +1067,7 @@ pub unsafe extern "C" fn cmdq_error(
             msg.as_ptr(),
         );
         if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
-            let sanitized = utf8_sanitize(msg.as_ptr());
-            msg = CStr::from_ptr(sanitized).to_owned();
-            free(sanitized as *mut ::core::ffi::c_void);
+            msg = utf8_sanitize_cstring(msg.as_ptr());
         }
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_write(
