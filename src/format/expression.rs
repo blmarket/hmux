@@ -14,37 +14,17 @@ pub(super) unsafe extern "C" fn format_strftime(
 ) -> size_t {
     return strftime(s, max, fmt, tm);
 }
-pub(super) unsafe extern "C" fn format_quote_shell(
-    mut s: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut at: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    out = xmalloc(
-        strlen(s)
-            .wrapping_mul(2 as size_t)
-            .wrapping_add(1 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    at = out;
-    cp = s;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if !strchr(
-            b"|&;<>(){}$`\\\"'*?[# =%\n\t\0" as *const u8 as *const ::core::ffi::c_char,
-            *cp as ::core::ffi::c_int,
-        )
-        .is_null()
-        {
-            let fresh20 = at;
-            at = at.offset(1);
-            *fresh20 = '\\' as i32 as ::core::ffi::c_char;
+pub(super) unsafe fn format_quote_shell(s: *const ::core::ffi::c_char) -> CString {
+    let input = CStr::from_ptr(s).to_bytes();
+    let mut quoted = Vec::with_capacity(input.len().saturating_mul(2));
+    const SHELL_SPECIAL: &[u8] = b"|&;<>(){}$`\\\"'*?[# =%\n\t";
+    for &byte in input {
+        if SHELL_SPECIAL.contains(&byte) {
+            quoted.push(b'\\');
         }
-        let fresh21 = at;
-        at = at.offset(1);
-        *fresh21 = *cp;
-        cp = cp.offset(1);
+        quoted.push(byte);
     }
-    *at = '\0' as i32 as ::core::ffi::c_char;
-    return out;
+    CString::new(quoted).expect("shell-quoted C string contains no NUL")
 }
 pub(super) unsafe fn format_quote_shell_single(s: *const ::core::ffi::c_char) -> CString {
     let input = CStr::from_ptr(s).to_bytes();
@@ -60,32 +40,16 @@ pub(super) unsafe fn format_quote_shell_single(s: *const ::core::ffi::c_char) ->
     quoted.push(b'\'');
     CString::new(quoted).expect("shell-quoted C string contains no NUL")
 }
-pub(super) unsafe extern "C" fn format_quote_style(
-    mut s: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut at: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    out = xmalloc(
-        strlen(s)
-            .wrapping_mul(2 as size_t)
-            .wrapping_add(1 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    at = out;
-    cp = s;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if *cp as ::core::ffi::c_int == '#' as i32 {
-            let fresh18 = at;
-            at = at.offset(1);
-            *fresh18 = '#' as i32 as ::core::ffi::c_char;
+pub(super) unsafe fn format_quote_style(s: *const ::core::ffi::c_char) -> CString {
+    let input = CStr::from_ptr(s).to_bytes();
+    let mut quoted = Vec::with_capacity(input.len().saturating_mul(2));
+    for &byte in input {
+        if byte == b'#' {
+            quoted.push(b'#');
         }
-        let fresh19 = at;
-        at = at.offset(1);
-        *fresh19 = *cp;
-        cp = cp.offset(1);
+        quoted.push(byte);
     }
-    *at = '\0' as i32 as ::core::ffi::c_char;
-    return out;
+    CString::new(quoted).expect("style-quoted C string contains no NUL")
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_pretty_time(
@@ -473,21 +437,24 @@ pub(super) unsafe extern "C" fn format_find(
         found = xstrdup(dirname(saved));
         free(saved as *mut ::core::ffi::c_void);
     }
+    let mut quoted: Option<CString> = None;
     if modifiers & FORMAT_QUOTE_SHELL as uint64_t != 0 {
-        saved = found;
-        found = format_quote_shell(saved);
-        free(saved as *mut ::core::ffi::c_void);
+        quoted = Some(format_quote_shell(found));
     }
     if modifiers & FORMAT_QUOTE_SHELL_SQ as uint64_t != 0 {
-        saved = found;
-        let quoted = format_quote_shell_single(saved);
-        found = xstrdup(quoted.as_ptr());
-        free(saved as *mut ::core::ffi::c_void);
+        quoted = Some(format_quote_shell_single(
+            quoted.as_ref().map_or(found, |value| value.as_ptr()),
+        ));
     }
     if modifiers & FORMAT_QUOTE_STYLE as uint64_t != 0 {
-        saved = found;
-        found = format_quote_style(saved);
-        free(saved as *mut ::core::ffi::c_void);
+        quoted = Some(format_quote_style(
+            quoted.as_ref().map_or(found, |value| value.as_ptr()),
+        ));
+    }
+    if let Some(quoted) = quoted {
+        let result = xstrdup(quoted.as_ptr());
+        free(found as *mut ::core::ffi::c_void);
+        found = result;
     }
     if modifiers & FORMAT_QUOTE_ARGUMENTS as uint64_t != 0 {
         saved = found;

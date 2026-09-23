@@ -1133,6 +1133,21 @@ legacy callers safe.
   baseline, including nested commands and non-UTF-8 bytes. No sanitizer was
   run.
 
+### Increment 207 — format quote modifier scratch owner (2026-09-23)
+
+- `format_quote_shell` and `format_quote_style` now construct byte-preserving
+  `CString` values. `format_find` retains an `Option<CString>` across its
+  shell, single-quote, and style-quote modifier subchain, replacing three
+  intermediate manual frees with Rust drops. The original C-owned `found`
+  string is freed once after the chain, and the returned `found` remains
+  libc-freeable for its callers. Removed both helper xmalloc buffers and
+  their pointer writes.
+- Library/binary build, `format_modifier_copy` and
+  `format_condition_scratch` tests, changed-file rustfmt, Python syntax
+  check, and `git diff --check` passed. A private-server CLI check matched
+  the pinned baseline for empty, non-UTF-8, newline, and combined quote
+  modifiers. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1143,10 +1158,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_quote_shell` and `format_quote_style` build local scratch strings
-   for quote modifiers. Audit the whole modifier subchain so intermediate
-   strings gain Rust ownership and lose their manual frees, while keeping
-   `format_find`'s returned C-owned contract.
+1. `cmd_print` builds a C-owned command string from an `args_print` result.
+   Its new `cmd_list_print_cstring` caller copies and frees that result;
+   command queue logging also consumes it synchronously. Audit a private
+   owned `cmd_print` producer and those callers while retaining its exported
+   libc-freeable wrapper. `args_print` still has its own C-owned return, so
+   its producer boundary needs a separate lifetime audit.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
@@ -1179,9 +1196,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–204. The remaining
+Current validation is recorded in increments 15–207. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–204 has its own local commit; none was pushed.
+Each of increments 15–207 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1434,3 +1451,9 @@ changed-file rustfmt, Python syntax checks, and `git diff --check` passed on
 main. Option-value and argument-escape output matched the pinned baseline
 byte for byte; the layout check passed separately on candidate and baseline.
 No combined sanitizer was run.
+After increments 205–207 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, set-buffer-name, command-list-print, and format-quote CLI checks,
+changed-file rustfmt, Python syntax checks, and `git diff --check` passed on
+main. All three CLI checks matched the pinned baseline byte for byte. No
+combined sanitizer was run.
