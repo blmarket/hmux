@@ -656,21 +656,20 @@ unsafe extern "C" fn window_tree_build(
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut squash_groups: ::core::ffi::c_int = (*data).squash_groups;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut n: u_int = 0;
     let mut i: u_int = 0;
     current = session_group_contains((*data).fs.s);
     (*data).item_list.clear();
-    l = sort_get_sessions(&raw mut n, sort_crit);
+    let l = sort_get_sessions(sort_crit);
+    let n = u_int::try_from(l.len()).expect("too many sessions for window tree");
     if n == 0 as u_int {
         return;
     }
     let mut current_block_12: u64;
     i = 0 as u_int;
     while i < n {
-        s = *l.offset(i as isize);
+        s = l[i as usize];
         if squash_groups != 0 && {
             sg = session_group_contains(s);
             !sg.is_null()

@@ -1217,18 +1217,17 @@ pub(super) unsafe extern "C" fn format_loop_sessions(
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
     let mut i: ::core::ffi::c_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
     let (all, active) = format_choose_loop(es, fmt);
     buffer = evbuffer_new();
     if buffer.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    l = sort_get_sessions(&raw mut n as *mut u_int, sc);
+    let l = sort_get_sessions(sc);
+    let n = ::core::ffi::c_int::try_from(l.len()).expect("too many sessions to format");
     i = 0 as ::core::ffi::c_int;
     while i < n {
-        s = *l.offset(i as isize);
+        s = l[i as usize];
         format_log1(
             es,
             b"format_loop_sessions\0" as *const u8 as *const ::core::ffi::c_char,

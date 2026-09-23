@@ -614,35 +614,16 @@ pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<*mut client
     );
     clients_sorted
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_sessions(
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut session {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut i: u_int = 0;
-    static mut l: *mut *mut session = ::core::ptr::null::<*mut session>() as *mut *mut session;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut session> {
+    let mut l = Vec::new();
+    let mut s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
-        if lsz <= i {
-            lsz = lsz.wrapping_add(100 as u_int);
-            l = xreallocarray(
-                l as *mut ::core::ffi::c_void,
-                lsz as size_t,
-                ::core::mem::size_of::<*mut session>() as size_t,
-            ) as *mut *mut session;
-        }
-        let fresh6 = i;
-        i = i.wrapping_add(1);
-        let ref mut fresh7 = *l.offset(fresh6 as isize);
-        *fresh7 = s;
+        l.push(s);
         s = sessions_next(s);
     }
     sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
+        l.as_mut_ptr() as *mut ::core::ffi::c_void,
+        u_int::try_from(l.len()).expect("too many sessions to sort"),
         ::core::mem::size_of::<*mut session>() as u_int,
         Some(
             sort_session_cmp
@@ -653,8 +634,7 @@ pub unsafe extern "C" fn sort_get_sessions(
         ),
         sort_crit,
     );
-    *n = i;
-    return l;
+    l
 }
 #[no_mangle]
 pub unsafe extern "C" fn sort_get_panes(

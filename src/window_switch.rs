@@ -304,12 +304,10 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut m: Vec<*mut window_switch_itemdata> = Vec::new();
     let mut f: *const ::core::ffi::c_char = (*data).filter;
-    let mut ns: u_int = 0;
     let mut nw: u_int = 0;
     let mut i: u_int = 0;
     let mut order: u_int = 0 as u_int;
     let mut sx: u_int = (*(*data).screen.grid).sx;
-    let mut sl: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
     let mut wl: *mut *mut winlink = ::core::ptr::null_mut::<*mut winlink>();
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
@@ -321,10 +319,11 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
     (*data).item_list.clear();
     match (*data).type_0 as ::core::ffi::c_uint {
         0 => {
-            sl = sort_get_sessions(&raw mut ns, &raw mut sort_crit);
+            let sl = sort_get_sessions(&raw mut sort_crit);
+            let ns = u_int::try_from(sl.len()).expect("too many sessions for window switch");
             i = 0 as u_int;
             while i < ns {
-                window_switch_add_session(data, *sl.offset(i as isize), &raw mut order);
+                window_switch_add_session(data, sl[i as usize], &raw mut order);
                 i = i.wrapping_add(1);
             }
         }

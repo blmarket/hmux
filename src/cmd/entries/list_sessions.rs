@@ -114,8 +114,6 @@ unsafe extern "C" fn cmd_list_sessions_exec(
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut c: *mut client = cmdq_get_client(item);
-    let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
-    let mut n: u_int = 0;
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -145,7 +143,8 @@ unsafe extern "C" fn cmd_list_sessions_exec(
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    l = sort_get_sessions(&raw mut n, &raw mut sort_crit);
+    let l = sort_get_sessions(&raw mut sort_crit);
+    let n = u_int::try_from(l.len()).expect("too many sessions to list");
     i = 0 as u_int;
     while i < n {
         ft = format_create(
@@ -163,7 +162,7 @@ unsafe extern "C" fn cmd_list_sessions_exec(
         format_defaults(
             ft,
             c,
-            *l.offset(i as isize),
+            l[i as usize],
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
         );

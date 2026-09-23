@@ -2233,6 +2233,24 @@ legacy callers safe.
   Rustfmt reports one import-layout difference also present in the base
   commit. No sanitizer was run.
 
+### Increment 125 — sorted session candidate list (2026-09-22)
+
+- `sort_get_sessions` now returns a caller-owned `Vec<*mut session>` to the
+  session list command, next/previous navigation, format `S:` loop, and
+  window tree/switch builders. Removed its process-global `xreallocarray`
+  scratch list and capacity counter. The session registry still owns the
+  pointees; callers own only the sorted snapshot through traversal.
+- The comparator, name/activity/reverse ordering, list indexes, and live
+  session lifecycle are preserved. Nested `S:` expansion gets a separate
+  snapshot instead of overwriting an outer traversal. The translated
+  `sort_get_sessions` staticlib symbol/signature is gone; no in-tree or
+  documented foreign caller was found.
+- Isolated validation: serialized workspace tests, binary build, cargo
+  check, `git diff --check`, and private-server checks for sorting, reverse,
+  filtering, nested `S:` loops, deletion, format loops, and session CLI
+  reference comparison passed. Rustfmt reports three import-layout
+  differences also present in the base commit. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2270,9 +2288,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–124. The remaining
+Current validation is recorded in increments 15–125. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–124 has its own local commit; none was pushed.
+Each of increments 15–125 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

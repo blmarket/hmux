@@ -723,16 +723,15 @@ pub unsafe extern "C" fn session_next_session(
     mut s: *mut session,
     mut sort_crit: *mut sort_criteria,
 ) -> *mut session {
-    let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
-    let mut n: u_int = 0;
     let mut i: u_int = 0;
     if sessions.storage.is_none() || session_alive(s) == 0 {
         return ::core::ptr::null_mut::<session>();
     }
-    l = sort_get_sessions(&raw mut n, sort_crit);
+    let l = sort_get_sessions(sort_crit);
+    let n = u_int::try_from(l.len()).expect("too many sessions to switch");
     i = 0 as u_int;
     while i < n {
-        if *l.offset(i as isize) == s {
+        if l[i as usize] == s {
             break;
         }
         i = i.wrapping_add(1);
@@ -747,23 +746,22 @@ pub unsafe extern "C" fn session_next_session(
     if i == n {
         i = 0 as u_int;
     }
-    return *l.offset(i as isize);
+    return l[i as usize];
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_previous_session(
     mut s: *mut session,
     mut sort_crit: *mut sort_criteria,
 ) -> *mut session {
-    let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
-    let mut n: u_int = 0;
     let mut i: u_int = 0;
     if sessions.storage.is_none() || session_alive(s) == 0 {
         return ::core::ptr::null_mut::<session>();
     }
-    l = sort_get_sessions(&raw mut n, sort_crit);
+    let l = sort_get_sessions(sort_crit);
+    let n = u_int::try_from(l.len()).expect("too many sessions to switch");
     i = 0 as u_int;
     while i < n {
-        if *l.offset(i as isize) == s {
+        if l[i as usize] == s {
             break;
         }
         i = i.wrapping_add(1);
@@ -778,7 +776,7 @@ pub unsafe extern "C" fn session_previous_session(
         i = n;
     }
     i = i.wrapping_sub(1);
-    return *l.offset(i as isize);
+    return l[i as usize];
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_attach(
