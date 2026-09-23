@@ -50,6 +50,10 @@ fn named_tables_defaults_replacement_and_retained_table_lifetime() {
         key_bindings_unref_table(a);
         key_bindings_add(c"z".as_ptr(), 1, null(), 0, cmd_list_new());
         key_bindings_remove(c"z".as_ptr(), 1);
+        let raw_name = b"\xff\0".as_ptr().cast();
+        let raw_table = key_bindings_get_table(raw_name, 1);
+        assert_eq!(CStr::from_ptr((*raw_table).name).to_bytes(), b"\xff");
+        key_bindings_remove_table(raw_name);
         assert!(key_bindings_first_table().is_null());
     }
 }

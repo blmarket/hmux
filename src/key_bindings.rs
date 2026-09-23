@@ -72,6 +72,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -85,6 +86,16 @@ pub struct key_tables {
 static mut key_tables: key_tables = key_tables {
     storage: std::ptr::null_mut(),
 };
+
+// The exported key_table layout stays at offset zero. Its name is a borrowed
+// pointer into this owner until the table's final reference is released.
+#[repr(C)]
+struct KeyTableOwner {
+    node: key_table,
+    name: CString,
+}
+
+const _: () = assert!(std::mem::offset_of!(KeyTableOwner, node) == 0);
 unsafe extern "C" fn key_table_cmp(
     mut table1: *mut key_table,
     mut table2: *mut key_table,
@@ -136,8 +147,12 @@ pub unsafe extern "C" fn key_bindings_get_table(
     if !table.is_null() || create == 0 {
         return table;
     }
-    table = Box::into_raw(Box::new(::core::mem::zeroed::<key_table>()));
-    (*table).name = xstrdup(name);
+    let mut owner = Box::new(KeyTableOwner {
+        node: ::core::mem::zeroed(),
+        name: CStr::from_ptr(name).to_owned(),
+    });
+    owner.node.name = owner.name.as_ptr();
+    table = Box::into_raw(owner).cast();
     (*table).key_bindings.storage = std::ptr::null_mut();
     (*table).default_key_bindings.storage = std::ptr::null_mut();
     (*table).references = 1 as u_int;
@@ -178,8 +193,7 @@ pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
         key_bindings_free(bd);
         bd = bd1;
     }
-    free((*table).name as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(table));
+    drop(Box::from_raw(table.cast::<KeyTableOwner>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_get(
