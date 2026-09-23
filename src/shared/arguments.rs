@@ -45,8 +45,6 @@ pub struct args {
 pub struct args_value {
     pub type_0: args_type,
     pub c2rust_unnamed: args_value_c2rust_unnamed,
-    /// Borrowed C string. The owner is keyed by this pointer outside the
-    /// movable C-layout record and is released by args_free_value.
     pub cached: *mut ::core::ffi::c_char,
     pub entry: args_value_entry,
 }

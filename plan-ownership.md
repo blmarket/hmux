@@ -1441,24 +1441,18 @@ legacy callers safe.
   for read/write callbacks, missing-path errors, `-` streams, binary contents,
   and non-UTF-8 paths. No sanitizer was run.
 
-### Increment 228 — cached command-list argument owner (2026-09-23)
+### Correction — argument cache owner retracted (2026-09-23)
 
-- `args_value_as_string` now stores command-list text in a `CString` owner
-  keyed by the stable character pointer. `args_value.cached` remains the
-  borrowed C-layout field and survives `xrecallocarray` movement of positional
-  values. `args_free_value` removes and drops that owner; C-created values
-  retain their existing libc-free fallback. Value-copy helpers keep separate
-  caches for copies.
-- Workspace tests, library/binary build, changed-file rustfmt, and diff checks
-  passed. The focused argument test covers repeated borrow, copy independence,
-  array growth, and teardown. `scripts/args_cached_commands_cli_checks.py`
-  matched the pinned baseline for parsed command-list arguments. No sanitizer
-  was run.
-- Combined validation after increments 226–228: `RUST_TEST_THREADS=1 cargo
-  test --workspace --quiet`, library/binary build, changed-file rustfmt,
-  Python AST checks, and each commit's diff check passed. The format expansion,
-  file path, cached argument, and embedded-NUL copy-view CLI checks all matched
-  the pinned baseline. No sanitizer was run.
+- Increment 228 used `HashMap<usize, CString>` keyed by the cached character
+  pointer. This violated the agreed rule against pointer-address collection
+  keys, so its code, test, and CLI script were reverted. Passing tests did not
+  make that ownership model acceptable. The command-list cache remains C-owned
+  until its movable `args_value` record can carry a genuine owner without
+  changing the required ABI or copy semantics.
+- The combined workspace tests, library/binary build, changed-file rustfmt,
+  Python AST checks, and the format expansion, file path, and embedded-NUL
+  copy-view baseline checks passed for increments 226–227 before this
+  correction. Revalidate the corrected main tree with the next integrations.
 
 ### Next candidates
 
@@ -1470,7 +1464,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. The command-list cache in `args_value_as_string` is retained in its
+   movable C-layout record. A pointer-keyed sidecar is disallowed by the type
+   policy; migrate only with a real record owner that preserves the public
+   layout and independent cache storage for copied values.
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -1480,7 +1478,7 @@ non-string value.
    `%.*s` formatter. The first-NUL behavior is covered by
    `scripts/window_copy_vadd_owner_cli_checks.py`. Revisit the remaining
    direct caller when the callback return contract can change.
-2. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. The expansion output now has a local
@@ -1488,7 +1486,7 @@ non-string value.
    Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-3. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
