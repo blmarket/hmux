@@ -1278,6 +1278,18 @@ legacy callers safe.
   parser verbose/debug, and command-option CLI checks all matched the
   pinned baseline. No sanitizer was run.
 
+### Increment 217 — list-keys command text owner (2026-09-23)
+
+- `cmd_list_keys_format_add_key_binding` now holds the existing
+  `cmd_list_print_cstring` result through its synchronous `format_add("%s")`
+  call. Removed its C-owned print result and matching free. The escaped and
+  no-groups flags, printed bytes, and exported signatures remain unchanged.
+- Library/binary build, changed-file rustfmt, and diff checks passed.
+  `scripts/cmd_list_print_owner_cli_checks.py` and
+  `scripts/arguments_escape_owner_cli_checks.py` matched the pinned baseline
+  for escaped separators, nested commands, and non-UTF-8 key-command text.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1288,12 +1300,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_list_keys_format_add_key_binding` still obtains a C-owned
-   `cmd_list_print` result only for a synchronous `format_add` call and then
-   frees it. The existing owned printer can cover that borrow; the escaped
-   and no-groups print flags need exact byte comparison. The command-list
-   cache in `args_value_as_string` is retained in its C-layout record and
-   needs a record-owner migration. `file_get_path` remains deferred:
+1. The command-prompt caller of `args_make_commands_get_command` still copies
+   its result into prompt bytes and frees the C allocation. A private owned
+   producer can cover that caller while the exported wrapper remains
+   libc-freeable. The command-list cache in `args_value_as_string` is retained
+   in its C-layout record and needs a record-owner migration.
+   `file_get_path` remains deferred:
    `client_file.path` is a
    public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
@@ -1327,9 +1339,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–216. The remaining
+Current validation is recorded in increments 15–217. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–216 has its own local commit; none was pushed.
+Each of increments 15–217 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

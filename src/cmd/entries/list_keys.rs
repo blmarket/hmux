@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_get, args_has, args_string};
-use crate::src::cmd::{cmd_get_args, cmd_list_print};
+use crate::src::cmd::{cmd_get_args, cmd_list_print_cstring};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::src::ffi::libc::free;
 use crate::src::format::{format_add, format_create, format_defaults, format_expand, format_free};
@@ -183,7 +183,6 @@ unsafe fn cmd_list_keys_format_add_key_binding(
     mut bd: *const key_binding,
     prefix: &CStr,
 ) {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*bd).flags & KEY_BINDING_REPEAT != 0 {
         format_add(
             ft,
@@ -232,7 +231,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         key_string.as_ptr(),
     );
-    s = cmd_list_print(
+    let command = cmd_list_print_cstring(
         (*bd).cmdlist,
         CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
     );
@@ -240,9 +239,8 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         ft,
         b"key_command\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        command.as_ptr(),
     );
-    free(s as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn cmd_list_keys_exec(
     mut self_0: *mut cmd,
