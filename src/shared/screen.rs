@@ -7,6 +7,7 @@ use super::{
     hyperlinks::hyperlinks,
     screen_write::screen_write_cline,
 };
+use std::collections::VecDeque;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct screen_sel {
@@ -20,12 +21,15 @@ pub struct screen_sel {
     pub clipx: u_int,
     pub cell: grid_cell,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-/// Screen title stack header.
+/// Screen title history, newest title first.
+///
+/// The C strings remain allocated with `xstrdup`/`free` because `screen_pop_title`
+/// transfers one directly back into `screen::title`.
+/// Only the pointer in `screen` is part of its C-compatible layout; this storage
+/// is private to Rust.
+#[derive(Default)]
 pub struct screen_titles {
-    pub tqh_first: *mut screen_title_entry,
-    pub tqh_last: *mut *mut screen_title_entry,
+    pub(crate) entries: VecDeque<*mut ::core::ffi::c_char>,
 }
 #[repr(C)]
 pub struct screen {
@@ -54,20 +58,6 @@ pub struct screen {
     pub write_list: *mut screen_write_cline,
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-/// Screen title stack entry.
-pub struct screen_title_entry {
-    pub text: *mut ::core::ffi::c_char,
-    pub entry: screen_title_link,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen_title_link {
-    pub tqe_next: *mut screen_title_entry,
-    pub tqe_prev: *mut *mut screen_title_entry,
 }
 
 pub const MODE_BRACKETPASTE: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;

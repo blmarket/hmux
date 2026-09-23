@@ -51,12 +51,11 @@ pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{
-    screen, screen_sel, screen_title_entry, screen_title_link, screen_titles, ALL_MODES,
-    EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR, MODE_CURSOR_BLINKING,
-    MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON, MODE_INSERT, MODE_KCURSOR,
-    MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
-    MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8, MODE_ORIGIN, MODE_SYNC,
-    MODE_THEME_UPDATES, MODE_WRAP,
+    screen, screen_sel, screen_titles, ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF,
+    MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE,
+    MODE_FOCUSON, MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2,
+    MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD,
+    MODE_MOUSE_UTF8, MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
 pub use crate::src::shared::screen_write::screen_write_cline;
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
@@ -80,23 +79,11 @@ pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 unsafe extern "C" fn screen_free_titles(mut s: *mut screen) {
-    let mut title_entry: *mut screen_title_entry = ::core::ptr::null_mut::<screen_title_entry>();
     if (*s).titles.is_null() {
         return;
     }
-    loop {
-        title_entry = (*(*s).titles).tqh_first;
-        if title_entry.is_null() {
-            break;
-        }
-        if !(*title_entry).entry.tqe_next.is_null() {
-            (*(*title_entry).entry.tqe_next).entry.tqe_prev = (*title_entry).entry.tqe_prev;
-        } else {
-            (*(*s).titles).tqh_last = (*title_entry).entry.tqe_prev;
-        }
-        *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
-        free((*title_entry).text as *mut ::core::ffi::c_void);
-        drop(Box::from_raw(title_entry));
+    while let Some(title) = (*(*s).titles).entries.pop_front() {
+        free(title as *mut ::core::ffi::c_void);
     }
     drop(Box::from_raw((*s).titles));
     (*s).titles = ::core::ptr::null_mut::<screen_titles>();
@@ -348,49 +335,28 @@ pub unsafe extern "C" fn screen_set_path(
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_push_title(mut s: *mut screen) {
-    let mut title_entry: *mut screen_title_entry = ::core::ptr::null_mut::<screen_title_entry>();
     log_debug(
         b"%s: %u\0" as *const u8 as *const ::core::ffi::c_char,
         b"screen_push_title\0" as *const u8 as *const ::core::ffi::c_char,
         (*s).ntitles,
     );
-    while (*s).ntitles >= 10 as u_int {
-        title_entry = *(*((*(*s).titles).tqh_last as *mut screen_titles)).tqh_last;
-        free((*title_entry).text as *mut ::core::ffi::c_void);
-        if !(*title_entry).entry.tqe_next.is_null() {
-            (*(*title_entry).entry.tqe_next).entry.tqe_prev = (*title_entry).entry.tqe_prev;
-        } else {
-            (*(*s).titles).tqh_last = (*title_entry).entry.tqe_prev;
-        }
-        *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
-        drop(Box::from_raw(title_entry));
+    while !(*s).titles.is_null() && (*(*s).titles).entries.len() >= 10 {
+        let Some(title) = (*(*s).titles).entries.pop_back() else {
+            break;
+        };
+        free(title as *mut ::core::ffi::c_void);
         (*s).ntitles = (*s).ntitles.wrapping_sub(1);
     }
     if (*s).titles.is_null() {
-        (*s).titles = Box::into_raw(Box::new(::core::mem::zeroed::<screen_titles>()));
-        (*(*s).titles).tqh_first = ::core::ptr::null_mut::<screen_title_entry>();
-        (*(*s).titles).tqh_last = &raw mut (*(*s).titles).tqh_first;
+        (*s).titles = Box::into_raw(Box::new(screen_titles {
+            entries: Default::default(),
+        }));
     }
-    title_entry = Box::into_raw(Box::new(screen_title_entry {
-        text: xstrdup((*s).title),
-        entry: screen_title_link {
-            tqe_next: ::core::ptr::null_mut(),
-            tqe_prev: ::core::ptr::null_mut(),
-        },
-    }));
-    (*title_entry).entry.tqe_next = (*(*s).titles).tqh_first;
-    if !(*title_entry).entry.tqe_next.is_null() {
-        (*(*(*s).titles).tqh_first).entry.tqe_prev = &raw mut (*title_entry).entry.tqe_next;
-    } else {
-        (*(*s).titles).tqh_last = &raw mut (*title_entry).entry.tqe_next;
-    }
-    (*(*s).titles).tqh_first = title_entry;
-    (*title_entry).entry.tqe_prev = &raw mut (*(*s).titles).tqh_first;
+    (*(*s).titles).entries.push_front(xstrdup((*s).title));
     (*s).ntitles = (*s).ntitles.wrapping_add(1);
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_pop_title(mut s: *mut screen) {
-    let mut title_entry: *mut screen_title_entry = ::core::ptr::null_mut::<screen_title_entry>();
     if (*s).titles.is_null() {
         return;
     }
@@ -399,17 +365,9 @@ pub unsafe extern "C" fn screen_pop_title(mut s: *mut screen) {
         b"screen_pop_title\0" as *const u8 as *const ::core::ffi::c_char,
         (*s).ntitles,
     );
-    title_entry = (*(*s).titles).tqh_first;
-    if !title_entry.is_null() {
+    if let Some(title) = (*(*s).titles).entries.pop_front() {
         free((*s).title as *mut ::core::ffi::c_void);
-        (*s).title = (*title_entry).text;
-        if !(*title_entry).entry.tqe_next.is_null() {
-            (*(*title_entry).entry.tqe_next).entry.tqe_prev = (*title_entry).entry.tqe_prev;
-        } else {
-            (*(*s).titles).tqh_last = (*title_entry).entry.tqe_prev;
-        }
-        *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
-        drop(Box::from_raw(title_entry));
+        (*s).title = title;
         (*s).ntitles = (*s).ntitles.wrapping_sub(1);
     }
 }
@@ -1343,6 +1301,32 @@ mod text_owner_tests {
                 assert_eq!(screen_alternate_off(&raw mut current, &raw mut cell, 1), 0);
             }
 
+            let history = [
+                c"history-0",
+                c"history-1",
+                c"history-2",
+                c"history-3",
+                c"history-4",
+                c"history-5",
+                c"history-6",
+                c"history-7",
+                c"history-8",
+                c"history-9",
+                c"history-10",
+            ];
+            for title in history {
+                assert_eq!(screen_set_title(&raw mut current, title.as_ptr(), 0), 1);
+                screen_push_title(&raw mut current);
+            }
+            assert_eq!(current.ntitles, 10);
+            assert_eq!((*current.titles).entries.len(), 10);
+            for expected in history.iter().skip(1).rev() {
+                screen_pop_title(&raw mut current);
+                assert_eq!(CStr::from_ptr(current.title), *expected);
+            }
+            assert_eq!(current.ntitles, 0);
+            assert_eq!(CStr::from_ptr(current.title), c"history-1");
+            assert_eq!(screen_set_title(&raw mut current, c"new".as_ptr(), 0), 1);
             screen_push_title(&raw mut current);
             screen_set_selection(
                 &raw mut current,

@@ -583,9 +583,6 @@ fn migrated_layouts_match_every_original_copy() {
         [hidden, rectangle, modekeys, sx, sy, ex, ey, clipx, cell],
         [screen]
     );
-    family!(screen_title_entry, [text, entry], [screen]);
-    family!(screen_title_link, [tqe_next, tqe_prev], [screen]);
-    family!(screen_titles, [tqh_first, tqh_last], [screen]);
     family!(
         screen_write_citem,
         [x, wrapped, type_0, used, bg, gc, entry],
