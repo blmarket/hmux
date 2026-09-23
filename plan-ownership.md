@@ -3177,6 +3177,20 @@ legacy callers safe.
   Full workspace tests, binary build, changed-file rustfmt, and diff checks
   passed. No sanitizer was run.
 
+### Increment 350 — owned UTF-8 item index (2026-09-23)
+
+- `utf8_index_tree.entries` now owns `Box<utf8_item>` values by their existing
+  24-bit indexes. `utf8_put_item` constructs each item before insertion and
+  publishes its stable pointer to `utf8_data_tree`, which remains a borrowed
+  data-key index. Removed the sole `utf8_item` `xcalloc`; no manual item free
+  existed. The cache remains process-lifetime, with no eviction or final
+  teardown. Duplicate index insertion retains the first item and drops the
+  rejected Box; production indexes are monotonic and checked as unique.
+- Added a live pane/capture CLI check for repeated four-byte emoji cells; its
+  captured bytes matched the pinned baseline. Full workspace tests, binary
+  build, changed-file rustfmt, Python syntax, and diff checks passed. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3192,11 +3206,9 @@ non-string value.
    and their two record-free sites, but must also update the allocation
    contract of exported `args_set` and its C-allocated integration-test
    producers. Keep positional arrays and their payload-only
-   `args_free_value` path separate. The `utf8_item` cache has no terminal free:
-   a complete migration would make its index map own boxed items while its
-   data map borrows their stable pointers for process lifetime. Disconnected
-   file-reading clients can leave a waiting command-queue item even after
-   callback data is released; that needs a separate queue cancellation design.
+   `args_free_value` path separate. Disconnected file-reading clients can
+   leave a waiting command-queue item even after callback data is released;
+   that needs a separate queue cancellation design.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

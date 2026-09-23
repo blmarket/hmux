@@ -29,7 +29,7 @@ pub use crate::src::shared::utf8::{wchar_t, UTF8_SIZE};
 pub use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::tmux::global_options;
-use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xmalloc, xrealloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -54,11 +54,12 @@ pub struct utf8_item {
 }
 #[derive(Default)]
 pub struct utf8_data_tree {
+    /// Borrowed aliases of items owned by the index tree for process lifetime.
     entries: std::collections::BTreeMap<(u_char, Vec<u8>), *mut utf8_item>,
 }
 #[derive(Default)]
 pub struct utf8_index_tree {
-    entries: std::collections::BTreeMap<u_int, *mut utf8_item>,
+    entries: std::collections::BTreeMap<u_int, Box<utf8_item>>,
 }
 
 pub const __WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX__;
@@ -980,10 +981,12 @@ static mut utf8_data_tree: utf8_data_tree = utf8_data_tree {
 // returning the existing item without replacing it on duplicate keys.
 unsafe fn utf8_index_tree_insert(
     head: *mut utf8_index_tree,
-    elm: *mut utf8_item,
+    elm: Box<utf8_item>,
 ) -> *mut utf8_item {
-    match (*head).entries.entry((*elm).index) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+    match (*head).entries.entry(elm.index) {
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            entry.get_mut().as_mut() as *mut utf8_item
+        }
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
             ::core::ptr::null_mut::<utf8_item>()
@@ -993,8 +996,8 @@ unsafe fn utf8_index_tree_insert(
 unsafe fn utf8_index_tree_find(head: *mut utf8_index_tree, index: u_int) -> *mut utf8_item {
     (*head)
         .entries
-        .get(&index)
-        .copied()
+        .get_mut(&index)
+        .map(|item| item.as_mut() as *mut utf8_item)
         .unwrap_or(::core::ptr::null_mut::<utf8_item>())
 }
 static mut utf8_index_tree: utf8_index_tree = utf8_index_tree {
@@ -1243,17 +1246,21 @@ unsafe extern "C" fn utf8_put_item(
     if utf8_next_index == (0xffffff as ::core::ffi::c_int + 1 as ::core::ffi::c_int) as u_int {
         return -(1 as ::core::ffi::c_int);
     }
-    ui = xcalloc(1 as size_t, ::core::mem::size_of::<utf8_item>() as size_t) as *mut utf8_item;
+    let mut owned = Box::new(::core::mem::zeroed::<utf8_item>());
     let fresh2 = utf8_next_index;
     utf8_next_index = utf8_next_index.wrapping_add(1);
-    (*ui).index = fresh2;
-    utf8_index_tree_insert(&raw mut utf8_index_tree, ui);
+    owned.index = fresh2;
     memcpy(
-        &raw mut (*ui).data as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
+        owned.data.as_mut_ptr().cast(),
         data as *const ::core::ffi::c_void,
         size,
     );
-    (*ui).size = size as u_char;
+    owned.size = size as u_char;
+    ui = owned.as_mut() as *mut utf8_item;
+    assert!(
+        utf8_index_tree_insert(&raw mut utf8_index_tree, owned).is_null(),
+        "fresh UTF-8 index must be unique"
+    );
     utf8_data_tree_insert(&raw mut utf8_data_tree, ui);
     *index = (*ui).index;
     log_debug(
@@ -2204,17 +2211,19 @@ mod tests {
     fn utf8_index_tree_matches_index_comparator() {
         unsafe {
             let mut tree = utf8_index_tree::default();
-            let mut items: [utf8_item; 4] = [std::mem::zeroed(); 4];
-            items[0].index = 7;
-            items[1].index = 0;
-            items[2].index = u_int::MAX;
-            items[3].index = 7;
+            let mut first_item = Box::new(std::mem::zeroed::<utf8_item>());
+            first_item.index = 7;
+            let first = first_item.as_mut() as *mut utf8_item;
+            assert!(utf8_index_tree_insert(&raw mut tree, first_item).is_null());
 
-            let first = &mut items[0] as *mut utf8_item;
-            let duplicate = &mut items[3] as *mut utf8_item;
-            assert!(utf8_index_tree_insert(&raw mut tree, first).is_null());
-            assert!(utf8_index_tree_insert(&raw mut tree, &mut items[1]).is_null());
-            assert!(utf8_index_tree_insert(&raw mut tree, &mut items[2]).is_null());
+            let mut zero = Box::new(std::mem::zeroed::<utf8_item>());
+            zero.index = 0;
+            assert!(utf8_index_tree_insert(&raw mut tree, zero).is_null());
+            let mut maximum = Box::new(std::mem::zeroed::<utf8_item>());
+            maximum.index = u_int::MAX;
+            assert!(utf8_index_tree_insert(&raw mut tree, maximum).is_null());
+            let mut duplicate = Box::new(std::mem::zeroed::<utf8_item>());
+            duplicate.index = 7;
             assert_eq!(
                 utf8_index_tree_insert(&raw mut tree, duplicate),
                 first,
