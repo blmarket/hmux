@@ -1481,6 +1481,18 @@ legacy callers safe.
   `seed,tail`. This PTY check was run manually rather than added as an
   automated test. No sanitizer run was performed.
 
+### Increment 79 — source-file cwd glob quoting (2026-09-22)
+
+- `cmd_source_file_quote_for_glob` now returns `CString` built from the cwd's
+  C-string bytes. Its sole caller, `cmd_source_file_exec`, borrows those bytes
+  for relative glob patterns and drops the owner at the former `free(cwd)`
+  point. This removes the helper's `xmalloc` buffer and caller's manual free.
+  ASCII glob punctuation is escaped with the same ctype check; non-ASCII bytes
+  remain unchanged. The asynchronous file list still receives its own copies.
+- The private-server `source_file_pattern` test passed with a cwd containing
+  brackets, plus, and UTF-8 bytes. `git diff --check` passed. No sanitizer run
+  was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1495,8 +1507,7 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the private `cmd_source_file_quote_for_glob` cwd builder and
-   `window_copy_cellstring`'s extended-cell copy. Remaining `xstrndup`
+2. Inspect `window_copy_cellstring`'s extended-cell copy. Remaining `xstrndup`
    callers return or transfer C-owned strings; `window_copy` regex buffers
    grow through a shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph

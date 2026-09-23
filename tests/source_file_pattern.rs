@@ -19,9 +19,9 @@ impl Server {
             .duration_since(UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        // Brackets in the cwd must be quoted before a relative path reaches glob.
+        // Glob punctuation in the cwd must be quoted; UTF-8 bytes stay literal.
         let directory = std::env::temp_dir().join(format!(
-            "hmux2-source-pattern-[test]-{}-{stamp}",
+            "hmux2-source-pattern-[test]+é-{}-{stamp}",
             std::process::id()
         ));
         fs::create_dir(&directory).expect("create private directory");

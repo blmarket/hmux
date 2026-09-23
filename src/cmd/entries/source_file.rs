@@ -5,7 +5,7 @@ use crate::src::cmd_queue::{
     cmdq_continue, cmdq_error, cmdq_get_callback1, cmdq_get_client, cmdq_get_target,
     cmdq_insert_after,
 };
-use crate::src::ffi::libc::{__ctype_b_loc, free, glob, globfree, strcmp, strerror, strlen};
+use crate::src::ffi::libc::{__ctype_b_loc, free, glob, globfree, strcmp, strerror};
 use crate::src::file::file_read;
 use crate::src::format::format_single_from_target;
 use crate::src::log::log_debug;
@@ -80,7 +80,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xcalloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
@@ -280,36 +280,20 @@ unsafe extern "C" fn cmd_source_file_add(
     let ref mut fresh1 = *(*cdata).files.offset(fresh0 as isize);
     *fresh1 = xstrdup(path);
 }
-unsafe extern "C" fn cmd_source_file_quote_for_glob(
-    mut path: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut quoted: *mut ::core::ffi::c_char = xmalloc(
-        (2 as size_t)
-            .wrapping_mul(strlen(path))
-            .wrapping_add(1 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    let mut q: *mut ::core::ffi::c_char = quoted;
-    let mut p: *const ::core::ffi::c_char = path;
-    while *p as ::core::ffi::c_int != '\0' as i32 {
-        if (*p as u_char as ::core::ffi::c_int) < 128 as ::core::ffi::c_int
-            && *(*__ctype_b_loc()).offset(*p as u_char as ::core::ffi::c_int as isize)
-                as ::core::ffi::c_int
+unsafe fn cmd_source_file_quote_for_glob(path: *const ::core::ffi::c_char) -> CString {
+    let mut quoted = Vec::new();
+    for &byte in CStr::from_ptr(path).to_bytes() {
+        if byte < 128
+            && *(*__ctype_b_loc()).offset(byte as isize) as ::core::ffi::c_int
                 & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
                 == 0
-            && *p as ::core::ffi::c_int != '/' as i32
+            && byte != b'/'
         {
-            let fresh2 = q;
-            q = q.offset(1);
-            *fresh2 = '\\' as i32 as ::core::ffi::c_char;
+            quoted.push(b'\\');
         }
-        let fresh3 = p;
-        p = p.offset(1);
-        let fresh4 = q;
-        q = q.offset(1);
-        *fresh4 = *fresh3;
+        quoted.push(byte);
     }
-    *q = '\0' as i32 as ::core::ffi::c_char;
-    return quoted;
+    CString::new(quoted).expect("C string path has no interior NUL")
 }
 unsafe extern "C" fn cmd_source_file_exec(
     mut self_0: *mut cmd,
@@ -319,7 +303,6 @@ unsafe extern "C" fn cmd_source_file_exec(
     let mut cdata: *mut cmd_source_file_data = ::core::ptr::null_mut::<cmd_source_file_data>();
     let mut c: *mut client = cmdq_get_client(item);
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
-    let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -388,7 +371,7 @@ unsafe extern "C" fn cmd_source_file_exec(
             (*cdata).flags |= CMD_PARSE_VERBOSE;
         }
     }
-    cwd = cmd_source_file_quote_for_glob(server_client_get_cwd(
+    let cwd = cmd_source_file_quote_for_glob(server_client_get_cwd(
         c,
         ::core::ptr::null_mut::<session>(),
     ));
@@ -408,7 +391,7 @@ unsafe extern "C" fn cmd_source_file_exec(
             let pattern = if *path as ::core::ffi::c_int == '/' as i32 {
                 CStr::from_ptr(path).to_owned()
             } else {
-                let cwd_bytes = CStr::from_ptr(cwd).to_bytes();
+                let cwd_bytes = cwd.to_bytes();
                 let path_bytes = CStr::from_ptr(path).to_bytes();
                 let mut bytes = Vec::with_capacity(cwd_bytes.len() + 1 + path_bytes.len());
                 bytes.extend_from_slice(cwd_bytes);
@@ -477,6 +460,6 @@ unsafe extern "C" fn cmd_source_file_exec(
     } else {
         cmd_source_file_complete(cdata);
     }
-    free(cwd as *mut ::core::ffi::c_void);
+    drop(cwd);
     return retval;
 }
