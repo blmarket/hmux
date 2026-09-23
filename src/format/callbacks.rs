@@ -475,13 +475,12 @@ unsafe extern "C" fn format_cb_current_command(
     if wp.is_null() || (*wp).shell.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    let cmd = osdep_get_name((*wp).fd, &raw mut (*wp).tty as *mut ::core::ffi::c_char);
-    if !cmd.is_null() && *cmd != 0 {
-        let value = parse_window_name(cmd);
-        free(cmd as *mut ::core::ffi::c_void);
+    if let Some(cmd) =
+        osdep_get_name_cstring((*wp).fd, &raw mut (*wp).tty as *mut ::core::ffi::c_char)
+    {
+        let value = parse_window_name(cmd.as_ptr());
         return value as *mut ::core::ffi::c_void;
     }
-    free(cmd as *mut ::core::ffi::c_void);
     let argv = cmd_stringify_argv_cstring((*wp).argc, (*wp).argv);
     let source = argv
         .as_ref()

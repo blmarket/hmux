@@ -9,7 +9,7 @@ pub use crate::src::shared::stdio::EOF;
 pub use crate::src::shared::stdio::{
     _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
 };
-use crate::src::xmalloc::xrealloc;
+use crate::src::xmalloc::xstrdup;
 
 pub const MAXPATHLEN: ::core::ffi::c_int = PATH_MAX;
 pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;
@@ -17,49 +17,43 @@ pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;
 pub const TIOCGSID: ::core::ffi::c_int = 0x5429 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn osdep_get_name(
-    mut fd: ::core::ffi::c_int,
-    mut tty: *mut ::core::ffi::c_char,
+    fd: ::core::ffi::c_int,
+    tty: *mut ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
-    let mut ch: ::core::ffi::c_int = 0;
-    let mut pgrp: pid_t = 0;
-    pgrp = tcgetpgrp(fd) as pid_t;
+    // Keep the exported libc-owned return contract for external callers.
+    osdep_get_name_cstring(fd, tty).map_or(::core::ptr::null_mut(), |name| xstrdup(name.as_ptr()))
+}
+
+pub(crate) unsafe fn osdep_get_name_cstring(
+    fd: ::core::ffi::c_int,
+    _tty: *mut ::core::ffi::c_char,
+) -> Option<CString> {
+    let pgrp = tcgetpgrp(fd) as pid_t;
     if pgrp == -(1 as ::core::ffi::c_int) {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
     let path = CString::new(format!("/proc/{pgrp}/cmdline")).unwrap();
-    f = fopen(
+    let f = fopen(
         path.as_ptr(),
         b"r\0" as *const u8 as *const ::core::ffi::c_char,
     ) as *mut FILE;
     if f.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
-    len = 0 as size_t;
-    buf = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf = Vec::new();
     loop {
-        ch = fgetc(f);
-        if !(ch != EOF) {
+        let ch = fgetc(f);
+        if ch == EOF || ch == 0 {
             break;
         }
-        if ch == '\0' as i32 {
-            break;
-        }
-        buf = xrealloc(
-            buf as *mut ::core::ffi::c_void,
-            len.wrapping_add(2 as size_t),
-        ) as *mut ::core::ffi::c_char;
-        let fresh0 = len;
-        len = len.wrapping_add(1);
-        *buf.offset(fresh0 as isize) = ch as ::core::ffi::c_char;
-    }
-    if !buf.is_null() {
-        *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
+        buf.push(ch as u8);
     }
     fclose(f);
-    return buf;
+    if buf.is_empty() {
+        None
+    } else {
+        Some(CString::new(buf).expect("cmdline stops at the first NUL"))
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_char {

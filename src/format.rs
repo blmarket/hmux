@@ -34,7 +34,7 @@ use crate::src::options::{
     options_get_number, options_get_string, options_is_array, options_name, options_next,
     options_parse_get, options_to_string,
 };
-use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name};
+use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top, paste_make_sample,
 };

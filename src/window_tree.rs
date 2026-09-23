@@ -17,7 +17,7 @@ use crate::src::mode_tree::{
     mode_tree_set_prompt, mode_tree_start, mode_tree_view_name, mode_tree_zoom,
 };
 use crate::src::options::options_get_string;
-use crate::src::osdep_linux::osdep_get_name;
+use crate::src::osdep_linux::osdep_get_name_cstring;
 use crate::src::resize::recalculate_sizes;
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_hline,
@@ -1574,7 +1574,6 @@ unsafe extern "C" fn window_tree_search(
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut retval: ::core::ffi::c_int = 0;
     window_tree_pull_item(item, &raw mut s, &raw mut wl, &raw mut wp);
     match (*item).type_0 as ::core::ffi::c_uint {
@@ -1603,19 +1602,19 @@ unsafe extern "C" fn window_tree_search(
         }
         3 => {
             if !(s.is_null() || wl.is_null() || wp.is_null()) {
-                cmd = osdep_get_name((*wp).fd, &raw mut (*wp).tty as *mut ::core::ffi::c_char);
-                if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
-                    free(cmd as *mut ::core::ffi::c_void);
+                let Some(cmd) = osdep_get_name_cstring(
+                    (*wp).fd,
+                    &raw mut (*wp).tty as *mut ::core::ffi::c_char,
+                ) else {
                     return 0 as ::core::ffi::c_int;
-                }
+                };
                 if icase != 0 {
-                    retval = (strcasestr(cmd, ss) != NULL as *mut ::core::ffi::c_char)
+                    retval = (strcasestr(cmd.as_ptr(), ss) != NULL as *mut ::core::ffi::c_char)
                         as ::core::ffi::c_int;
                 } else {
-                    retval =
-                        (strstr(cmd, ss) != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
+                    retval = (strstr(cmd.as_ptr(), ss) != NULL as *mut ::core::ffi::c_char)
+                        as ::core::ffi::c_int;
                 }
-                free(cmd as *mut ::core::ffi::c_void);
                 return retval;
             }
         }
