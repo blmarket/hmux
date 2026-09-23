@@ -1900,6 +1900,20 @@ legacy callers safe.
   `send-keys -K`. The click timer was source-audited but not live E2E tested.
   No sanitizer was run.
 
+### Increment 260 — confirmation prompt callback owner (2026-09-23)
+
+- `cmd_confirm_before_data` now has a `Box` owner. Creation keeps the box local
+  through command construction and key validation; the prompt receives it
+  only after setup succeeds. The registered free callback releases the nested
+  C-owned command list and drops the box. Prompt replacement and cancellation
+  still use the same status prompt free callback.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and
+  `scripts/confirm_before_owner_cli_checks.py` passed on main. The attached
+  PTY comparison with the pinned baseline covered accept, reject, custom key
+  with default yes, prompt replacement, and invalid-key cleanup. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1910,8 +1924,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit small callback and mode-data leaves such as `window_clock` and
-   `confirm_before` for complete allocation, callback, and free ownership.
+1. Audit small callback and mode-data leaves such as `window_clock` for
+   complete allocation, callback, and free ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
