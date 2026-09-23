@@ -62,15 +62,20 @@ unsafe fn paste_take_data(pb: *mut paste_buffer, data: *mut ::core::ffi::c_char,
     } else {
         Some(std::slice::from_raw_parts(data.cast::<u8>(), size).into())
     };
+    paste_store_data(pb, owned);
+    free(data.cast());
+}
+
+unsafe fn paste_store_data(pb: *mut paste_buffer, data: Option<Box<[u8]>>) {
+    let size = data.as_ref().map_or(0, |bytes| bytes.len());
     let owner = &mut *pb.cast::<PasteBufferOwner>();
-    owner.data = owned;
+    owner.data = data;
     owner.node.data = owner
         .data
         .as_mut()
         .map_or(::core::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         .cast::<::core::ffi::c_char>();
     owner.node.size = size;
-    free(data.cast());
 }
 
 unsafe fn paste_replace_name(pb: *mut paste_buffer, name: CString) -> CString {
@@ -278,18 +283,27 @@ pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_add(
-    mut prefix: *const ::core::ffi::c_char,
-    mut data: *mut ::core::ffi::c_char,
-    mut size: size_t,
+    prefix: *const ::core::ffi::c_char,
+    data: *mut ::core::ffi::c_char,
+    size: size_t,
 ) {
+    if size == 0 {
+        free(data.cast());
+        return;
+    }
+    let owned = std::slice::from_raw_parts(data.cast::<u8>(), size).into();
+    paste_add_owned(prefix, owned);
+    free(data.cast());
+}
+
+pub(crate) unsafe fn paste_add_owned(mut prefix: *const ::core::ffi::c_char, data: Box<[u8]>) {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut pb1: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut limit: u_int = 0;
     if prefix.is_null() {
         prefix = b"buffer\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    if size == 0 as size_t {
-        free(data as *mut ::core::ffi::c_void);
+    if data.is_empty() {
         return;
     }
     let prefix_bytes = CStr::from_ptr(prefix).to_bytes().to_vec();
@@ -321,7 +335,7 @@ pub unsafe extern "C" fn paste_add(
             break;
         }
     }
-    paste_take_data(pb, data, size);
+    paste_store_data(pb, Some(data));
     (*pb).automatic = 1 as ::core::ffi::c_int;
     paste_num_automatic = paste_num_automatic.wrapping_add(1);
     (*pb).created = time(::core::ptr::null_mut::<time_t>());

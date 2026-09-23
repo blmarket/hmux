@@ -125,14 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `tty_keys_clipboard` still decodes an OSC 52 reply into an `xmalloc`
-   buffer, then either frees it or transfers it to `paste_add` after a
-   synchronous input-request callback. The paste buffer now owns boxed bytes.
-   A private owned-byte paste path can let the decoder use `Vec<u8>` through
-   the callback and move its exact decoded slice on the query path, while the
-   exported `paste_add` retains its C-input transfer contract. Validate real
-   terminal OSC 52 query/reply, invalid base64, and binary bytes including
-   an interior NUL.
+1. Monitor cached `last` values are the next live bounded owner. `monitor_check_value`
+   replaces `format_expand` results in the boxed item, pane, and window
+   records; their teardown and generation sweeps free the raw strings. Add
+   private optional `CString` owners for all three leaf types and lend the
+   public pointers. Audit the report callback before publishing or dropping
+   an old value: it can reenter and destroy a monitor leaf. Existing monitor
+   leaf and non-UTF-8 CLI checks cover changes, sweeps, and teardown.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -182,14 +181,13 @@ non-string value.
    crosses the C-owned return boundary. Remaining `xstrndup` callers return
    or transfer C-owned strings.
 
-OSC 52 decode output transfers directly into `paste_add`, which retains its C
-allocation until `paste_free`; a local Vec would add a copy without removing
-the lifetime. The existing clipboard-reply E2E covers decoded `A\0B` and a
-first NUL in encoded input.
+OSC 52 decoded output now moves directly from a `Vec<u8>` into the boxed paste
+owner on the query path. The exported `paste_add` still copies and consumes
+its C input. The real terminal clipboard-query E2E covers binary `A\0B\xff`,
+invalid base64, and empty replies.
 
-`set-buffer`'s payload is a less useful local target: `paste_set` retains the
-libc allocation on success and leaves it with the caller on error, so a local
-`Vec` alone would add an allocation and copy.
+`set-buffer` payloads copy into the paste owner on success; `paste_set` name
+errors still leave the C producer allocation with the caller.
 
 ## Recent migration detail
 
@@ -966,6 +964,21 @@ libc allocation on success and leaves it with the caller on error, so a local
   error. The existing UTF-8 prompt-paste CLI check passed. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
 
+### Increment 407 — owned OSC 52 decoded bytes (2026-09-23)
+
+- `tty_keys_clipboard` now decodes base64 directly into a `Vec<u8>`, lends its
+  pointer to the synchronous `input_request_reply`, and moves its exact
+  decoded bytes into the paste owner on the pending-query path. Invalid and
+  unqueried results drop normally. A private `paste_add_owned` shares the
+  existing automatic-buffer creation, eviction, and event path; exported
+  `paste_add` still copies and consumes its C input. Its prefix remains valid
+  through name construction even if it aliases that C input.
+- Serialized workspace tests and binary build passed. A real attached-PTY
+  comparison against pinned tmux passed for a query followed by `A\0B\xff`,
+  invalid base64, and an empty reply. Existing set-buffer and load-buffer
+  CLI comparisons passed. Changed-file rustfmt and diff checks passed. No
+  sanitizer ran.
+
 ## Historical migration index
 
 Each retained increment was committed separately; increment 228 was reverted.
@@ -1220,8 +1233,8 @@ Numbers 6–139 were never individually recorded in this document.
 - args_set retains an out-of-repo Box record contract. Do not change that allocation path solely for in-repo callers.
 - utf8_sanitize preserves the first-NUL C-string view and the old fatal for a leading zero-width cell. Its Rust allocation failure diagnostic can differ from xreallocarray; a malformed complete UTF-8 rewind was corrected to retry from the candidate start.
 - log_vwrite, which calls vasprintf directly, has a supported interior-NUL E2E. No supported interior-NUL output was found in xvasprintf callers; the binary A\0B show-buffer E2E reaches window_copy_vadd but formats only A.
-- OSC 52 decoded allocations and set-buffer producer data transfer to the
-  paste owner, which copies and frees each accepted producer. `paste_set`
+- OSC 52 decoded bytes move to the paste owner without a C allocation;
+  set-buffer producer data is copied and freed on acceptance. `paste_set`
   errors leave producer data with the caller. The public data pointer borrows
   the owner until replacement or deletion.
 

@@ -4,14 +4,14 @@ use crate::src::bracketed_paste::{
 use crate::src::colour::{colour_format, colour_parse_x11_logged};
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{
-    __ctype_b_loc, free, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol, strtoul,
+    __ctype_b_loc, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol, strtoul,
 };
 use crate::src::ffi::resolv::__b64_pton;
 use crate::src::input::input_request_reply;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_debug, log_get_level};
 use crate::src::options::{options_array_getv, options_get, options_get_number};
-use crate::src::paste::paste_add;
+use crate::src::paste::paste_add_owned;
 use crate::src::reactor::{
     evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized,
     event_pending, event_set,
@@ -109,7 +109,6 @@ use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
 use crate::src::tty_term::tty_term_string;
 use crate::src::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::src::window::window_update_focus;
-use crate::src::xmalloc::xmalloc;
 use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
@@ -2583,7 +2582,6 @@ unsafe extern "C" fn tty_keys_clipboard(
     let mut end: size_t = 0;
     let mut terminator: size_t = 0 as size_t;
     let mut needed: size_t = 0;
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut clip: ::core::ffi::c_char = 0 as ::core::ffi::c_char;
     let mut outlen: ::core::ffi::c_int = 0;
     let mut cd: input_request_clipboard_data = input_request_clipboard_data {
@@ -2669,24 +2667,24 @@ unsafe extern "C" fn tty_keys_clipboard(
     if needed == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
-    out = xmalloc(needed) as *mut ::core::ffi::c_char;
+    let mut out = Vec::<u8>::with_capacity(needed);
     outlen = __b64_pton(
         copy.as_ptr().cast::<::core::ffi::c_char>(),
-        out as *mut ::core::ffi::c_uchar,
+        out.as_mut_ptr(),
         needed,
     );
     if outlen == -(1 as ::core::ffi::c_int) {
-        free(out as *mut ::core::ffi::c_void);
         return 0 as ::core::ffi::c_int;
     }
+    out.set_len(outlen as usize);
     drop(copy);
     log_debug(
         b"%s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
         b"tty_keys_clipboard\0" as *const u8 as *const ::core::ffi::c_char,
         outlen,
-        out,
+        out.as_ptr().cast::<::core::ffi::c_char>(),
     );
-    cd.buf = out;
+    cd.buf = out.as_mut_ptr().cast();
     cd.len = outlen as size_t;
     cd.clip = clip;
     input_request_reply(
@@ -2695,16 +2693,10 @@ unsafe extern "C" fn tty_keys_clipboard(
         &raw mut cd as *mut ::core::ffi::c_void,
     );
     if (*tty).flags & TTY_OSC52QUERY != 0 {
-        paste_add(
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            out,
-            outlen as size_t,
-        );
-        out = ::core::ptr::null_mut::<::core::ffi::c_char>();
+        paste_add_owned(::core::ptr::null(), out.into_boxed_slice());
         event_del(&raw mut (*tty).clipboard_timer);
         (*tty).flags &= !TTY_OSC52QUERY;
     }
-    free(out as *mut ::core::ffi::c_void);
     return 0 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn tty_keys_device_attributes(
