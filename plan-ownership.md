@@ -2451,6 +2451,18 @@ legacy callers safe.
   mutable-prompt CLI check covering incremental startup, and
   `git diff --check` passed. No sanitizer was run.
 
+### Increment 138 — prompt input format text (2026-09-22)
+
+- `prompt_format_tree` now owns the temporary `prompt_input` text as a
+  `CString` from `utf8_tocstr_cstring`. `format_add("prompt_input", "%s")`
+  copies that C-string view into its own format entry during the call, so
+  the temporary drops afterward. Removed the `utf8_tocstr` allocation and
+  manual free without changing the format tree's retained value.
+- Added `scripts/prompt_input_format_cli_checks.py` to verify an attached
+  prompt renders and updates a Unicode `#{prompt_input}` label as text is
+  entered. Isolated library/binary build, that script, the existing prompt
+  completion check, and `git diff --check` passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2461,9 +2473,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `prompt_format_tree` passes a temporary `utf8_tocstr` result to
-   `format_add("prompt_input", "%s")`, which copies synchronously, then
-   frees it. The new converter can own the temporary.
+1. `prompt_key` has a final incremental callback path that builds a
+   `%c%s` value from a local `utf8_tocstr` buffer, then frees both. Its
+   `prefix` choices are fixed nonzero bytes; audit callback outcomes and
+   the nearby single-key path before using the new converter there.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -2488,9 +2501,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–132. The remaining
+Current validation is recorded in increments 15–138. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–132 has its own local commit; none was pushed.
+Each of increments 15–138 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2589,3 +2602,10 @@ send-keys, and key CLI checks, and `git diff --check` passed on main.
 Changed-file rustfmt reports two import-layout differences in `prompt.rs`;
 checking its exact pre-increment `0c279d5` version reports the same sites.
 The other changed Rust files pass rustfmt. No combined sanitizer was run.
+After increments 136–138 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, prompt-mutable, prompt-input-format, prompt-completion, prompt-paste,
+and format-loop CLI checks, and `git diff --check` passed on main.
+Changed-file rustfmt reports only two import-layout differences in
+`prompt.rs`; checking its exact pre-increment `1c3d196` version reports the
+same sites. `src/text/utf8.rs` passes rustfmt. No combined sanitizer was run.

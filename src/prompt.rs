@@ -669,7 +669,6 @@ unsafe extern "C" fn prompt_draw_complete(
 }
 unsafe extern "C" fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if cmd_find_valid_state(&raw mut (*pr).state) != 0 {
         ft = format_create_from_state(
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -685,14 +684,13 @@ unsafe extern "C" fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree
             ::core::ptr::null_mut::<window_pane>(),
         );
     }
-    tmp = utf8_tocstr((*pr).buffer);
+    let tmp = utf8_tocstr_cstring((*pr).buffer);
     format_add(
         ft,
         b"prompt_input\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        tmp,
+        tmp.as_ptr(),
     );
-    free(tmp as *mut ::core::ffi::c_void);
     format_add(
         ft,
         b"prompt_flags\0" as *const u8 as *const ::core::ffi::c_char,
