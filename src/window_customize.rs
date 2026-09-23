@@ -1064,7 +1064,6 @@ unsafe extern "C" fn window_customize_build_array(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut ai: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1075,17 +1074,16 @@ unsafe extern "C" fn window_customize_build_array(
         if (*data).hide_default != 0 && window_customize_option_is_changed(o, array_key) == 0 {
             ai = options_array_next(ai);
         } else {
-            xasprintf(
-                &raw mut name,
-                b"%s[%s]\0" as *const u8 as *const ::core::ffi::c_char,
-                options_name(o),
-                array_key,
-            );
+            let mut name = CStr::from_ptr(options_name(o)).to_bytes().to_vec();
+            name.push(b'[');
+            name.extend_from_slice(CStr::from_ptr(array_key).to_bytes());
+            name.push(b']');
+            let name = CString::new(name).expect("option name and array key contain no NUL");
             format_add(
                 ft,
                 b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
+                name.as_ptr(),
             );
             value = options_to_string(o, array_key, 0 as ::core::ffi::c_int);
             format_add(
@@ -1109,12 +1107,11 @@ unsafe extern "C" fn window_customize_build_array(
                 top,
                 item as *mut ::core::ffi::c_void,
                 window_customize_option_identity(group, options_name(o), array_key),
-                name,
+                name.as_ptr(),
                 text,
                 -(1 as ::core::ffi::c_int),
             );
             free(text as *mut ::core::ffi::c_void);
-            free(name as *mut ::core::ffi::c_void);
             free(value as *mut ::core::ffi::c_void);
             count = count.wrapping_add(1);
             ai = options_array_next(ai);
