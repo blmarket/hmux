@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
-use crate::src::ffi::libc::{free, memchr, strlen};
+use crate::src::ffi::libc::{memchr, strlen};
 use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
 use crate::src::reactor::bufferevent_write;
 use crate::src::shared::abi::*;
@@ -66,7 +66,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::utf8::utf8_stravisx;
+use crate::src::utf8::utf8_stravisx_bytes;
 use crate::src::window::window_pane_exited;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -106,11 +106,8 @@ unsafe extern "C" fn cmd_paste_buffer_paste(
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
 ) {
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut n: size_t = 0;
-    n = utf8_stravisx(&raw mut cp, buf, len, VIS_SAFE | VIS_NOSLASH);
-    bufferevent_write((*wp).event, cp as *const ::core::ffi::c_void, n);
-    free(cp as *mut ::core::ffi::c_void);
+    let escaped = utf8_stravisx_bytes(buf, len, VIS_SAFE | VIS_NOSLASH);
+    bufferevent_write((*wp).event, escaped.as_ptr().cast(), escaped.len());
 }
 unsafe extern "C" fn cmd_paste_buffer_exec(
     mut self_0: *mut cmd,

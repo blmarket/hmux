@@ -125,11 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_paste_buffer_paste` still uses `utf8_stravisx` to allocate escaped
-   bytes, writes its exact returned length to `bufferevent_write`, then
-   frees the allocation. A private length-aware Vec escape helper can own
-   this local result while keeping exported `utf8_stravisx` C-owned. Check
-   binary input and the `paste-buffer -p` output against pinned tmux.
+1. `server_client_print` still uses exported `utf8_stravisx` for its
+   `parse == 0` control-client message path, then frees the local C string.
+   The private length-aware escape helper can own that result with a trailing
+   NUL for its synchronous `%s` consumers. Preserve the separate `parse !=
+   0` evbuffer path and test a real control-client `display-message` event
+   with non-UTF-8 and escaped bytes against pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1086,6 +1087,22 @@ name error.
   append, eviction, invalid names, and an attached-PTY binary `A\0B\xff`
   append whose `-w` OSC 52 output is checked byte for byte. Empty input and
   invalid name produce no clipboard output. Changed-file rustfmt and diff
+  checks passed. No sanitizer ran.
+
+### Increment 415 — owned paste-buffer escaped bytes (2026-09-23)
+
+- Private `utf8_stravisx_bytes` escapes an explicit byte length into a
+  `Vec<u8>`, preserving bytes after an input NUL and omitting the C
+  terminator. `cmd_paste_buffer_paste` lends that slice to synchronous
+  `bufferevent_write`, which copies into its output evbuffer. Its former
+  exported `utf8_stravisx` allocation and manual free are removed. The
+  exported escape function keeps its C-owned result contract.
+- Serialized workspace tests and binary build passed. A private-session
+  candidate/pinned-tmux comparison checked exact delivered bytes for
+  `A\0B\xff\nC\tD` in default escaped, `-S` raw, and `-p` bracketed
+  modes. The reader records actual pane input, and its completion marker
+  follows the paste on the same stream after the first bytes arrive to
+  avoid an asynchronous ordering race. Changed-file rustfmt and diff
   checks passed. No sanitizer ran.
 
 ## Historical migration index

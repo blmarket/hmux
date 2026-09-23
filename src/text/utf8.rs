@@ -1747,6 +1747,22 @@ pub(crate) unsafe fn utf8_stravis_cstring(src: *const ::core::ffi::c_char, flag:
     buffer.truncate(escaped_len + 1);
     CString::from_vec_with_nul(buffer).expect("utf8_strvis output has no interior NUL")
 }
+
+/// Escape an explicit byte length without losing bytes after an input NUL.
+pub(crate) unsafe fn utf8_stravisx_bytes(
+    src: *const ::core::ffi::c_char,
+    srclen: size_t,
+    flag: ::core::ffi::c_int,
+) -> Vec<u8> {
+    let capacity = srclen
+        .checked_mul(4)
+        .and_then(|size| size.checked_add(1))
+        .expect("escaped UTF-8 bytes are too large");
+    let mut buffer = vec![0u8; capacity];
+    let escaped_len = utf8_strvis(buffer.as_mut_ptr().cast(), src, srclen, flag);
+    buffer.truncate(escaped_len);
+    buffer
+}
 #[no_mangle]
 pub unsafe extern "C" fn utf8_stravisx(
     mut dst: *mut *mut ::core::ffi::c_char,
