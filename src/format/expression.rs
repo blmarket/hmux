@@ -696,27 +696,36 @@ pub(super) unsafe extern "C" fn format_choose(
     mut s: *const ::core::ffi::c_char,
     mut left: *mut *mut ::core::ffi::c_char,
     mut right: *mut *mut ::core::ffi::c_char,
-    mut expand: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let cp = format_skip1(es, s, b",\0" as *const u8 as *const ::core::ffi::c_char);
     if cp.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
     let split = cp.offset_from(s) as usize;
-    if expand != 0 {
-        // Clone both operands before expansion: a format callback may reenter
-        // the formatter or change the storage backing the original input.
-        let left0 = CString::new(&CStr::from_ptr(s).to_bytes()[..split]).unwrap();
-        let right0 = CStr::from_ptr(cp.add(1)).to_owned();
-        *left = format_expand1(es, left0.as_ptr());
-        drop(left0);
-        *right = format_expand1(es, right0.as_ptr());
-    } else {
-        // Loop callers retain and later free these C-owned operands.
-        *left = xstrndup(s, split as size_t);
-        *right = xstrdup(cp.add(1));
-    }
+    // Clone both operands before expansion: a format callback may reenter
+    // the formatter or change the storage backing the original input.
+    let left0 = CString::new(&CStr::from_ptr(s).to_bytes()[..split]).unwrap();
+    let right0 = CStr::from_ptr(cp.add(1)).to_owned();
+    *left = format_expand1(es, left0.as_ptr());
+    drop(left0);
+    *right = format_expand1(es, right0.as_ptr());
     return 0 as ::core::ffi::c_int;
+}
+
+// The three format loops only borrow the operands while expanding each item.
+// Keep both copies alive across nested expansions, including the no-comma case.
+unsafe fn format_choose_loop(
+    es: *mut format_expand_state,
+    fmt: *const ::core::ffi::c_char,
+) -> (CString, Option<CString>) {
+    let cp = format_skip1(es, fmt, b",\0".as_ptr().cast());
+    if cp.is_null() {
+        return (CStr::from_ptr(fmt).to_owned(), None);
+    }
+    let split = cp.offset_from(fmt) as usize;
+    let all = CString::new(&CStr::from_ptr(fmt).to_bytes()[..split]).unwrap();
+    let active = CStr::from_ptr(cp.add(1)).to_owned();
+    (all, Some(active))
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_true(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
@@ -1273,9 +1282,6 @@ pub(super) unsafe extern "C" fn format_loop_sessions(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut all: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut active: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut use_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
@@ -1284,17 +1290,7 @@ pub(super) unsafe extern "C" fn format_loop_sessions(
     let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
     let mut i: ::core::ffi::c_int = 0;
     let mut n: ::core::ffi::c_int = 0;
-    if format_choose(
-        es,
-        fmt,
-        &raw mut all,
-        &raw mut active,
-        0 as ::core::ffi::c_int,
-    ) != 0 as ::core::ffi::c_int
-    {
-        all = xstrdup(fmt);
-        active = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
+    let (all, active) = format_choose_loop(es, fmt);
     buffer = evbuffer_new();
     if buffer.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1309,15 +1305,15 @@ pub(super) unsafe extern "C" fn format_loop_sessions(
             b"session loop: $%u\0" as *const u8 as *const ::core::ffi::c_char,
             (*s).id,
         );
-        if !active.is_null()
+        let use_0 = if active.is_some()
             && !(*ft).c.is_null()
             && !(*(*ft).c).session.is_null()
             && (*s).id == (*(*(*ft).c).session).id
         {
-            use_0 = active;
+            active.as_ref().unwrap().as_ptr()
         } else {
-            use_0 = all;
-        }
+            all.as_ptr()
+        };
         nft = format_create(c, item, FORMAT_NONE, (*ft).flags);
         format_add(
             nft,
@@ -1350,8 +1346,8 @@ pub(super) unsafe extern "C" fn format_loop_sessions(
         free(expanded as *mut ::core::ffi::c_void);
         i += 1;
     }
-    free(active as *mut ::core::ffi::c_void);
-    free(all as *mut ::core::ffi::c_void);
+    drop(active);
+    drop(all);
     size = evbuffer_get_length(buffer);
     if size != 0 as size_t {
         value = xmemdup(
@@ -1468,9 +1464,6 @@ pub(super) unsafe extern "C" fn format_loop_windows(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut all: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut active: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut use_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
@@ -1488,17 +1481,7 @@ pub(super) unsafe extern "C" fn format_loop_windows(
         );
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    if format_choose(
-        es,
-        fmt,
-        &raw mut all,
-        &raw mut active,
-        0 as ::core::ffi::c_int,
-    ) != 0 as ::core::ffi::c_int
-    {
-        all = xstrdup(fmt);
-        active = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
+    let (all, active) = format_choose_loop(es, fmt);
     buffer = evbuffer_new();
     if buffer.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1515,11 +1498,11 @@ pub(super) unsafe extern "C" fn format_loop_windows(
             (*wl).idx,
             (*w).id,
         );
-        if !active.is_null() && wl == (*s).curw {
-            use_0 = active;
+        let use_0 = if active.is_some() && wl == (*s).curw {
+            active.as_ref().unwrap().as_ptr()
         } else {
-            use_0 = all;
-        }
+            all.as_ptr()
+        };
         nft = format_create(
             c,
             item,
@@ -1597,8 +1580,8 @@ pub(super) unsafe extern "C" fn format_loop_windows(
         free(expanded as *mut ::core::ffi::c_void);
         i += 1;
     }
-    free(active as *mut ::core::ffi::c_void);
-    free(all as *mut ::core::ffi::c_void);
+    drop(active);
+    drop(all);
     size = evbuffer_get_length(buffer);
     if size != 0 as size_t {
         value = xmemdup(
@@ -1641,9 +1624,6 @@ pub(super) unsafe extern "C" fn format_loop_panes(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut all: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut active: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut use_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
@@ -1660,17 +1640,7 @@ pub(super) unsafe extern "C" fn format_loop_panes(
         );
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    if format_choose(
-        es,
-        fmt,
-        &raw mut all,
-        &raw mut active,
-        0 as ::core::ffi::c_int,
-    ) != 0 as ::core::ffi::c_int
-    {
-        all = xstrdup(fmt);
-        active = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
+    let (all, active) = format_choose_loop(es, fmt);
     buffer = evbuffer_new();
     if buffer.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1685,11 +1655,11 @@ pub(super) unsafe extern "C" fn format_loop_panes(
             b"pane loop: %%%u\0" as *const u8 as *const ::core::ffi::c_char,
             (*wp).id,
         );
-        if !active.is_null() && wp == (*(*ft).w).active {
-            use_0 = active;
+        let use_0 = if active.is_some() && wp == (*(*ft).w).active {
+            active.as_ref().unwrap().as_ptr()
         } else {
-            use_0 = all;
-        }
+            all.as_ptr()
+        };
         nft = format_create(
             c,
             item,
@@ -1721,8 +1691,8 @@ pub(super) unsafe extern "C" fn format_loop_panes(
         free(expanded as *mut ::core::ffi::c_void);
         i += 1;
     }
-    free(active as *mut ::core::ffi::c_void);
-    free(all as *mut ::core::ffi::c_void);
+    drop(active);
+    drop(all);
     size = evbuffer_get_length(buffer);
     if size != 0 as size_t {
         value = xmemdup(
@@ -2521,13 +2491,8 @@ pub(super) unsafe extern "C" fn format_replace_expression(
             match current_block {
                 7376217411786091060 => {}
                 _ => {
-                    if format_choose(
-                        es,
-                        copy,
-                        &raw mut left,
-                        &raw mut right,
-                        1 as ::core::ffi::c_int,
-                    ) != 0 as ::core::ffi::c_int
+                    if format_choose(es, copy, &raw mut left, &raw mut right)
+                        != 0 as ::core::ffi::c_int
                     {
                         format_log1(
                             es,
@@ -3492,14 +3457,7 @@ pub(super) unsafe extern "C" fn format_replace(
             free(new as *mut ::core::ffi::c_void);
             current_block = 1803726662341650892;
         } else if modifiers & FORMAT_REPEAT as uint64_t != 0 {
-            if format_choose(
-                es,
-                copy,
-                &raw mut left,
-                &raw mut right,
-                1 as ::core::ffi::c_int,
-            ) != 0 as ::core::ffi::c_int
-            {
+            if format_choose(es, copy, &raw mut left, &raw mut right) != 0 as ::core::ffi::c_int {
                 format_log1(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3575,14 +3533,7 @@ pub(super) unsafe extern "C" fn format_replace(
             }
             current_block = 1803726662341650892;
         } else if !cmp.is_null() {
-            if format_choose(
-                es,
-                copy,
-                &raw mut left,
-                &raw mut right,
-                1 as ::core::ffi::c_int,
-            ) != 0 as ::core::ffi::c_int
-            {
+            if format_choose(es, copy, &raw mut left, &raw mut right) != 0 as ::core::ffi::c_int {
                 format_log1(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4399,30 +4350,39 @@ mod format_choose_tests {
             es.ft = ft;
             es.start_time = get_timer();
 
-            for (input, expand, expected_left, expected_right) in [
+            for (input, expected_left, expected_right) in [
                 (
                     b"one#,two,three\0".as_slice(),
-                    0,
                     b"one#,two".as_slice(),
                     b"three".as_slice(),
                 ),
-                (b"\xff,\xfe\0", 0, b"\xff", b"\xfe"),
-                (b"#{?1,a,b},tail\0", 0, b"#{?1,a,b}", b"tail"),
-                (b"one#,two,three\0", 1, b"one,two", b"three"),
-                (b"\xff,\xfe\0", 1, b"\xff", b"\xfe"),
-                (b",\0", 1, b"", b""),
+                (b"\xff,\xfe\0", b"\xff", b"\xfe"),
+                (b"#{?1,a,b},tail\0", b"#{?1,a,b}", b"tail"),
+                (b",\0", b"", b""),
+            ] {
+                let input = CStr::from_bytes_with_nul(input).unwrap();
+                let (left, right) = format_choose_loop(&raw mut es, input.as_ptr());
+                assert_eq!(left.to_bytes(), expected_left, "{input:?}");
+                assert_eq!(right.unwrap().to_bytes(), expected_right, "{input:?}");
+            }
+            let (all, active) = format_choose_loop(&raw mut es, b"no delimiter\0".as_ptr().cast());
+            assert_eq!(all.to_bytes(), b"no delimiter");
+            assert!(active.is_none());
+
+            for (input, expected_left, expected_right) in [
+                (
+                    b"one#,two,three\0".as_slice(),
+                    b"one,two".as_slice(),
+                    b"three".as_slice(),
+                ),
+                (b"\xff,\xfe\0", b"\xff", b"\xfe"),
+                (b",\0", b"", b""),
             ] {
                 let input = CStr::from_bytes_with_nul(input).unwrap();
                 let mut left = std::ptr::null_mut();
                 let mut right = std::ptr::null_mut();
                 assert_eq!(
-                    format_choose(
-                        &raw mut es,
-                        input.as_ptr(),
-                        &raw mut left,
-                        &raw mut right,
-                        expand
-                    ),
+                    format_choose(&raw mut es, input.as_ptr(), &raw mut left, &raw mut right,),
                     0,
                     "{input:?}"
                 );
@@ -4444,7 +4404,6 @@ mod format_choose_tests {
                     b"no delimiter\0".as_ptr().cast(),
                     &raw mut left,
                     &raw mut right,
-                    1,
                 ),
                 -1
             );

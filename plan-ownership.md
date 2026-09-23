@@ -1243,6 +1243,23 @@ legacy callers safe.
   isolated worktree. No live attached terminal or sanitizer run was
   performed.
 
+### Increment 63 — format-loop split operands (2026-09-22)
+
+- The session, window, and pane format loops now use a typed
+  `format_choose_loop` splitter that owns the all-item operand as `CString`
+  and the active operand as `Option<CString>`. This removes their
+  `format_choose(expand=0)` C allocations, `xstrdup(fmt)` fallbacks, and
+  manual frees. The unused unexpanded branch of `format_choose` is gone;
+  its expanded arithmetic/repeat/comparison results remain C-owned.
+  Nested `format_expand1` calls borrow stable pointers, and explicit drops
+  preserve active-then-all cleanup order before buffer extraction.
+- `scripts/format_loops_cli_checks.py` exercises live session, window,
+  and pane loops with no comma, nested and escaped commas, active window
+  and pane branches, and an attached-client active-session branch.
+  Workspace tests, binary build, changed-file rustfmt, `git diff --check`,
+  and the live CLI check passed in the isolated worktree. No sanitizer run
+  was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1257,12 +1274,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the shared unexpanded splitter used by the three format loops.
-   Its nested expansions and cleanup paths need a reentrancy audit.
+2. Inspect `tty_parse_features`' writable feature list and
+   `parse_window_name`'s local name copy, then the width-cache parser copy.
    Remaining `xstrndup` callers return or transfer C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–62. The remaining
+Current validation is recorded in increments 15–63. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–62 has its own local commit; none was pushed.
+Each of increments 15–63 has its own local commit; none was pushed.
