@@ -1,5 +1,5 @@
 use crate::src::colour::{colour_split_rgb, colour_theme_terminal_colour};
-use crate::src::ffi::libc::{free, memcmp, memcpy, memmove, memset, strchr, strlcat, strlen};
+use crate::src::ffi::libc::{memcmp, memcpy, memmove, memset, strchr, strlcat, strlen};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::server::current_time;
@@ -14,7 +14,7 @@ use crate::src::tmux::start_time;
 use crate::src::utf8::{
     utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xreallocarray, xsnprintf};
+use crate::src::xmalloc::{xmalloc, xsnprintf};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
@@ -235,11 +235,9 @@ unsafe extern "C" fn grid_get_extended_cell(
     mut flags: ::core::ffi::c_int,
 ) {
     let mut at: u_int = (*gl).extdsize.wrapping_add(1 as u_int);
-    (*gl).extddata = xreallocarray(
-        (*gl).extddata as *mut ::core::ffi::c_void,
-        at as size_t,
-        ::core::mem::size_of::<grid_extd_entry>() as size_t,
-    ) as *mut grid_extd_entry;
+    (*gl)
+        .extddata
+        .resize_with(at as usize, || std::mem::zeroed());
     (*gl).extdsize = at;
     (*gce).c2rust_unnamed.offset = at.wrapping_sub(1 as u_int);
     (*gce).flags = (flags | GRID_FLAG_EXTENDED) as u_char;
@@ -266,7 +264,10 @@ unsafe extern "C" fn grid_extended_cell(
     } else {
         utf8_from_data(&raw const (*gc).data, &raw mut uc);
     }
-    gee = (*gl).extddata.offset((*gce).c2rust_unnamed.offset as isize) as *mut grid_extd_entry;
+    gee = (*gl)
+        .extddata
+        .as_mut_ptr()
+        .offset((*gce).c2rust_unnamed.offset as isize) as *mut grid_extd_entry;
     (*gee).data = uc;
     (*gee).attr = (*gc).attr;
     (*gee).flags = flags as u_char;
@@ -278,7 +279,7 @@ unsafe extern "C" fn grid_extended_cell(
 }
 unsafe extern "C" fn grid_compact_line(mut gl: *mut grid_line) {
     let mut new_extdsize: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut new_extddata: *mut grid_extd_entry = ::core::ptr::null_mut::<grid_extd_entry>();
+    let mut new_extddata = GridArray::default();
     let mut gce: *mut grid_cell_entry = ::core::ptr::null_mut::<grid_cell_entry>();
     let mut gee: *mut grid_extd_entry = ::core::ptr::null_mut::<grid_extd_entry>();
     let mut px: u_int = 0;
@@ -288,32 +289,32 @@ unsafe extern "C" fn grid_compact_line(mut gl: *mut grid_line) {
     }
     px = 0 as u_int;
     while px < (*gl).cellsize as u_int {
-        gce = (*gl).celldata.offset(px as isize) as *mut grid_cell_entry;
+        gce = (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
         if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
             new_extdsize += 1;
         }
         px = px.wrapping_add(1);
     }
     if new_extdsize == 0 as ::core::ffi::c_int {
-        free((*gl).extddata as *mut ::core::ffi::c_void);
-        (*gl).extddata = ::core::ptr::null_mut::<grid_extd_entry>();
+        (*gl).extddata.clear();
         (*gl).extdsize = 0 as u_int;
         return;
     }
-    new_extddata = xreallocarray(
-        NULL,
-        new_extdsize as size_t,
-        ::core::mem::size_of::<grid_extd_entry>() as size_t,
-    ) as *mut grid_extd_entry;
+    new_extddata.resize_with(new_extdsize as usize, || {
+        std::mem::zeroed::<grid_extd_entry>()
+    });
     idx = 0 as u_int;
     px = 0 as u_int;
     while px < (*gl).cellsize as u_int {
-        gce = (*gl).celldata.offset(px as isize) as *mut grid_cell_entry;
+        gce = (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
         if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
-            gee = (*gl).extddata.offset((*gce).c2rust_unnamed.offset as isize)
+            gee = (*gl)
+                .extddata
+                .as_mut_ptr()
+                .offset((*gce).c2rust_unnamed.offset as isize)
                 as *mut grid_extd_entry;
             memcpy(
-                new_extddata.offset(idx as isize) as *mut grid_extd_entry
+                new_extddata.as_mut_ptr().offset(idx as isize) as *mut grid_extd_entry
                     as *mut ::core::ffi::c_void,
                 gee as *const ::core::ffi::c_void,
                 ::core::mem::size_of::<grid_extd_entry>() as size_t,
@@ -324,13 +325,12 @@ unsafe extern "C" fn grid_compact_line(mut gl: *mut grid_line) {
         }
         px = px.wrapping_add(1);
     }
-    free((*gl).extddata as *mut ::core::ffi::c_void);
     (*gl).extddata = new_extddata;
     (*gl).extdsize = new_extdsize as u_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_get_line(mut gd: *mut grid, mut line: u_int) -> *mut grid_line {
-    return (*gd).linedata.offset(line as isize) as *mut grid_line;
+    return (*gd).linedata.as_mut_ptr().offset(line as isize) as *mut grid_line;
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_line_time(mut gl: *const grid_line) -> time_t {
@@ -348,11 +348,9 @@ unsafe extern "C" fn grid_line_set_time(mut gl: *mut grid_line) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_adjust_lines(mut gd: *mut grid, mut lines: u_int) {
-    (*gd).linedata = xreallocarray(
-        (*gd).linedata as *mut ::core::ffi::c_void,
-        lines as size_t,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    ) as *mut grid_line;
+    (*gd)
+        .linedata
+        .resize_with(lines as usize, grid_line::default);
 }
 unsafe extern "C" fn grid_clear_cell(
     mut gd: *mut grid,
@@ -361,8 +359,9 @@ unsafe extern "C" fn grid_clear_cell(
     mut bg: u_int,
     mut moved: ::core::ffi::c_int,
 ) {
-    let mut gl: *mut grid_line = (*gd).linedata.offset(py as isize) as *mut grid_line;
-    let mut gce: *mut grid_cell_entry = (*gl).celldata.offset(px as isize) as *mut grid_cell_entry;
+    let mut gl: *mut grid_line = (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line;
+    let mut gce: *mut grid_cell_entry =
+        (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
     let mut gee: *mut grid_extd_entry = ::core::ptr::null_mut::<grid_extd_entry>();
     let mut old_offset: u_int = (*gce).c2rust_unnamed.offset;
     let mut had_extd: ::core::ffi::c_int = (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED;
@@ -466,14 +465,7 @@ pub unsafe extern "C" fn grid_set_tab(mut gc: *mut grid_cell, mut width: u_int) 
     );
 }
 unsafe extern "C" fn grid_free_line(mut gd: *mut grid, mut py: u_int) {
-    let mut gl: *mut grid_line = (*gd).linedata.offset(py as isize) as *mut grid_line;
-    free((*gl).celldata as *mut ::core::ffi::c_void);
-    free((*gl).extddata as *mut ::core::ffi::c_void);
-    memset(
-        gl as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    );
+    (&mut (*gd).linedata)[py as usize] = grid_line::default();
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_free_lines(mut gd: *mut grid, mut py: u_int, mut ny: u_int) {
@@ -492,20 +484,9 @@ pub(crate) unsafe fn grid_create_box(sx: u_int, sy: u_int, hlimit: u_int) -> Box
         owner.flags = GRID_HISTORY;
     }
     owner.hlimit = hlimit;
-    if sy != 0 {
-        owner.linedata =
-            xcalloc(sy as size_t, ::core::mem::size_of::<grid_line>() as size_t) as *mut grid_line;
-    }
+    owner.linedata.resize_with(sy as usize, grid_line::default);
     grid_check_is_clear(&raw mut *owner);
     owner
-}
-impl Drop for grid {
-    fn drop(&mut self) {
-        unsafe {
-            grid_free_lines(self, 0, self.hsize.wrapping_add(self.sy));
-            free(self.linedata.cast());
-        }
-    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> *mut grid {
@@ -554,8 +535,8 @@ pub unsafe extern "C" fn grid_compare(mut ga: *mut grid, mut gb: *mut grid) -> :
     }
     yy = 0 as u_int;
     while yy < (*ga).sy {
-        gla = (*ga).linedata.offset(yy as isize) as *mut grid_line;
-        glb = (*gb).linedata.offset(yy as isize) as *mut grid_line;
+        gla = (*ga).linedata.as_mut_ptr().offset(yy as isize) as *mut grid_line;
+        glb = (*gb).linedata.as_mut_ptr().offset(yy as isize) as *mut grid_line;
         if (*gla).cellsize as ::core::ffi::c_int != (*glb).cellsize as ::core::ffi::c_int {
             return 1 as ::core::ffi::c_int;
         }
@@ -573,20 +554,9 @@ pub unsafe extern "C" fn grid_compare(mut ga: *mut grid, mut gb: *mut grid) -> :
     return 0 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn grid_trim_history(mut gd: *mut grid, mut ny: u_int) {
-    let mut remaining: u_int = 0;
-    grid_free_lines(gd, 0 as u_int, ny);
-    remaining = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(ny);
-    memmove(
-        (*gd).linedata.offset(0 as ::core::ffi::c_int as isize) as *mut grid_line
-            as *mut ::core::ffi::c_void,
-        (*gd).linedata.offset(ny as isize) as *mut grid_line as *const ::core::ffi::c_void,
-        (remaining as size_t).wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-    );
-    memset(
-        (*gd).linedata.offset(remaining as isize) as *mut grid_line as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        (ny as size_t).wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-    );
+    grid_free_lines(gd, 0, ny);
+    let live = (*gd).hsize.wrapping_add((*gd).sy) as usize;
+    (&mut (*gd).linedata)[..live].rotate_left(ny as usize);
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_collect_history(mut gd: *mut grid, mut all: ::core::ffi::c_int) {
@@ -625,26 +595,19 @@ pub unsafe extern "C" fn grid_remove_history(mut gd: *mut grid, mut ny: u_int) {
         grid_free_line(gd, start.wrapping_add(yy));
         yy = yy.wrapping_add(1);
     }
-    memset(
-        (*gd).linedata.offset(start as isize) as *mut grid_line as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        (ny as size_t).wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-    );
     (*gd).hsize = (*gd).hsize.wrapping_sub(ny);
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_scroll_history(mut gd: *mut grid, mut bg: u_int) {
     let mut yy: u_int = 0;
     yy = (*gd).hsize.wrapping_add((*gd).sy);
-    (*gd).linedata = xreallocarray(
-        (*gd).linedata as *mut ::core::ffi::c_void,
-        yy.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    ) as *mut grid_line;
+    (*gd)
+        .linedata
+        .resize_with(yy.wrapping_add(1 as u_int) as usize, grid_line::default);
     grid_empty_line(gd, yy, bg);
     (*gd).hscrolled = (*gd).hscrolled.wrapping_add(1);
-    grid_compact_line((*gd).linedata.offset((*gd).hsize as isize) as *mut grid_line);
-    grid_line_set_time((*gd).linedata.offset((*gd).hsize as isize) as *mut grid_line);
+    grid_compact_line((*gd).linedata.as_mut_ptr().offset((*gd).hsize as isize) as *mut grid_line);
+    grid_line_set_time((*gd).linedata.as_mut_ptr().offset((*gd).hsize as isize) as *mut grid_line);
     (*gd).hsize = (*gd).hsize.wrapping_add(1);
     (*gd).scroll_added = (*gd).scroll_added.wrapping_add(1);
 }
@@ -654,11 +617,9 @@ pub unsafe extern "C" fn grid_clear_history(mut gd: *mut grid) {
     (*gd).hscrolled = 0 as u_int;
     (*gd).hsize = 0 as u_int;
     (*gd).scroll_generation = (*gd).scroll_generation.wrapping_add(1);
-    (*gd).linedata = xreallocarray(
-        (*gd).linedata as *mut ::core::ffi::c_void,
-        (*gd).sy as size_t,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    ) as *mut grid_line;
+    (*gd)
+        .linedata
+        .resize_with((*gd).sy as usize, grid_line::default);
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_scroll_history_region(
@@ -671,32 +632,17 @@ pub unsafe extern "C" fn grid_scroll_history_region(
     let mut gl_upper: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut yy: u_int = 0;
     yy = (*gd).hsize.wrapping_add((*gd).sy);
-    (*gd).linedata = xreallocarray(
-        (*gd).linedata as *mut ::core::ffi::c_void,
-        yy.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    ) as *mut grid_line;
-    gl_history = (*gd).linedata.offset((*gd).hsize as isize) as *mut grid_line;
-    memmove(
-        gl_history.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_void,
-        gl_history as *const ::core::ffi::c_void,
-        ((*gd).sy as size_t).wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-    );
+    (*gd)
+        .linedata
+        .resize_with(yy.wrapping_add(1 as u_int) as usize, grid_line::default);
+    let history = (*gd).hsize as usize;
+    (&mut (*gd).linedata)[history..=yy as usize].rotate_right(1);
     upper = upper.wrapping_add(1);
-    gl_upper = (*gd).linedata.offset(upper as isize) as *mut grid_line;
     lower = lower.wrapping_add(1);
-    memcpy(
-        gl_history as *mut ::core::ffi::c_void,
-        gl_upper as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    );
+    (*gd).linedata.swap(history, upper as usize);
+    gl_history = (*gd).linedata.as_mut_ptr().add(history);
     grid_line_set_time(gl_history);
-    memmove(
-        gl_upper as *mut ::core::ffi::c_void,
-        gl_upper.offset(1 as ::core::ffi::c_int as isize) as *const ::core::ffi::c_void,
-        (lower.wrapping_sub(upper) as size_t)
-            .wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-    );
+    (&mut (*gd).linedata)[upper as usize..=lower as usize].rotate_left(1);
     grid_empty_line(gd, lower, bg);
     (*gd).hscrolled = (*gd).hscrolled.wrapping_add(1);
     (*gd).hsize = (*gd).hsize.wrapping_add(1);
@@ -710,7 +656,7 @@ unsafe extern "C" fn grid_expand_line(
 ) {
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut xx: u_int = 0;
-    gl = (*gd).linedata.offset(py as isize) as *mut grid_line;
+    gl = (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line;
     if sx <= (*gl).cellsize as u_int {
         return;
     }
@@ -721,22 +667,9 @@ unsafe extern "C" fn grid_expand_line(
     } else if (*gd).sx > sx {
         sx = (*gd).sx;
     }
-    (*gl).celldata = xreallocarray(
-        (*gl).celldata as *mut ::core::ffi::c_void,
-        sx as size_t,
-        ::core::mem::size_of::<grid_cell_entry>() as size_t,
-    ) as *mut grid_cell_entry;
-    if ((*gl).cellsize as u_int) < sx {
-        memset(
-            (*gl)
-                .celldata
-                .offset((*gl).cellsize as ::core::ffi::c_int as isize)
-                as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            (sx.wrapping_sub((*gl).cellsize as u_int) as size_t)
-                .wrapping_mul(::core::mem::size_of::<grid_cell_entry>() as size_t),
-        );
-    }
+    (*gl)
+        .celldata
+        .resize_with(sx as usize, || std::mem::zeroed());
     xx = (*gl).cellsize as u_int;
     while xx < sx {
         grid_clear_cell(gd, xx, py, bg, 0 as ::core::ffi::c_int);
@@ -746,11 +679,7 @@ unsafe extern "C" fn grid_expand_line(
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_empty_line(mut gd: *mut grid, mut py: u_int, mut bg: u_int) {
-    memset(
-        (*gd).linedata.offset(py as isize) as *mut grid_line as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    );
+    (&mut (*gd).linedata)[py as usize] = grid_line::default();
     if !(bg == 8 as u_int || bg == 9 as u_int) {
         grid_expand_line(gd, py, (*gd).sx, bg);
     }
@@ -765,10 +694,11 @@ pub unsafe extern "C" fn grid_peek_line(mut gd: *mut grid, mut py: u_int) -> *co
     {
         return ::core::ptr::null::<grid_line>();
     }
-    return (*gd).linedata.offset(py as isize) as *mut grid_line;
+    return (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line;
 }
 unsafe extern "C" fn grid_get_cell1(mut gl: *mut grid_line, mut px: u_int, mut gc: *mut grid_cell) {
-    let mut gce: *mut grid_cell_entry = (*gl).celldata.offset(px as isize) as *mut grid_cell_entry;
+    let mut gce: *mut grid_cell_entry =
+        (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
     let mut gee: *mut grid_extd_entry = ::core::ptr::null_mut::<grid_extd_entry>();
     if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
         if (*gce).c2rust_unnamed.offset >= (*gl).extdsize {
@@ -778,7 +708,10 @@ unsafe extern "C" fn grid_get_cell1(mut gl: *mut grid_line, mut px: u_int, mut g
                 ::core::mem::size_of::<grid_cell>() as size_t,
             );
         } else {
-            gee = (*gl).extddata.offset((*gce).c2rust_unnamed.offset as isize)
+            gee = (*gl)
+                .extddata
+                .as_mut_ptr()
+                .offset((*gce).c2rust_unnamed.offset as isize)
                 as *mut grid_extd_entry;
             (*gc).flags = (*gee).flags;
             (*gc).attr = (*gee).attr;
@@ -821,7 +754,7 @@ pub unsafe extern "C" fn grid_get_cell(
         b"grid_get_cell\0" as *const u8 as *const ::core::ffi::c_char,
         py,
     ) != 0 as ::core::ffi::c_int
-        || px >= (*(*gd).linedata.offset(py as isize)).cellsize as u_int
+        || px >= (*(*gd).linedata.as_mut_ptr().offset(py as isize)).cellsize as u_int
     {
         memcpy(
             gc as *mut ::core::ffi::c_void,
@@ -829,7 +762,11 @@ pub unsafe extern "C" fn grid_get_cell(
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
     } else {
-        grid_get_cell1((*gd).linedata.offset(py as isize) as *mut grid_line, px, gc);
+        grid_get_cell1(
+            (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line,
+            px,
+            gc,
+        );
     };
 }
 #[no_mangle]
@@ -850,11 +787,11 @@ pub unsafe extern "C" fn grid_set_cell(
         return;
     }
     grid_expand_line(gd, py, px.wrapping_add(1 as u_int), 8 as u_int);
-    gl = (*gd).linedata.offset(py as isize) as *mut grid_line;
+    gl = (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line;
     if px.wrapping_add(1 as u_int) > (*gl).cellused as u_int {
         (*gl).cellused = px.wrapping_add(1 as u_int) as u_short;
     }
-    gce = (*gl).celldata.offset(px as isize) as *mut grid_cell_entry;
+    gce = (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry;
     if grid_need_extended_cell(gce, gc) != 0 {
         grid_extended_cell(gl, gce, gc);
     } else {
@@ -917,13 +854,16 @@ pub unsafe extern "C" fn grid_set_cells(
         (px as size_t).wrapping_add(slen) as u_int,
         8 as u_int,
     );
-    gl = (*gd).linedata.offset(py as isize) as *mut grid_line;
+    gl = (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line;
     if (px as size_t).wrapping_add(slen) > (*gl).cellused as size_t {
         (*gl).cellused = (px as size_t).wrapping_add(slen) as u_short;
     }
     i = 0 as u_int;
     while (i as size_t) < slen {
-        gce = (*gl).celldata.offset(px.wrapping_add(i) as isize) as *mut grid_cell_entry;
+        gce = (*gl)
+            .celldata
+            .as_mut_ptr()
+            .offset(px.wrapping_add(i) as isize) as *mut grid_cell_entry;
         if grid_need_extended_cell(gce, gc) != 0 {
             gee = grid_extended_cell(gl, gce, gc);
             (*gee).data = utf8_build_one(*s.offset(i as isize) as u_char);
@@ -973,7 +913,7 @@ pub unsafe extern "C" fn grid_clear(
     let mut current_block_21: u64;
     yy = py;
     while yy < py.wrapping_add(ny) {
-        gl = (*gd).linedata.offset(yy as isize) as *mut grid_line;
+        gl = (*gd).linedata.as_mut_ptr().offset(yy as isize) as *mut grid_line;
         sx = (*gd).sx;
         if sx > (*gl).cellsize as u_int {
             sx = (*gl).cellsize as u_int;
@@ -1039,7 +979,11 @@ pub unsafe extern "C" fn grid_clear_lines(
         yy = yy.wrapping_add(1);
     }
     if py != 0 as u_int {
-        let ref mut fresh1 = (*(*gd).linedata.offset(py.wrapping_sub(1 as u_int) as isize)).flags;
+        let ref mut fresh1 = (*(*gd)
+            .linedata
+            .as_mut_ptr()
+            .offset(py.wrapping_sub(1 as u_int) as isize))
+        .flags;
         *fresh1 = (*fresh1 as ::core::ffi::c_int & !GRID_LINE_WRAPPED) as u_short;
     }
 }
@@ -1095,14 +1039,23 @@ pub unsafe extern "C" fn grid_move_lines(
         yy = yy.wrapping_add(1);
     }
     if dy != 0 as u_int {
-        let ref mut fresh2 = (*(*gd).linedata.offset(dy.wrapping_sub(1 as u_int) as isize)).flags;
+        let ref mut fresh2 = (*(*gd)
+            .linedata
+            .as_mut_ptr()
+            .offset(dy.wrapping_sub(1 as u_int) as isize))
+        .flags;
         *fresh2 = (*fresh2 as ::core::ffi::c_int & !GRID_LINE_WRAPPED) as u_short;
     }
-    memmove(
-        (*gd).linedata.offset(dy as isize) as *mut grid_line as *mut ::core::ffi::c_void,
-        (*gd).linedata.offset(py as isize) as *mut grid_line as *const ::core::ffi::c_void,
-        (ny as size_t).wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-    );
+    let lines = &mut (*gd).linedata;
+    if dy < py {
+        for offset in 0..ny as usize {
+            lines[dy as usize + offset] = std::mem::take(&mut lines[py as usize + offset]);
+        }
+    } else {
+        for offset in (0..ny as usize).rev() {
+            lines[dy as usize + offset] = std::mem::take(&mut lines[py as usize + offset]);
+        }
+    }
     yy = py;
     while yy < py.wrapping_add(ny) {
         if yy < dy || yy >= dy.wrapping_add(ny) {
@@ -1111,7 +1064,11 @@ pub unsafe extern "C" fn grid_move_lines(
         yy = yy.wrapping_add(1);
     }
     if py != 0 as u_int && (py < dy || py >= dy.wrapping_add(ny)) {
-        let ref mut fresh3 = (*(*gd).linedata.offset(py.wrapping_sub(1 as u_int) as isize)).flags;
+        let ref mut fresh3 = (*(*gd)
+            .linedata
+            .as_mut_ptr()
+            .offset(py.wrapping_sub(1 as u_int) as isize))
+        .flags;
         *fresh3 = (*fresh3 as ::core::ffi::c_int & !GRID_LINE_WRAPPED) as u_short;
     }
 }
@@ -1137,12 +1094,14 @@ pub unsafe extern "C" fn grid_move_cells(
     {
         return;
     }
-    gl = (*gd).linedata.offset(py as isize) as *mut grid_line;
+    gl = (*gd).linedata.as_mut_ptr().offset(py as isize) as *mut grid_line;
     grid_expand_line(gd, py, px.wrapping_add(nx), 8 as u_int);
     grid_expand_line(gd, py, dx.wrapping_add(nx), 8 as u_int);
     memmove(
-        (*gl).celldata.offset(dx as isize) as *mut grid_cell_entry as *mut ::core::ffi::c_void,
-        (*gl).celldata.offset(px as isize) as *mut grid_cell_entry as *const ::core::ffi::c_void,
+        (*gl).celldata.as_mut_ptr().offset(dx as isize) as *mut grid_cell_entry
+            as *mut ::core::ffi::c_void,
+        (*gl).celldata.as_mut_ptr().offset(px as isize) as *mut grid_cell_entry
+            as *const ::core::ffi::c_void,
         (nx as size_t).wrapping_mul(::core::mem::size_of::<grid_cell_entry>() as size_t),
     );
     if dx.wrapping_add(nx) > (*gl).cellused as u_int {
@@ -1879,71 +1838,23 @@ pub unsafe extern "C" fn grid_duplicate_lines(
     grid_free_lines(dst, dy, ny);
     yy = 0 as u_int;
     while yy < ny {
-        srcl = (*src).linedata.offset(sy as isize) as *mut grid_line;
-        dstl = (*dst).linedata.offset(dy as isize) as *mut grid_line;
-        memcpy(
-            dstl as *mut ::core::ffi::c_void,
-            srcl as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_line>() as size_t,
-        );
-        if (*srcl).cellsize as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-            (*dstl).celldata = xreallocarray(
-                NULL,
-                (*srcl).cellsize as size_t,
-                ::core::mem::size_of::<grid_cell_entry>() as size_t,
-            ) as *mut grid_cell_entry;
-            memcpy(
-                (*dstl).celldata as *mut ::core::ffi::c_void,
-                (*srcl).celldata as *const ::core::ffi::c_void,
-                ((*srcl).cellsize as size_t)
-                    .wrapping_mul(::core::mem::size_of::<grid_cell_entry>() as size_t),
-            );
-        } else {
-            (*dstl).celldata = ::core::ptr::null_mut::<grid_cell_entry>();
-        }
-        if (*srcl).extdsize != 0 as u_int {
-            (*dstl).extdsize = (*srcl).extdsize;
-            (*dstl).extddata = xreallocarray(
-                NULL,
-                (*dstl).extdsize as size_t,
-                ::core::mem::size_of::<grid_extd_entry>() as size_t,
-            ) as *mut grid_extd_entry;
-            memcpy(
-                (*dstl).extddata as *mut ::core::ffi::c_void,
-                (*srcl).extddata as *const ::core::ffi::c_void,
-                ((*dstl).extdsize as size_t)
-                    .wrapping_mul(::core::mem::size_of::<grid_extd_entry>() as size_t),
-            );
-        } else {
-            (*dstl).extddata = ::core::ptr::null_mut::<grid_extd_entry>();
-        }
+        srcl = (*src).linedata.as_mut_ptr().offset(sy as isize) as *mut grid_line;
+        dstl = (*dst).linedata.as_mut_ptr().offset(dy as isize) as *mut grid_line;
+        *dstl = (*srcl).clone();
         sy = sy.wrapping_add(1);
         dy = dy.wrapping_add(1);
         yy = yy.wrapping_add(1);
     }
 }
 unsafe extern "C" fn grid_reflow_dead(mut gl: *mut grid_line) {
-    memset(
-        gl as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    );
+    *gl = grid_line::default();
     (*gl).flags = GRID_LINE_DEAD as u_short;
 }
 unsafe extern "C" fn grid_reflow_add(mut gd: *mut grid, mut n: u_int) -> *mut grid_line {
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut sy: u_int = (*gd).sy.wrapping_add(n);
-    (*gd).linedata = xreallocarray(
-        (*gd).linedata as *mut ::core::ffi::c_void,
-        sy as size_t,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    ) as *mut grid_line;
-    gl = (*gd).linedata.offset((*gd).sy as isize) as *mut grid_line;
-    memset(
-        gl as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        (n as size_t).wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-    );
+    (*gd).linedata.resize_with(sy as usize, grid_line::default);
+    gl = (*gd).linedata.as_mut_ptr().offset((*gd).sy as isize) as *mut grid_line;
     (*gd).sy = sy;
     return gl;
 }
@@ -1953,11 +1864,7 @@ unsafe extern "C" fn grid_reflow_move(
 ) -> *mut grid_line {
     let mut to: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     to = grid_reflow_add(gd, 1 as u_int);
-    memcpy(
-        to as *mut ::core::ffi::c_void,
-        from as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    );
+    *to = std::mem::take(&mut *from);
     grid_reflow_dead(from);
     return to;
 }
@@ -1995,22 +1902,25 @@ unsafe extern "C" fn grid_reflow_join(
     let mut wrapped: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     if already == 0 {
         to = (*target).sy;
-        gl = grid_reflow_move(target, (*gd).linedata.offset(yy as isize) as *mut grid_line);
+        gl = grid_reflow_move(
+            target,
+            (*gd).linedata.as_mut_ptr().offset(yy as isize) as *mut grid_line,
+        );
     } else {
         to = (*target).sy.wrapping_sub(1 as u_int);
-        gl = (*target).linedata.offset(to as isize) as *mut grid_line;
+        gl = (*target).linedata.as_mut_ptr().offset(to as isize) as *mut grid_line;
     }
     at = (*gl).cellused as u_int;
     lines = 0 as u_int;
     while !(yy.wrapping_add(1 as u_int).wrapping_add(lines) == (*gd).hsize.wrapping_add((*gd).sy)) {
         line = yy.wrapping_add(1 as u_int).wrapping_add(lines);
-        if !((*(*gd).linedata.offset(line as isize)).flags as ::core::ffi::c_int)
+        if !((*(*gd).linedata.as_mut_ptr().offset(line as isize)).flags as ::core::ffi::c_int)
             & GRID_LINE_WRAPPED
             != 0
         {
             wrapped = 0 as ::core::ffi::c_int;
         }
-        if (*(*gd).linedata.offset(line as isize)).cellused as ::core::ffi::c_int
+        if (*(*gd).linedata.as_mut_ptr().offset(line as isize)).cellused as ::core::ffi::c_int
             == 0 as ::core::ffi::c_int
         {
             if wrapped == 0 {
@@ -2019,7 +1929,7 @@ unsafe extern "C" fn grid_reflow_join(
             lines = lines.wrapping_add(1);
         } else {
             grid_get_cell1(
-                (*gd).linedata.offset(line as isize) as *mut grid_line,
+                (*gd).linedata.as_mut_ptr().offset(line as isize) as *mut grid_line,
                 0 as u_int,
                 &raw mut gc,
             );
@@ -2029,7 +1939,7 @@ unsafe extern "C" fn grid_reflow_join(
             width = width.wrapping_add(gc.data.width as u_int);
             grid_set_cell(target, at, to, &raw mut gc);
             at = at.wrapping_add(1);
-            from = (*gd).linedata.offset(line as isize) as *mut grid_line;
+            from = (*gd).linedata.as_mut_ptr().offset(line as isize) as *mut grid_line;
             want = 1 as u_int;
             while want < (*from).cellused as u_int {
                 grid_get_cell1(from, want, &raw mut gc);
@@ -2062,15 +1972,16 @@ unsafe extern "C" fn grid_reflow_join(
         );
         (*from).cellused = left as u_short;
         (*from).cellsize = (*from).cellused;
+        (*from)
+            .celldata
+            .resize_with((*from).cellsize as usize, || std::mem::zeroed());
         lines = lines.wrapping_sub(1);
     } else if wrapped == 0 {
         (*gl).flags = ((*gl).flags as ::core::ffi::c_int & !GRID_LINE_WRAPPED) as u_short;
     }
     i = yy.wrapping_add(1 as u_int);
     while i < yy.wrapping_add(1 as u_int).wrapping_add(lines) {
-        free((*(*gd).linedata.offset(i as isize)).celldata as *mut ::core::ffi::c_void);
-        free((*(*gd).linedata.offset(i as isize)).extddata as *mut ::core::ffi::c_void);
-        grid_reflow_dead((*gd).linedata.offset(i as isize) as *mut grid_line);
+        grid_reflow_dead((*gd).linedata.as_mut_ptr().offset(i as isize) as *mut grid_line);
         i = i.wrapping_add(1);
     }
     if (*gd).hscrolled > to.wrapping_add(lines) {
@@ -2086,7 +1997,7 @@ unsafe extern "C" fn grid_reflow_split(
     mut yy: u_int,
     mut at: u_int,
 ) {
-    let mut gl: *mut grid_line = (*gd).linedata.offset(yy as isize) as *mut grid_line;
+    let mut gl: *mut grid_line = (*gd).linedata.as_mut_ptr().offset(yy as isize) as *mut grid_line;
     let mut first: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -2136,7 +2047,7 @@ unsafe extern "C" fn grid_reflow_split(
     while i < used {
         grid_get_cell1(gl, i, &raw mut gc);
         if width.wrapping_add(gc.data.width as u_int) > sx {
-            let ref mut fresh44 = (*(*target).linedata.offset(line as isize)).flags;
+            let ref mut fresh44 = (*(*target).linedata.as_mut_ptr().offset(line as isize)).flags;
             *fresh44 = (*fresh44 as ::core::ffi::c_int | GRID_LINE_WRAPPED) as u_short;
             line = line.wrapping_add(1);
             width = 0 as u_int;
@@ -2148,17 +2059,16 @@ unsafe extern "C" fn grid_reflow_split(
         i = i.wrapping_add(1);
     }
     if flags & GRID_LINE_WRAPPED != 0 {
-        let ref mut fresh45 = (*(*target).linedata.offset(line as isize)).flags;
+        let ref mut fresh45 = (*(*target).linedata.as_mut_ptr().offset(line as isize)).flags;
         *fresh45 = (*fresh45 as ::core::ffi::c_int | GRID_LINE_WRAPPED) as u_short;
     }
     (*gl).cellused = at as u_short;
     (*gl).cellsize = (*gl).cellused;
+    (*gl)
+        .celldata
+        .resize_with((*gl).cellsize as usize, || std::mem::zeroed());
     (*gl).flags = ((*gl).flags as ::core::ffi::c_int | GRID_LINE_WRAPPED) as u_short;
-    memcpy(
-        first as *mut ::core::ffi::c_void,
-        gl as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_line>() as size_t,
-    );
+    *first = std::mem::take(&mut *gl);
     grid_reflow_dead(gl);
     if yy <= (*gd).hscrolled {
         (*gd).hscrolled = (*gd).hscrolled.wrapping_add(lines.wrapping_sub(1 as u_int));
@@ -2192,7 +2102,7 @@ pub unsafe extern "C" fn grid_reflow(mut gd: *mut grid, mut sx: u_int) {
     let target = &raw mut *target_owner;
     yy = 0 as u_int;
     while yy < (*gd).hsize.wrapping_add((*gd).sy) {
-        gl = (*gd).linedata.offset(yy as isize) as *mut grid_line;
+        gl = (*gd).linedata.as_mut_ptr().offset(yy as isize) as *mut grid_line;
         if !((*gl).flags as ::core::ffi::c_int & GRID_LINE_DEAD != 0) {
             width = 0 as u_int;
             at = width;
@@ -2233,12 +2143,7 @@ pub unsafe extern "C" fn grid_reflow(mut gd: *mut grid, mut sx: u_int) {
     if (*gd).hscrolled > (*gd).hsize {
         (*gd).hscrolled = (*gd).hsize;
     }
-    free((*gd).linedata as *mut ::core::ffi::c_void);
-    // Reflow has transferred every live line to target. Move the allocation
-    // back without letting the temporary grid destroy the transferred cells.
-    (*gd).linedata = std::mem::replace(&mut (*target).linedata, std::ptr::null_mut());
-    (*target).sy = 0;
-    (*target).hsize = 0;
+    (*gd).linedata = std::mem::take(&mut (*target).linedata);
     (*gd).scroll_generation = (*gd).scroll_generation.wrapping_add(1);
 }
 #[no_mangle]
@@ -2254,17 +2159,19 @@ pub unsafe extern "C" fn grid_wrap_position(
     let mut yy: u_int = 0;
     yy = 0 as u_int;
     while yy < py {
-        if (*(*gd).linedata.offset(yy as isize)).flags as ::core::ffi::c_int & GRID_LINE_WRAPPED
+        if (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).flags as ::core::ffi::c_int
+            & GRID_LINE_WRAPPED
             != 0
         {
-            ax = ax.wrapping_add((*(*gd).linedata.offset(yy as isize)).cellused as u_int);
+            ax = ax
+                .wrapping_add((*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int);
         } else {
             ax = 0 as u_int;
             ay = ay.wrapping_add(1);
         }
         yy = yy.wrapping_add(1);
     }
-    if px >= (*(*gd).linedata.offset(yy as isize)).cellused as u_int {
+    if px >= (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int {
         ax = UINT_MAX as u_int;
     } else {
         ax = ax.wrapping_add(px);
@@ -2288,7 +2195,8 @@ pub unsafe extern "C" fn grid_unwrap_position(
         if ay == wy {
             break;
         }
-        if !((*(*gd).linedata.offset(yy as isize)).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED
+        if !((*(*gd).linedata.as_mut_ptr().offset(yy as isize)).flags as ::core::ffi::c_int)
+            & GRID_LINE_WRAPPED
             != 0
         {
             ay = ay.wrapping_add(1);
@@ -2297,20 +2205,23 @@ pub unsafe extern "C" fn grid_unwrap_position(
     }
     if wx == UINT_MAX {
         while yy < ey
-            && (*(*gd).linedata.offset(yy as isize)).flags as ::core::ffi::c_int & GRID_LINE_WRAPPED
+            && (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).flags as ::core::ffi::c_int
+                & GRID_LINE_WRAPPED
                 != 0
         {
             yy = yy.wrapping_add(1);
         }
-        wx = (*(*gd).linedata.offset(yy as isize)).cellused as u_int;
+        wx = (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int;
     } else {
-        while (*(*gd).linedata.offset(yy as isize)).flags as ::core::ffi::c_int & GRID_LINE_WRAPPED
+        while (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).flags as ::core::ffi::c_int
+            & GRID_LINE_WRAPPED
             != 0
         {
-            if wx < (*(*gd).linedata.offset(yy as isize)).cellused as u_int {
+            if wx < (*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int {
                 break;
             }
-            wx = wx.wrapping_sub((*(*gd).linedata.offset(yy as isize)).cellused as u_int);
+            wx = wx
+                .wrapping_sub((*(*gd).linedata.as_mut_ptr().offset(yy as isize)).cellused as u_int);
             yy = yy.wrapping_add(1);
         }
     }
@@ -2710,4 +2621,75 @@ pub unsafe extern "C" fn grid_cell_attr_string(
     s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(1 as size_t) as usize] =
         '\0' as i32 as ::core::ffi::c_char;
     return &raw mut s as *mut ::core::ffi::c_char;
+}
+
+#[cfg(test)]
+mod storage_tests {
+    use super::*;
+
+    unsafe fn labeled_grid() -> Box<grid> {
+        let mut owner = grid_create_box(8, 4, 1);
+        for (y, byte) in b"ABCD".iter().enumerate() {
+            let mut cell = grid_default_cell;
+            cell.data.data[0] = *byte;
+            cell.fg = COLOUR_FLAG_RGB | (*byte as i32);
+            grid_set_cell(&raw mut *owner, 0, y as u_int, &cell);
+        }
+        owner
+    }
+    unsafe fn labels(owner: &mut grid) -> Vec<u8> {
+        (0..owner.hsize + owner.sy)
+            .map(|y| {
+                let mut cell = grid_default_cell;
+                grid_get_cell(owner, 0, y, &raw mut cell);
+                cell.data.data[0]
+            })
+            .collect()
+    }
+    #[test]
+    fn line_moves_history_rotation_and_deep_clones_keep_independent_cells() {
+        unsafe {
+            let mut owner = labeled_grid();
+            let mut copy = grid_create_box(8, 4, 0);
+            grid_duplicate_lines(&raw mut *copy, 0, &raw mut *owner, 0, 4);
+            assert_ne!(
+                owner.linedata[0].celldata.as_ptr(),
+                copy.linedata[0].celldata.as_ptr()
+            );
+            assert_ne!(
+                owner.linedata[0].extddata.as_ptr(),
+                copy.linedata[0].extddata.as_ptr()
+            );
+            grid_move_lines(&raw mut *owner, 0, 1, 3, 8);
+            assert_eq!(labels(&mut owner), b"BCD ");
+            grid_move_lines(&raw mut *owner, 1, 0, 3, 8);
+            assert_eq!(labels(&mut owner), b" BCD");
+            assert_eq!(labels(&mut copy), b"ABCD");
+            drop(owner);
+            assert_eq!(labels(&mut copy), b"ABCD");
+
+            let mut owner = labeled_grid();
+            grid_scroll_history_region(&raw mut *owner, 1, 2, 8);
+            assert_eq!(labels(&mut owner), b"BAC D");
+            grid_collect_history(&raw mut *owner, 0);
+            assert_eq!(labels(&mut owner), b"AC D");
+            // Repeated extended-cell updates and history compaction must retain
+            // the active entry while releasing unreachable extended entries.
+            let mut cell = grid_default_cell;
+            cell.fg = COLOUR_FLAG_RGB | 0x123456;
+            cell.data.data[0] = b'X';
+            for _ in 0..8 {
+                grid_set_cell(&raw mut *owner, 0, 0, &cell);
+            }
+            grid_scroll_history(&raw mut *owner, 8);
+            assert_eq!(labels(&mut owner), b"XC D ");
+            assert_eq!(
+                owner.linedata[0].extddata.len(),
+                owner.linedata[0].extdsize as usize
+            );
+            grid_clear_history(&raw mut *owner);
+            assert_eq!(labels(&mut owner), b"C D ");
+            assert_eq!(owner.linedata.len(), 4);
+        }
+    }
 }

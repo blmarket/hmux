@@ -528,39 +528,12 @@ unsafe extern "C" fn window_copy_sync_backing(
     } else {
         if collected > 0 as u_int {
             grid_free_lines(dg, 0 as u_int, collected);
-            memmove(
-                (*dg).linedata.offset(0 as ::core::ffi::c_int as isize) as *mut grid_line
-                    as *mut ::core::ffi::c_void,
-                (*dg).linedata.offset(collected as isize) as *mut grid_line
-                    as *const ::core::ffi::c_void,
-                (old_hsize.wrapping_add(sy).wrapping_sub(collected) as size_t)
-                    .wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-            );
-            memset(
-                (*dg)
-                    .linedata
-                    .offset(old_hsize.wrapping_add(sy).wrapping_sub(collected) as isize)
-                    as *mut grid_line as *mut ::core::ffi::c_void,
-                0 as ::core::ffi::c_int,
-                (collected as size_t).wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-            );
+            let live = old_hsize.wrapping_add(sy) as usize;
+            (&mut (*dg).linedata)[..live].rotate_left(collected as usize);
         }
-        if new_hsize.wrapping_add(sy) != old_hsize.wrapping_add(sy).wrapping_sub(collected) {
-            (*dg).linedata = xreallocarray(
-                (*dg).linedata as *mut ::core::ffi::c_void,
-                new_hsize.wrapping_add(sy) as size_t,
-                ::core::mem::size_of::<grid_line>() as size_t,
-            ) as *mut grid_line;
-            memset(
-                (*dg)
-                    .linedata
-                    .offset(old_hsize.wrapping_add(sy).wrapping_sub(collected) as isize)
-                    as *mut grid_line as *mut ::core::ffi::c_void,
-                0 as ::core::ffi::c_int,
-                (new_hsize.wrapping_sub(kept) as size_t)
-                    .wrapping_mul(::core::mem::size_of::<grid_line>() as size_t),
-            );
-        }
+        (*dg)
+            .linedata
+            .resize_with(new_hsize.wrapping_add(sy) as usize, grid_line::default);
         (*dg).hsize = new_hsize;
         if added > 0 as u_int {
             grid_duplicate_lines(dg, kept, sg, kept, added);
@@ -5973,7 +5946,7 @@ unsafe fn window_copy_cellstring(gl: &grid_line, px: u_int) -> Cow<'_, [u8]> {
     if px >= gl.cellsize as u_int {
         return Cow::Borrowed(b" ");
     }
-    let gce = &*gl.celldata.add(px as usize);
+    let gce = &*gl.celldata.as_ptr().add(px as usize);
     if gce.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         return Cow::Borrowed(b"");
     }
@@ -5987,7 +5960,7 @@ unsafe fn window_copy_cellstring(gl: &grid_line, px: u_int) -> Cow<'_, [u8]> {
         return Cow::Borrowed(b"\t");
     }
     utf8_to_data(
-        (*gl.extddata.add(gce.c2rust_unnamed.offset as usize)).data,
+        (*gl.extddata.as_ptr().add(gce.c2rust_unnamed.offset as usize)).data,
         &raw mut ud,
     );
     if ud.size == 0 {

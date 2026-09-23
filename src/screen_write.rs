@@ -4678,7 +4678,7 @@ pub unsafe extern "C" fn screen_write_cell(
         if (*s).cx >= (*gl).cellsize as u_int {
             skip = grid_cells_equal(gc, &raw const grid_default_cell);
         } else {
-            gce = (*gl).celldata.offset((*s).cx as isize) as *mut grid_cell_entry;
+            gce = (*gl).celldata.as_mut_ptr().offset((*s).cx as isize) as *mut grid_cell_entry;
             if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0 {
                 skip = 0 as ::core::ffi::c_int;
             } else if (*gc).flags as ::core::ffi::c_int != (*gce).flags as ::core::ffi::c_int {

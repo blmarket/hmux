@@ -94,6 +94,34 @@ def capture(binary):
             for width in (8, 43, 17, 30):
                 assert run("resize-window", "-x", str(width), "-y", "5") == (0, b"", b"")
                 results.append(run("capture-pane", "-p", "-S", "-", "-J"))
+            # Populate extended cells and exercise overlapping line moves,
+            # scroll regions, history compaction, and reflow together.
+            payload = "\x1bc" + "".join(
+                f"\x1b[38;2;{n};40;90mROW{n:02d}界\x1b[0m\r\n" for n in range(35)
+            ) + "STORAGE-END"
+            assert run("send-keys", "-l", payload) == (0, b"", b"")
+            deadline = time.monotonic() + 5
+            while b"STORAGE-END" not in run("capture-pane", "-p")[1]:
+                assert time.monotonic() < deadline
+                time.sleep(0.05)
+            for sequence in ("\x1b[2;4r\x1b[4;1H\n", "\x1b[r\x1b[2;1H\x1b[2L", "\x1b[1;1H\x1b[M"):
+                # A marker provides an output barrier after each mutation.
+                assert run("send-keys", "-l", sequence + "\x1b[1;1HSTEP") == (0, b"", b"")
+                deadline = time.monotonic() + 5
+                while not run("capture-pane", "-p")[1].startswith(b"STEP"):
+                    assert time.monotonic() < deadline
+                    time.sleep(0.05)
+                results.append(run("capture-pane", "-e", "-p", "-S", "-"))
+                assert run("send-keys", "-l", "\x1b[1;1H----") == (0, b"", b"")
+                deadline = time.monotonic() + 5
+                while not run("capture-pane", "-p")[1].startswith(b"----"):
+                    assert time.monotonic() < deadline
+                    time.sleep(0.05)
+            for width in (7, 31, 13, 30):
+                assert run("resize-window", "-x", str(width), "-y", "5") == (0, b"", b"")
+                results.append(run("capture-pane", "-e", "-p", "-S", "-", "-J"))
+            assert run("clear-history") == (0, b"", b"")
+            results.append(run("capture-pane", "-e", "-p", "-S", "-"))
             # Destruction with an alternate grid still active.
             assert run("send-keys", "-l", "\x1b[?1049h\x1b[HLAST") == (0, b"", b"")
             expect_row(b"LAST")

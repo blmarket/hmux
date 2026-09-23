@@ -117,11 +117,10 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate grid line and cell storage across growth, history collection,
-resize/reflow, duplication, and destruction. Grid records now have automatic
-cleanup and screen-owned Boxes; their nested raw arrays still have manual
-allocation and transfer boundaries. Reuse the completed screen construction and
-move audit. Screen write-list and hyperlink lifecycles also remain in scope.
+Next, migrate screen write-list storage across collection, scrolling, flush,
+resize, and destruction, then migrate retained hyperlink ownership. Reuse the
+completed screen construction and move audit. Grid records, lines, and both
+compact/extended cell arrays now have Rust collection ownership.
 
 Screen title/path strings and the bounded title stack now live in a nullable
 boxed `ScreenStorage` owner. Raw title/path pointers and `ntitles` are compatibility
@@ -140,6 +139,12 @@ raw screen fields are borrowed compatibility views. Grid is no longer Copy and
 cleans up its lines on drop; reflow retains an owned temporary and explicitly
 transfers its line allocation back. Only exported grid_create/grid_destroy
 adapters retain the raw owning contract, with no in-tree production callers.
+
+Grid line/cell arrays now use a nullable thin Vec owner to preserve zeroed
+construction and record layout. Lines are non-Copy; duplication deep-clones
+cells, moves use take/rotation, and reflow transfers the collection. Size fields
+retain their legacy logical rendering/format meanings; Vec owns allocation and
+capacity. No grid-array libc allocation/free or owning-record byte copies remain.
 
 Copy-mode lazy callbacks now return owned results directly into the entry cache.
 Both lookup and enumeration evaluate them without holding an owner borrow across
@@ -174,9 +179,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Screen text, title-stack, tabs, selection, and grid-record ownership is
-   complete. Grid line/cell arrays, screen write-list, and hyperlink storage
-   still have manual lifetime boundaries. Migrate each complete producer/consumer lifecycle; do not add
+1. Screen text, title-stack, tabs, selection, grid records, and grid line/cell
+   arrays have Rust owners. Screen write-list and hyperlink storage still have
+   manual lifetime boundaries. Migrate each complete producer/consumer lifecycle; do not add
    a blanket screen Drop until borrowed resource views and partial construction
    paths have been audited. Title/path compatibility pointers are borrows.
 2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
@@ -1790,6 +1795,28 @@ name error.
   pane-border, popup, and format-draw checks passed on candidate and pinned tmux.
   No sanitizer ran.
 - Next: grid line/cell collection ownership, then screen write lists/hyperlinks.
+
+### Batch — owned grid line and cell collections (2026-09-23)
+
+- Migrated line arrays, compact cells, extended cells, and compaction scratch to
+  Vec-backed owners. Nullable thin owners preserve zeroed construction and all
+  existing record-layout fixtures. Removed grid's manual Drop implementation:
+  nested collections now perform cleanup automatically. Legacy size fields keep
+  their logical rendering/format meanings while Vec manages allocation/capacity.
+- Removed Copy from grid_line. History trimming/region scrolling rotate owners;
+  overlapping line moves use direction-aware take; duplication deep-clones cells;
+  reflow moves lines and its final collection. Partial reflow truncates the
+  logical cell range so later growth initializes fresh cells. Copy-mode backing
+  synchronization uses the same collection growth and owner rotation. Screen
+  printing, writing, and copy-mode cell readers borrow collection pointers.
+- Added regression coverage for overlapping moves, deep clone independence,
+  region history rotation, collection/compaction, and destruction. Expanded the
+  capture-pane comparison with RGB/wide cells, insert/delete lines, region
+  scrolling, history clearing, and repeated reflow. All 401 serialized workspace
+  tests, binary build, changed-file rustfmt, and diff checks passed. Capture-pane,
+  copy-backing, copy-selection, copy-match, saved-status, pane-border, popup, and
+  format-draw CLI checks passed on candidate and pinned tmux. No sanitizer ran.
+- Next: screen write-list storage and retained hyperlink ownership.
 
 ## Historical migration index
 

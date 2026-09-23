@@ -1056,10 +1056,10 @@ pub unsafe extern "C" fn screen_print(
                 break;
             }
             last = last.wrapping_add(n as size_t);
-            gl = (*(*s).grid).linedata.offset(y as isize) as *mut grid_line;
+            gl = (*(*s).grid).linedata.as_mut_ptr().offset(y as isize) as *mut grid_line;
             x = 0 as u_int;
             while x < (*gl).cellused as u_int {
-                gce = (*gl).celldata.offset(x as isize) as *mut grid_cell_entry;
+                gce = (*gl).celldata.as_mut_ptr().offset(x as isize) as *mut grid_cell_entry;
                 if !((*gce).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
                     if !((*gce).flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
                         if last.wrapping_add(2 as size_t) >= len {
@@ -1099,7 +1099,11 @@ pub unsafe extern "C" fn screen_print(
                         last = last.wrapping_add(n as size_t);
                     } else {
                         utf8_to_data(
-                            (*(*gl).extddata.offset((*gce).c2rust_unnamed.offset as isize)).data,
+                            (*(*gl)
+                                .extddata
+                                .as_mut_ptr()
+                                .offset((*gce).c2rust_unnamed.offset as isize))
+                            .data,
                             &raw mut ud,
                         );
                         if ud.size as ::core::ffi::c_int > 0 as ::core::ffi::c_int {

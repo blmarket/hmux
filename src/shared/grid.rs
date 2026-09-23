@@ -23,6 +23,57 @@ pub struct grid_cell {
     pub link: u_int,
 }
 
+/// Nullable thin owner preserves translated record layout and zeroed construction.
+/// All element allocation, growth, cloning, and destruction belong to the Vec.
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct GridArray<T>(Option<Box<Vec<T>>>);
+
+impl<T> Default for GridArray<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+impl<T> std::ops::Deref for GridArray<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        self.0.as_deref().map_or(&[], |items| items.as_slice())
+    }
+}
+impl<T> std::ops::DerefMut for GridArray<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        self.0
+            .get_or_insert_with(|| Box::new(Vec::new()))
+            .as_mut_slice()
+    }
+}
+impl<T> GridArray<T> {
+    // Vec pointer access does not materialize a slice reference. Callers may
+    // retain disjoint element pointers until an operation changes the array.
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
+        self.0
+            .as_mut()
+            .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
+                items.as_mut_ptr()
+            })
+    }
+    pub(crate) fn as_ptr(&self) -> *const T {
+        self.0
+            .as_ref()
+            .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
+                items.as_ptr()
+            })
+    }
+    pub(crate) fn resize_with(&mut self, len: usize, init: impl FnMut() -> T) {
+        self.0
+            .get_or_insert_with(|| Box::new(Vec::new()))
+            .resize_with(len, init);
+    }
+    pub(crate) fn clear(&mut self) {
+        self.0 = None;
+    }
+}
+
 #[repr(C)]
 /// Owns its lines and their cell allocations. Screens and temporary reflow
 /// operations keep this record in a Box; raw grid pointers are scoped borrows.
@@ -36,14 +87,14 @@ pub struct grid {
     pub scroll_added: u_int,
     pub scroll_collected: u_int,
     pub scroll_generation: u_int,
-    pub linedata: *mut grid_line,
+    pub linedata: GridArray<grid_line>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct grid_line {
-    pub celldata: *mut grid_cell_entry,
-    pub extddata: *mut grid_extd_entry,
+    pub celldata: GridArray<grid_cell_entry>,
+    pub extddata: GridArray<grid_extd_entry>,
     pub cellused: u_short,
     pub cellsize: u_short,
     pub extdsize: u_int,
@@ -52,7 +103,7 @@ pub struct grid_line {
     pub flags: u_short,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct osc133_data {
     pub prompt_col: u_short,
