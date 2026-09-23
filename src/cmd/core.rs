@@ -1047,17 +1047,11 @@ pub unsafe extern "C" fn cmd_template_replace(
         return xstrdup(template);
     }
     let text = cmd_template_replace_cstring(template, s, idx);
-    log_debug(
-        b"%s: %s -> %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_template_replace\0" as *const u8 as *const ::core::ffi::c_char,
-        template,
-        text.as_ptr(),
-    );
     // Callers retain the exported malloc/free contract.
     xstrdup(text.as_ptr())
 }
 
-unsafe fn cmd_template_replace_cstring(
+pub(crate) unsafe fn cmd_template_replace_cstring(
     template: *const ::core::ffi::c_char,
     s: *const ::core::ffi::c_char,
     idx: ::core::ffi::c_int,
@@ -1121,7 +1115,14 @@ unsafe fn cmd_template_replace_cstring(
         }
         output.push(ch);
     }
-    CString::new(output).expect("C string template contains no embedded NUL")
+    let text = CString::new(output).expect("C string template contains no embedded NUL");
+    log_debug(
+        b"%s: %s -> %s\0" as *const u8 as *const ::core::ffi::c_char,
+        b"cmd_template_replace\0" as *const u8 as *const ::core::ffi::c_char,
+        template,
+        text.as_ptr(),
+    );
+    text
 }
 
 #[cfg(test)]

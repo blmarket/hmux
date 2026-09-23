@@ -5,6 +5,7 @@ import fcntl
 import os
 import pathlib
 import pty
+import re
 import select
 import struct
 import subprocess
@@ -17,13 +18,15 @@ root = pathlib.Path(__file__).resolve().parents[1]
 binary = pathlib.Path(os.environ.get("HMUX_BINARY", root / "target/debug/hmux2")).resolve()
 baseline = os.environ.get("HMUX_BASELINE_BINARY")
 env = dict(os.environ, TERM="xterm-256color", LC_ALL="C", TMUX="", SHELL="/bin/sh")
+csi = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\([A-Za-z0-9]")
 
 
 def exercise(binary_path):
     with tempfile.TemporaryDirectory(prefix="window-tree-strings-") as tmp:
         base = [str(binary_path), "-S", str(pathlib.Path(tmp) / "socket"), "-f", "/dev/null"]
         master, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
+        # The choose-tree help box needs 36 rows, including its border.
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 100, 0, 0))
         client = None
         output = bytearray()
 
@@ -68,6 +71,27 @@ def exercise(binary_path):
 
             output.clear()
             run("choose-tree", "-t", "tree:0.0", *options)
+            read_until(b"owned-format-tree")
+            output.clear()
+            run("send-keys", "-t", "tree:0.0", "C-h")
+            read_until(b"Exit mode")
+            help_rendered = csi.sub(b"", output)
+            help_lines = (
+                b"Move cursor up",
+                b"Collapse item",
+                b"Choose selected item",
+                b"Exit mode",
+            )
+            assert all(line in help_rendered for line in help_lines), help_rendered[-2000:]
+            # The first key dismisses the overlay; the next exits choose-tree.
+            run("send-keys", "-t", "tree:0.0", "q", "q")
+            wait_for(
+                lambda: run("display-message", "-p", "-t", "tree:0.0", "#{pane_in_mode}").strip() == b"0",
+                "help overlay teardown",
+            )
+
+            output.clear()
+            run("choose-tree", "-t", "tree:0.0", *options)
             read_until(b"(view: preview)")
             run("send-keys", "-t", "tree:0.0", ":")
             read_until(b"(current) ")
@@ -108,7 +132,11 @@ def exercise(binary_path):
             if client is not None:
                 if client.poll() is None:
                     client.terminate()
-                client.wait(timeout=5)
+                try:
+                    client.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    client.kill()
+                    client.wait(timeout=5)
             if slave is not None:
                 os.close(slave)
             os.close(master)

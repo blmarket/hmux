@@ -125,13 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Internal `cmd_template_replace` callers in `mode_tree` and
-   `window_switch` synchronously borrow their result, then free it. The
-   existing private `cmd_template_replace_cstring` builds the same text as a
-   `CString`; exposing an owned internal path could retire those temporary
-   C allocations while keeping the exported malloc/free contract. Audit
-   parse-time retention and preserve debug logging for percent templates.
-   Choose-tree and switch-mode CLI checks cover the command paths.
+1. `args_make_commands` owns a command string only through substitution and
+   synchronous parsing. It currently duplicates the starting command,
+   replaces it with a C allocation for each argument, frees each previous
+   allocation, then frees the final result. The now crate-visible
+   `cmd_template_replace_cstring` can keep the entire temporary as `CString`
+   while the retained argument value in `args_copy_copy_value` continues to
+   use its C-owned output contract.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -937,6 +937,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   switch-mode CLI checks passed for row rendering, incremental filter rebuild,
   selection, cancel, and session/window target paths. Changed-file rustfmt
   and diff checks passed. No sanitizer ran.
+
+### Increment 405 — owned mode command template temporaries (2026-09-23)
+
+- The existing `cmd_template_replace_cstring` is crate-visible. Synchronous
+  callers in `mode_tree_draw_help_line`, `mode_tree_run_command`, and
+  `window_switch_run_command` now use its `CString` directly and borrow its
+  pointer during format expansion or command parsing. Their extra exported
+  C copies and matching manual frees are gone. The exported
+  `cmd_template_replace` still returns a libc-freeable copy. Percent-template
+  debug logging moved into the shared helper, preserving its prior output.
+- Serialized workspace tests and the binary build passed. Pinned-baseline
+  CLI comparisons passed for choose-tree command execution, attached help
+  redraw with `C-h`, and switch-mode selection and target paths. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

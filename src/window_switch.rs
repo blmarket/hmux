@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::{cmd_mouse_at, cmd_template_replace};
+use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::cmd_parse::cmd_parse_and_append;
 use crate::src::cmd_queue::{cmdq_free_state, cmdq_new_state};
@@ -733,7 +733,6 @@ unsafe extern "C" fn window_switch_run_command(
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut target: Option<CString> = None;
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    let mut command: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut status: cmd_parse_status = CMD_PARSE_ERROR;
     if (*data).matches.is_empty() {
@@ -772,19 +771,19 @@ unsafe extern "C" fn window_switch_run_command(
     let Some(target) = target else {
         return 0 as ::core::ffi::c_int;
     };
-    command = cmd_template_replace(
+    let command = cmd_template_replace_cstring(
         (*data).command.as_ptr(),
         target.as_ptr(),
         1 as ::core::ffi::c_int,
     );
-    if !command.is_null() && *command as ::core::ffi::c_int != '\0' as i32 {
+    if !command.as_bytes().is_empty() {
         state = cmdq_new_state(
             &raw mut fs,
             ::core::ptr::null_mut::<key_event>(),
             0 as ::core::ffi::c_int,
         );
         status = cmd_parse_and_append(
-            command,
+            command.as_ptr(),
             ::core::ptr::null_mut::<cmd_parse_input>(),
             c,
             state,
@@ -831,7 +830,6 @@ unsafe extern "C" fn window_switch_run_command(
         }
         cmdq_free_state(state);
     }
-    free(command as *mut ::core::ffi::c_void);
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn window_switch_prompt_callback(

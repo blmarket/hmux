@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_mouse_at, cmd_template_replace};
+use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::cmd_parse::cmd_parse_and_append;
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_free_state, cmdq_get_callback1, cmdq_get_client, cmdq_new_state,
@@ -2195,10 +2195,9 @@ unsafe extern "C" fn mode_tree_draw_help_line(
     mut w: u_int,
 ) {
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut replaced: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    replaced = cmd_template_replace(line, item, 1 as ::core::ffi::c_int);
-    expanded = format_expand(ft, replaced);
-    free(replaced as *mut ::core::ffi::c_void);
+    let replaced = cmd_template_replace_cstring(line, item, 1 as ::core::ffi::c_int);
+    expanded = format_expand(ft, replaced.as_ptr());
+    drop(replaced);
     screen_write_cursormove(
         ctx,
         x as ::core::ffi::c_int,
@@ -2789,18 +2788,17 @@ pub unsafe extern "C" fn mode_tree_run_command(
     mut name: *const ::core::ffi::c_char,
 ) {
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    let mut command: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let command = cmd_template_replace_cstring(template, name, 1 as ::core::ffi::c_int);
     let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut status: cmd_parse_status = CMD_PARSE_ERROR;
-    command = cmd_template_replace(template, name, 1 as ::core::ffi::c_int);
-    if !command.is_null() && *command as ::core::ffi::c_int != '\0' as i32 {
+    if !command.as_bytes().is_empty() {
         state = cmdq_new_state(
             fs,
             ::core::ptr::null_mut::<key_event>(),
             0 as ::core::ffi::c_int,
         );
         status = cmd_parse_and_append(
-            command,
+            command.as_ptr(),
             ::core::ptr::null_mut::<cmd_parse_input>(),
             c,
             state,
@@ -2847,7 +2845,6 @@ pub unsafe extern "C" fn mode_tree_run_command(
         }
         cmdq_free_state(state);
     }
-    free(command as *mut ::core::ffi::c_void);
 }
 
 #[cfg(test)]

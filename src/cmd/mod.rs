@@ -3,6 +3,7 @@
 mod core;
 pub(crate) use self::core::{
     cmd_list_print_cstring, cmd_print_cstring, cmd_stringify_argv_cstring,
+    cmd_template_replace_cstring,
 };
 pub mod entries;
 pub mod find;
