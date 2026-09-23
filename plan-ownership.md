@@ -2634,6 +2634,19 @@ legacy callers safe.
   pre-migration binary. Full workspace tests, binary build, rustfmt, and diff
   checks passed. No sanitizer was run.
 
+### Increment 312 — boxed screen title stack header (2026-09-23)
+
+- `screen_push_title` now boxes the `screen_titles` header before storing the
+  first entry. Its address stays fixed while `tqh_last` points into its own
+  `tqh_first` field on an empty stack. `screen_free_titles` still unlinks and
+  drops every entry, then consumes the header Box and clears `s.titles` and
+  `ntitles`. The header remains alive after the last pop until screen cleanup,
+  matching the prior lifetime.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, rustfmt,
+  and diff checks passed. The live OSC 2/CSI title stack CLI matched the
+  pinned pre-migration binary across creation, overflow, pop, and teardown.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2644,12 +2657,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The `screen_titles` header in `src/screen.rs` has one constructor and one
-   final free. Its `tqh_last` points into the header when empty, so a Box must
-   preserve its address from first insertion through final cleanup. The
-   screen title stack CLI now covers header creation and teardown. The
-   separate `utf8_item` cache has no terminal free and needs a whole-cache
-   design.
+1. `args_entry` in `src/arguments.rs` is the next small record: `args_set`
+   allocates it once per flag, and `args_free` unlinks it and destroys its
+   value list before the sole record free. Its tree and intrusive value list
+   borrow a stable address. Existing argument CLI checks exercise parsed
+   option teardown. The separate `utf8_item` cache has no terminal free and
+   needs a whole-cache design; window-copy backing remains larger.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias

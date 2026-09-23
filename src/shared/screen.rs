@@ -22,6 +22,8 @@ pub struct screen_sel {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by the screen once the first title is pushed. An empty stack's
+/// tail link points into this header, so its address stays fixed until cleanup.
 pub struct screen_titles {
     pub tqh_first: *mut screen_title_entry,
     pub tqh_last: *mut *mut screen_title_entry,

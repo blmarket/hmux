@@ -98,7 +98,7 @@ unsafe extern "C" fn screen_free_titles(mut s: *mut screen) {
         free((*title_entry).text as *mut ::core::ffi::c_void);
         drop(Box::from_raw(title_entry));
     }
-    free((*s).titles as *mut ::core::ffi::c_void);
+    drop(Box::from_raw((*s).titles));
     (*s).titles = ::core::ptr::null_mut::<screen_titles>();
     (*s).ntitles = 0 as u_int;
 }
@@ -337,8 +337,7 @@ pub unsafe extern "C" fn screen_push_title(mut s: *mut screen) {
         (*s).ntitles = (*s).ntitles.wrapping_sub(1);
     }
     if (*s).titles.is_null() {
-        (*s).titles =
-            xmalloc(::core::mem::size_of::<screen_titles>() as size_t) as *mut screen_titles;
+        (*s).titles = Box::into_raw(Box::new(::core::mem::zeroed::<screen_titles>()));
         (*(*s).titles).tqh_first = ::core::ptr::null_mut::<screen_title_entry>();
         (*(*s).titles).tqh_last = &raw mut (*(*s).titles).tqh_first;
     }
