@@ -2702,6 +2702,21 @@ legacy callers safe.
   Full workspace tests, binary build, layout CLI on both binaries, rustfmt,
   and diff checks passed. No sanitizer was run.
 
+### Increment 317 — boxed control-window size records (2026-09-23)
+
+- `control_set_window_size` now boxes each `control_window` before inserting
+  it into the window-ID index. `control_clear_window_size` and `control_stop`
+  still remove each record from that index before consuming its Box. The
+  index and `entry.owner` hold borrowed pointers; `control_get_window_size`
+  copies dimensions to its caller. The stack lookup probe remains temporary.
+- Added `scripts/control_window_owner_cli_checks.py` to attach a real control
+  client, set and replace a per-window size, clear it, then disconnect while
+  another override is live. It passed on candidate and pinned baseline.
+  Full workspace tests, binary build, and the existing control-lines CLI on
+  both binaries passed. `src/shared/control.rs` passes rustfmt; the only
+  rustfmt differences in `src/control.rs` are its pre-existing import layout.
+  Diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2712,14 +2727,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `control_window` in `src/control.rs` has one allocation in
-   `control_set_window_size` and two final release paths,
-   `control_clear_window_size` and `control_stop`. It is a leaf record keyed
-   by an existing window ID; audit the live control-client set/clear protocol
-   before migration. `cmd_load_buffer_data` in
-   `src/cmd/entries/load_buffer.rs` has one constructor and a terminal
-   callback destructor, but its existing attached-client reference handling
-   on error/empty input needs separate review. `args_value` has several
+1. `cmd_load_buffer_data` in `src/cmd/entries/load_buffer.rs` has one
+   constructor and a terminal callback destructor. Audit its callback
+   lifecycle and the existing attached-client reference handling on
+   error/empty input separately before migration. `args_value` has several
    constructors and external fixtures, so audit its scalar/array ownership
    together before selection.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache

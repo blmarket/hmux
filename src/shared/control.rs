@@ -121,6 +121,8 @@ pub struct control_windows {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by the control client; the window-ID index borrows its address.
+/// Unlink before `control_clear_window_size` or `control_stop` consumes it.
 pub struct control_window {
     pub window: u_int,
     pub sx: u_int,

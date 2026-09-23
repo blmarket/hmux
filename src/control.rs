@@ -360,10 +360,7 @@ pub unsafe extern "C" fn control_set_window_size(
     }
     cw = control_get_window(c, window);
     if cw.is_null() {
-        cw = xcalloc(
-            1 as size_t,
-            ::core::mem::size_of::<control_window>() as size_t,
-        ) as *mut control_window;
+        cw = Box::into_raw(Box::new(::core::mem::zeroed::<control_window>()));
         (*cw).window = window;
         control_windows_insert(&raw mut (*cs).windows, cw);
     }
@@ -396,7 +393,7 @@ pub unsafe extern "C" fn control_clear_window_size(mut c: *mut client, mut windo
     cw = control_get_window(c, window);
     if !cw.is_null() {
         control_windows_remove(&raw mut (*cs).windows, cw);
-        free(cw as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(cw));
     }
 }
 unsafe extern "C" fn control_discard_pane(mut c: *mut client, mut cp: *mut control_pane) {
@@ -1499,7 +1496,7 @@ pub unsafe extern "C" fn control_stop(mut c: *mut client) {
         1 as ::core::ffi::c_int != 0
     } {
         control_windows_remove(&raw mut (*cs).windows, cw);
-        free(cw as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(cw));
         cw = cw1;
     }
     cb = (*cs).all_blocks.tqh_first;
