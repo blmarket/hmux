@@ -1693,16 +1693,16 @@ unsafe extern "C" fn mode_tree_prompt_input_callback(
     }
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn mode_tree_prompt_free_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut mtp: *mut mode_tree_prompt = data as *mut mode_tree_prompt;
-    if (*(*mtp).mtd).prompt_data == mtp {
-        (*(*mtp).mtd).prompt_data = ::core::ptr::null_mut::<mode_tree_prompt>();
+unsafe extern "C" fn mode_tree_prompt_free_callback(data: *mut ::core::ffi::c_void) {
+    let mtp_ptr = data as *mut mode_tree_prompt;
+    let mtp = Box::from_raw(mtp_ptr);
+    if (*mtp.mtd).prompt_data == mtp_ptr {
+        (*mtp.mtd).prompt_data = ::core::ptr::null_mut::<mode_tree_prompt>();
     }
-    if (*mtp).freecb.is_some() {
-        (*mtp).freecb.expect("non-null function pointer")((*mtp).data);
+    if mtp.freecb.is_some() {
+        mtp.freecb.expect("non-null function pointer")(mtp.data);
     }
-    mode_tree_remove_ref((*mtp).mtd);
-    free(mtp as *mut ::core::ffi::c_void);
+    mode_tree_remove_ref(mtp.mtd);
 }
 #[no_mangle]
 pub unsafe extern "C" fn mode_tree_set_prompt(
@@ -1776,15 +1776,13 @@ pub unsafe extern "C" fn mode_tree_set_prompt(
         oo = global_s_options;
     }
     mode_tree_clear_prompt(mtd);
-    mtp = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<mode_tree_prompt>() as size_t,
-    ) as *mut mode_tree_prompt;
-    (*mtp).mtd = mtd;
-    (*mtp).c = c;
-    (*mtp).inputcb = inputcb;
-    (*mtp).freecb = freecb;
-    (*mtp).data = data;
+    mtp = Box::into_raw(Box::new(mode_tree_prompt {
+        mtd,
+        c,
+        inputcb,
+        freecb,
+        data,
+    }));
     (*mtd).references = (*mtd).references.wrapping_add(1);
     (*mtd).prompt_top = (options_get_number(
         oo,

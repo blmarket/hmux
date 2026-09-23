@@ -91,7 +91,18 @@ def exercise(binary_path):
                 "accepted prompt teardown",
             )
             wait_for(lambda: run("show-option", "-gqv", "@prompt_hit").strip() == b"yes", "deferred command")
-            return picked, run("show-option", "-gqv", "@prompt_hit").strip()
+            prompt_hit = run("show-option", "-gqv", "@prompt_hit").strip()
+
+            # Destroy the pane while its mode-tree prompt is still active.
+            run("new-window", "-d", "-t", "tree", "-n", "survivor", "sleep 30")
+            output.clear()
+            run("choose-tree", "-t", "tree:0.0", *options)
+            read_until(b"owned-format-tree")
+            run("send-keys", "-t", "tree:0.0", ":")
+            read_until(b"(current) ")
+            run("kill-window", "-t", "tree:0")
+            assert b"survivor" in run("list-windows", "-t", "tree", "-F", "#{window_name}")
+            return picked, prompt_hit
         finally:
             subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
             if client is not None:

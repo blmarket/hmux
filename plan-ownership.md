@@ -2127,6 +2127,21 @@ legacy callers safe.
   `-K`, and command values, empty and accepted prompts, deferred command
   execution, and teardown. No sanitizer was run.
 
+### Increment 277 — mode-tree prompt callback record (2026-09-23)
+
+- `mode_tree_prompt` now uses a stable `Box` for callback data rather than
+  `xcalloc` and a matching manual `free`. Its free callback clears the
+  mode-tree observer, invokes the caller's free callback, releases the
+  mode-tree reference, then drops the box in the original order. The public
+  callback record and C layout remain unchanged.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and attached-client
+  `scripts/window_tree_prompt_cli_checks.py` and the extended
+  `scripts/window_tree_strings_owner_cli_checks.py` passed on main. The latter
+  also passed with the pinned baseline and now covers destroying a pane while
+  its mode-tree prompt is active, alongside empty and accepted prompts.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
