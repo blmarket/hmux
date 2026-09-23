@@ -95,6 +95,8 @@ mod tests {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by its command queue after insertion. Command and callback
+/// constructors return a stable address; `cmdq_remove` unlinks and drops it.
 pub struct cmdq_item {
     pub name: *mut ::core::ffi::c_char,
     pub queue: *mut cmdq_list,

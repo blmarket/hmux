@@ -2791,6 +2791,21 @@ legacy callers safe.
   passed. `src/mode_tree.rs` retains only its pre-existing import-layout
   rustfmt differences. No sanitizer was run.
 
+### Increment 323 — boxed command queue items (2026-09-23)
+
+- `cmdq_get_command` and `cmdq_get_callback1` now box each zeroed
+  `cmdq_item` before building command chains or publishing queue links.
+  `cmdq_remove` still releases client, command-list, and state references,
+  unlinks the intrusive queue entry, frees its name, then consumes the Box.
+  The two direct test fixtures now consume their item Boxes after their
+  existing nested cleanup. `next`, queue, and synchronous event pointers
+  remain borrowed aliases to stable item addresses.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build,
+  command-queue CLI on both candidate and pinned baseline, wait-channel
+  and run-shell callback CLI comparisons, and diff checks passed. Changed
+  code follows rustfmt; queue and fixture files retain only pre-existing
+  import-layout differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2801,12 +2816,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmdq_item` in `src/cmd/queue.rs` has two constructors,
-   `cmdq_get_command` and `cmdq_get_callback1`, and one final release in
-   `cmdq_remove`. Audit queue links, callback and command item paths, and
-   two direct test-fixture frees before migrating both constructors and the
-   destructor together. `cmdq_state` is another small record but its
-   explicit reference count requires a retain/release audit.
+1. `cmdq_state` in `src/cmd/queue.rs` has one constructor,
+   `cmdq_new_state`, and one terminal release at zero references in
+   `cmdq_free_state`. `cmdq_link_state` is the sole retain operation; audit
+   its copied key event, optional formats owner, and command/callback state
+   lifetimes before migrating the allocation pair.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`

@@ -507,7 +507,7 @@ unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
     }
     *(*item).entry.tqe_prev = (*item).entry.tqe_next;
     free((*item).name as *mut ::core::ffi::c_void);
-    free(item as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(item));
 }
 unsafe extern "C" fn cmdq_remove_group(mut item: *mut cmdq_item) {
     let mut this: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -562,8 +562,7 @@ pub unsafe extern "C" fn cmdq_get_command(
     }
     while !cmd.is_null() {
         entry = cmd_get_entry(cmd);
-        item =
-            xcalloc(1 as size_t, ::core::mem::size_of::<cmdq_item>() as size_t) as *mut cmdq_item;
+        item = Box::into_raw(Box::new(::core::mem::zeroed::<cmdq_item>()));
         xasprintf(
             &raw mut (*item).name,
             b"[%s/%p]\0" as *const u8 as *const ::core::ffi::c_char,
@@ -826,7 +825,7 @@ pub unsafe extern "C" fn cmdq_get_callback1(
     mut data: *mut ::core::ffi::c_void,
 ) -> *mut cmdq_item {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    item = xcalloc(1 as size_t, ::core::mem::size_of::<cmdq_item>() as size_t) as *mut cmdq_item;
+    item = Box::into_raw(Box::new(::core::mem::zeroed::<cmdq_item>()));
     xasprintf(
         &raw mut (*item).name,
         b"[%s/%p]\0" as *const u8 as *const ::core::ffi::c_char,

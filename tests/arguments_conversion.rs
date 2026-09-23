@@ -171,7 +171,7 @@ fn expanded_helpers_convert_formatted_values_and_keep_errors_typed() {
         );
         cmdq_free_state((*item).state);
         free((*item).name.cast());
-        free(item.cast());
+        drop(Box::from_raw(item));
     }
 }
 

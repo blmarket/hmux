@@ -90,7 +90,7 @@ unsafe fn run_option_command(command: &str) -> (cmd_retval, Vec<Vec<u8>>) {
     cmd_list_free((*item).cmdlist);
     cmdq_free_state((*item).state);
     free((*item).name.cast());
-    free(item.cast());
+    drop(Box::from_raw(item));
     (retval, causes)
 }
 
