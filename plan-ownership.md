@@ -1965,6 +1965,19 @@ legacy callers safe.
   execution, and the `-F` branch. Job creation failure was source-audited but
   not fault injected. No sanitizer was run.
 
+### Increment 265 — server ACL entry owner (2026-09-23)
+
+- `server_acl_entries` now stores `Box<server_acl_entry>` values under its
+  existing user/group semantic keys. Lookup and display borrow stable entry
+  pointers; deny removes and drops the box, while ACL initialization clears
+  and drops any previous entries. Removed the entry's `Copy` derive and its
+  `xcalloc`/`free` pair.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/server_acl_owner_cli_checks.py` passed on main. The pinned-baseline
+  comparison covered group grant, duplicate grant, read-only/write updates,
+  listing, and revocation. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

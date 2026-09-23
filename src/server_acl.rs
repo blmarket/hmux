@@ -1,5 +1,5 @@
 use crate::src::cmd_queue::cmdq_print;
-use crate::src::ffi::libc::{free, getgrgid, getpwuid, getuid};
+use crate::src::ffi::libc::{getgrgid, getpwuid, getuid};
 use crate::src::proc::{proc_get_peer_gid, proc_get_peer_uid};
 pub use crate::src::server::clients;
 use crate::src::shared::abi::*;
@@ -60,12 +60,11 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xcalloc, xstrdup};
+use crate::src::xmalloc::xstrdup;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct server_acl_entry {
     pub id: id_t,
@@ -74,7 +73,7 @@ pub struct server_acl_entry {
 #[derive(Default)]
 pub struct server_acl_entries {
     // The old comparator ordered non-groups before groups, then by id.
-    entries: std::collections::BTreeMap<(bool, id_t), *mut server_acl_entry>,
+    entries: std::collections::BTreeMap<(bool, id_t), Box<server_acl_entry>>,
 }
 pub const SERVER_ACL_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
@@ -99,7 +98,7 @@ unsafe fn server_acl_entry_find(
     (*head)
         .entries
         .get(&server_acl_key(id, flags))
-        .copied()
+        .map(|entry| entry.as_ref() as *const server_acl_entry as *mut server_acl_entry)
         .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
 
@@ -113,7 +112,7 @@ unsafe fn server_acl_entries_minmax(
         (*head).entries.iter().next_back()
     };
     entry
-        .map(|(_, entry)| *entry)
+        .map(|(_, entry)| entry.as_ref() as *const server_acl_entry as *mut server_acl_entry)
         .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
 
@@ -126,16 +125,18 @@ unsafe fn server_acl_entries_next(
         .entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map(|(_, entry)| *entry)
+        .map(|(_, entry)| entry.as_ref() as *const server_acl_entry as *mut server_acl_entry)
         .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
 
 unsafe fn server_acl_entries_insert(
     head: *mut server_acl_entries,
-    entry: *mut server_acl_entry,
+    entry: Box<server_acl_entry>,
 ) -> *mut server_acl_entry {
-    match (*head).entries.entry(server_acl_entry_key(entry)) {
-        std::collections::btree_map::Entry::Occupied(existing) => *existing.get(),
+    match (*head).entries.entry(server_acl_key(entry.id, entry.flags)) {
+        std::collections::btree_map::Entry::Occupied(existing) => {
+            existing.get().as_ref() as *const server_acl_entry as *mut server_acl_entry
+        }
         std::collections::btree_map::Entry::Vacant(existing) => {
             existing.insert(entry);
             ::core::ptr::null_mut::<server_acl_entry>()
@@ -146,11 +147,8 @@ unsafe fn server_acl_entries_insert(
 unsafe fn server_acl_entries_remove(
     head: *mut server_acl_entries,
     entry: *mut server_acl_entry,
-) -> *mut server_acl_entry {
-    (*head)
-        .entries
-        .remove(&server_acl_entry_key(entry))
-        .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
+) -> Option<Box<server_acl_entry>> {
+    (*head).entries.remove(&server_acl_entry_key(entry))
 }
 
 unsafe fn server_acl_entries_clear(head: *mut server_acl_entries) {
@@ -274,13 +272,13 @@ pub unsafe extern "C" fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     entry = server_acl_entry_find(&raw mut server_acl_entries, id, flags);
     if entry.is_null() {
-        entry = xcalloc(
-            1 as size_t,
-            ::core::mem::size_of::<server_acl_entry>() as size_t,
-        ) as *mut server_acl_entry;
-        (*entry).id = id;
-        (*entry).flags = flags & SERVER_ACL_IS_GROUP;
-        server_acl_entries_insert(&raw mut server_acl_entries, entry);
+        server_acl_entries_insert(
+            &raw mut server_acl_entries,
+            Box::new(server_acl_entry {
+                id,
+                flags: flags & SERVER_ACL_IS_GROUP,
+            }),
+        );
     }
 }
 #[no_mangle]
@@ -289,7 +287,6 @@ pub unsafe extern "C" fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c
     entry = server_acl_entry_find(&raw mut server_acl_entries, id, flags);
     if !entry.is_null() {
         server_acl_entries_remove(&raw mut server_acl_entries, entry);
-        free(entry as *mut ::core::ffi::c_void);
         server_acl_update();
     }
 }
@@ -334,43 +331,49 @@ mod tests {
     fn server_acl_tree_matches_red_black_tree_semantics() {
         unsafe {
             let mut tree = server_acl_entries::default();
-            let mut items: [server_acl_entry; 4] = [
-                server_acl_entry { id: 9, flags: 0 },
-                server_acl_entry { id: 4, flags: 0 },
-                server_acl_entry {
-                    id: 1,
-                    flags: SERVER_ACL_IS_GROUP,
-                },
-                server_acl_entry {
-                    id: 1,
-                    flags: SERVER_ACL_IS_GROUP | SERVER_ACL_READONLY,
-                },
-            ];
-            let first = &mut items[0] as *mut server_acl_entry;
-            let second = &mut items[1] as *mut server_acl_entry;
-            let group = &mut items[2] as *mut server_acl_entry;
-            let duplicate = &mut items[3] as *mut server_acl_entry;
+            let first = Box::new(server_acl_entry { id: 9, flags: 0 });
+            let second = Box::new(server_acl_entry { id: 4, flags: 0 });
+            let group = Box::new(server_acl_entry {
+                id: 1,
+                flags: SERVER_ACL_IS_GROUP,
+            });
+            let duplicate = Box::new(server_acl_entry {
+                id: 1,
+                flags: SERVER_ACL_IS_GROUP | SERVER_ACL_READONLY,
+            });
+            let first_ptr = first.as_ref() as *const server_acl_entry as *mut server_acl_entry;
+            let second_ptr = second.as_ref() as *const server_acl_entry as *mut server_acl_entry;
+            let group_ptr = group.as_ref() as *const server_acl_entry as *mut server_acl_entry;
 
             assert!(server_acl_entries_insert(&raw mut tree, first).is_null());
             assert!(server_acl_entries_insert(&raw mut tree, second).is_null());
             assert!(server_acl_entries_insert(&raw mut tree, group).is_null());
             assert_eq!(
                 server_acl_entries_insert(&raw mut tree, duplicate),
-                group,
+                group_ptr,
                 "duplicate keys keep the original item"
             );
 
-            assert_eq!(server_acl_entries_minmax(&raw mut tree, -1), second);
-            assert_eq!(server_acl_entries_next(&raw mut tree, second), first);
-            assert_eq!(server_acl_entries_next(&raw mut tree, first), group);
-            assert!(server_acl_entries_next(&raw mut tree, group).is_null());
-            assert_eq!(server_acl_entries_minmax(&raw mut tree, 1), group);
+            assert_eq!(server_acl_entries_minmax(&raw mut tree, -1), second_ptr);
+            assert_eq!(
+                server_acl_entries_next(&raw mut tree, second_ptr),
+                first_ptr
+            );
+            assert_eq!(server_acl_entries_next(&raw mut tree, first_ptr), group_ptr);
+            assert!(server_acl_entries_next(&raw mut tree, group_ptr).is_null());
+            assert_eq!(server_acl_entries_minmax(&raw mut tree, 1), group_ptr);
             assert_eq!(
                 server_acl_entry_find(&raw mut tree, 1, SERVER_ACL_IS_GROUP | SERVER_ACL_READONLY),
-                group,
+                group_ptr,
             );
-            assert_eq!(server_acl_entries_remove(&raw mut tree, first), first);
+            let removed = server_acl_entries_remove(&raw mut tree, first_ptr).unwrap();
+            assert_eq!(
+                removed.as_ref() as *const server_acl_entry as *mut server_acl_entry,
+                first_ptr
+            );
             assert!(server_acl_entry_find(&raw mut tree, 9, 0).is_null());
+            server_acl_entries_clear(&raw mut tree);
+            assert!(server_acl_entries_minmax(&raw mut tree, -1).is_null());
         }
     }
 }
