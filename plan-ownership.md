@@ -1830,6 +1830,25 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check` passed. No dedicated live
   interactive switch-mode scenario or sanitizer was run.
 
+### Increment 102 — window-tree item list (2026-09-22)
+
+- `window_tree_modedata` is Box-owned through its existing callback reference
+  count and holds `Vec<Box<window_tree_itemdata>>`. The boxed numeric rows keep
+  stable addresses while mode-tree items borrow them. Removed list
+  `xreallocarray`, `item_size`, per-row `xcalloc`/`free`, and the rebuild and
+  final free loops. The list clears at the previous rebuild point and drops
+  with the mode data when its final reference is released.
+- Filtered window/session parents only remove their just-added final row after
+  all rejected children have been removed. `mode_tree_remove` unlinks the
+  borrowed row before the Box is popped; its implementation and
+  `mode_tree_free_item` do not read `itemdata`. Raw mode-tree item pointers
+  remain borrowed compatibility views, valid only while their boxed row is
+  listed; no foreign ABI changed.
+- Validation in the isolated worktree: cargo check, workspace tests, binary
+  build, changed-file rustfmt, and `git diff --check` passed. An attached PTY
+  scenario exercised choose-tree with an all-filter fallback, filter clear
+  and rebuild, then quit/teardown. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1849,10 +1868,10 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `window_tree`'s item list still grows with `xreallocarray` and frees
-   individual rows on filtering, rebuild, and mode teardown. Audit its
-   remove-last behavior and mode-tree `itemdata` aliases before moving the
-   list and row owners together.
+2. `window_panes_modedata.areas` still grows with `xreallocarray` and frees
+   at mode teardown. Move its allocation and record lifecycle together,
+   following the Box-owned UI mode patterns from increments 99, 101, and
+   102. The two shorter-lived border maps are complete in increment 100.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1868,9 +1887,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–99. The remaining
+Current validation is recorded in increments 15–102. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–99 has its own local commit; none was pushed.
+Each of increments 15–102 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1885,3 +1904,9 @@ After increments 97–99 were integrated, `cargo test --workspace --quiet`,
 `cargo build --bin hmux2 --quiet`, the customize-option CLI checks,
 changed-file `rustfmt --edition 2021 --check`, and `git diff --check` passed
 on main.
+After increments 100–102 were integrated, `cargo test --workspace --quiet`,
+`cargo build --bin hmux2 --quiet`, and `git diff --check` passed on main.
+Changed-file rustfmt still reports only two import layout differences in
+`window_switch.rs` and `window_tree.rs`; running the same check on those exact
+files from the pre-migration `a5292e8` commit reports the same differences.
+No combined sanitizer or additional attached-terminal scenario was run.

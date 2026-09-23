@@ -122,14 +122,13 @@ use crate::src::window::{
     window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_index,
     window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xasprintf, xstrdup};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_tree_modedata {
     pub wp: *mut window_pane,
@@ -143,8 +142,7 @@ pub struct window_tree_modedata {
     pub hide_preview_this_pane: ::core::ffi::c_int,
     pub preview_is_info: ::core::ffi::c_int,
     pub prompt_flags: ::core::ffi::c_int,
-    pub item_list: *mut *mut window_tree_itemdata,
-    pub item_size: u_int,
+    pub item_list: Vec<Box<window_tree_itemdata>>,
     pub entered: *const ::core::ffi::c_char,
     pub fs: cmd_find_state,
     pub type_0: window_tree_type,
@@ -395,24 +393,28 @@ unsafe extern "C" fn window_tree_pull_item(
 unsafe extern "C" fn window_tree_add_item(
     mut data: *mut window_tree_modedata,
 ) -> *mut window_tree_itemdata {
-    let mut item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
-    (*data).item_list = xreallocarray(
-        (*data).item_list as *mut ::core::ffi::c_void,
-        (*data).item_size.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<*mut window_tree_itemdata>() as size_t,
-    ) as *mut *mut window_tree_itemdata;
-    let fresh3 = (*data).item_size;
-    (*data).item_size = (*data).item_size.wrapping_add(1);
-    let ref mut fresh4 = *(*data).item_list.offset(fresh3 as isize);
-    *fresh4 = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_tree_itemdata>() as size_t,
-    ) as *mut window_tree_itemdata;
-    item = *fresh4;
-    return item;
+    (*data).item_list.push(Box::new(window_tree_itemdata {
+        type_0: 0,
+        session: 0,
+        winlink: 0,
+        pane: 0,
+    }));
+    (*data).item_list.last_mut().unwrap().as_mut() as *mut window_tree_itemdata
 }
-unsafe extern "C" fn window_tree_free_item(mut item: *mut window_tree_itemdata) {
-    free(item as *mut ::core::ffi::c_void);
+unsafe extern "C" fn window_tree_remove_last_item(
+    data: *mut window_tree_modedata,
+    item: *mut window_tree_itemdata,
+    mti: *mut mode_tree_item,
+) {
+    debug_assert_eq!(
+        (*data)
+            .item_list
+            .last()
+            .map(|last| last.as_ref() as *const window_tree_itemdata),
+        Some(item as *const window_tree_itemdata),
+    );
+    mode_tree_remove((*data).data, mti);
+    (*data).item_list.pop();
 }
 unsafe extern "C" fn window_tree_build_pane(
     mut s: *mut session,
@@ -568,9 +570,7 @@ unsafe extern "C" fn window_tree_build_window(
         i = i.wrapping_add(1);
     }
     if found == 0 as u_int {
-        window_tree_free_item(item);
-        (*data).item_size = (*data).item_size.wrapping_sub(1);
-        mode_tree_remove((*data).data, mti);
+        window_tree_remove_last_item(data, item, mti);
         return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;
@@ -644,9 +644,7 @@ unsafe extern "C" fn window_tree_build_session(
         i = i.wrapping_add(1);
     }
     if empty == n {
-        window_tree_free_item(item);
-        (*data).item_size = (*data).item_size.wrapping_sub(1);
-        mode_tree_remove((*data).data, mti);
+        window_tree_remove_last_item(data, item, mti);
     }
 }
 unsafe extern "C" fn window_tree_build(
@@ -664,14 +662,7 @@ unsafe extern "C" fn window_tree_build(
     let mut n: u_int = 0;
     let mut i: u_int = 0;
     current = session_group_contains((*data).fs.s);
-    i = 0 as u_int;
-    while i < (*data).item_size {
-        window_tree_free_item(*(*data).item_list.offset(i as isize));
-        i = i.wrapping_add(1);
-    }
-    free((*data).item_list as *mut ::core::ffi::c_void);
-    (*data).item_list = ::core::ptr::null_mut::<*mut window_tree_itemdata>();
-    (*data).item_size = 0 as u_int;
+    (*data).item_list.clear();
     l = sort_get_sessions(&raw mut n, sort_crit);
     if n == 0 as u_int {
         return;
@@ -1860,10 +1851,29 @@ unsafe extern "C" fn window_tree_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    data = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_tree_modedata>() as size_t,
-    ) as *mut window_tree_modedata;
+    data = Box::into_raw(Box::new(window_tree_modedata {
+        wp: ::core::ptr::null_mut(),
+        dead: 0,
+        references: 0,
+        data: ::core::ptr::null_mut(),
+        format: ::core::ptr::null_mut(),
+        key_format: ::core::ptr::null_mut(),
+        command: ::core::ptr::null_mut(),
+        squash_groups: 0,
+        hide_preview_this_pane: 0,
+        preview_is_info: 0,
+        prompt_flags: 0,
+        item_list: Vec::new(),
+        entered: ::core::ptr::null(),
+        fs: ::core::mem::zeroed(),
+        type_0: WINDOW_TREE_NONE,
+        offset: 0,
+        left: 0,
+        right: 0,
+        start: 0,
+        end: 0,
+        each: 0,
+    }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
     (*data).references = 1 as ::core::ffi::c_int;
@@ -1974,21 +1984,14 @@ unsafe extern "C" fn window_tree_init(
     return s;
 }
 unsafe extern "C" fn window_tree_destroy(mut data: *mut window_tree_modedata) {
-    let mut i: u_int = 0;
     (*data).references -= 1;
     if (*data).references != 0 as ::core::ffi::c_int {
         return;
     }
-    i = 0 as u_int;
-    while i < (*data).item_size {
-        window_tree_free_item(*(*data).item_list.offset(i as isize));
-        i = i.wrapping_add(1);
-    }
-    free((*data).item_list as *mut ::core::ffi::c_void);
     free((*data).format as *mut ::core::ffi::c_void);
     free((*data).key_format as *mut ::core::ffi::c_void);
     free((*data).command as *mut ::core::ffi::c_void);
-    free(data as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_tree_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
