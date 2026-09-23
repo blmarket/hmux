@@ -41,9 +41,10 @@ use crate::src::tmux::{checkshell, find_home, global_options, ptm_fd};
 pub use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_add_pane, window_create, window_destroy_panes, window_pane_index,
-    window_pane_reset_mode_all, window_pane_set_event, window_pane_set_shell, window_pop_zoom,
-    window_push_zoom, window_redraw_active_switch, window_remove_pane, window_set_active_pane,
-    winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
+    window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
+    window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_remove_pane,
+    window_set_active_pane, winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window,
+    winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
@@ -499,8 +500,7 @@ pub unsafe extern "C" fn spawn_pane(
     let mut argvp: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut argv0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut new_cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cwd: Option<CString> = None;
     let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -557,7 +557,7 @@ pub unsafe extern "C" fn spawn_pane(
     }
     if !(*sc).cwd.is_null() {
         if !item.is_null() {
-            cwd = format_single(
+            let raw = format_single(
                 item,
                 (*sc).cwd,
                 c,
@@ -565,28 +565,30 @@ pub unsafe extern "C" fn spawn_pane(
                 ::core::ptr::null_mut::<winlink>(),
                 ::core::ptr::null_mut::<window_pane>(),
             );
+            cwd = Some(CStr::from_ptr(raw).to_owned());
+            free(raw.cast());
         } else {
-            cwd = xstrdup((*sc).cwd);
+            cwd = Some(CStr::from_ptr((*sc).cwd).to_owned());
         }
-        if *cwd as ::core::ffi::c_int != '/' as i32 {
+        let value = cwd.as_ref().expect("spawn cwd was just set");
+        if !value.as_bytes().starts_with(b"/") {
+            let mut combined = ::core::ptr::null_mut();
             xasprintf(
-                &raw mut new_cwd,
+                &raw mut combined,
                 b"%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
                 server_client_get_cwd(c, ts),
-                if *cwd as ::core::ffi::c_int != '\0' as i32 {
-                    b"/\0" as *const u8 as *const ::core::ffi::c_char
-                } else {
+                if value.as_bytes().is_empty() {
                     b"\0" as *const u8 as *const ::core::ffi::c_char
+                } else {
+                    b"/\0" as *const u8 as *const ::core::ffi::c_char
                 },
-                cwd,
+                value.as_ptr(),
             );
-            free(cwd as *mut ::core::ffi::c_void);
-            cwd = new_cwd;
+            cwd = Some(CStr::from_ptr(combined).to_owned());
+            free(combined.cast());
         }
     } else if !(*sc).flags & SPAWN_RESPAWN != 0 {
-        cwd = xstrdup(server_client_get_cwd(c, ts));
-    } else {
-        cwd = ::core::ptr::null_mut::<::core::ffi::c_char>();
+        cwd = Some(CStr::from_ptr(server_client_get_cwd(c, ts)).to_owned());
     }
     hlimit = options_get_number(
         (*s).options,
@@ -602,7 +604,6 @@ pub unsafe extern "C" fn spawn_pane(
                 (*(*sc).wl).idx,
                 idx,
             );
-            free(cwd as *mut ::core::ffi::c_void);
             return ::core::ptr::null_mut::<window_pane>();
         }
         if !(*(*sc).wp0).event.is_null() {
@@ -674,9 +675,8 @@ pub unsafe extern "C" fn spawn_pane(
         argc = (*sc).argc;
         argv = (*sc).argv;
     }
-    if !cwd.is_null() {
-        free((*new_wp).cwd as *mut ::core::ffi::c_void);
-        (*new_wp).cwd = cwd;
+    if let Some(cwd) = cwd.take() {
+        window_pane_set_cwd(new_wp, Some(cwd));
     }
     if argc > 0 as ::core::ffi::c_int {
         cmd_free_argv((*new_wp).argc, (*new_wp).argv);

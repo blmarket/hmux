@@ -3086,6 +3086,7 @@ struct WindowPaneOwned {
     visible_ranges: Vec<visible_range>,
     searchstr_owner: Option<CString>,
     shell_owner: Option<CString>,
+    cwd_owner: Option<CString>,
 }
 
 const _: () = assert!(::core::mem::offset_of!(WindowPaneOwned, pane) == 0);
@@ -3106,6 +3107,16 @@ pub(crate) unsafe fn window_pane_set_shell(wp: *mut window_pane, shell: Option<C
     (*owner).shell_owner = shell;
     (*wp).shell = (*owner)
         .shell_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+}
+
+/// `pane.cwd` is a borrowed view, invalidated on replacement or clear.
+pub(crate) unsafe fn window_pane_set_cwd(wp: *mut window_pane, cwd: Option<CString>) {
+    let owner = wp.cast::<WindowPaneOwned>();
+    (*owner).cwd_owner = cwd;
+    (*wp).cwd = (*owner)
+        .cwd_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
 }
@@ -3140,6 +3151,7 @@ unsafe extern "C" fn window_pane_create(
         visible_ranges: Vec::new(),
         searchstr_owner: None,
         shell_owner: None,
+        cwd_owner: None,
     })) as *mut window_pane;
     (*wp).references = 1 as ::core::ffi::c_int;
     (*wp).window = w as *mut window;
@@ -3329,7 +3341,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     screen_free(&raw mut (*wp).status_screen);
     screen_free(&raw mut (*wp).base);
     options_free((*wp).options);
-    free((*wp).cwd as *mut ::core::ffi::c_void);
+    window_pane_set_cwd(wp, None);
     window_pane_set_shell(wp, None);
     cmd_free_argv((*wp).argc, (*wp).argv);
     colour_palette_free(&raw mut (*wp).palette);

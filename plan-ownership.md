@@ -125,11 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The pane's `cwd` is assembled in `spawn_pane`, then transferred into the
-   pane and freed at teardown. Its producer has format expansion, relative
-   path construction, and early error returns. Audit these paths together
-   before moving the value into `WindowPaneOwned`; preserve the public pane
-   pointer as a borrowed view and the respawn reuse rule.
+1. `window_make_pane_status` retains its latest formatted pane-border text
+   in `border_status_line.expanded`, but in-tree pane code never reads that
+   cached value. Audit whether the pane instance has any external consumer;
+   if none, release the C-owned expansion after rendering and remove its
+   replacement/teardown frees. Other `style_line_entry` instances do read
+   their cached text for change detection, so keep the shared field.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -585,6 +586,23 @@ libc allocation on success and leaves it with the caller on error, so a local
   shell before respawn and confirms the pane retains its original shell.
   It excludes the initial asynchronous automatic window name from binary
   equality because that name can initially be the executable's own name.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 383 — owned pane working directory (2026-09-23)
+
+- `spawn_pane` now carries its constructed cwd in `Option<CString>` and
+  transfers it to `WindowPaneOwned` only when a new cwd was supplied. The
+  public `pane.cwd` pointer borrows that owner until replacement or clear.
+  Absolute, relative, empty, and non-UTF-8 paths retain C-string bytes.
+  `format_single` and relative-path `xasprintf` outputs are copied then
+  libc-freed at their producer boundaries; keeping the C formatter retains
+  its `%s` behavior. Early active-respawn failure drops the local owner,
+  and respawn without `-c` retains the pane's previous cwd. Removed the
+  local `xstrdup`/manual frees and the pane teardown free.
+- Serialized workspace tests and binary build passed. A new pane-cwd CLI
+  compared candidate and pinned 3.8-rc baseline for path creation,
+  formatted relative `-c`, actual process cwd, active-respawn error,
+  respawn retention/replacement, empty `-c`, and raw `0xff` path bytes.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
