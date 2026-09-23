@@ -120,7 +120,7 @@ use crate::src::tmux::{
     ptm_fd, setblocking, shell_argv0_cstring, shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
-use crate::src::xmalloc::{xmalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xsnprintf, xstrdup};
 use ::libc;
 use std::ffi::CString;
 
@@ -150,8 +150,7 @@ static mut client_exitval: ::core::ffi::c_int = 0;
 static mut client_exittype: msgtype = 0 as msgtype;
 static mut client_exitsession: *const ::core::ffi::c_char =
     ::core::ptr::null::<::core::ffi::c_char>();
-static mut client_exitmessage: *mut ::core::ffi::c_char =
-    ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char;
+static mut client_exitmessage: Option<Vec<u8>> = None;
 static mut client_execshell: *const ::core::ffi::c_char =
     ::core::ptr::null::<::core::ffi::c_char>();
 static mut client_execcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -349,7 +348,12 @@ unsafe extern "C" fn client_exit_message() -> *const ::core::ffi::c_char {
         }
         6 => return b"exited\0" as *const u8 as *const ::core::ffi::c_char,
         7 => return b"server exited\0" as *const u8 as *const ::core::ffi::c_char,
-        8 => return client_exitmessage,
+        8 => {
+            // The message remains owned until client_main has printed the exit reason.
+            return client_exitmessage
+                .as_ref()
+                .map_or(::core::ptr::null(), |message| message.as_ptr().cast());
+        }
         0 | _ => {}
     }
     return b"unknown reason\0" as *const u8 as *const ::core::ffi::c_char;
@@ -643,6 +647,7 @@ pub unsafe extern "C" fn client_main(
     setblocking(STDIN_FILENO, 1 as ::core::ffi::c_int);
     setblocking(STDOUT_FILENO, 1 as ::core::ffi::c_int);
     setblocking(STDERR_FILENO, 1 as ::core::ffi::c_int);
+    client_exitmessage.take();
     return client_exitval;
 }
 unsafe fn client_send_identify(
@@ -941,14 +946,9 @@ unsafe extern "C" fn client_dispatch_exit_message(
                 ::core::mem::size_of::<::core::ffi::c_int>() as usize as ::core::ffi::c_ulong
             ) as size_t as size_t;
         data = data.offset(::core::mem::size_of::<::core::ffi::c_int>() as usize as isize);
-        client_exitmessage = xmalloc(datalen) as *mut ::core::ffi::c_char;
-        memcpy(
-            client_exitmessage as *mut ::core::ffi::c_void,
-            data as *const ::core::ffi::c_void,
-            datalen,
-        );
-        *client_exitmessage.offset(datalen.wrapping_sub(1 as size_t) as isize) =
-            '\0' as i32 as ::core::ffi::c_char;
+        let mut message = ::core::slice::from_raw_parts(data.cast::<u8>(), datalen).to_vec();
+        *message.last_mut().unwrap() = 0;
+        client_exitmessage = Some(message);
         client_exitreason = CLIENT_EXIT_MESSAGE_PROVIDED;
     }
 }

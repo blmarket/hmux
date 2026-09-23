@@ -1736,6 +1736,17 @@ legacy callers safe.
   text, and appending after a binary paste buffer containing an embedded NUL.
   No sanitizer was run.
 
+### Increment 248 — client exit message owner (2026-09-23)
+
+- `client_exitmessage` now stores the received `MSG_EXIT` payload in
+  `Option<Vec<u8>>`. The C printf path borrows its pointer until final exit
+  output, then `client_main` drops the owner. A repeated message also drops
+  the previous payload. The last received byte is still forced to NUL.
+- Library/binary build, changed-file rustfmt, diff check, the agent's
+  workspace test run, and `scripts/server_exit_payload_cli_checks.py` passed.
+  The CLI check matched the pinned baseline for a normal exit, an attached
+  exit, and a socket startup error. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1746,9 +1757,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `input_ctx.input_buf`, `grid_string_cells`, and `client_exitmessage` are
-   under independent owner/caller audits. Integrate only a migration that
-   removes a meaningful manual lifetime without weakening its C boundary.
+1. `input_ctx.input_buf` and `grid_string_cells` are under independent
+   owner/caller audits. Integrate only a migration that removes a meaningful
+   manual lifetime without weakening its C boundary.
    `set-buffer`'s payload is a less useful local target: `paste_set` retains
    the libc allocation on success and leaves it with the caller on error, so
    a local `Vec` alone would add an allocation and copy.
@@ -1779,7 +1790,7 @@ non-string value.
    tag-only generated ID would violate the agreed type policy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–247 above, with increment 228 explicitly retracted.
+recorded in increments 226–248 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.
