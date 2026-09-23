@@ -57,8 +57,8 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::window::{
-    window_pane_get_pane_lines, window_pane_is_floating, window_pane_is_visible,
-    window_pane_scrollbar_reserve,
+    window_pane_ensure_visible_ranges, window_pane_get_pane_lines, window_pane_is_floating,
+    window_pane_is_visible, window_pane_scrollbar_reserve,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -84,6 +84,21 @@ pub unsafe extern "C" fn window_position_is_visible(
     }
     return 0 as ::core::ffi::c_int;
 }
+
+/// Grow the pane-owned range array while keeping the legacy `visible_ranges`
+/// view for synchronous readers. A caller-supplied view retains its existing
+/// C allocation path. Growing either view invalidates prior element pointers.
+unsafe fn window_visible_ensure_ranges(wp: *mut window_pane, r: *mut visible_ranges, n: u_int) {
+    if r != &raw mut (*wp).r {
+        server_client_ensure_ranges(r, n);
+        return;
+    }
+    if (*r).size >= n {
+        return;
+    }
+    window_pane_ensure_visible_ranges(wp, n);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn window_visible_ranges(
     mut base_wp: *mut window_pane,
@@ -147,7 +162,7 @@ pub unsafe extern "C" fn window_visible_ranges(
                         width = (*w).sx.wrapping_sub(px as u_int);
                     }
                     if r.is_null() {
-                        server_client_ensure_ranges(&raw mut (*base_wp).r, 1 as u_int);
+                        window_visible_ensure_ranges(base_wp, &raw mut (*base_wp).r, 1 as u_int);
                         r = &raw mut (*base_wp).r;
                         (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).px = px as u_int;
                         (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).nx = width;
@@ -250,7 +265,8 @@ pub unsafe extern "C" fn window_visible_ranges(
                                                         (*ri).px =
                                                             (rb + 1 as ::core::ffi::c_int) as u_int;
                                                     } else if lb > sx && rb <= ex {
-                                                        server_client_ensure_ranges(
+                                                        window_visible_ensure_ranges(
+                                                            base_wp,
                                                             r,
                                                             (*r).used.wrapping_add(1 as u_int),
                                                         );

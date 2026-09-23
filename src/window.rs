@@ -3078,6 +3078,33 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
     wp.id = id;
     return window_pane_tree_find(&raw mut all_window_panes, &raw mut wp);
 }
+/// A pane keeps its C layout and address at offset zero. The trailing vector
+/// owns the range storage exposed temporarily through `pane.r.ranges`.
+#[repr(C)]
+struct WindowPaneOwned {
+    pane: window_pane,
+    visible_ranges: Vec<visible_range>,
+}
+
+const _: () = assert!(::core::mem::offset_of!(WindowPaneOwned, pane) == 0);
+
+/// A prior `pane.r.ranges` element pointer is invalid after this function
+/// grows the vector. All callers consume the view before asking for new ranges.
+pub(crate) unsafe fn window_pane_ensure_visible_ranges(wp: *mut window_pane, n: u_int) {
+    let owner = wp as *mut WindowPaneOwned;
+    let r = &raw mut (*wp).r;
+    if (*r).size >= n {
+        return;
+    }
+    let ranges_ptr = {
+        let ranges = &mut (*owner).visible_ranges;
+        ranges.resize(n as usize, visible_range { px: 0, nx: 0 });
+        ranges.as_mut_ptr()
+    };
+    (*r).ranges = ranges_ptr;
+    (*r).size = n;
+}
+
 unsafe extern "C" fn window_pane_create(
     mut w: *mut window,
     mut sx: u_int,
@@ -3086,7 +3113,10 @@ unsafe extern "C" fn window_pane_create(
 ) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
-    wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
+    wp = Box::into_raw(Box::new(WindowPaneOwned {
+        pane: std::mem::zeroed::<window_pane>(),
+        visible_ranges: Vec::new(),
+    })) as *mut window_pane;
     (*wp).references = 1 as ::core::ffi::c_int;
     (*wp).window = w as *mut window;
     (*wp).options = options_create((*w).options);
@@ -3274,7 +3304,6 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     free((*wp).searchstr as *mut ::core::ffi::c_void);
     screen_free(&raw mut (*wp).status_screen);
     screen_free(&raw mut (*wp).base);
-    free((*wp).r.ranges as *mut ::core::ffi::c_void);
     options_free((*wp).options);
     free((*wp).cwd as *mut ::core::ffi::c_void);
     free((*wp).shell as *mut ::core::ffi::c_void);
@@ -3282,7 +3311,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     colour_palette_free(&raw mut (*wp).palette);
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);
     free((*wp).border_status_line.expanded as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(wp));
+    drop(Box::from_raw(wp as *mut WindowPaneOwned));
 }
 unsafe extern "C" fn window_pane_read_callback(
     mut bufev: *mut bufferevent,
