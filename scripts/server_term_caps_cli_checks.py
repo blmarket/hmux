@@ -21,6 +21,8 @@ with tempfile.TemporaryDirectory(prefix="server-term-caps-", dir=root / "target"
         "hmux-owner-cap|ownership terminfo fixture,\n"
         "\tclear=\\E[?42h\\E[H,\n"
         "\tuse=xterm-256color,\n"
+        "hmux-owner-no-clear|ownership invalid terminfo fixture,\n"
+        "\tcup=\\E[%i%p1%d;%p2%dH,\n"
     )
     terminfo = tmp / "terminfo"
     subprocess.run(["tic", "-x", "-o", str(terminfo), str(source)], check=True)
@@ -58,6 +60,18 @@ with tempfile.TemporaryDirectory(prefix="server-term-caps-", dir=root / "target"
         run("detach-client", "-t", client_tty)
         os.waitpid(pid, 0)
         pid = None
+
+        # Creation fails after the terminal record enters the global list.
+        # The error path must remove and destroy it without disturbing the server.
+        invalid_env = dict(env, TERM="hmux-owner-no-clear")
+        pid, master2 = pty.fork()
+        if pid == 0:
+            os.execve(binary, base + ["attach-session", "-t", "caps"], invalid_env)
+        _, status = os.waitpid(pid, 0)
+        pid = None
+        os.close(master2)
+        assert os.WIFEXITED(status) and os.WEXITSTATUS(status) != 0, status
+        assert b"hmux-owner-no-clear" not in run("show-messages", "-T")
     finally:
         if pid is not None:
             os.kill(pid, signal.SIGTERM)

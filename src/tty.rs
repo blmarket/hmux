@@ -830,6 +830,7 @@ pub unsafe extern "C" fn tty_close(mut tty: *mut tty) {
         evbuffer_free((*tty).out);
         event_del(&raw mut (*tty).event_out);
         tty_term_free((*tty).term);
+        (*tty).term = ::core::ptr::null_mut();
         tty_keys_free(tty);
         (*tty).flags &= !TTY_OPENED;
     }

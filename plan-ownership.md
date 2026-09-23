@@ -2868,6 +2868,22 @@ legacy callers safe.
   It passed on candidate and pinned baseline. Full workspace tests, binary
   build, changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 328 — boxed terminal record (2026-09-23)
+
+- `tty_term_create` now constructs the outer `tty_term` as a stable `Box`;
+  `tty_term_free` unlinks it and frees the existing C-owned name, code array,
+  and capability strings before dropping the Box. Removed the record's
+  `xcalloc`/`free` pair and its unused `Copy`/`Clone` derive. The `tty.term`
+  and global `tty_terms` pointers remain borrowed compatibility views;
+  `tty_close` now clears `tty.term` after freeing it. Construction failure
+  still reaches the same destructor through `tty_term_create`.
+- Attached-terminal override output matched the pinned baseline. Extended
+  `scripts/server_term_caps_cli_checks.py` with a custom terminal missing
+  `clear`; its failed attach leaves no terminal-list entry on either binary.
+  Full workspace tests, binary build, and diff checks passed. Changed code
+  follows rustfmt; `src/shared/tty.rs` retains its pre-existing test-import
+  formatting difference. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2878,10 +2894,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `tty_term` in `src/tty_term.rs` has one zeroing allocation in
-   `tty_term_create` and one terminal `tty_term_free`; it is stored in an
-   intrusive global list and has subsidiary name/code allocations. Audit
-   by-value copies, failure teardown, and list aliases before boxing it.
+1. `window_pane_prompt` in `src/window.rs` has one allocation in
+   `window_pane_set_prompt` and one callback destructor in
+   `window_pane_prompt_free_callback`. Its address is borrowed by prompt
+   callbacks and `window_pane.prompt_data`; preserve clearing and callback
+   order, and test with attached `command-prompt -P` submit, cancel,
+   replacement, and pane teardown.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`

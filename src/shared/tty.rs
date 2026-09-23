@@ -355,6 +355,7 @@ pub struct tty {
     pub cell: grid_cell,
     pub last_cell: grid_cell,
     pub flags: ::core::ffi::c_int,
+    /// Box-owned terminal record while TTY_OPENED is set; invalidated by tty_close.
     pub term: *mut tty_term,
     pub mouse_last_x: u_int,
     pub mouse_last_y: u_int,
@@ -372,7 +373,6 @@ pub struct tty {
     pub key_tree: *mut tty_key,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tty_term {
     pub name: *mut ::core::ffi::c_char,

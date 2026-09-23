@@ -1385,7 +1385,19 @@ pub unsafe extern "C" fn tty_term_create(
         b"adding term %s\0" as *const u8 as *const ::core::ffi::c_char,
         name,
     );
-    term = xcalloc(1 as size_t, ::core::mem::size_of::<tty_term>() as size_t) as *mut tty_term;
+    // The global list and tty keep this address until tty_term_free.
+    term = Box::into_raw(Box::new(tty_term {
+        name: ::core::ptr::null_mut(),
+        tty: ::core::ptr::null_mut(),
+        applied_features: 0,
+        acs: [[0; 2]; 256],
+        codes: ::core::ptr::null_mut(),
+        flags: 0,
+        entry: tty_term_entry {
+            le_next: ::core::ptr::null_mut(),
+            le_prev: ::core::ptr::null_mut(),
+        },
+    }));
     (*term).tty = tty as *mut tty;
     (*term).name = xstrdup(name);
     (*term).codes = xcalloc(
@@ -1590,7 +1602,7 @@ pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {
     }
     *(*term).entry.le_prev = (*term).entry.le_next;
     free((*term).name as *mut ::core::ffi::c_void);
-    free(term as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(term));
 }
 pub(crate) unsafe fn tty_term_read_list(
     name: *const ::core::ffi::c_char,
