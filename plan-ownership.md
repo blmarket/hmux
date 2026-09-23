@@ -2157,6 +2157,21 @@ legacy callers safe.
   custom `-F`, `-K`, command expansion, cancel, detachment with a live mode,
   and editor completion/cancellation. No sanitizer was run.
 
+### Increment 279 — switch-mode strings and mutable filter (2026-09-23)
+
+- `window_switch_modedata` now owns its row format, command, and mutable
+  filter as `CString` fields in the existing stable `Box`. The incremental
+  prompt callback copies input before replacing the filter, so an input view
+  into existing mode storage remains valid. Formatting and command execution
+  borrow C views; the `xstrdup` allocations and matching frees are gone.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check,
+  `scripts/window_switch_mode_strings_cli_checks.py`, and
+  `scripts/window_switch_target_cli_checks.py` passed on main. The new
+  attached-client check also passed with the pinned baseline and covered
+  custom `-F` and command values, incremental typing and deletion, selection
+  of two targets, and cancel teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2167,12 +2182,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_buffer_modedata` still owns its command, row format, and key format
-   with `xstrdup`/`free` despite already having a stable `Box`. The analogous
-   choose-client and choose-tree strings above provide the next small pattern.
-   `window_switch_modedata` likewise owns a row format and command, plus a
-   mutable filter that needs copy-before-replace during prompt callbacks.
-   `mode_tree_prompt` is another small `xcalloc`/`free` callback record.
+1. `mode_tree_menu` is a small `xmalloc`/`free` callback record. Its menu
+   callback and `menu_display` failure path both release it after the
+   mode-tree reference; a stable `Box` can replace that pair once callback
+   reentry and failure cleanup are checked. The larger `mode_tree_data`
+   filter/search strings and mode-tree items need their own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

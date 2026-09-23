@@ -99,7 +99,6 @@ use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::window::{window_pane_reset_mode, window_zoom, winlink_find_by_index};
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -112,10 +111,10 @@ pub struct window_switch_modedata {
     pub wp: *mut window_pane,
     pub screen: screen,
     pub zoomed: ::core::ffi::c_int,
-    pub format: *mut ::core::ffi::c_char,
-    pub command: *mut ::core::ffi::c_char,
+    pub format: CString,
+    pub command: CString,
     pub type_0: window_switch_type,
-    pub filter: *mut ::core::ffi::c_char,
+    pub filter: CString,
     pub prompt: *mut prompt,
     pub prompt_cx: u_int,
     // Matches only borrow rows; boxes keep their addresses stable as the list grows.
@@ -248,7 +247,7 @@ unsafe extern "C" fn window_switch_add_session(
     let fresh7 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh7;
-    (*item).text = format_expand(ft, (*data).format);
+    (*item).text = format_expand(ft, (*data).format.as_ptr());
     format_free(ft);
 }
 unsafe extern "C" fn window_switch_add_window(
@@ -278,7 +277,7 @@ unsafe extern "C" fn window_switch_add_window(
     let fresh4 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh4;
-    (*item).text = format_expand(ft, (*data).format);
+    (*item).text = format_expand(ft, (*data).format.as_ptr());
     format_free(ft);
 }
 unsafe extern "C" fn window_switch_compare(
@@ -304,7 +303,7 @@ unsafe extern "C" fn window_switch_compare(
 unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) {
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut m: Vec<*mut window_switch_itemdata> = Vec::new();
-    let mut f: *const ::core::ffi::c_char = (*data).filter;
+    let mut f: *const ::core::ffi::c_char = (*data).filter.as_ptr();
     let mut i: u_int = 0;
     let mut order: u_int = 0 as u_int;
     let mut sx: u_int = (*(*data).screen.grid).sx;
@@ -619,14 +618,24 @@ unsafe extern "C" fn window_switch_init(
         freecb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
     };
+    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+        WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr()
+    } else {
+        args_get(args, 'F' as i32 as u_char)
+    };
+    let command = if args.is_null() || args_count(args) == 0 as u_int {
+        WINDOW_SWITCH_DEFAULT_COMMAND.as_ptr()
+    } else {
+        args_string(args, 0 as u_int)
+    };
     data = Box::into_raw(Box::new(window_switch_modedata {
         wp: ::core::ptr::null_mut(),
         screen: ::core::mem::zeroed(),
         zoomed: 0,
-        format: ::core::ptr::null_mut(),
-        command: ::core::ptr::null_mut(),
+        format: CStr::from_ptr(format).to_owned(),
+        command: CStr::from_ptr(command).to_owned(),
         type_0: WINDOW_SWITCH_TYPE_SESSION,
-        filter: ::core::ptr::null_mut(),
+        filter: CString::default(),
         prompt: ::core::ptr::null_mut(),
         prompt_cx: 0,
         item_list: Vec::new(),
@@ -640,17 +649,6 @@ unsafe extern "C" fn window_switch_init(
         (*data).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
-    }
-    (*data).filter = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-    if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
-        (*data).format = xstrdup(WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr());
-    } else {
-        (*data).format = xstrdup(args_get(args, 'F' as i32 as u_char));
-    }
-    if args.is_null() || args_count(args) == 0 as u_int {
-        (*data).command = xstrdup(WINDOW_SWITCH_DEFAULT_COMMAND.as_ptr());
-    } else {
-        (*data).command = xstrdup(args_string(args, 0 as u_int));
     }
     memset(
         &raw mut pd as *mut ::core::ffi::c_void,
@@ -676,7 +674,7 @@ unsafe extern "C" fn window_switch_init(
     prompt_update(
         (*data).prompt,
         b"(search) \0" as *const u8 as *const ::core::ffi::c_char,
-        (*data).filter,
+        (*data).filter.as_ptr(),
     );
     s = &raw mut (*data).screen;
     screen_init(s, (*(*wp).base.grid).sx, (*(*wp).base.grid).sy, 0 as u_int);
@@ -700,10 +698,7 @@ unsafe extern "C" fn window_switch_free(mut wme: *mut window_mode_entry) {
     }
     (*data).item_list.clear();
     (*data).matches.clear();
-    free((*data).filter as *mut ::core::ffi::c_void);
     prompt_free((*data).prompt);
-    free((*data).format as *mut ::core::ffi::c_void);
-    free((*data).command as *mut ::core::ffi::c_void);
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
 }
@@ -776,7 +771,11 @@ unsafe extern "C" fn window_switch_run_command(
     let Some(target) = target else {
         return 0 as ::core::ffi::c_int;
     };
-    command = cmd_template_replace((*data).command, target.as_ptr(), 1 as ::core::ffi::c_int);
+    command = cmd_template_replace(
+        (*data).command.as_ptr(),
+        target.as_ptr(),
+        1 as ::core::ffi::c_int,
+    );
     if !command.is_null() && *command as ::core::ffi::c_int != '\0' as i32 {
         state = cmdq_new_state(
             &raw mut fs,
@@ -849,8 +848,8 @@ unsafe extern "C" fn window_switch_prompt_callback(
     } else if *s as ::core::ffi::c_int != '\0' as i32 {
         s = s.offset(1);
     }
-    free((*data).filter as *mut ::core::ffi::c_void);
-    (*data).filter = xstrdup(s);
+    // A prompt callback may provide a view into existing mode storage.
+    (*data).filter = CStr::from_ptr(s).to_owned();
     window_switch_build(data);
     (*data).current = 0 as u_int;
     (*data).offset = 0 as u_int;
