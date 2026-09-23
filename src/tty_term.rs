@@ -3,7 +3,7 @@ use crate::src::compat::unvis::strunvis;
 use crate::src::compat::vis::strnvis;
 use crate::src::environ::environ_find;
 use crate::src::ffi::libc::{
-    fnmatch, free, memset, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp, strstr,
+    fnmatch, memset, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp, strstr,
 };
 pub use crate::src::ffi::ncurses::TERMINAL;
 use crate::src::ffi::ncurses::{
@@ -81,18 +81,33 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
-use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xasprintf, xsnprintf};
 use std::ffi::{CStr, CString};
 
 // The public term pointer addresses this first field. Matching, logs, and
 // terminal listings borrow the name until tty_term_free drops the owner.
+// Each string-valued code borrows the matching indexed CString.
 #[repr(C)]
 struct TtyTermOwner {
     term: tty_term,
     name: CString,
+    strings: Vec<Option<CString>>,
 }
 
 const _: () = assert!(std::mem::offset_of!(TtyTermOwner, term) == 0);
+
+unsafe fn tty_term_replace_string(term: *mut tty_term, index: usize, value: Option<CString>) {
+    let owner = &mut *term.cast::<TtyTermOwner>();
+    assert!(index < owner.strings.len());
+    let code = owner.term.codes.add(index);
+    if owner.strings[index].is_some() {
+        (*code).value.string = ::core::ptr::null_mut();
+    }
+    owner.strings[index] = value;
+    if let Some(value) = owner.strings[index].as_ref() {
+        (*code).value.string = value.as_ptr().cast_mut();
+    }
+}
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
@@ -1057,15 +1072,12 @@ pub unsafe extern "C" fn tty_term_ncodes() -> u_int {
     return (::core::mem::size_of::<[tty_term_code_entry; 234]>() as usize)
         .wrapping_div(::core::mem::size_of::<tty_term_code_entry>() as usize) as u_int;
 }
-unsafe extern "C" fn tty_term_strip(mut s: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char {
-    let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    static mut buf: [::core::ffi::c_char; 8192] = [0; 8192];
-    let mut len: size_t = 0;
+unsafe fn tty_term_strip(s: *const ::core::ffi::c_char) -> CString {
     if strchr(s, '$' as i32).is_null() {
-        return xstrdup(s);
+        return CStr::from_ptr(s).to_owned();
     }
-    len = 0 as size_t;
-    ptr = s;
+    let mut stripped = Vec::with_capacity(8191);
+    let mut ptr = s;
     while *ptr as ::core::ffi::c_int != '\0' as i32 {
         if *ptr as ::core::ffi::c_int == '$' as i32
             && *ptr.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '<' as i32
@@ -1082,19 +1094,13 @@ unsafe extern "C" fn tty_term_strip(mut s: *const ::core::ffi::c_char) -> *mut :
                 break;
             }
         }
-        let fresh3 = len;
-        len = len.wrapping_add(1);
-        buf[fresh3 as usize] = *ptr;
-        if len
-            == (::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as usize)
-                .wrapping_sub(1 as usize)
-        {
+        stripped.push(*ptr as u8);
+        if stripped.len() == 8191 {
             break;
         }
         ptr = ptr.offset(1);
     }
-    buf[len as usize] = '\0' as i32 as ::core::ffi::c_char;
-    return xstrdup(&raw mut buf as *mut ::core::ffi::c_char);
+    CString::new(stripped).expect("terminal capability C string contains no NUL")
 }
 unsafe extern "C" fn tty_term_override_next(
     mut s: *const ::core::ffi::c_char,
@@ -1220,16 +1226,16 @@ pub unsafe extern "C" fn tty_term_apply(
             if !(strcmp(s, (*ent).name) != 0 as ::core::ffi::c_int) {
                 code = (*term).codes.offset(i as isize) as *mut tty_code;
                 if remove != 0 {
+                    tty_term_replace_string(term, i as usize, None);
                     (*code).type_0 = TTYCODE_NONE;
                 } else {
                     match (*ent).type_0 as ::core::ffi::c_uint {
                         1 => {
-                            if (*code).type_0 as ::core::ffi::c_uint
-                                == TTYCODE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-                            {
-                                free((*code).value.string as *mut ::core::ffi::c_void);
-                            }
-                            (*code).value.string = xstrdup(value);
+                            tty_term_replace_string(
+                                term,
+                                i as usize,
+                                Some(CStr::from_ptr(value).to_owned()),
+                            );
                             (*code).type_0 = (*ent).type_0;
                         }
                         2 => {
@@ -1240,11 +1246,13 @@ pub unsafe extern "C" fn tty_term_apply(
                                 &raw mut errstr,
                             ) as ::core::ffi::c_int;
                             if errstr.is_null() {
+                                tty_term_replace_string(term, i as usize, None);
                                 (*code).value.number = n;
                                 (*code).type_0 = (*ent).type_0;
                             }
                         }
                         3 => {
+                            tty_term_replace_string(term, i as usize, None);
                             (*code).value.flag = 1 as ::core::ffi::c_int;
                             (*code).type_0 = (*ent).type_0;
                         }
@@ -1363,7 +1371,7 @@ unsafe extern "C" fn tty_term_validate(mut term: *mut tty_term) {
     }
     log_debug(b"removing invalid Ms capability\0" as *const u8 as *const ::core::ffi::c_char);
     (*term).flags |= TERM_INVALIDMS;
-    free((*code).value.string as *mut ::core::ffi::c_void);
+    tty_term_replace_string(term, TTYC_MS as usize, None);
     (*code).type_0 = TTYCODE_NONE;
 }
 #[no_mangle]
@@ -1410,6 +1418,7 @@ pub unsafe extern "C" fn tty_term_create(
             },
         },
         name: CStr::from_ptr(name).to_owned(),
+        strings: vec![None; tty_term_ncodes() as usize],
     });
     owner.term.name = owner.name.as_ptr().cast_mut();
     term = &raw mut owner.term;
@@ -1444,11 +1453,16 @@ pub unsafe extern "C" fn tty_term_create(
                     if !(*(*ent).name.offset(namelen as isize) as ::core::ffi::c_int != '\0' as i32)
                     {
                         code = (*term).codes.offset(j as isize) as *mut tty_code;
+                        tty_term_replace_string(term, j as usize, None);
                         (*code).type_0 = TTYCODE_NONE;
                         match (*ent).type_0 as ::core::ffi::c_uint {
                             1 => {
                                 (*code).type_0 = TTYCODE_STRING;
-                                (*code).value.string = tty_term_strip(value);
+                                tty_term_replace_string(
+                                    term,
+                                    j as usize,
+                                    Some(tty_term_strip(value)),
+                                );
                             }
                             2 => {
                                 n = strtonum(
@@ -1603,11 +1617,7 @@ pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {
     );
     i = 0 as u_int;
     while i < tty_term_ncodes() {
-        if (*(*term).codes.offset(i as isize)).type_0 as ::core::ffi::c_uint
-            == TTYCODE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            free((*(*term).codes.offset(i as isize)).value.string as *mut ::core::ffi::c_void);
-        }
+        tty_term_replace_string(term, i as usize, None);
         i = i.wrapping_add(1);
     }
     drop(Box::from_raw(::core::ptr::slice_from_raw_parts_mut(
@@ -1945,4 +1955,25 @@ pub unsafe extern "C" fn tty_term_describe(
         _ => {}
     }
     return &raw mut s as *mut ::core::ffi::c_char;
+}
+
+#[cfg(test)]
+mod term_string_owner_tests {
+    use super::*;
+
+    #[test]
+    fn strip_preserves_bytes_and_delay_path_limit() {
+        unsafe {
+            assert_eq!(tty_term_strip(c"ab$<5>cd".as_ptr()).as_bytes(), b"abcd");
+            let high = CString::new(b"a\xff$<10>b".as_slice()).unwrap();
+            assert_eq!(tty_term_strip(high.as_ptr()).as_bytes(), b"a\xffb");
+
+            let mut long = b"$<1>".to_vec();
+            long.extend(std::iter::repeat_n(b'x', 9000));
+            let long = CString::new(long).unwrap();
+            let stripped = tty_term_strip(long.as_ptr());
+            assert_eq!(stripped.as_bytes().len(), 8191);
+            assert!(stripped.as_bytes().iter().all(|byte| *byte == b'x'));
+        }
+    }
 }

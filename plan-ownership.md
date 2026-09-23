@@ -125,16 +125,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Terminal capability strings in `tty_code.value.string` are the next live
-   bounded owner. `TtyTermOwner` already boxes each term and owns its name;
-   indexed optional `CString` slots can own string codes while public union
-   pointers borrow them. Trace `tty_term_create`, `tty_term_apply`,
-   `tty_term_validate`, and `tty_term_free` together, including overrides from
-   `tty_features`. Preserve `tty_term_strip`'s 8191-byte limit and first-NUL
-   behavior. Removal currently retags a code to NONE without freeing its old
-   string, so clear the new owner on that path and record the leak correction.
-   Extend the attached-client terminal capability CLI check for replacement
-   and removal against the pinned baseline.
+1. `paste_buffer.data` is the next live bounded owner. `PasteBufferOwner`
+   already boxes each stable buffer and owns its name. `paste_add`, `paste_set`,
+   and `paste_replace` accept C-allocated pointer-plus-size transfers; an
+   owned byte slice can hold exact binary data and lend the public pointer.
+   Copy and free each accepted producer allocation at the transfer boundary,
+   while preserving caller ownership on `paste_set` name errors. Zero-size
+   paths still consume the input. `paste_free` and `paste_replace` then lose
+   their manual data frees. Existing load-buffer CLI checks round-trip
+   `A\0B\xff`; editor and set-buffer checks cover replacement and lifecycle.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -894,6 +893,23 @@ libc allocation on success and leaves it with the caller on error, so a local
   values, not direct array elements, and rejects empty strings before node
   creation; these existing behaviors were retained. Changed-file rustfmt and
   diff checks passed. No sanitizer ran.
+
+### Increment 402 — owned terminal capability strings (2026-09-23)
+
+- `TtyTermOwner` now holds indexed optional `CString` values for all string
+  capabilities; public `tty_code` union pointers borrow those slots. Creation
+  strips terminfo delay text directly into `CString`, preserving the old
+  8191-byte limit. Overrides, feature application, validation, and teardown
+  replace or clear owners while keeping the public code type and value order.
+  Removed the `xstrdup` producers and the manual string frees. Removing a
+  capability or repeating one during creation now also releases the earlier
+  string instead of retaining an unreachable allocation.
+- A focused strip test checks delay removal, raw high bytes, and the length
+  limit. Serialized workspace tests and binary build passed. Attached-client
+  CLI checks against pinned 3.8-rc cover terminfo creation, single override,
+  sequential replacement, removal, client identification, and failed terminal
+  creation cleanup. Changed-file rustfmt and diff checks passed. No sanitizer
+  ran.
 
 ## Historical migration index
 
