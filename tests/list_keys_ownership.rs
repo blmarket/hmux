@@ -119,8 +119,11 @@ fn notes_listing_combines_tables_filters_and_repeats() {
     ]);
     assert_eq!(table, b"prefix|C-a|prefix-note\n");
 
+    server.success(&["bind-key", "-T", "prefix", "-N", "updated-note", "C-a"]);
+    assert_eq!(listing(), b"prefix|C-a|updated-note\nroot|C-b|root-note\n");
+
     server.success(&["unbind-key", "-a", "-T", "root"]);
-    assert_eq!(listing(), b"prefix|C-a|prefix-note\n");
+    assert_eq!(listing(), b"prefix|C-a|updated-note\n");
     server.success(&["unbind-key", "-a", "-T", "prefix"]);
     assert_eq!(listing(), b"");
 }

@@ -24,7 +24,7 @@ use crate::src::hooks::{
 use crate::src::key_bindings::{
     key_bindings_add, key_bindings_first, key_bindings_first_table, key_bindings_get,
     key_bindings_get_default, key_bindings_get_table, key_bindings_next, key_bindings_next_table,
-    key_bindings_remove, key_bindings_reset,
+    key_bindings_remove, key_bindings_reset, key_bindings_set_note,
 };
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::mode_tree::{
@@ -926,11 +926,10 @@ unsafe extern "C" fn window_customize_set_note_value(
     if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    free((*bd).note as *mut ::core::ffi::c_void);
     if *s as ::core::ffi::c_int == '\0' as i32 {
-        (*bd).note = ::core::ptr::null::<::core::ffi::c_char>();
+        key_bindings_set_note(bd, ::core::ptr::null());
     } else {
-        (*bd).note = xstrdup(s);
+        key_bindings_set_note(bd, s);
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -4237,8 +4236,7 @@ unsafe extern "C" fn window_customize_set_note_callback(
     {
         return PROMPT_CLOSE;
     }
-    free((*bd).note as *mut ::core::ffi::c_void);
-    (*bd).note = xstrdup(s);
+    key_bindings_set_note(bd, s);
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
     (*(*data).wp).flags |= PANE_REDRAW;

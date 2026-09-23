@@ -3412,6 +3412,28 @@ legacy callers safe.
   build, private-server key CLI check, changed-file rustfmt, and
   `git diff --check` passed. No sanitizer was run.
 
+### Increment 365 — owned key-binding notes (2026-09-23)
+
+- Private `KeyBindingOwner` now holds each live/default binding's optional
+  note as a `CString`. Its exported `key_binding.note` field borrows the owner
+  until replacement or index removal. `key_bindings_set_note` copies the
+  incoming C string before dropping the previous value, including when input
+  aliases the current note. Both production constructors, note-only updates,
+  resets, startup default snapshots, and both customize-mode mutations use
+  the owner; `key_bindings_free` drops it after releasing the command-list
+  reference. Removed all in-tree note `xstrdup`/`free` pairs without changing
+  the exported record layout. The default snapshot still has a null table
+  name and its own note copy while retaining the shared command-list ref.
+- Storage tests now cover aliased note input, non-UTF-8 bytes, independent
+  default snapshots, reset, and final teardown. The live-server list-keys
+  test covers note-only updates. The attached customize E2E now edits a note
+  through the prompt and clears it through the editor, checking `list-keys`
+  after each operation. Full workspace tests, the binary build, key CLI,
+  candidate customize detail/prompt checks, changed-file rustfmt, Python
+  syntax, and diff checks passed. The pinned
+  baseline customize-mode subprocess timed out in this environment; its
+  spawned test processes were terminated. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3422,10 +3444,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `key_binding.note` is a live, mutable string owner with writes in
-   `key_bindings` and `window_customize`. A contained owner must route all
-   note replacement and default-snapshot copies through one setter; the
-   storage test's synthetic default binding must use the same constructor.
+1. `client.ttyname` is the next small live owner. Its only writer copies the
+   identify payload, and `server_client_lost` releases it after hooks and tty
+   teardown. The existing `ClientOwner` can own a `CString` and expose a
+   borrowed pointer without changing the public layout; clear it at the
+   current free site to preserve destruction order.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach

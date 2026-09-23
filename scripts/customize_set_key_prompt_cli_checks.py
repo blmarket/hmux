@@ -69,13 +69,46 @@ def check(binary_path, kind):
             output.clear()
             run("send-keys", "-t", "keys:0.0", "s")
             wait_for(expected)
+            if kind == "note":
+                edited_note = b"edited-owner-note-42"
+                run("send-keys", "-t", "keys:0.0", "C-u")
+                run("send-keys", "-t", "keys:0.0", "-l", edited_note.decode())
+                run("send-keys", "-t", "keys:0.0", "Enter")
+                assert run(
+                    "list-keys", "-F", "#{key_note}", "-T", "ownertable", "F12"
+                ).strip() == edited_note
+                output.clear()
+                run("send-keys", "-t", "keys:0.0", "s")
+                wait_for(b"(F12) " + edited_note)
+                run("send-keys", "-t", "keys:0.0", "Enter")
+
+                # The prompt rejects an empty value, so clear the note using
+                # the customize tree's editor action and a deterministic editor.
+                editor = pathlib.Path(tmp) / "clear-note-editor"
+                editor.write_text("#!/bin/sh\nprintf '\\n' > \"$1\"\n")
+                editor.chmod(0o700)
+                run("set-option", "-g", "editor", str(editor))
+                run("send-keys", "-t", "keys:0.0", "e")
+                deadline = time.monotonic() + 5
+                while run(
+                    "list-keys", "-F", "#{key_note}", "-T", "ownertable", "F12"
+                ).strip():
+                    assert time.monotonic() < deadline, "note editor did not clear note"
+                    time.sleep(0.05)
+                assert run(
+                    "list-keys", "-F", "#{key_command}", "-T", "ownertable", "F12"
+                ).strip() == "display-message owner-command-é".encode()
             return expected
         finally:
             subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
             if client is not None:
                 if client.poll() is None:
                     client.terminate()
-                client.wait(timeout=5)
+                try:
+                    client.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    client.kill()
+                    client.wait(timeout=5)
             if slave is not None:
                 os.close(slave)
             os.close(master)

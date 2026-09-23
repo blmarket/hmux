@@ -96,6 +96,37 @@ struct KeyTableOwner {
 }
 
 const _: () = assert!(std::mem::offset_of!(KeyTableOwner, node) == 0);
+
+// The indexes own boxed records. The exported note pointer borrows this
+// owner's optional CString until replacement or index removal.
+#[repr(C)]
+struct KeyBindingOwner {
+    node: key_binding,
+    note: Option<CString>,
+}
+
+const _: () = assert!(std::mem::offset_of!(KeyBindingOwner, node) == 0);
+
+unsafe fn key_bindings_new() -> *mut key_binding {
+    Box::into_raw(Box::new(KeyBindingOwner {
+        node: std::mem::zeroed(),
+        note: None,
+    }))
+    .cast()
+}
+
+pub(crate) unsafe fn key_bindings_set_note(bd: *mut key_binding, note: *const ::core::ffi::c_char) {
+    // Copy before replacing: a caller may pass the binding's current note.
+    let next = if note.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(note).to_owned())
+    };
+    let owner = &mut *bd.cast::<KeyBindingOwner>();
+    owner.node.note = std::ptr::null();
+    owner.note = next;
+    owner.node.note = owner.note.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+}
 unsafe extern "C" fn key_table_cmp(
     mut table1: *mut key_table,
     mut table2: *mut key_table,
@@ -116,8 +147,7 @@ unsafe extern "C" fn key_bindings_cmp(
 }
 unsafe extern "C" fn key_bindings_free(mut bd: *mut key_binding) {
     cmd_list_free((*bd).cmdlist);
-    free((*bd).note as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(bd));
+    drop(Box::from_raw(bd.cast::<KeyBindingOwner>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_get_table(
@@ -257,8 +287,7 @@ pub unsafe extern "C" fn key_bindings_add(
     if cmdlist.is_null() {
         if !bd.is_null() {
             if !note.is_null() {
-                free((*bd).note as *mut ::core::ffi::c_void);
-                (*bd).note = xstrdup(note);
+                key_bindings_set_note(bd, note);
             }
             if repeat != 0 {
                 (*bd).flags |= KEY_BINDING_REPEAT;
@@ -270,11 +299,11 @@ pub unsafe extern "C" fn key_bindings_add(
         key_bindings_index_remove(&raw mut (*table).key_bindings, bd);
         key_bindings_free(bd);
     }
-    bd = Box::into_raw(Box::new(::core::mem::zeroed::<key_binding>()));
+    bd = key_bindings_new();
     (*bd).key = (key as ::core::ffi::c_ulonglong & !KEYC_MASK_FLAGS) as key_code;
     (*bd).tablename = (*table).name;
     if !note.is_null() {
-        (*bd).note = xstrdup(note);
+        key_bindings_set_note(bd, note);
     }
     key_bindings_index_insert(&raw mut (*table).key_bindings, bd);
     if repeat != 0 {
@@ -344,12 +373,7 @@ pub unsafe extern "C" fn key_bindings_reset(
     cmd_list_free((*bd).cmdlist);
     (*bd).cmdlist = (*dd).cmdlist;
     (*(*bd).cmdlist).references += 1;
-    free((*bd).note as *mut ::core::ffi::c_void);
-    if !(*dd).note.is_null() {
-        (*bd).note = xstrdup((*dd).note);
-    } else {
-        (*bd).note = ::core::ptr::null::<::core::ffi::c_char>();
-    }
+    key_bindings_set_note(bd, (*dd).note);
     (*bd).flags = (*dd).flags;
 }
 #[no_mangle]
@@ -391,6 +415,25 @@ pub unsafe extern "C" fn key_bindings_reset_table(mut name: *const ::core::ffi::
         bd = bd1;
     }
 }
+
+/// Insert a default snapshot, consuming one existing command-list reference.
+/// Its note is copied; its table name remains absent as in the original
+/// startup snapshot.
+pub unsafe fn key_bindings_add_default(
+    table: *mut key_table,
+    key: key_code,
+    cmdlist: *mut cmd_list,
+    note: *const ::core::ffi::c_char,
+    flags: ::core::ffi::c_int,
+) -> *mut key_binding {
+    let bd = key_bindings_new();
+    (*bd).key = key;
+    (*bd).cmdlist = cmdlist;
+    (*bd).flags = flags;
+    key_bindings_set_note(bd, note);
+    key_bindings_index_insert(&raw mut (*table).default_key_bindings, bd);
+    bd
+}
 unsafe extern "C" fn key_bindings_init_done(
     mut item: *mut cmdq_item,
     mut data: *mut ::core::ffi::c_void,
@@ -402,15 +445,9 @@ unsafe extern "C" fn key_bindings_init_done(
     while !table.is_null() {
         bd = key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
         while !bd.is_null() {
-            new_bd = Box::into_raw(Box::new(::core::mem::zeroed::<key_binding>()));
-            (*new_bd).key = (*bd).key;
-            if !(*bd).note.is_null() {
-                (*new_bd).note = xstrdup((*bd).note);
-            }
-            (*new_bd).flags = (*bd).flags;
-            (*new_bd).cmdlist = (*bd).cmdlist;
-            (*(*new_bd).cmdlist).references += 1;
-            key_bindings_index_insert(&raw mut (*table).default_key_bindings, new_bd);
+            (*(*bd).cmdlist).references += 1;
+            new_bd =
+                key_bindings_add_default(table, (*bd).key, (*bd).cmdlist, (*bd).note, (*bd).flags);
             bd = key_bindings_index_next(bd);
         }
         table = key_tables_next(table);

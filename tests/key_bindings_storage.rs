@@ -26,12 +26,32 @@ fn named_tables_defaults_replacement_and_retained_table_lifetime() {
         let binding = key_bindings_get(a, 42);
         assert_eq!(CStr::from_ptr((*binding).note), c"replacement");
         assert_ne!((*binding).flags & KEY_BINDING_REPEAT, 0);
+        // A note-only update may borrow the current note. Replacement must
+        // copy it before releasing the previous owner.
+        key_bindings_add(c"a".as_ptr(), 42, (*binding).note, 0, std::ptr::null_mut());
+        assert_eq!(CStr::from_ptr((*binding).note), c"replacement");
+        key_bindings_add(
+            c"a".as_ptr(),
+            42,
+            b"\xff\0".as_ptr().cast(),
+            0,
+            std::ptr::null_mut(),
+        );
+        assert_eq!(CStr::from_ptr((*binding).note).to_bytes(), b"\xff");
         // Active and default bindings use independent indexes with identical keys.
-        let default = Box::into_raw(Box::new(std::mem::zeroed::<key_binding>()));
-        (*default).key = 42;
-        (*default).cmdlist = cmd_list_new();
-        key_bindings_index_insert(&mut (*a).default_key_bindings, default);
+        let default = key_bindings_add_default(a, 42, cmd_list_new(), null(), 0);
         assert_eq!(key_bindings_get_default(a, 42), default);
+        assert!((*default).tablename.is_null());
+        let source = key_bindings_get(a, 99);
+        let copied = key_bindings_add_default(a, 99, cmd_list_new(), (*source).note, 0);
+        key_bindings_add(
+            c"a".as_ptr(),
+            99,
+            c"changed".as_ptr(),
+            0,
+            std::ptr::null_mut(),
+        );
+        assert_eq!(CStr::from_ptr((*copied).note), c"original");
         key_bindings_reset(c"a".as_ptr(), 42);
         assert_eq!((*binding).cmdlist, (*default).cmdlist);
         assert!((*binding).note.is_null());
