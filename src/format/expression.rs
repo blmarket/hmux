@@ -984,13 +984,11 @@ pub(super) unsafe extern "C" fn format_bool_op_1(
     mut not: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
     let mut result: ::core::ffi::c_int = 0;
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    expanded = format_expand1(es, fmt);
-    result = format_true(expanded);
+    let expanded = format_expand1_cstring(es, fmt);
+    result = format_true(expanded.as_ptr());
     if not != 0 {
         result = (result == 0) as ::core::ffi::c_int;
     }
-    free(expanded as *mut ::core::ffi::c_void);
     return xstrdup(if result != 0 {
         b"1\0" as *const u8 as *const ::core::ffi::c_char
     } else {
@@ -1005,7 +1003,6 @@ pub(super) unsafe extern "C" fn format_bool_op_n(
     let mut result: ::core::ffi::c_int = 0;
     let mut cp1: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp2: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     result = if and != 0 {
         1 as ::core::ffi::c_int
     } else {
@@ -1026,7 +1023,7 @@ pub(super) unsafe extern "C" fn format_bool_op_n(
             CString::new(std::slice::from_raw_parts(cp1.cast::<u8>(), length))
                 .expect("format operand contains no NUL before its delimiter")
         };
-        expanded = format_expand1(es, operand.as_ptr());
+        let expanded = format_expand1_cstring(es, operand.as_ptr());
         format_log1(
             es,
             b"format_bool_op_n\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1036,14 +1033,13 @@ pub(super) unsafe extern "C" fn format_bool_op_n(
             } else {
                 b"||\0" as *const u8 as *const ::core::ffi::c_char
             },
-            expanded,
+            expanded.as_ptr(),
         );
         if and != 0 {
-            result = (result != 0 && format_true(expanded) != 0) as ::core::ffi::c_int;
+            result = (result != 0 && format_true(expanded.as_ptr()) != 0) as ::core::ffi::c_int;
         } else {
-            result = (result != 0 || format_true(expanded) != 0) as ::core::ffi::c_int;
+            result = (result != 0 || format_true(expanded.as_ptr()) != 0) as ::core::ffi::c_int;
         }
-        free(expanded as *mut ::core::ffi::c_void);
         if cp2.is_null() {
             break;
         }
@@ -1059,18 +1055,15 @@ pub(super) unsafe extern "C" fn format_session_name(
     mut es: *mut format_expand_state,
     mut fmt: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    name = format_expand1(es, fmt);
+    let name = format_expand1_cstring(es, fmt);
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
-        if strcmp((*s).name, name) == 0 as ::core::ffi::c_int {
-            free(name as *mut ::core::ffi::c_void);
+        if strcmp((*s).name, name.as_ptr()) == 0 as ::core::ffi::c_int {
             return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
         }
         s = sessions_next(s);
     }
-    free(name as *mut ::core::ffi::c_void);
     return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
 }
 pub(super) unsafe extern "C" fn format_loop_sessions(
@@ -1102,7 +1095,6 @@ pub(super) unsafe extern "C" fn format_loop_sessions(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
@@ -1155,14 +1147,9 @@ pub(super) unsafe extern "C" fn format_loop_sessions(
         );
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
-        expanded = format_expand1(&raw mut next, use_0);
+        let expanded = format_expand1_cstring(&raw mut next, use_0);
         format_free(next.ft);
-        evbuffer_add(
-            buffer,
-            expanded as *const ::core::ffi::c_void,
-            strlen(expanded),
-        );
-        free(expanded as *mut ::core::ffi::c_void);
+        evbuffer_add(buffer, expanded.as_ptr().cast(), expanded.as_bytes().len());
         i += 1;
     }
     drop(active);
@@ -1185,7 +1172,6 @@ pub(super) unsafe extern "C" fn format_window_name(
     mut fmt: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
     let mut ft: *mut format_tree = (*es).ft;
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if (*ft).s.is_null() {
         format_log1(
@@ -1195,16 +1181,14 @@ pub(super) unsafe extern "C" fn format_window_name(
         );
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    name = format_expand1(es, fmt);
+    let name = format_expand1_cstring(es, fmt);
     wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strcmp((*(*wl).window).name, name) == 0 as ::core::ffi::c_int {
-            free(name as *mut ::core::ffi::c_void);
+        if strcmp((*(*wl).window).name, name.as_ptr()) == 0 as ::core::ffi::c_int {
             return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
         }
         wl = winlinks_next(wl);
     }
-    free(name as *mut ::core::ffi::c_void);
     return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
 }
 pub(super) unsafe extern "C" fn format_add_window_neighbour(
@@ -1283,7 +1267,6 @@ pub(super) unsafe extern "C" fn format_loop_windows(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
@@ -1386,14 +1369,9 @@ pub(super) unsafe extern "C" fn format_loop_windows(
         format_defaults(nft, (*ft).c, s, wl, ::core::ptr::null_mut::<window_pane>());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
-        expanded = format_expand1(&raw mut next, use_0);
+        let expanded = format_expand1_cstring(&raw mut next, use_0);
         format_free(nft);
-        evbuffer_add(
-            buffer,
-            expanded as *const ::core::ffi::c_void,
-            strlen(expanded),
-        );
-        free(expanded as *mut ::core::ffi::c_void);
+        evbuffer_add(buffer, expanded.as_ptr().cast(), expanded.as_bytes().len());
         i += 1;
     }
     drop(active);
@@ -1440,7 +1418,6 @@ pub(super) unsafe extern "C" fn format_loop_panes(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
@@ -1496,14 +1473,9 @@ pub(super) unsafe extern "C" fn format_loop_panes(
         format_defaults(nft, (*ft).c, (*ft).s, (*ft).wl, wp);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
-        expanded = format_expand1(&raw mut next, use_0);
+        let expanded = format_expand1_cstring(&raw mut next, use_0);
         format_free(nft);
-        evbuffer_add(
-            buffer,
-            expanded as *const ::core::ffi::c_void,
-            strlen(expanded),
-        );
-        free(expanded as *mut ::core::ffi::c_void);
+        evbuffer_add(buffer, expanded.as_ptr().cast(), expanded.as_bytes().len());
         i += 1;
     }
     drop(active);
@@ -1553,7 +1525,6 @@ pub(super) unsafe extern "C" fn format_loop_add_option(
     };
     let mut oe: *const options_table_entry = options_table_entry(o);
     let mut name: *const ::core::ffi::c_char = options_name(o);
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut is_array: ::core::ffi::c_int = options_is_array(o);
     format_log1(
@@ -1658,14 +1629,9 @@ pub(super) unsafe extern "C" fn format_loop_add_option(
     format_defaults(nft, (*ft).c, (*ft).s, (*ft).wl, (*ft).wp);
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
-    expanded = format_expand1(&raw mut next, fmt);
+    let expanded = format_expand1_cstring(&raw mut next, fmt);
     format_free(nft);
-    evbuffer_add(
-        buffer,
-        expanded as *const ::core::ffi::c_void,
-        strlen(expanded),
-    );
-    free(expanded as *mut ::core::ffi::c_void);
+    evbuffer_add(buffer, expanded.as_ptr().cast(), expanded.as_bytes().len());
 }
 pub(super) unsafe extern "C" fn format_loop_add_array_item(
     mut es: *mut format_expand_state,
@@ -1701,7 +1667,6 @@ pub(super) unsafe extern "C" fn format_loop_add_array_item(
     let mut oe: *const options_table_entry = options_table_entry(o);
     let mut name: *const ::core::ffi::c_char = options_name(o);
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     array_key = options_array_item_key(a);
     format_log1(
@@ -1816,14 +1781,9 @@ pub(super) unsafe extern "C" fn format_loop_add_array_item(
     format_defaults(nft, (*ft).c, (*ft).s, (*ft).wl, (*ft).wp);
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
-    expanded = format_expand1(&raw mut next, fmt);
+    let expanded = format_expand1_cstring(&raw mut next, fmt);
     format_free(nft);
-    evbuffer_add(
-        buffer,
-        expanded as *const ::core::ffi::c_void,
-        strlen(expanded),
-    );
-    free(expanded as *mut ::core::ffi::c_void);
+    evbuffer_add(buffer, expanded.as_ptr().cast(), expanded.as_bytes().len());
 }
 pub(super) unsafe extern "C" fn format_loop_options(
     mut es: *mut format_expand_state,
@@ -1946,7 +1906,6 @@ pub(super) unsafe extern "C" fn format_loop_environ(
     };
     let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
@@ -2048,14 +2007,9 @@ pub(super) unsafe extern "C" fn format_loop_environ(
         format_defaults(nft, (*ft).c, (*ft).s, (*ft).wl, (*ft).wp);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
-        expanded = format_expand1(&raw mut next, fmt);
+        let expanded = format_expand1_cstring(&raw mut next, fmt);
         format_free(nft);
-        evbuffer_add(
-            buffer,
-            expanded as *const ::core::ffi::c_void,
-            strlen(expanded),
-        );
-        free(expanded as *mut ::core::ffi::c_void);
+        evbuffer_add(buffer, expanded.as_ptr().cast(), expanded.as_bytes().len());
         i = i.wrapping_add(1);
         envent = environ_next(envent);
     }
@@ -2101,7 +2055,6 @@ pub(super) unsafe extern "C" fn format_loop_clients(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
@@ -2138,14 +2091,9 @@ pub(super) unsafe extern "C" fn format_loop_clients(
         format_defaults(nft, c, (*ft).s, (*ft).wl, (*ft).wp);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
-        expanded = format_expand1(&raw mut next, fmt);
+        let expanded = format_expand1_cstring(&raw mut next, fmt);
         format_free(nft);
-        evbuffer_add(
-            buffer,
-            expanded as *const ::core::ffi::c_void,
-            strlen(expanded),
-        );
-        free(expanded as *mut ::core::ffi::c_void);
+        evbuffer_add(buffer, expanded.as_ptr().cast(), expanded.as_bytes().len());
         i += 1;
     }
     size = evbuffer_get_length(buffer);
@@ -3596,17 +3544,15 @@ pub(super) unsafe extern "C" fn format_expand1(
     xstrdup(format_expand1_cstring(es, fmt).as_ptr())
 }
 
-unsafe fn format_expand1_cstring(
+pub(super) unsafe fn format_expand1_cstring(
     mut es: *mut format_expand_state,
     mut fmt: *const ::core::ffi::c_char,
 ) -> CString {
     let mut ft: *mut format_tree = (*es).ft;
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut style_end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: size_t = 0;
-    let mut outlen: size_t = 0;
     let mut ch: ::core::ffi::c_int = 0;
     let mut brackets: ::core::ffi::c_int = 0;
     let mut expanded: [::core::ffi::c_char; 8192] = [0; 8192];
@@ -3708,25 +3654,26 @@ unsafe fn format_expand1_cstring(
                         b"found #(): %s\0" as *const u8 as *const ::core::ffi::c_char,
                         name.as_ptr(),
                     );
-                    if (*ft).flags & FORMAT_NOJOBS != 0 || (*es).flags & FORMAT_EXPAND_NOJOBS != 0 {
-                        out = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+                    let out = if (*ft).flags & FORMAT_NOJOBS != 0
+                        || (*es).flags & FORMAT_EXPAND_NOJOBS != 0
+                    {
                         format_log1(
                             es,
                             b"format_expand1\0" as *const u8 as *const ::core::ffi::c_char,
                             b"#() is disabled\0" as *const u8 as *const ::core::ffi::c_char,
                         );
+                        CString::default()
                     } else {
-                        out = format_job_get(es, name.as_ptr());
+                        let out = format_job_get(es, name.as_ptr());
                         format_log1(
                             es,
                             b"format_expand1\0" as *const u8 as *const ::core::ffi::c_char,
                             b"#() result: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                            out,
+                            out.as_ptr(),
                         );
-                    }
-                    outlen = strlen(out);
-                    output.extend_from_slice(std::slice::from_raw_parts(out.cast::<u8>(), outlen));
-                    free(out as *mut ::core::ffi::c_void);
+                        out
+                    };
+                    output.extend_from_slice(out.as_bytes());
                     fmt = fmt.offset(n.wrapping_add(1 as size_t) as isize);
                     continue;
                 }

@@ -127,15 +127,14 @@ pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
         (*fj).status = 0 as ::core::ffi::c_int;
     }
 }
-pub(super) unsafe extern "C" fn format_job_get(
+pub(super) unsafe fn format_job_get(
     mut es: *mut format_expand_state,
     mut cmd: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
+) -> CString {
     let mut ft: *mut format_tree = (*es).ft;
     let mut jobs: *mut format_job_tree = ::core::ptr::null_mut::<format_job_tree>();
     let mut fj: *mut format_job = ::core::ptr::null_mut::<format_job>();
     let mut t: time_t = 0;
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut force: ::core::ffi::c_int = 0;
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -172,9 +171,11 @@ pub(super) unsafe extern "C" fn format_job_get(
         FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE,
     );
     next.flags &= !FORMAT_EXPAND_TIME;
-    expanded = format_expand1(&raw mut next, cmd);
-    if (*fj).expanded.is_null() || strcmp(expanded, (*fj).expanded) != 0 as ::core::ffi::c_int {
-        format_job_set_expanded(fj, CStr::from_ptr(expanded).to_owned());
+    let expanded = format_expand1_cstring(&raw mut next, cmd);
+    if (*fj).expanded.is_null()
+        || strcmp(expanded.as_ptr(), (*fj).expanded) != 0 as ::core::ffi::c_int
+    {
+        format_job_set_expanded(fj, expanded.clone());
         force = 1 as ::core::ffi::c_int;
     } else {
         force = (*ft).flags & FORMAT_FORCE;
@@ -185,7 +186,7 @@ pub(super) unsafe extern "C" fn format_job_get(
     }
     if force != 0 || (*fj).job.is_null() && (*fj).last != t {
         (*fj).job = job_run(
-            expanded,
+            expanded.as_ptr(),
             0 as ::core::ffi::c_int,
             ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
             ::core::ptr::null_mut::<environ>(),
@@ -207,14 +208,13 @@ pub(super) unsafe extern "C" fn format_job_get(
     } else if !(*fj).job.is_null() && t - (*fj).last > 1 as time_t && (*fj).out.is_null() {
         format_job_set_out(fj, format_job_message(fj, b"' not ready>"));
     }
-    free(expanded as *mut ::core::ffi::c_void);
     if (*ft).flags & FORMAT_STATUS != 0 {
         (*fj).status = 1 as ::core::ffi::c_int;
     }
     if (*fj).out.is_null() {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        return CString::default();
     }
-    return format_expand1(&raw mut next, (*fj).out);
+    return format_expand1_cstring(&raw mut next, (*fj).out);
 }
 // Do not retain a map borrow across format expansion or process callbacks.
 unsafe fn format_job_find_or_insert(

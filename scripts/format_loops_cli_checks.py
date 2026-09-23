@@ -41,6 +41,18 @@ with tempfile.TemporaryDirectory(prefix="format-loops-", dir=root / "target") as
         check("#{W:#{?#{==:#{window_index},0},Y,N};}", b"Y;N;\n")
         check("#{P:#{?#{==:#{pane_index},0},Y,N};}", b"Y;N;\n")
 
+        # Recursive lookup and loop results outlive their temporary format trees.
+        run("rename-window", "-t", "first:0", "named-window")
+        check("#{N/s:#{session_name}}|#{N/s:absent-session}", b"1|0\n")
+        check("#{N/w:#{window_name}}|#{N/w:absent-window}", b"1|0\n")
+        run("set-option", "-t", "first", "@loop-owned", "scalar-value")
+        run("set-option", "-t", "first", "status-format[0]", "array-value")
+        check("#{O/s:#{?#{==:#{option_name},@loop-owned},#{option_value},}}", b"scalar-value\n")
+        check("#{O/s:#{?#{==:#{option_name},status-format},#{option_array_key}:#{option_value};,}}",
+              b"0:array-value;\n")
+        run("set-environment", "-t", "first", "LOOP_OWNED", "environment-value")
+        check("#{V:#{?#{==:#{environ_name},LOOP_OWNED},#{environ_value},}}", b"environment-value\n")
+
         # An attached control client gives S: an active session to select.
         control = subprocess.run(
             base + ["-C", "attach-session", "-t", "first"],

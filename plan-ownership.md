@@ -117,12 +117,13 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate internal expression helpers away from the C-return
-`format_expand1` adapter. Audit its producer/consumer contracts in
-`src/format/expression.rs` and `src/format/jobs.rs` together, carrying owned
-results through recursive expansion, conditions, loops, and job expansion.
-Split only at complete return contracts if that batch is too broad; do not
-replace it with unrelated leaf conversions.
+Next, migrate the remaining `format_choose` and `format_replace` consumers of
+the C-return `format_expand1` adapter in `src/format/expression.rs`. Predicates,
+name lookups, loop-body expansion, and the job command/output path now retain
+owned recursive results. The predicate and loop helper return values and loop
+accumulators still use their old C contracts with `format_replace`; migrate
+those producer/consumer contracts together. Split only at complete return
+contracts if that batch is too broad; do not replace it with unrelated leaves.
 
 Customize, buffer, client, switch, and tree modes now use owned expansion
 results, as does the save-buffer path. Exported `format_expand`,
@@ -1587,6 +1588,24 @@ name error.
 - No C-return expansion calls remain in these four modes. Exported C format
   contracts and unrelated callbacks remain unchanged. Next: internal expression
   and job expansion producer/consumer contracts around `format_expand1`.
+
+### Batch — owned recursive expansion consumers and jobs (2026-09-23)
+
+- Boolean predicates, session/window name lookup, and every loop-body expansion
+  now retain `CString` results directly, including across temporary tree
+  destruction. `format_job_get` owns its expanded command and returns its
+  expanded output as `CString`; the outer expansion appends those bytes without
+  a C allocation/free round trip. The job cache still keeps its existing command
+  snapshot before process callbacks. Disabled/no-output jobs return an empty
+  owner. Predicate/loop final results and `format_replace` remain C-owned pending
+  the next coordinated return-contract change.
+- Serialized workspace tests (396), binary build, changed-file rustfmt, and
+  diff checks passed. Expanded the existing loop CLI check with scalar/array
+  option, environment, and recursive name lookups; it, job output/replacement,
+  job-name, and expansion-output checks passed on candidate and pinned baseline.
+  The existing nested client-sort check passed on candidate but the pinned
+  baseline repeated a client row; that unchanged test exposes its nested-sort
+  behavior and was not weakened. No sanitizer ran.
 
 ## Historical migration index
 
