@@ -1,4 +1,4 @@
-use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_list_print};
+use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_list_print_cstring};
 use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_callback1, cmdq_get_command,
@@ -238,7 +238,6 @@ pub unsafe extern "C" fn key_bindings_add(
 ) {
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     table = key_bindings_get_table(name, 1 as ::core::ffi::c_int);
     bd = key_bindings_get(table, key & !KEYC_MASK_FLAGS);
     if cmdlist.is_null() {
@@ -268,16 +267,15 @@ pub unsafe extern "C" fn key_bindings_add(
         (*bd).flags |= KEY_BINDING_REPEAT;
     }
     (*bd).cmdlist = cmdlist;
-    s = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
+    let s = cmd_list_print_cstring((*bd).cmdlist, 0);
     let key_string = key_string_format((*bd).key, true);
     log_debug(
         b"%s: %#llx %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"key_bindings_add\0" as *const u8 as *const ::core::ffi::c_char,
         (*bd).key,
         key_string.as_ptr(),
-        s,
+        s.as_ptr(),
     );
-    free(s as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_remove(
