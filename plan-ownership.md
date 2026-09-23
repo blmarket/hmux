@@ -1722,6 +1722,20 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check` passed in the isolated
   worktree. No sanitizer run was performed.
 
+### Increment 95 — session-group node and name owner (2026-09-22)
+
+- The `session_groups` index now owns each group as `Box<SessionGroupOwner>`:
+  a stable C-layout node plus a byte-preserving `CString` name. This removes
+  `session_group_new`'s `xcalloc`/`xstrdup` and the last-member `free` pair.
+  Internal insert consumes the owner; removal drops it after the existing
+  group event and after detaching the final session. Borrowed group pointers
+  remain valid while indexed, and byte-order traversal is unchanged.
+- Updated the focused storage test for owned insertion/removal, duplicate
+  names, outsider non-removal, stable pointers, and non-UTF-8 borrowed input.
+  Workspace tests, binary build, session CLI reference comparison,
+  changed-file rustfmt, and `git diff --check` passed in the isolated
+  worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1752,10 +1766,14 @@ non-string value.
    tags, and session/winlink graph require separate migrations. The new typed
    mode-tree key is the prerequisite for replacing further pointer tags, but
    each mode still needs its own semantic identity and alias audit.
+   `window_client` has no existing guaranteed unique semantic key: names and
+   PIDs can repeat, and creation timestamps are not unique by contract.
+   Its pointer tag must wait for a client owner/observer migration; a new
+   tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–94. The remaining
+Current validation is recorded in increments 15–95. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–94 has its own local commit; none was pushed.
+Each of increments 15–95 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

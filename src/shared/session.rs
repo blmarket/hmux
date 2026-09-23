@@ -63,7 +63,7 @@ pub struct session_group {
 #[repr(C)]
 pub struct session_group_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut session_group>,
+    pub owner: *mut std::collections::BTreeMap<Vec<u8>, Box<SessionGroupOwner>>,
 }
 
 #[derive(Copy, Clone)]
@@ -75,5 +75,12 @@ pub struct session_group_sessions {
 
 #[repr(C)]
 pub struct session_groups {
-    pub storage: Option<Box<std::collections::BTreeMap<Vec<u8>, *mut session_group>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<Vec<u8>, Box<SessionGroupOwner>>>>,
+}
+
+/// Owns a stable C-compatible group node and its byte-preserving name. The
+/// session-groups index is the sole owner; `session_group` pointers are borrowed.
+pub struct SessionGroupOwner {
+    pub(crate) node: session_group,
+    pub(crate) name: std::ffi::CString,
 }
