@@ -2468,6 +2468,19 @@ legacy callers safe.
   and baseline. Changed files retain exactly their pre-existing rustfmt
   import-order differences. No sanitizer was run.
 
+### Increment 300 — boxed outer options record (2026-09-23)
+
+- `options_create` now boxes the stable outer `options` record before creating
+  its already Box-owned entry storage, removing its `xcalloc`. `options_free`
+  still removes every entry, drops the storage, then consumes the outer `Box`
+  instead of libc `free`. `parent` remains a borrowed link, and each entry's
+  `owner` back-pointer remains stable until entry removal.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, and diff
+  checks passed. Options-value and customize-scope CLI checks matched the
+  pinned baseline for global and session/window/pane paths. Array-key checks
+  passed separately on candidate and baseline. Changed files retain exactly
+  their pre-existing rustfmt import-order differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2478,12 +2491,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The outer `options` record in `src/options.rs` still has an `xcalloc` and
-   final libc `free`; its entry storage is already Box-owned. Check parent
-   links, teardown order, and all raw aliases before boxing it. The larger
-   `window_copy_mode_data.backing` screen pointer is invalidated on refresh.
-   The redraw scene's line array has self-referential intrusive list tails and
-   needs its own alias audit.
+1. The outer `monitor_set` in `src/monitor.rs` has one `xcalloc` in
+   `monitor_create` and one final libc `free` in `monitor_destroy`. Timer
+   cancellation, item cleanup, and session reference release must keep their
+   current order; callbacks borrow the stable set pointer. `key_binding`
+   records in `src/key_bindings.rs` are another bounded candidate with two
+   constructors and one free helper. `window_copy_mode_data.backing` is larger:
+   its borrowed screen pointer is invalidated on refresh. The redraw scene's
+   line array has self-referential intrusive list tails and needs an alias
+   audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

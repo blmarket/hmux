@@ -64,6 +64,7 @@ mod tests {
     }
 }
 
+/// Box-owned by options_create; parent and entry back-pointers are borrowed.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options {

@@ -41,7 +41,7 @@ use crate::src::window::{
     window_pane_tree_minmax, window_pane_tree_next, windows_minmax, windows_next,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -271,11 +271,12 @@ unsafe fn options_value_to_cstring(
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_create(mut parent: *mut options) -> *mut options {
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    oo = xcalloc(1 as size_t, ::core::mem::size_of::<options>() as size_t) as *mut options;
-    (*oo).tree = Box::into_raw(Box::new(options_storage::default()));
-    (*oo).parent = parent;
-    return oo;
+    let mut oo = Box::new(options {
+        tree: ::core::ptr::null_mut(),
+        parent,
+    });
+    oo.tree = Box::into_raw(Box::new(options_storage::default()));
+    Box::into_raw(oo)
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_free(mut oo: *mut options) {
@@ -290,7 +291,7 @@ pub unsafe extern "C" fn options_free(mut oo: *mut options) {
         o = tmp;
     }
     drop(Box::from_raw((*oo).tree));
-    free(oo as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(oo));
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_get_parent(mut oo: *mut options) -> *mut options {
