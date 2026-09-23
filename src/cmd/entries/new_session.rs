@@ -96,7 +96,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::spawn::spawn_window;
-use crate::src::tmux::{check_name, clean_name, global_s_options};
+use crate::src::tmux::{check_name, clean_name_cstring, global_s_options};
 use crate::src::utf8::utf8_stravis_cstring;
 use crate::src::window::winlinks_minmax;
 use std::ffi::{CStr, CString};
@@ -201,8 +201,10 @@ unsafe extern "C" fn cmd_new_session_exec(
     let mut formatted_cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ename: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut wname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut sname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut sname: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut wname_owned: Option<CString> = None;
+    let mut sname_owned: Option<CString> = None;
     let mut prefix: Option<CString> = None;
     let mut detached: ::core::ffi::c_int = 0;
     let mut already_attached: ::core::ffi::c_int = 0;
@@ -270,7 +272,14 @@ unsafe extern "C" fn cmd_new_session_exec(
             free(ename as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
-        wname = clean_name(ename, 0 as ::core::ffi::c_int);
+        wname_owned = Some(
+            clean_name_cstring(CStr::from_ptr(ename), 0)
+                .expect("check_name validated the window name"),
+        );
+        wname = wname_owned
+            .as_ref()
+            .expect("window name was cleaned")
+            .as_ptr();
         free(ename as *mut ::core::ffi::c_void);
     }
     tmp = args_get(args, 's' as i32 as u_char);
@@ -292,7 +301,14 @@ unsafe extern "C" fn cmd_new_session_exec(
             free(ename as *mut ::core::ffi::c_void);
             current_block = 5193972633326621385;
         } else {
-            sname = clean_name(ename, 0 as ::core::ffi::c_int);
+            sname_owned = Some(
+                clean_name_cstring(CStr::from_ptr(ename), 0)
+                    .expect("check_name validated the session name"),
+            );
+            sname = sname_owned
+                .as_ref()
+                .expect("session name was cleaned")
+                .as_ptr();
             free(ename as *mut ::core::ffi::c_void);
             current_block = 10043043949733653460;
         }
@@ -318,8 +334,6 @@ unsafe extern "C" fn cmd_new_session_exec(
                         args_has(args, 'E' as i32 as u_char),
                         args_get(args, 'f' as i32 as u_char),
                     );
-                    free(wname as *mut ::core::ffi::c_void);
-                    free(sname as *mut ::core::ffi::c_void);
                     return retval;
                 }
             }
@@ -808,8 +822,6 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                                 formatted_cwd
                                                                     as *mut ::core::ffi::c_void,
                                                             );
-                                                            free(wname as *mut ::core::ffi::c_void);
-                                                            free(sname as *mut ::core::ffi::c_void);
                                                             return CMD_RETURN_NORMAL;
                                                         }
                                                     }
@@ -830,7 +842,5 @@ unsafe extern "C" fn cmd_new_session_exec(
         cmd_free_argv(sc.argc, sc.argv);
     }
     free(formatted_cwd as *mut ::core::ffi::c_void);
-    free(wname as *mut ::core::ffi::c_void);
-    free(sname as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }

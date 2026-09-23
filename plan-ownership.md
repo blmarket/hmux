@@ -125,14 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_new_session_exec` still keeps `clean_name` results for optional `-n`
-   window and `-s` session names as C allocations through attach, duplicate
-   name, spawn, and error paths. `session_create` and `spawn_window` copy these
-   names into their existing owners. Use local `Option<CString>` values from
-   `clean_name_cstring`, lend pointers only through synchronous calls, and
-   remove matching frees. Preserve the formatted-name input allocations and
-   early-return behavior. Compare explicit names, duplicate and attach paths,
-   and spawn errors with pinned tmux.
+1. `cmd_display_menu_exec` duplicates a literal empty default title before
+   `menu_create` and frees it immediately afterward. `menu_create` copies the
+   title into `MenuOwner.title`, so borrow the literal for the default branch
+   and free only the formatted `-T` result. Exercise an attached-client menu
+   without `-T` and compare with pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1266,6 +1263,20 @@ name error.
   window-name CLI comparison with pinned tmux passed for explicit names,
   `-S` reuse, ambiguous duplicate names, and a spawn error. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 428 — own new-session cleaned names (2026-09-23)
+
+- `cmd_new_session_exec` now keeps optional cleaned `-n` and `-s` names in
+  local `CString` owners through attach, duplicate-name, spawn, and error
+  paths. `session_create` and `spawn_window` copy borrowed pointers into
+  `SessionOwner.name` and `WindowOwned.name`. Six manual C frees are gone;
+  formatted-name inputs retain their existing C allocation and cleanup.
+- Serialized workspace tests, binary build, existing session/window name CLI
+  comparisons, and a focused new-session CLI comparison with pinned tmux
+  passed. The focused check covers valid names, duplicate rejection, invalid
+  UTF-8, and the `-A` branch's no-terminal error. A genuine `spawn_window`
+  failure needs controlled fault injection and was not exercised by CLI.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
