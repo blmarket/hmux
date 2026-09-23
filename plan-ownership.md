@@ -339,6 +339,19 @@ legacy callers safe.
   the old and new binaries for empty, multiple, other-session, and detached
   client cases. No sanitizer was run.
 
+### Increment 149 — Linux proc lookup paths (2026-09-22)
+
+- `osdep_get_name` and `osdep_get_cwd` now own all three local
+  `/proc/<pid>/cmdline` and `/proc/<pid>/cwd` path strings in `CString`s.
+  `fopen` and `readlink` borrow their pointers synchronously; removed three
+  `xasprintf` allocations and matching frees. Exported function signatures
+  and the returned C-owned command-name buffer are unchanged.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. New `scripts/osdep_proc_cli_checks.py` passed with both old and
+  new binaries for a live pane's current command and cwd. The rare cwd SID
+  fallback is source-audited but not exercised by that E2E. No sanitizer was
+  run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -378,9 +391,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–148. The remaining
+Current validation is recorded in increments 15–149. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–148 has its own local commit; none was pushed.
+Each of increments 15–149 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
