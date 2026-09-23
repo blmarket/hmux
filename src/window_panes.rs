@@ -103,7 +103,8 @@ use crate::src::window::{
     winlink_find_by_window,
 };
 use crate::src::window_clock::window_clock_table;
-use crate::src::xmalloc::{xasprintf, xmalloc, xsnprintf};
+use crate::src::xmalloc::{xmalloc, xsnprintf};
+use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -1750,17 +1751,13 @@ unsafe extern "C" fn window_panes_run_command(
 ) {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    xasprintf(
-        &raw mut expanded,
-        b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    let expanded = CString::new(format!("%{}", (*wp).id)).expect("pane ID contains NUL");
+    let mut expanded_ptr = expanded.as_ptr().cast_mut();
     cmdlist = args_make_commands(
         (*data).state,
         1 as ::core::ffi::c_int,
-        &raw mut expanded,
+        &raw mut expanded_ptr,
         &raw mut error,
     );
     if cmdlist.is_null() {
@@ -1771,7 +1768,6 @@ unsafe extern "C" fn window_panes_run_command(
         cmdq_append(c, new_item);
         cmd_list_free(cmdlist);
     }
-    free(expanded as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_panes_find_pane(
     mut data: *mut window_panes_modedata,

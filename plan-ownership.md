@@ -544,6 +544,20 @@ legacy callers safe.
   a command containing byte `0xff`. The view-pane output path was source
   audited but not live tested. No sanitizer was run.
 
+### Increment 165 — display-panes command argument scratch (2026-09-22)
+
+- `window_panes_run_command` now owns the formatted `%<pane-id>` argument as
+  a local `CString`. `args_make_commands` only borrows its temporary argv
+  pointer while synchronously substituting and parsing the command, so the
+  scratch is dropped when this function returns. Removed its `xasprintf` and
+  matching free; no queued command retains the pointer.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. The new attached-client `display_panes_command_cli_checks.py`
+  splits a window, selects pane 1 in display-panes mode, and verifies the
+  custom command receives the exact `%<pane-id>` text. It passed with both
+  the pre-migration and migrated binaries. Only the success path was live
+  tested; no sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -554,9 +568,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_panes_run_command`'s pane-ID text has a local `xasprintf`/free
-   pair passed to synchronous `args_make_commands`. Audit and migrate that
-   complete boundary.
+1. `window_pane_search` in `src/window.rs` formats `"*%s*"` into a local
+   C allocation for `fnmatch`, then frees it after the grid scan. A
+   byte-preserving `CString` should own the glob pattern after checking its
+   borrow lifetime and the regex branch's separate cleanup.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -739,3 +754,10 @@ by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
 build, start-command-list CLI checks, changed-file rustfmt, and
 `git diff --check` passed on main. The isolated parser log-prefix and prompt
 history-file E2E scenarios also passed. No combined sanitizer was run.
+After increments 163–165 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, prompt-completion and display-panes-command CLI checks, the focused
+`run_shell_partial_line` integration test, changed-file rustfmt for
+`run_shell.rs` and `window_panes.rs`, and `git diff --check` passed on main.
+`prompt.rs` still has the two pre-existing import-layout differences.
+No combined sanitizer was run.
