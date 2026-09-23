@@ -128,3 +128,25 @@ fn options_match_abi_adapter_matches_command_adapter() {
         );
     }
 }
+
+#[test]
+fn parse_and_match_preserve_untouched_outputs() {
+    unsafe {
+        let sentinel = 1usize as *mut std::ffi::c_char;
+        let mut key = sentinel;
+        let name = options_parse(c"".as_ptr(), &mut key);
+        assert!(name.is_null());
+        assert_eq!(key, sentinel);
+
+        let mut ambiguous = 42;
+        let name = options_match_command(c"".as_ptr(), &mut key, &mut ambiguous);
+        assert!(name.is_null());
+        assert_eq!(key, sentinel);
+        assert_eq!(ambiguous, 42);
+
+        let name = options_match_command(c"status[]".as_ptr(), &mut key, &mut ambiguous);
+        assert!(name.is_null());
+        assert!(key.is_null());
+        assert_eq!(ambiguous, 42);
+    }
+}

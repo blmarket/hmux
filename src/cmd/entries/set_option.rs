@@ -15,8 +15,8 @@ pub use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_array_assign, options_array_clear, options_array_get, options_array_set, options_empty,
     options_from_string, options_get, options_get_only, options_get_string, options_is_array,
-    options_match_command, options_push_changes, options_remove_or_default,
-    options_scope_from_name, options_set_string,
+    options_match_owned, options_push_changes, options_remove_or_default, options_scope_from_name,
+    options_set_string, OptionMatchFailure,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
@@ -431,11 +431,11 @@ unsafe extern "C" fn cmd_set_option_exec(
     let mut parent: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut po: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut argument: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut array_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut window: ::core::ffi::c_int = 0;
     let mut already: ::core::ffi::c_int = 0;
@@ -469,7 +469,15 @@ unsafe extern "C" fn cmd_set_option_exec(
         free(argument as *mut ::core::ffi::c_void);
         return CMD_RETURN_NORMAL;
     }
-    name = options_match_command(argument, &raw mut array_key, &raw mut ambiguous);
+    let matched = options_match_owned(CStr::from_ptr(argument));
+    if let Ok(parsed) = &matched {
+        name = parsed.name.as_ptr();
+        array_key = parsed
+            .array_key
+            .as_ref()
+            .map_or(::core::ptr::null(), |key| key.as_ptr());
+    }
+    ambiguous = matches!(matched, Err(OptionMatchFailure::Ambiguous)) as ::core::ffi::c_int;
     if name.is_null() {
         if args_has(args, 'q' as i32 as u_char) != 0 {
             current_block = 710513931074292511;
@@ -717,15 +725,11 @@ unsafe extern "C" fn cmd_set_option_exec(
         8517774764635037400 => {
             free(argument as *mut ::core::ffi::c_void);
             free(expanded as *mut ::core::ffi::c_void);
-            free(name as *mut ::core::ffi::c_void);
-            free(array_key as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         _ => {
             free(argument as *mut ::core::ffi::c_void);
             free(expanded as *mut ::core::ffi::c_void);
-            free(name as *mut ::core::ffi::c_void);
-            free(array_key as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     };

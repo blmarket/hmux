@@ -14,8 +14,9 @@ pub use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_array_first, options_array_item_key, options_array_next, options_first, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_only,
-    options_is_array, options_is_string, options_match_command, options_name, options_next,
+    options_is_array, options_is_string, options_match_owned, options_name, options_next,
     options_scope_from_flags, options_scope_from_name, options_to_cstring, options_to_string,
+    OptionMatchFailure,
 };
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
@@ -196,9 +197,9 @@ unsafe extern "C" fn cmd_show_options_exec(
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut argument: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut array_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut window: ::core::ffi::c_int = 0;
     let mut ambiguous: ::core::ffi::c_int = 0;
     let mut parent: ::core::ffi::c_int = 0;
@@ -234,7 +235,15 @@ unsafe extern "C" fn cmd_show_options_exec(
         return cmd_show_options_all(self_0, item, scope, oo);
     }
     argument = format_single_from_target(item, args_string(args, 0 as u_int));
-    name = options_match_command(argument, &raw mut array_key, &raw mut ambiguous);
+    let matched = options_match_owned(CStr::from_ptr(argument));
+    if let Ok(parsed) = &matched {
+        name = parsed.name.as_ptr();
+        array_key = parsed
+            .array_key
+            .as_ref()
+            .map_or(::core::ptr::null(), |key| key.as_ptr());
+    }
+    ambiguous = matches!(matched, Err(OptionMatchFailure::Ambiguous)) as ::core::ffi::c_int;
     if name.is_null() {
         if args_has(args, 'q' as i32 as u_char) != 0 {
             current_block = 9776955515550960483;
@@ -310,14 +319,10 @@ unsafe extern "C" fn cmd_show_options_exec(
     }
     match current_block {
         18040240512796061664 => {
-            free(name as *mut ::core::ffi::c_void);
-            free(array_key as *mut ::core::ffi::c_void);
             free(argument as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         _ => {
-            free(name as *mut ::core::ffi::c_void);
-            free(array_key as *mut ::core::ffi::c_void);
             free(argument as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }

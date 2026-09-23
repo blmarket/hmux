@@ -125,15 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `options_parse` and `options_match_command` still return C-owned option
-   name and nullable array-key outputs. In-tree `set-option`, `show-options`,
-   and customize-mode callers free both on their success/error paths. A
-   private `(CString, Option<CString>)` result can own the parsed values
-   while exported adapters retain their C output contracts. Preserve
-   `options_parse`'s untouched key output on empty input and
-   `options_match_command`'s untouched ambiguity output on parse failure;
-   test valid, invalid, ambiguous, and array-key commands against pinned
-   tmux. This is smaller than the disconnected-client wait-queue boundary.
+1. `format_find` in `src/format/expression.rs` retries `options_parse_get`
+   across up to six option scopes, allocating/freeing the parsed name and
+   optional array key for each attempt. Parse once into the owned option
+   name/key, borrow them through the synchronous lookups and value conversion,
+   and leave exported `options_parse_get`'s C output contract intact. Check
+   format expansion with an array key and fallback across scopes. This is a
+   smaller boundary than disconnected-client queue cancellation.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1151,6 +1149,24 @@ name error.
   label box while the two-column `界` trims to empty at limit one and draws
   only the outer preview border. The narrow comparison passed repeatedly.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 419 — owned option command names (2026-09-23)
+
+- `options_parse_owned` and `options_match_owned` now return a `CString` name
+  and optional normalized `CString` array key. `set-option`, `show-options`,
+  and the customize add-option prompt borrow those through their synchronous
+  calls; their matching-output `free` paths are gone. The exported
+  `options_parse`, `options_match`, and `options_match_command` adapters retain
+  libc-freeable output. Empty parse still leaves the key output untouched;
+  parse failure still leaves the ambiguity output untouched.
+- Serialized workspace tests, binary build, candidate array-key CLI, and
+  customize add-option CLI with candidate and pinned tmux passed. A direct
+  candidate/pinned comparison matched valid normalized array keys, ambiguous
+  `status-`, and invalid `not-an-option` in set/show commands. The pinned tmux
+  differs on malformed `update-environment[]` and overflow keys: it reports
+  ambiguous where the existing candidate parser reports invalid, so the
+  candidate-only array-key script cannot pass against pinned tmux. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

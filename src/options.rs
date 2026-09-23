@@ -929,36 +929,42 @@ pub unsafe extern "C" fn options_parse(
     name: *const ::core::ffi::c_char,
     key: *mut *mut ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let input = std::ffi::CStr::from_ptr(name).to_bytes();
+    let input = CStr::from_ptr(name);
     if input.is_empty() {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
     *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let copy = xstrdup(name);
-    let parsed = match parse_option_name(input) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            free(copy as *mut ::core::ffi::c_void);
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
-        }
+    let Some(parsed) = options_parse_owned(input) else {
+        return ::core::ptr::null_mut();
     };
-    if parsed.array_key.is_some() {
-        let open = input
-            .iter()
-            .position(|&byte| byte == b'[')
-            .expect("parsed array option has an opening bracket");
-        let raw = CString::new(&input[open + 1..input.len() - 1])
-            .expect("C string option name has no interior NUL");
-        let Some(new_key) = options_array_correct_key(raw.as_ptr()) else {
-            free(copy as *mut ::core::ffi::c_void);
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
-        };
-        // options_parse returns a C-owned key. Copy at this ABI boundary;
-        // normalized scratch remains owned by the local CString.
-        *key = xstrdup(new_key.as_ptr());
-        *copy.add(parsed.name.len()) = '\0' as ::core::ffi::c_char;
+    if let Some(array_key) = &parsed.array_key {
+        *key = xstrdup(array_key.as_ptr());
     }
-    return copy;
+    xstrdup(parsed.name.as_ptr())
+}
+
+/// Name and normalized array key owned through the command's synchronous use.
+pub struct OwnedOptionName {
+    pub name: CString,
+    pub array_key: Option<CString>,
+}
+
+pub fn options_parse_owned(input: &CStr) -> Option<OwnedOptionName> {
+    let bytes = input.to_bytes();
+    let parsed = parse_option_name(bytes).ok()?;
+    let array_key = match parsed.array_key {
+        Some(ArrayIndex::Numeric(number)) => {
+            Some(CString::new(number.to_string()).expect("numeric key has no NUL"))
+        }
+        Some(ArrayIndex::Text(bytes)) => {
+            Some(CString::new(bytes).expect("C string key has no interior NUL"))
+        }
+        None => None,
+    };
+    Some(OwnedOptionName {
+        name: CString::new(parsed.name).expect("C string option name has no interior NUL"),
+        array_key,
+    })
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_parse_get(
@@ -1008,21 +1014,45 @@ pub unsafe extern "C" fn options_match(
     options_match_command(s, key, ambiguous)
 }
 
-/// Rust-facing command adapter for option-name matching.
-///
-/// The returned name and array key use the historical C allocator and remain
-/// owned by the caller. The ABI entry point above delegates here so the
-/// set-option and show-options commands can share the byte parser without
-/// changing their ownership rules.
+/// Compatibility adapter for callers that free the returned C allocations.
 pub unsafe fn options_match_command(
     s: *const ::core::ffi::c_char,
     key: *mut *mut ::core::ffi::c_char,
     ambiguous: *mut ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let parsed = options_parse(s, key);
-    if parsed.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let result = options_match_owned(CStr::from_ptr(s));
+    match result {
+        Ok(parsed) => {
+            *ambiguous = 0;
+            *key = parsed
+                .array_key
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |key| xstrdup(key.as_ptr()));
+            xstrdup(parsed.name.as_ptr())
+        }
+        Err(OptionMatchFailure::Parse) => {
+            if !CStr::from_ptr(s).is_empty() {
+                *key = ::core::ptr::null_mut();
+            }
+            ::core::ptr::null_mut()
+        }
+        Err(failure) => {
+            *key = ::core::ptr::null_mut();
+            *ambiguous = (failure == OptionMatchFailure::Ambiguous) as ::core::ffi::c_int;
+            ::core::ptr::null_mut()
+        }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionMatchFailure {
+    Parse,
+    Ambiguous,
+    Invalid,
+}
+
+pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMatchFailure> {
+    let mut parsed = options_parse_owned(s).ok_or(OptionMatchFailure::Parse)?;
 
     let mut candidates: [&[u8]; 273] = [&[]; 273];
     let mut entries: [*const options_table_entry; 273] =
@@ -1048,36 +1078,21 @@ pub unsafe fn options_match_command(
         map = map.offset(1);
     }
 
-    let result = match match_option_name(
-        std::ffi::CStr::from_ptr(s).to_bytes(),
+    match match_option_name(
+        s.to_bytes(),
         &aliases[..alias_count],
         &candidates[..candidate_count],
     ) {
-        Ok(OptionNameMatch::User) => {
-            *ambiguous = 0 as ::core::ffi::c_int;
-            return parsed;
-        }
+        Ok(OptionNameMatch::User) => Ok(parsed),
         Ok(OptionNameMatch::BuiltIn(index)) => {
-            let result = xstrdup((*entries[index]).name);
-            free(parsed as *mut ::core::ffi::c_void);
-            result
+            parsed.name = CStr::from_ptr((*entries[index]).name).to_owned();
+            Ok(parsed)
         }
-        Err(OptionNameMatchError::Ambiguous) => {
-            *ambiguous = 1 as ::core::ffi::c_int;
-            free(parsed as *mut ::core::ffi::c_void);
-            free(*key as *mut ::core::ffi::c_void);
-            *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
-        }
+        Err(OptionNameMatchError::Ambiguous) => Err(OptionMatchFailure::Ambiguous),
         Err(OptionNameMatchError::Invalid(_) | OptionNameMatchError::NotFound) => {
-            *ambiguous = 0 as ::core::ffi::c_int;
-            free(parsed as *mut ::core::ffi::c_void);
-            free(*key as *mut ::core::ffi::c_void);
-            *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+            Err(OptionMatchFailure::Invalid)
         }
-    };
-    return result;
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_match_get(

@@ -39,9 +39,9 @@ use crate::src::options::{
     options_array_next, options_array_set, options_create, options_default,
     options_default_to_string, options_first, options_free, options_from_string, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_number,
-    options_get_only, options_get_parent, options_match, options_name, options_next, options_owner,
-    options_push_changes, options_remove_or_default, options_set_number, options_set_string,
-    options_to_string,
+    options_get_only, options_get_parent, options_match_owned, options_name, options_next,
+    options_owner, options_push_changes, options_remove_or_default, options_set_number,
+    options_set_string, options_to_string,
 };
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
@@ -3333,11 +3333,8 @@ unsafe extern "C" fn window_customize_add_option_callback(
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut array_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut what: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ambiguous: ::core::ffi::c_int = 0;
     let mut namelen: size_t = 0;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
@@ -3377,9 +3374,9 @@ unsafe extern "C" fn window_customize_add_option_callback(
     }
     let copy = std::ffi::CString::new(std::slice::from_raw_parts(s.cast::<u8>(), namelen))
         .expect("strcspn stops at the first NUL");
-    name = options_match(copy.as_ptr(), &raw mut array_key, &raw mut ambiguous);
-    drop(copy);
-    if name.is_null() || *name as ::core::ffi::c_int != '@' as i32 || !array_key.is_null() {
+    let matched = options_match_owned(copy.as_c_str());
+    if !matches!(&matched, Ok(parsed) if parsed.name.as_bytes().first() == Some(&b'@') && parsed.array_key.is_none())
+    {
         what = if (*item).option_type as ::core::ffi::c_uint
             == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -3396,10 +3393,10 @@ unsafe extern "C" fn window_customize_add_option_callback(
             b"User %s name must start with @\0" as *const u8 as *const ::core::ffi::c_char,
             what,
         );
-        free(name as *mut ::core::ffi::c_void);
-        free(array_key as *mut ::core::ffi::c_void);
         return PROMPT_CLOSE;
     }
+    let name_owned = matched.expect("valid user option was checked").name;
+    let name = name_owned.as_ptr();
     options_set_string(
         (*item).oo,
         name,
@@ -3416,8 +3413,6 @@ unsafe extern "C" fn window_customize_add_option_callback(
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
     (*(*data).wp).flags |= PANE_REDRAW;
-    free(name as *mut ::core::ffi::c_void);
-    free(array_key as *mut ::core::ffi::c_void);
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn window_customize_add_option(
