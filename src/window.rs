@@ -62,7 +62,7 @@ use crate::src::style::{
     style_ranges_free, style_ranges_get_range, style_ranges_init,
     style_set_scrollbar_style_from_option,
 };
-use crate::src::tmux::{clean_name, global_options, global_w_options, setblocking};
+use crate::src::tmux::{clean_name_cstring, global_options, global_w_options, setblocking};
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
 use crate::src::xmalloc::{xmalloc, xreallocarray, xstrdup};
@@ -1515,10 +1515,9 @@ pub unsafe extern "C" fn window_set_name(
     mut new_name: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
 ) {
-    let name = clean_name(new_name, untrusted);
-    if !name.is_null() {
+    if let Some(name) = clean_name_cstring(CStr::from_ptr(new_name), untrusted) {
         // Keep the previous owner alive across synchronous rename callbacks.
-        let last = window_replace_name_from_c_owned(w, name);
+        let last = window_replace_name(w, name);
         window_fire_renamed(w, last.as_ptr());
     }
 }
