@@ -69,7 +69,8 @@ pub use crate::src::shared::window::{
 };
 use crate::src::style::{style_copy, style_link, style_parse, style_set, style_tostring};
 use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
-use crate::src::xmalloc::{xcalloc, xstrdup, xstrndup};
+use crate::src::xmalloc::{xcalloc, xstrdup};
+use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -1183,7 +1184,6 @@ pub unsafe extern "C" fn format_draw(
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut link_uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut more: utf8_state = UTF8_MORE;
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut fr: *mut format_range = ::core::ptr::null_mut::<format_range>();
     let mut fr1: *mut format_range = ::core::ptr::null_mut::<format_range>();
     let mut frs: format_ranges = format_ranges {
@@ -1356,30 +1356,34 @@ pub unsafe extern "C" fn format_draw(
                 current_block = 4329038292887906754;
                 break;
             } else {
-                tmp = xstrndup(
-                    cp.offset(2 as ::core::ffi::c_int as isize),
-                    end.offset_from(cp.offset(2 as ::core::ffi::c_int as isize))
-                        as ::core::ffi::c_long as size_t,
-                );
+                let style_start = cp.offset(2);
+                let style_len = end.offset_from(style_start) as usize;
+                // The slice lies inside the NUL-terminated expanded string.
+                // style_parse and log_debug read it before this owner drops.
+                let style_text = CString::new(::core::slice::from_raw_parts(
+                    style_start as *const u8,
+                    style_len,
+                ))
+                .expect("format style contains an interior NUL");
                 style_copy(&raw mut saved_sy, &raw mut sy);
-                if style_parse(&raw mut sy, &raw mut current_default, tmp)
+                if style_parse(&raw mut sy, &raw mut current_default, style_text.as_ptr())
                     != 0 as ::core::ffi::c_int
                 {
                     log_debug(
                         b"%s: invalid style '%s'\0" as *const u8 as *const ::core::ffi::c_char,
                         b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                        tmp,
+                        style_text.as_ptr(),
                     );
-                    free(tmp as *mut ::core::ffi::c_void);
+                    drop(style_text);
                     cp = end.offset(1 as ::core::ffi::c_int as isize);
                 } else {
                     log_debug(
                         b"%s: style '%s' -> '%s'\0" as *const u8 as *const ::core::ffi::c_char,
                         b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                        tmp,
+                        style_text.as_ptr(),
                         style_tostring(&raw mut sy),
                     );
-                    free(tmp as *mut ::core::ffi::c_void);
+                    drop(style_text);
                     if default_colours != 0 {
                         sy.gc.bg = (*base).bg;
                         sy.gc.fg = (*base).fg;

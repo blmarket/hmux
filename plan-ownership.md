@@ -1088,6 +1088,19 @@ legacy callers safe.
   passed in the isolated worktree. The script does not assert cached job
   output display; no sanitizer run was performed.
 
+### Increment 52 — drawn format style scratch (2026-09-22)
+
+- `format_draw` now owns the bracketed style substring as a byte-preserving
+  `CString`, removing its `xstrndup` and both branch-local `free` calls.
+  `style_parse` copies parsed tokens into the style and hyperlink storage;
+  `log_debug` only borrows the text. Explicit drops at the original free
+  sites preserve release order before later style and link callbacks.
+- `scripts/format_draw_style_cli_checks.py` checks a live status line with
+  a valid red style, an invalid style that keeps red, and a valid green
+  style. Workspace tests, binary build, changed-file rustfmt,
+  `git diff --check`, and the live CLI check passed in the isolated
+  worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1102,12 +1115,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the bracketed style scratch in `fuzzy.rs` and `format_draw.rs`,
-   then the conditional operand scratch in `format_replace`. Audit whether
-   `style_parse` and nested format callbacks retain pointers.
+2. Inspect the bracketed style scratch in `fuzzy.rs`, then the conditional
+   operand scratch in `format_replace`. Audit whether nested format
+   callbacks retain pointers.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–51. The remaining
+Current validation is recorded in increments 15–52. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–51 has its own local commit; none was pushed.
+Each of increments 15–52 has its own local commit; none was pushed.
