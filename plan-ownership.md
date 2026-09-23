@@ -3025,6 +3025,21 @@ legacy callers safe.
   Full workspace tests, binary build, changed-file rustfmt, and diff checks
   passed. No sanitizer was run.
 
+### Increment 339 — owned new-session group prefix (2026-09-23)
+
+- `cmd_new_session_exec` now keeps its optional generated-name prefix as a
+  local `Option<CString>`. Existing session/group names are copied without
+  changing their bytes; a validated new group uses the same UTF-8 escaping
+  as `clean_name(group, 0)`. `session_create` borrows the prefix only for
+  synchronous name formatting. Removed all three C allocations and the two
+  terminal prefix frees; the optional null argument remains distinct from
+  an empty prefix.
+- Added `scripts/new_session_prefix_owner_cli_checks.py` to compare plain,
+  existing-group, and escaped new-group generated session names, plus an
+  invalid UTF-8 group error, against the pinned baseline. Full workspace
+  tests, binary build, changed-file rustfmt, and diff checks passed. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

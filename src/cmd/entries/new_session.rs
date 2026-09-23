@@ -89,6 +89,7 @@ use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
 pub use crate::src::shared::tree::RB_NEGINF;
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
+use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 pub use crate::src::shared::window::{
     window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
@@ -96,8 +97,10 @@ pub use crate::src::shared::window::{
 };
 use crate::src::spawn::spawn_window;
 use crate::src::tmux::{check_name, clean_name, global_s_options};
+use crate::src::utf8::utf8_stravis_cstring;
 use crate::src::window::winlinks_minmax;
 use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -200,7 +203,7 @@ unsafe extern "C" fn cmd_new_session_exec(
     let mut ename: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut wname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut sname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut prefix: Option<CString> = None;
     let mut detached: ::core::ffi::c_int = 0;
     let mut already_attached: ::core::ffi::c_int = 0;
     let mut is_control: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -336,10 +339,10 @@ unsafe extern "C" fn cmd_new_session_exec(
                         sg = session_group_contains(groupwith);
                     }
                     if !sg.is_null() {
-                        prefix = xstrdup((*sg).name);
+                        prefix = Some(CStr::from_ptr((*sg).name).to_owned());
                         current_block = 6717214610478484138;
                     } else if !groupwith.is_null() {
-                        prefix = xstrdup((*groupwith).name);
+                        prefix = Some(CStr::from_ptr((*groupwith).name).to_owned());
                         current_block = 6717214610478484138;
                     } else if check_name(group) == 0 {
                         cmdq_error(
@@ -350,7 +353,10 @@ unsafe extern "C" fn cmd_new_session_exec(
                         );
                         current_block = 5193972633326621385;
                     } else {
-                        prefix = clean_name(group, 0 as ::core::ffi::c_int);
+                        prefix = Some(utf8_stravis_cstring(
+                            group,
+                            VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
+                        ));
                         current_block = 6717214610478484138;
                     }
                 } else {
@@ -617,7 +623,15 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                             av = args_next_value(av);
                                                         }
                                                         s = session_create(
-                                                            prefix, sname, cwd, env, oo, tiop,
+                                                            prefix.as_ref().map_or(
+                                                                ::core::ptr::null(),
+                                                                |name| name.as_ptr(),
+                                                            ),
+                                                            sname,
+                                                            cwd,
+                                                            env,
+                                                            oo,
+                                                            tiop,
                                                         );
                                                         sc.item = item;
                                                         sc.s = s;
@@ -794,9 +808,6 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                             free(cwd as *mut ::core::ffi::c_void);
                                                             free(wname as *mut ::core::ffi::c_void);
                                                             free(sname as *mut ::core::ffi::c_void);
-                                                            free(
-                                                                prefix as *mut ::core::ffi::c_void,
-                                                            );
                                                             return CMD_RETURN_NORMAL;
                                                         }
                                                     }
@@ -819,6 +830,5 @@ unsafe extern "C" fn cmd_new_session_exec(
     free(cwd as *mut ::core::ffi::c_void);
     free(wname as *mut ::core::ffi::c_void);
     free(sname as *mut ::core::ffi::c_void);
-    free(prefix as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }
