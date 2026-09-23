@@ -40,8 +40,9 @@ pub struct args {
 }
 
 #[repr(C)]
-/// Linked flag values are Box-owned by `args`; positional values live in a
-/// separate movable C array and retain their payload-only cleanup path.
+/// Flag values are Box-owned by their entry's Rust value collection; positional
+/// values live in a separate movable C array and retain their payload-only
+/// cleanup path.
 pub struct args_value {
     pub type_0: args_type,
     pub c2rust_unnamed: args_value_c2rust_unnamed,
@@ -52,8 +53,10 @@ pub struct args_value {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct args_value_entry {
-    pub tqe_next: *mut args_value,
-    pub tqe_prev: *mut *mut args_value,
+    /// Owner collection used by args_next_value; this is not a neighbor link.
+    pub owner: *mut args_values_storage,
+    /// Stable position in the owner's append-only value collection.
+    pub index: usize,
 }
 
 #[derive(Copy, Clone)]
@@ -98,9 +101,18 @@ pub struct args_entry_entry {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// ABI-sized head view for an argument entry's flag values. The head stores a
+/// first-element view and owns the collection through its storage pointer.
 pub struct args_values {
-    pub tqh_first: *mut args_value,
-    pub tqh_last: *mut *mut args_value,
+    pub first: *mut args_value,
+    pub storage: *mut args_values_storage,
+}
+
+/// Owns stable flag-value allocations for one args_entry. The enclosing C
+/// layout keeps the same two pointer-sized head slots.
+#[derive(Default)]
+pub struct args_values_storage {
+    pub(crate) values: Vec<Box<args_value>>,
 }
 
 pub type args_parse_cb = Option<

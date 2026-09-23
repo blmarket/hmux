@@ -15,7 +15,7 @@ pub use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
     args, args_entry, args_entry_entry, args_parse, args_parse_cb, args_tree, args_tree_storage,
-    args_value, args_value_c2rust_unnamed, args_value_entry, args_values,
+    args_value, args_value_c2rust_unnamed, args_value_entry, args_values, args_values_storage,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -225,8 +225,8 @@ mod args_tree_tests {
         Box::into_raw(Box::new(args_entry {
             flag,
             values: args_values {
-                tqh_first: ::core::ptr::null_mut::<args_value>(),
-                tqh_last: ::core::ptr::null_mut::<*mut args_value>(),
+                first: ::core::ptr::null_mut::<args_value>(),
+                storage: ::core::ptr::null_mut::<args_values_storage>(),
             },
             count: 0,
             flags: 0,
@@ -293,18 +293,50 @@ unsafe extern "C" fn args_find(args: *mut args, flag: u_char) -> *mut args_entry
     args_tree_find(&raw mut (*args).tree, flag)
 }
 
+unsafe fn args_values_owner(entry: *mut args_entry) -> *mut args_values_storage {
+    if entry.is_null() {
+        return ::core::ptr::null_mut::<args_values_storage>();
+    }
+    (*entry).values.storage
+}
+
+unsafe fn args_values_ensure_owner(entry: *mut args_entry) -> *mut args_values_storage {
+    let mut owner = args_values_owner(entry);
+    if owner.is_null() {
+        owner = Box::into_raw(Box::new(args_values_storage::default()));
+        (*entry).values.first = ::core::ptr::null_mut::<args_value>();
+        (*entry).values.storage = owner;
+    }
+    owner
+}
+
+unsafe fn args_value_at(entry: *mut args_entry, index: usize) -> *mut args_value {
+    let owner = args_values_owner(entry);
+    if owner.is_null() {
+        return ::core::ptr::null_mut::<args_value>();
+    }
+    (&(*owner).values)
+        .get(index)
+        .map(|value| (&**value as *const args_value).cast_mut())
+        .unwrap_or(::core::ptr::null_mut::<args_value>())
+}
+
+unsafe fn args_value_count(entry: *mut args_entry) -> usize {
+    let owner = args_values_owner(entry);
+    if owner.is_null() {
+        0
+    } else {
+        (*owner).values.len()
+    }
+}
+
 unsafe fn args_last_value(args: *mut args, flag: u_char) -> Option<*mut args_value> {
     let entry = args_find(args, flag);
     if entry.is_null() {
         return None;
     }
-    let mut value = (*entry).values.tqh_first;
-    let mut last = None;
-    while !value.is_null() {
-        last = Some(value);
-        value = (*value).entry.tqe_next;
-    }
-    last
+    let count = args_value_count(entry);
+    (count != 0).then(|| args_value_at(entry, count - 1))
 }
 
 unsafe fn args_last_string(args: *mut args, flag: u_char) -> Option<*const ::core::ffi::c_char> {
@@ -751,7 +783,7 @@ pub unsafe extern "C" fn args_copy(
     new_args = args_create();
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() {
-        if (*entry).values.tqh_first.is_null() {
+        if args_value_count(entry) == 0 {
             i = 0 as u_int;
             while i < (*entry).count {
                 args_set(
@@ -763,12 +795,12 @@ pub unsafe extern "C" fn args_copy(
                 i = i.wrapping_add(1);
             }
         } else {
-            value = (*entry).values.tqh_first;
+            value = args_value_at(entry, 0);
             while !value.is_null() {
                 new_value = args_new_flag_value();
                 args_copy_copy_value(new_value, value, argc, argv);
                 args_set(new_args, (*entry).flag, new_value, 0 as ::core::ffi::c_int);
-                value = (*value).entry.tqe_next;
+                value = args_next_value(value);
             }
         }
         entry = args_tree_next(&raw mut (*args).tree, entry);
@@ -815,8 +847,6 @@ pub unsafe extern "C" fn args_free_values(mut values: *mut args_value, mut count
 pub unsafe extern "C" fn args_free(mut args: *mut args) {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut entry1: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut value1: *mut args_value = ::core::ptr::null_mut::<args_value>();
     // The C-layout cached fields borrow strings in ArgsOwner. Clear those
     // pointers before args_free_value handles any independently C-owned cache.
     let owner = &mut *args.cast::<ArgsOwner>();
@@ -835,20 +865,12 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         1 as ::core::ffi::c_int != 0
     } {
         args_tree_remove(&raw mut (*args).tree, entry);
-        value = (*entry).values.tqh_first;
-        while !value.is_null() && {
-            value1 = (*value).entry.tqe_next;
-            1 as ::core::ffi::c_int != 0
-        } {
-            if !(*value).entry.tqe_next.is_null() {
-                (*(*value).entry.tqe_next).entry.tqe_prev = (*value).entry.tqe_prev;
-            } else {
-                (*entry).values.tqh_last = (*value).entry.tqe_prev;
+        let values_owner = args_values_owner(entry);
+        if !values_owner.is_null() {
+            let mut values_owner = Box::from_raw(values_owner);
+            for value in values_owner.values.iter_mut() {
+                args_free_value((&mut **value) as *mut args_value);
             }
-            *(*value).entry.tqe_prev = (*value).entry.tqe_next;
-            args_free_value(value);
-            drop(Box::from_raw(value));
-            value = value1;
         }
         drop(Box::from_raw(entry));
         entry = entry1;
@@ -997,7 +1019,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() {
         if !((*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0) {
-            if (*entry).values.tqh_first.is_null() {
+            if args_value_count(entry) == 0 {
                 if buf.is_empty() {
                     args_print_add(&mut buf, b"-\0" as *const u8 as *const ::core::ffi::c_char);
                 }
@@ -1031,8 +1053,8 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
                 );
             }
             last = entry;
-        } else if !(*entry).values.tqh_first.is_null() {
-            value = (*entry).values.tqh_first;
+        } else if args_value_count(entry) != 0 {
+            value = args_value_at(entry, 0);
             while !value.is_null() {
                 if !buf.is_empty() {
                     args_print_add(
@@ -1048,7 +1070,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
                     );
                 }
                 args_print_add_value(&mut buf, value);
-                value = (*value).entry.tqe_next;
+                value = args_next_value(value);
             }
             last = entry;
         }
@@ -1155,8 +1177,9 @@ pub unsafe extern "C" fn args_set(
         (*entry).flag = flag;
         (*entry).count = 1 as u_int;
         (*entry).flags = flags;
-        (*entry).values.tqh_first = ::core::ptr::null_mut::<args_value>();
-        (*entry).values.tqh_last = &raw mut (*entry).values.tqh_first;
+        (*entry).values.first = ::core::ptr::null_mut::<args_value>();
+        let values_owner = Box::into_raw(Box::new(args_values_storage::default()));
+        (*entry).values.storage = values_owner;
         args_tree_insert(&raw mut (*args).tree, entry);
     } else {
         (*entry).count = (*entry).count.wrapping_add(1);
@@ -1165,10 +1188,15 @@ pub unsafe extern "C" fn args_set(
         && (*value).type_0 as ::core::ffi::c_uint
             != ARGS_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        (*value).entry.tqe_next = ::core::ptr::null_mut::<args_value>();
-        (*value).entry.tqe_prev = (*entry).values.tqh_last;
-        *(*entry).values.tqh_last = value;
-        (*entry).values.tqh_last = &raw mut (*value).entry.tqe_next;
+        let values_owner = args_values_ensure_owner(entry);
+        let mut boxed_value = Box::from_raw(value);
+        let index = (*values_owner).values.len();
+        boxed_value.entry.owner = values_owner;
+        boxed_value.entry.index = index;
+        if index == 0 {
+            (*entry).values.first = value;
+        }
+        (*values_owner).values.push(boxed_value);
     } else {
         if !value.is_null() {
             drop(Box::from_raw(value));
@@ -1185,12 +1213,11 @@ pub unsafe extern "C" fn args_get(
     if entry.is_null() {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    if (*entry).values.tqh_first.is_null() {
+    let value = args_last_value(args, flag);
+    if value.is_none() {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    return (**(*((*entry).values.tqh_last as *mut args_values)).tqh_last)
-        .c2rust_unnamed
-        .string;
+    return (*value.unwrap()).c2rust_unnamed.string;
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_first(
@@ -1490,11 +1517,18 @@ pub unsafe extern "C" fn args_first_value(
     if entry.is_null() {
         return ::core::ptr::null_mut::<args_value>();
     }
-    return (*entry).values.tqh_first;
+    return args_value_at(entry, 0);
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_next_value(mut value: *mut args_value) -> *mut args_value {
-    return (*value).entry.tqe_next;
+    if value.is_null() || (*value).entry.owner.is_null() {
+        return ::core::ptr::null_mut::<args_value>();
+    }
+    let next_index = (*value).entry.index.saturating_add(1);
+    return (&(*(*value).entry.owner).values)
+        .get(next_index)
+        .map(|next| (&**next as *const args_value).cast_mut())
+        .unwrap_or(::core::ptr::null_mut::<args_value>());
 }
 
 fn strtonum_error(errstr: *const ::core::ffi::c_char) -> ArgumentValueError {

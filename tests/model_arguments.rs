@@ -1327,87 +1327,87 @@ fn original_copies_match() {
     record!(
         "src/arguments.rs::C2RustUnnamed_11",
         hmux2::src::arguments::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/client.rs::C2RustUnnamed_48",
         hmux2::src::client::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd.rs::C2RustUnnamed_36",
         hmux2::src::cmd::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_bind_key.rs::C2RustUnnamed_36",
         hmux2::src::cmd_bind_key::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_display_menu.rs::C2RustUnnamed_35",
         hmux2::src::cmd_display_menu::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_find_window.rs::C2RustUnnamed_35",
         hmux2::src::cmd_find_window::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_new_session.rs::C2RustUnnamed_37",
         hmux2::src::cmd_new_session::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_new_window.rs::C2RustUnnamed_35",
         hmux2::src::cmd_new_window::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_parse.rs::C2RustUnnamed_37",
         hmux2::src::cmd_parse::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_queue.rs::C2RustUnnamed_37",
         hmux2::src::cmd_queue::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_refresh_client.rs::C2RustUnnamed_35",
         hmux2::src::cmd_refresh_client::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_respawn_pane.rs::C2RustUnnamed_35",
         hmux2::src::cmd_respawn_pane::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_respawn_window.rs::C2RustUnnamed_35",
         hmux2::src::cmd_respawn_window::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/cmd_split_window.rs::C2RustUnnamed_35",
         hmux2::src::cmd_split_window::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/server_client.rs::C2RustUnnamed_38",
         hmux2::src::server_client::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/window_copy.rs::C2RustUnnamed_38",
         hmux2::src::window_copy::args_value_entry,
-        [tqe_next, tqe_prev]
+        [owner, index]
     );
     record!(
         "src/arguments.rs::args_values",
         hmux2::src::arguments::args_values,
-        [tqh_first, tqh_last]
+        [first, storage]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-arguments.txt"));

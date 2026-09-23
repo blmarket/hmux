@@ -3,8 +3,8 @@ use std::mem::size_of;
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_copy, args_create, args_escape, args_first_value, args_free, args_free_values, args_has,
-    args_next_value, args_parse as parse_args, args_percentage_result, args_print,
+    args_copy, args_create, args_escape, args_first_value, args_free, args_free_values, args_get,
+    args_has, args_next_value, args_parse as parse_args, args_percentage_result, args_print,
     args_push_positional, args_set, args_string, args_string_percentage_and_expand_result,
     args_strtonum, args_strtonum_and_expand_result, args_strtonum_result, parse_number,
     parse_percentage, ArgumentValueError,
@@ -236,6 +236,36 @@ fn repeated_flags_keep_order_and_numeric_helpers_use_the_last_value() {
         );
         assert_eq!(args_strtonum_result(args, b'v', 0, 100), Ok(34));
         assert_eq!(args_percentage_result(args, b'v', 0, 100, 100), Ok(34));
+        args_free(args);
+    }
+}
+
+#[test]
+fn flag_value_collection_keeps_addresses_stable_and_returns_the_last_value() {
+    unsafe {
+        let args = args_create();
+        let first_text = cstring("first");
+        args_set(args, b'n', string_value(first_text.as_c_str()), 0);
+        let first = args_first_value(args, b'n');
+
+        for index in 1..512 {
+            let text = CString::new(index.to_string()).unwrap();
+            args_set(args, b'n', string_value(text.as_c_str()), 0);
+        }
+
+        assert_eq!(args_first_value(args, b'n'), first);
+        assert_eq!(
+            CStr::from_ptr((*first).c2rust_unnamed.string).to_bytes(),
+            b"first"
+        );
+
+        let mut value = first;
+        for _ in 0..512 {
+            assert!(!value.is_null());
+            value = args_next_value(value);
+        }
+        assert!(value.is_null());
+        assert_eq!(CStr::from_ptr(args_get(args, b'n')).to_bytes(), b"511");
         args_free(args);
     }
 }
