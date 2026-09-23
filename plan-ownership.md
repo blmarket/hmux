@@ -641,6 +641,19 @@ legacy callers safe.
   rendered its item title, and right-clicking the preview rendered the
   empty-title generic menu. No sanitizer was run.
 
+### Increment 172 — mode-tree preview label scratch (2026-09-22)
+
+- `mode_tree_draw` now builds its preview-box label in a local byte-preserving
+  `CString`, removing the sorted and unsorted `xasprintf` branches and their
+  matching free. The label is borrowed for width checks and synchronous
+  `screen_write_puts`, then dropped at the former free point before the
+  preview callback. Sort order, reversed marker, optional view name, and
+  glibc null `%s` rendering are preserved.
+- The library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. The new attached-client `mode_tree_preview_label_cli_checks.py`
+  passed with baseline and migrated binaries for sorted, reversed, and
+  unsorted preview labels. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -651,10 +664,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `mode_tree_draw` in `src/mode_tree.rs` formats a preview-box label from
-   item name, sort mode, and optional view name, then frees it after
-   synchronous drawing. Audit both formatting branches and own the label
-   bytes locally without changing width or display order.
+1. `mode_tree_draw` also formats each tree row with `%*s%s%s` into a local
+   C allocation, draws it synchronously, then frees it. A byte-preserving
+   `CString` could own each row after preserving signed field-width padding
+   and the drawing callback order.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual

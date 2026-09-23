@@ -1036,6 +1036,14 @@ pub unsafe extern "C" fn mode_tree_remove(
     }
     mode_tree_free_item(mti);
 }
+unsafe fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: *const ::core::ffi::c_char) {
+    if value.is_null() {
+        bytes.extend_from_slice(b"(null)");
+    } else {
+        bytes.extend_from_slice(CStr::from_ptr(value).to_bytes());
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     let mut wp: *mut window_pane = (*mtd).wp;
@@ -1479,41 +1487,27 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 &raw mut box_gc,
                 ::core::ptr::null::<::core::ffi::c_char>(),
             );
+            let mut label_bytes = b" ".to_vec();
+            mode_tree_append_printf_string(&mut label_bytes, (*mti).name);
             if !(*mtd).sort_crit.order_seq.is_null() {
-                xasprintf(
-                    &raw mut text,
-                    b" %s (sort: %s%s)%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*mti).name,
+                label_bytes.extend_from_slice(b" (sort: ");
+                mode_tree_append_printf_string(
+                    &mut label_bytes,
                     sort_order_to_string((*mtd).sort_crit.order),
-                    if (*mtd).sort_crit.reversed != 0 {
-                        b", reversed\0" as *const u8 as *const ::core::ffi::c_char
-                    } else {
-                        b"\0" as *const u8 as *const ::core::ffi::c_char
-                    },
-                    if (*mtd).view_name.is_null() {
-                        b"\0" as *const u8 as *const ::core::ffi::c_char
-                    } else {
-                        b" (view: \0" as *const u8 as *const ::core::ffi::c_char
-                    },
-                    if (*mtd).view_name.is_null() {
-                        b"\0" as *const u8 as *const ::core::ffi::c_char
-                    } else {
-                        (*mtd).view_name
-                    },
-                    if (*mtd).view_name.is_null() {
-                        b"\0" as *const u8 as *const ::core::ffi::c_char
-                    } else {
-                        b")\0" as *const u8 as *const ::core::ffi::c_char
-                    },
                 );
-            } else {
-                xasprintf(
-                    &raw mut text,
-                    b" %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*mti).name,
-                );
+                if (*mtd).sort_crit.reversed != 0 {
+                    label_bytes.extend_from_slice(b", reversed");
+                }
+                label_bytes.push(b')');
+                if !(*mtd).view_name.is_null() {
+                    label_bytes.extend_from_slice(b" (view: ");
+                    mode_tree_append_printf_string(&mut label_bytes, (*mtd).view_name);
+                    label_bytes.push(b')');
+                }
             }
-            if w.wrapping_sub(2 as u_int) as size_t >= strlen(text) {
+            let label = CString::new(label_bytes).expect("preview label contains no NUL");
+            let label_len = label.as_bytes().len() as size_t;
+            if w.wrapping_sub(2 as u_int) as size_t >= label_len {
                 screen_write_cursormove(
                     &raw mut ctx,
                     1 as ::core::ffi::c_int,
@@ -1524,7 +1518,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     &raw mut ctx,
                     &raw mut box_gc,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    text,
+                    label.as_ptr(),
                 );
                 if (*mtd).no_matches != 0 {
                     n = (::core::mem::size_of::<[::core::ffi::c_char; 11]>() as usize)
@@ -1535,7 +1529,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 }
                 if !(*mtd).filter.is_null()
                     && w.wrapping_sub(2 as u_int) as size_t
-                        >= strlen(text)
+                        >= label_len
                             .wrapping_add(10 as size_t)
                             .wrapping_add(n)
                             .wrapping_add(2 as size_t)
@@ -1571,7 +1565,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     );
                 }
             }
-            free(text as *mut ::core::ffi::c_void);
+            drop(label);
             box_x = w.wrapping_sub(4 as u_int);
             box_y = sy.wrapping_sub(h).wrapping_sub(2 as u_int);
             if box_x != 0 as u_int && box_y != 0 as u_int {
