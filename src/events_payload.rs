@@ -76,8 +76,8 @@ use crate::src::window::{
     window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
     window_remove_ref, winlink_find_by_index,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmemdup, xstrdup, xvasprintf_cstring};
-use std::ffi::CString;
+use crate::src::xmalloc::{xcalloc, xmemdup, xstrdup, xvasprintf_cstring};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -741,63 +741,49 @@ pub unsafe extern "C" fn event_payload_add_formats(
     mut prefix: *const ::core::ffi::c_char,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if prefix.is_null() {
         prefix = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
+    let prefix = CStr::from_ptr(prefix).to_bytes();
     epi = event_payload_tree_minmax(&raw mut (*ep).items, -1);
     while !epi.is_null() {
-        key = (*epi).name;
+        let key = (*epi).name;
         if !(*key as ::core::ffi::c_int == '_' as i32) {
-            value = event_payload_item_print(epi);
-            xasprintf(
-                &raw mut name,
-                b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-                prefix,
-                key,
-            );
+            let value = event_payload_item_print(epi);
+            let key_bytes = CStr::from_ptr(key).to_bytes();
+            let mut name_bytes = Vec::with_capacity(prefix.len() + key_bytes.len());
+            name_bytes.extend_from_slice(prefix);
+            name_bytes.extend_from_slice(key_bytes);
+            let name = CString::new(name_bytes).expect("C string parts contain no NUL");
+            // format_add copies the key into its format entry before returning.
             format_add(
                 ft,
-                name,
+                name.as_ptr(),
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 value,
             );
-            free(name as *mut ::core::ffi::c_void);
             free(value as *mut ::core::ffi::c_void);
-            if (*epi).type_0 as ::core::ffi::c_uint
+            let named = if (*epi).type_0 as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                xasprintf(
-                    &raw mut name,
-                    b"%s%s_name\0" as *const u8 as *const ::core::ffi::c_char,
-                    prefix,
-                    key,
-                );
-                format_add(
-                    ft,
-                    name,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*(*epi).c2rust_unnamed.session).name,
-                );
-                free(name as *mut ::core::ffi::c_void);
+                Some((*(*epi).c2rust_unnamed.session).name)
             } else if (*epi).type_0 as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                xasprintf(
-                    &raw mut name,
-                    b"%s%s_name\0" as *const u8 as *const ::core::ffi::c_char,
-                    prefix,
-                    key,
-                );
+                Some((*(*epi).c2rust_unnamed.window).name)
+            } else {
+                None
+            };
+            if let Some(named) = named {
+                let mut suffixed = name.as_bytes().to_vec();
+                suffixed.extend_from_slice(b"_name");
+                let suffixed = CString::new(suffixed).expect("C string parts contain no NUL");
                 format_add(
                     ft,
-                    name,
+                    suffixed.as_ptr(),
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*(*epi).c2rust_unnamed.window).name,
+                    named,
                 );
-                free(name as *mut ::core::ffi::c_void);
             }
         }
         epi = event_payload_tree_next(epi);

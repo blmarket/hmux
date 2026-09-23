@@ -425,6 +425,19 @@ legacy callers safe.
   and new binaries for empty grouped/ungrouped sessions, clients on both
   group members and an outsider, and detach. No sanitizer was run.
 
+### Increment 156 — event payload format keys (2026-09-22)
+
+- `event_payload_add_formats` now owns its `prefix + key` and optional
+  `_name` format keys in local, byte-preserving `CString`s. Removed the three
+  `xasprintf` allocation/free pairs. `format_add` copies each key into its
+  format entry synchronously; the separate C-owned
+  `event_payload_item_print` result keeps its existing free.
+- Isolated library/binary build, focused event-payload unit test,
+  changed-file rustfmt, and `git diff --check` passed. New
+  `scripts/event_payload_formats_cli_checks.py` passed with old and new
+  binaries for window-renamed and session-created hook formats, including
+  `_name` keys and a Unicode window name. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -463,9 +476,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–155. The remaining
+Current validation is recorded in increments 15–156. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–155 has its own local commit; none was pushed.
+Each of increments 15–156 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -605,3 +618,8 @@ rustfmt, and `git diff --check` passed on main. A private-socket scenario
 created a split pane and second window and entered `choose-tree`; the
 attached-client entry/exit check was run in increment 153's isolated
 validation. No combined sanitizer was run.
+After increments 154–156 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, session-group-list, grouped-attached-list, and event-payload hook CLI
+checks, changed-file rustfmt, and `git diff --check` passed on main. No
+combined sanitizer was run.
