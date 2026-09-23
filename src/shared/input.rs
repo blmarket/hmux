@@ -45,6 +45,8 @@ pub struct input_ctx {
     pub last: utf8_data,
     pub state: *const input_state,
     pub flags: ::core::ffi::c_int,
+    // Opaque handle to the request collection owned by InputCtxOwner. The
+    // second pointer preserves the translated C record's size and alignment.
     pub requests: input_requests,
     pub request_count: u_int,
     pub request_timer: event,
@@ -62,29 +64,15 @@ pub struct input_request {
     pub end: input_end_type,
     pub idx: ::core::ffi::c_int,
     pub data: *mut ::core::ffi::c_void,
-    pub entry: input_request_entry,
-    pub centry: input_request_centry,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct input_requests {
-    pub tqh_first: *mut input_request,
-    pub tqh_last: *mut *mut input_request,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct input_request_centry {
-    pub tqe_next: *mut input_request,
-    pub tqe_prev: *mut *mut input_request,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct input_request_entry {
-    pub tqe_next: *mut input_request,
-    pub tqe_prev: *mut *mut input_request,
+    /// Points at the collection held by the input or client owner.
+    pub collection: *mut ::core::ffi::c_void,
+    /// Retained to preserve the translated record's size and alignment.
+    pub reserved: *mut ::core::ffi::c_void,
 }
 
 pub type input_end_type = ::core::ffi::c_uint;

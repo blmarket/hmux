@@ -7,7 +7,7 @@ use crate::src::ffi::libc::{
     __ctype_b_loc, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol, strtoul,
 };
 use crate::src::ffi::resolv::__b64_pton;
-use crate::src::input::input_request_reply;
+use crate::src::input::{input_client_has_requests, input_request_reply};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_debug, log_get_level};
 use crate::src::options::{options_array_getv, options_get, options_get_number};
@@ -2213,7 +2213,7 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     if (*tty).flags & (TTY_WAITFG | TTY_WAITBG) != 0
                         || (*tty).flags & (TTY_OSC52QUERY | TTY_WINSIZEQUERY) != 0
                         || (*tty).flags & TTY_ALL_REQUEST_FLAGS != TTY_ALL_REQUEST_FLAGS
-                        || !(*c).input_requests.tqh_first.is_null()
+                        || input_client_has_requests(c)
                     {
                         log_debug(
                             b"%s: increasing delay (active query)\0" as *const u8

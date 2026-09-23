@@ -150,6 +150,7 @@ struct ClientOwner {
     saved_status_screen: Option<Box<screen>>,
     term_cap_strings: Vec<CString>,
     term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
+    input_request_handles: Vec<*mut input_request>,
     tty_range: visible_range,
 }
 
@@ -354,6 +355,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -397,6 +399,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -436,6 +439,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -476,6 +480,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -515,6 +520,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -554,6 +560,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -593,6 +600,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -635,6 +643,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -680,6 +689,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -719,6 +729,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -758,6 +769,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -797,6 +809,7 @@ mod client_message_owner_tests {
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
+                input_request_handles: Vec::new(),
                 tty_range: visible_range { px: 0, nx: 0 },
             });
             let c = &raw mut owner.node;
@@ -1189,7 +1202,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
-    c = &raw mut (*Box::into_raw(Box::new(ClientOwner {
+    let owner = Box::into_raw(Box::new(ClientOwner {
         node: std::mem::zeroed::<client>(),
         message: None,
         ttyname: None,
@@ -1206,9 +1219,11 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         saved_status_screen: None,
         term_cap_strings: Vec::new(),
         term_cap_ptrs: Vec::new(),
+        input_request_handles: Vec::new(),
         tty_range: visible_range { px: 0, nx: 0 },
-    })))
-    .node;
+    }));
+    c = &raw mut (*owner).node;
+    (*c).input_requests.collection = &mut (*owner).input_request_handles as *mut _ as *mut _;
     (*c).references = 1 as ::core::ffi::c_int;
     (*c).peer = proc_add_peer(
         server_proc,
@@ -1290,8 +1305,6 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         c as *mut ::core::ffi::c_void,
     );
     (*c).click_wp = -(1 as ::core::ffi::c_int);
-    (*c).input_requests.tqh_first = ::core::ptr::null_mut::<input_request>();
-    (*c).input_requests.tqh_last = &raw mut (*c).input_requests.tqh_first;
     (*c).entry.tqe_next = ::core::ptr::null_mut::<client>();
     (*c).entry.tqe_prev = clients.tqh_last;
     *clients.tqh_last = c;

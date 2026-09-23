@@ -1033,7 +1033,7 @@ fn original_copies_match() {
     record!(
         "src/input.rs::input_request",
         hmux2::src::input::input_request,
-        [c, ictx, type_0, t, end, idx, data, entry, centry]
+        [c, ictx, type_0, t, end, idx, data]
     );
     record!(
         "src/input_keys.rs::input_request",
@@ -1251,614 +1251,604 @@ fn original_copies_match() {
         []
     );
     record!(
-        "src/input.rs::C2RustUnnamed_30",
-        hmux2::src::input::input_request_centry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/input.rs::C2RustUnnamed_31",
-        hmux2::src::input::input_request_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
         "src/alerts.rs::input_requests",
         hmux2::src::alerts::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/arguments.rs::input_requests",
         hmux2::src::arguments::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cfg.rs::input_requests",
         hmux2::src::cfg::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/client.rs::input_requests",
         hmux2::src::client::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd.rs::input_requests",
         hmux2::src::cmd::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_attach_session.rs::input_requests",
         hmux2::src::cmd_attach_session::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_bind_key.rs::input_requests",
         hmux2::src::cmd_bind_key::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_break_pane.rs::input_requests",
         hmux2::src::cmd_break_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_capture_pane.rs::input_requests",
         hmux2::src::cmd_capture_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_choose_tree.rs::input_requests",
         hmux2::src::cmd_choose_tree::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_command_prompt.rs::input_requests",
         hmux2::src::cmd_command_prompt::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_confirm_before.rs::input_requests",
         hmux2::src::cmd_confirm_before::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_copy_mode.rs::input_requests",
         hmux2::src::cmd_copy_mode::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_detach_client.rs::input_requests",
         hmux2::src::cmd_detach_client::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_display_menu.rs::input_requests",
         hmux2::src::cmd_display_menu::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_display_message.rs::input_requests",
         hmux2::src::cmd_display_message::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_find.rs::input_requests",
         hmux2::src::cmd_find::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_find_window.rs::input_requests",
         hmux2::src::cmd_find_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_if_shell.rs::input_requests",
         hmux2::src::cmd_if_shell::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_join_pane.rs::input_requests",
         hmux2::src::cmd_join_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_kill_pane.rs::input_requests",
         hmux2::src::cmd_kill_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_kill_session.rs::input_requests",
         hmux2::src::cmd_kill_session::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_kill_window.rs::input_requests",
         hmux2::src::cmd_kill_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_list_buffers.rs::input_requests",
         hmux2::src::cmd_list_buffers::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_list_clients.rs::input_requests",
         hmux2::src::cmd_list_clients::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_list_commands.rs::input_requests",
         hmux2::src::cmd_list_commands::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_list_keys.rs::input_requests",
         hmux2::src::cmd_list_keys::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_list_panes.rs::input_requests",
         hmux2::src::cmd_list_panes::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_list_sessions.rs::input_requests",
         hmux2::src::cmd_list_sessions::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_list_windows.rs::input_requests",
         hmux2::src::cmd_list_windows::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_load_buffer.rs::input_requests",
         hmux2::src::cmd_load_buffer::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_lock_server.rs::input_requests",
         hmux2::src::cmd_lock_server::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_move_window.rs::input_requests",
         hmux2::src::cmd_move_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_new_session.rs::input_requests",
         hmux2::src::cmd_new_session::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_new_window.rs::input_requests",
         hmux2::src::cmd_new_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_parse.rs::input_requests",
         hmux2::src::cmd_parse::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_paste_buffer.rs::input_requests",
         hmux2::src::cmd_paste_buffer::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_pipe_pane.rs::input_requests",
         hmux2::src::cmd_pipe_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_queue.rs::input_requests",
         hmux2::src::cmd_queue::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_refresh_client.rs::input_requests",
         hmux2::src::cmd_refresh_client::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_rename_session.rs::input_requests",
         hmux2::src::cmd_rename_session::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_rename_window.rs::input_requests",
         hmux2::src::cmd_rename_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_resize_pane.rs::input_requests",
         hmux2::src::cmd_resize_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_resize_window.rs::input_requests",
         hmux2::src::cmd_resize_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_respawn_pane.rs::input_requests",
         hmux2::src::cmd_respawn_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_respawn_window.rs::input_requests",
         hmux2::src::cmd_respawn_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_rotate_window.rs::input_requests",
         hmux2::src::cmd_rotate_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_run_shell.rs::input_requests",
         hmux2::src::cmd_run_shell::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_save_buffer.rs::input_requests",
         hmux2::src::cmd_save_buffer::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_select_layout.rs::input_requests",
         hmux2::src::cmd_select_layout::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_select_pane.rs::input_requests",
         hmux2::src::cmd_select_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_select_window.rs::input_requests",
         hmux2::src::cmd_select_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_send_keys.rs::input_requests",
         hmux2::src::cmd_send_keys::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_server_access.rs::input_requests",
         hmux2::src::cmd_server_access::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_set_buffer.rs::input_requests",
         hmux2::src::cmd_set_buffer::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_set_environment.rs::input_requests",
         hmux2::src::cmd_set_environment::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_set_option.rs::input_requests",
         hmux2::src::cmd_set_option::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_show_environment.rs::input_requests",
         hmux2::src::cmd_show_environment::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_show_messages.rs::input_requests",
         hmux2::src::cmd_show_messages::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_show_options.rs::input_requests",
         hmux2::src::cmd_show_options::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_source_file.rs::input_requests",
         hmux2::src::cmd_source_file::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_split_window.rs::input_requests",
         hmux2::src::cmd_split_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_swap_pane.rs::input_requests",
         hmux2::src::cmd_swap_pane::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_swap_window.rs::input_requests",
         hmux2::src::cmd_swap_window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_switch_client.rs::input_requests",
         hmux2::src::cmd_switch_client::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/cmd_wait_for.rs::input_requests",
         hmux2::src::cmd_wait_for::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/colour.rs::input_requests",
         hmux2::src::colour::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/control.rs::input_requests",
         hmux2::src::control::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/control_notify.rs::input_requests",
         hmux2::src::control_notify::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/environ.rs::input_requests",
         hmux2::src::environ::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/events.rs::input_requests",
         hmux2::src::events::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/events_payload.rs::input_requests",
         hmux2::src::events_payload::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/file.rs::input_requests",
         hmux2::src::file::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/format.rs::input_requests",
         hmux2::src::format::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/format_draw.rs::input_requests",
         hmux2::src::format_draw::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/hooks.rs::input_requests",
         hmux2::src::hooks::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/input.rs::input_requests",
         hmux2::src::input::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/input_keys.rs::input_requests",
         hmux2::src::input_keys::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/job.rs::input_requests",
         hmux2::src::job::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/key_bindings.rs::input_requests",
         hmux2::src::key_bindings::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/layout.rs::input_requests",
         hmux2::src::layout::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/layout_custom.rs::input_requests",
         hmux2::src::layout_custom::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/layout_set.rs::input_requests",
         hmux2::src::layout_set::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/menu.rs::input_requests",
         hmux2::src::menu::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/mode_tree.rs::input_requests",
         hmux2::src::mode_tree::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/monitor.rs::input_requests",
         hmux2::src::monitor::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/names.rs::input_requests",
         hmux2::src::names::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/options.rs::input_requests",
         hmux2::src::options::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/popup.rs::input_requests",
         hmux2::src::popup::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/prompt.rs::input_requests",
         hmux2::src::prompt::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/resize.rs::input_requests",
         hmux2::src::resize::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/screen.rs::input_requests",
         hmux2::src::screen::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/screen_redraw.rs::input_requests",
         hmux2::src::screen_redraw::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/screen_write.rs::input_requests",
         hmux2::src::screen_write::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/server.rs::input_requests",
         hmux2::src::server::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/server_acl.rs::input_requests",
         hmux2::src::server_acl::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/server_client.rs::input_requests",
         hmux2::src::server_client::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/server_fn.rs::input_requests",
         hmux2::src::server_fn::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/session.rs::input_requests",
         hmux2::src::session::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/sort.rs::input_requests",
         hmux2::src::sort::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/spawn.rs::input_requests",
         hmux2::src::spawn::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/status.rs::input_requests",
         hmux2::src::status::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/style.rs::input_requests",
         hmux2::src::style::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/tty.rs::input_requests",
         hmux2::src::tty::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/tty_acs.rs::input_requests",
         hmux2::src::tty_acs::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/tty_draw.rs::input_requests",
         hmux2::src::tty_draw::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/tty_features.rs::input_requests",
         hmux2::src::tty_features::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/tty_keys.rs::input_requests",
         hmux2::src::tty_keys::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/tty_term.rs::input_requests",
         hmux2::src::tty_term::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window.rs::input_requests",
         hmux2::src::window::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_border.rs::input_requests",
         hmux2::src::window_border::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_buffer.rs::input_requests",
         hmux2::src::window_buffer::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_client.rs::input_requests",
         hmux2::src::window_client::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_clock.rs::input_requests",
         hmux2::src::window_clock::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_copy.rs::input_requests",
         hmux2::src::window_copy::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_customize.rs::input_requests",
         hmux2::src::window_customize::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_panes.rs::input_requests",
         hmux2::src::window_panes::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_switch.rs::input_requests",
         hmux2::src::window_switch::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_tree.rs::input_requests",
         hmux2::src::window_tree::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/window_visible.rs::input_requests",
         hmux2::src::window_visible::input_requests,
-        [tqh_first, tqh_last]
+        [collection, reserved]
     );
     record!(
         "src/input.rs::input_state",

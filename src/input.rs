@@ -63,6 +63,7 @@ use crate::src::window::{
     window_update_activity,
 };
 use crate::src::xmalloc::{xmalloc, xsnprintf, xvasprintf_cstring};
+use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::abi::__compar_fn_t;
@@ -92,8 +93,7 @@ pub use crate::src::shared::hyperlinks::hyperlinks;
 pub use crate::src::shared::input::input_request_type;
 pub use crate::src::shared::input::{
     input_cell, input_ctx, input_end_type, input_param, input_param_c2rust_unnamed,
-    input_param_type_0, input_request, input_request_centry, input_request_entry, input_requests,
-    input_state, input_transition,
+    input_param_type_0, input_request, input_requests, input_state, input_transition,
 };
 pub use crate::src::shared::input::{
     INPUT_BUF_DEFAULT_SIZE, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
@@ -167,6 +167,7 @@ pub const INPUT_END_ST: input_end_type = 0;
 #[repr(C)]
 struct InputCtxOwner {
     ctx: input_ctx,
+    requests: VecDeque<Box<InputRequestOwner>>,
     buffer: Vec<u8>,
     param_strings: [Option<CString>; 24],
 }
@@ -176,11 +177,16 @@ impl InputCtxOwner {
     fn new() -> *mut input_ctx {
         let mut owner = Box::new(Self {
             ctx: unsafe { ::core::mem::zeroed() },
+            requests: VecDeque::new(),
             buffer: vec![0; INPUT_BUF_START as usize],
             param_strings: std::array::from_fn(|_| None),
         });
         owner.sync_buffer();
-        Box::into_raw(owner).cast()
+        let owner = Box::into_raw(owner);
+        unsafe {
+            (*owner).ctx.requests.collection = &mut (*owner).requests as *mut _ as *mut _;
+        }
+        owner.cast::<input_ctx>()
     }
 
     fn sync_buffer(&mut self) {
@@ -268,9 +274,9 @@ mod input_buffer_ownership_tests {
     }
 }
 
-// Every request variant is allocated through input_make_request. The public
-// intrusive-list node stays at a stable address; queued replies borrow bytes
-// from the owner until input_free_request removes and drops the node.
+// InputCtxOwner owns each boxed request in collection order. The public
+// request stays at a stable address as the VecDeque grows, and queued replies
+// borrow bytes from this owner until input_free_request removes and drops it.
 #[repr(C)]
 struct InputRequestOwner {
     request: input_request,
@@ -279,12 +285,11 @@ struct InputRequestOwner {
 const _: () = assert!(::core::mem::offset_of!(InputRequestOwner, request) == 0);
 
 impl InputRequestOwner {
-    fn new() -> *mut input_request {
-        Box::into_raw(Box::new(Self {
+    fn new() -> Box<Self> {
+        Box::new(Self {
             request: unsafe { ::core::mem::zeroed() },
             reply: None,
-        }))
-        .cast()
+        })
     }
 
     unsafe fn set_reply(ir: *mut input_request, reply: CString) {
@@ -292,6 +297,31 @@ impl InputRequestOwner {
         owner.request.data = reply.as_ptr() as *mut ::core::ffi::c_void;
         owner.reply = Some(reply);
     }
+}
+
+unsafe fn input_ctx_requests<'a>(ictx: *mut input_ctx) -> &'a mut VecDeque<Box<InputRequestOwner>> {
+    &mut *(*ictx)
+        .requests
+        .collection
+        .cast::<VecDeque<Box<InputRequestOwner>>>()
+}
+
+unsafe fn input_client_requests<'a>(c: *mut client) -> &'a mut Vec<*mut input_request> {
+    &mut *(*c)
+        .input_requests
+        .collection
+        .cast::<Vec<*mut input_request>>()
+}
+
+unsafe fn input_ctx_request_handles(ictx: *mut input_ctx) -> Vec<*mut input_request> {
+    input_ctx_requests(ictx)
+        .iter_mut()
+        .map(|owner| &mut owner.request as *mut input_request)
+        .collect()
+}
+
+pub(crate) unsafe fn input_client_has_requests(c: *mut client) -> bool {
+    !input_client_requests(c).is_empty()
 }
 
 #[cfg(test)]
@@ -302,25 +332,28 @@ mod input_request_ownership_tests {
     #[test]
     fn queued_reply_survives_earlier_request_removal() {
         unsafe {
-            let mut ictx: input_ctx = ::core::mem::zeroed();
-            ictx.requests.tqh_last = &raw mut ictx.requests.tqh_first;
+            let ictx = InputCtxOwner::new();
+            let mut client_requests: Vec<*mut input_request> = Vec::new();
+            let mut c: client = ::core::mem::zeroed();
+            c.input_requests.collection = &mut client_requests as *mut _ as *mut _;
 
             // Seed one pending nonqueue request without starting a timer.
-            let pending = InputRequestOwner::new();
-            (*pending).ictx = &raw mut ictx;
+            let mut pending_owner = InputRequestOwner::new();
+            let pending = &mut pending_owner.request as *mut input_request;
+            (*pending).ictx = ictx;
+            (*pending).c = &mut c;
             (*pending).type_0 = INPUT_REQUEST_PALETTE;
-            (*pending).entry.tqe_prev = ictx.requests.tqh_last;
-            *ictx.requests.tqh_last = pending;
-            ictx.requests.tqh_last = &raw mut (*pending).entry.tqe_next;
-            ictx.request_count = 1;
+            input_ctx_requests(ictx).push_back(pending_owner);
+            input_client_requests(&mut c).push(pending);
+            (*ictx).request_count = 1;
 
             input_reply(
-                &raw mut ictx,
+                ictx,
                 1,
                 b"reply:%s\0".as_ptr().cast(),
                 b"\xff\xfe\0".as_ptr().cast::<::core::ffi::c_char>(),
             );
-            let queued = (*pending).entry.tqe_next;
+            let queued = *input_ctx_request_handles(ictx).last().unwrap();
             assert_eq!((*queued).type_0, INPUT_REQUEST_QUEUE);
             assert_eq!(
                 CStr::from_ptr((*queued).data.cast()).to_bytes(),
@@ -328,25 +361,56 @@ mod input_request_ownership_tests {
             );
 
             input_free_request(pending);
-            assert_eq!(ictx.requests.tqh_first, queued);
+            assert_eq!(input_ctx_request_handles(ictx), vec![queued]);
+            assert_eq!(input_client_requests(&mut c), &[]);
             assert_eq!(
                 CStr::from_ptr((*queued).data.cast()).to_bytes(),
                 b"reply:\xff\xfe"
             );
             input_free_request(queued);
-            assert!(ictx.requests.tqh_first.is_null());
-            assert_eq!(ictx.request_count, 0);
+            assert!(input_ctx_requests(ictx).is_empty());
+            assert_eq!((*ictx).request_count, 0);
+            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
         }
     }
 
     #[test]
     fn reply_without_pending_request_does_not_queue() {
         unsafe {
-            let mut ictx: input_ctx = ::core::mem::zeroed();
-            ictx.requests.tqh_last = &raw mut ictx.requests.tqh_first;
-            input_reply(&raw mut ictx, 1, b"\x1b[0n\0".as_ptr().cast());
-            assert!(ictx.requests.tqh_first.is_null());
-            assert_eq!(ictx.request_count, 0);
+            let ictx = InputCtxOwner::new();
+            input_reply(ictx, 1, b"\x1b[0n\0".as_ptr().cast());
+            assert!(input_ctx_requests(ictx).is_empty());
+            assert_eq!((*ictx).request_count, 0);
+            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+        }
+    }
+
+    #[test]
+    fn cancelling_client_drops_its_requests_from_the_input_owner() {
+        unsafe {
+            let ictx = InputCtxOwner::new();
+            let mut client_requests: Vec<*mut input_request> = Vec::new();
+            let mut c: client = ::core::mem::zeroed();
+            c.input_requests.collection = &mut client_requests as *mut _ as *mut _;
+
+            for type_0 in [INPUT_REQUEST_PALETTE, INPUT_REQUEST_CLIPBOARD] {
+                let mut owner = InputRequestOwner::new();
+                let ir = &mut owner.request as *mut input_request;
+                (*ir).ictx = ictx;
+                (*ir).c = &mut c;
+                (*ir).type_0 = type_0;
+                input_ctx_requests(ictx).push_back(owner);
+                input_client_requests(&mut c).push(ir);
+                (*ictx).request_count += 1;
+            }
+
+            assert!(input_client_has_requests(&mut c));
+            input_cancel_requests(&mut c);
+
+            assert!(!input_client_has_requests(&mut c));
+            assert!(input_ctx_requests(ictx).is_empty());
+            assert_eq!((*ictx).request_count, 0);
+            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
         }
     }
 }
@@ -2397,8 +2461,6 @@ pub unsafe extern "C" fn input_init(
         ),
         ictx as *mut ::core::ffi::c_void,
     );
-    (*ictx).requests.tqh_first = ::core::ptr::null_mut::<input_request>();
-    (*ictx).requests.tqh_last = &raw mut (*ictx).requests.tqh_first;
     event_set(
         &raw mut (*ictx).request_timer,
         -(1 as ::core::ffi::c_int),
@@ -2418,16 +2480,15 @@ pub unsafe extern "C" fn input_init(
 }
 #[no_mangle]
 pub unsafe extern "C" fn input_free(mut ictx: *mut input_ctx) {
-    let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut ir1: *mut input_request = ::core::ptr::null_mut::<input_request>();
     input_clear_param_strings(ictx);
-    ir = (*ictx).requests.tqh_first;
-    while !ir.is_null() && {
-        ir1 = (*ir).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
+    loop {
+        let ir = input_ctx_requests(ictx)
+            .front_mut()
+            .map(|owner| &mut owner.request as *mut input_request);
+        let Some(ir) = ir else {
+            break;
+        };
         input_free_request(ir);
-        ir = ir1;
     }
     event_del(&raw mut (*ictx).request_timer);
     evbuffer_free((*ictx).since_ground);
@@ -2735,7 +2796,7 @@ unsafe extern "C" fn input_reply(
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();
     let reply = xvasprintf_cstring(fmt, ap);
-    if add != 0 && !(*ictx).requests.tqh_first.is_null() {
+    if add != 0 && !input_ctx_requests(ictx).is_empty() {
         ir = input_make_request(ictx, INPUT_REQUEST_QUEUE);
         InputRequestOwner::set_reply(ir, reply);
     } else {
@@ -6066,14 +6127,16 @@ unsafe extern "C" fn input_request_timer_callback(
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut ictx: *mut input_ctx = arg as *mut input_ctx;
-    let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut ir1: *mut input_request = ::core::ptr::null_mut::<input_request>();
     let mut t: uint64_t = get_timer();
-    ir = (*ictx).requests.tqh_first;
-    while !ir.is_null() && {
-        ir1 = (*ir).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
+    for ir in input_ctx_request_handles(ictx) {
+        // Sending a queued reply can reenter input processing. Confirm that
+        // this stable handle still belongs to the owner before dereferencing.
+        if !input_ctx_requests(ictx)
+            .iter()
+            .any(|owner| std::ptr::eq(&owner.request, ir))
+        {
+            continue;
+        }
         if !((*ir).t >= t.wrapping_sub(INPUT_REQUEST_TIMEOUT as uint64_t)) {
             if (*ir).type_0 as ::core::ffi::c_uint
                 == INPUT_REQUEST_QUEUE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -6082,7 +6145,6 @@ unsafe extern "C" fn input_request_timer_callback(
             }
             input_free_request(ir);
         }
-        ir = ir1;
     }
     if (*ictx).request_count != 0 as u_int {
         input_start_request_timer(ictx);
@@ -6100,8 +6162,8 @@ unsafe extern "C" fn input_make_request(
     mut ictx: *mut input_ctx,
     mut type_0: input_request_type,
 ) -> *mut input_request {
-    let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    ir = InputRequestOwner::new();
+    let mut owner = InputRequestOwner::new();
+    let ir = &mut owner.request as *mut input_request;
     (*ir).type_0 = type_0;
     (*ir).ictx = ictx;
     (*ir).t = get_timer();
@@ -6109,30 +6171,26 @@ unsafe extern "C" fn input_make_request(
     if (*ictx).request_count == 1 as u_int {
         input_start_request_timer(ictx);
     }
-    (*ir).entry.tqe_next = ::core::ptr::null_mut::<input_request>();
-    (*ir).entry.tqe_prev = (*ictx).requests.tqh_last;
-    *(*ictx).requests.tqh_last = ir;
-    (*ictx).requests.tqh_last = &raw mut (*ir).entry.tqe_next;
+    input_ctx_requests(ictx).push_back(owner);
     return ir;
 }
 unsafe extern "C" fn input_free_request(mut ir: *mut input_request) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
     if !(*ir).c.is_null() {
-        if !(*ir).centry.tqe_next.is_null() {
-            (*(*ir).centry.tqe_next).centry.tqe_prev = (*ir).centry.tqe_prev;
-        } else {
-            (*(*ir).c).input_requests.tqh_last = (*ir).centry.tqe_prev;
-        }
-        *(*ir).centry.tqe_prev = (*ir).centry.tqe_next;
+        let c_requests = input_client_requests((*ir).c);
+        let index = c_requests
+            .iter()
+            .position(|request| *request == ir)
+            .expect("request missing from its client handle collection");
+        c_requests.remove(index);
     }
     (*ictx).request_count = (*ictx).request_count.wrapping_sub(1);
-    if !(*ir).entry.tqe_next.is_null() {
-        (*(*ir).entry.tqe_next).entry.tqe_prev = (*ir).entry.tqe_prev;
-    } else {
-        (*ictx).requests.tqh_last = (*ir).entry.tqe_prev;
-    }
-    *(*ir).entry.tqe_prev = (*ir).entry.tqe_next;
-    drop(Box::from_raw(ir.cast::<InputRequestOwner>()));
+    let requests = input_ctx_requests(ictx);
+    let index = requests
+        .iter()
+        .position(|owner| std::ptr::eq(&owner.request, ir))
+        .expect("request missing from its input context owner");
+    drop(requests.remove(index).unwrap());
 }
 unsafe extern "C" fn input_add_request(
     mut ictx: *mut input_ctx,
@@ -6178,10 +6236,7 @@ unsafe extern "C" fn input_add_request(
     (*ir).c = c;
     (*ir).idx = idx;
     (*ir).end = (*ictx).input_end;
-    (*ir).centry.tqe_next = ::core::ptr::null_mut::<input_request>();
-    (*ir).centry.tqe_prev = (*c).input_requests.tqh_last;
-    *(*c).input_requests.tqh_last = ir;
-    (*c).input_requests.tqh_last = &raw mut (*ir).centry.tqe_next;
+    input_client_requests(c).push(ir);
     match type_0 as ::core::ffi::c_uint {
         0 => {
             xsnprintf(
@@ -6261,16 +6316,10 @@ pub unsafe extern "C" fn input_request_reply(
     mut type_0: input_request_type,
     mut data: *mut ::core::ffi::c_void,
 ) {
-    let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut ir1: *mut input_request = ::core::ptr::null_mut::<input_request>();
     let mut found: *mut input_request = ::core::ptr::null_mut::<input_request>();
     let mut pd: *mut input_request_palette_data = data as *mut input_request_palette_data;
     let mut complete: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    ir = (*c).input_requests.tqh_first;
-    while !ir.is_null() && {
-        ir1 = (*ir).centry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
+    for ir in input_client_requests(c).clone() {
         if (*ir).type_0 as ::core::ffi::c_uint != type_0 as ::core::ffi::c_uint {
             input_free_request(ir);
         } else if type_0 as ::core::ffi::c_uint
@@ -6288,16 +6337,17 @@ pub unsafe extern "C" fn input_request_reply(
             found = ir;
             break;
         }
-        ir = ir1;
     }
     if found.is_null() {
         return;
     }
-    ir = (*(*found).ictx).requests.tqh_first;
-    while !ir.is_null() && {
-        ir1 = (*ir).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
+    for ir in input_ctx_request_handles((*found).ictx) {
+        if !input_ctx_requests((*found).ictx)
+            .iter()
+            .any(|owner| std::ptr::eq(&owner.request, ir))
+        {
+            continue;
+        }
         if complete != 0
             && (*ir).type_0 as ::core::ffi::c_uint
                 != INPUT_REQUEST_QUEUE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -6321,20 +6371,12 @@ pub unsafe extern "C" fn input_request_reply(
             complete = 1 as ::core::ffi::c_int;
         }
         input_free_request(ir);
-        ir = ir1;
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn input_cancel_requests(mut c: *mut client) {
-    let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut ir1: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    ir = (*c).input_requests.tqh_first;
-    while !ir.is_null() && {
-        ir1 = (*ir).centry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
+    for ir in input_client_requests(c).clone() {
         input_free_request(ir);
-        ir = ir1;
     }
 }
 unsafe extern "C" fn input_report_current_theme(mut ictx: *mut input_ctx) {
