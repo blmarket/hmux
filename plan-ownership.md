@@ -125,11 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window.name` has a bounded owner in the new `WindowOwned` box, but its
-   writers span spawn, break-pane, explicit rename, automatic rename, and
-   terminal title updates. Audit each returned C allocation and synchronous
-   rename notification before changing the public borrowed name pointer;
-   callbacks need the previous name alive through delivery.
+1. `session.cwd` has one creator, one attach-session replacement, and one
+   teardown free. `SessionOwner` can hold an `Option<CString>` while public
+   `session.cwd` borrows it. Preserve its early clear in `session_destroy`;
+   `format_single` returns a C-owned attach path that must be copied before
+   its producer allocation is freed. Check `#{session_path}` and new-window
+   cwd after initial `-c` and attach-session `-c`.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -631,6 +632,24 @@ libc allocation on success and leaves it with the caller on error, so a local
   a failed selection followed by `select-layout -o` and passed with both
   candidate and pinned 3.8-rc baseline. Changed-file rustfmt and diff checks
   passed. No sanitizer ran.
+
+### Increment 386 — owned window name (2026-09-23)
+
+- `WindowOwned` now owns `window.name` as a `CString`; the public pointer
+  borrows it until replacement or destruction. Spawn copies explicit name
+  bytes directly into the owner. Default-name and `clean_name` producers
+  still return C allocations, which are copied and libc-freed at the
+  producer boundary. Removed the manual name frees in spawn, break-pane,
+  explicit rename, and window destruction. `window_set_name` computes its
+  cleaned name before replacing the old one to preserve aliasing, and keeps
+  the previous owner alive through synchronous rename callbacks.
+- The reentrant rename test now constructs a private `WindowOwned` fixture;
+  its former bare public-window fixture could not represent this invariant.
+  Serialized workspace tests and binary build passed. A new CLI comparison
+  against pinned 3.8-rc covers explicit rename, named and default spawn,
+  named and default break-pane, and pane terminal rename. Event payload,
+  waiter, and command-stringify CLI comparisons also passed. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

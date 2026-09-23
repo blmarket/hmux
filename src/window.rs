@@ -1292,6 +1292,7 @@ pub unsafe extern "C" fn window_update_activity(mut w: *mut window) {
 struct WindowOwned {
     node: window,
     old_layout: Option<CString>,
+    name: CString,
 }
 
 const _: () = assert!(::core::mem::offset_of!(WindowOwned, node) == 0);
@@ -1307,6 +1308,24 @@ pub(crate) unsafe fn window_replace_old_layout(
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr() as *mut _);
     previous
+}
+
+/// `window.name` borrows the current CString until the next replacement.
+pub(crate) unsafe fn window_replace_name(w: *mut window, name: CString) -> CString {
+    let owner = w.cast::<WindowOwned>();
+    let previous = ::core::mem::replace(&mut (*owner).name, name);
+    (*w).name = (*owner).name.as_ptr() as *mut _;
+    previous
+}
+
+/// C producers return libc-owned strings; copy before releasing that storage.
+pub(crate) unsafe fn window_replace_name_from_c_owned(
+    w: *mut window,
+    raw_name: *mut ::core::ffi::c_char,
+) -> CString {
+    let name = CStr::from_ptr(raw_name).to_owned();
+    free(raw_name.cast());
+    window_replace_name(w, name)
 }
 
 #[no_mangle]
@@ -1326,8 +1345,9 @@ pub unsafe extern "C" fn window_create(
     w = Box::into_raw(Box::new(WindowOwned {
         node: ::core::mem::zeroed::<window>(),
         old_layout: None,
+        name: CString::new("").expect("empty window name has no NUL"),
     })) as *mut window;
-    (*w).name = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+    (*w).name = (*w.cast::<WindowOwned>()).name.as_ptr() as *mut _;
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes.tqh_first = ::core::ptr::null_mut::<window_pane>();
     (*w).panes.tqh_last = &raw mut (*w).panes.tqh_first;
@@ -1398,7 +1418,6 @@ unsafe extern "C" fn window_destroy(mut w: *mut window) {
         event_del(&raw mut (*w).offset_timer);
     }
     options_free((*w).options);
-    free((*w).name as *mut ::core::ffi::c_void);
     drop(Box::from_raw(w.cast::<WindowOwned>()));
 }
 #[no_mangle]
@@ -1498,11 +1517,8 @@ pub unsafe extern "C" fn window_set_name(
 ) {
     let name = clean_name(new_name, untrusted);
     if !name.is_null() {
-        // window_create initializes name; keep the old bytes alive through the
-        // synchronous rename notification, including reentrant callbacks.
-        let last = CStr::from_ptr((*w).name).to_owned();
-        free((*w).name as *mut ::core::ffi::c_void);
-        (*w).name = name;
+        // Keep the previous owner alive across synchronous rename callbacks.
+        let last = window_replace_name_from_c_owned(w, name);
         window_fire_renamed(w, last.as_ptr());
     }
 }
@@ -5073,4 +5089,80 @@ pub unsafe extern "C" fn window_pane_is_floating(mut wp: *mut window_pane) -> ::
         return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+    use crate::src::events::{events_add_sink, events_remove_sink};
+    use crate::src::events_payload::event_payload_get_string;
+    use crate::src::shared::events::event_payload;
+    use std::ffi::{c_char, c_void, CStr};
+
+    struct RenameState {
+        window: *mut window,
+        events: Vec<(Vec<u8>, Vec<u8>)>,
+        reenter: bool,
+    }
+
+    unsafe extern "C" fn on_rename(
+        _: *const c_char,
+        payload: *mut event_payload,
+        data: *mut c_void,
+    ) {
+        let state = data.cast::<RenameState>();
+        let old = CStr::from_ptr(event_payload_get_string(payload, c"old_name".as_ptr()))
+            .to_bytes()
+            .to_vec();
+        let new = CStr::from_ptr(event_payload_get_string(payload, c"new_name".as_ptr()))
+            .to_bytes()
+            .to_vec();
+        (*state).events.push((old, new));
+        if (*state).reenter {
+            (*state).reenter = false;
+            window_set_name((*state).window, c"inner".as_ptr(), 0);
+        }
+    }
+
+    #[test]
+    fn rename_keeps_old_name_through_reentrant_notification() {
+        unsafe {
+            // Only the rename owner is relevant here; an extra reference
+            // prevents the sessionless fixture from reaching window_destroy.
+            let mut owner = WindowOwned {
+                node: std::mem::zeroed(),
+                old_layout: None,
+                name: CString::new("before").unwrap(),
+            };
+            let w = &raw mut owner.node;
+            (*w).name = owner.name.as_ptr() as *mut _;
+            (*w).references = 1;
+            let mut state = RenameState {
+                window: w,
+                events: Vec::new(),
+                reenter: true,
+            };
+            let sink = events_add_sink(
+                c"window-renamed".as_ptr(),
+                Some(on_rename),
+                (&raw mut state).cast(),
+            );
+
+            window_set_name(w, c"outer".as_ptr(), 0);
+            assert_eq!(
+                state.events,
+                vec![
+                    (b"before".to_vec(), b"outer".to_vec()),
+                    (b"outer".to_vec(), b"inner".to_vec()),
+                ]
+            );
+            assert_eq!(CStr::from_ptr((*w).name), c"inner");
+            assert_eq!((*w).references, 1);
+
+            window_set_name(w, c"\xff".as_ptr(), 0);
+            assert_eq!(CStr::from_ptr((*w).name), c"inner");
+            assert_eq!(state.events.len(), 2);
+            events_remove_sink(sink);
+        }
+    }
 }

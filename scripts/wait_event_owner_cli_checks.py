@@ -44,6 +44,7 @@ def trace(binary):
 
         try:
             run("new-session", "-d", "-s", "event-owner", "sleep 30")
+            run("rename-window", "-t", "event-owner:0", "initial")
             filtered = start_waiter("-F", "0", "-v")
             filtered_name = clients(1)[0]
             accepted = start_waiter("-F", "1", "-v")

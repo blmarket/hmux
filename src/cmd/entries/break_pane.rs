@@ -85,8 +85,8 @@ use crate::src::tmux::{check_name, clean_name};
 use crate::src::window::{
     window_add_ref, window_count_panes, window_create, window_fire_pane_moved,
     window_get_pane_lines, window_lost_pane, window_pane_is_floating, window_remove_ref,
-    window_set_active_pane, window_set_name, winlink_find_by_index, winlink_find_by_window,
-    winlink_shuffle_up,
+    window_replace_name_from_c_owned, window_set_active_pane, window_set_name,
+    winlink_find_by_index, winlink_find_by_window, winlink_shuffle_up,
 };
 use crate::src::window_border::window_set_fill_cells;
 
@@ -331,11 +331,13 @@ unsafe extern "C" fn cmd_break_pane_exec(
         (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
         (*w).active = wp;
         (*w).latest = tc as *mut ::core::ffi::c_void;
-        free((*w).name as *mut ::core::ffi::c_void);
         if name.is_null() {
-            (*w).name = default_window_name(w);
+            drop(window_replace_name_from_c_owned(w, default_window_name(w)));
         } else {
-            (*w).name = clean_name(name, 0 as ::core::ffi::c_int);
+            drop(window_replace_name_from_c_owned(
+                w,
+                clean_name(name, 0 as ::core::ffi::c_int),
+            ));
             options_set_number(
                 (*w).options,
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,

@@ -43,11 +43,11 @@ use crate::src::window::{
     window_add_pane, window_create, window_destroy_panes, window_pane_index,
     window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
     window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_remove_pane,
-    window_set_active_pane, winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window,
-    winlink_stack_remove,
+    window_replace_name, window_replace_name_from_c_owned, window_set_active_pane, winlink_add,
+    winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xasprintf, xsnprintf};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -451,11 +451,13 @@ pub unsafe extern "C" fn spawn_window(
         return ::core::ptr::null_mut::<winlink>();
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 {
-        free((*w).name as *mut ::core::ffi::c_void);
         if (*sc).name.is_null() {
-            (*w).name = default_window_name(w);
+            drop(window_replace_name_from_c_owned(w, default_window_name(w)));
         } else {
-            (*w).name = xstrdup((*sc).name);
+            drop(window_replace_name(
+                w,
+                CStr::from_ptr((*sc).name).to_owned(),
+            ));
             options_set_number(
                 (*w).options,
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
