@@ -25,7 +25,7 @@ use crate::src::layout::{
     layout_assign_pane, layout_close_pane, layout_floating_pane, layout_free, layout_init,
 };
 use crate::src::log::{log_close, log_debug};
-use crate::src::names::default_window_name;
+use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_get_string, options_set_number};
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::bufferevent_free;
@@ -43,8 +43,8 @@ use crate::src::window::{
     window_add_pane, window_create, window_destroy_panes, window_pane_index,
     window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
     window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_remove_pane,
-    window_replace_name, window_replace_name_from_c_owned, window_set_active_pane, winlink_add,
-    winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
+    window_replace_name, window_set_active_pane, winlink_add, winlink_find_by_index,
+    winlink_remove, winlink_set_window, winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::{xasprintf, xsnprintf};
@@ -452,7 +452,7 @@ pub unsafe extern "C" fn spawn_window(
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 {
         if (*sc).name.is_null() {
-            drop(window_replace_name_from_c_owned(w, default_window_name(w)));
+            drop(window_replace_name(w, default_window_name_cstring(w)));
         } else {
             drop(window_replace_name(
                 w,

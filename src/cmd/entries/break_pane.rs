@@ -13,7 +13,7 @@ use crate::src::layout::{
     layout_close_pane, layout_fix_offsets, layout_fix_panes, layout_floating_args_parse,
     layout_init, layout_remove_tile, layout_set_size,
 };
-use crate::src::names::default_window_name;
+use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_set_number, options_set_parent};
 use crate::src::server_client::server_client_remove_pane;
 use crate::src::server_fn::{
@@ -85,8 +85,8 @@ use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::{
     window_add_ref, window_count_panes, window_create, window_fire_pane_moved,
     window_get_pane_lines, window_lost_pane, window_pane_is_floating, window_remove_ref,
-    window_replace_name, window_replace_name_from_c_owned, window_set_active_pane, window_set_name,
-    winlink_find_by_index, winlink_find_by_window, winlink_shuffle_up,
+    window_replace_name, window_set_active_pane, window_set_name, winlink_find_by_index,
+    winlink_find_by_window, winlink_shuffle_up,
 };
 use crate::src::window_border::window_set_fill_cells;
 
@@ -332,7 +332,7 @@ unsafe extern "C" fn cmd_break_pane_exec(
         (*w).active = wp;
         (*w).latest = tc as *mut ::core::ffi::c_void;
         if name.is_null() {
-            drop(window_replace_name_from_c_owned(w, default_window_name(w)));
+            drop(window_replace_name(w, default_window_name_cstring(w)));
         } else {
             let cleaned = clean_name_cstring(std::ffi::CStr::from_ptr(name), 0)
                 .expect("check_name validated the explicit window name");

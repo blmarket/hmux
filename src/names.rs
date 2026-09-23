@@ -69,10 +69,10 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::tmux::clean_name;
+use crate::src::tmux::clean_name_cstring;
 use crate::src::window::window_set_name;
 use crate::src::xmalloc::xstrdup;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -216,15 +216,20 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
     free(name as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
-pub unsafe extern "C" fn default_window_name(mut w: *mut window) -> *mut ::core::ffi::c_char {
+pub unsafe extern "C" fn default_window_name(w: *mut window) -> *mut ::core::ffi::c_char {
+    let name = default_window_name_cstring(w);
+    xstrdup(name.as_ptr())
+}
+
+pub(crate) unsafe fn default_window_name_cstring(w: *mut window) -> CString {
     if (*w).active.is_null() {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        return c"".to_owned();
     }
     let cmd = cmd_stringify_argv_cstring((*(*w).active).argc, (*(*w).active).argv);
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
-        parse_window_name(cmd.as_ptr())
+        parse_window_name_cstring(cmd)
     } else {
-        parse_window_name((*(*w).active).shell)
+        parse_window_name_cstring(CStr::from_ptr((*(*w).active).shell))
     }
 }
 unsafe extern "C" fn format_window_name(mut w: *mut window) -> *mut ::core::ffi::c_char {
@@ -249,13 +254,17 @@ unsafe extern "C" fn format_window_name(mut w: *mut window) -> *mut ::core::ffi:
 }
 #[no_mangle]
 pub unsafe extern "C" fn parse_window_name(
-    mut in_0: *const ::core::ffi::c_char,
+    in_0: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
+    let name = parse_window_name_cstring(CStr::from_ptr(in_0));
+    xstrdup(name.as_ptr())
+}
+
+unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    // Keep the writable copy alive through basename and clean_name, which reads
-    // it synchronously and returns a separate C-owned string.
-    let mut copy = CStr::from_ptr(in_0).to_bytes_with_nul().to_vec();
+    // Keep the writable copy alive through basename and name cleaning.
+    let mut copy = in_0.to_bytes_with_nul().to_vec();
     name = copy.as_mut_ptr().cast();
     if *name as ::core::ffi::c_int == '"' as i32 {
         name = name.offset(1);
@@ -301,10 +310,23 @@ pub unsafe extern "C" fn parse_window_name(
     if *name as ::core::ffi::c_int == '/' as i32 {
         name = __xpg_basename(name);
     }
-    name = clean_name(name, 0 as ::core::ffi::c_int);
-    drop(copy);
-    if name.is_null() {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+    clean_name_cstring(CStr::from_ptr(name), 0).unwrap_or_else(|| c"".to_owned())
+}
+
+#[cfg(test)]
+mod owned_name_tests {
+    use super::*;
+
+    #[test]
+    fn window_without_active_pane_has_empty_owned_and_c_names() {
+        unsafe {
+            // Only the active field is read; keep the fixture out of WindowOwned.
+            let w = std::mem::MaybeUninit::<window>::zeroed();
+            let w = w.as_ptr().cast_mut();
+            assert_eq!(default_window_name_cstring(w), c"");
+            let raw = default_window_name(w);
+            assert_eq!(CStr::from_ptr(raw), c"");
+            crate::src::ffi::libc::free(raw.cast());
+        }
     }
-    return name;
 }

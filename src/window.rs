@@ -1318,16 +1318,6 @@ pub(crate) unsafe fn window_replace_name(w: *mut window, name: CString) -> CStri
     previous
 }
 
-/// C producers return libc-owned strings; copy before releasing that storage.
-pub(crate) unsafe fn window_replace_name_from_c_owned(
-    w: *mut window,
-    raw_name: *mut ::core::ffi::c_char,
-) -> CString {
-    let name = CStr::from_ptr(raw_name).to_owned();
-    free(raw_name.cast());
-    window_replace_name(w, name)
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn window_create(
     mut sx: u_int,

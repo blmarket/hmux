@@ -125,13 +125,7 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `default_window_name` and `parse_window_name` in `src/names.rs` return
-   C-owned results that `spawn_pane` and `break-pane` immediately copy into
-   `WindowOwned.name` and free. Add private `CString` producers using the
-   existing cleaned-name owner, while preserving exported libc-freeable
-   adapters for format callbacks. Compare default names and parser byte
-   behavior with pinned tmux; include quoted/`exec` inputs and missing panes.
-2. Disconnected file-reading clients can leave a waiting command-queue item.
+1. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
    `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
@@ -142,7 +136,15 @@ non-string value.
    Reproduction: keep a `source-file -` or `split-window -d -I` client's
    stdin pipe open, kill that waiting client, and inspect the `-vv` server
    log: `lost client` has no matching `free client` while the server remains
-   responsive. Closing the pipe first hides the issue.
+   responsive. Closing the pipe first hides the issue. Add an E2E that keeps
+   stdin open through client loss and verifies queue/client cleanup before
+   changing teardown. The smallest safe implementation includes the wait
+   owner, callback data, and queue drain together.
+2. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
+   title stack duplicates and transfers title text. `screen` is still a Copy
+   C-layout record, so migrate the title/path/stack lifecycle together only
+   after auditing every by-value copy and embedded screen destruction path.
+   Existing title-stack and OSC 7 CLI checks provide normal-path coverage.
 3. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. These string-return contracts are deferred
@@ -1389,6 +1391,21 @@ name error.
   pinned tmux passed. The CLI now also creates a pane from a non-UTF-8
   relative `-c` value and checks both its start and process cwd. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 437 — own default window names directly (2026-09-23)
+
+- Private `default_window_name_cstring` and `parse_window_name_cstring` now
+  produce the cleaned name as a `CString`. `spawn_window` and `break-pane`
+  transfer it directly to `WindowOwned.name`, removing their C allocation,
+  copy, free, and the obsolete `window_replace_name_from_c_owned` helper.
+  Exported `default_window_name` and `parse_window_name` still return
+  libc-freeable duplicates for out-of-tree and format callback consumers.
+- Serialized workspace tests and binary build passed. Parser API tests and
+  existing window-name and argv CLI comparisons passed. A new exact-byte CLI
+  compared candidate and pinned tmux for default names from spawned windows
+  and broken panes, including quoted paths and invalid UTF-8 argv bytes.
+  A unit test covers the no-active-pane empty result through both APIs.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
