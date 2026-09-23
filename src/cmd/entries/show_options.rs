@@ -82,7 +82,8 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xasprintf, xstrdup};
+use crate::src::xmalloc::xstrdup;
+use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -498,7 +499,6 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
     let mut template: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut target: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tv: timeval = timeval {
         tv_sec: 0 as __time_t,
@@ -518,32 +518,14 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
     if template.is_null() {
         template = SHOW_HOOKS_MONITOR_TEMPLATE.as_ptr();
     }
-    match type_0 as ::core::ffi::c_uint {
-        0 => {
-            target = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-        }
-        1 => {
-            xasprintf(
-                &raw mut target,
-                b"%%%d\0" as *const u8 as *const ::core::ffi::c_char,
-                id,
-            );
-        }
-        2 => {
-            target = xstrdup(b"%*\0" as *const u8 as *const ::core::ffi::c_char);
-        }
-        3 => {
-            xasprintf(
-                &raw mut target,
-                b"@%d\0" as *const u8 as *const ::core::ffi::c_char,
-                id,
-            );
-        }
-        4 => {
-            target = xstrdup(b"@*\0" as *const u8 as *const ::core::ffi::c_char);
-        }
-        _ => {}
-    }
+    let target = match type_0 {
+        MONITOR_SESSION => Some(CString::new("").unwrap()),
+        MONITOR_PANE => Some(CString::new(format!("%{id}")).unwrap()),
+        MONITOR_ALL_PANES => Some(CString::new("%*").unwrap()),
+        MONITOR_WINDOW => Some(CString::new(format!("@{id}")).unwrap()),
+        MONITOR_ALL_WINDOWS => Some(CString::new("@*").unwrap()),
+        _ => None,
+    };
     ft = format_create_from_target(item);
     format_add(
         ft,
@@ -614,7 +596,7 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
         ft,
         b"hook_monitor_target\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        target,
+        target.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
     );
     format_add(
         ft,
@@ -646,7 +628,7 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
         line,
     );
     free(line as *mut ::core::ffi::c_void);
-    free(target as *mut ::core::ffi::c_void);
+    drop(target);
     free(value as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn cmd_show_options_all(

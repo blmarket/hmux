@@ -1493,6 +1493,20 @@ legacy callers safe.
   brackets, plus, and UTF-8 bytes. `git diff --check` passed. No sanitizer run
   was performed.
 
+### Increment 80 — hook-monitor target string (2026-09-22)
+
+- `cmd_show_hooks_print_monitor` now builds its local target as
+  `Option<CString>`, removing three `xstrdup` branches, two `xasprintf`
+  branches, and the matching `free`. `format_add` copies the borrowed string
+  synchronously. The unknown monitor type still passes a null pointer, and
+  the owner drops after `free(line)` and before `free(value)` as before.
+- `cargo check --bin hmux2`, the binary build, and `git diff --check` passed.
+  A live server check exercised `set-hook -B` and `show-hooks -B -F` for
+  session, pane, all panes, window, and all windows targets. No automated E2E
+  test or sanitizer run was added. After both increments, the combined main
+  branch passed `cargo test --workspace --quiet`, `cargo build --bin hmux2
+  --quiet`, and changed-file `rustfmt --check`.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1506,16 +1520,21 @@ non-string value.
 1. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
-   ownership. Revisit when the callback return contract can change.
+   ownership. The migrated `xvasprintf_cstring` callers have no identified
+   user path that emits a middle NUL: `args_print_add`'s `%c` values are
+   validated nonzero option flags, and layout's `%c` values are fixed
+   nonzero characters. A synthetic variadic FFI call could emit one, but it
+   would not be a supported E2E scenario. Revisit the direct caller when the
+   callback return contract can change.
 2. Inspect `window_copy_cellstring`'s extended-cell copy. Remaining `xstrndup`
    callers return or transfer C-owned strings; `window_copy` regex buffers
    grow through a shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–78. The remaining
+Current validation is recorded in increments 15–80. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–78 has its own local commit; none was pushed.
+Each of increments 15–80 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
