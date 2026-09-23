@@ -3136,6 +3136,20 @@ legacy callers safe.
   Full workspace tests, binary build, changed-file rustfmt, and diff checks
   passed. No sanitizer was run.
 
+### Increment 347 — boxed parser command records (2026-09-23)
+
+- The three grammar actions and two argument-vector paths now create
+  `cmd_parse_command` through one boxed constructor, initializing its inline
+  intrusive argument tail at the final address. Normal command teardown
+  consumes the Box after releasing arguments; the empty trailing command
+  path uses the same destructor. `yydestruct` now releases discarded
+  standalone `command` and `commands` values on parser errors, including
+  their nested records. Other grammar semantic variants still have their
+  pre-existing error-path cleanup gaps.
+- Verbose parser, lexer error/recovery, and command-list print CLI checks
+  matched the pinned baseline. Full workspace tests, binary build,
+  changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

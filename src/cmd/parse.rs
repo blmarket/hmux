@@ -108,6 +108,7 @@ pub struct cmd_parse_commands {
     pub tqh_last: *mut *mut cmd_parse_command,
 }
 #[repr(C)]
+/// Box-owned parser command; its argument-list header is inline and stable.
 pub struct cmd_parse_command {
     pub line: u_int,
     pub arguments: cmd_parse_arguments,
@@ -639,9 +640,15 @@ static mut yytranslate: [yytype_int8; 267] = [
     10 as ::core::ffi::c_int as yytype_int8,
     11 as ::core::ffi::c_int as yytype_int8,
 ];
+unsafe fn cmd_parse_new_command(line: u_int) -> *mut cmd_parse_command {
+    let cmd = Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_command>()));
+    (*cmd).line = line;
+    (*cmd).arguments.tqh_last = &raw mut (*cmd).arguments.tqh_first;
+    cmd
+}
 unsafe extern "C" fn cmd_parse_free_command(mut cmd: *mut cmd_parse_command) {
     cmd_parse_free_arguments(&raw mut (*cmd).arguments);
-    free(cmd as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(cmd));
 }
 unsafe extern "C" fn cmd_parse_new_commands() -> *mut cmd_parse_commands {
     let mut cmds: *mut cmd_parse_commands = ::core::ptr::null_mut::<cmd_parse_commands>();
@@ -1769,12 +1776,27 @@ unsafe extern "C" fn yydestruct(
     if yymsg.is_null() {
         yymsg = b"Deleting\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    if yykind == YYSYMBOL_arguments {
-        let args = (*yyvaluep).arguments;
-        if !args.is_null() {
-            cmd_parse_free_arguments(args);
-            drop(Box::from_raw(args));
+    match yykind {
+        YYSYMBOL_arguments => {
+            let args = (*yyvaluep).arguments;
+            if !args.is_null() {
+                cmd_parse_free_arguments(args);
+                drop(Box::from_raw(args));
+            }
         }
+        YYSYMBOL_command => {
+            let cmd = (*yyvaluep).command;
+            if !cmd.is_null() {
+                cmd_parse_free_command(cmd);
+            }
+        }
+        YYSYMBOL_commands => {
+            let cmds = (*yyvaluep).commands;
+            if !cmds.is_null() {
+                cmd_parse_free_commands(cmds);
+            }
+        }
+        _ => {}
     }
 }
 #[no_mangle]
@@ -2598,29 +2620,13 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                         }
                         32 => {
                             let mut ps_11: *mut cmd_parse_state = &raw mut parse_state;
-                            yyval.command = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_command>() as size_t,
-                            ) as *mut cmd_parse_command;
-                            (*yyval.command).line = (*(*ps_11).input).line;
-                            (*yyval.command).arguments.tqh_first =
-                                ::core::ptr::null_mut::<cmd_parse_argument>();
-                            (*yyval.command).arguments.tqh_last =
-                                &raw mut (*yyval.command).arguments.tqh_first;
+                            yyval.command = cmd_parse_new_command((*(*ps_11).input).line);
                         }
                         33 => {
                             let mut ps_12: *mut cmd_parse_state = &raw mut parse_state;
                             let mut arg: *mut cmd_parse_argument =
                                 ::core::ptr::null_mut::<cmd_parse_argument>();
-                            yyval.command = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_command>() as size_t,
-                            ) as *mut cmd_parse_command;
-                            (*yyval.command).line = (*(*ps_12).input).line;
-                            (*yyval.command).arguments.tqh_first =
-                                ::core::ptr::null_mut::<cmd_parse_argument>();
-                            (*yyval.command).arguments.tqh_last =
-                                &raw mut (*yyval.command).arguments.tqh_first;
+                            yyval.command = cmd_parse_new_command((*(*ps_12).input).line);
                             arg = xcalloc(
                                 1 as size_t,
                                 ::core::mem::size_of::<cmd_parse_argument>() as size_t,
@@ -2642,15 +2648,7 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             let mut ps_13: *mut cmd_parse_state = &raw mut parse_state;
                             let mut arg_0: *mut cmd_parse_argument =
                                 ::core::ptr::null_mut::<cmd_parse_argument>();
-                            yyval.command = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_command>() as size_t,
-                            ) as *mut cmd_parse_command;
-                            (*yyval.command).line = (*(*ps_13).input).line;
-                            (*yyval.command).arguments.tqh_first =
-                                ::core::ptr::null_mut::<cmd_parse_argument>();
-                            (*yyval.command).arguments.tqh_last =
-                                &raw mut (*yyval.command).arguments.tqh_first;
+                            yyval.command = cmd_parse_new_command((*(*ps_13).input).line);
                             if !(*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments)
                                 .tqh_first
                                 .is_null()
@@ -3108,13 +3106,7 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
         ::core::mem::size_of::<cmd_parse_result>() as size_t,
     );
     cmds = cmd_parse_new_commands();
-    cmd = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<cmd_parse_command>() as size_t,
-    ) as *mut cmd_parse_command;
-    (*cmd).line = (*pi).line;
-    (*cmd).arguments.tqh_first = ::core::ptr::null_mut::<cmd_parse_argument>();
-    (*cmd).arguments.tqh_last = &raw mut (*cmd).arguments.tqh_first;
+    cmd = cmd_parse_new_command((*pi).line);
     i = 0 as u_int;
     while i < count {
         end = 0 as ::core::ffi::c_int;
@@ -3175,13 +3167,7 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
             (*cmd).entry.tqe_prev = (*cmds).tqh_last;
             *(*cmds).tqh_last = cmd;
             (*cmds).tqh_last = &raw mut (*cmd).entry.tqe_next;
-            cmd = xcalloc(
-                1 as size_t,
-                ::core::mem::size_of::<cmd_parse_command>() as size_t,
-            ) as *mut cmd_parse_command;
-            (*cmd).line = (*pi).line;
-            (*cmd).arguments.tqh_first = ::core::ptr::null_mut::<cmd_parse_argument>();
-            (*cmd).arguments.tqh_last = &raw mut (*cmd).arguments.tqh_first;
+            cmd = cmd_parse_new_command((*pi).line);
         }
         i = i.wrapping_add(1);
     }
@@ -3191,7 +3177,7 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
         *(*cmds).tqh_last = cmd;
         (*cmds).tqh_last = &raw mut (*cmd).entry.tqe_next;
     } else {
-        free(cmd as *mut ::core::ffi::c_void);
+        cmd_parse_free_command(cmd);
     }
     cmd_parse_build_commands(cmds, pi, &raw mut pr);
     cmd_parse_free_commands(cmds);
