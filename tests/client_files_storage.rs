@@ -1,5 +1,43 @@
 use hmux2::src::file::*;
+use hmux2::src::reactor::{event_init, event_loop, shutdown_runtime};
+use std::ffi::{c_char, c_int, c_void};
 use std::ptr::null_mut;
+
+unsafe extern "C" fn count_done(
+    _: *mut client,
+    _: *const c_char,
+    _: c_int,
+    _: c_int,
+    _: *mut hmux2::src::shared::event::evbuffer,
+    data: *mut c_void,
+) {
+    *(data as *mut usize) += 1;
+}
+
+#[test]
+fn terminal_file_completion_is_scheduled_once() {
+    unsafe {
+        shutdown_runtime();
+        event_init();
+        let mut calls = 0_usize;
+        let mut files = client_files { storage: None };
+        let file = file_create_with_peer(
+            null_mut(),
+            &mut files,
+            42,
+            Some(count_done),
+            (&mut calls as *mut usize).cast(),
+        );
+        // Completion and teardown can both arrive before the event runs.
+        file_fire_done(file);
+        file_fire_done(file);
+        event_loop(2);
+        event_loop(2);
+        assert_eq!(calls, 1);
+        assert!(files.storage.is_none());
+        shutdown_runtime();
+    }
+}
 
 #[test]
 fn stream_lookup_order_reference_release_and_double_removal() {

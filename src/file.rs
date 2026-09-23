@@ -157,6 +157,7 @@ struct FileOwner {
     node: client_file,
     path: Option<CString>,
     skipped_done_cleanup: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void)>,
+    terminal_scheduled: bool,
 }
 
 const _: () = assert!(std::mem::offset_of!(FileOwner, node) == 0);
@@ -166,6 +167,7 @@ unsafe fn file_create_owner() -> *mut client_file {
         node: std::mem::zeroed(),
         path: None,
         skipped_done_cleanup: None,
+        terminal_scheduled: false,
     }))
     .cast()
 }
@@ -305,6 +307,14 @@ unsafe extern "C" fn file_fire_done_cb(
 }
 #[no_mangle]
 pub unsafe extern "C" fn file_fire_done(mut cf: *mut client_file) {
+    // The file stays in its stream index until this event runs. A read-done
+    // message and client teardown can both request completion before then.
+    // Only the first event may consume the callback data and free the owner.
+    let owner = &mut *cf.cast::<FileOwner>();
+    if owner.terminal_scheduled {
+        return;
+    }
+    owner.terminal_scheduled = true;
     event_once(
         -(1 as ::core::ffi::c_int),
         EV_TIMEOUT as ::core::ffi::c_short,

@@ -3342,6 +3342,25 @@ legacy callers safe.
   tests, binary build, changed-file rustfmt, and diff checks passed. No
   sanitizer was run.
 
+### Increment 361 — single terminal event per file owner (2026-09-23)
+
+- `FileOwner` now records when its terminal callback has been scheduled.
+  `file_fire_done` queues at most one event while a stream remains indexed,
+  so a read-done message followed by client teardown cannot dispatch a
+  second callback after the first frees the owner and its callback data.
+  The initial file reference continues to keep the owner alive through that
+  one event; no exported layout or callback signature changed.
+- A deterministic reactor test schedules terminal completion twice before
+  dispatch and checks one callback and final index removal. Disconnected
+  client queue draining remains a separate coordinated migration: its wait
+  owners include files, prompts, jobs, timers, wait channels, popup overlays,
+  and pane wait items, and unfired queue callbacks own data that needs a
+  cancellation destructor.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the binary build,
+  the attached-client binary-buffer CLI check against the pinned baseline,
+  changed-file rustfmt, and `git diff --check` passed. Workspace-wide
+  rustfmt still reports unrelated pre-existing formatting differences.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3358,7 +3377,8 @@ non-string value.
    `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
    wait-owner detach hooks, callback-data destruction, and queue draining as
    one coordinated boundary. A closed file may still invoke its normal
-   callback after client loss, and duplicate terminal scheduling needs audit.
+   callback after client loss. Terminal event scheduling is now idempotent;
+   further progress callbacks and terminal error ordering still need audit.
 2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. `ibufq_new`/`ibufq_free` are a small
