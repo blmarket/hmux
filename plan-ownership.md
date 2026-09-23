@@ -1017,6 +1017,19 @@ legacy callers safe.
   with and without login mode, using a UTF-8 shell basename, against the
   pinned baseline. No sanitizer was run.
 
+### Increment 199 — command-completion scratch owner (2026-09-23)
+
+- `prompt_complete_prefix` now returns a `CString` for the bytewise common
+  prefix. `prompt_complete` owns either that prefix or the single-match name
+  plus space and returns `Option<CString>` to its sole caller.
+  `prompt_replace_complete` borrows the pointer only while replacing prompt
+  text; the owner drops on return. Removed the completion `xasprintf`, the
+  prefix `xstrdup` and in-place NUL write, and both completion frees.
+- Library/binary build, `model_prompt` and `remaining_prompt` tests, and
+  attached-client prompt-completion CLI checks passed on candidate and pinned
+  baseline. The source is byte-preserving, including non-UTF-8 command alias
+  bytes. `git diff --check` passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

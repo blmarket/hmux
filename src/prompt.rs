@@ -1496,7 +1496,7 @@ unsafe extern "C" fn prompt_replace_complete(
     mut s: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut word: [::core::ffi::c_char; 64] = [0; 64];
-    let mut allocated: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut allocated: Option<CString> = None;
     let mut size: size_t = 0;
     let mut n: size_t = 0;
     let mut off: size_t = 0;
@@ -1560,10 +1560,10 @@ unsafe extern "C" fn prompt_replace_complete(
             &raw mut word as *mut ::core::ffi::c_char,
             first.offset_from((*pr).buffer) as ::core::ffi::c_long as u_int,
         );
-        if allocated.is_null() {
+        let Some(completion) = allocated.as_ref() else {
             return 0 as ::core::ffi::c_int;
-        }
-        s = allocated;
+        };
+        s = completion.as_ptr();
     }
     n = size
         .wrapping_sub(last.offset_from((*pr).buffer) as ::core::ffi::c_long as size_t)
@@ -1593,7 +1593,6 @@ unsafe extern "C" fn prompt_replace_complete(
     }
     (*pr).index =
         (first.offset_from((*pr).buffer) as ::core::ffi::c_long as size_t).wrapping_add(strlen(s));
-    free(allocated as *mut ::core::ffi::c_void);
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn prompt_forward_word(
@@ -10805,31 +10804,20 @@ unsafe fn prompt_complete_commands(s: *const ::core::ffi::c_char) -> Vec<CString
     }
     return list;
 }
-unsafe fn prompt_complete_prefix(list: &[CString]) -> *mut ::core::ffi::c_char {
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
-    let mut j: size_t = 0;
-    if list.is_empty() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+fn prompt_complete_prefix(list: &[CString]) -> CString {
+    let first = list
+        .first()
+        .expect("completion list is nonempty")
+        .as_bytes();
+    let mut prefix_len = first.len();
+    for name in &list[1..] {
+        prefix_len = first[..prefix_len]
+            .iter()
+            .zip(name.as_bytes())
+            .take_while(|(a, b)| a == b)
+            .count();
     }
-    out = xstrdup(list[0].as_ptr());
-    i = 1 as u_int;
-    while (i as usize) < list.len() {
-        j = 0 as size_t;
-        while *out.offset(j as isize) as ::core::ffi::c_int != '\0' as i32
-            && *list[i as usize].as_ptr().offset(j as isize) as ::core::ffi::c_int != '\0' as i32
-        {
-            if *out.offset(j as isize) as ::core::ffi::c_int
-                != *list[i as usize].as_ptr().offset(j as isize) as ::core::ffi::c_int
-            {
-                break;
-            }
-            j = j.wrapping_add(1);
-        }
-        *out.offset(j as isize) = '\0' as i32 as ::core::ffi::c_char;
-        i = i.wrapping_add(1);
-    }
-    return out;
+    CString::new(&first[..prefix_len]).expect("completion names contain no NUL")
 }
 unsafe extern "C" fn prompt_clear_complete(mut pr: *mut prompt) {
     (*pr).completion.names = Vec::new();
@@ -10845,24 +10833,23 @@ unsafe fn prompt_store_complete(mut pr: *mut prompt, list: Vec<CString>) {
     }
     (*pr).completion.display = Some(CString::new(display).expect("names contain no NUL"));
 }
-unsafe extern "C" fn prompt_complete(
+unsafe fn prompt_complete(
     mut pr: *mut prompt,
     mut word: *const ::core::ffi::c_char,
     mut offset: u_int,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut list: Vec<CString>;
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     if (*pr).type_0 as ::core::ffi::c_uint
         != PROMPT_TYPE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
         || offset != 0 as u_int
         || *word as ::core::ffi::c_int == '\0' as i32
     {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
     list = prompt_complete_commands(word);
     if list.is_empty() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
     list.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
     i = 0 as u_int;
@@ -10874,24 +10861,21 @@ unsafe extern "C" fn prompt_complete(
         );
         i = i.wrapping_add(1);
     }
-    if list.len() == 1 {
-        xasprintf(
-            &raw mut out,
-            b"%s \0" as *const u8 as *const ::core::ffi::c_char,
-            list[0].as_ptr(),
-        );
+    let out = if list.len() == 1 {
+        let mut bytes = list[0].as_bytes().to_vec();
+        bytes.push(b' ');
+        CString::new(bytes).expect("completion name contains no NUL")
     } else {
-        out = prompt_complete_prefix(&list);
+        prompt_complete_prefix(&list)
+    };
+    if strcmp(word, out.as_ptr()) != 0 as ::core::ffi::c_int {
+        return Some(out);
     }
-    if !out.is_null() && strcmp(word, out) == 0 as ::core::ffi::c_int {
-        free(out as *mut ::core::ffi::c_void);
-        out = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    if !out.is_null() || list.len() <= 1 {
-        return out;
+    if list.len() <= 1 {
+        return None;
     }
     prompt_store_complete(pr, list);
-    return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    None
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_type(mut type_0: *const ::core::ffi::c_char) -> prompt_type {
