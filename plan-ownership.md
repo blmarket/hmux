@@ -1594,6 +1594,18 @@ legacy callers safe.
   `scripts/file_path_owner_cli_checks.py` against the pinned baseline passed.
   No sanitizer was run.
 
+### Increment 239 — copy-mode regex string buffer owner (2026-09-23)
+
+- `window_copy_stringify` now appends into a `Vec<u8>` owned by each of its
+  four caller paths. This removes the shared `(buf, size)` `xrealloc` lifecycle
+  and all matching frees. The vector keeps interior NUL bytes and one final
+  terminator; `regexec`, `regcomp`, and cell mapping borrow its pointer only
+  for synchronous calls.
+- The live `copy_regex_cells` test now covers regex searches across wrapped
+  lines in both directions, including wide and multibyte cells. Both focused
+  tests, changed-file rustfmt, diff check, and a pinned-baseline wrapped-line
+  trace passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1604,15 +1616,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_copy_stringify` still grows a raw `(buf, size)` C buffer across
-   wrapped grid lines. Its four caller paths need a complete owner audit,
-   including regex/search consumers and embedded-NUL behavior, before a
-   `Vec<u8>` can replace the shared pointer and size lifecycle.
-2. The command-list cache in `args_value_as_string` is retained in its
+1. The command-list cache in `args_value_as_string` is retained in its
    movable C-layout record. A pointer-keyed sidecar is disallowed by the type
    policy; migrate only with a real record owner that preserves the public
    layout and independent cache storage for copied values.
-3. The only direct `xvasprintf` production caller outside the `xmalloc`
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -1622,14 +1630,14 @@ non-string value.
    `%.*s` formatter. The first-NUL behavior is covered by
    `scripts/window_copy_vadd_owner_cli_checks.py`. Revisit the remaining
    direct caller when the callback return contract can change.
-4. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+3. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
    crosses the C-owned return boundary. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-5. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and

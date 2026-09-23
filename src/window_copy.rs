@@ -5836,8 +5836,6 @@ unsafe extern "C" fn window_copy_search_lr_regex(
     let mut foundy: u_int = 0;
     let mut len: u_int = 0;
     let mut pywrap: u_int = 0;
-    let mut size: u_int = 1 as u_int;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut regmatch: regmatch_t = regmatch_t { rm_so: 0, rm_eo: 0 };
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     if first >= last {
@@ -5846,22 +5844,27 @@ unsafe extern "C" fn window_copy_search_lr_regex(
     if first != 0 as u_int {
         eflags |= REG_NOTBOL;
     }
-    buf = xmalloc(size as size_t) as *mut ::core::ffi::c_char;
-    *buf.offset(0 as ::core::ffi::c_int as isize) = '\0' as i32 as ::core::ffi::c_char;
-    buf = window_copy_stringify(gd, py, first, (*gd).sx, buf, &raw mut size);
+    let mut buf = vec![0u8];
+    window_copy_stringify(gd, py, first, (*gd).sx, &mut buf);
     len = (*gd).sx.wrapping_sub(first);
     endline = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
     pywrap = py;
-    while !buf.is_null() && pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
+    while pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
         gl = grid_get_line(gd, pywrap);
         if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
             break;
         }
         pywrap = pywrap.wrapping_add(1);
-        buf = window_copy_stringify(gd, pywrap, 0 as u_int, (*gd).sx, buf, &raw mut size);
+        window_copy_stringify(gd, pywrap, 0 as u_int, (*gd).sx, &mut buf);
         len = len.wrapping_add((*gd).sx);
     }
-    if regexec(reg, buf, 1 as size_t, &raw mut regmatch, eflags) == 0 as ::core::ffi::c_int
+    if regexec(
+        reg,
+        buf.as_ptr().cast(),
+        1 as size_t,
+        &raw mut regmatch,
+        eflags,
+    ) == 0 as ::core::ffi::c_int
         && regmatch.rm_so != regmatch.rm_eo
     {
         foundx = first;
@@ -5871,7 +5874,9 @@ unsafe extern "C" fn window_copy_search_lr_regex(
             len,
             &raw mut foundx,
             &raw mut foundy,
-            buf.offset(regmatch.rm_so as isize),
+            buf.as_ptr()
+                .cast::<::core::ffi::c_char>()
+                .offset(regmatch.rm_so as isize),
         );
         if foundy == py && foundx < last {
             *ppx = foundx;
@@ -5881,7 +5886,9 @@ unsafe extern "C" fn window_copy_search_lr_regex(
                 len,
                 &raw mut foundx,
                 &raw mut foundy,
-                buf.offset(regmatch.rm_eo as isize),
+                buf.as_ptr()
+                    .cast::<::core::ffi::c_char>()
+                    .offset(regmatch.rm_eo as isize),
             );
             *psx = foundx;
             while foundy > py {
@@ -5889,11 +5896,9 @@ unsafe extern "C" fn window_copy_search_lr_regex(
                 foundy = foundy.wrapping_sub(1);
             }
             *psx = (*psx).wrapping_sub(*ppx);
-            free(buf as *mut ::core::ffi::c_void);
             return 1 as ::core::ffi::c_int;
         }
     }
-    free(buf as *mut ::core::ffi::c_void);
     *ppx = 0 as u_int;
     *psx = 0 as u_int;
     return 0 as ::core::ffi::c_int;
@@ -5911,32 +5916,39 @@ unsafe extern "C" fn window_copy_search_rl_regex(
     let mut endline: u_int = 0;
     let mut len: u_int = 0;
     let mut pywrap: u_int = 0;
-    let mut size: u_int = 1 as u_int;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf = vec![0u8];
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     if first != 0 as u_int {
         eflags |= REG_NOTBOL;
     }
-    buf = xmalloc(size as size_t) as *mut ::core::ffi::c_char;
-    *buf.offset(0 as ::core::ffi::c_int as isize) = '\0' as i32 as ::core::ffi::c_char;
-    buf = window_copy_stringify(gd, py, first, (*gd).sx, buf, &raw mut size);
+    window_copy_stringify(gd, py, first, (*gd).sx, &mut buf);
     len = (*gd).sx.wrapping_sub(first);
     endline = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
     pywrap = py;
-    while !buf.is_null() && pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
+    while pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
         gl = grid_get_line(gd, pywrap);
         if !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
             break;
         }
         pywrap = pywrap.wrapping_add(1);
-        buf = window_copy_stringify(gd, pywrap, 0 as u_int, (*gd).sx, buf, &raw mut size);
+        window_copy_stringify(gd, pywrap, 0 as u_int, (*gd).sx, &mut buf);
         len = len.wrapping_add((*gd).sx);
     }
-    if window_copy_last_regex(gd, py, first, last, len, ppx, psx, buf, reg, eflags) != 0 {
-        free(buf as *mut ::core::ffi::c_void);
+    if window_copy_last_regex(
+        gd,
+        py,
+        first,
+        last,
+        len,
+        ppx,
+        psx,
+        buf.as_ptr().cast(),
+        reg,
+        eflags,
+    ) != 0
+    {
         return 1 as ::core::ffi::c_int;
     }
-    free(buf as *mut ::core::ffi::c_void);
     *ppx = 0 as u_int;
     *psx = 0 as u_int;
     return 0 as ::core::ffi::c_int;
@@ -6051,55 +6063,23 @@ unsafe extern "C" fn window_copy_last_regex(
         return 0 as ::core::ffi::c_int;
     };
 }
-unsafe extern "C" fn window_copy_stringify(
-    mut gd: *mut grid,
-    mut py: u_int,
-    mut first: u_int,
-    mut last: u_int,
-    mut buf: *mut ::core::ffi::c_char,
-    mut size: *mut u_int,
-) -> *mut ::core::ffi::c_char {
-    let mut ax: u_int = 0;
-    let mut bx: u_int = 0;
-    let mut newsize: u_int = *size;
-    let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
-    let mut bufsize: size_t = 1024 as size_t;
-    while bufsize < newsize as size_t {
-        bufsize = bufsize.wrapping_mul(2 as size_t);
-    }
-    buf = xrealloc(buf as *mut ::core::ffi::c_void, bufsize) as *mut ::core::ffi::c_char;
-    gl = grid_peek_line(gd, py);
+unsafe fn window_copy_stringify(
+    gd: *mut grid,
+    py: u_int,
+    first: u_int,
+    last: u_int,
+    buf: &mut Vec<u8>,
+) {
+    let gl = grid_peek_line(gd, py);
     if gl.is_null() {
-        *buf.offset((*size).wrapping_sub(1 as u_int) as isize) = '\0' as i32 as ::core::ffi::c_char;
-        return buf;
+        return;
     }
-    bx = (*size).wrapping_sub(1 as u_int);
-    ax = first;
-    while ax < last {
-        let d = window_copy_cellstring(&*gl, ax);
-        let dlen = d.len() as size_t;
-        newsize = (newsize as size_t).wrapping_add(dlen) as u_int as u_int;
-        while bufsize < newsize as size_t {
-            bufsize = bufsize.wrapping_mul(2 as size_t);
-            buf = xrealloc(buf as *mut ::core::ffi::c_void, bufsize) as *mut ::core::ffi::c_char;
-        }
-        if dlen == 1 as size_t {
-            let fresh1 = bx;
-            bx = bx.wrapping_add(1);
-            *buf.offset(fresh1 as isize) = d[0] as ::core::ffi::c_char;
-        } else if dlen != 0 as size_t {
-            memcpy(
-                buf.offset(bx as isize) as *mut ::core::ffi::c_void,
-                d.as_ptr() as *const ::core::ffi::c_void,
-                dlen,
-            );
-            bx = (bx as size_t).wrapping_add(dlen) as u_int as u_int;
-        }
-        ax = ax.wrapping_add(1);
+    buf.pop(); // Remove the previous terminator before appending another line.
+    for ax in first..last {
+        // Keep interior NUL bytes in the buffer; only the final byte terminates it.
+        buf.extend_from_slice(&window_copy_cellstring(&*gl, ax));
     }
-    *buf.offset(newsize.wrapping_sub(1 as u_int) as isize) = '\0' as i32 as ::core::ffi::c_char;
-    *size = newsize;
-    return buf;
+    buf.push(0);
 }
 unsafe extern "C" fn window_copy_cstrtocellpos(
     mut gd: *mut grid,
@@ -6351,10 +6331,8 @@ unsafe extern "C" fn window_copy_search_jump(
     let mut i: u_int = 0;
     let mut px: u_int = 0;
     let mut sx: u_int = 0;
-    let mut ssize: u_int = 1 as u_int;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut cflags: ::core::ffi::c_int = REG_EXTENDED;
-    let mut sbuf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut reg: regex_t = re_pattern_buffer {
         buffer: ::core::ptr::null_mut::<re_dfa_t>(),
         allocated: 0,
@@ -6367,17 +6345,14 @@ unsafe extern "C" fn window_copy_search_jump(
         c2rust_padding: [0; 7],
     };
     if regex != 0 {
-        sbuf = xmalloc(ssize as size_t) as *mut ::core::ffi::c_char;
-        *sbuf.offset(0 as ::core::ffi::c_int as isize) = '\0' as i32 as ::core::ffi::c_char;
-        sbuf = window_copy_stringify(sgd, 0 as u_int, 0 as u_int, (*sgd).sx, sbuf, &raw mut ssize);
+        let mut sbuf = vec![0u8];
+        window_copy_stringify(sgd, 0 as u_int, 0 as u_int, (*sgd).sx, &mut sbuf);
         if cis != 0 {
             cflags |= REG_ICASE;
         }
-        if regcomp(&raw mut reg, sbuf, cflags) != 0 as ::core::ffi::c_int {
-            free(sbuf as *mut ::core::ffi::c_void);
+        if regcomp(&raw mut reg, sbuf.as_ptr().cast(), cflags) != 0 as ::core::ffi::c_int {
             return 0 as ::core::ffi::c_int;
         }
-        free(sbuf as *mut ::core::ffi::c_void);
     }
     if direction != 0 {
         i = fy;
@@ -6905,12 +6880,10 @@ unsafe extern "C" fn window_copy_search_marks(
     let mut py: u_int = 0;
     let mut nfound: u_int = 0 as u_int;
     let mut width: u_int = 0;
-    let mut ssize: u_int = 1 as u_int;
     let mut start: u_int = 0;
     let mut end: u_int = 0;
     let mut sx: u_int = (*gd).sx;
     let mut sy: u_int = (*gd).sy;
-    let mut sbuf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut reg: regex_t = re_pattern_buffer {
         buffer: ::core::ptr::null_mut::<re_dfa_t>(),
         allocated: 0,
@@ -6946,26 +6919,22 @@ unsafe extern "C" fn window_copy_search_marks(
     }
     cis = window_copy_is_lowercase((*data).searchstr);
     if regex != 0 {
-        sbuf = xmalloc(ssize as size_t) as *mut ::core::ffi::c_char;
-        *sbuf.offset(0 as ::core::ffi::c_int as isize) = '\0' as i32 as ::core::ffi::c_char;
-        sbuf = window_copy_stringify(
+        let mut sbuf = vec![0u8];
+        window_copy_stringify(
             (*ssp).grid,
             0 as u_int,
             0 as u_int,
             (*(*ssp).grid).sx,
-            sbuf,
-            &raw mut ssize,
+            &mut sbuf,
         );
         if cis != 0 {
             cflags |= REG_ICASE;
         }
-        if regcomp(&raw mut reg, sbuf, cflags) != 0 as ::core::ffi::c_int {
-            free(sbuf as *mut ::core::ffi::c_void);
+        if regcomp(&raw mut reg, sbuf.as_ptr().cast(), cflags) != 0 as ::core::ffi::c_int {
             free((*data).searchmark as *mut ::core::ffi::c_void);
             (*data).searchmark = ::core::ptr::null_mut::<u_char>();
             return 0 as ::core::ffi::c_int;
         }
-        free(sbuf as *mut ::core::ffi::c_void);
     }
     tstart = get_timer();
     if visible_only != 0 {

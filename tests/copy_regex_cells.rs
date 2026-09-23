@@ -99,3 +99,34 @@ fn regex_search_maps_multibyte_and_wide_cells_in_both_directions() {
     server.search("search-backward", "émega", b"6:0:1\n");
     server.search("search-forward", "漢字 gamma", b"5:1:1\n");
 }
+
+#[test]
+fn regex_search_spans_wrapped_lines_in_both_directions() {
+    let server = Server::new();
+    server.command(&[
+        "new-session",
+        "-d",
+        "-x",
+        "10",
+        "-y",
+        "8",
+        "-s",
+        "copy-regex-wrap",
+        "printf 'ABCDEFGHIJé漢XYZ\\n'; sleep 30",
+    ]);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let output = server.command(&["capture-pane", "-p", "-S", "0"]);
+        if output.starts_with("ABCDEFGHIJ\n".as_bytes()) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "pane output missing: {output:?}");
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    server.command(&["copy-mode"]);
+    server.search("search-forward", "Jé", b"9:0:1\n");
+    server.search("search-forward", "é漢", b"0:1:1\n");
+    server.search("search-backward", "Jé", b"9:0:1\n");
+}
