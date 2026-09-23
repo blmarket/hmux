@@ -101,7 +101,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::status::status_message_set;
 use crate::src::utf8::utf8_sanitize_cstring;
-use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -109,6 +109,54 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;
+
+/// The public queue item borrows its printable name from this stable box.
+#[repr(C)]
+struct CmdqItemOwner {
+    node: cmdq_item,
+    name: Option<CString>,
+}
+
+const _: () = assert!(::core::mem::offset_of!(CmdqItemOwner, node) == 0);
+
+unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_item {
+    let mut owner = Box::new(CmdqItemOwner {
+        node: ::core::mem::zeroed::<cmdq_item>(),
+        name: None,
+    });
+    let item = &raw mut owner.node;
+    let label = if label.is_null() {
+        b"(null)".as_slice()
+    } else {
+        CStr::from_ptr(label).to_bytes()
+    };
+    let address = format!("{item:p}");
+    let mut bytes = Vec::with_capacity(label.len() + address.len() + 3);
+    bytes.push(b'[');
+    bytes.extend_from_slice(label);
+    bytes.push(b'/');
+    bytes.extend_from_slice(address.as_bytes());
+    bytes.push(b']');
+    owner.name = Some(CString::new(bytes).expect("queue item label has no NUL"));
+    owner.node.name = owner.name.as_ref().unwrap().as_ptr() as *mut _;
+    Box::into_raw(owner).cast::<cmdq_item>()
+}
+
+unsafe fn cmdq_drop_owner(item: *mut cmdq_item) {
+    drop(Box::from_raw(item.cast::<CmdqItemOwner>()));
+}
+
+/// Release an item that has not been linked into a command queue.
+pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
+    if !(*item).client.is_null() {
+        server_client_unref((*item).client);
+    }
+    if !(*item).cmdlist.is_null() {
+        cmd_list_free((*item).cmdlist);
+    }
+    cmdq_free_state((*item).state);
+    cmdq_drop_owner(item);
+}
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_36;
 
@@ -506,8 +554,7 @@ unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
         (*(*item).queue).list.tqh_last = (*item).entry.tqe_prev;
     }
     *(*item).entry.tqe_prev = (*item).entry.tqe_next;
-    free((*item).name as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(item));
+    cmdq_drop_owner(item);
 }
 unsafe extern "C" fn cmdq_remove_group(mut item: *mut cmdq_item) {
     let mut this: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -562,13 +609,7 @@ pub unsafe extern "C" fn cmdq_get_command(
     }
     while !cmd.is_null() {
         entry = cmd_get_entry(cmd);
-        item = Box::into_raw(Box::new(::core::mem::zeroed::<cmdq_item>()));
-        xasprintf(
-            &raw mut (*item).name,
-            b"[%s/%p]\0" as *const u8 as *const ::core::ffi::c_char,
-            (*entry).name,
-            item,
-        );
+        item = cmdq_new_named_item((*entry).name);
         (*item).type_0 = CMDQ_COMMAND;
         (*item).group = cmd_get_group(cmd);
         (*item).state = cmdq_link_state(state);
@@ -825,13 +866,7 @@ pub unsafe extern "C" fn cmdq_get_callback1(
     mut data: *mut ::core::ffi::c_void,
 ) -> *mut cmdq_item {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    item = Box::into_raw(Box::new(::core::mem::zeroed::<cmdq_item>()));
-    xasprintf(
-        &raw mut (*item).name,
-        b"[%s/%p]\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
-        item,
-    );
+    item = cmdq_new_named_item(name);
     (*item).type_0 = CMDQ_CALLBACK;
     (*item).group = 0 as u_int;
     (*item).state = cmdq_new_state(

@@ -1,13 +1,13 @@
 use crate::src::cfg::{cfg_finished, cfg_test_take_causes, CFG_TEST_LOCK};
 use crate::src::cmd::{cmd_list_free, cmdq_item};
 use crate::src::cmd_parse::cmd_parse_from_string;
-use crate::src::cmd_queue::{cmdq_free_state, cmdq_get_command};
-use crate::src::ffi::libc::free;
+use crate::src::cmd_queue::{cmdq_free_detached, cmdq_get_command, cmdq_get_name};
+use crate::src::ffi::libc::snprintf;
 use crate::src::options::{options_create, options_free};
 use crate::src::shared::command::{cmd_retval, CMD_PARSE_SUCCESS, CMD_RETURN_ERROR};
 use crate::src::shared::options::options;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 struct OptionGlobalsGuard {
     previous_global_options: *mut options,
@@ -87,11 +87,39 @@ unsafe fn run_option_command(command: &str) -> (cmd_retval, Vec<Vec<u8>>) {
     let retval = exec(cmd, item);
     let causes = cfg_test_take_causes();
 
-    cmd_list_free((*item).cmdlist);
-    cmdq_free_state((*item).state);
-    free((*item).name.cast());
-    drop(Box::from_raw(item));
+    cmdq_free_detached(item);
     (retval, causes)
+}
+
+#[test]
+fn command_queue_name_keeps_entry_label_and_item_pointer() {
+    let _guard = CFG_TEST_LOCK.lock().unwrap();
+    unsafe {
+        let _globals = OptionGlobalsGuard::new();
+        let command = c"set-option status on";
+        let parsed = cmd_parse_from_string(command.as_ptr(), std::ptr::null_mut());
+        assert_eq!((*parsed).status, CMD_PARSE_SUCCESS);
+
+        let command_list = (*parsed).cmdlist;
+        let item = cmdq_get_command(command_list, std::ptr::null_mut());
+        assert!(!item.is_null());
+        cmd_list_free(command_list);
+
+        let mut expected = [0_i8; 128];
+        let written = snprintf(
+            expected.as_mut_ptr(),
+            expected.len(),
+            c"[%s/%p]".as_ptr(),
+            c"set-option".as_ptr(),
+            item.cast::<::core::ffi::c_void>(),
+        );
+        assert!(written >= 0 && (written as usize) < expected.len());
+        assert_eq!(
+            CStr::from_ptr(cmdq_get_name(item)).to_bytes(),
+            CStr::from_ptr(expected.as_ptr()).to_bytes()
+        );
+        cmdq_free_detached(item);
+    }
 }
 
 fn assert_error_cases(command: &str, cases: &[(&str, &[u8])]) {

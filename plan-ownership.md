@@ -125,14 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmdq_item.name` is the next bounded live owner. Command and callback
-   constructors each `xasprintf` a label and the item pointer; `cmdq_remove`
-   has the sole production free before its Box drop. An offset-zero owner
-   can keep the formatted name after the box address is stable. Preserve
-   bytewise labels and pointer-bearing `%p` text. One options test manually
-   destroys a bare public item and must use owner-aware construction or
-   cleanup. This target is separate from disconnected-client queue
-   cancellation below.
+1. `args_command_state` has a bounded command string and optional source
+   filename. `args_make_commands_prepare` constructs the state, and
+   `args_make_commands_free` has both final frees. An offset-zero owner can
+   hold optional `CString` values while public pointers stay borrowed. The
+   command-list branch needs both absent. Preserve format-expansion and
+   parser callback ordering, and check sourced invalid nested commands for
+   filename and line diagnostics. This is separate from queue cancellation.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -731,6 +730,23 @@ libc allocation on success and leaves it with the caller on error, so a local
   Serialized workspace tests and binary build passed. JSON parse/recursive
   cleanup and custom-layout CLI checks passed on candidate and pinned
   3.8-rc. Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 392 — owned command queue item name (2026-09-23)
+
+- `CmdqItemOwner` now boxes public queue items at offset zero and holds
+  their printable name as a `CString`. Command and callback constructors
+  assemble raw label bytes and the stable item pointer in Rust, replacing
+  both `xasprintf` calls. The public `cmdq_item.name` pointer borrows that
+  value until queue removal. `cmdq_remove` drops the owner at its old free
+  point; a Rust-only detached-item cleanup helper handles unqueued items.
+  Removed the name's manual free, and the raw item no longer derives `Copy`
+  or `Clone`.
+- The options and argument-conversion fixtures now use detached cleanup.
+  Focused tests cover command labels, raw `0xff` callback labels, and C
+  `%p` pointer formatting. Serialized workspace tests and binary build
+  passed; if-shell, hook insertion, and session CLI comparisons passed
+  against pinned 3.8-rc. Changed-file rustfmt and diff checks passed. No
+  sanitizer ran.
 
 ## Historical migration index
 
