@@ -616,24 +616,24 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    let mut user: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     tmp = cmd_print((*item).cmd);
     if !c.is_null() {
         uid = proc_get_peer_uid((*c).peer);
-        if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
+        let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
             pw = getpwuid(uid as __uid_t);
             if !pw.is_null() {
-                xasprintf(
-                    &raw mut user,
-                    b"[%s]\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*pw).pw_name,
-                );
+                let name = CStr::from_ptr((*pw).pw_name).to_bytes();
+                let mut bytes = Vec::with_capacity(name.len() + 2);
+                bytes.push(b'[');
+                bytes.extend_from_slice(name);
+                bytes.push(b']');
+                CString::new(bytes).expect("passwd name is a C string")
             } else {
-                user = xstrdup(b"[unknown]\0" as *const u8 as *const ::core::ffi::c_char);
+                c"[unknown]".to_owned()
             }
         } else {
-            user = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-        }
+            c"".to_owned()
+        };
         if !(*c).session.is_null()
             && (*state).event.key != KEYC_NONE as ::core::ffi::c_ulong as key_code
         {
@@ -641,7 +641,7 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
             server_add_message(
                 b"%s%s key %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 (*c).name,
-                user,
+                user.as_ptr(),
                 key.as_ptr(),
                 tmp,
             );
@@ -649,11 +649,10 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
             server_add_message(
                 b"%s%s command: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 (*c).name,
-                user,
+                user.as_ptr(),
                 tmp,
             );
         }
-        free(user as *mut ::core::ffi::c_void);
     } else {
         server_add_message(
             b"command: %s\0" as *const u8 as *const ::core::ffi::c_char,

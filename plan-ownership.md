@@ -290,6 +290,19 @@ legacy callers safe.
   reverse, Unicode targets, replacement, and mode teardown/reentry. No
   sanitizer was run.
 
+### Increment 145 — command message username suffix (2026-09-22)
+
+- `cmdq_add_message` now owns its local `[username]`, `[unknown]`, or empty
+  suffix as a `CString`. The passwd name is read as C-string bytes without
+  assuming UTF-8, then bracketed; `server_add_message` formats and copies
+  the borrowed pointer synchronously. Removed the suffix's `xasprintf` and
+  two `xstrdup` allocations and its manual free. The separate `cmd_print`
+  result remains C-owned by its producer and is still freed here.
+- Isolated library/binary build, `scripts/server_messages_cli_checks.py`,
+  changed-file rustfmt, and `git diff --check` passed. The CLI exercises
+  same-UID command messages and message retention; a peer with a different
+  UID was not available for an attached-client test. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -300,11 +313,7 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmdq_add_message` still allocates a local `[username]` suffix with
-   `xasprintf` or `xstrdup` and frees it after `server_add_message` copies
-   the formatted text. A byte-preserving `CString` can own that local suffix;
-   the separate `cmd_print` result remains C-owned by its producer.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -313,14 +322,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+2. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-4. The remaining address-based registries, other UI tags, and session/winlink
+3. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
@@ -328,9 +337,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–144. The remaining
+Current validation is recorded in increments 15–145. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–144 has its own local commit; none was pushed.
+Each of increments 15–145 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
