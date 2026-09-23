@@ -1,8 +1,6 @@
 use crate::src::arguments::args_escape_cstring;
 use crate::src::cfg::cfg_files;
-use crate::src::cmd::{
-    cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv, cmd_stringify_argv_cstring,
-};
+use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv_cstring};
 use crate::src::cmd_queue::{
     cmdq_get_client, cmdq_get_event, cmdq_get_target, cmdq_get_target_client, cmdq_merge_formats,
     cmdq_print,
@@ -25,9 +23,9 @@ use crate::src::grid_view::grid_view_get_cell;
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::job::{job_free, job_get_data, job_get_event, job_run};
 use crate::src::layout::layout_add_horizontal_border;
-use crate::src::layout_custom::layout_dump;
+use crate::src::layout_custom::layout_dump_owned;
 use crate::src::log::{fatalx, log_debug, log_get_level};
-use crate::src::names::parse_window_name;
+use crate::src::names::parse_window_name_cstring;
 pub use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_array_first, options_array_item_key, options_array_next, options_first, options_get,
@@ -36,12 +34,13 @@ use crate::src::options::{
 };
 use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{
-    paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top, paste_make_sample,
+    paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top,
+    paste_make_sample_cstring,
 };
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
-    evbuffer_pullup, evbuffer_readline, event_add, event_initialized, event_pending, event_set,
+    evbuffer_get_length, evbuffer_pullup, evbuffer_readline, event_add, event_initialized,
+    event_pending, event_set,
 };
 use crate::src::regsub::regsub_cstring;
 pub use crate::src::server::clients;
@@ -69,7 +68,7 @@ use crate::src::tmux::{
 use crate::src::tty::{tty_default_colours, tty_window_offset};
 use crate::src::tty_features::{tty_feature_present, tty_get_features};
 use crate::src::tty_term::{tty_term_has_name, tty_term_number};
-use crate::src::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr};
+use crate::src::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::window::{
     window_count_panes, window_get_pane_status, window_pane_get_pane_status, window_pane_index,
     window_pane_is_floating, window_pane_mode, window_pane_printable_flags,
@@ -79,13 +78,11 @@ use crate::src::window::{
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
 use crate::src::window_copy::{
-    window_copy_get_hyperlink, window_copy_get_line, window_copy_get_word,
+    window_copy_get_hyperlink_cstring, window_copy_get_line_cstring, window_copy_get_word_cstring,
 };
 use crate::src::window_tree::window_tree_mode;
-use crate::src::xmalloc::{
-    xasprintf, xmalloc, xmemdup, xrealloc, xreallocarray, xsnprintf, xstrdup, xstrndup, xvasprintf,
-    xvasprintf_cstring,
-};
+use crate::src::xmalloc::{xsnprintf, xstrdup, xvasprintf_cstring};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::abi::NULL_0;
 use crate::src::shared::abi::*;
@@ -263,13 +260,6 @@ pub struct format_expand_state {
     pub time: time_t,
     pub tm: tm,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_table_entry {
-    pub key: *const ::core::ffi::c_char,
-    pub type_0: format_table_type,
-    pub cb: format_cb,
-}
 pub type format_table_type = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
@@ -292,34 +282,6 @@ pub const ADD: C2RustUnnamed_44 = 0;
 pub type C2RustUnnamed_44 = ::core::ffi::c_uint;
 
 pub const REG_NOSUB: ::core::ffi::c_int = (1 as ::core::ffi::c_int) << 3 as ::core::ffi::c_int;
-#[inline]
-unsafe extern "C" fn bsearch(
-    mut __key: *const ::core::ffi::c_void,
-    mut __base: *const ::core::ffi::c_void,
-    mut __nmemb: size_t,
-    mut __size: size_t,
-    mut __compar: __compar_fn_t,
-) -> *mut ::core::ffi::c_void {
-    let mut __p: *const ::core::ffi::c_void = ::core::ptr::null::<::core::ffi::c_void>();
-    let mut __comparison: ::core::ffi::c_int = 0;
-    while __nmemb != 0 {
-        __p = (__base as *const ::core::ffi::c_char)
-            .offset((__nmemb >> 1 as ::core::ffi::c_int).wrapping_mul(__size) as isize)
-            as *const ::core::ffi::c_void;
-        __comparison = Some(__compar.expect("non-null function pointer"))
-            .expect("non-null function pointer")(__key, __p);
-        if __comparison == 0 as ::core::ffi::c_int {
-            return __p as *mut ::core::ffi::c_void;
-        }
-        if __comparison > 0 as ::core::ffi::c_int {
-            __base = (__p as *const ::core::ffi::c_char).offset(__size as isize)
-                as *const ::core::ffi::c_void;
-            __nmemb = __nmemb.wrapping_sub(1);
-        }
-        __nmemb >>= 1 as ::core::ffi::c_int;
-    }
-    return NULL;
-}
 pub const INT64_MAX: ::core::ffi::c_long = 9223372036854775807 as ::core::ffi::c_long;
 
 static mut sort_crit: sort_criteria = sort_criteria {
@@ -626,10 +588,17 @@ unsafe extern "C" fn format_is_word_separator(
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_grid_word(
+    gd: *mut grid,
+    x: u_int,
+    y: u_int,
+) -> *mut ::core::ffi::c_char {
+    format_grid_word_cstring(gd, x, y).map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+}
+pub(crate) unsafe fn format_grid_word_cstring(
     mut gd: *mut grid,
     mut x: u_int,
     mut y: u_int,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -649,7 +618,7 @@ pub unsafe extern "C" fn format_grid_word(
     let mut ud: Vec<utf8_data> = Vec::new();
     let mut end: u_int = 0;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut s = None;
     ws = options_get_string(
         global_s_options,
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
@@ -713,15 +682,15 @@ pub unsafe extern "C" fn format_grid_word(
             size: 0,
             width: 0,
         });
-        s = utf8_tocstr(ud.as_mut_ptr());
+        s = Some(utf8_tocstr_cstring(ud.as_ptr()));
     }
     return s;
 }
 #[no_mangle]
-pub unsafe extern "C" fn format_grid_line(
-    mut gd: *mut grid,
-    mut y: u_int,
-) -> *mut ::core::ffi::c_char {
+pub unsafe extern "C" fn format_grid_line(gd: *mut grid, y: u_int) -> *mut ::core::ffi::c_char {
+    format_grid_line_cstring(gd, y).map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+}
+pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -> Option<CString> {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -738,7 +707,7 @@ pub unsafe extern "C" fn format_grid_line(
     };
     let mut ud: Vec<utf8_data> = Vec::new();
     let mut x: u_int = 0;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut s = None;
     x = 0 as u_int;
     while x < grid_line_length(gd, y) {
         grid_get_cell(gd, x, y, &raw mut gc);
@@ -760,18 +729,27 @@ pub unsafe extern "C" fn format_grid_line(
             size: 0,
             width: 0,
         });
-        s = utf8_tocstr(ud.as_mut_ptr());
+        s = Some(utf8_tocstr_cstring(ud.as_ptr()));
         drop(ud);
     }
     return s;
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_grid_hyperlink(
+    gd: *mut grid,
+    x: u_int,
+    y: u_int,
+    s: *mut screen,
+) -> *mut ::core::ffi::c_char {
+    format_grid_hyperlink_cstring(gd, x, y, s)
+        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+}
+pub(crate) unsafe fn format_grid_hyperlink_cstring(
     mut gd: *mut grid,
     mut x: u_int,
     mut y: u_int,
     mut s: *mut screen,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -793,12 +771,12 @@ pub unsafe extern "C" fn format_grid_hyperlink(
             break;
         }
         if x == 0 as u_int {
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+            return None;
         }
         x = x.wrapping_sub(1);
     }
     if (*s).hyperlinks.is_null() || gc.link == 0 as u_int {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
     if hyperlinks_get(
         (*s).hyperlinks,
@@ -808,9 +786,9 @@ pub unsafe extern "C" fn format_grid_hyperlink(
         ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
     ) == 0
     {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
-    return xstrdup(uri);
+    return Some(CStr::from_ptr(uri).to_owned());
 }
 
 pub const FORMAT_TYPE_PANE: format_type = 3;

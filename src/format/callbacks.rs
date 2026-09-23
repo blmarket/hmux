@@ -1,35 +1,23 @@
-// Private default-callback implementation.  The callback bodies and their
-// sorted 214-entry lookup table stay together so callback order, static cache
-// lifetime, and allocation/free ownership remain unchanged.  This module
-// consumes the facade's generated model types and FFI helpers and exposes only
-// the table lookup/storage needed by the expression and tree groups.
+// Built-in callbacks return owned bytes or copied timestamps. The sorted
+// immutable table is shared by lookup and enumeration; external user callbacks
+// retain their separate C ABI.
 use super::*;
 use crate::src::server_client::server_client_set_user;
+use std::ffi::{CStr, CString};
 use std::fmt::Write as _;
 
-unsafe extern "C" fn format_printf(
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) -> *mut ::core::ffi::c_char {
-    let mut ap: ::core::ffi::VaList;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    ap = args.clone();
-    xvasprintf(&raw mut s, fmt, ap);
-    return s;
-}
-unsafe extern "C" fn format_cb_host(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_host(mut ft: *mut format_tree) -> Option<CString> {
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
     if gethostname(
         &raw mut host as *mut ::core::ffi::c_char,
         ::core::mem::size_of::<[::core::ffi::c_char; 65]>() as size_t,
     ) != 0 as ::core::ffi::c_int
     {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"".to_owned());
     }
-    return xstrdup(&raw mut host as *mut ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned());
 }
-unsafe extern "C" fn format_cb_host_short(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_host_short(mut ft: *mut format_tree) -> Option<CString> {
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if gethostname(
@@ -37,31 +25,30 @@ unsafe extern "C" fn format_cb_host_short(mut ft: *mut format_tree) -> *mut ::co
         ::core::mem::size_of::<[::core::ffi::c_char; 65]>() as size_t,
     ) != 0 as ::core::ffi::c_int
     {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"".to_owned());
     }
     cp = strchr(&raw mut host as *mut ::core::ffi::c_char, '.' as i32);
     if !cp.is_null() {
         *cp = '\0' as i32 as ::core::ffi::c_char;
     }
-    return xstrdup(&raw mut host as *mut ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned());
 }
-unsafe extern "C" fn format_cb_pid(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    xasprintf(
-        &raw mut value,
-        b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-        getpid() as ::core::ffi::c_long,
+unsafe fn format_cb_pid(mut ft: *mut format_tree) -> Option<CString> {
+    let mut value = None;
+    value = Some(
+        CString::new(format!(
+            "{}",
+            (getpid() as ::core::ffi::c_long) as ::core::ffi::c_long
+        ))
+        .expect("formatted numbers contain no NUL"),
     );
-    return value as *mut ::core::ffi::c_void;
+    return value;
 }
-unsafe extern "C" fn format_cb_session_attached_list(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = (*ft).s;
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     if s.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     let mut names = Vec::<u8>::new();
     loop_0 = clients.tqh_first;
@@ -75,17 +62,17 @@ unsafe extern "C" fn format_cb_session_attached_list(
         loop_0 = (*loop_0).entry.tqe_next;
     }
     if names.is_empty() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void
+    Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
-unsafe extern "C" fn format_cb_session_alert(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = (*ft).s;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut alerts: [::core::ffi::c_char; 1024] = [0; 1024];
     let mut alerted: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if s.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
@@ -118,17 +105,15 @@ unsafe extern "C" fn format_cb_session_alert(mut ft: *mut format_tree) -> *mut :
         }
         wl = winlinks_next(wl);
     }
-    return xstrdup(&raw mut alerts as *mut ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned());
 }
-unsafe extern "C" fn format_cb_session_alerts(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = (*ft).s;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut alerts: [::core::ffi::c_char; 1024] = [0; 1024];
     let mut tmp: [::core::ffi::c_char; 16] = [0; 16];
     if s.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
@@ -176,15 +161,15 @@ unsafe extern "C" fn format_cb_session_alerts(
         }
         wl = winlinks_next(wl);
     }
-    return xstrdup(&raw mut alerts as *mut ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned());
 }
-unsafe extern "C" fn format_cb_session_stack(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = (*ft).s;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut result: [::core::ffi::c_char; 1024] = [0; 1024];
     let mut tmp: [::core::ffi::c_char; 16] = [0; 16];
     if s.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     xsnprintf(
         &raw mut result as *mut ::core::ffi::c_char,
@@ -218,17 +203,15 @@ unsafe extern "C" fn format_cb_session_stack(mut ft: *mut format_tree) -> *mut :
             wl,
         );
     }
-    return xstrdup(&raw mut result as *mut ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(CStr::from_ptr(&raw mut result as *mut ::core::ffi::c_char).to_owned());
 }
-unsafe extern "C" fn format_cb_window_stack_index(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut idx: u_int = 0;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if (*ft).wl.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     s = (*(*ft).wl).session;
     idx = 0 as u_int;
@@ -245,24 +228,18 @@ unsafe extern "C" fn format_cb_window_stack_index(
         );
     }
     if wl.is_null() {
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    xasprintf(
-        &raw mut value,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        idx,
-    );
-    return value as *mut ::core::ffi::c_void;
+    value =
+        Some(CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"));
+    return value;
 }
-unsafe extern "C" fn format_cb_window_linked_sessions_list(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_linked_sessions_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut names = Vec::new();
     if (*ft).wl.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     w = (*(*ft).wl).window;
     wl = (*w).winlinks.tqh_first;
@@ -274,20 +251,17 @@ unsafe extern "C" fn format_cb_window_linked_sessions_list(
         wl = (*wl).wentry.tqe_next;
     }
     if names.is_empty() {
-        return ::core::ptr::null_mut();
+        return None;
     }
-    // The format callback hands this result to the C-owned format tree.
-    return xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void;
+    return Some(CString::new(names).expect("callback bytes contain no NUL"));
 }
-unsafe extern "C" fn format_cb_window_active_sessions(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_active_sessions(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut n: u_int = 0 as u_int;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if (*ft).wl.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     w = (*(*ft).wl).window;
     wl = (*w).winlinks.tqh_first;
@@ -297,20 +271,15 @@ unsafe extern "C" fn format_cb_window_active_sessions(
         }
         wl = (*wl).wentry.tqe_next;
     }
-    xasprintf(
-        &raw mut value,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        n,
-    );
-    return value as *mut ::core::ffi::c_void;
+    value =
+        Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"));
+    return value;
 }
-unsafe extern "C" fn format_cb_window_active_sessions_list(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_active_sessions_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if (*ft).wl.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     w = (*(*ft).wl).window;
     let mut names = Vec::<u8>::new();
@@ -325,20 +294,18 @@ unsafe extern "C" fn format_cb_window_active_sessions_list(
         wl = (*wl).wentry.tqe_next;
     }
     if names.is_empty() {
-        return ::core::ptr::null_mut();
+        return None;
     }
-    xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void
+    Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
-unsafe extern "C" fn format_cb_window_active_clients(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if (*ft).wl.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     w = (*(*ft).wl).window;
     loop_0 = clients.tqh_first;
@@ -351,21 +318,16 @@ unsafe extern "C" fn format_cb_window_active_clients(
         }
         loop_0 = (*loop_0).entry.tqe_next;
     }
-    xasprintf(
-        &raw mut value,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        n,
-    );
-    return value as *mut ::core::ffi::c_void;
+    value =
+        Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"));
+    return value;
 }
-unsafe extern "C" fn format_cb_window_active_clients_list(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
     if (*ft).wl.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     w = (*(*ft).wl).window;
     let mut names = Vec::<u8>::new();
@@ -383,18 +345,17 @@ unsafe extern "C" fn format_cb_window_active_clients_list(
         loop_0 = (*loop_0).entry.tqe_next;
     }
     if names.is_empty() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    // The format callback hands this result to the C-owned format tree.
-    xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void
+    Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
-unsafe extern "C" fn format_cb_window_layout(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_layout(mut ft: *mut format_tree) -> Option<CString> {
     let mut c: *mut client = (*ft).client;
     let mut w: *mut window = (*ft).w;
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if w.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if !(*w).saved_layout_root.is_null() {
         lcroot = (*w).saved_layout_root;
@@ -407,16 +368,14 @@ unsafe extern "C" fn format_cb_window_layout(mut ft: *mut format_tree) -> *mut :
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
-    return layout_dump(w, lcroot, flags) as *mut ::core::ffi::c_void;
+    return layout_dump_owned(w, lcroot, flags);
 }
-unsafe extern "C" fn format_cb_window_visible_layout(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_visible_layout(mut ft: *mut format_tree) -> Option<CString> {
     let mut c: *mut client = (*ft).client;
     let mut w: *mut window = (*ft).w;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if w.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if !c.is_null()
         && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -424,28 +383,25 @@ unsafe extern "C" fn format_cb_window_visible_layout(
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
-    return layout_dump(w, (*w).layout_root, flags) as *mut ::core::ffi::c_void;
+    return layout_dump_owned(w, (*w).layout_root, flags);
 }
-unsafe extern "C" fn format_cb_start_command(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_start_command(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return cmd_stringify_argv((*wp).argc, (*wp).argv) as *mut ::core::ffi::c_void;
+    return cmd_stringify_argv_cstring((*wp).argc, (*wp).argv);
 }
-unsafe extern "C" fn format_cb_start_command_list(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_start_command_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*wp).argc < 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*wp).argc == 0 as ::core::ffi::c_int {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"".to_owned());
     }
     let mut command = Vec::<u8>::new();
     for i in 0..(*wp).argc {
@@ -455,62 +411,58 @@ unsafe extern "C" fn format_cb_start_command_list(
         }
         command.extend_from_slice(quoted.as_bytes());
     }
-    // The format tree owns and frees callback results, so copy once at its boundary.
-    xmemdup(command.as_ptr().cast(), command.len()) as *mut ::core::ffi::c_void
+    Some(CString::new(command).expect("callback bytes contain no NUL"))
 }
-unsafe extern "C" fn format_cb_start_path(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_start_path(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*wp).cwd.is_null() {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"".to_owned());
     }
-    return xstrdup((*wp).cwd) as *mut ::core::ffi::c_void;
+    return Some(CStr::from_ptr((*wp).cwd).to_owned());
 }
-unsafe extern "C" fn format_cb_current_command(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_current_command(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if wp.is_null() || (*wp).shell.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if let Some(cmd) =
         osdep_get_name_cstring((*wp).fd, &raw mut (*wp).tty as *mut ::core::ffi::c_char)
     {
-        let value = parse_window_name(cmd.as_ptr());
-        return value as *mut ::core::ffi::c_void;
+        let value = parse_window_name_cstring(cmd.as_c_str());
+        return Some(value);
     }
     let argv = cmd_stringify_argv_cstring((*wp).argc, (*wp).argv);
     let source = argv
         .as_ref()
         .filter(|text| !text.as_bytes().is_empty())
         .map_or((*wp).shell as *const _, |text| text.as_ptr());
-    let value = parse_window_name(source);
-    value as *mut ::core::ffi::c_void
+    let value = parse_window_name_cstring(CStr::from_ptr(source));
+    Some(value)
 }
-unsafe extern "C" fn format_cb_current_path(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_current_path(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     cwd = osdep_get_cwd((*wp).fd);
     if cwd.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return xstrdup(cwd) as *mut ::core::ffi::c_void;
+    return Some(CStr::from_ptr(cwd).to_owned());
 }
-unsafe extern "C" fn format_cb_history_bytes(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_history_bytes(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut size: size_t = 0 as size_t;
     let mut i: u_int = 0;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     gd = (*wp).base.grid;
     i = 0 as u_int;
@@ -533,16 +485,12 @@ unsafe extern "C" fn format_cb_history_bytes(mut ft: *mut format_tree) -> *mut :
             .wrapping_mul(::core::mem::size_of::<grid_line>() as usize)
             as ::core::ffi::c_ulong,
     ) as size_t as size_t;
-    xasprintf(
-        &raw mut value,
-        b"%zu\0" as *const u8 as *const ::core::ffi::c_char,
-        size,
+    value = Some(
+        CString::new(format!("{}", (size) as usize)).expect("formatted numbers contain no NUL"),
     );
-    return value as *mut ::core::ffi::c_void;
+    return value;
 }
-unsafe extern "C" fn format_cb_history_all_bytes(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_history_all_bytes(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
@@ -550,9 +498,9 @@ unsafe extern "C" fn format_cb_history_all_bytes(
     let mut lines: u_int = 0;
     let mut cells: u_int = 0 as u_int;
     let mut extended_cells: u_int = 0 as u_int;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     gd = (*wp).base.grid;
     lines = (*gd).hsize.wrapping_add((*gd).sy);
@@ -563,23 +511,28 @@ unsafe extern "C" fn format_cb_history_all_bytes(
         extended_cells = extended_cells.wrapping_add((*gl).extdsize);
         i = i.wrapping_add(1);
     }
-    xasprintf(
-        &raw mut value,
-        b"%u,%zu,%u,%zu,%u,%zu\0" as *const u8 as *const ::core::ffi::c_char,
-        lines,
-        (lines as usize).wrapping_mul(::core::mem::size_of::<grid_line>() as usize),
-        cells,
-        (cells as usize).wrapping_mul(::core::mem::size_of::<grid_cell_entry>() as usize),
-        extended_cells,
-        (extended_cells as usize).wrapping_mul(::core::mem::size_of::<grid_extd_entry>() as usize),
+    value = Some(
+        CString::new(format!(
+            "{},{},{},{},{},{}",
+            (lines) as u32,
+            ((lines as usize).wrapping_mul(::core::mem::size_of::<grid_line>() as usize)) as usize,
+            (cells) as u32,
+            ((cells as usize).wrapping_mul(::core::mem::size_of::<grid_cell_entry>() as usize))
+                as usize,
+            (extended_cells) as u32,
+            ((extended_cells as usize)
+                .wrapping_mul(::core::mem::size_of::<grid_extd_entry>() as usize))
+                as usize
+        ))
+        .expect("formatted numbers contain no NUL"),
     );
-    return value as *mut ::core::ffi::c_void;
+    return value;
 }
-unsafe extern "C" fn format_cb_pane_tabs(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_tabs(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut i: u_int = 0;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     let mut tabs = String::new();
     i = 0 as u_int;
@@ -599,11 +552,11 @@ unsafe extern "C" fn format_cb_pane_tabs(mut ft: *mut format_tree) -> *mut ::cor
         i = i.wrapping_add(1);
     }
     if tabs.is_empty() {
-        return ::core::ptr::null_mut();
+        return None;
     }
-    xmemdup(tabs.as_ptr().cast(), tabs.len()) as *mut ::core::ffi::c_void
+    Some(CString::new(tabs).expect("callback bytes contain no NUL"))
 }
-unsafe extern "C" fn format_cb_pane_fg(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_fg(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -620,46 +573,38 @@ unsafe extern "C" fn format_cb_pane_fg(mut ft: *mut format_tree) -> *mut ::core:
         link: 0,
     };
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     tty_default_colours(&raw mut gc, wp, ::core::ptr::null_mut::<u_int>());
-    return xstrdup(colour_format(gc.fg).as_ptr()) as *mut ::core::ffi::c_void;
+    return Some(colour_format(gc.fg));
 }
-unsafe extern "C" fn format_cb_pane_flags(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_flags(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return xstrdup(window_pane_printable_flags((*ft).wp)) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr(window_pane_printable_flags((*ft).wp)).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_floating_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_floating_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
         if window_pane_is_floating(wp) != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_modal_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_modal_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
         if wp == (*(*wp).window).modal {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_bg(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_bg(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -676,23 +621,21 @@ unsafe extern "C" fn format_cb_pane_bg(mut ft: *mut format_tree) -> *mut ::core:
         link: 0,
     };
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     tty_default_colours(&raw mut gc, wp, ::core::ptr::null_mut::<u_int>());
-    return xstrdup(colour_format(gc.bg).as_ptr()) as *mut ::core::ffi::c_void;
+    return Some(colour_format(gc.bg));
 }
-unsafe extern "C" fn format_cb_session_group_list(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = (*ft).s;
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut loop_0: *mut session = ::core::ptr::null_mut::<session>();
     if s.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     sg = session_group_contains(s);
     if sg.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     let mut names = Vec::<u8>::new();
     loop_0 = (*sg).sessions.tqh_first;
@@ -704,24 +647,22 @@ unsafe extern "C" fn format_cb_session_group_list(
         loop_0 = (*loop_0).gentry.tqe_next;
     }
     if names.is_empty() {
-        return ::core::ptr::null_mut();
+        return None;
     }
-    xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void
+    Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
-unsafe extern "C" fn format_cb_session_group_attached_list(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = (*ft).s;
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
     let mut session_loop: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     if s.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     sg = session_group_contains(s);
     if sg.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     let mut names = Vec::<u8>::new();
     loop_0 = clients.tqh_first;
@@ -742,37 +683,34 @@ unsafe extern "C" fn format_cb_session_group_attached_list(
         loop_0 = (*loop_0).entry.tqe_next;
     }
     if names.is_empty() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void
+    Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
-unsafe extern "C" fn format_cb_pane_in_mode(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_in_mode(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut n: u_int = 0 as u_int;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     wme = (*wp).modes.tqh_first;
     while !wme.is_null() {
         n = n.wrapping_add(1);
         wme = (*wme).entry.tqe_next;
     }
-    xasprintf(
-        &raw mut value,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        n,
-    );
-    return value as *mut ::core::ffi::c_void;
+    value =
+        Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"));
+    return value;
 }
-unsafe extern "C" fn format_cb_pane_at_top(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_at_top(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut status: ::core::ffi::c_int = 0;
     let mut flag: ::core::ffi::c_int = 0;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     status = window_pane_get_pane_status(wp);
     if status == PANE_STATUS_TOP {
@@ -780,23 +718,18 @@ unsafe extern "C" fn format_cb_pane_at_top(mut ft: *mut format_tree) -> *mut ::c
     } else {
         flag = ((*wp).yoff == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     }
-    xasprintf(
-        &raw mut value,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        flag,
-    );
-    return value as *mut ::core::ffi::c_void;
+    value =
+        Some(CString::new(format!("{}", (flag) as i32)).expect("formatted numbers contain no NUL"));
+    return value;
 }
-unsafe extern "C" fn format_cb_pane_at_bottom(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_at_bottom(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut status: ::core::ffi::c_int = 0;
     let mut flag: ::core::ffi::c_int = 0;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     w = (*wp).window as *mut window;
     status = window_pane_get_pane_status(wp);
@@ -808,16 +741,11 @@ unsafe extern "C" fn format_cb_pane_at_bottom(
         flag = ((*wp).yoff + (*wp).sy as ::core::ffi::c_int == (*w).sy as ::core::ffi::c_int)
             as ::core::ffi::c_int;
     }
-    xasprintf(
-        &raw mut value,
-        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        flag,
-    );
-    return value as *mut ::core::ffi::c_void;
+    value =
+        Some(CString::new(format!("{}", (flag) as i32)).expect("formatted numbers contain no NUL"));
+    return value;
 }
-unsafe extern "C" fn format_cb_cursor_character(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_cursor_character(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -833,40 +761,42 @@ unsafe extern "C" fn format_cb_cursor_character(
         us: 0,
         link: 0,
     };
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = None;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     grid_view_get_cell((*wp).base.grid, (*wp).base.cx, (*wp).base.cy, &raw mut gc);
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
-        xasprintf(
-            &raw mut value,
-            b"%.*s\0" as *const u8 as *const ::core::ffi::c_char,
-            gc.data.size as ::core::ffi::c_int,
-            &raw mut gc.data.data as *mut u_char,
+        value = Some(
+            CString::new(std::slice::from_raw_parts(
+                (&raw mut gc.data.data as *mut u_char).cast::<u8>(),
+                libc::strnlen(
+                    (&raw mut gc.data.data as *mut u_char).cast(),
+                    gc.data.size as ::core::ffi::c_int as usize,
+                ),
+            ))
+            .expect("bounded character contains no NUL"),
         );
     }
-    return value as *mut ::core::ffi::c_void;
+    return value;
 }
-unsafe extern "C" fn format_cb_cursor_colour(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_cursor_colour(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if wp.is_null() || (*wp).screen.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*(*wp).screen).ccolour != -(1 as ::core::ffi::c_int) {
-        return xstrdup(colour_format((*(*wp).screen).ccolour).as_ptr())
-            as *mut ::core::ffi::c_void;
+        return Some(colour_format((*(*wp).screen).ccolour));
     }
-    return xstrdup(colour_format((*(*wp).screen).default_ccolour).as_ptr())
-        as *mut ::core::ffi::c_void;
+    return Some(colour_format((*(*wp).screen).default_ccolour));
 }
-unsafe extern "C" fn format_cb_mouse_word(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_word(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     wp = cmd_mouse_pane(
         &raw mut (*ft).m,
@@ -874,7 +804,7 @@ unsafe extern "C" fn format_cb_mouse_word(mut ft: *mut format_tree) -> *mut ::co
         ::core::ptr::null_mut::<*mut winlink>(),
     );
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if cmd_mouse_at(
         wp,
@@ -884,26 +814,24 @@ unsafe extern "C" fn format_cb_mouse_word(mut ft: *mut format_tree) -> *mut ::co
         0 as ::core::ffi::c_int,
     ) != 0 as ::core::ffi::c_int
     {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if !(*wp).modes.tqh_first.is_null() {
         if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
-            return window_copy_get_word(wp, x, y) as *mut ::core::ffi::c_void;
+            return window_copy_get_word_cstring(wp, x, y);
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     gd = (*wp).base.grid;
-    return format_grid_word(gd, x, (*gd).hsize.wrapping_add(y)) as *mut ::core::ffi::c_void;
+    return format_grid_word_cstring(gd, x, (*gd).hsize.wrapping_add(y));
 }
-unsafe extern "C" fn format_cb_mouse_hyperlink(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     wp = cmd_mouse_pane(
         &raw mut (*ft).m,
@@ -911,7 +839,7 @@ unsafe extern "C" fn format_cb_mouse_hyperlink(
         ::core::ptr::null_mut::<*mut winlink>(),
     );
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if cmd_mouse_at(
         wp,
@@ -921,25 +849,24 @@ unsafe extern "C" fn format_cb_mouse_hyperlink(
         0 as ::core::ffi::c_int,
     ) != 0 as ::core::ffi::c_int
     {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if !(*wp).modes.tqh_first.is_null() {
         if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
-            return window_copy_get_hyperlink(wp, x, y) as *mut ::core::ffi::c_void;
+            return window_copy_get_hyperlink_cstring(wp, x, y);
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     gd = (*wp).base.grid;
-    return format_grid_hyperlink(gd, x, (*gd).hsize.wrapping_add(y), (*wp).screen)
-        as *mut ::core::ffi::c_void;
+    return format_grid_hyperlink_cstring(gd, x, (*gd).hsize.wrapping_add(y), (*wp).screen);
 }
-unsafe extern "C" fn format_cb_mouse_line(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     wp = cmd_mouse_pane(
         &raw mut (*ft).m,
@@ -947,7 +874,7 @@ unsafe extern "C" fn format_cb_mouse_line(mut ft: *mut format_tree) -> *mut ::co
         ::core::ptr::null_mut::<*mut winlink>(),
     );
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if cmd_mouse_at(
         wp,
@@ -957,53 +884,46 @@ unsafe extern "C" fn format_cb_mouse_line(mut ft: *mut format_tree) -> *mut ::co
         0 as ::core::ffi::c_int,
     ) != 0 as ::core::ffi::c_int
     {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if !(*wp).modes.tqh_first.is_null() {
         if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
-            return window_copy_get_line(wp, y) as *mut ::core::ffi::c_void;
+            return window_copy_get_line_cstring(wp, y);
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     gd = (*wp).base.grid;
-    return format_grid_line(gd, (*gd).hsize.wrapping_add(y)) as *mut ::core::ffi::c_void;
+    return format_grid_line_cstring(gd, (*gd).hsize.wrapping_add(y));
 }
-unsafe extern "C" fn format_cb_mouse_status_line(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn format_cb_mouse_status_line(mut ft: *mut format_tree) -> Option<CString> {
+    let mut value = None;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*ft).c.is_null() || !(*(*ft).c).tty.flags & TTY_STARTED != 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*ft).m.statusat == 0 as ::core::ffi::c_int && (*ft).m.y < (*ft).m.statuslines {
         y = (*ft).m.y;
     } else if (*ft).m.statusat > 0 as ::core::ffi::c_int && (*ft).m.y >= (*ft).m.statusat as u_int {
         y = (*ft).m.y.wrapping_sub((*ft).m.statusat as u_int);
     } else {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    xasprintf(
-        &raw mut value,
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        y,
-    );
-    return value as *mut ::core::ffi::c_void;
+    value =
+        Some(CString::new(format!("{}", (y) as u32)).expect("formatted numbers contain no NUL"));
+    return value;
 }
-unsafe extern "C" fn format_cb_mouse_status_range(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CString> {
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*ft).c.is_null() || !(*(*ft).c).tty.flags & TTY_STARTED != 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*ft).m.statusat == 0 as ::core::ffi::c_int && (*ft).m.y < (*ft).m.statuslines {
         x = (*ft).m.x;
@@ -1012,153 +932,139 @@ unsafe extern "C" fn format_cb_mouse_status_range(
         x = (*ft).m.x;
         y = (*ft).m.y.wrapping_sub((*ft).m.statusat as u_int);
     } else {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     sr = status_get_range((*ft).c, x, y);
     if sr.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     match (*sr).type_0 as ::core::ffi::c_uint {
-        0 => return ::core::ptr::null_mut::<::core::ffi::c_void>(),
+        0 => return None,
         1 => {
-            return xstrdup(b"left\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"left".to_owned());
         }
         2 => {
-            return xstrdup(b"right\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"right".to_owned());
         }
         3 => {
-            return xstrdup(b"pane\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"pane".to_owned());
         }
         4 => {
-            return xstrdup(b"window\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"window".to_owned());
         }
         5 => {
-            return xstrdup(b"session\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"session".to_owned());
         }
         6 => {
-            return xstrdup(&raw mut (*sr).string as *mut ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(
+                CStr::from_ptr(&raw mut (*sr).string as *mut ::core::ffi::c_char).to_owned(),
+            );
         }
         7 => {
-            return xstrdup(b"control\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"control".to_owned());
         }
         _ => {}
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_alternate_on(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_alternate_on(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if !(*(*ft).wp).base.saved_grid.is_null() {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_alternate_saved_x(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_alternate_saved_x(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).base.saved_cx,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).base.saved_cx) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_alternate_saved_y(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_alternate_saved_y(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).base.saved_cy,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).base.saved_cy) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_bracket_paste_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_bracket_paste_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() && !(*(*ft).wp).screen.is_null() {
         if (*(*(*ft).wp).screen).mode & MODE_BRACKETPASTE != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_buffer_name(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_buffer_name(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).pb.is_null() {
-        return xstrdup(paste_buffer_name((*ft).pb)) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr(paste_buffer_name((*ft).pb)).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_buffer_sample(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_buffer_sample(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).pb.is_null() {
-        return paste_make_sample((*ft).pb) as *mut ::core::ffi::c_void;
+        return Some(paste_make_sample_cstring((*ft).pb));
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_buffer_full(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_buffer_full(mut ft: *mut format_tree) -> Option<CString> {
     let mut size: size_t = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !(*ft).pb.is_null() {
         s = paste_buffer_data((*ft).pb, &raw mut size);
         if !s.is_null() {
-            return xstrndup(s, size) as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(std::slice::from_raw_parts(
+                    s.cast::<u8>(),
+                    libc::strnlen(s, size),
+                ))
+                .expect("bounded buffer contains no NUL"),
+            );
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_buffer_size(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_buffer_size(mut ft: *mut format_tree) -> Option<CString> {
     let mut size: size_t = 0;
     if !(*ft).pb.is_null() {
         paste_buffer_data((*ft).pb, &raw mut size);
-        return format_printf(b"%zu\0" as *const u8 as *const ::core::ffi::c_char, size)
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", (size) as usize)).expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_cell_height(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_cell_height(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() && (*(*ft).c).tty.flags & TTY_STARTED != 0 {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).c).tty.ypixel,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).c).tty.ypixel) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_cell_width(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_cell_width(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() && (*(*ft).c).tty.flags & TTY_STARTED != 0 {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).c).tty.xpixel,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).c).tty.xpixel) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_colours(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_colours(mut ft: *mut format_tree) -> Option<CString> {
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
     let mut colours: u_int = 0;
     if (*ft).c.is_null() || !(*(*ft).c).tty.flags & TTY_STARTED != 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     term = (*(*ft).c).tty.term;
     if (*term).flags & TERM_RGBCOLOURS != 0 {
@@ -1175,169 +1081,151 @@ unsafe extern "C" fn format_cb_client_colours(
             colours = 16 as u_int;
         }
     }
-    return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, colours)
-        as *mut ::core::ffi::c_void;
+    return Some(
+        CString::new(format!("{}", (colours) as u32)).expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_client_control_mode(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_control_mode(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
         if (*(*ft).c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_discarded(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_discarded(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return format_printf(
-            b"%zu\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).c).discarded,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).c).discarded) as usize))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_flags(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_flags(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return xstrdup(server_client_get_flags((*ft).c)) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr(server_client_get_flags((*ft).c)).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_height(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_height(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() && (*(*ft).c).tty.flags & TTY_STARTED != 0 {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).c).tty.sy,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).c).tty.sy) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_key_table(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_key_table(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return xstrdup((*(*(*ft).c).keytable).name) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*(*ft).c).keytable).name).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_last_session(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_last_session(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null()
         && !(*(*ft).c).last_session.is_null()
         && session_alive((*(*ft).c).last_session) != 0
     {
-        return xstrdup((*(*(*ft).c).last_session).name) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*(*ft).c).last_session).name).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_name(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_name(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return xstrdup((*(*ft).c).name) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).c).name).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_pid(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_pid(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return format_printf(
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).c).pid as ::core::ffi::c_long,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!(
+                "{}",
+                ((*(*ft).c).pid as ::core::ffi::c_long) as ::core::ffi::c_long
+            ))
+            .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_prefix(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_prefix(mut ft: *mut format_tree) -> Option<CString> {
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !(*ft).c.is_null() {
         name = server_client_get_key_table((*ft).c);
         if strcmp((*(*(*ft).c).keytable).name, name) == 0 as ::core::ffi::c_int {
-            return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"0".to_owned());
         }
-        return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"1".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_readonly(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_readonly(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
         if (*(*ft).c).flags & CLIENT_READONLY as uint64_t != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_session(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_session(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() && !(*(*ft).c).session.is_null() {
-        return xstrdup((*(*(*ft).c).session).name) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*(*ft).c).session).name).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_termfeatures(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_termfeatures(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return xstrdup(tty_get_features((*(*ft).c).term_features)) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr(tty_get_features((*(*ft).c).term_features)).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_termname(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_termname(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return xstrdup((*(*ft).c).term_name) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).c).term_name).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_termtype(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_termtype(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
         if (*(*ft).c).term_type.is_null() {
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"".to_owned());
         }
-        return xstrdup((*(*ft).c).term_type) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).c).term_type).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_tty(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_tty(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return xstrdup((*(*ft).c).ttyname) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).c).ttyname).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_uid(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_uid(mut ft: *mut format_tree) -> Option<CString> {
     let mut uid: uid_t = 0;
     if !(*ft).c.is_null() {
         uid = proc_get_peer_uid((*(*ft).c).peer);
         if uid != -(1 as ::core::ffi::c_int) as uid_t {
-            return format_printf(
-                b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-                uid as ::core::ffi::c_long,
-            ) as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!(
+                    "{}",
+                    (uid as ::core::ffi::c_long) as ::core::ffi::c_long
+                ))
+                .expect("formatted numbers contain no NUL"),
+            );
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_user(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_user(mut ft: *mut format_tree) -> Option<CString> {
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     if !(*ft).c.is_null() {
         if !(*(*ft).c).user.is_null() {
-            return xstrdup((*(*ft).c).user) as *mut ::core::ffi::c_void;
+            return Some(CStr::from_ptr((*(*ft).c).user).to_owned());
         }
         uid = proc_get_peer_uid((*(*ft).c).peer);
         if uid != -(1 as ::core::ffi::c_int) as uid_t && {
@@ -1348,60 +1236,54 @@ unsafe extern "C" fn format_cb_client_user(mut ft: *mut format_tree) -> *mut ::c
                 (*ft).c,
                 Some(std::ffi::CStr::from_ptr((*pw).pw_name).to_owned()),
             );
-            return xstrdup((*(*ft).c).user) as *mut ::core::ffi::c_void;
+            return Some(CStr::from_ptr((*(*ft).c).user).to_owned());
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_utf8(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_utf8(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
         if (*(*ft).c).flags & CLIENT_UTF8 as uint64_t != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_width(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_width(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).c).tty.sx,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).c).tty.sx) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_written(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_written(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return format_printf(
-            b"%zu\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).c).written,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).c).written) as usize))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_theme(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_theme(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
         match (*(*ft).c).theme as ::core::ffi::c_uint {
             2 => {
-                return xstrdup(b"dark\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"dark".to_owned());
             }
             1 => {
-                return xstrdup(b"light\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"light".to_owned());
             }
-            0 => return ::core::ptr::null_mut::<::core::ffi::c_void>(),
+            0 => return None,
             _ => {}
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_config_files(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_config_files(mut ft: *mut format_tree) -> Option<CString> {
     let mut paths = Vec::<u8>::new();
     for (index, path) in cfg_files().iter().enumerate() {
         if index != 0 {
@@ -1409,212 +1291,177 @@ unsafe extern "C" fn format_cb_config_files(mut ft: *mut format_tree) -> *mut ::
         }
         paths.extend_from_slice(path.as_bytes());
     }
-    xmemdup(paths.as_ptr().cast(), paths.len()) as *mut ::core::ffi::c_void
+    Some(CString::new(paths).expect("callback bytes contain no NUL"))
 }
-unsafe extern "C" fn format_cb_cursor_flag(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_cursor_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_CURSOR != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_cursor_shape(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_cursor_shape(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() && !(*(*ft).wp).screen.is_null() {
         match (*(*(*ft).wp).screen).cstyle as ::core::ffi::c_uint {
             1 => {
-                return xstrdup(b"block\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"block".to_owned());
             }
             2 => {
-                return xstrdup(b"underline\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"underline".to_owned());
             }
             3 => {
-                return xstrdup(b"bar\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"bar".to_owned());
             }
             _ => {
-                return xstrdup(b"default\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"default".to_owned());
             }
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_cursor_very_visible(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_cursor_very_visible(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() && !(*(*ft).wp).screen.is_null() {
         if (*(*(*ft).wp).screen).mode & MODE_CURSOR_VERY_VISIBLE != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_cursor_x(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_cursor_x(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).base.cx,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).base.cx) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_cursor_y(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_cursor_y(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).base.cy,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).base.cy) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_cursor_blinking(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_cursor_blinking(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() && !(*(*ft).wp).screen.is_null() {
         if (*(*(*ft).wp).screen).mode & MODE_CURSOR_BLINKING != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_history_added(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_history_added(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*(*ft).wp).base.grid).scroll_added,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!(
+                "{}",
+                ((*(*(*ft).wp).base.grid).scroll_added) as u32
+            ))
+            .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_history_collected(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_history_collected(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*wp).base.grid).scroll_collected,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*wp).base.grid).scroll_collected) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_history_generation(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_history_generation(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*wp).base.grid).scroll_generation,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*wp).base.grid).scroll_generation) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_history_limit(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_history_limit(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*(*ft).wp).base.grid).hlimit,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*(*ft).wp).base.grid).hlimit) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_history_size(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_history_size(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*(*ft).wp).base.grid).hsize,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*(*ft).wp).base.grid).hsize) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_insert_flag(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_insert_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_INSERT != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_keypad_cursor_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_keypad_cursor_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_KCURSOR != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_keypad_flag(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_keypad_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_KKEYPAD != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_all_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_all_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_MOUSE_ALL != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_any_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_any_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & ALL_MOUSE_MODES != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_button_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_button_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_MOUSE_BUTTON != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_pane(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_pane(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*ft).m.valid != 0 {
         wp = cmd_mouse_pane(
@@ -1623,60 +1470,48 @@ unsafe extern "C" fn format_cb_mouse_pane(mut ft: *mut format_tree) -> *mut ::co
             ::core::ptr::null_mut::<*mut winlink>(),
         );
         if !wp.is_null() {
-            return format_printf(
-                b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            ) as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!("%{}", ((*wp).id) as u32))
+                    .expect("formatted numbers contain no NUL"),
+            );
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_sgr_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_sgr_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_MOUSE_SGR != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_standard_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_standard_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_MOUSE_STANDARD != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_utf8_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_utf8_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_MOUSE_UTF8 != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_x(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_x(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     wp = cmd_mouse_pane(
         &raw mut (*ft).m,
@@ -1692,31 +1527,32 @@ unsafe extern "C" fn format_cb_mouse_x(mut ft: *mut format_tree) -> *mut ::core:
             0 as ::core::ffi::c_int,
         ) == 0 as ::core::ffi::c_int
     {
-        return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, x)
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", (x) as u32)).expect("formatted numbers contain no NUL"),
+        );
     }
     if !(*ft).c.is_null() && (*(*ft).c).tty.flags & TTY_STARTED != 0 {
         if (*ft).m.statusat == 0 as ::core::ffi::c_int && (*ft).m.y < (*ft).m.statuslines {
-            return format_printf(
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ft).m.x,
-            ) as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!("{}", ((*ft).m.x) as u32))
+                    .expect("formatted numbers contain no NUL"),
+            );
         }
         if (*ft).m.statusat > 0 as ::core::ffi::c_int && (*ft).m.y >= (*ft).m.statusat as u_int {
-            return format_printf(
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ft).m.x,
-            ) as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!("{}", ((*ft).m.x) as u32))
+                    .expect("formatted numbers contain no NUL"),
+            );
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_mouse_y(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_mouse_y(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     wp = cmd_mouse_pane(
         &raw mut (*ft).m,
@@ -1732,60 +1568,54 @@ unsafe extern "C" fn format_cb_mouse_y(mut ft: *mut format_tree) -> *mut ::core:
             0 as ::core::ffi::c_int,
         ) == 0 as ::core::ffi::c_int
     {
-        return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, y)
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", (y) as u32)).expect("formatted numbers contain no NUL"),
+        );
     }
     if !(*ft).c.is_null() && (*(*ft).c).tty.flags & TTY_STARTED != 0 {
         if (*ft).m.statusat == 0 as ::core::ffi::c_int && (*ft).m.y < (*ft).m.statuslines {
-            return format_printf(
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ft).m.y,
-            ) as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!("{}", ((*ft).m.y) as u32))
+                    .expect("formatted numbers contain no NUL"),
+            );
         }
         if (*ft).m.statusat > 0 as ::core::ffi::c_int && (*ft).m.y >= (*ft).m.statusat as u_int {
-            return format_printf(
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ft).m.y.wrapping_sub((*ft).m.statusat as u_int),
-            ) as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!(
+                    "{}",
+                    ((*ft).m.y.wrapping_sub((*ft).m.statusat as u_int)) as u32
+                ))
+                .expect("formatted numbers contain no NUL"),
+            );
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_next_session_id(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
-    return format_printf(
-        b"$%u\0" as *const u8 as *const ::core::ffi::c_char,
-        next_session_id,
-    ) as *mut ::core::ffi::c_void;
+unsafe fn format_cb_next_session_id(mut ft: *mut format_tree) -> Option<CString> {
+    return Some(
+        CString::new(format!("${}", (next_session_id) as u32))
+            .expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_origin_flag(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_origin_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_ORIGIN != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_synchronized_output_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_synchronized_output_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_SYNC != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_private_modes(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_private_modes(mut ft: *mut format_tree) -> Option<CString> {
     static mut table: [C2RustUnnamed_43; 14] = [
         C2RustUnnamed_43 {
             mode: MODE_KCURSOR,
@@ -1848,7 +1678,7 @@ unsafe extern "C" fn format_cb_pane_private_modes(
     let mut value = String::new();
     let mut i: u_int = 0;
     if (*ft).wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     mode = (*(*ft).wp).base.mode;
     i = 0 as u_int;
@@ -1870,68 +1700,61 @@ unsafe extern "C" fn format_cb_pane_private_modes(
         i = i.wrapping_add(1);
     }
     let value = std::ffi::CString::new(value).expect("mode numbers have no NUL bytes");
-    return xstrdup(value.as_ptr()) as *mut ::core::ffi::c_void;
+    return Some(value);
 }
-unsafe extern "C" fn format_cb_pane_active(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_active(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*ft).wp == (*(*(*ft).wp).window).active {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_at_left(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_at_left(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).xoff == 0 as ::core::ffi::c_int {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_at_right(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_at_right(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).xoff + (*(*ft).wp).sx as ::core::ffi::c_int
             == (*(*(*ft).wp).window).sx as ::core::ffi::c_int
         {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_bottom(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_bottom(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).yoff + (*wp).sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!(
+                "{}",
+                ((*wp).yoff + (*wp).sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32
+            ))
+            .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_dead(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_dead(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
         if (*wp).fd == -(1 as ::core::ffi::c_int) && (*wp).flags & PANE_STATUSREADY != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_dead_signal(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_dead_signal(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !wp.is_null() {
@@ -1942,132 +1765,97 @@ unsafe extern "C" fn format_cb_pane_dead_signal(
                 > 0 as ::core::ffi::c_int
         {
             name = sig2name((*wp).status & 0x7f as ::core::ffi::c_int);
-            return format_printf(b"%s\0" as *const u8 as *const ::core::ffi::c_char, name)
-                as *mut ::core::ffi::c_void;
+            return Some(CStr::from_ptr(name).to_owned());
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_dead_status(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_dead_status(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
         if (*wp).flags & PANE_STATUSREADY != 0
             && (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int
         {
-            return format_printf(
-                b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*wp).status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int,
-            ) as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!(
+                    "{}",
+                    (((*wp).status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int)
+                        as i32
+                ))
+                .expect("formatted numbers contain no NUL"),
+            );
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_dead_time(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_dead_time(mut ft: *mut format_tree) -> Option<time_t> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
         if (*wp).flags & PANE_STATUSDRAWN != 0 {
-            return &raw mut (*wp).dead_time as *mut ::core::ffi::c_void;
+            return Some(((*wp).dead_time).tv_sec as time_t);
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_last_output_time(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_last_output_time(mut ft: *mut format_tree) -> Option<time_t> {
     let mut wp: *mut window_pane = (*ft).wp;
-    static mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     if !wp.is_null() && (*wp).last_output_time != 0 as time_t {
-        tv.tv_sec = (*wp).last_output_time as __time_t;
-        tv.tv_usec = 0 as __suseconds_t;
-        return &raw mut tv as *mut ::core::ffi::c_void;
+        return Some((*wp).last_output_time as __time_t as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_output_generation(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_output_generation(mut ft: *mut format_tree) -> Option<CString> {
     let mut value: ::core::ffi::c_ulonglong = 0;
     if !(*ft).wp.is_null() {
         value = (*(*ft).wp).output_generation as ::core::ffi::c_ulonglong;
-        return format_printf(b"%llu\0" as *const u8 as *const ::core::ffi::c_char, value)
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", (value) as u64)).expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_last_prompt_time(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_last_prompt_time(mut ft: *mut format_tree) -> Option<time_t> {
     let mut wp: *mut window_pane = (*ft).wp;
-    static mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     if !wp.is_null() && (*wp).last_prompt_time != 0 as time_t {
-        tv.tv_sec = (*wp).last_prompt_time as __time_t;
-        tv.tv_usec = 0 as __suseconds_t;
-        return &raw mut tv as *mut ::core::ffi::c_void;
+        return Some((*wp).last_prompt_time as __time_t as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_command_start_time(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_command_start_time(mut ft: *mut format_tree) -> Option<time_t> {
     let mut wp: *mut window_pane = (*ft).wp;
-    static mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     if !wp.is_null() && (*wp).cmd_start_time != 0 as time_t {
-        tv.tv_sec = (*wp).cmd_start_time as __time_t;
-        tv.tv_usec = 0 as __suseconds_t;
-        return &raw mut tv as *mut ::core::ffi::c_void;
+        return Some((*wp).cmd_start_time as __time_t as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_command_end_time(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_command_end_time(mut ft: *mut format_tree) -> Option<time_t> {
     let mut wp: *mut window_pane = (*ft).wp;
-    static mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     if !wp.is_null() && (*wp).cmd_end_time != 0 as time_t {
-        tv.tv_sec = (*wp).cmd_end_time as __time_t;
-        tv.tv_usec = 0 as __suseconds_t;
-        return &raw mut tv as *mut ::core::ffi::c_void;
+        return Some((*wp).cmd_end_time as __time_t as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_command_running(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_command_running(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*wp).flags & PANE_CMDRUNNING != 0) as ::core::ffi::c_int,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!(
+                "{}",
+                (((*wp).flags & PANE_CMDRUNNING != 0) as ::core::ffi::c_int) as i32
+            ))
+            .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_command_duration(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_command_duration(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut end: time_t = 0;
     if wp.is_null() || (*wp).cmd_start_time == 0 as time_t {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*wp).flags & PANE_CMDRUNNING != 0 {
         end = time(::core::ptr::null_mut::<time_t>());
@@ -2077,304 +1865,278 @@ unsafe extern "C" fn format_cb_pane_command_duration(
     if end < (*wp).cmd_start_time {
         end = (*wp).cmd_start_time;
     }
-    return format_printf(
-        b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-        (end - (*wp).cmd_start_time) as ::core::ffi::c_longlong,
-    ) as *mut ::core::ffi::c_void;
+    return Some(
+        CString::new(format!(
+            "{}",
+            ((end - (*wp).cmd_start_time) as ::core::ffi::c_longlong) as i64
+        ))
+        .expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_pane_command_status(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_command_status(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() && (*wp).cmd_status != -(1 as ::core::ffi::c_int) {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).cmd_status,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*wp).cmd_status) as i32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_format(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_format(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).type_0 as ::core::ffi::c_uint
         == FORMAT_TYPE_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"1".to_owned());
     }
-    return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(c"0".to_owned());
 }
-unsafe extern "C" fn format_cb_pane_height(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_height(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).sy,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).sy) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_id(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_id(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).id,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("%{}", ((*(*ft).wp).id) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_index(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_index(mut ft: *mut format_tree) -> Option<CString> {
     let mut idx: u_int = 0;
     if !(*ft).wp.is_null() && window_pane_index((*ft).wp, &raw mut idx) == 0 as ::core::ffi::c_int {
-        return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, idx)
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_input_off(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_input_off(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).flags & PANE_INPUTOFF != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_unseen_changes(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_unseen_changes(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).flags & PANE_UNSEENCHANGES != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_key_mode(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_key_mode(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() && !(*(*ft).wp).screen.is_null() {
         match (*(*(*ft).wp).screen).mode & EXTENDED_KEY_MODES {
             MODE_KEYS_EXTENDED => {
-                return xstrdup(b"Ext 1\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"Ext 1".to_owned());
             }
             MODE_KEYS_EXTENDED_2 => {
-                return xstrdup(b"Ext 2\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"Ext 2".to_owned());
             }
             _ => {
-                return xstrdup(b"VT10x\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"VT10x".to_owned());
             }
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_last(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_last(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*ft).wp == (*(*(*ft).wp).window).last_panes.tqh_first {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_left(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_left(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).xoff,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).xoff) as i32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_marked(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_marked(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if server_check_marked() != 0 && marked_pane.wp == (*ft).wp {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_marked_set(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_marked_set(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if server_check_marked() != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_mode(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_mode(mut ft: *mut format_tree) -> Option<CString> {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if !(*ft).wp.is_null() {
         wme = (*(*ft).wp).modes.tqh_first;
         if !wme.is_null() {
-            return xstrdup((*(*wme).mode).name) as *mut ::core::ffi::c_void;
+            return Some(CStr::from_ptr((*(*wme).mode).name).to_owned());
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_path(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_path(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.path.is_null() {
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"".to_owned());
         }
-        return xstrdup((*(*ft).wp).base.path) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).wp).base.path).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_pid(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_pid(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() && (*(*ft).wp).fd != -(1 as ::core::ffi::c_int) {
-        return format_printf(
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).pid as ::core::ffi::c_long,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!(
+                "{}",
+                ((*(*ft).wp).pid as ::core::ffi::c_long) as ::core::ffi::c_long
+            ))
+            .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_pipe(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_pipe(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_pipe_pid(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn format_cb_pane_pipe_pid(mut ft: *mut format_tree) -> Option<CString> {
+    let mut value = None;
     if !(*ft).wp.is_null() && (*(*ft).wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        xasprintf(
-            &raw mut value,
-            b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).pipe_pid as ::core::ffi::c_long,
+        value = Some(
+            CString::new(format!(
+                "{}",
+                ((*(*ft).wp).pipe_pid as ::core::ffi::c_long) as ::core::ffi::c_long
+            ))
+            .expect("formatted numbers contain no NUL"),
         );
     }
-    return value as *mut ::core::ffi::c_void;
+    return value;
 }
-unsafe extern "C" fn format_cb_pane_pb_progress(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn format_cb_pane_pb_progress(mut ft: *mut format_tree) -> Option<CString> {
+    let mut value = None;
     if !(*ft).wp.is_null() {
-        xasprintf(
-            &raw mut value,
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).base.progress_bar.progress,
+        value = Some(
+            CString::new(format!(
+                "{}",
+                ((*(*ft).wp).base.progress_bar.progress) as i32
+            ))
+            .expect("formatted numbers contain no NUL"),
         );
     }
-    return value as *mut ::core::ffi::c_void;
+    return value;
 }
-unsafe extern "C" fn format_cb_pane_pb_state(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_pb_state(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         match (*(*ft).wp).base.progress_bar.state as ::core::ffi::c_uint {
             0 => {
-                return xstrdup(b"hidden\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"hidden".to_owned());
             }
             1 => {
-                return xstrdup(b"normal\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"normal".to_owned());
             }
             2 => {
-                return xstrdup(b"error\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"error".to_owned());
             }
             3 => {
-                return xstrdup(b"indeterminate\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"indeterminate".to_owned());
             }
             4 => {
-                return xstrdup(b"paused\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"paused".to_owned());
             }
             _ => {}
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_right(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_right(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).xoff + (*wp).sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!(
+                "{}",
+                ((*wp).xoff + (*wp).sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32
+            ))
+            .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_search_string(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_search_string(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).searchstr.is_null() {
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"".to_owned());
         }
-        return xstrdup((*(*ft).wp).searchstr) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).wp).searchstr).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_synchronized(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_synchronized(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if options_get_number(
             (*(*ft).wp).options,
             b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_title(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_title(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return xstrdup((*(*ft).wp).base.title) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).wp).base.title).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_top(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_top(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).yoff,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).yoff) as i32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_tty(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_tty(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return xstrdup(&raw mut (*(*ft).wp).tty as *mut ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CStr::from_ptr(&raw mut (*(*ft).wp).tty as *mut ::core::ffi::c_char).to_owned(),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_unzoomed_height(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_unzoomed_height(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -2383,7 +2145,7 @@ unsafe extern "C" fn format_cb_pane_unzoomed_height(
     let mut floating: ::core::ffi::c_int = 0;
     let mut sy: u_int = 0;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     w = (*wp).window as *mut window;
     lc = (*wp).saved_layout_cell;
@@ -2391,7 +2153,7 @@ unsafe extern "C" fn format_cb_pane_unzoomed_height(
         lc = (*wp).layout_cell as *mut layout_cell;
     }
     if lc.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     sy = (*lc).g.sy;
     floating = (*lc).flags & LAYOUT_CELL_FLOATING;
@@ -2411,12 +2173,11 @@ unsafe extern "C" fn format_cb_pane_unzoomed_height(
     {
         sy = sy.wrapping_sub(1);
     }
-    return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, sy)
-        as *mut ::core::ffi::c_void;
+    return Some(
+        CString::new(format!("{}", (sy) as u32)).expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_pane_unzoomed_width(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_unzoomed_width(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut saved: ::core::ffi::c_int = 0;
@@ -2424,7 +2185,7 @@ unsafe extern "C" fn format_cb_pane_unzoomed_width(
     let mut sb_pad: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     if wp.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     lc = (*wp).saved_layout_cell;
     saved = (lc != NULL_0 as *mut layout_cell) as ::core::ffi::c_int;
@@ -2432,7 +2193,7 @@ unsafe extern "C" fn format_cb_pane_unzoomed_width(
         lc = (*wp).layout_cell as *mut layout_cell;
     }
     if lc.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     sx = (*lc).g.sx;
     if saved != 0 && (*wp).base.saved_grid.is_null() && (*(*wp).window).sb == PANE_SCROLLBARS_ALWAYS
@@ -2452,84 +2213,76 @@ unsafe extern "C" fn format_cb_pane_unzoomed_width(
             sx = sx.wrapping_sub((sb_w + sb_pad) as u_int);
         }
     }
-    return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, sx)
-        as *mut ::core::ffi::c_void;
+    return Some(
+        CString::new(format!("{}", (sx) as u32)).expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_pane_width(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_width(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).sx,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).sx) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_x(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_x(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).xoff,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).xoff) as i32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_y(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_y(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).yoff,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).yoff) as i32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_z(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_z(mut ft: *mut format_tree) -> Option<CString> {
     let mut idx: u_int = 0;
     if !(*ft).wp.is_null() && window_pane_zindex((*ft).wp, &raw mut idx) == 0 as ::core::ffi::c_int
     {
-        return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, idx)
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_pane_zoomed_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_pane_zoomed_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if !wp.is_null() {
         if (*wp).flags & PANE_ZOOMED != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_scroll_region_lower(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_scroll_region_lower(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).base.rlower,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).base.rlower) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_scroll_region_upper(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wp).base.rupper,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wp).base.rupper) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_server_sessions(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_server_sessions(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
@@ -2537,293 +2290,241 @@ unsafe extern "C" fn format_cb_server_sessions(
         n = n.wrapping_add(1);
         s = sessions_next(s);
     }
-    return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, n)
-        as *mut ::core::ffi::c_void;
+    return Some(
+        CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_session_active(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_active(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).s.is_null() || (*ft).c.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if (*(*ft).c).session == (*ft).s {
-        return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"1".to_owned());
     }
-    return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(c"0".to_owned());
 }
-unsafe extern "C" fn format_cb_session_activity_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
         wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*(*ft).wl).flags & WINLINK_ACTIVITY != 0 {
-                return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"1".to_owned());
             }
-            return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"0".to_owned());
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_bell_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
         wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*wl).flags & WINLINK_BELL != 0 {
-                return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"1".to_owned());
             }
-            return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"0".to_owned());
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_silence_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_silence_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
         wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*(*ft).wl).flags & WINLINK_SILENCE != 0 {
-                return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                    as *mut ::core::ffi::c_void;
+                return Some(c"1".to_owned());
             }
-            return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"0".to_owned());
         }
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_attached(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_attached(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).s).attached,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).s).attached) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_format(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_format(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).type_0 as ::core::ffi::c_uint
         == FORMAT_TYPE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"1".to_owned());
     }
-    return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(c"0".to_owned());
 }
-unsafe extern "C" fn format_cb_session_group(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_group(mut ft: *mut format_tree) -> Option<CString> {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !(*ft).s.is_null() && {
         sg = session_group_contains((*ft).s);
         !sg.is_null()
     } {
-        return xstrdup((*sg).name) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*sg).name).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_group_attached(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_group_attached(mut ft: *mut format_tree) -> Option<CString> {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !(*ft).s.is_null() && {
         sg = session_group_contains((*ft).s);
         !sg.is_null()
     } {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            session_group_attached_count(sg),
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", (session_group_attached_count(sg)) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_group_many_attached(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_group_many_attached(mut ft: *mut format_tree) -> Option<CString> {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !(*ft).s.is_null() && {
         sg = session_group_contains((*ft).s);
         !sg.is_null()
     } {
         if session_group_attached_count(sg) > 1 as u_int {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_group_size(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_group_size(mut ft: *mut format_tree) -> Option<CString> {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !(*ft).s.is_null() && {
         sg = session_group_contains((*ft).s);
         !sg.is_null()
     } {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            session_group_count(sg),
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", (session_group_count(sg)) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_grouped(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_grouped(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
         if !session_group_contains((*ft).s).is_null() {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_id(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_id(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        return format_printf(
-            b"$%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).s).id,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("${}", ((*(*ft).s).id) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_many_attached(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_many_attached(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
         if (*(*ft).s).attached > 1 as u_int {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_marked(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_marked(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
         if server_check_marked() != 0 && marked_pane.s == (*ft).s {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_name(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_name(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        return xstrdup((*(*ft).s).name) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).s).name).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_path(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_path(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        return xstrdup((*(*ft).s).cwd) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).s).cwd).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_windows(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_windows(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            winlink_count(&raw mut (*(*ft).s).windows),
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!(
+                "{}",
+                (winlink_count(&raw mut (*(*ft).s).windows)) as u32
+            ))
+            .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_socket_path(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    return xstrdup(socket_path) as *mut ::core::ffi::c_void;
+unsafe fn format_cb_socket_path(mut ft: *mut format_tree) -> Option<CString> {
+    return Some(CStr::from_ptr(socket_path).to_owned());
 }
-unsafe extern "C" fn format_cb_version(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    return xstrdup(getversion()) as *mut ::core::ffi::c_void;
+unsafe fn format_cb_version(mut ft: *mut format_tree) -> Option<CString> {
+    return Some(CStr::from_ptr(getversion()).to_owned());
 }
-unsafe extern "C" fn format_cb_sixel_support(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+unsafe fn format_cb_sixel_support(mut ft: *mut format_tree) -> Option<CString> {
+    return Some(c"0".to_owned());
 }
-unsafe extern "C" fn format_cb_active_window_index(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_active_window_index(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*(*ft).s).curw).idx,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*(*ft).s).curw).idx) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_last_window_index(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_last_window_index(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
         wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_INF);
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wl).idx,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*wl).idx) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_active(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_active(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         if (*ft).wl == (*(*(*ft).wl).session).curw {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_activity_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_activity_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         if (*(*ft).wl).flags & WINLINK_ACTIVITY != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_bell_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_bell_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         if (*(*ft).wl).flags & WINLINK_BELL != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_bigger(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_bigger(mut ft: *mut format_tree) -> Option<CString> {
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
     let mut sx: u_int = 0;
@@ -2837,115 +2538,100 @@ unsafe extern "C" fn format_cb_window_bigger(mut ft: *mut format_tree) -> *mut :
             &raw mut sy,
         ) != 0
         {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_cell_height(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_cell_height(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).w).ypixel,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).w).ypixel) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_cell_width(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_cell_width(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).w).xpixel,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).w).xpixel) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_end_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         if (*ft).wl == winlinks_minmax(&raw mut (*(*(*ft).wl).session).windows, RB_INF) {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_flags(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
-        return xstrdup(window_printable_flags((*ft).wl, 1 as ::core::ffi::c_int))
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CStr::from_ptr(window_printable_flags((*ft).wl, 1 as ::core::ffi::c_int)).to_owned(),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_format(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_format(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).type_0 as ::core::ffi::c_uint
         == FORMAT_TYPE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"1".to_owned());
     }
-    return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char) as *mut ::core::ffi::c_void;
+    return Some(c"0".to_owned());
 }
-unsafe extern "C" fn format_cb_window_height(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_height(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).w).sy,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).w).sy) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_manual_height(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_manual_height(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = (*ft).w;
     if w.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if options_get_number(
         (*w).options,
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) != WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong
     {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"".to_owned());
     }
-    return format_printf(
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).manual_sy,
-    ) as *mut ::core::ffi::c_void;
+    return Some(
+        CString::new(format!("{}", ((*w).manual_sy) as u32))
+            .expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_window_id(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_id(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
-        return format_printf(
-            b"@%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).w).id,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("@{}", ((*(*ft).w).id) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_index(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_index(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
-        return format_printf(
-            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).wl).idx,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).wl).idx) as i32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_last_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         if (*ft).wl
             == crate::src::window::winlink_stack_first(
@@ -2953,15 +2639,13 @@ unsafe extern "C" fn format_cb_window_last_flag(
                 &raw mut (*(*(*ft).wl).session).windows,
             )
         {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_linked(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -2972,8 +2656,7 @@ unsafe extern "C" fn format_cb_window_linked(mut ft: *mut format_tree) -> *mut :
             while !wl.is_null() {
                 if (*wl).window == (*(*ft).wl).window {
                     if found != 0 {
-                        return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                            as *mut ::core::ffi::c_void;
+                        return Some(c"1".to_owned());
                     }
                     found = 1 as ::core::ffi::c_int;
                 }
@@ -2981,20 +2664,17 @@ unsafe extern "C" fn format_cb_window_linked(mut ft: *mut format_tree) -> *mut :
             }
             s = sessions_next(s);
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_linked_sessions(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
     if (*ft).wl.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     w = (*(*ft).wl).window;
     sg = session_groups_minmax(&raw mut session_groups, RB_NEGINF);
@@ -3014,45 +2694,35 @@ unsafe extern "C" fn format_cb_window_linked_sessions(
         }
         s = sessions_next(s);
     }
-    return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, n)
-        as *mut ::core::ffi::c_void;
+    return Some(
+        CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_window_marked_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_marked_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         if server_check_marked() != 0 && marked_pane.wl == (*ft).wl {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_modal_pane(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_modal_pane(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() && !(*(*ft).w).modal.is_null() {
-        return format_printf(
-            b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*(*ft).w).modal).id,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("%{}", ((*(*(*ft).w).modal).id) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_name(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_name(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
-        return format_printf(
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).w).name,
-        ) as *mut ::core::ffi::c_void;
+        return Some(CStr::from_ptr((*(*ft).w).name).to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_offset_x(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_offset_x(mut ft: *mut format_tree) -> Option<CString> {
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
     let mut sx: u_int = 0;
@@ -3066,16 +2736,15 @@ unsafe extern "C" fn format_cb_window_offset_x(
             &raw mut sy,
         ) != 0
         {
-            return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, ox)
-                as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!("{}", (ox) as u32)).expect("formatted numbers contain no NUL"),
+            );
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_offset_y(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_offset_y(mut ft: *mut format_tree) -> Option<CString> {
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
     let mut sx: u_int = 0;
@@ -3089,1949 +2758,1121 @@ unsafe extern "C" fn format_cb_window_offset_y(
             &raw mut sy,
         ) != 0
         {
-            return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, oy)
-                as *mut ::core::ffi::c_void;
+            return Some(
+                CString::new(format!("{}", (oy) as u32)).expect("formatted numbers contain no NUL"),
+            );
         }
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_panes(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_panes(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            window_count_panes((*ft).w, 1 as ::core::ffi::c_int),
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!(
+                "{}",
+                (window_count_panes((*ft).w, 1 as ::core::ffi::c_int)) as u32
+            ))
+            .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_raw_flags(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_raw_flags(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
-        return xstrdup(window_printable_flags((*ft).wl, 0 as ::core::ffi::c_int))
-            as *mut ::core::ffi::c_void;
+        return Some(
+            CStr::from_ptr(window_printable_flags((*ft).wl, 0 as ::core::ffi::c_int)).to_owned(),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_silence_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_silence_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         if (*(*ft).wl).flags & WINLINK_SILENCE != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_start_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_start_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         if (*ft).wl == winlinks_minmax(&raw mut (*(*(*ft).wl).session).windows, RB_NEGINF) {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_width(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_width(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
-        return format_printf(
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*ft).w).sx,
-        ) as *mut ::core::ffi::c_void;
+        return Some(
+            CString::new(format!("{}", ((*(*ft).w).sx) as u32))
+                .expect("formatted numbers contain no NUL"),
+        );
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_window_manual_width(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_manual_width(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = (*ft).w;
     if w.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        return None;
     }
     if options_get_number(
         (*w).options,
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) != WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong
     {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"".to_owned());
     }
-    return format_printf(
-        b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).manual_sx,
-    ) as *mut ::core::ffi::c_void;
+    return Some(
+        CString::new(format!("{}", ((*w).manual_sx) as u32))
+            .expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_window_zoomed_flag(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_zoomed_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
         if (*(*ft).w).flags & WINDOW_ZOOMED != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_wrap_flag(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_wrap_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         if (*(*ft).wp).base.mode & MODE_WRAP != 0 {
-            return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                as *mut ::core::ffi::c_void;
+            return Some(c"1".to_owned());
         }
-        return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
+        return Some(c"0".to_owned());
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_buffer_created(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
-    static mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
+unsafe fn format_cb_buffer_created(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).pb.is_null() {
-        tv.tv_usec = 0 as __suseconds_t;
-        tv.tv_sec = tv.tv_usec as __time_t;
-        tv.tv_sec = paste_buffer_created((*ft).pb) as __time_t;
-        return &raw mut tv as *mut ::core::ffi::c_void;
+        return Some(paste_buffer_created((*ft).pb) as __time_t as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_activity(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_activity(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).c.is_null() {
-        return &raw mut (*(*ft).c).activity_time as *mut ::core::ffi::c_void;
+        return Some(((*(*ft).c).activity_time).tv_sec as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_client_created(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_client_created(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).c.is_null() {
-        return &raw mut (*(*ft).c).creation_time as *mut ::core::ffi::c_void;
+        return Some(((*(*ft).c).creation_time).tv_sec as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_activity(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_activity(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).s.is_null() {
-        return &raw mut (*(*ft).s).activity_time as *mut ::core::ffi::c_void;
+        return Some(((*(*ft).s).activity_time).tv_sec as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_created(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_created(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).s.is_null() {
-        return &raw mut (*(*ft).s).creation_time as *mut ::core::ffi::c_void;
+        return Some(((*(*ft).s).creation_time).tv_sec as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_session_last_attached(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_session_last_attached(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).s.is_null() {
-        return &raw mut (*(*ft).s).last_attached_time as *mut ::core::ffi::c_void;
+        return Some(((*(*ft).s).last_attached_time).tv_sec as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_start_time(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    return &raw mut start_time as *mut ::core::ffi::c_void;
+unsafe fn format_cb_start_time(mut ft: *mut format_tree) -> Option<time_t> {
+    return Some((start_time).tv_sec as time_t);
 }
-unsafe extern "C" fn format_cb_window_activity(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
+unsafe fn format_cb_window_activity(mut ft: *mut format_tree) -> Option<time_t> {
     if !(*ft).w.is_null() {
-        return &raw mut (*(*ft).w).activity_time as *mut ::core::ffi::c_void;
+        return Some(((*(*ft).w).activity_time).tv_sec as time_t);
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    return None;
 }
-unsafe extern "C" fn format_cb_buffer_mode_format(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
-    return xstrdup(window_buffer_mode.default_format) as *mut ::core::ffi::c_void;
+unsafe fn format_cb_buffer_mode_format(mut ft: *mut format_tree) -> Option<CString> {
+    return Some(CStr::from_ptr(window_buffer_mode.default_format).to_owned());
 }
-unsafe extern "C" fn format_cb_client_mode_format(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
-    return xstrdup(window_client_mode.default_format) as *mut ::core::ffi::c_void;
+unsafe fn format_cb_client_mode_format(mut ft: *mut format_tree) -> Option<CString> {
+    return Some(CStr::from_ptr(window_client_mode.default_format).to_owned());
 }
-unsafe extern "C" fn format_cb_tree_mode_format(
-    mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_void {
-    return xstrdup(window_tree_mode.default_format) as *mut ::core::ffi::c_void;
+unsafe fn format_cb_tree_mode_format(mut ft: *mut format_tree) -> Option<CString> {
+    return Some(CStr::from_ptr(window_tree_mode.default_format).to_owned());
 }
-unsafe extern "C" fn format_cb_uid(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    return format_printf(
-        b"%ld\0" as *const u8 as *const ::core::ffi::c_char,
-        getuid() as ::core::ffi::c_long,
-    ) as *mut ::core::ffi::c_void;
+unsafe fn format_cb_uid(mut ft: *mut format_tree) -> Option<CString> {
+    return Some(
+        CString::new(format!(
+            "{}",
+            (getuid() as ::core::ffi::c_long) as ::core::ffi::c_long
+        ))
+        .expect("formatted numbers contain no NUL"),
+    );
 }
-unsafe extern "C" fn format_cb_user(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-    static mut cached: *mut ::core::ffi::c_char =
-        ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char;
-    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    if cached.is_null() && {
-        pw = getpwuid(getuid());
-        !pw.is_null()
-    } {
-        cached = xstrdup((*pw).pw_name);
+unsafe fn format_cb_user(_ft: *mut format_tree) -> Option<CString> {
+    // Preserve retry-on-failure and process-lifetime caching without a leaked
+    // libc allocation. No borrow survives the libc lookup or a callback.
+    static CACHED: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+    if let Some(name) = CACHED.get() {
+        return Some(name.clone());
     }
-    if !cached.is_null() {
-        return xstrdup(cached) as *mut ::core::ffi::c_void;
+    let pw = getpwuid(getuid());
+    if pw.is_null() {
+        return None;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    let name = CStr::from_ptr((*pw).pw_name).to_owned();
+    let _ = CACHED.set(name);
+    CACHED.get().cloned()
 }
-pub(super) static mut format_table: [format_table_entry; 214] = unsafe {
-    [
-        format_table_entry {
-            key: b"active_window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_active_window_index
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"alternate_on\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_alternate_on
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"alternate_saved_x\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_alternate_saved_x
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"alternate_saved_y\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_alternate_saved_y
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"bracket_paste_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_bracket_paste_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"buffer_created\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_buffer_created
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"buffer_full\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_buffer_full
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"buffer_mode_format\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_buffer_mode_format
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"buffer_name\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_buffer_name
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"buffer_sample\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_buffer_sample
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"buffer_size\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_buffer_size
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_activity\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_client_activity
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_cell_height\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_cell_height
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_cell_width\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_cell_width
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_colours\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_colours
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_control_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_control_mode
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_created\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_client_created
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_discarded\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_discarded
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_flags\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_flags
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_height\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_height
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_key_table\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_key_table
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_last_session\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_last_session
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_mode_format\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_mode_format
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_name\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_name
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_pid\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_pid
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_prefix\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_prefix
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_readonly\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_readonly
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_session\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_session
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_termfeatures\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_termfeatures
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_termname\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_termname
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_termtype\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_termtype
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_theme\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_theme
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_tty\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_tty
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_uid\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_uid
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_user\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_user
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_utf8\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_utf8
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_width\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_width
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"client_written\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_client_written
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"config_files\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_config_files
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"cursor_blinking\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_cursor_blinking
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"cursor_character\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_cursor_character
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"cursor_colour\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_cursor_colour
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"cursor_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_cursor_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"cursor_shape\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_cursor_shape
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"cursor_very_visible\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_cursor_very_visible
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"cursor_x\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_cursor_x
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"cursor_y\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_cursor_y
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"history_added\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_history_added
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"history_all_bytes\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_history_all_bytes
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"history_bytes\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_history_bytes
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"history_collected\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_history_collected
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"history_generation\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_history_generation
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"history_limit\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_history_limit
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"history_size\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_history_size
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"host\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_host
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"host_short\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_host_short
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"insert_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_insert_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"keypad_cursor_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_keypad_cursor_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"keypad_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_keypad_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"last_window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_last_window_index
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_all_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_all_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_any_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_any_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_button_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_button_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_hyperlink\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_hyperlink
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_line\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_line
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_pane
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_sgr_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_sgr_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_standard_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_standard_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_status_line\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_status_line
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_status_range\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_status_range
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_utf8_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_utf8_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_word\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_word
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_x\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_x
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"mouse_y\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_mouse_y
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"next_session_id\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_next_session_id
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"origin_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_origin_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_active\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_active
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_at_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_at_bottom
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_at_left\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_at_left
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_at_right\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_at_right
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_at_top\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_at_top
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_bg\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_bg
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_bottom
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_command_duration\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_command_duration
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_command_end_time\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_pane_command_end_time
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_command_running\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_command_running
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_command_start_time\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_pane_command_start_time
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_command_status\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_command_status
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_current_command\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_current_command
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_current_path\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_current_path
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_dead\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_dead
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_dead_signal\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_dead_signal
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_dead_status\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_dead_status
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_dead_time\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_pane_dead_time
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_fg\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_fg
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_flags\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_flags
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_floating_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_floating_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_format\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_format
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_height\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_height
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_id\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_id
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_in_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_in_mode
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_index\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_index
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_input_off\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_input_off
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_key_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_key_mode
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_last\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_last
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_last_output_time\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_pane_last_output_time
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_last_prompt_time\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_pane_last_prompt_time
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_left\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_left
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_marked\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_marked
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_marked_set\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_marked_set
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_modal_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_modal_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_mode
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_output_generation\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_output_generation
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_path\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_path
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_pb_progress\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_pb_progress
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_pb_state\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_pb_state
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_pid\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_pid
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_pipe\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_pipe
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_pipe_pid\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_pipe_pid
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_private_modes\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_private_modes
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_right
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_search_string\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_search_string
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_start_command\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_start_command
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_start_command_list\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_start_command_list
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_start_path\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_start_path
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_synchronized\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_synchronized
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_tabs\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_tabs
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_title\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_title
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_top
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_tty\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_tty
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_unseen_changes\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_unseen_changes
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_unzoomed_height\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_unzoomed_height
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_unzoomed_width\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_unzoomed_width
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_width\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_width
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_x\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_x
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_y\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_y
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_z\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_z
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pane_zoomed_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pane_zoomed_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"pid\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_pid as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"scroll_region_lower\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_scroll_region_lower
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"scroll_region_upper\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_scroll_region_upper
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"server_sessions\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_server_sessions
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_active\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_active
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_activity\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_session_activity
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_activity_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_activity_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_alert\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_alert
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_alerts\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_alerts
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_attached\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_attached
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_attached_list\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_attached_list
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_bell_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_bell_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_created\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_session_created
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_format\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_format
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_group\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_group
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_group_attached\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_group_attached
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_group_attached_list\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_group_attached_list
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_group_list\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_group_list
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_group_many_attached\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_group_many_attached
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_group_size\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_group_size
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_grouped\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_grouped
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_id\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_id
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_last_attached\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_session_last_attached
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_many_attached\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_many_attached
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_marked\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_marked
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_name\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_name
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_path\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_path
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_silence_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_silence_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_stack\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_stack
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"session_windows\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_session_windows
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"sixel_support\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_sixel_support
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"socket_path\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_socket_path
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"start_time\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_start_time
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"synchronized_output_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_synchronized_output_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"tree_mode_format\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_tree_mode_format
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"uid\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_uid as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"user\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_user
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"version\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_version
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_active\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_active
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_active_clients\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_active_clients
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_active_clients_list\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_active_clients_list
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_active_sessions\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_active_sessions
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_active_sessions_list\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_active_sessions_list
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_activity\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_TIME,
-            cb: Some(
-                format_cb_window_activity
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_activity_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_activity_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_bell_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_bell_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_bigger\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_bigger
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_cell_height\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_cell_height
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_cell_width\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_cell_width
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_end_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_end_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_flags\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_flags
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_format\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_format
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_height\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_height
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_id\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_id
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_index
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_last_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_layout\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_layout
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_linked\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_linked
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_linked_sessions\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_linked_sessions
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_linked_sessions_list\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_linked_sessions_list
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_manual_height\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_manual_height
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_manual_width\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_manual_width
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_marked_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_marked_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_modal_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_modal_pane
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_name\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_name
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_offset_x\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_offset_x
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_offset_y\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_offset_y
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_panes\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_panes
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_raw_flags\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_raw_flags
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_silence_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_silence_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_stack_index\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_stack_index
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_start_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_start_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_visible_layout\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_visible_layout
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_width\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_width
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"window_zoomed_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_window_zoomed_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-        format_table_entry {
-            key: b"wrap_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            type_0: FORMAT_TABLE_STRING,
-            cb: Some(
-                format_cb_wrap_flag
-                    as unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void,
-            ),
-        },
-    ]
-};
-pub(super) unsafe extern "C" fn format_table_compare(
-    mut key0: *const ::core::ffi::c_void,
-    mut entry0: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut key: *const ::core::ffi::c_char = key0 as *const ::core::ffi::c_char;
-    let mut entry: *const format_table_entry = entry0 as *const format_table_entry;
-    return strcmp(key, (*entry).key);
+pub(super) enum FormatValue {
+    String(CString),
+    Time(time_t),
 }
-pub(super) unsafe extern "C" fn format_table_get(
-    mut key: *const ::core::ffi::c_char,
-) -> *const format_table_entry {
-    return bsearch(
-        key as *const ::core::ffi::c_void,
-        &raw const format_table as *const format_table_entry as *const ::core::ffi::c_void,
-        (::core::mem::size_of::<[format_table_entry; 214]>() as size_t)
-            .wrapping_div(::core::mem::size_of::<format_table_entry>() as size_t),
-        ::core::mem::size_of::<format_table_entry>() as size_t,
-        Some(
-            format_table_compare
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    ) as *const format_table_entry;
+pub(super) enum FormatCallback {
+    String(unsafe fn(*mut format_tree) -> Option<CString>),
+    Time(unsafe fn(*mut format_tree) -> Option<time_t>),
+}
+pub(super) struct FormatTableEntry {
+    pub key: &'static CStr,
+    callback: FormatCallback,
+}
+impl FormatTableEntry {
+    pub unsafe fn get(&self, ft: *mut format_tree) -> Option<FormatValue> {
+        match self.callback {
+            FormatCallback::String(cb) => cb(ft).map(FormatValue::String),
+            FormatCallback::Time(cb) => cb(ft).map(FormatValue::Time),
+        }
+    }
+}
+pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
+    FormatTableEntry {
+        key: c"active_window_index",
+        callback: FormatCallback::String(format_cb_active_window_index),
+    },
+    FormatTableEntry {
+        key: c"alternate_on",
+        callback: FormatCallback::String(format_cb_alternate_on),
+    },
+    FormatTableEntry {
+        key: c"alternate_saved_x",
+        callback: FormatCallback::String(format_cb_alternate_saved_x),
+    },
+    FormatTableEntry {
+        key: c"alternate_saved_y",
+        callback: FormatCallback::String(format_cb_alternate_saved_y),
+    },
+    FormatTableEntry {
+        key: c"bracket_paste_flag",
+        callback: FormatCallback::String(format_cb_bracket_paste_flag),
+    },
+    FormatTableEntry {
+        key: c"buffer_created",
+        callback: FormatCallback::Time(format_cb_buffer_created),
+    },
+    FormatTableEntry {
+        key: c"buffer_full",
+        callback: FormatCallback::String(format_cb_buffer_full),
+    },
+    FormatTableEntry {
+        key: c"buffer_mode_format",
+        callback: FormatCallback::String(format_cb_buffer_mode_format),
+    },
+    FormatTableEntry {
+        key: c"buffer_name",
+        callback: FormatCallback::String(format_cb_buffer_name),
+    },
+    FormatTableEntry {
+        key: c"buffer_sample",
+        callback: FormatCallback::String(format_cb_buffer_sample),
+    },
+    FormatTableEntry {
+        key: c"buffer_size",
+        callback: FormatCallback::String(format_cb_buffer_size),
+    },
+    FormatTableEntry {
+        key: c"client_activity",
+        callback: FormatCallback::Time(format_cb_client_activity),
+    },
+    FormatTableEntry {
+        key: c"client_cell_height",
+        callback: FormatCallback::String(format_cb_client_cell_height),
+    },
+    FormatTableEntry {
+        key: c"client_cell_width",
+        callback: FormatCallback::String(format_cb_client_cell_width),
+    },
+    FormatTableEntry {
+        key: c"client_colours",
+        callback: FormatCallback::String(format_cb_client_colours),
+    },
+    FormatTableEntry {
+        key: c"client_control_mode",
+        callback: FormatCallback::String(format_cb_client_control_mode),
+    },
+    FormatTableEntry {
+        key: c"client_created",
+        callback: FormatCallback::Time(format_cb_client_created),
+    },
+    FormatTableEntry {
+        key: c"client_discarded",
+        callback: FormatCallback::String(format_cb_client_discarded),
+    },
+    FormatTableEntry {
+        key: c"client_flags",
+        callback: FormatCallback::String(format_cb_client_flags),
+    },
+    FormatTableEntry {
+        key: c"client_height",
+        callback: FormatCallback::String(format_cb_client_height),
+    },
+    FormatTableEntry {
+        key: c"client_key_table",
+        callback: FormatCallback::String(format_cb_client_key_table),
+    },
+    FormatTableEntry {
+        key: c"client_last_session",
+        callback: FormatCallback::String(format_cb_client_last_session),
+    },
+    FormatTableEntry {
+        key: c"client_mode_format",
+        callback: FormatCallback::String(format_cb_client_mode_format),
+    },
+    FormatTableEntry {
+        key: c"client_name",
+        callback: FormatCallback::String(format_cb_client_name),
+    },
+    FormatTableEntry {
+        key: c"client_pid",
+        callback: FormatCallback::String(format_cb_client_pid),
+    },
+    FormatTableEntry {
+        key: c"client_prefix",
+        callback: FormatCallback::String(format_cb_client_prefix),
+    },
+    FormatTableEntry {
+        key: c"client_readonly",
+        callback: FormatCallback::String(format_cb_client_readonly),
+    },
+    FormatTableEntry {
+        key: c"client_session",
+        callback: FormatCallback::String(format_cb_client_session),
+    },
+    FormatTableEntry {
+        key: c"client_termfeatures",
+        callback: FormatCallback::String(format_cb_client_termfeatures),
+    },
+    FormatTableEntry {
+        key: c"client_termname",
+        callback: FormatCallback::String(format_cb_client_termname),
+    },
+    FormatTableEntry {
+        key: c"client_termtype",
+        callback: FormatCallback::String(format_cb_client_termtype),
+    },
+    FormatTableEntry {
+        key: c"client_theme",
+        callback: FormatCallback::String(format_cb_client_theme),
+    },
+    FormatTableEntry {
+        key: c"client_tty",
+        callback: FormatCallback::String(format_cb_client_tty),
+    },
+    FormatTableEntry {
+        key: c"client_uid",
+        callback: FormatCallback::String(format_cb_client_uid),
+    },
+    FormatTableEntry {
+        key: c"client_user",
+        callback: FormatCallback::String(format_cb_client_user),
+    },
+    FormatTableEntry {
+        key: c"client_utf8",
+        callback: FormatCallback::String(format_cb_client_utf8),
+    },
+    FormatTableEntry {
+        key: c"client_width",
+        callback: FormatCallback::String(format_cb_client_width),
+    },
+    FormatTableEntry {
+        key: c"client_written",
+        callback: FormatCallback::String(format_cb_client_written),
+    },
+    FormatTableEntry {
+        key: c"config_files",
+        callback: FormatCallback::String(format_cb_config_files),
+    },
+    FormatTableEntry {
+        key: c"cursor_blinking",
+        callback: FormatCallback::String(format_cb_cursor_blinking),
+    },
+    FormatTableEntry {
+        key: c"cursor_character",
+        callback: FormatCallback::String(format_cb_cursor_character),
+    },
+    FormatTableEntry {
+        key: c"cursor_colour",
+        callback: FormatCallback::String(format_cb_cursor_colour),
+    },
+    FormatTableEntry {
+        key: c"cursor_flag",
+        callback: FormatCallback::String(format_cb_cursor_flag),
+    },
+    FormatTableEntry {
+        key: c"cursor_shape",
+        callback: FormatCallback::String(format_cb_cursor_shape),
+    },
+    FormatTableEntry {
+        key: c"cursor_very_visible",
+        callback: FormatCallback::String(format_cb_cursor_very_visible),
+    },
+    FormatTableEntry {
+        key: c"cursor_x",
+        callback: FormatCallback::String(format_cb_cursor_x),
+    },
+    FormatTableEntry {
+        key: c"cursor_y",
+        callback: FormatCallback::String(format_cb_cursor_y),
+    },
+    FormatTableEntry {
+        key: c"history_added",
+        callback: FormatCallback::String(format_cb_history_added),
+    },
+    FormatTableEntry {
+        key: c"history_all_bytes",
+        callback: FormatCallback::String(format_cb_history_all_bytes),
+    },
+    FormatTableEntry {
+        key: c"history_bytes",
+        callback: FormatCallback::String(format_cb_history_bytes),
+    },
+    FormatTableEntry {
+        key: c"history_collected",
+        callback: FormatCallback::String(format_cb_history_collected),
+    },
+    FormatTableEntry {
+        key: c"history_generation",
+        callback: FormatCallback::String(format_cb_history_generation),
+    },
+    FormatTableEntry {
+        key: c"history_limit",
+        callback: FormatCallback::String(format_cb_history_limit),
+    },
+    FormatTableEntry {
+        key: c"history_size",
+        callback: FormatCallback::String(format_cb_history_size),
+    },
+    FormatTableEntry {
+        key: c"host",
+        callback: FormatCallback::String(format_cb_host),
+    },
+    FormatTableEntry {
+        key: c"host_short",
+        callback: FormatCallback::String(format_cb_host_short),
+    },
+    FormatTableEntry {
+        key: c"insert_flag",
+        callback: FormatCallback::String(format_cb_insert_flag),
+    },
+    FormatTableEntry {
+        key: c"keypad_cursor_flag",
+        callback: FormatCallback::String(format_cb_keypad_cursor_flag),
+    },
+    FormatTableEntry {
+        key: c"keypad_flag",
+        callback: FormatCallback::String(format_cb_keypad_flag),
+    },
+    FormatTableEntry {
+        key: c"last_window_index",
+        callback: FormatCallback::String(format_cb_last_window_index),
+    },
+    FormatTableEntry {
+        key: c"mouse_all_flag",
+        callback: FormatCallback::String(format_cb_mouse_all_flag),
+    },
+    FormatTableEntry {
+        key: c"mouse_any_flag",
+        callback: FormatCallback::String(format_cb_mouse_any_flag),
+    },
+    FormatTableEntry {
+        key: c"mouse_button_flag",
+        callback: FormatCallback::String(format_cb_mouse_button_flag),
+    },
+    FormatTableEntry {
+        key: c"mouse_hyperlink",
+        callback: FormatCallback::String(format_cb_mouse_hyperlink),
+    },
+    FormatTableEntry {
+        key: c"mouse_line",
+        callback: FormatCallback::String(format_cb_mouse_line),
+    },
+    FormatTableEntry {
+        key: c"mouse_pane",
+        callback: FormatCallback::String(format_cb_mouse_pane),
+    },
+    FormatTableEntry {
+        key: c"mouse_sgr_flag",
+        callback: FormatCallback::String(format_cb_mouse_sgr_flag),
+    },
+    FormatTableEntry {
+        key: c"mouse_standard_flag",
+        callback: FormatCallback::String(format_cb_mouse_standard_flag),
+    },
+    FormatTableEntry {
+        key: c"mouse_status_line",
+        callback: FormatCallback::String(format_cb_mouse_status_line),
+    },
+    FormatTableEntry {
+        key: c"mouse_status_range",
+        callback: FormatCallback::String(format_cb_mouse_status_range),
+    },
+    FormatTableEntry {
+        key: c"mouse_utf8_flag",
+        callback: FormatCallback::String(format_cb_mouse_utf8_flag),
+    },
+    FormatTableEntry {
+        key: c"mouse_word",
+        callback: FormatCallback::String(format_cb_mouse_word),
+    },
+    FormatTableEntry {
+        key: c"mouse_x",
+        callback: FormatCallback::String(format_cb_mouse_x),
+    },
+    FormatTableEntry {
+        key: c"mouse_y",
+        callback: FormatCallback::String(format_cb_mouse_y),
+    },
+    FormatTableEntry {
+        key: c"next_session_id",
+        callback: FormatCallback::String(format_cb_next_session_id),
+    },
+    FormatTableEntry {
+        key: c"origin_flag",
+        callback: FormatCallback::String(format_cb_origin_flag),
+    },
+    FormatTableEntry {
+        key: c"pane_active",
+        callback: FormatCallback::String(format_cb_pane_active),
+    },
+    FormatTableEntry {
+        key: c"pane_at_bottom",
+        callback: FormatCallback::String(format_cb_pane_at_bottom),
+    },
+    FormatTableEntry {
+        key: c"pane_at_left",
+        callback: FormatCallback::String(format_cb_pane_at_left),
+    },
+    FormatTableEntry {
+        key: c"pane_at_right",
+        callback: FormatCallback::String(format_cb_pane_at_right),
+    },
+    FormatTableEntry {
+        key: c"pane_at_top",
+        callback: FormatCallback::String(format_cb_pane_at_top),
+    },
+    FormatTableEntry {
+        key: c"pane_bg",
+        callback: FormatCallback::String(format_cb_pane_bg),
+    },
+    FormatTableEntry {
+        key: c"pane_bottom",
+        callback: FormatCallback::String(format_cb_pane_bottom),
+    },
+    FormatTableEntry {
+        key: c"pane_command_duration",
+        callback: FormatCallback::String(format_cb_pane_command_duration),
+    },
+    FormatTableEntry {
+        key: c"pane_command_end_time",
+        callback: FormatCallback::Time(format_cb_pane_command_end_time),
+    },
+    FormatTableEntry {
+        key: c"pane_command_running",
+        callback: FormatCallback::String(format_cb_pane_command_running),
+    },
+    FormatTableEntry {
+        key: c"pane_command_start_time",
+        callback: FormatCallback::Time(format_cb_pane_command_start_time),
+    },
+    FormatTableEntry {
+        key: c"pane_command_status",
+        callback: FormatCallback::String(format_cb_pane_command_status),
+    },
+    FormatTableEntry {
+        key: c"pane_current_command",
+        callback: FormatCallback::String(format_cb_current_command),
+    },
+    FormatTableEntry {
+        key: c"pane_current_path",
+        callback: FormatCallback::String(format_cb_current_path),
+    },
+    FormatTableEntry {
+        key: c"pane_dead",
+        callback: FormatCallback::String(format_cb_pane_dead),
+    },
+    FormatTableEntry {
+        key: c"pane_dead_signal",
+        callback: FormatCallback::String(format_cb_pane_dead_signal),
+    },
+    FormatTableEntry {
+        key: c"pane_dead_status",
+        callback: FormatCallback::String(format_cb_pane_dead_status),
+    },
+    FormatTableEntry {
+        key: c"pane_dead_time",
+        callback: FormatCallback::Time(format_cb_pane_dead_time),
+    },
+    FormatTableEntry {
+        key: c"pane_fg",
+        callback: FormatCallback::String(format_cb_pane_fg),
+    },
+    FormatTableEntry {
+        key: c"pane_flags",
+        callback: FormatCallback::String(format_cb_pane_flags),
+    },
+    FormatTableEntry {
+        key: c"pane_floating_flag",
+        callback: FormatCallback::String(format_cb_pane_floating_flag),
+    },
+    FormatTableEntry {
+        key: c"pane_format",
+        callback: FormatCallback::String(format_cb_pane_format),
+    },
+    FormatTableEntry {
+        key: c"pane_height",
+        callback: FormatCallback::String(format_cb_pane_height),
+    },
+    FormatTableEntry {
+        key: c"pane_id",
+        callback: FormatCallback::String(format_cb_pane_id),
+    },
+    FormatTableEntry {
+        key: c"pane_in_mode",
+        callback: FormatCallback::String(format_cb_pane_in_mode),
+    },
+    FormatTableEntry {
+        key: c"pane_index",
+        callback: FormatCallback::String(format_cb_pane_index),
+    },
+    FormatTableEntry {
+        key: c"pane_input_off",
+        callback: FormatCallback::String(format_cb_pane_input_off),
+    },
+    FormatTableEntry {
+        key: c"pane_key_mode",
+        callback: FormatCallback::String(format_cb_pane_key_mode),
+    },
+    FormatTableEntry {
+        key: c"pane_last",
+        callback: FormatCallback::String(format_cb_pane_last),
+    },
+    FormatTableEntry {
+        key: c"pane_last_output_time",
+        callback: FormatCallback::Time(format_cb_pane_last_output_time),
+    },
+    FormatTableEntry {
+        key: c"pane_last_prompt_time",
+        callback: FormatCallback::Time(format_cb_pane_last_prompt_time),
+    },
+    FormatTableEntry {
+        key: c"pane_left",
+        callback: FormatCallback::String(format_cb_pane_left),
+    },
+    FormatTableEntry {
+        key: c"pane_marked",
+        callback: FormatCallback::String(format_cb_pane_marked),
+    },
+    FormatTableEntry {
+        key: c"pane_marked_set",
+        callback: FormatCallback::String(format_cb_pane_marked_set),
+    },
+    FormatTableEntry {
+        key: c"pane_modal_flag",
+        callback: FormatCallback::String(format_cb_pane_modal_flag),
+    },
+    FormatTableEntry {
+        key: c"pane_mode",
+        callback: FormatCallback::String(format_cb_pane_mode),
+    },
+    FormatTableEntry {
+        key: c"pane_output_generation",
+        callback: FormatCallback::String(format_cb_pane_output_generation),
+    },
+    FormatTableEntry {
+        key: c"pane_path",
+        callback: FormatCallback::String(format_cb_pane_path),
+    },
+    FormatTableEntry {
+        key: c"pane_pb_progress",
+        callback: FormatCallback::String(format_cb_pane_pb_progress),
+    },
+    FormatTableEntry {
+        key: c"pane_pb_state",
+        callback: FormatCallback::String(format_cb_pane_pb_state),
+    },
+    FormatTableEntry {
+        key: c"pane_pid",
+        callback: FormatCallback::String(format_cb_pane_pid),
+    },
+    FormatTableEntry {
+        key: c"pane_pipe",
+        callback: FormatCallback::String(format_cb_pane_pipe),
+    },
+    FormatTableEntry {
+        key: c"pane_pipe_pid",
+        callback: FormatCallback::String(format_cb_pane_pipe_pid),
+    },
+    FormatTableEntry {
+        key: c"pane_private_modes",
+        callback: FormatCallback::String(format_cb_pane_private_modes),
+    },
+    FormatTableEntry {
+        key: c"pane_right",
+        callback: FormatCallback::String(format_cb_pane_right),
+    },
+    FormatTableEntry {
+        key: c"pane_search_string",
+        callback: FormatCallback::String(format_cb_pane_search_string),
+    },
+    FormatTableEntry {
+        key: c"pane_start_command",
+        callback: FormatCallback::String(format_cb_start_command),
+    },
+    FormatTableEntry {
+        key: c"pane_start_command_list",
+        callback: FormatCallback::String(format_cb_start_command_list),
+    },
+    FormatTableEntry {
+        key: c"pane_start_path",
+        callback: FormatCallback::String(format_cb_start_path),
+    },
+    FormatTableEntry {
+        key: c"pane_synchronized",
+        callback: FormatCallback::String(format_cb_pane_synchronized),
+    },
+    FormatTableEntry {
+        key: c"pane_tabs",
+        callback: FormatCallback::String(format_cb_pane_tabs),
+    },
+    FormatTableEntry {
+        key: c"pane_title",
+        callback: FormatCallback::String(format_cb_pane_title),
+    },
+    FormatTableEntry {
+        key: c"pane_top",
+        callback: FormatCallback::String(format_cb_pane_top),
+    },
+    FormatTableEntry {
+        key: c"pane_tty",
+        callback: FormatCallback::String(format_cb_pane_tty),
+    },
+    FormatTableEntry {
+        key: c"pane_unseen_changes",
+        callback: FormatCallback::String(format_cb_pane_unseen_changes),
+    },
+    FormatTableEntry {
+        key: c"pane_unzoomed_height",
+        callback: FormatCallback::String(format_cb_pane_unzoomed_height),
+    },
+    FormatTableEntry {
+        key: c"pane_unzoomed_width",
+        callback: FormatCallback::String(format_cb_pane_unzoomed_width),
+    },
+    FormatTableEntry {
+        key: c"pane_width",
+        callback: FormatCallback::String(format_cb_pane_width),
+    },
+    FormatTableEntry {
+        key: c"pane_x",
+        callback: FormatCallback::String(format_cb_pane_x),
+    },
+    FormatTableEntry {
+        key: c"pane_y",
+        callback: FormatCallback::String(format_cb_pane_y),
+    },
+    FormatTableEntry {
+        key: c"pane_z",
+        callback: FormatCallback::String(format_cb_pane_z),
+    },
+    FormatTableEntry {
+        key: c"pane_zoomed_flag",
+        callback: FormatCallback::String(format_cb_pane_zoomed_flag),
+    },
+    FormatTableEntry {
+        key: c"pid",
+        callback: FormatCallback::String(format_cb_pid),
+    },
+    FormatTableEntry {
+        key: c"scroll_region_lower",
+        callback: FormatCallback::String(format_cb_scroll_region_lower),
+    },
+    FormatTableEntry {
+        key: c"scroll_region_upper",
+        callback: FormatCallback::String(format_cb_scroll_region_upper),
+    },
+    FormatTableEntry {
+        key: c"server_sessions",
+        callback: FormatCallback::String(format_cb_server_sessions),
+    },
+    FormatTableEntry {
+        key: c"session_active",
+        callback: FormatCallback::String(format_cb_session_active),
+    },
+    FormatTableEntry {
+        key: c"session_activity",
+        callback: FormatCallback::Time(format_cb_session_activity),
+    },
+    FormatTableEntry {
+        key: c"session_activity_flag",
+        callback: FormatCallback::String(format_cb_session_activity_flag),
+    },
+    FormatTableEntry {
+        key: c"session_alert",
+        callback: FormatCallback::String(format_cb_session_alert),
+    },
+    FormatTableEntry {
+        key: c"session_alerts",
+        callback: FormatCallback::String(format_cb_session_alerts),
+    },
+    FormatTableEntry {
+        key: c"session_attached",
+        callback: FormatCallback::String(format_cb_session_attached),
+    },
+    FormatTableEntry {
+        key: c"session_attached_list",
+        callback: FormatCallback::String(format_cb_session_attached_list),
+    },
+    FormatTableEntry {
+        key: c"session_bell_flag",
+        callback: FormatCallback::String(format_cb_session_bell_flag),
+    },
+    FormatTableEntry {
+        key: c"session_created",
+        callback: FormatCallback::Time(format_cb_session_created),
+    },
+    FormatTableEntry {
+        key: c"session_format",
+        callback: FormatCallback::String(format_cb_session_format),
+    },
+    FormatTableEntry {
+        key: c"session_group",
+        callback: FormatCallback::String(format_cb_session_group),
+    },
+    FormatTableEntry {
+        key: c"session_group_attached",
+        callback: FormatCallback::String(format_cb_session_group_attached),
+    },
+    FormatTableEntry {
+        key: c"session_group_attached_list",
+        callback: FormatCallback::String(format_cb_session_group_attached_list),
+    },
+    FormatTableEntry {
+        key: c"session_group_list",
+        callback: FormatCallback::String(format_cb_session_group_list),
+    },
+    FormatTableEntry {
+        key: c"session_group_many_attached",
+        callback: FormatCallback::String(format_cb_session_group_many_attached),
+    },
+    FormatTableEntry {
+        key: c"session_group_size",
+        callback: FormatCallback::String(format_cb_session_group_size),
+    },
+    FormatTableEntry {
+        key: c"session_grouped",
+        callback: FormatCallback::String(format_cb_session_grouped),
+    },
+    FormatTableEntry {
+        key: c"session_id",
+        callback: FormatCallback::String(format_cb_session_id),
+    },
+    FormatTableEntry {
+        key: c"session_last_attached",
+        callback: FormatCallback::Time(format_cb_session_last_attached),
+    },
+    FormatTableEntry {
+        key: c"session_many_attached",
+        callback: FormatCallback::String(format_cb_session_many_attached),
+    },
+    FormatTableEntry {
+        key: c"session_marked",
+        callback: FormatCallback::String(format_cb_session_marked),
+    },
+    FormatTableEntry {
+        key: c"session_name",
+        callback: FormatCallback::String(format_cb_session_name),
+    },
+    FormatTableEntry {
+        key: c"session_path",
+        callback: FormatCallback::String(format_cb_session_path),
+    },
+    FormatTableEntry {
+        key: c"session_silence_flag",
+        callback: FormatCallback::String(format_cb_session_silence_flag),
+    },
+    FormatTableEntry {
+        key: c"session_stack",
+        callback: FormatCallback::String(format_cb_session_stack),
+    },
+    FormatTableEntry {
+        key: c"session_windows",
+        callback: FormatCallback::String(format_cb_session_windows),
+    },
+    FormatTableEntry {
+        key: c"sixel_support",
+        callback: FormatCallback::String(format_cb_sixel_support),
+    },
+    FormatTableEntry {
+        key: c"socket_path",
+        callback: FormatCallback::String(format_cb_socket_path),
+    },
+    FormatTableEntry {
+        key: c"start_time",
+        callback: FormatCallback::Time(format_cb_start_time),
+    },
+    FormatTableEntry {
+        key: c"synchronized_output_flag",
+        callback: FormatCallback::String(format_cb_synchronized_output_flag),
+    },
+    FormatTableEntry {
+        key: c"tree_mode_format",
+        callback: FormatCallback::String(format_cb_tree_mode_format),
+    },
+    FormatTableEntry {
+        key: c"uid",
+        callback: FormatCallback::String(format_cb_uid),
+    },
+    FormatTableEntry {
+        key: c"user",
+        callback: FormatCallback::String(format_cb_user),
+    },
+    FormatTableEntry {
+        key: c"version",
+        callback: FormatCallback::String(format_cb_version),
+    },
+    FormatTableEntry {
+        key: c"window_active",
+        callback: FormatCallback::String(format_cb_window_active),
+    },
+    FormatTableEntry {
+        key: c"window_active_clients",
+        callback: FormatCallback::String(format_cb_window_active_clients),
+    },
+    FormatTableEntry {
+        key: c"window_active_clients_list",
+        callback: FormatCallback::String(format_cb_window_active_clients_list),
+    },
+    FormatTableEntry {
+        key: c"window_active_sessions",
+        callback: FormatCallback::String(format_cb_window_active_sessions),
+    },
+    FormatTableEntry {
+        key: c"window_active_sessions_list",
+        callback: FormatCallback::String(format_cb_window_active_sessions_list),
+    },
+    FormatTableEntry {
+        key: c"window_activity",
+        callback: FormatCallback::Time(format_cb_window_activity),
+    },
+    FormatTableEntry {
+        key: c"window_activity_flag",
+        callback: FormatCallback::String(format_cb_window_activity_flag),
+    },
+    FormatTableEntry {
+        key: c"window_bell_flag",
+        callback: FormatCallback::String(format_cb_window_bell_flag),
+    },
+    FormatTableEntry {
+        key: c"window_bigger",
+        callback: FormatCallback::String(format_cb_window_bigger),
+    },
+    FormatTableEntry {
+        key: c"window_cell_height",
+        callback: FormatCallback::String(format_cb_window_cell_height),
+    },
+    FormatTableEntry {
+        key: c"window_cell_width",
+        callback: FormatCallback::String(format_cb_window_cell_width),
+    },
+    FormatTableEntry {
+        key: c"window_end_flag",
+        callback: FormatCallback::String(format_cb_window_end_flag),
+    },
+    FormatTableEntry {
+        key: c"window_flags",
+        callback: FormatCallback::String(format_cb_window_flags),
+    },
+    FormatTableEntry {
+        key: c"window_format",
+        callback: FormatCallback::String(format_cb_window_format),
+    },
+    FormatTableEntry {
+        key: c"window_height",
+        callback: FormatCallback::String(format_cb_window_height),
+    },
+    FormatTableEntry {
+        key: c"window_id",
+        callback: FormatCallback::String(format_cb_window_id),
+    },
+    FormatTableEntry {
+        key: c"window_index",
+        callback: FormatCallback::String(format_cb_window_index),
+    },
+    FormatTableEntry {
+        key: c"window_last_flag",
+        callback: FormatCallback::String(format_cb_window_last_flag),
+    },
+    FormatTableEntry {
+        key: c"window_layout",
+        callback: FormatCallback::String(format_cb_window_layout),
+    },
+    FormatTableEntry {
+        key: c"window_linked",
+        callback: FormatCallback::String(format_cb_window_linked),
+    },
+    FormatTableEntry {
+        key: c"window_linked_sessions",
+        callback: FormatCallback::String(format_cb_window_linked_sessions),
+    },
+    FormatTableEntry {
+        key: c"window_linked_sessions_list",
+        callback: FormatCallback::String(format_cb_window_linked_sessions_list),
+    },
+    FormatTableEntry {
+        key: c"window_manual_height",
+        callback: FormatCallback::String(format_cb_window_manual_height),
+    },
+    FormatTableEntry {
+        key: c"window_manual_width",
+        callback: FormatCallback::String(format_cb_window_manual_width),
+    },
+    FormatTableEntry {
+        key: c"window_marked_flag",
+        callback: FormatCallback::String(format_cb_window_marked_flag),
+    },
+    FormatTableEntry {
+        key: c"window_modal_pane",
+        callback: FormatCallback::String(format_cb_window_modal_pane),
+    },
+    FormatTableEntry {
+        key: c"window_name",
+        callback: FormatCallback::String(format_cb_window_name),
+    },
+    FormatTableEntry {
+        key: c"window_offset_x",
+        callback: FormatCallback::String(format_cb_window_offset_x),
+    },
+    FormatTableEntry {
+        key: c"window_offset_y",
+        callback: FormatCallback::String(format_cb_window_offset_y),
+    },
+    FormatTableEntry {
+        key: c"window_panes",
+        callback: FormatCallback::String(format_cb_window_panes),
+    },
+    FormatTableEntry {
+        key: c"window_raw_flags",
+        callback: FormatCallback::String(format_cb_window_raw_flags),
+    },
+    FormatTableEntry {
+        key: c"window_silence_flag",
+        callback: FormatCallback::String(format_cb_window_silence_flag),
+    },
+    FormatTableEntry {
+        key: c"window_stack_index",
+        callback: FormatCallback::String(format_cb_window_stack_index),
+    },
+    FormatTableEntry {
+        key: c"window_start_flag",
+        callback: FormatCallback::String(format_cb_window_start_flag),
+    },
+    FormatTableEntry {
+        key: c"window_visible_layout",
+        callback: FormatCallback::String(format_cb_window_visible_layout),
+    },
+    FormatTableEntry {
+        key: c"window_width",
+        callback: FormatCallback::String(format_cb_window_width),
+    },
+    FormatTableEntry {
+        key: c"window_zoomed_flag",
+        callback: FormatCallback::String(format_cb_window_zoomed_flag),
+    },
+    FormatTableEntry {
+        key: c"wrap_flag",
+        callback: FormatCallback::String(format_cb_wrap_flag),
+    },
+];
+pub(super) unsafe fn format_table_get(
+    key: *const ::core::ffi::c_char,
+) -> Option<&'static FormatTableEntry> {
+    let key = CStr::from_ptr(key);
+    FORMAT_TABLE
+        .binary_search_by(|entry| entry.key.cmp(key))
+        .ok()
+        .map(|index| &FORMAT_TABLE[index])
+}
+
+#[cfg(test)]
+mod owned_callback_tests {
+    use super::*;
+
+    #[test]
+    fn builtin_lookup_preserves_sorted_keys_and_missing_results() {
+        unsafe {
+            assert!(FORMAT_TABLE
+                .windows(2)
+                .all(|pair| pair[0].key < pair[1].key));
+            for entry in &FORMAT_TABLE {
+                assert!(std::ptr::eq(
+                    format_table_get(entry.key.as_ptr()).unwrap(),
+                    entry
+                ));
+            }
+            assert!(format_table_get(c"not_a_builtin".as_ptr()).is_none());
+            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            for key in [
+                c"buffer_full",
+                c"client_created",
+                c"session_created",
+                c"pane_dead_time",
+            ] {
+                assert!(format_table_get(key.as_ptr()).unwrap().get(ft).is_none());
+            }
+            format_free(ft);
+        }
+    }
+
+    #[test]
+    fn callback_strings_and_timestamps_outlive_the_buffer_and_tree() {
+        use crate::src::paste::{paste_free, paste_get_name, paste_set_owned};
+        unsafe {
+            let mut cause = std::ptr::null_mut();
+            let name = c"callback-owned-results";
+            assert_eq!(
+                paste_set_owned(
+                    b"A\xff\0B".to_vec().into_boxed_slice(),
+                    name.as_ptr(),
+                    &raw mut cause
+                ),
+                0
+            );
+            let pb = paste_get_name(name.as_ptr());
+            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            (*ft).pb = pb;
+            let full = format_cb_buffer_full(ft).unwrap();
+            let sample = format_cb_buffer_sample(ft).unwrap();
+            let created = format_cb_buffer_created(ft).unwrap();
+            let old_created = (*pb).created;
+            (*pb).created = 0;
+            assert_eq!(format_cb_buffer_created(ft), Some(0));
+            (*ft).pb = std::ptr::null_mut();
+            paste_free(pb);
+            format_free(ft);
+            assert_eq!(full.as_bytes(), b"A\xff");
+            assert!(!sample.as_bytes().is_empty());
+            assert_eq!(created, old_created);
+        }
+    }
 }

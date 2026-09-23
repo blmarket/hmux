@@ -274,46 +274,17 @@ pub unsafe extern "C" fn format_each(
     >,
     mut arg: *mut ::core::ffi::c_void,
 ) {
-    let mut fte: *const format_table_entry = ::core::ptr::null::<format_table_entry>();
-    let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut i: u_int = 0;
+    let mut fe: *mut format_entry;
     let mut s: [::core::ffi::c_char; 64] = [0; 64];
-    let mut value: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-    let mut tv: *mut timeval = ::core::ptr::null_mut::<timeval>();
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[format_table_entry; 214]>() as usize)
-            .wrapping_div(::core::mem::size_of::<format_table_entry>() as usize)
-    {
-        fte = (&raw const format_table as *const format_table_entry).offset(i as isize)
-            as *const format_table_entry;
-        value = (*fte).cb.expect("non-null function pointer")(ft);
-        if !value.is_null() {
-            if (*fte).type_0 as ::core::ffi::c_uint
-                == FORMAT_TABLE_TIME as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                tv = value as *mut timeval;
-                xsnprintf(
-                    &raw mut s as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*tv).tv_sec as ::core::ffi::c_longlong,
-                );
-                cb.expect("non-null function pointer")(
-                    (*fte).key,
-                    &raw mut s as *mut ::core::ffi::c_char,
-                    arg,
-                );
-            } else {
-                cb.expect("non-null function pointer")(
-                    (*fte).key,
-                    value as *const ::core::ffi::c_char,
-                    arg,
-                );
-                free(value);
+    for entry in &FORMAT_TABLE {
+        let Some(value) = entry.get(ft) else { continue };
+        let value = match value {
+            FormatValue::String(value) => value,
+            FormatValue::Time(value) => {
+                CString::new(value.to_string()).expect("timestamp contains no NUL")
             }
-        }
-        i = i.wrapping_add(1);
+        };
+        cb.expect("non-null function pointer")(entry.key.as_ptr(), value.as_ptr(), arg);
     }
     fe = format_entry_tree_minmax(&raw mut (*ft).tree, RB_NEGINF);
     while !fe.is_null() {

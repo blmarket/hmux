@@ -1181,35 +1181,70 @@ unsafe extern "C" fn window_copy_next_paragraph(mut wme: *mut window_mode_entry)
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_copy_get_word(
+    wp: *mut window_pane,
+    x: u_int,
+    y: u_int,
+) -> *mut ::core::ffi::c_char {
+    window_copy_get_word_cstring(wp, x, y)
+        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+}
+pub(crate) unsafe fn window_copy_get_word_cstring(
     mut wp: *mut window_pane,
     mut x: u_int,
     mut y: u_int,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*(*data).backing).grid;
-    return format_grid_word(gd, x, (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy));
+    return crate::src::format::format_grid_word_cstring(
+        gd,
+        x,
+        (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy),
+    );
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_copy_get_line(
+    wp: *mut window_pane,
+    y: u_int,
+) -> *mut ::core::ffi::c_char {
+    window_copy_get_line_cstring(wp, y)
+        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+}
+pub(crate) unsafe fn window_copy_get_line_cstring(
     mut wp: *mut window_pane,
     mut y: u_int,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*(*data).backing).grid;
-    return format_grid_line(gd, (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy));
+    return crate::src::format::format_grid_line_cstring(
+        gd,
+        (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy),
+    );
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_copy_get_hyperlink(
+    wp: *mut window_pane,
+    x: u_int,
+    y: u_int,
+) -> *mut ::core::ffi::c_char {
+    window_copy_get_hyperlink_cstring(wp, x, y)
+        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+}
+pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
     mut wp: *mut window_pane,
     mut x: u_int,
     mut y: u_int,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid;
-    return format_grid_hyperlink(gd, x, (*gd).hsize.wrapping_add(y), (*wp).screen);
+    return crate::src::format::format_grid_hyperlink_cstring(
+        gd,
+        x,
+        (*gd).hsize.wrapping_add(y),
+        (*wp).screen,
+    );
 }
 unsafe extern "C" fn window_copy_cursor_hyperlink_cb(
     mut ft: *mut format_tree,

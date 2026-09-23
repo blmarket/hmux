@@ -67,6 +67,24 @@ def check(executable, directory):
             if expected is not None:
                 assert actual == expected, (expression, actual, expected)
             output.append(actual)
+        # Enumeration and direct lookup consume the same built-in result contract.
+        run(b"set-buffer", b"A\xff\tB")
+        listed = dict(line.split(b"=", 1) for line in run(b"display-message", b"-a").splitlines() if b"=" in line)
+        stable_keys = (
+            b"buffer_name", b"buffer_size", b"buffer_sample", b"buffer_full",
+            b"session_name", b"session_windows", b"session_id", b"window_id",
+            b"pane_id", b"pane_width", b"pane_height", b"pane_left", b"pane_top",
+            b"window_width", b"window_height", b"alternate_on", b"pane_dead",
+            b"pane_in_mode", b"cursor_x", b"cursor_y", b"pane_tabs",
+        )
+        for key in stable_keys + (b"pid", b"session_created", b"start_time", b"buffer_created"):
+            expanded = run(b"display-message", b"-p", b"#{" + key + b"}").rstrip(b"\n")
+            assert listed[key] == expanded, (key, listed.get(key), expanded)
+            if key in stable_keys:
+                output.append(expanded)
+        # Exercise buffer escaping and the 200-byte preview cap on both paths.
+        run(b"set-buffer", b"x" * 220)
+        assert run(b"display-message", b"-p", b"#{buffer_sample}") == b"x" * 200 + b"...\n"
         return tuple(output)
     finally:
         subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=20)

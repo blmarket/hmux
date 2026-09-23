@@ -1,6 +1,6 @@
 use crate::src::events::events_fire;
 use crate::src::events_payload::{event_payload_create, event_payload_set_string};
-use crate::src::ffi::libc::{free, strlcpy, time};
+use crate::src::ffi::libc::{free, time};
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::events::event_payload;
@@ -12,7 +12,7 @@ pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::utf8::utf8_strvis;
-use crate::src::xmalloc::{xasprintf, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xasprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 #[derive(Default)]
@@ -510,30 +510,23 @@ pub unsafe extern "C" fn paste_replace(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn paste_make_sample(mut pb: *mut paste_buffer) -> *mut ::core::ffi::c_char {
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
-    let mut used: size_t = 0;
-    let flags: ::core::ffi::c_int = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
-    let width: size_t = 200 as size_t;
-    len = (*pb).size;
-    if len > width {
-        len = width;
-    }
-    buf = xreallocarray(
-        NULL,
-        len,
-        (4 as ::core::ffi::c_int + 4 as ::core::ffi::c_int) as size_t,
-    ) as *mut ::core::ffi::c_char;
-    used = utf8_strvis(buf, (*pb).data, len, flags);
+pub unsafe extern "C" fn paste_make_sample(pb: *mut paste_buffer) -> *mut ::core::ffi::c_char {
+    xstrdup(paste_make_sample_cstring(pb).as_ptr())
+}
+pub(crate) unsafe fn paste_make_sample_cstring(pb: *mut paste_buffer) -> CString {
+    let flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
+    let width = 200;
+    let len = (*pb).size.min(width);
+    let mut buffer = vec![0u8; len * 8 + 4];
+    let used = utf8_strvis(buffer.as_mut_ptr().cast(), (*pb).data, len, flags);
     if (*pb).size > width || used > width {
-        strlcpy(
-            buf.offset(width as isize),
-            b"...\0" as *const u8 as *const ::core::ffi::c_char,
-            4 as size_t,
-        );
+        buffer[width..width + 4].copy_from_slice(b"...\0");
     }
-    return buf;
+    let length = CStr::from_ptr(buffer.as_ptr().cast())
+        .to_bytes_with_nul()
+        .len();
+    buffer.truncate(length);
+    CString::from_vec_with_nul(buffer).expect("sample contains one terminating NUL")
 }
 
 #[cfg(test)]

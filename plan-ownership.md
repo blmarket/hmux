@@ -117,13 +117,20 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate the built-in format callback table in `src/format/callbacks.rs`
-and its lookup/enumeration consumers together. Its 214 entries still use an
-untyped C callback result for either a borrowed timestamp or a libc-owned
-string. Give those distinct results explicit Rust contracts; remove the
-callback string copy/free boundary in `format_find` and the remaining
-`format_printf` allocation contract at the same time. Audit `format_each` and
-all table consumers before changing the callback type.
+Next, migrate the four copy-mode callbacks registered through `format_add_cb`
+in `src/window_copy.rs`, their entry storage, and lazy evaluation together.
+Introduce an owned internal callback registration contract while retaining the
+exported C callback ABI. Remove the in-tree callback result copy/free bridge
+without extending an entry borrow across callback execution; preserve lazy
+caching and replacement behavior. Existing entry-owner and copy-mode checks
+cover these paths, and owned grid result APIs are now available.
+
+All 214 built-in callbacks now use an immutable typed table: 201 return
+`Option<CString>` and 13 return `Option<time_t>`. Lookup and enumeration consume
+those results directly. The old `format_printf` and untyped table search are
+gone; no built-in callback allocates a C-owned result. The process username
+cache owns its CString and timestamp callbacks copy values instead of exposing
+mutable timestamp scratch.
 
 The expression evaluator now keeps replacement values, predicates, lookups,
 loop results, arithmetic results, substitutions, and output transforms owned.
@@ -162,10 +169,10 @@ non-string value.
    PIDs can repeat, and creation timestamps are not unique by contract. Its
    pointer tag must wait for a client owner/observer migration; a new tag-only
    generated ID would violate the agreed type policy.
-4. The only direct `xvasprintf` production caller outside the `xmalloc`
-   wrappers is `format_printf`. Its callback ABI requires a C-owned return
-   that consumers libc-free, so a local `CString` does not remove manual
-   ownership. `args_print_add`'s `%c` values are validated nonzero option
+4. The built-in callback batch removed `format_printf`, formerly the last
+   direct `xvasprintf` production caller outside the `xmalloc` wrappers.
+   The remaining varargs adapters retain their byte-preserving owned results.
+   `args_print_add`'s `%c` values are validated nonzero option
    flags, layout's `%c` values are fixed nonzero characters, and
    `format_log1`'s `%c` values come from a non-NUL format scan. An
    attached-client `show-buffer`
@@ -1652,6 +1659,31 @@ name error.
   lookup quoting, timestamps, and floating-point edge cases. Output, loops,
   search, trim, quote, job output, and job-name CLI checks passed on candidate
   and pinned tmux. No sanitizer ran.
+
+### Batch — typed owned built-in format callbacks (2026-09-23)
+
+- Migrated the entire 214-entry callback table and both production consumers,
+  lookup and enumeration. String callbacks return `Option<CString>`; timestamp
+  callbacks return `Option<time_t>`. The immutable table uses borrowed static
+  C-string keys and slice binary search. All keys, callback mappings, kinds,
+  and ordering were compared with the preceding commit and preserved.
+- Removed `format_printf`, built-in malloc/free handoffs, mutable timestamp
+  scratch, and the leaked username cache. Numeric rendering explicitly retains
+  the C format's integer width and signedness. Null versus empty is preserved,
+  including padding-cell cursor characters. Layout, command names, and argument
+  callbacks consume existing owners; grid word/line/hyperlink, copy-mode mouse
+  accessors, and paste samples now expose owned producer APIs with exported C
+  adapters. Buffer text still ends at its first NUL and samples retain escaping
+  and the 200-byte preview cap.
+- Serialized workspace tests (398), binary build, changed-file rustfmt, and
+  diff checks passed. Added callback lookup/order, absence, timestamp snapshot,
+  and result-lifetime tests. Expanded output CLI checks compare enumeration
+  against lookup and cover binary paste previews. Output, loops, active clients,
+  active sessions, group attachment, linked sessions, session group lists,
+  start commands, old-format layouts, paste escaping, and job output checks
+  passed on candidate and pinned tmux. No sanitizer ran.
+- Exported user callback registration still accepts libc-owned results; its
+  four copy-mode production callbacks and lazy-entry storage are next.
 
 ## Historical migration index
 

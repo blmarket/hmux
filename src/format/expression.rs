@@ -241,8 +241,6 @@ pub(super) unsafe fn format_find(
     mut time_format: *const ::core::ffi::c_char,
 ) -> Option<CString> {
     let mut current_block: u64;
-    let mut fte: *const format_table_entry = ::core::ptr::null::<format_table_entry>();
-    let mut value: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe_find: format_entry = format_entry {
         key: ::core::ptr::null_mut::<::core::ffi::c_char>(),
@@ -302,21 +300,11 @@ pub(super) unsafe fn format_find(
             .map_or(::core::ptr::null(), |key| key.as_ptr());
         found = Some(options_to_cstring(o, array_key, 1 as ::core::ffi::c_int));
     } else {
-        fte = format_table_get(key);
-        if !fte.is_null() {
-            value = (*fte).cb.expect("non-null function pointer")(ft);
-            if (*fte).type_0 as ::core::ffi::c_uint
-                == FORMAT_TABLE_TIME as ::core::ffi::c_int as ::core::ffi::c_uint
-                && !value.is_null()
-            {
-                t = (*(value as *mut timeval)).tv_sec as time_t;
-            } else {
-                // Built-in callbacks still transfer libc-owned strings. Snapshot
-                // and release that allocation at the callback boundary.
-                if !value.is_null() {
-                    found = Some(CStr::from_ptr(value.cast()).to_owned());
-                    free(value);
-                }
+        if let Some(entry) = format_table_get(key) {
+            match entry.get(ft) {
+                Some(FormatValue::String(value)) => found = Some(value),
+                Some(FormatValue::Time(value)) => t = value,
+                None => {}
             }
         } else {
             fe_find.key = key as *mut ::core::ffi::c_char;

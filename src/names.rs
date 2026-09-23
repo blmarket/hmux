@@ -260,7 +260,7 @@ pub unsafe extern "C" fn parse_window_name(
     xstrdup(name.as_ptr())
 }
 
-unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
+pub(crate) unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     // Keep the writable copy alive through basename and name cleaning.
