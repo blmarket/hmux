@@ -2661,6 +2661,19 @@ legacy callers safe.
   binary build, command-queue CLI on both binaries, rustfmt, and diff checks
   passed. No sanitizer was run.
 
+### Increment 314 — boxed argument command states (2026-09-23)
+
+- `args_make_commands_prepare` now boxes each zeroed `args_command_state`.
+  Synchronous and asynchronous users keep the stable raw pointer until
+  `args_make_commands_free`, which still releases command-list and client
+  references, frees `pi.file` and `cmd`, then consumes the outer Box.
+  `pi.fs` retains borrowed target pointers under the existing callback
+  lifetime contract.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build,
+  rustfmt, and diff checks passed. If-shell, run-shell, and command-prompt
+  CLI checks matched the pinned baseline; display-panes command checks
+  passed separately on candidate and baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2671,13 +2684,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_command_state` in `src/arguments.rs` has one constructor in
-   `args_make_commands_prepare` and one final free in
-   `args_make_commands_free`. Its pointer survives asynchronous if-shell,
-   run-shell, command-prompt, and display-panes consumers. Preserve command
-   list/client references and parser scratch cleanup before boxing its outer
-   record. The separate `utf8_item` cache has no terminal free and needs a
-   whole-cache design; window-copy backing remains larger.
+1. `cmdq_list` in `src/cmd/queue.rs` has one constructor, `cmdq_new`, and one
+   final free, `cmdq_free`, after an empty-list assertion. Its intrusive tail
+   pointer points into the record, so a Box must fix its address before that
+   self-link is initialized. Client queues use the destructor; the lazy
+   global queue intentionally lives for the process. `args_value` has several
+   constructors and external fixtures, so audit its scalar/array ownership
+   together before selection.
+   The separate `utf8_item` cache has no terminal free and needs a whole-cache
+   design; window-copy backing remains larger.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias

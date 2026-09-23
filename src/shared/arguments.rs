@@ -117,6 +117,8 @@ pub struct args_parse {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned from `args_make_commands_prepare` until its matching free call.
+/// Async command callbacks borrow the stable address and release it once done.
 pub struct args_command_state {
     pub cmdlist: *mut cmd_list,
     pub cmd: *mut ::core::ffi::c_char,

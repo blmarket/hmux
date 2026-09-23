@@ -1268,10 +1268,7 @@ pub unsafe extern "C" fn args_make_commands_prepare(
     let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    state = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<args_command_state>() as size_t,
-    ) as *mut args_command_state;
+    state = Box::into_raw(Box::new(::core::mem::zeroed::<args_command_state>()));
     if idx < (*args).count {
         value = (*args).values.offset(idx as isize) as *mut args_value;
         if (*value).type_0 as ::core::ffi::c_uint
@@ -1382,7 +1379,7 @@ pub unsafe extern "C" fn args_make_commands_free(mut state: *mut args_command_st
     }
     free((*state).pi.file as *mut ::core::ffi::c_void);
     free((*state).cmd as *mut ::core::ffi::c_void);
-    free(state as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(state));
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_make_commands_get_command(
