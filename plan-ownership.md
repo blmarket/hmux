@@ -125,13 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `main_0` in `src/tmux.rs` owns its startup socket path through repeated
-   `-S`, `TMUX`, or `make_label`, then lends it to global `socket_path` until
-   `client_main` exits. Hold the selected path in `Option<CString>` and have
-   private `make_label` return one directly. Preserve byte paths, the
-   comma-truncated `TMUX` value, and the separate systemd activation path.
-   Compare repeated `-S`, inherited `TMUX`, and label behavior with pinned
-   tmux, including `#{socket_path}` output.
+1. `input_key_build` in `src/input_keys.rs` creates modified-key entries by
+   separately allocating a C string and entry record, then stores their
+   pointers in a global numeric tree without teardown. A private boxed
+   entry/string owner held by that tree could remove both manual allocations.
+   Audit duplicate insertion, static default entries, and lookup pointer
+   stability before changing the tree. Compare generated key output with
+   pinned tmux and keep numeric traversal tests.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1317,6 +1317,20 @@ name error.
   checks passed on candidate and pinned tmux. A new control-client CLI check
   compared exact old-format bytes, verified its checksum, and restored the
   prior layout with `select-layout -o`; it passed on both binaries. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 432 — own startup socket path (2026-09-23)
+
+- `main_0` now owns its selected `-S`, inherited `TMUX`, or label path in
+  `Option<CString>` and lends it to global `socket_path` through `client_main`.
+  Repeated `-S` replaces the prior owner directly; inherited `TMUX` is copied
+  only through its first comma; private `make_label` builds its result from
+  bytes without `xasprintf`. Removed the old path's `xstrdup` and `free`.
+  Systemd socket activation may separately replace the global pointer.
+- Serialized workspace tests, binary build, and existing socket label/base
+  CLI checks passed. A new startup socket CLI compared candidate and pinned
+  tmux for repeated raw-byte `-S`, `TMUX` selection and comma truncation,
+  literal commas in `-S`, and exact `#{socket_path}` bytes. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index

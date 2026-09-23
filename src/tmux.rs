@@ -15,10 +15,10 @@ use crate::src::compat::getprogname::getprogname;
 use crate::src::environ::{environ_create, environ_find, environ_put, environ_set};
 pub use crate::src::ffi::libc::nl_item;
 use crate::src::ffi::libc::{
-    __errno_location, access, clock_gettime, environ, err, errx, exit, fcntl, fprintf, free,
-    getcwd, getenv, getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale,
-    stderr, stdout, strcasecmp, strcasestr, strchr, strcmp, strcspn, strerror, strncmp, strrchr,
-    strsep, strstr, tzset,
+    __errno_location, access, clock_gettime, environ, err, errx, exit, fcntl, fprintf, getcwd,
+    getenv, getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale, stderr,
+    stdout, strcasecmp, strcasestr, strchr, strcmp, strerror, strncmp, strrchr, strsep, strstr,
+    tzset,
 };
 use crate::src::log::{log_add_level, log_debug};
 use crate::src::options::{
@@ -54,7 +54,7 @@ pub use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tty_features::tty_parse_features;
 use crate::src::utf8::{utf8_isvalid, utf8_stravis_cstring};
-use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
@@ -649,10 +649,7 @@ fn make_label_cause(parts: &[&[u8]]) -> CString {
     CString::new(bytes).expect("socket label cause contains no NUL")
 }
 
-unsafe fn make_label(
-    mut label: *const ::core::ffi::c_char,
-) -> Result<*mut ::core::ffi::c_char, CString> {
-    let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn make_label(mut label: *const ::core::ffi::c_char) -> Result<CString, CString> {
     let mut sb: stat = stat {
         st_dev: 0,
         st_ino: 0,
@@ -724,13 +721,10 @@ unsafe fn make_label(
             b" has unsafe permissions",
         ]));
     } else {
-        xasprintf(
-            &raw mut path,
-            b"%s/%s\0" as *const u8 as *const ::core::ffi::c_char,
-            base.as_ptr(),
-            label,
-        );
-        return Ok(path);
+        let mut path = base.into_bytes();
+        path.push(b'/');
+        path.extend_from_slice(CStr::from_ptr(label).to_bytes());
+        return Ok(CString::new(path).expect("socket label path contains no NUL"));
     }
 }
 #[no_mangle]
@@ -896,7 +890,7 @@ unsafe fn main_0(
     mut argc: ::core::ffi::c_int,
     mut argv: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut path: Option<CString> = None;
     // BSDoptarg points into argv, which main keeps alive through main_0.
     let mut label: Option<&CStr> = None;
     let mut var: *mut *mut ::core::ffi::c_char =
@@ -1022,8 +1016,7 @@ unsafe fn main_0(
             }
             113 => {}
             83 => {
-                free(path as *mut ::core::ffi::c_void);
-                path = xstrdup(BSDoptarg);
+                path = Some(CStr::from_ptr(BSDoptarg).to_owned());
             }
             84 => {
                 tty_parse_features(
@@ -1139,34 +1132,40 @@ unsafe fn main_0(
             keys as ::core::ffi::c_longlong,
         );
     }
-    if path.is_null() && label.is_none() {
+    if path.is_none() && label.is_none() {
         s = getenv(b"TMUX\0" as *const u8 as *const ::core::ffi::c_char);
         if !s.is_null()
             && *s as ::core::ffi::c_int != '\0' as i32
             && *s as ::core::ffi::c_int != ',' as i32
         {
-            path = xstrdup(s);
-            *path.offset(
-                strcspn(path, b",\0" as *const u8 as *const ::core::ffi::c_char) as isize,
-            ) = '\0' as i32 as ::core::ffi::c_char;
+            let tmux = CStr::from_ptr(s).to_bytes();
+            let end = tmux
+                .iter()
+                .position(|byte| *byte == b',')
+                .unwrap_or(tmux.len());
+            path = Some(CString::new(&tmux[..end]).expect("TMUX socket path contains no NUL"));
         }
     }
-    if path.is_null() {
-        path = match make_label(label.map_or(::core::ptr::null(), |label| label.as_ptr())) {
-            Ok(path) => path,
-            Err(cause) => {
-                fprintf(
-                    stderr,
-                    b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause.as_ptr(),
-                );
-                drop(cause);
-                exit(1 as ::core::ffi::c_int);
-            }
-        };
+    if path.is_none() {
+        path = Some(
+            match make_label(label.map_or(::core::ptr::null(), |label| label.as_ptr())) {
+                Ok(path) => path,
+                Err(cause) => {
+                    fprintf(
+                        stderr,
+                        b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
+                        cause.as_ptr(),
+                    );
+                    drop(cause);
+                    exit(1 as ::core::ffi::c_int);
+                }
+            },
+        );
         flags |= CLIENT_DEFAULTSOCKET as uint64_t;
     }
-    socket_path = path;
+    // The global pointer borrows this owner through client_main, including
+    // the server fork. Systemd activation may replace the global separately.
+    socket_path = path.as_ref().expect("socket path was selected").as_ptr();
     exit(client_main(osdep_event_init(), argc, argv, flags, feat));
 }
 pub const TMUX_VERSION: [::core::ffi::c_char; 9] =
