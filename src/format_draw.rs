@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{free, memcpy, memset, strcmp, strlcpy, strlen};
+use crate::src::ffi::libc::{free, memcpy, strcmp, strlcpy, strlen};
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::hyperlinks_put;
@@ -69,7 +69,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::style::{style_copy, style_link, style_parse, style_set, style_tostring};
 use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
-use crate::src::xmalloc::{xcalloc, xstrdup};
+use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
 use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -1920,13 +1920,21 @@ pub unsafe extern "C" fn format_width(mut expanded: *const ::core::ffi::c_char) 
     }
     return width;
 }
+// Callers free the returned string with libc free. Only this final copy crosses
+// that ownership boundary; trim construction stays owned by the local Vec.
+unsafe fn format_trim_output(bytes: &[u8]) -> *mut ::core::ffi::c_char {
+    let copy = xmalloc(bytes.len() + 1).cast::<::core::ffi::c_char>();
+    ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), copy.cast::<u8>(), bytes.len());
+    *copy.add(bytes.len()) = 0;
+    copy
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn format_trim_left(
     mut expanded: *const ::core::ffi::c_char,
     mut limit: u_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut out = Vec::<u8>::new();
     let mut cp: *const ::core::ffi::c_char = expanded;
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: u_int = 0;
@@ -1939,9 +1947,6 @@ pub unsafe extern "C" fn format_trim_left(
         width: 0,
     };
     let mut more: utf8_state = UTF8_MORE;
-    copy = xcalloc(2 as size_t, strlen(expanded).wrapping_add(1 as size_t))
-        as *mut ::core::ffi::c_char;
-    out = copy;
     while *cp as ::core::ffi::c_int != '\0' as i32 {
         if width >= limit {
             break;
@@ -1953,16 +1958,9 @@ pub unsafe extern "C" fn format_trim_left(
             }
             if leading_width != 0 as u_int {
                 if n == 1 as u_int {
-                    let fresh0 = out;
-                    out = out.offset(1);
-                    *fresh0 = '#' as i32 as ::core::ffi::c_char;
+                    out.push(b'#');
                 } else {
-                    memset(
-                        out as *mut ::core::ffi::c_void,
-                        '#' as i32,
-                        (2 as u_int).wrapping_mul(leading_width) as size_t,
-                    );
-                    out = out.offset((2 as u_int).wrapping_mul(leading_width) as isize);
+                    out.resize(out.len() + 2 * leading_width as usize, b'#');
                 }
                 width = width.wrapping_add(leading_width);
             }
@@ -1977,14 +1975,8 @@ pub unsafe extern "C" fn format_trim_left(
             if end.is_null() {
                 break;
             }
-            memcpy(
-                out as *mut ::core::ffi::c_void,
-                cp as *const ::core::ffi::c_void,
-                end.offset(1 as ::core::ffi::c_int as isize).offset_from(cp) as ::core::ffi::c_long
-                    as size_t,
-            );
-            out = out.offset(end.offset(1 as ::core::ffi::c_int as isize).offset_from(cp)
-                as ::core::ffi::c_long as isize);
+            let span = end.offset(1).offset_from(cp) as usize;
+            out.extend_from_slice(::core::slice::from_raw_parts(cp.cast::<u8>(), span));
             cp = end.offset(1 as ::core::ffi::c_int as isize);
         } else {
             more = utf8_open(&raw mut ud, *cp as u_char);
@@ -2004,12 +1996,7 @@ pub unsafe extern "C" fn format_trim_left(
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     if width.wrapping_add(ud.width as u_int) <= limit {
-                        memcpy(
-                            out as *mut ::core::ffi::c_void,
-                            &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
-                            ud.size as size_t,
-                        );
-                        out = out.offset(ud.size as ::core::ffi::c_int as isize);
+                        out.extend_from_slice(&ud.data[..ud.size as usize]);
                     }
                     width = width.wrapping_add(ud.width as u_int);
                 } else {
@@ -2020,9 +2007,7 @@ pub unsafe extern "C" fn format_trim_left(
                 && (*cp as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
             {
                 if width.wrapping_add(1 as u_int) <= limit {
-                    let fresh1 = out;
-                    out = out.offset(1);
-                    *fresh1 = *cp;
+                    out.push(*cp as u8);
                 }
                 width = width.wrapping_add(1);
                 cp = cp.offset(1);
@@ -2031,16 +2016,14 @@ pub unsafe extern "C" fn format_trim_left(
             }
         }
     }
-    *out = '\0' as i32 as ::core::ffi::c_char;
-    return copy;
+    return format_trim_output(&out);
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_trim_right(
     mut expanded: *const ::core::ffi::c_char,
     mut limit: u_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut out = Vec::<u8>::new();
     let mut cp: *const ::core::ffi::c_char = expanded;
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut width: u_int = 0 as u_int;
@@ -2061,9 +2044,6 @@ pub unsafe extern "C" fn format_trim_right(
         return xstrdup(expanded);
     }
     skip = total_width.wrapping_sub(limit);
-    copy = xcalloc(2 as size_t, strlen(expanded).wrapping_add(1 as size_t))
-        as *mut ::core::ffi::c_char;
-    out = copy;
     while *cp as ::core::ffi::c_int != '\0' as i32 {
         if *cp as ::core::ffi::c_int == '#' as i32 {
             end = format_leading_hashes(cp, &raw mut n, &raw mut leading_width);
@@ -2077,16 +2057,9 @@ pub unsafe extern "C" fn format_trim_right(
             }
             if copy_width != 0 as u_int {
                 if n == 1 as u_int {
-                    let fresh2 = out;
-                    out = out.offset(1);
-                    *fresh2 = '#' as i32 as ::core::ffi::c_char;
+                    out.push(b'#');
                 } else {
-                    memset(
-                        out as *mut ::core::ffi::c_void,
-                        '#' as i32,
-                        (2 as u_int).wrapping_mul(copy_width) as size_t,
-                    );
-                    out = out.offset((2 as u_int).wrapping_mul(copy_width) as isize);
+                    out.resize(out.len() + 2 * copy_width as usize, b'#');
                 }
             }
             width = width.wrapping_add(leading_width);
@@ -2101,14 +2074,8 @@ pub unsafe extern "C" fn format_trim_right(
             if end.is_null() {
                 break;
             }
-            memcpy(
-                out as *mut ::core::ffi::c_void,
-                cp as *const ::core::ffi::c_void,
-                end.offset(1 as ::core::ffi::c_int as isize).offset_from(cp) as ::core::ffi::c_long
-                    as size_t,
-            );
-            out = out.offset(end.offset(1 as ::core::ffi::c_int as isize).offset_from(cp)
-                as ::core::ffi::c_long as isize);
+            let span = end.offset(1).offset_from(cp) as usize;
+            out.extend_from_slice(::core::slice::from_raw_parts(cp.cast::<u8>(), span));
             cp = end.offset(1 as ::core::ffi::c_int as isize);
         } else {
             more = utf8_open(&raw mut ud, *cp as u_char);
@@ -2128,12 +2095,7 @@ pub unsafe extern "C" fn format_trim_right(
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     if width >= skip {
-                        memcpy(
-                            out as *mut ::core::ffi::c_void,
-                            &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
-                            ud.size as size_t,
-                        );
-                        out = out.offset(ud.size as ::core::ffi::c_int as isize);
+                        out.extend_from_slice(&ud.data[..ud.size as usize]);
                     }
                     width = width.wrapping_add(ud.width as u_int);
                 } else {
@@ -2144,9 +2106,7 @@ pub unsafe extern "C" fn format_trim_right(
                 && (*cp as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
             {
                 if width >= skip {
-                    let fresh3 = out;
-                    out = out.offset(1);
-                    *fresh3 = *cp;
+                    out.push(*cp as u8);
                 }
                 width = width.wrapping_add(1);
                 cp = cp.offset(1);
@@ -2155,6 +2115,39 @@ pub unsafe extern "C" fn format_trim_right(
             }
         }
     }
-    *out = '\0' as i32 as ::core::ffi::c_char;
-    return copy;
+    return format_trim_output(&out);
+}
+
+#[cfg(test)]
+mod trim_tests {
+    use super::{format_trim_left, format_trim_right};
+    use crate::src::ffi::libc::free;
+    use std::ffi::CStr;
+
+    fn trim(input: &[u8], limit: u32, left: bool) -> Vec<u8> {
+        assert_eq!(input.last(), Some(&0));
+        unsafe {
+            let ptr = if left {
+                format_trim_left(input.as_ptr().cast(), limit)
+            } else {
+                format_trim_right(input.as_ptr().cast(), limit)
+            };
+            let result = CStr::from_ptr(ptr).to_bytes().to_vec();
+            free(ptr.cast());
+            result
+        }
+    }
+
+    #[test]
+    fn trim_preserves_style_utf8_invalid_bytes_and_first_nul() {
+        assert_eq!(trim(b"abcdef\0", 3, true), b"abc");
+        assert_eq!(trim(b"abcdef\0", 3, false), b"def");
+        assert_eq!(trim(b"\xc3\xa9abcdef\0", 3, true), b"\xc3\xa9ab");
+        assert_eq!(trim(b"\xc3\xa9abcdef\0", 3, false), b"def");
+        assert_eq!(trim(b"#[fg=red]abcdef\0", 3, true), b"#[fg=red]abc");
+        assert_eq!(trim(b"#[fg=red]abcdef\0", 3, false), b"#[fg=red]def");
+        assert_eq!(trim(b"\xffabcdef\0", 3, true), b"abc");
+        assert_eq!(trim(b"abc\0def\0", 2, true), b"ab");
+        assert_eq!(trim(b"abc\0def\0", 2, false), b"bc");
+    }
 }

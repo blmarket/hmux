@@ -1566,6 +1566,24 @@ legacy callers safe.
   changed-file rustfmt, and diff checks passed. The format-unescape CLI check
   matched the pinned baseline. No sanitizer was run.
 
+### Increment 237 — format trim output owner (2026-09-23)
+
+- `format_trim_left` and `format_trim_right` now assemble style tokens,
+  multibyte cells, and ordinary bytes in local `Vec<u8>` values. This removes
+  their oversized `xcalloc` scratch buffers and manual output-pointer writes.
+  Each result still makes one C-owned copy for the format, menu, and window
+  tree callers that libc-free it; the right-trim early `xstrdup` return keeps
+  its existing contract.
+- Focused trim tests for styles, UTF-8, invalid bytes, and first NUL,
+  library/binary build, changed-file rustfmt, Python AST, and diff checks
+  passed. `scripts/format_trim_owner_cli_checks.py` matched the pinned
+  baseline for positive and negative widths. No sanitizer was run.
+- Combined validation after increments 235–237: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt,
+  Python AST, and each commit's diff check passed. Copy-match, trim,
+  format-unescape, and embedded-NUL copy-view CLI checks matched the pinned
+  baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1576,10 +1594,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_trim_left` and `format_trim_right` still assemble output through
-   manual C-buffer growth. Their private callers can keep one C-owned result
-   while the complete scratch assembly moves to `Vec<u8>`; a focused baseline
-   comparison is being prepared.
+1. `window_copy_stringify` still grows a raw `(buf, size)` C buffer across
+   wrapped grid lines. Its four caller paths need a complete owner audit,
+   including regex/search consumers and embedded-NUL behavior, before a
+   `Vec<u8>` can replace the shared pointer and size lifecycle.
 2. The command-list cache in `args_value_as_string` is retained in its
    movable C-layout record. A pointer-keyed sidecar is disallowed by the type
    policy; migrate only with a real record owner that preserves the public
@@ -1611,7 +1629,7 @@ non-string value.
    tag-only generated ID would violate the agreed type policy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–234 above, with increment 228 explicitly retracted.
+recorded in increments 226–237 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.
