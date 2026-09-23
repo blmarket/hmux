@@ -120,7 +120,7 @@ use crate::src::tmux::{
     ptm_fd, setblocking, shell_argv0_cstring, shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
-use crate::src::xmalloc::{xsnprintf, xstrdup};
+use crate::src::xmalloc::xsnprintf;
 use ::libc;
 use std::ffi::CString;
 
@@ -150,9 +150,7 @@ static mut client_exitval: ::core::ffi::c_int = 0;
 static mut client_exittype: msgtype = 0 as msgtype;
 static mut client_exitsession: Option<CString> = None;
 static mut client_exitmessage: Option<Vec<u8>> = None;
-static mut client_execshell: *const ::core::ffi::c_char =
-    ::core::ptr::null::<::core::ffi::c_char>();
-static mut client_execcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+static mut client_exec_payload: Option<(CString, CString)> = None;
 static mut client_attached: ::core::ffi::c_int = 0;
 static mut client_files: client_files = client_files { storage: None };
 unsafe extern "C" fn client_get_lock(
@@ -594,7 +592,10 @@ pub unsafe extern "C" fn client_main(
         if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
             tcsetattr(STDOUT_FILENO, TCSAFLUSH, &raw mut saved_tio);
         }
-        client_exec(client_execshell, client_execcmd);
+        let (shell, command) = client_exec_payload
+            .as_ref()
+            .expect("MSG_EXEC requires a stored shell and command");
+        client_exec(shell.as_ptr(), command.as_ptr());
     }
     if client_attached != 0 {
         if client_exitreason as ::core::ffi::c_uint
@@ -1153,11 +1154,9 @@ unsafe extern "C" fn client_dispatch_attached(mut imsg: *mut imsg) {
             {
                 fatalx(b"bad MSG_EXEC string\0" as *const u8 as *const ::core::ffi::c_char);
             }
-            client_execcmd = xstrdup(data);
-            client_execshell = xstrdup(
-                data.offset(strlen(data) as isize)
-                    .offset(1 as ::core::ffi::c_int as isize),
-            );
+            let command = std::ffi::CStr::from_ptr(data).to_owned();
+            let shell = std::ffi::CStr::from_ptr(data.add(strlen(data) + 1)).to_owned();
+            client_exec_payload = Some((shell, command));
             client_exittype = (*imsg).hdr.type_0 as msgtype;
             proc_send(
                 client_peer,

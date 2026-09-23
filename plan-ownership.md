@@ -125,12 +125,7 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The client-process `MSG_EXEC` handler duplicates command and shell into
-   two private static pointers. It validates the two-string packet, then
-   `client_main` lends both strings to `client_exec` after the event loop.
-   One `Option<(CString, CString)>` can own the pair atomically; `execl`
-   replaces the process on its normal path.
-2. Disconnected file-reading clients can leave a waiting command-queue item.
+1. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
    `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
@@ -138,20 +133,20 @@ non-string value.
    one coordinated boundary. A closed file may still invoke its normal
    callback after client loss. Terminal event scheduling is now idempotent;
    further progress callbacks and terminal error ordering still need audit.
-3. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
+2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. `ibufq_new`/`ibufq_free` are a small
    standalone allocation pair, but have no in-tree production caller. The
    exported contracts are deferred while live client fields remain. Revisit
    this ranking after each completed boundary.
-4. The remaining address-based registries, other UI tags, and session/winlink
+3. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
    PIDs can repeat, and creation timestamps are not unique by contract. Its
    pointer tag must wait for a client owner/observer migration; a new tag-only
    generated ID would violate the agreed type policy.
-5. The only direct `xvasprintf` production caller outside the `xmalloc`
+4. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -168,7 +163,7 @@ non-string value.
    `format_find` transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-6. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+5. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
@@ -525,6 +520,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   build passed. The key CLI now binds `0x41` and checks canonical `A`
   listing; candidate and matching 3.8-rc baseline passed. Changed-file
   rustfmt and diff checks passed. No sanitizer was run.
+
+### Increment 379 — owned client-process exec payload (2026-09-23)
+
+- The private `MSG_EXEC` command and shell now share one
+  `Option<(CString, CString)>` owner. The validated packet is copied into both
+  values before the pair is installed. `client_main` borrows their pointers
+  for `client_exec`, whose successful `execl` replaces the process. Removed
+  both static raw pointers and their `xstrdup` calls; repeated exec packets
+  replace and release the old pair. The wire format and separate `MSG_SHELL`
+  path are unchanged.
+- Serialized workspace tests, binary build, and the PTY `detach-client -E`
+  CLI check passed against the pinned 3.8-rc baseline, including raw `0xff`
+  output and `$SHELL=/bin/sh`. Changed-file rustfmt and diff checks passed.
+  No sanitizer was run.
 
 ## Historical migration index
 
