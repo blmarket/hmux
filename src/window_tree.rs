@@ -123,7 +123,7 @@ use crate::src::window::{
     window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
 use crate::src::xmalloc::{xasprintf, xstrdup};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -2388,7 +2388,6 @@ unsafe extern "C" fn window_tree_key(
     let mut item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
     let mut new_item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -2476,44 +2475,44 @@ unsafe extern "C" fn window_tree_key(
         }
         120 => {
             window_tree_pull_item(item, &raw mut ns, &raw mut nwl, &raw mut nwp);
-            match (*item).type_0 as ::core::ffi::c_uint {
+            let prompt = match (*item).type_0 as ::core::ffi::c_uint {
                 1 => {
                     if !ns.is_null() {
-                        xasprintf(
-                            &raw mut prompt,
-                            b"Kill session %s? \0" as *const u8 as *const ::core::ffi::c_char,
-                            (*ns).name,
-                        );
+                        let mut bytes = b"Kill session ".to_vec();
+                        bytes.extend_from_slice(CStr::from_ptr((*ns).name).to_bytes());
+                        bytes.extend_from_slice(b"? ");
+                        Some(CString::new(bytes).expect("session name contains no NUL"))
+                    } else {
+                        None
                     }
                 }
                 2 => {
                     if !nwl.is_null() {
-                        xasprintf(
-                            &raw mut prompt,
-                            b"Kill window %u? \0" as *const u8 as *const ::core::ffi::c_char,
-                            (*nwl).idx,
-                        );
+                        Some(
+                            CString::new(format!("Kill window {}? ", (*nwl).idx as u32))
+                                .expect("window index contains no NUL"),
+                        )
+                    } else {
+                        None
                     }
                 }
                 3 => {
                     if !(nwp.is_null()
                         || window_pane_index(nwp, &raw mut idx) != 0 as ::core::ffi::c_int)
                     {
-                        xasprintf(
-                            &raw mut prompt,
-                            b"Kill pane %u? \0" as *const u8 as *const ::core::ffi::c_char,
-                            idx,
-                        );
+                        Some(CString::new(format!("Kill pane {idx}? ")).unwrap())
+                    } else {
+                        None
                     }
                 }
-                0 | _ => {}
-            }
-            if !prompt.is_null() {
+                0 | _ => None,
+            };
+            if let Some(prompt) = prompt {
                 (*data).references += 1;
                 mode_tree_set_prompt(
                     (*data).data,
                     c,
-                    prompt,
+                    prompt.as_ptr(),
                     b"\0" as *const u8 as *const ::core::ffi::c_char,
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
@@ -2532,22 +2531,17 @@ unsafe extern "C" fn window_tree_key(
                     ),
                     data as *mut ::core::ffi::c_void,
                 );
-                free(prompt as *mut ::core::ffi::c_void);
             }
         }
         88 => {
             tagged = mode_tree_count_tagged((*data).data);
             if !(tagged == 0 as u_int) {
-                xasprintf(
-                    &raw mut prompt,
-                    b"Kill %u tagged? \0" as *const u8 as *const ::core::ffi::c_char,
-                    tagged,
-                );
+                let prompt = CString::new(format!("Kill {tagged} tagged? ")).unwrap();
                 (*data).references += 1;
                 mode_tree_set_prompt(
                     (*data).data,
                     c,
-                    prompt,
+                    prompt.as_ptr(),
                     b"\0" as *const u8 as *const ::core::ffi::c_char,
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
@@ -2566,28 +2560,20 @@ unsafe extern "C" fn window_tree_key(
                     ),
                     data as *mut ::core::ffi::c_void,
                 );
-                free(prompt as *mut ::core::ffi::c_void);
             }
         }
         58 => {
             tagged = mode_tree_count_tagged((*data).data);
-            if tagged != 0 as u_int {
-                xasprintf(
-                    &raw mut prompt,
-                    b"(%u tagged) \0" as *const u8 as *const ::core::ffi::c_char,
-                    tagged,
-                );
+            let prompt = if tagged != 0 as u_int {
+                CString::new(format!("({tagged} tagged) ")).unwrap()
             } else {
-                xasprintf(
-                    &raw mut prompt,
-                    b"(current) \0" as *const u8 as *const ::core::ffi::c_char,
-                );
-            }
+                CString::new("(current) ").unwrap()
+            };
             (*data).references += 1;
             mode_tree_set_prompt(
                 (*data).data,
                 c,
-                prompt,
+                prompt.as_ptr(),
                 b"\0" as *const u8 as *const ::core::ffi::c_char,
                 PROMPT_TYPE_COMMAND,
                 PROMPT_NOFORMAT,
@@ -2606,7 +2592,6 @@ unsafe extern "C" fn window_tree_key(
                 ),
                 data as *mut ::core::ffi::c_void,
             );
-            free(prompt as *mut ::core::ffi::c_void);
         }
         13 => {
             name = window_tree_get_target(item, &raw mut fs);

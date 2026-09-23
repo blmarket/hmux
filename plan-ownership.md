@@ -668,6 +668,20 @@ legacy callers safe.
   binaries for a filtered `status-format[7]` entry and its value. No
   sanitizer was run.
 
+### Increment 174 — window-tree prompt label scratch (2026-09-22)
+
+- `window_tree_key` now owns its kill-session, kill-window, kill-pane,
+  tagged-kill, and command prompt labels in local `CString`s. Removed their
+  `xasprintf` allocations and matching frees. `mode_tree_set_prompt` calls
+  `prompt_create` synchronously, which copies the label into the prompt's
+  owned string; the local owner then drops. Session names retain their raw
+  C-string bytes and `%u` window indexes retain unsigned formatting.
+- The library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. The new attached-client `window_tree_prompt_cli_checks.py` passed
+  with baseline and migrated binaries for session, window, pane, tagged-kill,
+  and tagged-command labels. The untagged `(current)` branch is source
+  audited but not in that E2E. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -682,10 +696,7 @@ non-string value.
    C allocation, draws it synchronously, then frees it. A byte-preserving
    `CString` could own each row after preserving signed field-width padding
    and the drawing callback order.
-2. `window_tree_key` creates local confirmation and command prompt strings
-   for `mode_tree_set_prompt`, which copies them synchronously. Audit each
-   branch and remove its matching free with a local `CString` owner.
-3. The only direct `xvasprintf` production caller outside the `xmalloc`
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -694,14 +705,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-4. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-5. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
@@ -887,3 +898,8 @@ build, menu-owner, capture-pane-grid-cell, and mode-tree-menu-title CLI
 checks, changed-file rustfmt, and `git diff --check` passed on main. The
 capture-pane check compared complete output against the pinned baseline
 binary for both OSC 8 cases. No combined sanitizer was run.
+After increments 172–174 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, mode-tree-preview-label, customize-array-name, and window-tree-prompt
+CLI checks, changed-file rustfmt, and `git diff --check` passed on main.
+No combined sanitizer was run.
