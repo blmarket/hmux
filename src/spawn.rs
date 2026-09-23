@@ -47,6 +47,7 @@ use crate::src::window::{
 };
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup};
+use std::ffi::CString;
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__off64_t, __off_t};
@@ -933,15 +934,10 @@ pub unsafe extern "C" fn spawn_pane(
         }
     }
     if !(*new_wp).flags & PANE_EMPTY != 0 {
-        xasprintf(
-            &raw mut cp,
-            b"tmux(%lu).%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            getpid() as ::core::ffi::c_long,
-            (*new_wp).id,
-        );
-        utempter_add_record((*new_wp).fd, cp);
+        let record = CString::new(format!("tmux({}).%{}", getpid(), (*new_wp).id))
+            .expect("pane login record contains no NUL");
+        utempter_add_record((*new_wp).fd, record.as_ptr());
         kill(getpid(), SIGCHLD);
-        free(cp as *mut ::core::ffi::c_void);
     }
     (*new_wp).flags &= !PANE_EXITED;
     sigprocmask(
