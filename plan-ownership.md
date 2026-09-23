@@ -151,6 +151,14 @@ non-string value.
    and queue drain together. The client queue runs serially, so a registered
    file-backed waiter is the only fired waiting item at its head, but queued
    callback payloads still need an ownership audit before generic draining.
+   The callback audit found owned queue data in `cmdq_get_error` and
+   `control_error` strings, boxed key events (sometimes with a client ref),
+   counted mode-tree and window-tree references, and source-file completion
+   data/depth. Other callbacks borrow a client or carry null data. A private
+   callback-item cancel destructor and registered file-wait cancel hook can
+   release these before a scoped queue drain. A blanket drain would also
+   need hooks for wait-for, jobs, popup, prompt, and pane waiters. The E2E
+   now queues a suffix command and proves it never runs after disconnect.
    Pane input also serves `display-message -I`.
 3. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
    title stack duplicates and transfers title text. `screen` is still a Copy

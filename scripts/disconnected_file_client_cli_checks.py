@@ -48,7 +48,7 @@ def check(binary, directory):
         run("new-session", "-d", "-s", "file-wait", "sleep 30")
         server_pid = int(run("display-message", "-p", "#{pid}").strip())
         pending = subprocess.Popen(
-            base + ["source-file", "-"],
+            base + ["source-file", "-", ";", "set-option", "-g", "@should_not_run", "1"],
             cwd=directory,
             env=env,
             stdin=subprocess.PIPE,
@@ -65,10 +65,12 @@ def check(binary, directory):
             match = re.search(rb"client (0x[0-9a-f]+) " + pid_marker + rb"(?:\n|\r\n)", log)
             if match is None or b"cmd_source_file_exec" not in log:
                 return None
+            assert b"@should_not_run" in log, "queued suffix was not parsed"
             assert pending.poll() is None, (pending.returncode, pending.stderr.read())
             return match.group(1), match.end()
 
         pointer, start = poll_until(waiting_pointer, 5, "waiting source-file client")
+        assert run("show-options", "-gqv", "@should_not_run") == b""
         # The parent still owns the write end when this client is killed.
         assert not pending.stdin.closed
         pending.kill()
@@ -91,6 +93,7 @@ def check(binary, directory):
             if pointer in line and any(marker in line for marker in (b"lost client", b"free client", b"unref client"))
         ]
         assert run("list-sessions", "-F", "#{session_name}") == b"file-wait\n"
+        assert run("show-options", "-gqv", "@should_not_run") == b""
         return freed, related
     finally:
         if pending is not None:
