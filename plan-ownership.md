@@ -413,6 +413,18 @@ legacy callers safe.
   old and new binaries for an ungrouped session, multiple grouped sessions,
   a Unicode name, rename, and teardown. No sanitizer was run.
 
+### Increment 155 — grouped attached-client list scratch (2026-09-22)
+
+- `format_cb_session_group_attached_list` now collects the names of clients
+  attached to any session in the group in a local `Vec<u8>`. Removed its
+  `evbuffer` allocation/free and append/pullup calls. The nested membership
+  scan, global client order, separator-on-nonempty rule, null result for no
+  bytes, and final C-owned `xmemdup` callback result remain unchanged.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. New `scripts/format_group_attached_cli_checks.py` passed with old
+  and new binaries for empty grouped/ungrouped sessions, clients on both
+  group members and an outsider, and detach. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -423,11 +435,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_cb_session_group_attached_list` still assembles attached client
-   names from a session group in a local `evbuffer`, then duplicates them
-   for its C-owned callback result. Audit its nested membership scan,
-   client traversal order, and null/empty behavior before replacing the
-   intermediate buffer with `Vec`.
+1. `format_cb_pane_tabs` has the remaining local `evbuffer` assembly in the
+   format callbacks: a comma-separated numeric tab-stop list, duplicated
+   for the C-owned callback result. Audit tab-bit traversal and empty/null
+   behavior before replacing its intermediate buffer with Rust-owned text.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -452,9 +463,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–154. The remaining
+Current validation is recorded in increments 15–155. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–154 has its own local commit; none was pushed.
+Each of increments 15–155 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

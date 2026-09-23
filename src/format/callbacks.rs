@@ -742,9 +742,6 @@ unsafe extern "C" fn format_cb_session_group_attached_list(
     let mut session_loop: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut size: ::core::ffi::c_int = 0;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if s.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
@@ -752,10 +749,7 @@ unsafe extern "C" fn format_cb_session_group_attached_list(
     if sg.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    buffer = evbuffer_new();
-    if buffer.is_null() {
-        fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
-    }
+    let mut names = Vec::<u8>::new();
     loop_0 = clients.tqh_first;
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
@@ -763,35 +757,20 @@ unsafe extern "C" fn format_cb_session_group_attached_list(
             session_loop = (*sg).sessions.tqh_first;
             while !session_loop.is_null() {
                 if session_loop == client_session {
-                    if evbuffer_get_length(buffer) > 0 as size_t {
-                        evbuffer_add(
-                            buffer,
-                            b",\0" as *const u8 as *const ::core::ffi::c_char
-                                as *const ::core::ffi::c_void,
-                            1 as size_t,
-                        );
+                    if !names.is_empty() {
+                        names.push(b',');
                     }
-                    evbuffer_add_printf(
-                        buffer,
-                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*loop_0).name,
-                    );
+                    names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
                 }
                 session_loop = (*session_loop).gentry.tqe_next;
             }
         }
         loop_0 = (*loop_0).entry.tqe_next;
     }
-    size = evbuffer_get_length(buffer) as ::core::ffi::c_int;
-    if size != 0 as ::core::ffi::c_int {
-        value = xmemdup(
-            evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t)
-                as *const ::core::ffi::c_void,
-            size as size_t,
-        );
+    if names.is_empty() {
+        return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    evbuffer_free(buffer);
-    return value as *mut ::core::ffi::c_void;
+    xmemdup(names.as_ptr().cast(), names.len()) as *mut ::core::ffi::c_void
 }
 unsafe extern "C" fn format_cb_pane_in_mode(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     let mut wp: *mut window_pane = (*ft).wp;
