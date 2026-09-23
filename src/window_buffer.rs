@@ -98,7 +98,7 @@ use crate::src::sort::sort_get_buffers;
 use crate::src::spawn::{spawn_cancel_editor, spawn_editor, spawn_get_editor_pid};
 use crate::src::utf8::utf8_strvis;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
-use crate::src::xmalloc::{xcalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -113,9 +113,9 @@ pub struct window_buffer_modedata {
     pub data: *mut mode_tree_data,
     pub editor: *mut spawn_editor_state,
     pub edit: *mut window_buffer_editdata,
-    pub command: *mut ::core::ffi::c_char,
-    pub format: *mut ::core::ffi::c_char,
-    pub key_format: *mut ::core::ffi::c_char,
+    pub command: CString,
+    pub format: CString,
+    pub key_format: CString,
     item_list: Vec<Box<WindowBufferItemOwner>>,
 }
 #[derive(Copy, Clone)]
@@ -352,7 +352,7 @@ unsafe extern "C" fn window_buffer_build(
             match current_block_32 {
                 5948590327928692120 => {}
                 _ => {
-                    text = format_expand(ft, (*data).format);
+                    text = format_expand(ft, (*data).format.as_ptr());
                     mode_tree_add(
                         (*data).data,
                         ::core::ptr::null_mut::<mode_tree_item>(),
@@ -620,7 +620,7 @@ unsafe extern "C" fn window_buffer_get_key(
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         line,
     );
-    expanded = format_expand(ft, (*data).key_format);
+    expanded = format_expand(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(KEYC_UNKNOWN);
     free(expanded as *mut ::core::ffi::c_void);
     format_free(ft);
@@ -670,35 +670,35 @@ unsafe extern "C" fn window_buffer_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
+    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+        CStr::from_ptr(WINDOW_BUFFER_DEFAULT_FORMAT.as_ptr()).to_owned()
+    } else {
+        CStr::from_ptr(args_get(args, 'F' as i32 as u_char)).to_owned()
+    };
+    let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
+        CStr::from_ptr(WINDOW_BUFFER_DEFAULT_KEY_FORMAT.as_ptr()).to_owned()
+    } else {
+        CStr::from_ptr(args_get(args, 'K' as i32 as u_char)).to_owned()
+    };
+    let command = if args.is_null() || args_count(args) == 0 as u_int {
+        CStr::from_ptr(WINDOW_BUFFER_DEFAULT_COMMAND.as_ptr()).to_owned()
+    } else {
+        CStr::from_ptr(args_string(args, 0 as u_int)).to_owned()
+    };
     data = Box::into_raw(Box::new(window_buffer_modedata {
         wp,
         fs: ::core::mem::zeroed(),
         data: ::core::ptr::null_mut(),
         editor: ::core::ptr::null_mut(),
         edit: ::core::ptr::null_mut(),
-        command: ::core::ptr::null_mut(),
-        format: ::core::ptr::null_mut(),
-        key_format: ::core::ptr::null_mut(),
+        command,
+        format,
+        key_format,
         item_list: Vec::new(),
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
     cmd_find_copy_state(&raw mut (*data).fs, fs);
-    if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
-        (*data).format = xstrdup(WINDOW_BUFFER_DEFAULT_FORMAT.as_ptr());
-    } else {
-        (*data).format = xstrdup(args_get(args, 'F' as i32 as u_char));
-    }
-    if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
-        (*data).key_format = xstrdup(WINDOW_BUFFER_DEFAULT_KEY_FORMAT.as_ptr());
-    } else {
-        (*data).key_format = xstrdup(args_get(args, 'K' as i32 as u_char));
-    }
-    if args.is_null() || args_count(args) == 0 as u_int {
-        (*data).command = xstrdup(WINDOW_BUFFER_DEFAULT_COMMAND.as_ptr());
-    } else {
-        (*data).command = xstrdup(args_string(args, 0 as u_int));
-    }
     (*data).data = mode_tree_start(
         wp,
         args,
@@ -772,9 +772,6 @@ unsafe extern "C" fn window_buffer_free(mut wme: *mut window_mode_entry) {
     }
     mode_tree_free((*data).data);
     window_buffer_clear_items(&mut (*data).item_list);
-    free((*data).format as *mut ::core::ffi::c_void);
-    free((*data).key_format as *mut ::core::ffi::c_void);
-    free((*data).command as *mut ::core::ffi::c_void);
     drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_buffer_resize(
@@ -823,7 +820,7 @@ unsafe extern "C" fn window_buffer_do_paste(
         mode_tree_run_command(
             c,
             ::core::ptr::null_mut::<cmd_find_state>(),
-            (*data).command,
+            (*data).command.as_ptr(),
             (*item).name,
         );
     }

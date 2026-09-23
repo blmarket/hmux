@@ -2142,6 +2142,21 @@ legacy callers safe.
   its mode-tree prompt is active, alongside empty and accepted prompts.
   No sanitizer was run.
 
+### Increment 278 — choose-buffer mode strings (2026-09-23)
+
+- `window_buffer_modedata` now owns its command, row format, and key format as
+  `CString` fields in the existing stable `Box`. Formatting, key parsing, and
+  command execution borrow C views. The three `xstrdup` allocations and
+  matching frees are gone; editor cancellation, mode-tree teardown, and item
+  cleanup still precede dropping the box.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check,
+  `scripts/window_buffer_mode_strings_cli_checks.py`, and
+  `scripts/window_buffer_edit_owner_cli_checks.py` passed on main. Both
+  attached-client checks passed with the pinned baseline; they covered
+  custom `-F`, `-K`, command expansion, cancel, detachment with a live mode,
+  and editor completion/cancellation. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
