@@ -96,7 +96,7 @@ unsafe extern "C" fn screen_free_titles(mut s: *mut screen) {
         }
         *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
         free((*title_entry).text as *mut ::core::ffi::c_void);
-        free(title_entry as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(title_entry));
     }
     free((*s).titles as *mut ::core::ffi::c_void);
     (*s).titles = ::core::ptr::null_mut::<screen_titles>();
@@ -333,7 +333,7 @@ pub unsafe extern "C" fn screen_push_title(mut s: *mut screen) {
             (*(*s).titles).tqh_last = (*title_entry).entry.tqe_prev;
         }
         *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
-        free(title_entry as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(title_entry));
         (*s).ntitles = (*s).ntitles.wrapping_sub(1);
     }
     if (*s).titles.is_null() {
@@ -342,9 +342,13 @@ pub unsafe extern "C" fn screen_push_title(mut s: *mut screen) {
         (*(*s).titles).tqh_first = ::core::ptr::null_mut::<screen_title_entry>();
         (*(*s).titles).tqh_last = &raw mut (*(*s).titles).tqh_first;
     }
-    title_entry =
-        xmalloc(::core::mem::size_of::<screen_title_entry>() as size_t) as *mut screen_title_entry;
-    (*title_entry).text = xstrdup((*s).title);
+    title_entry = Box::into_raw(Box::new(screen_title_entry {
+        text: xstrdup((*s).title),
+        entry: screen_title_link {
+            tqe_next: ::core::ptr::null_mut(),
+            tqe_prev: ::core::ptr::null_mut(),
+        },
+    }));
     (*title_entry).entry.tqe_next = (*(*s).titles).tqh_first;
     if !(*title_entry).entry.tqe_next.is_null() {
         (*(*(*s).titles).tqh_first).entry.tqe_prev = &raw mut (*title_entry).entry.tqe_next;
@@ -376,7 +380,7 @@ pub unsafe extern "C" fn screen_pop_title(mut s: *mut screen) {
             (*(*s).titles).tqh_last = (*title_entry).entry.tqe_prev;
         }
         *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
-        free(title_entry as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(title_entry));
         (*s).ntitles = (*s).ntitles.wrapping_sub(1);
     }
 }

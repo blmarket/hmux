@@ -58,6 +58,8 @@ pub struct screen {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned while linked in a screen's title stack. Pop transfers `text` to
+/// the screen; eviction and stack cleanup free it before dropping the record.
 pub struct screen_title_entry {
     pub text: *mut ::core::ffi::c_char,
     pub entry: screen_title_link,

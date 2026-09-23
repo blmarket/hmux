@@ -2621,6 +2621,19 @@ legacy callers safe.
   pre-migration binary. Changed files pass rustfmt and diff checks. No
   sanitizer was run.
 
+### Increment 311 — boxed screen title stack entries (2026-09-23)
+
+- `screen_push_title` now boxes each `screen_title_entry` with explicit link
+  initialization. `screen_free_titles`, oldest-entry eviction, and
+  `screen_pop_title` still unlink before consuming the Box. Cleanup/eviction
+  free the saved text; pop transfers that text to `s.title` and frees only the
+  entry record. The intrusive links borrow each stable boxed address.
+- Added `scripts/screen_title_stack_cli_checks.py` to drive OSC 2 titles and
+  CSI push/pop through a live pane, including more than ten pushes for oldest
+  eviction and teardown with a remaining stack entry. It matched the pinned
+  pre-migration binary. Full workspace tests, binary build, rustfmt, and diff
+  checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2631,12 +2644,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen_title_entry` in `src/screen.rs` has one constructor and three
-   terminal paths: stack cleanup, oldest-entry eviction, and pop. Preserve
-   intrusive TAILQ unlink order and the pop path's transfer of `text` to
-   `s.title`. The separate `screen_titles` header can follow once the leaf is
-   migrated; its tail pointer may point into its own head. The separate
-   `utf8_item` cache has no terminal free and needs a whole-cache design.
+1. The `screen_titles` header in `src/screen.rs` has one constructor and one
+   final free. Its `tqh_last` points into the header when empty, so a Box must
+   preserve its address from first insertion through final cleanup. The
+   screen title stack CLI now covers header creation and teardown. The
+   separate `utf8_item` cache has no terminal free and needs a whole-cache
+   design.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias
