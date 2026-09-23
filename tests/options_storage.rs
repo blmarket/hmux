@@ -268,3 +268,45 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         options_free(oo);
     }
 }
+
+#[test]
+fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
+    unsafe {
+        let oo = options_create(null_mut());
+        let table = &raw const hmux2::src::options_table::options_table;
+        let definition = (*table)
+            .iter()
+            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"update-environment")
+            .unwrap();
+        let strings = options_empty(oo, definition);
+        let mut input = b"  ONE,\xff TWO,,\0ignored".to_vec();
+        assert_eq!(
+            options_array_assign(strings, input.as_ptr().cast(), null_mut()),
+            0
+        );
+        input.fill(b'x');
+        for (index, expected) in [b"ONE".as_slice(), b"\xff", b"TWO"].iter().enumerate() {
+            let key = CString::new(index.to_string()).unwrap();
+            let value = options_array_get(strings, key.as_ptr());
+            assert!(!value.is_null());
+            assert_eq!(CStr::from_ptr((*value).string).to_bytes(), *expected);
+        }
+        assert!(options_array_get(strings, c"3".as_ptr()).is_null());
+
+        let colour_definition = (*table)
+            .iter()
+            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"pane-colours")
+            .unwrap();
+        let colours = options_empty(oo, colour_definition);
+        let mut cause = null_mut();
+        assert_eq!(
+            options_array_assign(colours, c"red,,invalid-colour".as_ptr(), &mut cause),
+            -1
+        );
+        assert!(!options_array_get(colours, c"0".as_ptr()).is_null());
+        assert!(options_array_get(colours, c"1".as_ptr()).is_null());
+        assert_eq!(CStr::from_ptr(cause), c"bad colour: invalid-colour");
+        free(cause.cast());
+        options_free(oo);
+    }
+}

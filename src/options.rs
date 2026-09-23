@@ -766,9 +766,7 @@ pub unsafe extern "C" fn options_array_assign(
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut string: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
     separator = (*(*o).tableentry).separator;
@@ -805,8 +803,8 @@ pub unsafe extern "C" fn options_array_assign(
     if *s as ::core::ffi::c_int == '\0' as i32 {
         return 0 as ::core::ffi::c_int;
     }
-    string = xstrdup(s);
-    copy = string;
+    let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
+    let mut string = copy.as_mut_ptr().cast::<::core::ffi::c_char>();
     loop {
         next = strsep(&raw mut string, separator);
         if next.is_null() {
@@ -841,11 +839,9 @@ pub unsafe extern "C" fn options_array_assign(
             cause,
         ) != 0 as ::core::ffi::c_int
         {
-            free(copy as *mut ::core::ffi::c_void);
             return -(1 as ::core::ffi::c_int);
         }
     }
-    free(copy as *mut ::core::ffi::c_void);
     return 0 as ::core::ffi::c_int;
 }
 #[no_mangle]

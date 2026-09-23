@@ -1301,6 +1301,21 @@ legacy callers safe.
   build, changed-file rustfmt, and `git diff --check` passed in the
   isolated worktree. No sanitizer run was performed.
 
+### Increment 67 — options array assignment split copy (2026-09-22)
+
+- `options_array_assign` now owns its mutable `strsep` input as `Vec<u8>`
+  copied through `CStr::to_bytes_with_nul`. The old `xstrdup` and both
+  success/error `free` paths are gone. `options_array_set` copies string
+  tokens or parses command/colour values before returning; it retains no
+  pointer into the split buffer. Empty tokens, first-NUL parsing, and the
+  partial array left after an error are unchanged.
+- `tests/options_storage.rs` covers mixed separators, non-UTF-8 tokens,
+  first-NUL handling, stable stored values after input mutation, and a
+  colour error after one successful element. Focused and workspace tests,
+  binary build, changed-file rustfmt, `git diff --check`, and
+  `scripts/options_array_key_cli_checks.py` passed in the isolated worktree.
+  No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1315,12 +1330,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `server_client_set_flags`' writable comma-list copy and other
-   local parser scratch. Remaining `xstrndup` callers return or transfer
-   C-owned strings.
+2. Inspect `server_client_set_flags`' writable comma-list copy,
+   `cmd_find_client`'s trailing-colon scratch, and other local parser buffers.
+   Remaining `xstrndup` callers return or transfer C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–66. The remaining
+Current validation is recorded in increments 15–67. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–66 has its own local commit; none was pushed.
+Each of increments 15–67 has its own local commit; none was pushed.
