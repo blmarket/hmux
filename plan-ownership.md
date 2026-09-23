@@ -884,6 +884,27 @@ legacy callers safe.
   pointer would preserve manual ownership, so this helper is deferred until
   the callback return contract can change.
 
+### Increment 38 — client status message strings (2026-09-22)
+
+- `status_message_set` now formats through `xvasprintf_cstring`. A private
+  first-field `ClientOwner` wrapper holds the unchanged ABI `client` node and
+  an optional `CString` for `message_string`. The sole production client
+  constructor and final destructor allocate/drop the wrapper. Status set,
+  clear, and client-loss cleanup replace or release the owner at their
+  original lifecycle points; the raw message field only borrows its bytes.
+- Removed the formatted message's direct `xvasprintf`/`free` pair and both
+  client message frees. No pointer-key registry or raw CString ownership
+  handoff was added. All 23 production formats use literal text, `%s`, or
+  `%d`, and their C-string readers have no supported embedded-NUL suffix E2E.
+- A focused owner test covers stable client pointer, replacement, non-UTF-8,
+  empty, and a direct `status_message_clear` call.
+  `scripts/status_message_cli_checks.py` exercises attached messages,
+  replacement, a timer interval, and disconnect with an active
+  message on a private socket. Workspace tests, binary build, rustfmt, and
+  `git diff --check` passed in the isolated worktree. The timer's owner state
+  and null-client branch were source-audited but lack direct live assertions;
+  no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -898,13 +919,12 @@ non-string value.
    uses its returned byte length. The remaining values are observed as C
    strings, so no supported embedded-NUL E2E case requires a full-byte
    buffer. Continue with the next small containing lifecycle.
-2. `input_reply` and `status_message_set`
-   store formatted C strings in records or queues. Audit each containing
-   lifecycle before adding `CString`; a local owner alone would dangle.
+2. `input_reply` stores formatted C strings in queued request records. Audit
+   the containing lifecycle before adding `CString`; a local owner would dangle.
    `format_printf` and the `xmalloc` wrappers retain their C allocator ABI.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–37. The remaining
+Current validation is recorded in increments 15–38. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–37 has its own local commit; none was pushed.
+Each of increments 15–38 has its own local commit; none was pushed.

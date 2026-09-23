@@ -101,6 +101,7 @@ use crate::src::window_visible::{window_position_is_visible, window_visible_rang
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xreallocarray, xrecallocarray, xsnprintf, xstrdup,
 };
+use std::ffi::CString;
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
@@ -114,6 +115,62 @@ pub use crate::src::shared::client::{
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
+
+// The public client record keeps its C layout. Only server_client_create
+// allocates clients, and server_client_free drops this containing owner.
+// message_string borrows the CString until the next replacement or clear.
+#[repr(C)]
+struct ClientOwner {
+    node: client,
+    message: Option<CString>,
+}
+
+const _: () = assert!(std::mem::offset_of!(ClientOwner, node) == 0);
+
+pub(crate) unsafe fn server_client_set_message(c: *mut client, message: Option<CString>) {
+    let owner = c as *mut ClientOwner;
+    // Invalidate the compatibility pointer before releasing the old value.
+    (*c).message_string = ::core::ptr::null_mut();
+    (*owner).message = message;
+    if let Some(message) = (*owner).message.as_ref() {
+        (*c).message_string = message.as_ptr().cast_mut();
+    }
+}
+
+#[cfg(test)]
+mod client_message_owner_tests {
+    use super::{client, server_client_set_message, ClientOwner};
+    use crate::src::status::status_message_clear;
+    use std::ffi::{CStr, CString};
+
+    #[test]
+    fn message_replacement_and_clear_keep_the_client_pointer_stable() {
+        unsafe {
+            let mut owner = Box::new(ClientOwner {
+                node: std::mem::zeroed::<client>(),
+                message: None,
+            });
+            let c = &raw mut owner.node;
+            assert!((*c).message_string.is_null());
+
+            server_client_set_message(c, Some(CString::new(vec![b'a', 0xff]).unwrap()));
+            assert_eq!(CStr::from_ptr((*c).message_string).to_bytes(), b"a\xff");
+            assert_eq!(c, &raw mut owner.node);
+
+            server_client_set_message(c, Some(CString::new(Vec::<u8>::new()).unwrap()));
+            assert_eq!(CStr::from_ptr((*c).message_string).to_bytes(), b"");
+            assert!(!(*c).message_string.is_null());
+
+            // A live message has pushed a status screen. Keep one extra
+            // reference so status_message_clear does not need a full screen.
+            (*c).status.references = 2;
+            status_message_clear(c);
+            assert!((*c).message_string.is_null());
+            assert!(owner.message.is_none());
+            assert_eq!((*c).status.references, 1);
+        }
+    }
+}
 pub use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
     CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER,
@@ -478,7 +535,11 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
-    c = Box::into_raw(Box::new(std::mem::zeroed::<client>()));
+    c = &raw mut (*Box::into_raw(Box::new(ClientOwner {
+        node: std::mem::zeroed::<client>(),
+        message: None,
+    })))
+    .node;
     (*c).references = 1 as ::core::ffi::c_int;
     (*c).peer = proc_add_peer(
         server_proc,
@@ -906,7 +967,9 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
         event_del(&raw mut (*c).cycle_timer);
     }
     key_bindings_unref_table((*c).keytable as *mut key_table);
-    free((*c).message_string as *mut ::core::ffi::c_void);
+    // Callbacks during client loss can set another message after the earlier
+    // clear. Preserve the final release point before cancelling its timer.
+    server_client_set_message(c, None);
     if event_initialized(&raw mut (*c).message_timer) != 0 {
         event_del(&raw mut (*c).message_timer);
     }
@@ -973,7 +1036,7 @@ unsafe extern "C" fn server_client_free(
             (*c).files.storage.is_none(),
             "client file index still contains live records at client teardown"
         );
-        drop(Box::from_raw(c));
+        drop(Box::from_raw(c as *mut ClientOwner));
     }
 }
 #[no_mangle]

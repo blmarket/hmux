@@ -23,13 +23,13 @@ use crate::src::screen_write::{
 };
 pub use crate::src::server::clients;
 use crate::src::server::server_add_message;
-use crate::src::server_client::server_client_clear_overlay;
+use crate::src::server_client::{server_client_clear_overlay, server_client_set_message};
 pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::style::{
     style_apply, style_ranges_free, style_ranges_get_range, style_ranges_init,
 };
 use crate::src::tmux::global_s_options;
-use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf};
+use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf_cstring};
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -555,29 +555,27 @@ pub unsafe extern "C" fn status_message_set(
         tv_usec: 0,
     };
     let mut ap: ::core::ffi::VaList;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ap = args.clone();
-    xvasprintf(&raw mut s, fmt, ap);
+    let s = xvasprintf_cstring(fmt, ap);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"status_message_set\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        s.as_ptr(),
     );
     if c.is_null() {
         server_add_message(
             b"message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            s,
+            s.as_ptr(),
         );
-        free(s as *mut ::core::ffi::c_void);
         return;
     }
     status_message_clear(c);
     status_push_screen(c);
-    (*c).message_string = s;
+    server_client_set_message(c, Some(s));
     server_add_message(
         b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
         (*c).name,
-        s,
+        (*c).message_string,
     );
     if delay == -(1 as ::core::ffi::c_int) {
         delay = options_get_number(
@@ -623,8 +621,7 @@ pub unsafe extern "C" fn status_message_clear(mut c: *mut client) {
     if (*c).message_string.is_null() {
         return;
     }
-    free((*c).message_string as *mut ::core::ffi::c_void);
-    (*c).message_string = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    server_client_set_message(c, None);
     if (*c).prompt.is_null() {
         (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
     }
