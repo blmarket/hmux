@@ -70,7 +70,6 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::window::{window_pane_index, window_pane_zindex, winlinks_minmax, winlinks_next};
-use crate::src::xmalloc::xreallocarray;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -635,57 +634,6 @@ pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut sessi
         sort_crit,
     );
     l
-}
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_panes_session(
-    mut s: *mut session,
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut window_pane {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut i: u_int = 0;
-    static mut l: *mut *mut window_pane =
-        ::core::ptr::null::<*mut window_pane>() as *mut *mut window_pane;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
-    while !wl.is_null() {
-        w = (*wl).window;
-        wp = (*w).panes.tqh_first;
-        while !wp.is_null() {
-            if lsz <= i {
-                lsz = lsz.wrapping_add(100 as u_int);
-                l = xreallocarray(
-                    l as *mut ::core::ffi::c_void,
-                    lsz as size_t,
-                    ::core::mem::size_of::<*mut window_pane>() as size_t,
-                ) as *mut *mut window_pane;
-            }
-            let fresh10 = i;
-            i = i.wrapping_add(1);
-            let ref mut fresh11 = *l.offset(fresh10 as isize);
-            *fresh11 = wp;
-            wp = (*wp).entry.tqe_next;
-        }
-        wl = winlinks_next(wl);
-    }
-    sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
-        ::core::mem::size_of::<*mut window_pane>() as u_int,
-        Some(
-            sort_pane_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
-    *n = i;
-    return l;
 }
 pub unsafe fn sort_get_panes_window(
     w: *mut window,

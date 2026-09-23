@@ -2341,6 +2341,24 @@ legacy callers safe.
   `sort_get_panes_session` remains. Rustfmt reports one import-layout
   difference also present in the base commit. No sanitizer was run.
 
+### Increment 131 — remove unused session pane sorter (2026-09-22)
+
+- Removed `sort_get_panes_session` and its process-global `xreallocarray`
+  pointer cache/capacity counter. It had no in-tree caller. With both unused
+  pane sorters gone, `src/sort.rs` no longer imports `xreallocarray` or keeps
+  any static pointer-list cache. The used window-scoped pane sorter remains
+  caller-owned from increment 128.
+- The `no_mangle` staticlib symbol is intentionally gone. The upstream tmux
+  source header declares the historical function, but this repository has no
+  header, caller, or documented foreign consumer of that ABI. Unknown
+  out-of-tree staticlib consumers would need updating.
+- Isolated validation: library build, serialized workspace tests,
+  `git diff --check`, and `nm` confirmed the session symbol is absent while
+  the global symbol remained in that isolated branch. After integrating both
+  removals, the library build and `nm` confirmed that neither symbol remains.
+  Rustfmt reports one import-layout difference also present in the base
+  commit. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2351,11 +2369,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The remaining `sort_get_panes` and `sort_get_panes_session` still keep
-   process-global `xreallocarray` pointer lists but have no in-tree callers.
-   Both are exported `no_mangle` staticlib symbols; no header or documented
-   foreign use was found. Audit their external ABI obligation before
-   deleting dead caches or preserving an intentional foreign API.
+1. The Box-owned prompt record still has its editable `buffer` as a separately
+   allocated UTF-8 data array. Audit its edit, resize, and callback paths
+   before moving that complete field to Rust-owned storage.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -2365,17 +2381,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-3. The Box-owned prompt record still has its editable `buffer` as a separately
-   allocated UTF-8 data array. Audit its edit, resize, and callback paths
-   before moving that complete field to Rust-owned storage.
-4. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-5. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
@@ -2383,9 +2396,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–130. The remaining
+Current validation is recorded in increments 15–131. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–130 has its own local commit; none was pushed.
+Each of increments 15–131 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
