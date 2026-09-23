@@ -39,7 +39,6 @@ pub struct events_sink {
     pub data: *mut ::core::ffi::c_void,
     pub dead: ::core::ffi::c_int,
     pub generation: u_int,
-    pub entry: events_sink_entry,
 }
 
 pub type events_cb = Option<
@@ -49,13 +48,6 @@ pub type events_cb = Option<
         *mut ::core::ffi::c_void,
     ) -> (),
 >;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct events_sink_entry {
-    pub tqe_next: *mut events_sink,
-    pub tqe_prev: *mut *mut events_sink,
-}
 
 #[derive(Copy, Clone)]
 #[repr(C)]

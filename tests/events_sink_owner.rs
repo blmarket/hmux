@@ -5,6 +5,7 @@ use std::ffi::{c_char, c_void};
 
 struct State {
     first: *mut events_sink,
+    second: *mut events_sink,
     later: *mut events_sink,
     calls: Vec<u8>,
 }
@@ -13,6 +14,8 @@ unsafe extern "C" fn first(_: *const c_char, _: *mut event_payload, data: *mut c
     let state = &mut *data.cast::<State>();
     state.calls.push(b'A');
     events_remove_sink(state.first);
+    assert_eq!((*state.first).dead, 1);
+    events_remove_sink(state.second);
     state.later = events_add_sink(c"owner-event".as_ptr(), Some(later), data);
 }
 
@@ -29,23 +32,23 @@ fn sink_owns_its_name_and_defers_removal_until_dispatch_ends() {
     unsafe {
         let mut state = State {
             first: std::ptr::null_mut(),
+            second: std::ptr::null_mut(),
             later: std::ptr::null_mut(),
             calls: Vec::new(),
         };
         let data = (&raw mut state).cast();
         let mut name = b"owner-event\0".to_vec();
         state.first = events_add_sink(name.as_ptr().cast(), Some(first), data);
-        let second_sink = events_add_sink(name.as_ptr().cast(), Some(second), data);
+        state.second = events_add_sink(name.as_ptr().cast(), Some(second), data);
 
         // The caller's name buffer may disappear or change after registration.
         name[0] = b'X';
         events_fire(c"owner-event".as_ptr(), event_payload_create());
-        assert_eq!(state.calls, b"AB");
+        assert_eq!(state.calls, b"A");
 
         events_fire(c"owner-event".as_ptr(), event_payload_create());
-        assert_eq!(state.calls, b"ABBC");
+        assert_eq!(state.calls, b"AC");
 
-        events_remove_sink(second_sink);
         events_remove_sink(state.later);
     }
 }

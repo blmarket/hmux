@@ -203,17 +203,12 @@ fn original_copies_match() {
     record!(
         "src/events.rs::events_sink",
         hmux2::src::events::events_sink,
-        [name, cb, data, dead, generation, entry]
+        [name, cb, data, dead, generation]
     );
     record!(
         "src/hooks.rs::events_sink",
         *mut hmux2::src::hooks::events_sink,
         []
-    );
-    record!(
-        "src/events.rs::C2RustUnnamed_35",
-        hmux2::src::events::events_sink_entry,
-        [tqe_next, tqe_prev]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/remaining-events.txt"));

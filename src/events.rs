@@ -25,7 +25,7 @@ use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
 pub use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
-pub use crate::src::shared::events::{event_payload, events_cb, events_sink, events_sink_entry};
+pub use crate::src::shared::events::{event_payload, events_cb, events_sink};
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
 pub use crate::src::shared::hyperlinks::hyperlinks;
@@ -69,21 +69,12 @@ use std::ffi::{CStr, CString};
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct events_sinks {
-    pub tqh_first: *mut events_sink,
-    pub tqh_last: *mut *mut events_sink,
-}
-static mut events_sinks: events_sinks = events_sinks {
-    tqh_first: ::core::ptr::null::<events_sink>() as *mut events_sink,
-    tqh_last: ::core::ptr::null::<*mut events_sink>() as *mut *mut events_sink,
-};
+static mut events_sinks: Vec<Box<EventsSinkOwner>> = Vec::new();
 static mut events_dispatching: u_int = 0;
 static mut events_generation: u_int = 0;
 
-// The C-shaped sink must stay at offset zero: hooks and wait items retain its
-// address until events_remove_sink, including removal deferred by events_fire.
+// Hooks and wait items retain the stable address of the sink until
+// events_remove_sink, including removal deferred by events_fire.
 #[repr(C)]
 struct EventsSinkOwner {
     sink: events_sink,
@@ -91,26 +82,23 @@ struct EventsSinkOwner {
 }
 
 unsafe extern "C" fn events_free_sink(mut es: *mut events_sink) {
-    if !(*es).entry.tqe_next.is_null() {
-        (*(*es).entry.tqe_next).entry.tqe_prev = (*es).entry.tqe_prev;
-    } else {
-        events_sinks.tqh_last = (*es).entry.tqe_prev;
+    let sinks = &mut *(&raw mut events_sinks);
+    if let Some(index) = sinks
+        .iter()
+        .position(|sink| (&sink.sink as *const events_sink).cast_mut() == es)
+    {
+        drop(sinks.remove(index));
     }
-    *(*es).entry.tqe_prev = (*es).entry.tqe_next;
-    drop(Box::from_raw(es.cast::<EventsSinkOwner>()));
 }
 unsafe extern "C" fn events_free_dead() {
-    let mut es: *mut events_sink = ::core::ptr::null_mut::<events_sink>();
-    let mut es1: *mut events_sink = ::core::ptr::null_mut::<events_sink>();
-    es = events_sinks.tqh_first;
-    while !es.is_null() && {
-        es1 = (*es).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if (*es).dead != 0 {
-            events_free_sink(es);
+    let sinks = &mut *(&raw mut events_sinks);
+    let mut index = 0;
+    while index < sinks.len() {
+        if sinks[index].sink.dead != 0 {
+            drop(sinks.remove(index));
+        } else {
+            index += 1;
         }
-        es = es1;
     }
 }
 #[no_mangle]
@@ -127,20 +115,12 @@ pub unsafe extern "C" fn events_add_sink(
             data,
             dead: 0,
             generation: events_generation,
-            entry: events_sink_entry {
-                tqe_next: ::core::ptr::null_mut(),
-                tqe_prev: ::core::ptr::null_mut(),
-            },
         },
         name: CStr::from_ptr(name).to_owned(),
     });
     owner.sink.name = owner.name.as_ptr().cast_mut();
     let es = &raw mut owner.sink;
-    (*es).entry.tqe_next = ::core::ptr::null_mut::<events_sink>();
-    (*es).entry.tqe_prev = events_sinks.tqh_last;
-    *events_sinks.tqh_last = es;
-    events_sinks.tqh_last = &raw mut (*es).entry.tqe_next;
-    let _ = Box::into_raw(owner);
+    (&mut *(&raw mut events_sinks)).push(owner);
     es
 }
 #[no_mangle]
@@ -175,14 +155,18 @@ pub unsafe extern "C" fn events_fire(
         );
     }
     events_dispatching = events_dispatching.wrapping_add(1);
-    es = events_sinks.tqh_first;
-    while !es.is_null() {
+    let mut index = 0;
+    while index < (&*(&raw const events_sinks)).len() {
+        es = {
+            let sinks = &mut *(&raw mut events_sinks);
+            &raw mut sinks[index].sink
+        };
+        index += 1;
         if !((*es).dead != 0 || (*es).generation > generation) {
             if strcmp((*es).name, name) == 0 as ::core::ffi::c_int {
                 (*es).cb.expect("non-null function pointer")(name, ep, (*es).data);
             }
         }
-        es = (*es).entry.tqe_next;
     }
     events_dispatching = events_dispatching.wrapping_sub(1);
     if events_dispatching == 0 as u_int {
@@ -362,14 +346,3 @@ pub unsafe extern "C" fn events_fire_winlink(
     );
     events_fire(name, ep);
 }
-unsafe extern "C" fn run_static_initializers() {
-    events_sinks = events_sinks {
-        tqh_first: ::core::ptr::null_mut::<events_sink>(),
-        tqh_last: &raw mut events_sinks.tqh_first,
-    };
-}
-#[used]
-#[cfg_attr(target_os = "linux", link_section = ".init_array")]
-#[cfg_attr(target_os = "windows", link_section = ".CRT$XIB")]
-#[cfg_attr(target_os = "macos", link_section = "__DATA,__mod_init_func")]
-static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
