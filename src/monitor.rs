@@ -178,7 +178,7 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
     } {
         monitor_windows_remove(&raw mut (*me).windows, mw);
         free((*mw).last as *mut ::core::ffi::c_void);
-        free(mw as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(mw));
         mw = mw1;
     }
     free((*me).last as *mut ::core::ffi::c_void);
@@ -398,10 +398,7 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
             find.idx = (*wl).idx as u_int;
             mw = monitor_windows_find(&raw mut (*me).windows, &raw mut find);
             if mw.is_null() {
-                mw = xcalloc(
-                    1 as size_t,
-                    ::core::mem::size_of::<monitor_window>() as size_t,
-                ) as *mut monitor_window;
+                mw = Box::into_raw(Box::new(::core::mem::zeroed::<monitor_window>()));
                 (*mw).window = (*w).id;
                 (*mw).idx = (*wl).idx as u_int;
                 monitor_windows_insert(&raw mut (*me).windows, mw);
@@ -443,10 +440,7 @@ unsafe extern "C" fn monitor_check_all_windows_one(
     find.idx = (*wl).idx as u_int;
     mw = monitor_windows_find(&raw mut (*me).windows, &raw mut find);
     if mw.is_null() {
-        mw = xcalloc(
-            1 as size_t,
-            ::core::mem::size_of::<monitor_window>() as size_t,
-        ) as *mut monitor_window;
+        mw = Box::into_raw(Box::new(::core::mem::zeroed::<monitor_window>()));
         (*mw).window = (*w).id;
         (*mw).idx = (*wl).idx as u_int;
         monitor_windows_insert(&raw mut (*me).windows, mw);
@@ -473,7 +467,7 @@ unsafe extern "C" fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut ge
         if !((*mw).generation == generation) {
             monitor_windows_remove(&raw mut (*me).windows, mw);
             free((*mw).last as *mut ::core::ffi::c_void);
-            free(mw as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(mw));
         }
         mw = mw1;
     }

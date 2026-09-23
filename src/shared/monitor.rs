@@ -82,6 +82,8 @@ pub struct monitor_windows {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by a monitor item. Its index and timer traversal borrow this
+/// stable address until removal, then release `last` before dropping the Box.
 pub struct monitor_window {
     pub window: u_int,
     pub idx: u_int,

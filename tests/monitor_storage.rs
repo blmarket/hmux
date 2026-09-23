@@ -14,8 +14,7 @@ fn byte_names_composite_keys_and_nested_cleanup() {
                 (*pane).pane = id;
                 (*pane).idx = idx;
                 monitor_panes_insert(&mut (*item).panes, pane);
-                let window =
-                    libc::calloc(1, std::mem::size_of::<monitor_window>()) as *mut monitor_window;
+                let window = Box::into_raw(Box::new(std::mem::zeroed::<monitor_window>()));
                 (*window).window = id;
                 (*window).idx = idx;
                 monitor_windows_insert(&mut (*item).windows, window);

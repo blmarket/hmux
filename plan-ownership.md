@@ -2553,6 +2553,20 @@ legacy callers safe.
   and diff checks passed. Changed files retain only the pre-existing
   `monitor.rs` rustfmt import-order difference. No sanitizer was run.
 
+### Increment 306 — boxed monitor window leaves (2026-09-23)
+
+- `monitor_check_window` and `monitor_check_all_windows_one` now box their
+  zeroed `monitor_window` leaves. Both `monitor_free_item` and
+  `monitor_sweep_all_windows` remove each index entry and free its `last`
+  string before consuming the `Box`. Updated the storage-test window fixture
+  to match. The semantic `(window id, winlink index)` index still borrows
+  stable leaf pointers until removal.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, and diff
+  checks passed. The session-scoped monitor leaf and monitor-string CLI checks
+  matched the pinned pre-migration binary. Changed files retain only the
+  pre-existing `monitor.rs` rustfmt import-order difference. No sanitizer was
+  run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2563,10 +2577,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Symmetric `monitor_window` records in `src/monitor.rs` are the next small
-   leaf owners. They have two constructors and both sweep/final cleanup paths;
-   their storage-test fixtures still use libc `calloc`. The session-scoped
-   monitor leaf CLI covers timer checks and a window generation sweep.
+1. `paste_buffer` in `src/paste.rs` is the next small record: `paste_add` and
+   `paste_set` allocate it, and `paste_free` is its sole record destructor.
+   Preserve event order, data/name cleanup, and stable pointers borrowed by
+   the name/time indexes across eviction, rename, replacement, and deletion.
+   The set-buffer-name and sorted-buffer CLI checks cover these paths.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias
