@@ -1766,6 +1766,21 @@ legacy callers safe.
   workspace suite, binary build, changed-file rustfmt, and `git diff
   --check` passed in the isolated worktree. No sanitizer run was performed.
 
+### Increment 98 — choose-buffer item list and names (2026-09-22)
+
+- `window_buffer_modedata` is Box-owned and holds a
+  `Vec<Box<WindowBufferItemOwner>>`. Each stable item owns a byte-preserving
+  `CString` name and lends its C-layout item pointer only while listed.
+  This removes the list `xreallocarray`, per-item `xcalloc`/`xstrdup`, count,
+  ordered manual frees, and final list free. Ordered Vec draining preserves
+  teardown order. The editor keeps its separate copied name for callbacks
+  that outlive a rebuild; mode-tree callback borrows end before reentrancy.
+- A focused owner test covers empty/non-UTF-8 names and pointer stability
+  across 512 additions. The attached-terminal choose-buffer test now builds
+  nine buffers. Focused and workspace tests, binary build, changed-file
+  rustfmt, and `git diff --check` passed in the isolated worktree. No
+  sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1785,10 +1800,9 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `window_buffer`'s item list has paired allocation and teardown in
-   `window_buffer_add_item`, `window_buffer_build`, and `window_buffer_free`.
-   Audit editor callbacks and mode-tree `itemdata` aliases before migrating
-   that list, its items, and their names as one owner boundary.
+2. `window_customize`'s item list and detached prompt/editor clones still
+   have paired manual allocations and frees. Their reference-counted mode
+   data must outlive callbacks; migrate all clone paths with the list owner.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1804,9 +1818,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–97. The remaining
+Current validation is recorded in increments 15–98. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–97 has its own local commit; none was pushed.
+Each of increments 15–98 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

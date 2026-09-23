@@ -98,14 +98,14 @@ use crate::src::sort::sort_get_buffers;
 use crate::src::spawn::{spawn_cancel_editor, spawn_editor, spawn_get_editor_pid};
 use crate::src::utf8::utf8_strvis;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
-use crate::src::xmalloc::{xcalloc, xreallocarray, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xcalloc, xsnprintf, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_buffer_modedata {
     pub wp: *mut window_pane,
@@ -116,8 +116,7 @@ pub struct window_buffer_modedata {
     pub command: *mut ::core::ffi::c_char,
     pub format: *mut ::core::ffi::c_char,
     pub key_format: *mut ::core::ffi::c_char,
-    pub item_list: *mut *mut window_buffer_itemdata,
-    pub item_size: u_int,
+    item_list: Vec<Box<WindowBufferItemOwner>>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -125,6 +124,13 @@ pub struct window_buffer_itemdata {
     pub name: *const ::core::ffi::c_char,
     pub order: u_int,
     pub size: size_t,
+}
+
+// The mode tree borrows `item` during callbacks. The box keeps its address
+// stable as the list grows, and `name` keeps the C string alive with it.
+struct WindowBufferItemOwner {
+    item: window_buffer_itemdata,
+    _name: CString,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -260,28 +266,28 @@ pub static mut window_buffer_mode: window_mode = unsafe {
 };
 static mut window_buffer_order_seq: [sort_order; 4] =
     [SORT_CREATION, SORT_NAME, SORT_SIZE, SORT_END];
-unsafe extern "C" fn window_buffer_add_item(
-    mut data: *mut window_buffer_modedata,
+fn window_buffer_add_item(
+    items: &mut Vec<Box<WindowBufferItemOwner>>,
+    name: &CStr,
 ) -> *mut window_buffer_itemdata {
-    let mut item: *mut window_buffer_itemdata = ::core::ptr::null_mut::<window_buffer_itemdata>();
-    (*data).item_list = xreallocarray(
-        (*data).item_list as *mut ::core::ffi::c_void,
-        (*data).item_size.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<*mut window_buffer_itemdata>() as size_t,
-    ) as *mut *mut window_buffer_itemdata;
-    let fresh0 = (*data).item_size;
-    (*data).item_size = (*data).item_size.wrapping_add(1);
-    let ref mut fresh1 = *(*data).item_list.offset(fresh0 as isize);
-    *fresh1 = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_buffer_itemdata>() as size_t,
-    ) as *mut window_buffer_itemdata;
-    item = *fresh1;
-    return item;
+    let name = name.to_owned();
+    let mut owned = Box::new(WindowBufferItemOwner {
+        item: window_buffer_itemdata {
+            name: name.as_ptr(),
+            order: 0,
+            size: 0,
+        },
+        _name: name,
+    });
+    let item = &mut owned.item as *mut window_buffer_itemdata;
+    items.push(owned);
+    item
 }
-unsafe extern "C" fn window_buffer_free_item(mut item: *mut window_buffer_itemdata) {
-    free((*item).name as *mut ::core::ffi::c_void);
-    free(item as *mut ::core::ffi::c_void);
+
+fn window_buffer_clear_items(items: &mut Vec<Box<WindowBufferItemOwner>>) {
+    for item in items.drain(..) {
+        drop(item);
+    }
 }
 unsafe extern "C" fn window_buffer_build(
     mut modedata: *mut ::core::ffi::c_void,
@@ -301,19 +307,12 @@ unsafe extern "C" fn window_buffer_build(
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    i = 0 as u_int;
-    while i < (*data).item_size {
-        window_buffer_free_item(*(*data).item_list.offset(i as isize));
-        i = i.wrapping_add(1);
-    }
-    free((*data).item_list as *mut ::core::ffi::c_void);
-    (*data).item_list = ::core::ptr::null_mut::<*mut window_buffer_itemdata>();
-    (*data).item_size = 0 as u_int;
+    window_buffer_clear_items(&mut (*data).item_list);
     l = sort_get_buffers(&raw mut n, sort_crit);
     i = 0 as u_int;
     while i < n {
-        item = window_buffer_add_item(data);
-        (*item).name = xstrdup(paste_buffer_name(*l.offset(i as isize)));
+        let name = CStr::from_ptr(paste_buffer_name(*l.offset(i as isize)));
+        item = window_buffer_add_item(&mut (*data).item_list, name);
         paste_buffer_data(*l.offset(i as isize), &raw mut (*item).size);
         (*item).order = paste_buffer_order(*l.offset(i as isize));
         i = i.wrapping_add(1);
@@ -325,8 +324,11 @@ unsafe extern "C" fn window_buffer_build(
     }
     let mut current_block_32: u64;
     i = 0 as u_int;
-    while i < (*data).item_size {
-        item = *(*data).item_list.offset(i as isize);
+    while (i as usize) < (*data).item_list.len() {
+        item = {
+            let items = &mut (*data).item_list;
+            &mut items[i as usize].item as *mut window_buffer_itemdata
+        };
         pb = paste_get_name((*item).name);
         if !pb.is_null() {
             ft = format_create(
@@ -671,10 +673,17 @@ unsafe extern "C" fn window_buffer_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    data = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_buffer_modedata>() as size_t,
-    ) as *mut window_buffer_modedata;
+    data = Box::into_raw(Box::new(window_buffer_modedata {
+        wp,
+        fs: ::core::mem::zeroed(),
+        data: ::core::ptr::null_mut(),
+        editor: ::core::ptr::null_mut(),
+        edit: ::core::ptr::null_mut(),
+        command: ::core::ptr::null_mut(),
+        format: ::core::ptr::null_mut(),
+        key_format: ::core::ptr::null_mut(),
+        item_list: Vec::new(),
+    }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
     cmd_find_copy_state(&raw mut (*data).fs, fs);
@@ -757,7 +766,6 @@ unsafe extern "C" fn window_buffer_init(
 }
 unsafe extern "C" fn window_buffer_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
-    let mut i: u_int = 0;
     if data.is_null() {
         return;
     }
@@ -766,16 +774,11 @@ unsafe extern "C" fn window_buffer_free(mut wme: *mut window_mode_entry) {
         window_buffer_finish_edit((*data).edit as *mut window_buffer_editdata);
     }
     mode_tree_free((*data).data);
-    i = 0 as u_int;
-    while i < (*data).item_size {
-        window_buffer_free_item(*(*data).item_list.offset(i as isize));
-        i = i.wrapping_add(1);
-    }
-    free((*data).item_list as *mut ::core::ffi::c_void);
+    window_buffer_clear_items(&mut (*data).item_list);
     free((*data).format as *mut ::core::ffi::c_void);
     free((*data).key_format as *mut ::core::ffi::c_void);
     free((*data).command as *mut ::core::ffi::c_void);
-    free(data as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_buffer_resize(
     mut wme: *mut window_mode_entry,
@@ -1151,4 +1154,38 @@ unsafe extern "C" fn window_buffer_key(
         window_buffer_draw_waiting(data);
         (*wp).flags |= PANE_REDRAW;
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buffer_items_own_names_and_keep_callback_addresses_stable() {
+        let mut items = Vec::new();
+        let source = CString::new(b"\xffbuffer".to_vec()).unwrap();
+        let first = window_buffer_add_item(&mut items, &source);
+        let first_name = unsafe { (*first).name };
+        drop(source);
+
+        let empty = CStr::from_bytes_with_nul(b"\0").unwrap();
+        let empty_item = window_buffer_add_item(&mut items, empty);
+        for _ in 0..512 {
+            window_buffer_add_item(&mut items, empty);
+        }
+
+        assert_eq!(first, &mut items[0].item as *mut window_buffer_itemdata);
+        assert_eq!(
+            unsafe { CStr::from_ptr(first_name).to_bytes() },
+            b"\xffbuffer"
+        );
+        assert_eq!(unsafe { (*first).name }, first_name);
+        assert_eq!(
+            unsafe { CStr::from_ptr((*empty_item).name).to_bytes() },
+            b""
+        );
+
+        window_buffer_clear_items(&mut items);
+        assert!(items.is_empty());
+    }
 }

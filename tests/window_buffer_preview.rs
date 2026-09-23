@@ -152,6 +152,9 @@ fn preview_renders_long_line_then_short_escaped_line() {
         "preview",
         "sleep 30",
     ]);
+    for index in 0..8 {
+        server.command(&["set-buffer", "-b", &format!("older-{index}"), "old"]);
+    }
     let contents = format!("{}\n\tshort", "A".repeat(70));
     server.command(&["set-buffer", "-b", "sample", &contents]);
 
