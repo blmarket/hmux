@@ -56,7 +56,7 @@ use crate::src::session::{
     sessions_next,
 };
 pub use crate::src::session::{session_groups, sessions};
-pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
+pub use crate::src::shared::session::{session_group, session_group_entry};
 use crate::src::sort::{
     sort_get_clients, sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
 };

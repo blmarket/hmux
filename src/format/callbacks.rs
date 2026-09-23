@@ -623,7 +623,6 @@ unsafe fn format_cb_pane_bg(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = (*ft).s;
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut loop_0: *mut session = ::core::ptr::null_mut::<session>();
     if s.is_null() {
         return None;
     }
@@ -632,13 +631,11 @@ unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CStri
         return None;
     }
     let mut names = Vec::<u8>::new();
-    loop_0 = (*sg).sessions.tqh_first;
-    while !loop_0.is_null() {
+    for loop_0 in crate::src::session::session_group_members(sg) {
         if !names.is_empty() {
             names.push(b',');
         }
         names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
-        loop_0 = (*loop_0).gentry.tqe_next;
     }
     if names.is_empty() {
         return None;
@@ -663,15 +660,13 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
         if !client_session.is_null() {
-            session_loop = (*sg).sessions.tqh_first;
-            while !session_loop.is_null() {
+            for session_loop in crate::src::session::session_group_members(sg) {
                 if session_loop == client_session {
                     if !names.is_empty() {
                         names.push(b',');
                     }
                     names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
                 }
-                session_loop = (*session_loop).gentry.tqe_next;
             }
         }
         loop_0 = (*loop_0).entry.tqe_next;
@@ -2673,8 +2668,11 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
     w = (*(*ft).wl).window;
     sg = session_groups_minmax(&raw mut session_groups, RB_NEGINF);
     while !sg.is_null() {
-        s = (*sg).sessions.tqh_first;
-        if !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
+        s = crate::src::session::session_group_members(sg)
+            .first()
+            .copied()
+            .unwrap_or(std::ptr::null_mut());
+        if !s.is_null() && !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
             n = n.wrapping_add(1);
         }
         sg = session_groups_next(sg);

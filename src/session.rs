@@ -63,8 +63,7 @@ pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
 pub use crate::src::shared::session::{
-    session_group, session_group_entry, session_group_sessions, session_groups, sessions,
-    SessionGroupOwner,
+    session_group, session_group_entry, session_groups, sessions, SessionGroupOwner,
 };
 pub use crate::src::shared::sort::sort_criteria;
 pub use crate::src::shared::spawn::spawn_editor_state;
@@ -279,18 +278,14 @@ impl SessionGroupOwner {
         let mut owner = Box::new(Self {
             node: session_group {
                 name: std::ptr::null(),
-                sessions: session_group_sessions {
-                    tqh_first: std::ptr::null_mut(),
-                    tqh_last: std::ptr::null_mut(),
-                },
                 entry: session_group_entry {
                     owner: std::ptr::null_mut(),
                 },
             },
             name: name.to_owned(),
+            members: Vec::new(),
         });
         owner.node.name = owner.name.as_ptr();
-        owner.node.sessions.tqh_last = &raw mut owner.node.sessions.tqh_first;
         owner
     }
 
@@ -464,10 +459,6 @@ pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *
         tio: ::core::ptr::null_mut::<termios>(),
         environ: ::core::ptr::null_mut::<environ>(),
         references: 0,
-        gentry: session_gentry {
-            tqe_next: ::core::ptr::null_mut::<session>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut session>(),
-        },
         entry: session_entry {
             owner: std::ptr::null_mut(),
         },
@@ -1080,15 +1071,10 @@ pub unsafe extern "C" fn session_set_current(
 #[no_mangle]
 pub unsafe extern "C" fn session_group_contains(mut target: *mut session) -> *mut session_group {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
     sg = session_groups_minmax(&raw mut session_groups, RB_NEGINF);
     while !sg.is_null() {
-        s = (*sg).sessions.tqh_first;
-        while !s.is_null() {
-            if s == target {
-                return sg;
-            }
-            s = (*s).gentry.tqe_next;
+        if (*sg.cast::<SessionGroupOwner>()).members.contains(&target) {
+            return sg;
         }
         sg = session_groups_next(sg);
     }
@@ -1100,10 +1086,6 @@ pub unsafe extern "C" fn session_group_find(
 ) -> *mut session_group {
     let mut sg: session_group = session_group {
         name: ::core::ptr::null::<::core::ffi::c_char>(),
-        sessions: session_group_sessions {
-            tqh_first: ::core::ptr::null_mut::<session>(),
-            tqh_last: ::core::ptr::null_mut::<*mut session>(),
-        },
         entry: session_group_entry {
             owner: std::ptr::null_mut(),
         },
@@ -1166,10 +1148,7 @@ unsafe extern "C" fn session_group_fire(
 #[no_mangle]
 pub unsafe extern "C" fn session_group_add(mut sg: *mut session_group, mut s: *mut session) {
     if session_group_contains(s).is_null() {
-        (*s).gentry.tqe_next = ::core::ptr::null_mut::<session>();
-        (*s).gentry.tqe_prev = (*sg).sessions.tqh_last;
-        *(*sg).sessions.tqh_last = s;
-        (*sg).sessions.tqh_last = &raw mut (*s).gentry.tqe_next;
+        (*sg.cast::<SessionGroupOwner>()).members.push(s);
         session_group_fire(
             b"session-added-to-group\0" as *const u8 as *const ::core::ffi::c_char,
             sg,
@@ -1188,56 +1167,48 @@ unsafe extern "C" fn session_group_remove(mut s: *mut session) {
         sg,
         s,
     );
-    if !(*s).gentry.tqe_next.is_null() {
-        (*(*s).gentry.tqe_next).gentry.tqe_prev = (*s).gentry.tqe_prev;
-    } else {
-        (*sg).sessions.tqh_last = (*s).gentry.tqe_prev;
-    }
-    *(*s).gentry.tqe_prev = (*s).gentry.tqe_next;
-    if (*sg).sessions.tqh_first.is_null() {
+    let members = &mut (*sg.cast::<SessionGroupOwner>()).members;
+    let index = members
+        .iter()
+        .position(|member| *member == s)
+        .expect("session group membership disappeared");
+    members.remove(index);
+    if members.is_empty() {
         assert!(session_groups_remove(&raw mut session_groups, sg));
     }
 }
+/// Returns the group's members in their preserved insertion order.
+pub unsafe fn session_group_members(sg: *mut session_group) -> Vec<*mut session> {
+    if sg.is_null() {
+        return Vec::new();
+    }
+    (*sg.cast::<SessionGroupOwner>()).members.clone()
+}
 #[no_mangle]
 pub unsafe extern "C" fn session_group_count(mut sg: *mut session_group) -> u_int {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut n: u_int = 0;
-    n = 0 as u_int;
-    s = (*sg).sessions.tqh_first;
-    while !s.is_null() {
-        n = n.wrapping_add(1);
-        s = (*s).gentry.tqe_next;
-    }
-    return n;
+    return u_int::try_from((*sg.cast::<SessionGroupOwner>()).members.len())
+        .expect("session group has too many members");
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_group_attached_count(mut sg: *mut session_group) -> u_int {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut n: u_int = 0;
-    n = 0 as u_int;
-    s = (*sg).sessions.tqh_first;
-    while !s.is_null() {
-        n = n.wrapping_add((*s).attached);
-        s = (*s).gentry.tqe_next;
-    }
-    return n;
+    (*sg.cast::<SessionGroupOwner>())
+        .members
+        .iter()
+        .fold(0, |count, member| count.wrapping_add((**member).attached))
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_group_synchronize_to(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut target: *mut session = ::core::ptr::null_mut::<session>();
     sg = session_group_contains(s);
     if sg.is_null() {
         return;
     }
-    target = ::core::ptr::null_mut::<session>();
-    target = (*sg).sessions.tqh_first;
-    while !target.is_null() {
-        if target != s {
-            break;
-        }
-        target = (*target).gentry.tqe_next;
-    }
+    let target = (*sg.cast::<SessionGroupOwner>())
+        .members
+        .iter()
+        .copied()
+        .find(|target| *target != s)
+        .unwrap_or(std::ptr::null_mut());
     if !target.is_null() {
         session_group_synchronize1(target, s);
     }
@@ -1245,17 +1216,14 @@ pub unsafe extern "C" fn session_group_synchronize_to(mut s: *mut session) {
 #[no_mangle]
 pub unsafe extern "C" fn session_group_synchronize_from(mut target: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
     sg = session_group_contains(target);
     if sg.is_null() {
         return;
     }
-    s = (*sg).sessions.tqh_first;
-    while !s.is_null() {
+    for s in session_group_members(sg) {
         if s != target {
             session_group_synchronize1(target, s);
         }
-        s = (*s).gentry.tqe_next;
     }
 }
 unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s: *mut session) {

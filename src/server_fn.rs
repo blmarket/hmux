@@ -29,7 +29,7 @@ use crate::src::session::{
     sessions_next,
 };
 pub use crate::src::shared::events::event_payload;
-pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
+pub use crate::src::shared::session::{session_group, session_group_entry};
 use crate::src::tmux::sig2name;
 use crate::src::tty::{tty_raw, tty_stop_tty};
 use crate::src::tty_term::tty_term_string;
@@ -201,10 +201,8 @@ pub unsafe extern "C" fn server_redraw_session_group(mut s: *mut session) {
     if sg.is_null() {
         server_redraw_session(s);
     } else {
-        s = (*sg).sessions.tqh_first;
-        while !s.is_null() {
+        for s in crate::src::session::session_group_members(sg) {
             server_redraw_session(s);
-            s = (*s).gentry.tqe_next;
         }
     };
 }
@@ -226,10 +224,8 @@ pub unsafe extern "C" fn server_status_session_group(mut s: *mut session) {
     if sg.is_null() {
         server_status_session(s);
     } else {
-        s = (*sg).sessions.tqh_first;
-        while !s.is_null() {
+        for s in crate::src::session::session_group_members(sg) {
             server_status_session(s);
-            s = (*s).gentry.tqe_next;
         }
     };
 }
@@ -409,10 +405,8 @@ pub unsafe extern "C" fn server_renumber_session(mut s: *mut session) {
     {
         sg = session_group_contains(s);
         if !sg.is_null() {
-            s = (*sg).sessions.tqh_first;
-            while !s.is_null() {
+            for s in crate::src::session::session_group_members(sg) {
                 session_renumber_windows(s);
-                s = (*s).gentry.tqe_next;
             }
         } else {
             session_renumber_windows(s);
@@ -656,7 +650,6 @@ pub unsafe extern "C" fn server_destroy_pane(
 }
 unsafe extern "C" fn server_destroy_session_group(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut s1: *mut session = ::core::ptr::null_mut::<session>();
     sg = session_group_contains(s);
     if sg.is_null() {
         server_destroy_session(s);
@@ -666,18 +659,13 @@ unsafe extern "C" fn server_destroy_session_group(mut s: *mut session) {
             b"server_destroy_session_group\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else {
-        s = (*sg).sessions.tqh_first;
-        while !s.is_null() && {
-            s1 = (*s).gentry.tqe_next;
-            1 as ::core::ffi::c_int != 0
-        } {
+        for s in crate::src::session::session_group_members(sg) {
             server_destroy_session(s);
             session_destroy(
                 s,
                 1 as ::core::ffi::c_int,
                 b"server_destroy_session_group\0" as *const u8 as *const ::core::ffi::c_char,
             );
-            s = s1;
         }
     };
 }

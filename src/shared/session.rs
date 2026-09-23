@@ -28,7 +28,6 @@ pub struct session {
     pub tio: *mut termios,
     pub environ: *mut environ,
     pub references: ::core::ffi::c_int,
-    pub gentry: session_gentry,
     pub entry: session_entry,
 }
 
@@ -55,7 +54,6 @@ pub struct sessions {
 #[repr(C)]
 pub struct session_group {
     pub name: *const ::core::ffi::c_char,
-    pub sessions: session_group_sessions,
     pub entry: session_group_entry,
 }
 
@@ -66,13 +64,6 @@ pub struct session_group_entry {
     pub owner: *mut std::collections::BTreeMap<Vec<u8>, Box<SessionGroupOwner>>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct session_group_sessions {
-    pub tqh_first: *mut session,
-    pub tqh_last: *mut *mut session,
-}
-
 #[repr(C)]
 pub struct session_groups {
     pub storage: Option<Box<std::collections::BTreeMap<Vec<u8>, Box<SessionGroupOwner>>>>,
@@ -80,7 +71,12 @@ pub struct session_groups {
 
 /// Owns a stable C-compatible group node and its byte-preserving name. The
 /// session-groups index is the sole owner; `session_group` pointers are borrowed.
+#[repr(C)]
 pub struct SessionGroupOwner {
     pub(crate) node: session_group,
     pub(crate) name: std::ffi::CString,
+    /// Ordered weak handles to sessions, whose allocations are owned by the
+    /// global session index.
+    pub(crate) members: Vec<*mut session>,
 }
+const _: () = assert!(::core::mem::offset_of!(SessionGroupOwner, node) == 0);

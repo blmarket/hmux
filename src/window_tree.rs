@@ -95,7 +95,7 @@ pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
-pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
+pub use crate::src::shared::session::{session_group, session_group_entry};
 pub use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 pub use crate::src::shared::spawn::spawn_editor_state;
@@ -652,7 +652,12 @@ unsafe extern "C" fn window_tree_build(
             sg = session_group_contains(s);
             !sg.is_null()
         } {
-            if sg == current && s != (*data).fs.s || sg != current && s != (*sg).sessions.tqh_first
+            if sg == current && s != (*data).fs.s
+                || sg != current
+                    && Some(s)
+                        != crate::src::session::session_group_members(sg)
+                            .first()
+                            .copied()
             {
                 current_block_12 = 3640593987805443782;
             } else {

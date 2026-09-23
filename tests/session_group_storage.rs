@@ -22,10 +22,6 @@ fn byte_order_duplicates_neighbors_and_owner_removal() {
         assert!(!session_groups_remove(&mut *head, outsider.node_ptr()));
         let mut lookup = session_group {
             name: c"a".as_ptr(),
-            sessions: session_group_sessions {
-                tqh_first: std::ptr::null_mut(),
-                tqh_last: std::ptr::null_mut(),
-            },
             entry: session_group_entry {
                 owner: std::ptr::null_mut(),
             },
@@ -75,10 +71,7 @@ fn named_group_owns_borrowed_name_and_reuses_stable_allocation() {
         assert_eq!(session_group_new(c"gr\xffup".as_ptr()), first);
         assert_eq!(session_group_find(c"gr\xffup".as_ptr()), first);
         assert!(session_group_find(c"missing".as_ptr()).is_null());
-        assert_eq!(
-            (*first).sessions.tqh_last,
-            &raw mut (*first).sessions.tqh_first
-        );
+        assert!(session_group_members(first).is_empty());
         assert!(session_groups_remove(head, first));
         assert!((*head).storage.is_none());
     }

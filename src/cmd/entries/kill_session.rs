@@ -56,7 +56,7 @@ pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
-pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
+pub use crate::src::shared::session::{session_group, session_group_entry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
@@ -113,8 +113,6 @@ unsafe extern "C" fn cmd_kill_session_exec(
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut s: *mut session = (*target).s;
-    let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
-    let mut stmp: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut filter: *const ::core::ffi::c_char = args_get(args, 'f' as i32 as u_char);
@@ -141,18 +139,13 @@ unsafe extern "C" fn cmd_kill_session_exec(
         sg = session_group_contains(s);
         !sg.is_null()
     } {
-        sloop = (*sg).sessions.tqh_first;
-        while !sloop.is_null() && {
-            stmp = (*sloop).gentry.tqe_next;
-            1 as ::core::ffi::c_int != 0
-        } {
+        for sloop in crate::src::session::session_group_members(sg) {
             server_destroy_session(sloop);
             session_destroy(
                 sloop,
                 1 as ::core::ffi::c_int,
                 b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
             );
-            sloop = stmp;
         }
     } else {
         server_destroy_session(s);

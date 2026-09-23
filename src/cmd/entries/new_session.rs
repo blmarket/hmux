@@ -81,7 +81,7 @@ pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
-pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
+pub use crate::src::shared::session::{session_group, session_group_entry};
 pub use crate::src::shared::spawn::spawn_context;
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
