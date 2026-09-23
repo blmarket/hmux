@@ -368,7 +368,6 @@ pub unsafe extern "C" fn client_main(
     mut feat: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
-    let mut data: *mut msg_command = ::core::ptr::null_mut::<msg_command>();
     let mut fd: ::core::ffi::c_int = 0;
     let mut i: ::core::ffi::c_int = 0;
     let mut ttynam: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -545,13 +544,17 @@ pub unsafe extern "C" fn client_main(
             );
             return 1 as ::core::ffi::c_int;
         }
-        data = xmalloc((::core::mem::size_of::<msg_command>() as size_t).wrapping_add(size))
-            as *mut msg_command;
-        (*data).argc = argc;
+        const _: () = assert!(
+            ::core::mem::size_of::<msg_command>()
+                == ::core::mem::size_of::<::core::ffi::c_int>()
+        );
+        let header_size = ::core::mem::size_of::<msg_command>();
+        let mut data = vec![0u8; header_size + size];
+        data[..header_size].copy_from_slice(&argc.to_ne_bytes());
         if cmd_pack_argv(
             argc,
             argv,
-            data.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_char,
+            data[header_size..].as_mut_ptr() as *mut ::core::ffi::c_char,
             size,
         ) != 0 as ::core::ffi::c_int
         {
@@ -559,28 +562,22 @@ pub unsafe extern "C" fn client_main(
                 stderr,
                 b"command too long\n\0" as *const u8 as *const ::core::ffi::c_char,
             );
-            free(data as *mut ::core::ffi::c_void);
             return 1 as ::core::ffi::c_int;
         }
-        size = (size as ::core::ffi::c_ulong)
-            .wrapping_add(::core::mem::size_of::<msg_command>() as usize as ::core::ffi::c_ulong)
-            as size_t as size_t;
         if proc_send(
             client_peer,
             msg,
             -(1 as ::core::ffi::c_int),
-            data as *const ::core::ffi::c_void,
-            size,
+            data.as_ptr() as *const ::core::ffi::c_void,
+            data.len(),
         ) != 0 as ::core::ffi::c_int
         {
             fprintf(
                 stderr,
                 b"failed to send command\n\0" as *const u8 as *const ::core::ffi::c_char,
             );
-            free(data as *mut ::core::ffi::c_void);
             return 1 as ::core::ffi::c_int;
         }
-        free(data as *mut ::core::ffi::c_void);
     } else if msg as ::core::ffi::c_uint == MSG_SHELL as ::core::ffi::c_int as ::core::ffi::c_uint {
         proc_send(
             client_peer,

@@ -1336,6 +1336,19 @@ legacy callers safe.
   a normal no-message exit, an attached-client exit, and a socket startup
   failure with an error message and return code 1. No sanitizer was run.
 
+### Increment 221 — client command packet byte owner (2026-09-23)
+
+- `client_main` now owns the outgoing `MSG_COMMAND` packet in a `Vec<u8>`.
+  A compile-time size assertion confirms the one-field `msg_command` header
+  matches native `c_int` bytes; `cmd_pack_argv` writes after that header.
+  Removed the local `xmalloc` and all success/error frees. `proc_send` copies
+  the complete packet synchronously, preserving argv bytes, native header,
+  packet length, and exported signatures.
+- Workspace tests, binary build, Python syntax, and diff checks passed in the
+  isolated worktree. `scripts/client_command_payload_cli_checks.py` matched
+  the pinned baseline for normal, non-UTF-8, zero-argument, large successful,
+  failed-send, and too-long command paths. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1346,12 +1359,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The client-side `MSG_COMMAND` packet still uses `xmalloc`, packs its
-   `msg_command` header and argv bytes, sends through the same copying
-   `proc_send` path, then frees the allocation on success and errors. Audit
-   native header bytes, `cmd_pack_argv`, size limits, and zero arguments for
-   a local byte owner. The command-list cache in `args_value_as_string` is
-   retained in its C-layout record and needs a record-owner migration.
+1. `format_unescape` still allocates a raw scratch string and returns a
+   C-owned pointer. Its modifier parser callers expand then free the result
+   synchronously, while literal format output keeps a C-owned return. Audit
+   a private owned producer and wrapper with exact escape and timeout
+   behavior. The command-list cache in `args_value_as_string` is retained in
+   its C-layout record and needs a record-owner migration.
    `file_get_path` remains deferred:
    `client_file.path` is a
    public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
@@ -1386,9 +1399,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–220. The remaining
+Current validation is recorded in increments 15–221. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–220 has its own local commit; none was pushed.
+Each of increments 15–221 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
