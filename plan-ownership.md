@@ -125,13 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_find` in `src/format/expression.rs` retries `options_parse_get`
-   across up to six option scopes, allocating/freeing the parsed name and
-   optional array key for each attempt. Parse once into the owned option
-   name/key, borrow them through the synchronous lookups and value conversion,
-   and leave exported `options_parse_get`'s C output contract intact. Check
-   format expansion with an array key and fallback across scopes. This is a
-   smaller boundary than disconnected-client queue cancellation.
+1. `paste_rename`, `paste_set_inner`, and `rename-session` copy the C-owned
+   output of `clean_name` into `CString` and then free the C allocation. A
+   private `clean_name_cstring` can build the escaped name directly with the
+   existing UTF-8 `CString` helper; the exported `clean_name` adapter retains
+   its C-owned output. Preserve invalid UTF-8 rejection and the untrusted
+   `#(` rewrite. This is smaller than disconnected-client queue cancellation.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1166,6 +1165,18 @@ name error.
   differs on malformed `update-environment[]` and overflow keys: it reports
   ambiguous where the existing candidate parser reports invalid, so the
   candidate-only array-key script cannot pass against pinned tmux. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 420 — parse format option names once (2026-09-23)
+
+- `format_find` now parses the option name and optional array key once into
+  `OwnedOptionName`, then borrows them through up to six synchronous scope
+  lookups and `options_to_string`. Its repeated `options_parse_get` C name/key
+  allocations and array-key `free` are gone. The exported `options_parse_get`
+  ABI and its C-owned key result remain for external callers.
+- Serialized workspace tests and binary build passed. A direct CLI comparison
+  with pinned tmux matched normalized array-key lookup, session option override,
+  ordinary format-table fallback, and missing/invalid option names. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index

@@ -30,9 +30,9 @@ use crate::src::log::{fatalx, log_debug, log_get_level};
 use crate::src::names::parse_window_name;
 pub use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_first, options_array_item_key, options_array_next, options_first,
+    options_array_first, options_array_item_key, options_array_next, options_first, options_get,
     options_get_number, options_get_string, options_is_array, options_name, options_next,
-    options_parse_get, options_to_string,
+    options_parse_owned, options_to_string,
 };
 use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{

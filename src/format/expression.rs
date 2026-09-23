@@ -260,7 +260,6 @@ pub(super) unsafe extern "C" fn format_find(
     let mut found: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut saved: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: [::core::ffi::c_char; 512] = [0; 512];
-    let mut array_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut t: time_t = 0 as time_t;
     let mut tm: tm = tm {
@@ -276,55 +275,32 @@ pub(super) unsafe extern "C" fn format_find(
         tm_gmtoff: 0,
         tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
     };
-    o = options_parse_get(
-        global_options,
-        key,
-        &raw mut array_key,
-        0 as ::core::ffi::c_int,
-    );
-    if o.is_null() && !(*ft).wp.is_null() {
-        o = options_parse_get(
-            (*(*ft).wp).options,
-            key,
-            &raw mut array_key,
-            0 as ::core::ffi::c_int,
-        );
-    }
-    if o.is_null() && !(*ft).w.is_null() {
-        o = options_parse_get(
-            (*(*ft).w).options,
-            key,
-            &raw mut array_key,
-            0 as ::core::ffi::c_int,
-        );
-    }
-    if o.is_null() {
-        o = options_parse_get(
-            global_w_options,
-            key,
-            &raw mut array_key,
-            0 as ::core::ffi::c_int,
-        );
-    }
-    if o.is_null() && !(*ft).s.is_null() {
-        o = options_parse_get(
-            (*(*ft).s).options,
-            key,
-            &raw mut array_key,
-            0 as ::core::ffi::c_int,
-        );
-    }
-    if o.is_null() {
-        o = options_parse_get(
-            global_s_options,
-            key,
-            &raw mut array_key,
-            0 as ::core::ffi::c_int,
-        );
+    let parsed_option = options_parse_owned(CStr::from_ptr(key));
+    if let Some(parsed) = &parsed_option {
+        let name = parsed.name.as_ptr();
+        o = options_get(global_options, name);
+        if o.is_null() && !(*ft).wp.is_null() {
+            o = options_get((*(*ft).wp).options, name);
+        }
+        if o.is_null() && !(*ft).w.is_null() {
+            o = options_get((*(*ft).w).options, name);
+        }
+        if o.is_null() {
+            o = options_get(global_w_options, name);
+        }
+        if o.is_null() && !(*ft).s.is_null() {
+            o = options_get((*(*ft).s).options, name);
+        }
+        if o.is_null() {
+            o = options_get(global_s_options, name);
+        }
     }
     if !o.is_null() {
+        let array_key = parsed_option
+            .as_ref()
+            .and_then(|parsed| parsed.array_key.as_ref())
+            .map_or(::core::ptr::null(), |key| key.as_ptr());
         found = options_to_string(o, array_key, 1 as ::core::ffi::c_int);
-        free(array_key as *mut ::core::ffi::c_void);
     } else {
         fte = format_table_get(key);
         if !fte.is_null() {
