@@ -2022,6 +2022,21 @@ legacy callers safe.
   four directions, equal-activity order, and recent-activity priority. No
   sanitizer was run.
 
+### Increment 113 — format modifier backing array (2026-09-22)
+
+- `format_build_modifiers` now returns `Vec<format_modifier>`, and
+  `format_add_modifier` pushes initialized records into it. Removed the
+  backing-array `xreallocarray`, `free(list)`, and count out parameter.
+  `format_free_modifiers` still frees each C-owned argv before the Vec drops.
+- `format_replace` derives count from the Vec and saves element pointers only
+  after parsing has stopped growing the array. The selected modifier pointers
+  and substitution list remain valid until cleanup. Parse failure and both
+  replacement exits keep their prior argv cleanup order; recursive expansion
+  has its own local Vec.
+- Isolated validation: a 40-modifier growth case followed by two
+  substitutions, workspace tests, binary build, format-loop CLI checks,
+  changed-file rustfmt, and `git diff --check` passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2044,9 +2059,6 @@ non-string value.
 2. `prompt_paste` still allocates and frees a local UTF-8 conversion array.
    Its borrowed `ud` pointer selects either that scratch array or the
    existing copied buffer; preserve both paths when moving scratch to Vec.
-   The `format_modifier` backing array is another local owner, but its
-   element addresses must remain stable after parsing while replacements
-   use them.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2062,9 +2074,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–112. The remaining
+Current validation is recorded in increments 15–113. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–112 has its own local commit; none was pushed.
+Each of increments 15–113 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

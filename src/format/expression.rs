@@ -742,56 +742,38 @@ pub(super) unsafe extern "C" fn format_is_end(mut c: ::core::ffi::c_char) -> ::c
     return (c as ::core::ffi::c_int == ';' as i32 || c as ::core::ffi::c_int == ':' as i32)
         as ::core::ffi::c_int;
 }
-pub(super) unsafe extern "C" fn format_add_modifier(
-    mut list: *mut *mut format_modifier,
-    mut count: *mut u_int,
-    mut c: *const ::core::ffi::c_char,
-    mut n: size_t,
-    mut argv: *mut *mut ::core::ffi::c_char,
-    mut argc: ::core::ffi::c_int,
+pub(super) unsafe fn format_add_modifier(
+    list: &mut Vec<format_modifier>,
+    c: *const ::core::ffi::c_char,
+    n: size_t,
+    argv: *mut *mut ::core::ffi::c_char,
+    argc: ::core::ffi::c_int,
 ) {
-    let mut fm: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
-    *list = xreallocarray(
-        *list as *mut ::core::ffi::c_void,
-        (*count).wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<format_modifier>() as size_t,
-    ) as *mut format_modifier;
-    let fresh29 = *count;
-    *count = (*count).wrapping_add(1);
-    fm = (*list).offset(fresh29 as isize) as *mut format_modifier;
+    let mut fm = format_modifier {
+        modifier: [0; 3],
+        size: n as u_int,
+        argv,
+        argc,
+    };
     memcpy(
-        &raw mut (*fm).modifier as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
+        fm.modifier.as_mut_ptr() as *mut ::core::ffi::c_void,
         c as *const ::core::ffi::c_void,
         n,
     );
-    (*fm).modifier[n as usize] = '\0' as i32 as ::core::ffi::c_char;
-    (*fm).size = n as u_int;
-    (*fm).argv = argv;
-    (*fm).argc = argc;
+    list.push(fm);
 }
-pub(super) unsafe extern "C" fn format_free_modifiers(
-    mut list: *mut format_modifier,
-    mut count: u_int,
-) {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < count {
-        cmd_free_argv(
-            (*list.offset(i as isize)).argc,
-            (*list.offset(i as isize)).argv,
-        );
-        i = i.wrapping_add(1);
+pub(super) unsafe fn format_free_modifiers(list: Vec<format_modifier>) {
+    for fm in &list {
+        cmd_free_argv(fm.argc, fm.argv);
     }
-    free(list as *mut ::core::ffi::c_void);
 }
-pub(super) unsafe extern "C" fn format_build_modifiers(
+pub(super) unsafe fn format_build_modifiers(
     mut es: *mut format_expand_state,
     mut s: *mut *const ::core::ffi::c_char,
-    mut count: *mut u_int,
-) -> *mut format_modifier {
+) -> Vec<format_modifier> {
     let mut cp: *const ::core::ffi::c_char = *s;
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut list: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
+    let mut list: Vec<format_modifier> = Vec::new();
     let mut c: ::core::ffi::c_char = 0;
     let mut last: [::core::ffi::c_char; 4] =
         ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"X;:\0");
@@ -799,7 +781,6 @@ pub(super) unsafe extern "C" fn format_build_modifiers(
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut argc: ::core::ffi::c_int = 0;
-    *count = 0 as u_int;
     while *cp as ::core::ffi::c_int != '\0' as i32 && *cp as ::core::ffi::c_int != ':' as i32 {
         if *cp as ::core::ffi::c_int == ';' as i32 {
             cp = cp.offset(1);
@@ -815,8 +796,7 @@ pub(super) unsafe extern "C" fn format_build_modifiers(
             && format_is_end(*cp.offset(1 as ::core::ffi::c_int as isize)) != 0
         {
             format_add_modifier(
-                &raw mut list,
-                count,
+                &mut list,
                 cp,
                 1 as size_t,
                 ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -861,8 +841,7 @@ pub(super) unsafe extern "C" fn format_build_modifiers(
             && format_is_end(*cp.offset(2 as ::core::ffi::c_int as isize)) != 0
         {
             format_add_modifier(
-                &raw mut list,
-                count,
+                &mut list,
                 cp,
                 2 as size_t,
                 ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -881,8 +860,7 @@ pub(super) unsafe extern "C" fn format_build_modifiers(
             c = *cp.offset(0 as ::core::ffi::c_int as isize);
             if format_is_end(*cp.offset(1 as ::core::ffi::c_int as isize)) != 0 {
                 format_add_modifier(
-                    &raw mut list,
-                    count,
+                    &mut list,
                     cp,
                     1 as size_t,
                     ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -922,7 +900,7 @@ pub(super) unsafe extern "C" fn format_build_modifiers(
                     *fresh26 = format_expand1(es, value);
                     free(value as *mut ::core::ffi::c_void);
                     argc = 1 as ::core::ffi::c_int;
-                    format_add_modifier(&raw mut list, count, &raw mut c, 1 as size_t, argv, argc);
+                    format_add_modifier(&mut list, &raw mut c, 1 as size_t, argv, argc);
                     cp = end;
                 } else {
                     last[0 as ::core::ffi::c_int as usize] =
@@ -966,15 +944,14 @@ pub(super) unsafe extern "C" fn format_build_modifiers(
                             }
                         }
                     }
-                    format_add_modifier(&raw mut list, count, &raw mut c, 1 as size_t, argv, argc);
+                    format_add_modifier(&mut list, &raw mut c, 1 as size_t, argv, argc);
                 }
             }
         }
     }
     if *cp as ::core::ffi::c_int != ':' as i32 {
-        format_free_modifiers(list, *count);
-        *count = 0 as u_int;
-        return ::core::ptr::null_mut::<format_modifier>();
+        format_free_modifiers(list);
+        return Vec::new();
     }
     *s = cp.offset(1 as ::core::ffi::c_int as isize);
     return list;
@@ -2749,7 +2726,7 @@ pub(super) unsafe extern "C" fn format_replace(
     let mut width: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut j: ::core::ffi::c_int = 0;
     let mut c: ::core::ffi::c_int = 0;
-    let mut list: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
+    let mut list: Vec<format_modifier> = Vec::new();
     let mut cmp: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
     let mut search: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
     let mut sub: Vec<*mut format_modifier> = Vec::new();
@@ -2758,7 +2735,6 @@ pub(super) unsafe extern "C" fn format_replace(
     let mut bool_op_n: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
     let mut cycle_count: u_int = 1 as u_int;
     let mut i: u_int = 0;
-    let mut count: u_int = 0;
     let mut nrep: u_int = 0;
     let mut check: u_int = 0 as u_int;
     let mut loop_flags: *const ::core::ffi::c_char =
@@ -2791,10 +2767,12 @@ pub(super) unsafe extern "C" fn format_replace(
     let copy0 = CString::new(std::slice::from_raw_parts(key.cast::<u8>(), key_end))
         .expect("format key contains no NUL");
     copy = copy0.as_ptr();
-    list = format_build_modifiers(es, &raw mut copy, &raw mut count);
+    list = format_build_modifiers(es, &raw mut copy);
+    // No more entries are pushed after parsing. Pointers saved in cmp, search,
+    // sub, and other modifier selections stay valid until cleanup.
     i = 0 as u_int;
-    while i < count {
-        fm = list.offset(i as isize) as *mut format_modifier;
+    while (i as usize) < list.len() {
+        fm = list.as_mut_ptr().add(i as usize);
         if format_logging(ft) != 0 {
             format_log1(
                 es,
@@ -3769,7 +3747,7 @@ pub(super) unsafe extern "C" fn format_replace(
                     copy0.as_ptr(),
                 );
                 drop(sub);
-                format_free_modifiers(list, count);
+                format_free_modifiers(list);
                 drop(copy0);
                 free(time_format as *mut ::core::ffi::c_void);
                 return -(1 as ::core::ffi::c_int);
@@ -3931,7 +3909,7 @@ pub(super) unsafe extern "C" fn format_replace(
     );
     free(value as *mut ::core::ffi::c_void);
     drop(sub);
-    format_free_modifiers(list, count);
+    format_free_modifiers(list);
     drop(copy0);
     free(time_format as *mut ::core::ffi::c_void);
     return 0 as ::core::ffi::c_int;
