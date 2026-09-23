@@ -133,7 +133,6 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
     let mut reply: *mut sd_bus_message = ::core::ptr::null_mut::<sd_bus_message>();
     let mut bus: *mut sd_bus = ::core::ptr::null_mut::<sd_bus>();
     let mut slot: *mut sd_bus_slot = ::core::ptr::null_mut::<sd_bus_slot>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut slice: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut unit: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut uuid: sd_id128_t = sd_id128 { bytes: [0; 16] };
@@ -210,49 +209,23 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                         strerror(-r),
                     );
                 } else {
-                    xasprintf(
-                        &raw mut name,
-                        b"tmux-spawn-%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x.scope\0"
-                            as *const u8 as *const ::core::ffi::c_char,
-                        uuid.bytes[0 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[1 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[2 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[3 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[4 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[5 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[6 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[7 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[8 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[9 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[10 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[11 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[12 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[13 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[14 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                        uuid.bytes[15 as ::core::ffi::c_int as usize]
-                            as ::core::ffi::c_int,
-                    );
+                    let hex = b"0123456789abcdef";
+                    let mut scope = Vec::with_capacity(b"tmux-spawn-".len() + 36 + b".scope".len());
+                    scope.extend_from_slice(b"tmux-spawn-");
+                    for (i, byte) in uuid.bytes.iter().enumerate() {
+                        if matches!(i, 4 | 6 | 8 | 10) {
+                            scope.push(b'-');
+                        }
+                        scope.push(hex[(byte >> 4) as usize]);
+                        scope.push(hex[(byte & 0x0f) as usize]);
+                    }
+                    scope.extend_from_slice(b".scope");
+                    let name = CString::new(scope).expect("systemd scope name contains no NUL");
                     r = sd_bus_message_append(
                         m,
                         b"s\0" as *const u8 as *const ::core::ffi::c_char,
-                        name,
+                        name.as_ptr(),
                     );
-                    free(name as *mut ::core::ffi::c_void);
                     if r < 0 as ::core::ffi::c_int {
                         xasprintf(
                             cause,

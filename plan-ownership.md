@@ -814,6 +814,20 @@ legacy callers safe.
   CLI check compared set UTF-8, removed, and empty rows with the pinned
   baseline and verified filter rejection. No sanitizer was run.
 
+### Increment 184 — systemd UUID scope-name scratch (2026-09-22)
+
+- `systemd_move_to_new_cgroup` now owns its UUID-derived scope name in a
+  local `CString` through the synchronous `sd_bus_message_append` call.
+  Removed the scope-name `xasprintf` allocation and matching `free`. The
+  byte formatter preserves the original 16-byte UUID order, lowercase
+  two-digit hex for each byte, 8-4-4-4-12 grouping, and `.scope` suffix.
+  The bus message and error causes keep their existing ownership paths.
+- Library/binary build, `remaining_spawn` tests, changed-file rustfmt, and
+  `git diff --check` passed. The private-server systemd pane CLI check now
+  verifies the live unit name's exact UUID-shaped byte layout as well as
+  its description, and passed for migrated and pinned baseline binaries.
+  A running user systemd manager is required; no sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -824,10 +838,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `systemd_move_to_new_cgroup` still formats a local UUID-derived scope
-   name with `xasprintf`, appends it synchronously to a bus message, and
-   frees it. The scope-name byte layout needs a precise UUID-format audit
-   before replacing that local owner.
+1. Customize-mode prompt labels still have local `xasprintf`/free pairs
+   around `mode_tree_set_prompt`. The environment-change and new-key prompts
+   are small independent owner candidates once their callback copies and
+   byte formatting are checked.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual

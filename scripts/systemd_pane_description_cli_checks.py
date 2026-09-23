@@ -3,6 +3,7 @@
 
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 import time
@@ -31,6 +32,10 @@ def check(binary_path, socket):
         )
         server_pid = int(parent.stdout.strip())
         expected = f"tmux child pane {pane_pid} launched by process {server_pid}"
+        scope_name = re.compile(
+            r"tmux-spawn-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12}\.scope"
+        )
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             units = subprocess.run(
@@ -38,8 +43,11 @@ def check(binary_path, socket):
                  "--no-legend", "--plain"],
                 env=env, capture_output=True, check=True, timeout=10,
             ).stdout.decode()
-            if any(line.endswith(expected) for line in units.splitlines()):
-                return True
+            for line in units.splitlines():
+                if line.endswith(expected):
+                    unit = line.split(maxsplit=1)[0]
+                    assert scope_name.fullmatch(unit), unit
+                    return True
             time.sleep(0.1)
         raise AssertionError(f"pane scope description missing: {expected!r}")
     finally:
