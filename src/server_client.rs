@@ -164,8 +164,8 @@ unsafe fn server_client_clear_term_caps(c: *mut client) {
     let owner = c as *mut ClientOwner;
     (*c).term_caps = ::core::ptr::null_mut();
     (*c).term_ncaps = 0;
-    // Match tty_term_free_list's release order at client loss, even when
-    // other references delay the final ClientOwner drop.
+    // Release on client loss, even when other references delay the final
+    // ClientOwner drop.
     (*owner).term_cap_strings = Vec::new();
     (*owner).term_cap_ptrs = Vec::new();
 }

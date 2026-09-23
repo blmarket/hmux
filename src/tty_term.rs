@@ -81,7 +81,8 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
-use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
@@ -1584,54 +1585,30 @@ pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {
     free((*term).name as *mut ::core::ffi::c_void);
     free(term as *mut ::core::ffi::c_void);
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_read_list(
-    mut name: *const ::core::ffi::c_char,
-    mut fd: ::core::ffi::c_int,
-    mut caps: *mut *mut *mut ::core::ffi::c_char,
-    mut ncaps: *mut u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+pub(crate) unsafe fn tty_term_read_list(
+    name: *const ::core::ffi::c_char,
+    fd: ::core::ffi::c_int,
+) -> Result<Vec<CString>, CString> {
     let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
     let mut error: ::core::ffi::c_int = 0;
     let mut n: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: [::core::ffi::c_char; 11] = [0; 11];
+    let mut caps = Vec::new();
     if setupterm(name as *mut ::core::ffi::c_char, fd, &raw mut error) != OK {
-        match error {
-            1 => {
-                xasprintf(
-                    cause,
-                    b"can't use hardcopy terminal: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    name,
-                );
-            }
-            0 => {
-                xasprintf(
-                    cause,
-                    b"missing or unsuitable terminal: %s\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                    name,
-                );
-            }
-            -1 => {
-                xasprintf(
-                    cause,
-                    b"can't find terminfo database\0" as *const u8 as *const ::core::ffi::c_char,
-                );
-            }
-            _ => {
-                xasprintf(
-                    cause,
-                    b"unknown error\0" as *const u8 as *const ::core::ffi::c_char,
-                );
-            }
+        let (message, with_name): (&[u8], bool) = match error {
+            1 => (b"can't use hardcopy terminal: ", true),
+            0 => (b"missing or unsuitable terminal: ", true),
+            -1 => (b"can't find terminfo database", false),
+            _ => (b"unknown error", false),
+        };
+        let mut cause = message.to_vec();
+        if with_name {
+            cause.extend_from_slice(CStr::from_ptr(name).to_bytes());
         }
-        return -(1 as ::core::ffi::c_int);
+        return Err(CString::new(cause).expect("C strings contain no interior NUL"));
     }
-    *ncaps = 0 as u_int;
-    *caps = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut current_block_23: u64;
     i = 0 as u_int;
     while i < tty_term_ncodes() {
@@ -1686,38 +1663,20 @@ pub unsafe extern "C" fn tty_term_read_list(
         }
         match current_block_23 {
             14763689060501151050 => {
-                *caps = xreallocarray(
-                    *caps as *mut ::core::ffi::c_void,
-                    (*ncaps).wrapping_add(1 as u_int) as size_t,
-                    ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-                ) as *mut *mut ::core::ffi::c_char;
-                xasprintf(
-                    (*caps).offset(*ncaps as isize) as *mut *mut ::core::ffi::c_char,
-                    b"%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*ent).name,
-                    s,
-                );
-                *ncaps = (*ncaps).wrapping_add(1);
+                let name = CStr::from_ptr((*ent).name).to_bytes();
+                let value = CStr::from_ptr(s).to_bytes();
+                let mut cap = Vec::with_capacity(name.len() + 1 + value.len());
+                cap.extend_from_slice(name);
+                cap.push(b'=');
+                cap.extend_from_slice(value);
+                caps.push(CString::new(cap).expect("C strings contain no interior NUL"));
             }
             _ => {}
         }
         i = i.wrapping_add(1);
     }
     del_curterm(cur_term);
-    return 0 as ::core::ffi::c_int;
-}
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_free_list(
-    mut caps: *mut *mut ::core::ffi::c_char,
-    mut ncaps: u_int,
-) {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < ncaps {
-        free(*caps.offset(i as isize) as *mut ::core::ffi::c_void);
-        i = i.wrapping_add(1);
-    }
-    free(caps as *mut ::core::ffi::c_void);
+    Ok(caps)
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_term_has(

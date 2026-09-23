@@ -2179,6 +2179,26 @@ legacy callers safe.
   import-layout differences also present in the base commit. No sanitizer
   was run.
 
+### Increment 122 — client terminal capability producer (2026-09-22)
+
+- `tty_term_read_list` now returns `Result<Vec<CString>, CString>` to
+  `client_main`. The client keeps each capability and any setup error text in
+  Rust-owned storage; the raw capability array, per-entry `xasprintf`,
+  `xreallocarray`, and `tty_term_free_list` loop are gone. The server-side
+  client owner from increment 120 is unchanged except for a stale comment.
+- `client_send_identify` borrows the capability slice and sends each complete
+  C string, including its terminator. `proc_send`/`imsg_compose`/`ibuf_add`
+  copy those bytes synchronously, so the local Vec may drop after sending.
+  Terminfo iteration order, duplicates, non-UTF-8 bytes, first-NUL views,
+  empty lists, and setup error messages are preserved. The translated
+  `tty_term_read_list` and `tty_term_free_list` symbols are no longer exported;
+  no in-tree or documented foreign caller was found.
+- Isolated validation: serialized workspace tests, library/binary build,
+  `git diff --check`, and the attached custom-terminfo PTY scenario passed.
+  That scenario checks normal capability delivery, not a user path to a
+  middle NUL. Rustfmt reports four import-layout differences also present in
+  the base commit. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2220,9 +2240,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–121. The remaining
+Current validation is recorded in increments 15–122. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–121 has its own local commit; none was pushed.
+Each of increments 15–122 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

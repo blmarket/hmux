@@ -119,9 +119,10 @@ use crate::src::tmux::{
     find_cwd, find_home, global_environ, global_options, global_s_options, global_w_options,
     ptm_fd, setblocking, shell_argv0, shell_command, socket_path,
 };
-use crate::src::tty_term::{tty_term_free_list, tty_term_read_list};
+use crate::src::tty_term::tty_term_read_list;
 use crate::src::xmalloc::{xasprintf, xmalloc, xsnprintf, xstrdup};
 use ::libc;
+use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_26;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_25;
@@ -397,10 +398,7 @@ pub unsafe extern "C" fn client_main(
         c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
     };
     let mut size: size_t = 0;
-    let mut caps: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut ncaps: u_int = 0 as u_int;
+    let mut caps = Vec::new();
     let mut values: *mut args_value = ::core::ptr::null_mut::<args_value>();
     if !shell_command.is_null() {
         msg = MSG_SHELL;
@@ -491,23 +489,18 @@ pub unsafe extern "C" fn client_main(
     if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
         fatal(b"pledge failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    if isatty(STDIN_FILENO) != 0
-        && *termname as ::core::ffi::c_int != '\0' as i32
-        && tty_term_read_list(
-            termname,
-            STDIN_FILENO,
-            &raw mut caps,
-            &raw mut ncaps,
-            &raw mut cause,
-        ) != 0 as ::core::ffi::c_int
-    {
-        fprintf(
-            stderr,
-            b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-            cause,
-        );
-        free(cause as *mut ::core::ffi::c_void);
-        return 1 as ::core::ffi::c_int;
+    if isatty(STDIN_FILENO) != 0 && *termname as ::core::ffi::c_int != '\0' as i32 {
+        match tty_term_read_list(termname, STDIN_FILENO) {
+            Ok(read_caps) => caps = read_caps,
+            Err(cause) => {
+                fprintf(
+                    stderr,
+                    b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
+                    cause.as_ptr(),
+                );
+                return 1 as ::core::ffi::c_int;
+            }
+        }
     }
     if ptm_fd != -(1 as ::core::ffi::c_int) {
         close(ptm_fd);
@@ -535,8 +528,7 @@ pub unsafe extern "C" fn client_main(
         cfsetospeed(&raw mut tio, cfgetospeed(&raw mut saved_tio));
         tcsetattr(STDIN_FILENO, TCSANOW, &raw mut tio);
     }
-    client_send_identify(ttynam, termname, caps, ncaps, cwd, feat);
-    tty_term_free_list(caps, ncaps);
+    client_send_identify(ttynam, termname, &caps, cwd, feat);
     proc_flush_peer(client_peer);
     if msg as ::core::ffi::c_uint == MSG_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint {
         size = 0 as size_t;
@@ -658,11 +650,10 @@ pub unsafe extern "C" fn client_main(
     setblocking(STDERR_FILENO, 1 as ::core::ffi::c_int);
     return client_exitval;
 }
-unsafe extern "C" fn client_send_identify(
+unsafe fn client_send_identify(
     mut ttynam: *const ::core::ffi::c_char,
     mut termname: *const ::core::ffi::c_char,
-    mut caps: *mut *mut ::core::ffi::c_char,
-    mut ncaps: u_int,
+    caps: &[CString],
     mut cwd: *const ::core::ffi::c_char,
     mut feat: ::core::ffi::c_int,
 ) {
@@ -671,7 +662,6 @@ unsafe extern "C" fn client_send_identify(
     let mut fd: ::core::ffi::c_int = 0;
     let mut flags: uint64_t = client_flags;
     let mut pid: pid_t = 0;
-    let mut i: u_int = 0;
     proc_send(
         client_peer,
         MSG_IDENTIFY_LONGFLAGS,
@@ -714,16 +704,14 @@ unsafe extern "C" fn client_send_identify(
         cwd as *const ::core::ffi::c_void,
         strlen(cwd).wrapping_add(1 as size_t),
     );
-    i = 0 as u_int;
-    while i < ncaps {
+    for cap in caps {
         proc_send(
             client_peer,
             MSG_IDENTIFY_TERMINFO,
             -(1 as ::core::ffi::c_int),
-            *caps.offset(i as isize) as *const ::core::ffi::c_void,
-            strlen(*caps.offset(i as isize)).wrapping_add(1 as size_t),
+            cap.as_ptr() as *const ::core::ffi::c_void,
+            cap.as_bytes_with_nul().len() as size_t,
         );
-        i = i.wrapping_add(1);
     }
     fd = dup(STDIN_FILENO);
     if fd == -(1 as ::core::ffi::c_int) {
