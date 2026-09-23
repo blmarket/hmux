@@ -1,6 +1,8 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{free, memcpy, memmove, memset, strchr, strcmp, strlcat, strlen, strncmp};
+use crate::src::ffi::libc::{
+    free, memcpy, memmove, memset, strchr, strcmp, strlcat, strlen, strncmp,
+};
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time, format_free,
 };
@@ -62,7 +64,9 @@ pub use crate::src::shared::pane::{
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
 };
-pub use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
+pub use crate::src::shared::paste::{
+    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
+};
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
@@ -99,7 +103,7 @@ use crate::src::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr, utf8_fromcstr_vec, utf8_open, utf8_set,
     utf8_strlen, utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray};
 use std::ffi::{CStr, CString};
 use std::mem::MaybeUninit;
 
@@ -368,7 +372,6 @@ mod prompt_buffer_tests {
 pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mut prompt {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut input: *const ::core::ffi::c_char = (*pd).input;
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut allocation = Box::new(MaybeUninit::<prompt>::zeroed());
     let pr = allocation.as_mut_ptr();
     // The remaining C-style fields accept zero; initialize the owned Rust field before use.
@@ -397,11 +400,12 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
         input = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     (&raw mut (*pr).string).write(CStr::from_ptr((*pd).prompt).to_owned());
-    if (*pd).flags & PROMPT_NOFORMAT != 0 {
-        tmp = xstrdup(input);
+    let expanded = if (*pd).flags & PROMPT_NOFORMAT != 0 {
+        None
     } else {
-        tmp = format_expand_time(ft, input);
-    }
+        Some(format_expand_time(ft, input))
+    };
+    let tmp = expanded.map_or(input, |value| value.cast_const());
     if (*pd).flags & PROMPT_INCREMENTAL != 0 {
         (&raw mut (*pr).last).write(Some(CStr::from_ptr(tmp).to_owned()));
         prompt_set_buffer(pr, b"\0" as *const u8 as *const ::core::ffi::c_char);
@@ -410,7 +414,9 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
         prompt_set_buffer(pr, tmp);
     }
     (*pr).index = utf8_strlen((*pr).buffer);
-    free(tmp as *mut ::core::ffi::c_void);
+    if let Some(expanded) = expanded {
+        free(expanded.cast());
+    }
     (*pr).inputcb = (*pd).inputcb;
     (*pr).freecb = (*pd).freecb;
     (*pr).data = (*pd).data;
@@ -497,7 +503,6 @@ pub unsafe extern "C" fn prompt_update(
     mut input: *const ::core::ffi::c_char,
 ) {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if cmd_find_valid_state(&raw mut (*pr).state) != 0 {
         ft = format_create_from_state(
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -517,14 +522,17 @@ pub unsafe extern "C" fn prompt_update(
     if input.is_null() {
         input = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    if (*pr).flags & PROMPT_NOFORMAT != 0 {
-        tmp = xstrdup(input);
+    let expanded = if (*pr).flags & PROMPT_NOFORMAT != 0 {
+        None
     } else {
-        tmp = format_expand_time(ft, input);
-    }
+        Some(format_expand_time(ft, input))
+    };
+    let tmp = expanded.map_or(input, |value| value.cast_const());
     prompt_set_buffer(pr, tmp);
     (*pr).index = utf8_strlen((*pr).buffer);
-    free(tmp as *mut ::core::ffi::c_void);
+    if let Some(expanded) = expanded {
+        free(expanded.cast());
+    }
     memset(
         &raw mut (*pr).hindex as *mut u_int as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,

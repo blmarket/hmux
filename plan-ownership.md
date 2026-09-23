@@ -2335,6 +2335,21 @@ legacy callers safe.
   repeated `-L`, and a non-UTF-8 final label; it checked both raw socket path
   bytes and the displayed path. No sanitizer was run.
 
+### Increment 291 — borrowed unformatted prompt input (2026-09-23)
+
+- `prompt_create` and `prompt_update` now borrow their normalized input in
+  `PROMPT_NOFORMAT` instead of duplicating and freeing it. Incremental prompt
+  creation still copies into `last`; `prompt_set_buffer` decodes into owned
+  cells before replacing the old buffer, so an input alias into prompt storage
+  remains safe. The formatted branches keep their independently allocated
+  `format_expand_time` results and matching frees. This removes two
+  `xstrdup`/`free` pairs without changing the exported prompt signatures.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, and diff checks passed. Attached-client switch-mode
+  strings and mode-tree filter/search checks matched the pinned baseline for
+  prompt creation, update, typed input, clearing, and teardown. The formatted
+  prompt-input CLI check also passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2345,14 +2360,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The `PROMPT_NOFORMAT` branches in `prompt_create` and `prompt_update`
-   (`src/prompt.rs`) duplicate an input C string only for synchronous copies
-   into prompt-owned storage, then free the duplicate. Borrowing the original
-   input in those branches could remove both pairs while retaining the
-   formatted branch's separately owned expansion. `window_copy_mode_data`
-   backing is a larger screen owner whose borrowed pointer is invalidated on
-   refresh. The redraw scene's line array has self-referential intrusive
-   list tails and needs its own alias audit.
+1. `screen.sel` in `src/screen.rs` is a small leaf `screen_sel` record.
+   `screen_set_selection` allocates it once, while clearing or freeing the
+   screen releases it. A stable `Box` can remove that `xcalloc`/`free` pair
+   after checking screen copy sites and selection teardown; the raw pointer
+   remains a compatibility view. `window_copy_mode_data.backing` is a larger
+   screen owner whose borrowed pointer is invalidated on refresh. The redraw
+   scene's line array has self-referential intrusive list tails and needs its
+   own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
