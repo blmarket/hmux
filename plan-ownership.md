@@ -2463,6 +2463,19 @@ legacy callers safe.
   entered. Isolated library/binary build, that script, the existing prompt
   completion check, and `git diff --check` passed. No sanitizer was run.
 
+### Increment 139 — final incremental prompt callback text (2026-09-22)
+
+- The final incremental branch in `prompt_key` now converts its editable
+  cells with `utf8_tocstr_cstring`, prefixes the fixed nonzero control byte
+  in a Rust-owned `CString`, and passes a borrowed pointer to the synchronous
+  callback. Removed its `utf8_tocstr` and `xasprintf` allocations, `cp`
+  scratch pointer, and two manual frees.
+- The prefixed bytes preserve arbitrary non-UTF-8 input and the first-NUL
+  C-string view. An attached-client check now types `zé` into an incremental
+  command prompt and verifies the exact `=zé` callback value.
+- Isolated library/binary build, serialized workspace tests, the attached
+  prompt check, and `git diff --check` passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2473,11 +2486,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `prompt_key` has a final incremental callback path that builds a
-   `%c%s` value from a local `utf8_tocstr` buffer, then frees both. Its
-   `prefix` choices are fixed nonzero bytes; audit callback outcomes and
-   the nearby single-key path before using the new converter there.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. `prompt_key`'s numeric non-digit callback still uses a local
+   `utf8_tocstr` result and manual free after the callback.
+2. The 26 repeated prompt accept/history branches still create and free
+   identical local `utf8_tocstr` results. A shared owner helper can preserve
+   history-before-callback ordering and eliminate all 26 pairs together.
+3. The nearby `PROMPT_SINGLE` branch also has a local `utf8_tocstr` pair;
+   audit its callback outcome and any combined flags separately.
+4. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -2486,14 +2502,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+5. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-4. The remaining address-based registries, other UI tags, and session/winlink
+6. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and

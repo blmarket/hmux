@@ -132,6 +132,23 @@ with tempfile.TemporaryDirectory(prefix="prompt-mutable-", dir=root / "target") 
         os.write(master, b"z")
         time.sleep(0.1)
         assert run("show-options", "-gqv", "@prompt_saved") == b"=seed\n"
+
+        run("command-prompt", "-i", "-t", client_tty, "-p", "typed-incremental",
+            "set-option -g @prompt_key_incremental '%%'")
+        wait_for_terminal(b"typed-incremental")
+        os.write(master, b"z\xc3\xa9")
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            result = subprocess.run(base + ["show-options", "-gqv", "@prompt_key_incremental"],
+                                    env=env, capture_output=True, timeout=10)
+            if result.returncode == 0 and result.stdout == b"=z\xc3\xa9\n":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError(
+                f"incremental typing did not emit prefixed input: {result.returncode}, "
+                f"{result.stdout!r}, {result.stderr!r}"
+            )
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
         if command is not None and command.poll() is None:

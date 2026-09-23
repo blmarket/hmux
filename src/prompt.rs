@@ -1766,7 +1766,6 @@ pub unsafe extern "C" fn prompt_key(
 ) -> prompt_key_result {
     let mut current_block: u64;
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut prefix: ::core::ffi::c_char = '=' as i32 as ::core::ffi::c_char;
     let mut histstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut size: size_t = 0;
@@ -10902,21 +10901,17 @@ pub unsafe extern "C" fn prompt_key(
     }
     *redraw = 1 as ::core::ffi::c_int;
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
-        s = utf8_tocstr((*pr).buffer);
-        xasprintf(
-            &raw mut cp,
-            b"%c%s\0" as *const u8 as *const ::core::ffi::c_char,
-            prefix as ::core::ffi::c_int,
-            s,
-        );
+        let input = utf8_tocstr_cstring((*pr).buffer);
+        let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
+        bytes.push(prefix as u8);
+        bytes.extend_from_slice(input.as_bytes());
+        let callback_input = CString::new(bytes).expect("the first NUL ends the prompt input");
         prompt_fire_callback(
             pr,
-            cp,
+            callback_input.as_ptr(),
             PROMPT_KEY_HANDLED,
             ::core::ptr::null_mut::<::core::ffi::c_int>(),
         );
-        free(cp as *mut ::core::ffi::c_void);
-        free(s as *mut ::core::ffi::c_void);
     }
     return result;
 }
