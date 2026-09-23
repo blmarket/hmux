@@ -2172,6 +2172,21 @@ legacy callers safe.
   custom `-F` and command values, incremental typing and deletion, selection
   of two targets, and cancel teardown. No sanitizer was run.
 
+### Increment 280 — mode-tree menu callback record (2026-09-23)
+
+- `mode_tree_menu` now uses a stable `Box` for the menu callback data in place
+  of `xmalloc` and manual `free`. The callback releases its mode-tree
+  reference before dropping the box; the `menu_display` error path keeps the
+  same reference, record, and menu cleanup order. The record's C layout and
+  callback pointer remain unchanged.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and the extended attached-client
+  `scripts/mode_tree_menu_title_cli_checks.py` passed on main and the pinned
+  baseline. It covered inside and outside menus, selection/cancel callbacks,
+  and mode teardown. The current `menu_display` implementation returns zero
+  on every path, so its error branch was reviewed but could not be reached
+  through this E2E. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

@@ -119,7 +119,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
 use crate::src::window::window_zoom;
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xstrdup};
+use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -2033,16 +2033,15 @@ unsafe extern "C" fn mode_tree_menu_callback(
     mut key: key_code,
     mut data: *mut ::core::ffi::c_void,
 ) {
-    let mut mtm: *mut mode_tree_menu = data as *mut mode_tree_menu;
-    let mut mtd: *mut mode_tree_data = (*mtm).data;
+    let mtm = Box::from_raw(data as *mut mode_tree_menu);
+    let mtd = mtm.data;
     if !((*mtd).dead != 0 || key == KEYC_NONE as ::core::ffi::c_ulong as key_code) {
-        if !((*mtm).line >= mode_tree_line_count(mtd)) {
-            (*mtd).current = (*mtm).line;
-            (*mtd).menucb.expect("non-null function pointer")((*mtd).modedata, (*mtm).c, key);
+        if !(mtm.line >= mode_tree_line_count(mtd)) {
+            (*mtd).current = mtm.line;
+            (*mtd).menucb.expect("non-null function pointer")((*mtd).modedata, mtm.c, key);
         }
     }
     mode_tree_remove_ref(mtd);
-    free(mtm as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn mode_tree_display_menu(
     mut mtd: *mut mode_tree_data,
@@ -2080,10 +2079,7 @@ unsafe extern "C" fn mode_tree_display_menu(
         ::core::ptr::null_mut::<cmd_find_state>(),
     );
     drop(title);
-    mtm = xmalloc(::core::mem::size_of::<mode_tree_menu>() as size_t) as *mut mode_tree_menu;
-    (*mtm).data = mtd;
-    (*mtm).c = c;
-    (*mtm).line = line;
+    mtm = Box::into_raw(Box::new(mode_tree_menu { data: mtd, c, line }));
     (*mtd).references = (*mtd).references.wrapping_add(1);
     if x >= (*menu)
         .width
@@ -2122,7 +2118,7 @@ unsafe extern "C" fn mode_tree_display_menu(
     ) != 0 as ::core::ffi::c_int
     {
         mode_tree_remove_ref(mtd);
-        free(mtm as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(mtm));
         menu_free(menu);
     }
 }

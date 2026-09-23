@@ -16,15 +16,16 @@ import time
 
 root = pathlib.Path(__file__).resolve().parents[1]
 binary = pathlib.Path(os.environ.get("HMUX_BINARY", root / "target/debug/hmux2")).resolve()
+baseline = os.environ.get("HMUX_BASELINE_BINARY")
 box_top_left = "┌".encode()
 csi = re.compile(rb"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
-def check_menu(outside):
+def check_menu(binary_path, outside):
     with tempfile.TemporaryDirectory(prefix="mode-tree-menu-", dir=root / "target") as tmp:
         socket = pathlib.Path(tmp) / "socket"
         env = dict(os.environ, TERM="xterm-256color", LC_ALL="C", TMUX="", SHELL="/bin/sh")
-        base = [str(binary), "-S", str(socket), "-f", "/dev/null"]
+        base = [str(binary_path), "-S", str(socket), "-f", "/dev/null"]
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
         client = None
@@ -32,6 +33,7 @@ def check_menu(outside):
         def run(*args):
             result = subprocess.run(base + list(args), env=env, capture_output=True, timeout=10)
             assert result.returncode == 0, (args, result.returncode, result.stderr)
+            return result.stdout
 
         def read_until(marker):
             output = bytearray()
@@ -78,6 +80,17 @@ def check_menu(outside):
                 assert title == b"", title
             else:
                 assert title == b"0", title
+            # Both a selection and Cancel return through mode_tree_menu_callback.
+            os.write(master, b"q" if outside else b"\r")
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                mode = run("display-message", "-p", "-t", "tree:0.0", "#{pane_in_mode}").strip()
+                if mode == b"0":
+                    break
+                time.sleep(0.05)
+            else:
+                raise AssertionError(f"menu selection did not finish: outside={outside}, mode={mode!r}")
+            return title
         finally:
             subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
             if client is not None:
@@ -89,6 +102,8 @@ def check_menu(outside):
             os.close(master)
 
 
-check_menu(outside=False)
-check_menu(outside=True)
+actual = [check_menu(binary, outside) for outside in (False, True)]
+if baseline is not None:
+    expected = [check_menu(pathlib.Path(baseline).resolve(), outside) for outside in (False, True)]
+    assert actual == expected, (actual, expected)
 print("mode-tree menu title CLI checks passed")
