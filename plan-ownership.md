@@ -2251,6 +2251,24 @@ legacy callers safe.
   reference comparison passed. Rustfmt reports three import-layout
   differences also present in the base commit. No sanitizer was run.
 
+### Increment 126 — prompt copied UTF-8 data (2026-09-22)
+
+- The Box-owned prompt record now holds `copied` as
+  `Option<Box<[utf8_data]>>`. One helper saves a boxed copy of the cut range
+  plus its zero sentinel before the live input buffer is moved. All 26 cut
+  branches call that helper; a later cut drops the previous copy on
+  replacement, and `prompt_free` drops the final owner with the prompt Box.
+  Removed each `xcalloc`/`memcpy`/`free` sequence for this field.
+- `None` still means that no word has been copied; `Some` with only a
+  terminator represents an empty copy. `prompt_paste` borrows the boxed
+  storage through its paste operation. The internal prompt layout fixture
+  now records 416 bytes and the shifted completion field; no foreign prompt
+  layout consumer was identified.
+- Isolated validation: serialized workspace tests, binary build, changed-file
+  rustfmt, `git diff --check`, and an attached-client cut/yank check passed.
+  The CLI check now covers replacing a saved word with UTF-8 input and pasting
+  the replacement. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2261,7 +2279,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. The remaining used sorted candidate caches are `sort_get_winlinks`,
+   `sort_get_winlinks_session`, and `sort_get_panes_window`. They still keep
+   process-global `xreallocarray` pointer lists, while their callers traverse
+   them synchronously in list, format, and mode builders. Audit each caller
+   for nested sorting and lifetime before moving each complete cache to a
+   caller-owned Vec. The unused pane variants also need an export/ABI audit.
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -2270,17 +2294,17 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. The Box-owned prompt record still has `buffer` and `copied` as separately
-   allocated UTF-8 data arrays. Audit their edit, resize, and copy paths
-   before moving those complete fields to Rust-owned storage.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. The Box-owned prompt record still has its editable `buffer` as a separately
+   allocated UTF-8 data array. Audit its edit, resize, and callback paths
+   before moving that complete field to Rust-owned storage.
+4. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-4. The remaining address-based registries, other UI tags, and session/winlink
+5. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
@@ -2288,9 +2312,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–125. The remaining
+Current validation is recorded in increments 15–126. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–125 has its own local commit; none was pushed.
+Each of increments 15–126 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2360,3 +2384,10 @@ reports six import-layout differences in `cmd/entries/list_keys.rs`,
 `sort.rs`, `client.rs`, and `server_client.rs`; checking the exact files from
 pre-increment `9eadbcb` reports the same six sites. No combined sanitizer
 was run.
+After increments 124–126 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the binary build,
+sorted-client, sorted-session, prompt-paste, format-loop, and session-reference
+CLI checks, and `git diff --check` passed on main. Changed-file rustfmt reports
+three import-layout differences in `sort.rs`, `window_tree.rs`, and
+`window_switch.rs`; checking the exact files from pre-increment `803b3b3`
+reports the same three sites. No combined sanitizer was run.

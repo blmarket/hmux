@@ -98,7 +98,7 @@ pub struct prompt {
     pub flags: ::core::ffi::c_int,
     pub closed: ::core::ffi::c_int,
     pub hindex: [u_int; 2],
-    pub copied: *mut utf8_data,
+    pub copied: Option<Box<[utf8_data]>>,
     pub completion: prompt_completion,
 }
 

@@ -317,6 +317,7 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
     let pr = allocation.as_mut_ptr();
     // The remaining C-style fields accept zero; initialize the owned Rust field before use.
     (&raw mut (*pr).completion).write(prompt_completion::default());
+    (&raw mut (*pr).copied).write(None);
     let pr = Box::into_raw(allocation) as *mut prompt;
     if !(*pd).fs.is_null() {
         ft = format_create_from_state(
@@ -389,7 +390,6 @@ pub unsafe extern "C" fn prompt_free(mut pr: *mut prompt) {
             (*pr).freecb.expect("non-null function pointer")((*pr).data);
         }
         free((*pr).buffer as *mut ::core::ffi::c_void);
-        free((*pr).copied as *mut ::core::ffi::c_void);
         prompt_clear_complete(pr);
         drop(Box::from_raw(pr));
     }
@@ -1339,6 +1339,22 @@ unsafe extern "C" fn prompt_translate_key(
     }
     return 0 as ::core::ffi::c_int;
 }
+unsafe fn prompt_save_copied(pr: *mut prompt, idx: size_t) {
+    let count = (*pr).index.wrapping_sub(idx);
+    let empty = utf8_data {
+        data: [0; 32],
+        have: 0,
+        size: 0,
+        width: 0,
+    };
+    let mut copied = vec![empty; count.wrapping_add(1)];
+    copied[..count].copy_from_slice(std::slice::from_raw_parts(
+        (*pr).buffer.offset(idx as isize),
+        count,
+    ));
+    (*pr).copied = Some(copied.into_boxed_slice());
+}
+
 unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1351,9 +1367,9 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     let mut scratch: Vec<utf8_data> = Vec::new();
     let mut more: utf8_state = UTF8_MORE;
     size = utf8_strlen((*pr).buffer);
-    if !(*pr).copied.is_null() {
-        ud = (*pr).copied;
-        n = utf8_strlen((*pr).copied);
+    if let Some(copied) = (*pr).copied.as_ref() {
+        ud = copied.as_ptr() as *mut utf8_data;
+        n = utf8_strlen(copied.as_ptr());
     } else {
         pb = paste_get_top(::core::ptr::null_mut::<*mut ::core::ffi::c_char>());
         if pb.is_null() {
@@ -1910,20 +1926,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -2272,20 +2275,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -2634,20 +2624,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -2996,20 +2973,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -3358,20 +3322,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -3720,20 +3671,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -4082,20 +4020,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -4444,20 +4369,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -4806,20 +4718,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -5168,20 +5067,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -5530,20 +5416,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -5892,20 +5765,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -6254,20 +6114,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -6616,20 +6463,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -6978,20 +6812,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -7340,20 +7161,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -7702,20 +7510,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -8064,20 +7859,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -8426,20 +8208,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -8788,20 +8557,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -9150,20 +8906,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -9512,20 +9255,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -9874,20 +9604,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -10236,20 +9953,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -10598,20 +10302,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -10960,20 +10651,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                free((*pr).copied as *mut ::core::ffi::c_void);
-                                (*pr).copied = xcalloc(
-                                    ::core::mem::size_of::<utf8_data>() as size_t,
-                                    (*pr).index.wrapping_sub(idx).wrapping_add(1 as size_t),
-                                ) as *mut utf8_data;
-                                memcpy(
-                                    (*pr).copied as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset(idx as isize)
-                                        as *const ::core::ffi::c_void,
-                                    (*pr)
-                                        .index
-                                        .wrapping_sub(idx)
-                                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                                );
+                                prompt_save_copied(pr, idx);
                                 memmove(
                                     (*pr).buffer.offset(idx as isize)
                                         as *mut ::core::ffi::c_void,

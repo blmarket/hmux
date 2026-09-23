@@ -102,6 +102,19 @@ with tempfile.TemporaryDirectory(prefix="prompt-paste-", dir=root / "target") as
         _, stderr = prompt_command.communicate(timeout=5)
         assert prompt_command.returncode == 0, stderr
         assert run("show-options", "-gqv", "@copied") == b"abc def\n"
+
+        # A second cut replaces the saved word; the replacement survives UTF-8 paste.
+        prompt_command = subprocess.Popen(
+            base + ["command-prompt", "-t", client_tty, "-I", "abc def", "-p", "replaced", "set-option -g @replaced '%%'"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        wait_for_terminal(b"replaced")
+        os.write(master, b"\x17\xc3\xa9Z\x17\x19\r")  # C-w, éZ, C-w, C-y, Enter.
+        _, stderr = prompt_command.communicate(timeout=5)
+        assert prompt_command.returncode == 0, stderr
+        assert run("show-options", "-gqv", "@replaced") == "abc éZ\n".encode()
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
         if prompt_command is not None and prompt_command.poll() is None:
