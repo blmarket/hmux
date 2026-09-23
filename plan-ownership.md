@@ -314,6 +314,18 @@ legacy callers safe.
   passed. A detached `-vv` server created a nonempty
   `tmux-server-<pid>.log` and shut down successfully. No sanitizer was run.
 
+### Increment 147 — pane private mode list scratch (2026-09-22)
+
+- `format_cb_pane_private_modes` now appends its comma-separated numeric mode
+  list to a Rust `String`, avoiding a C allocation and free for each added
+  mode. One `xstrdup` still returns a C-owned result required by the format
+  callback cache, which libc-frees it. The no-pane null result, empty string,
+  table order, and cursor-blink filtering are unchanged.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. New live-server `scripts/pane_private_modes_cli_checks.py` passed
+  with both old and new callbacks for default, empty, multiple, blinking,
+  and cleared modes. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -324,7 +336,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. `format_cb_session_attached_list` still allocates an `evbuffer`, appends
+   client-name bytes and separators, duplicates the result with `xmemdup`,
+   then frees the buffer. Its callback requires a C-owned result, but a
+   Rust-owned intermediate could remove the evbuffer lifetime. Preserve the
+   null result when the list is empty and the current byte order/format.
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -333,14 +350,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-3. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
@@ -348,9 +365,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–146. The remaining
+Current validation is recorded in increments 15–147. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–146 has its own local commit; none was pushed.
+Each of increments 15–147 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -472,3 +489,9 @@ suite includes `osc8_hyperlink_id` and `copy_regex_cells`; there is no
 separate OSC 8 CLI script. Changed-file rustfmt passed for `grid/core.rs`
 and `window_copy.rs`. `prompt.rs` retains the two pre-existing import-layout
 differences documented above. No combined sanitizer was run.
+After increments 145–147 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, server-message and pane-private-mode CLI checks, a detached `-vv`
+server log-file check, changed-file rustfmt, and `git diff --check` passed on
+main. The log check created one nonempty `tmux-server-<pid>.log` in a private
+temporary directory and shut down the server. No combined sanitizer was run.

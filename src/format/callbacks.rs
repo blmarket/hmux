@@ -4,6 +4,7 @@
 // consumes the facade's generated model types and FFI helpers and exposes only
 // the table lookup/storage needed by the expression and tree groups.
 use super::*;
+use std::fmt::Write as _;
 
 unsafe extern "C" fn format_printf(
     mut fmt: *const ::core::ffi::c_char,
@@ -2000,8 +2001,7 @@ unsafe extern "C" fn format_cb_pane_private_modes(
         },
     ];
     let mut mode: ::core::ffi::c_int = 0;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value = String::new();
     let mut i: u_int = 0;
     if (*ft).wp.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
@@ -2016,31 +2016,17 @@ unsafe extern "C" fn format_cb_pane_private_modes(
             if !(table[i as usize].mode == MODE_CURSOR_BLINKING
                 && !mode & MODE_CURSOR_BLINKING_SET != 0)
             {
-                if value.is_null() {
-                    xasprintf(
-                        &raw mut value,
-                        b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-                        table[i as usize].number,
-                    );
-                } else {
-                    xasprintf(
-                        &raw mut tmp,
-                        b"%s,%d\0" as *const u8 as *const ::core::ffi::c_char,
-                        value,
-                        table[i as usize].number,
-                    );
-                    free(value as *mut ::core::ffi::c_void);
-                    value = tmp;
+                if !value.is_empty() {
+                    value.push(',');
                 }
+                write!(&mut value, "{}", table[i as usize].number)
+                    .expect("writing to a String cannot fail");
             }
         }
         i = i.wrapping_add(1);
     }
-    if value.is_null() {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)
-            as *mut ::core::ffi::c_void;
-    }
-    return value as *mut ::core::ffi::c_void;
+    let value = std::ffi::CString::new(value).expect("mode numbers have no NUL bytes");
+    return xstrdup(value.as_ptr()) as *mut ::core::ffi::c_void;
 }
 unsafe extern "C" fn format_cb_pane_active(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     if !(*ft).wp.is_null() {
