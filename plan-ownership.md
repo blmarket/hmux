@@ -125,13 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Incoming OSC 52 decoding in `input_osc_52_parse` still allocates raw C
-   bytes. `input_osc_52` borrows them for terminal or pane selection and
-   transfers them to `paste_add`, or frees them on invalid/no-client paths.
-   The new private `paste_add_owned` can accept the exact decoded bytes after
-   synchronous selection and pane events. Keep the owned bytes alive through
-   `events_fire_pane`, which can reenter, and validate real incoming terminal
-   and pane OSC 52 paths with binary and invalid base64 replies.
+1. `input_request_clipboard_reply` still xmallocs and copies borrowed terminal
+   reply bytes solely to pass them to `paste_add`, which copies and frees them
+   again. It can copy once into a boxed slice and use `paste_add_owned`, while
+   retaining the borrowed reply data through `input_reply_clipboard`. The real
+   attached-PTY query E2E covers binary, invalid, and empty replies.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -997,6 +995,21 @@ errors still leave the C producer allocation with the caller.
   rustfmt and diff checks passed. No sanitizer ran. During a reentrant
   callback, the public cache pointer now shows the new value; report
   `value`/`last` fields and notification order retain their prior meaning.
+
+### Increment 409 — owned application OSC 52 decoded bytes (2026-09-23)
+
+- `input_osc_52_parse` now decodes into a `Vec<u8>` and returns it to its
+  sole caller. Invalid or unhandled data drops normally. `input_osc_52`
+  lends the bytes to synchronous terminal or pane selection, keeps them alive
+  through the pane event, and moves the exact decoded bytes to
+  `paste_add_owned`. The former xmalloc, invalid/no-client free, and raw
+  producer transfer to `paste_add` are removed. The `Vec` retains an allocated
+  pointer even for a decoded zero-length result until selection finishes.
+- Serialized workspace tests and binary build passed. A real application
+  output comparison against pinned tmux passed for pane binary `A\0B\xff`,
+  invalid base64, and empty payload, plus popup binary `A\0B\xff`. The pane
+  and popup traces wait for a marker after the OSC before inspecting the
+  clipboard. Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

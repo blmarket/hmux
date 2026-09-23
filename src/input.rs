@@ -23,7 +23,7 @@ use crate::src::log::{fatalx, log_debug};
 use crate::src::options::{
     options_get_number, options_get_only, options_remove_or_default, options_set_number,
 };
-use crate::src::paste::{paste_add, paste_buffer_data, paste_get_top};
+use crate::src::paste::{paste_add, paste_add_owned, paste_buffer_data, paste_get_top};
 use crate::src::reactor::{
     bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length,
     evbuffer_new, event_add, event_del, event_set,
@@ -5865,13 +5865,11 @@ unsafe extern "C" fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::co
         (*ictx).input_end as ::core::ffi::c_int,
     );
 }
-unsafe extern "C" fn input_osc_52_parse(
+unsafe fn input_osc_52_parse(
     mut ictx: *mut input_ctx,
     mut p: *const ::core::ffi::c_char,
-    mut out: *mut *mut u_char,
-    mut outlen: *mut ::core::ffi::c_int,
     mut clip: *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Option<Vec<u8>> {
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut len: size_t = 0;
     let mut allow: *const ::core::ffi::c_char =
@@ -5883,15 +5881,15 @@ unsafe extern "C" fn input_osc_52_parse(
         b"set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 2 as ::core::ffi::c_longlong
     {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     end = strchr(p, ';' as i32);
     if end.is_null() {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     end = end.offset(1);
     if *end as ::core::ffi::c_int == '\0' as i32 {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5919,23 +5917,22 @@ unsafe extern "C" fn input_osc_52_parse(
     );
     if strcmp(end, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         input_osc_52_reply(ictx, *clip);
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     len = strlen(end)
         .wrapping_add(3 as size_t)
         .wrapping_div(4 as size_t)
         .wrapping_mul(3 as size_t);
     if len == 0 as size_t {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
-    *out = xmalloc(len) as *mut u_char;
-    *outlen = __b64_pton(end, *out, len);
-    if *outlen == -(1 as ::core::ffi::c_int) {
-        free(*out as *mut ::core::ffi::c_void);
-        *out = ::core::ptr::null_mut::<u_char>();
-        return 0 as ::core::ffi::c_int;
+    let mut out = vec![0; len];
+    let outlen = __b64_pton(end, out.as_mut_ptr(), len);
+    if outlen == -(1 as ::core::ffi::c_int) {
+        return None;
     }
-    return 1 as ::core::ffi::c_int;
+    out.truncate(outlen as usize);
+    Some(out)
 }
 unsafe extern "C" fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
@@ -5949,56 +5946,38 @@ unsafe extern "C" fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core
         scrolled: 0,
         bg: 0,
     };
-    let mut out: *mut u_char = ::core::ptr::null_mut::<u_char>();
-    let mut outlen: ::core::ffi::c_int = 0;
     let mut clip: [::core::ffi::c_char; 13] = ::core::mem::transmute::<
         [u8; 13],
         [::core::ffi::c_char; 13],
     >(*b"\0\0\0\0\0\0\0\0\0\0\0\0\0");
-    if input_osc_52_parse(
-        ictx,
-        p,
-        &raw mut out,
-        &raw mut outlen,
-        &raw mut clip as *mut ::core::ffi::c_char,
-    ) == 0
-    {
+    let Some(mut out) = input_osc_52_parse(ictx, p, clip.as_mut_ptr()) else {
         return;
-    }
+    };
     if wp.is_null() {
         if (*ictx).c.is_null() {
-            free(out as *mut ::core::ffi::c_void);
             return;
         }
         tty_set_selection(
             &raw mut (*(*ictx).c).tty,
             &raw mut clip as *mut ::core::ffi::c_char,
-            out as *const ::core::ffi::c_char,
-            outlen as size_t,
+            out.as_ptr().cast(),
+            out.len(),
         );
-        paste_add(
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            out as *mut ::core::ffi::c_char,
-            outlen as size_t,
-        );
+        paste_add_owned(::core::ptr::null(), out.into_boxed_slice());
     } else {
         screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
             &raw mut ctx,
             &raw mut clip as *mut ::core::ffi::c_char,
-            out,
-            outlen as u_int,
+            out.as_mut_ptr(),
+            out.len() as u_int,
         );
         screen_write_stop(&raw mut ctx);
         events_fire_pane(
             b"pane-set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
             wp,
         );
-        paste_add(
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            out as *mut ::core::ffi::c_char,
-            outlen as size_t,
-        );
+        paste_add_owned(::core::ptr::null(), out.into_boxed_slice());
     };
 }
 unsafe extern "C" fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
