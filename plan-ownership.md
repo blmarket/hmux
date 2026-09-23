@@ -1261,6 +1261,23 @@ legacy callers safe.
   command argument and final command list debug log lines under `-vv`.
   Candidate output matched the pinned baseline. No sanitizer was run.
 
+### Increment 216 — command-option print owner (2026-09-23)
+
+- The command branch of `options_value_to_cstring` now returns the existing
+  `cmd_list_print_cstring` result directly. Removed the intermediate C-owned
+  result, its byte copy into another `CString`, and its manual free.
+  `options_to_string` remains libc-freeable at its exported boundary; printed
+  command bytes and record ownership remain unchanged.
+- Workspace tests, library/binary build, changed-file rustfmt, and diff
+  checks passed in the isolated worktree. The private-server
+  `scripts/options_value_owner_cli_checks.py` matched the pinned baseline,
+  including command-option rendering. No sanitizer was run.
+- Combined validation after increments 214–216: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt,
+  Python AST checks, and commit diff checks passed. The hook debug,
+  parser verbose/debug, and command-option CLI checks all matched the
+  pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1271,9 +1288,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `options_value_to_cstring` copies a C-owned command-list print result into
-   a `CString` and frees the original. Audit direct use of the existing owned
-   printer. `file_get_path` remains deferred:
+1. `cmd_list_keys_format_add_key_binding` still obtains a C-owned
+   `cmd_list_print` result only for a synchronous `format_add` call and then
+   frees it. The existing owned printer can cover that borrow; the escaped
+   and no-groups print flags need exact byte comparison. The command-list
+   cache in `args_value_as_string` is retained in its C-layout record and
+   needs a record-owner migration. `file_get_path` remains deferred:
    `client_file.path` is a
    public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
@@ -1307,9 +1327,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–215. The remaining
+Current validation is recorded in increments 15–216. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–215 has its own local commit; none was pushed.
+Each of increments 15–216 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

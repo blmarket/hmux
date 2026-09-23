@@ -1,6 +1,6 @@
 use crate::src::alerts::alerts_reset_all;
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_list_free, cmd_list_print};
+use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
 use crate::src::compat::strtonum::strtonum;
@@ -223,11 +223,7 @@ unsafe fn options_value_to_cstring(
         && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        let printed = cmd_list_print((*ov).cmdlist, 0);
-        // cmd_list_print still has a C-owned result for its other callers.
-        let value = CStr::from_ptr(printed).to_owned();
-        free(printed.cast());
-        return value;
+        return cmd_list_print_cstring((*ov).cmdlist, 0);
     }
     if !(*o).tableentry.is_null()
         && ((*(*o).tableentry).type_0 as ::core::ffi::c_uint
