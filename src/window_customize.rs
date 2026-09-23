@@ -144,7 +144,7 @@ use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
 use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xreallocarray, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring,
+    xasprintf, xcalloc, xmalloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -1317,42 +1317,15 @@ unsafe extern "C" fn window_customize_build_option(
     }
     return (1 as u_int).wrapping_add(window_customize_build_array(data, top, scope, group, o, ft));
 }
-unsafe extern "C" fn window_customize_find_user_options(
-    mut oo: *mut options,
-    mut list: *mut *mut *const ::core::ffi::c_char,
-    mut size: *mut u_int,
-) {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
-    o = options_first(oo);
+unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CString>) {
+    let mut o = options_first(oo);
     while !o.is_null() {
-        name = options_name(o);
-        if *name as ::core::ffi::c_int != '@' as i32 {
-            o = options_next(o);
-        } else {
-            i = 0 as u_int;
-            while i < *size {
-                if strcmp(*(*list).offset(i as isize), name) == 0 as ::core::ffi::c_int {
-                    break;
-                }
-                i = i.wrapping_add(1);
-            }
-            if i != *size {
-                o = options_next(o);
-            } else {
-                *list = xreallocarray(
-                    *list as *mut ::core::ffi::c_void,
-                    (*size).wrapping_add(1 as u_int) as size_t,
-                    ::core::mem::size_of::<*const ::core::ffi::c_char>() as size_t,
-                ) as *mut *const ::core::ffi::c_char;
-                let fresh2 = *size;
-                *size = (*size).wrapping_add(1);
-                let ref mut fresh3 = *(*list).offset(fresh2 as isize);
-                *fresh3 = name;
-                o = options_next(o);
-            }
+        let name = CStr::from_ptr(options_name(o));
+        if name.to_bytes().first() == Some(&b'@') && !list.iter().any(|entry| entry == name) {
+            // Later row builders can call format callbacks before the list is exhausted.
+            list.push(name.to_owned());
         }
+        o = options_next(o);
     }
 }
 unsafe extern "C" fn window_customize_build_options(
@@ -1373,11 +1346,8 @@ unsafe extern "C" fn window_customize_build_options(
     let mut top: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut loop_0: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut list: *mut *const ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
+    let mut list = Vec::<CString>::new();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut size: u_int = 0 as u_int;
-    let mut i: u_int = 0;
     let mut count: u_int = 0 as u_int;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
     top = mode_tree_add_identity(
@@ -1396,24 +1366,23 @@ unsafe extern "C" fn window_customize_build_options(
         0 as ::core::ffi::c_int,
     ) as *mut mode_tree_item;
     mode_tree_no_tag(top);
-    window_customize_find_user_options(oo0, &raw mut list, &raw mut size);
+    window_customize_find_user_options(oo0, &mut list);
     if !oo1.is_null() {
-        window_customize_find_user_options(oo1, &raw mut list, &raw mut size);
+        window_customize_find_user_options(oo1, &mut list);
     }
     if !oo2.is_null() {
-        window_customize_find_user_options(oo2, &raw mut list, &raw mut size);
+        window_customize_find_user_options(oo2, &mut list);
     }
-    i = 0 as u_int;
-    while i < size {
+    for name in &list {
         o = ::core::ptr::null_mut::<options_entry>();
         if !oo2.is_null() {
-            o = options_get(oo2, *list.offset(i as isize));
+            o = options_get(oo2, name.as_ptr());
         }
         if o.is_null() && !oo1.is_null() {
-            o = options_get(oo1, *list.offset(i as isize));
+            o = options_get(oo1, name.as_ptr());
         }
         if o.is_null() {
-            o = options_get(oo0, *list.offset(i as isize));
+            o = options_get(oo0, name.as_ptr());
         }
         if options_owner(o) == oo2 {
             scope = scope2;
@@ -1425,9 +1394,8 @@ unsafe extern "C" fn window_customize_build_options(
         count = count.wrapping_add(window_customize_build_option(
             data, top, scope, group, o, ft, filter, fs, type_0,
         ));
-        i = i.wrapping_add(1);
     }
-    free(list as *mut ::core::ffi::c_void);
+    drop(list);
     loop_0 = options_first(oo0);
     while !loop_0.is_null() {
         name = options_name(loop_0);

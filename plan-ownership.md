@@ -1989,6 +1989,23 @@ legacy callers safe.
   layout, and resize scenario passed. A forced nested-scene runtime case was
   not run; no sanitizer was run.
 
+### Increment 111 — customize user-option name list (2026-09-22)
+
+- `window_customize_find_user_options` now fills a `Vec<CString>` for the
+  three option scopes. Removed the temporary name-array `xreallocarray`,
+  manual size/index tracking, and `free(list)` from
+  `window_customize_build_options`; the Vec drops at the same point before
+  built-in option traversal.
+- Deduplication compares the original C-string bytes and keeps first-seen
+  order across global, window, and pane scopes. Each selected name is looked
+  up in pane, window, then global order as before. Names are copied before
+  row-building format callbacks can run; retained mode-tree rows copy their
+  names separately. `name.as_ptr()` is only a synchronous lookup borrow.
+- Isolated validation: workspace tests, binary build, changed-file rustfmt,
+  `git diff --check`, customize-option CLI checks, and an attached scenario
+  with shared and unique names across all three scopes passed. The shared
+  name appeared once with the pane value. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2008,10 +2025,11 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `window_customize_find_user_options` still builds a temporary borrowed
-   name array with `xreallocarray`/`free`. Its three callers share it only
-   within `window_customize_build_options`; audit name lifetime across the
-   mode-tree callbacks before moving this scratch list to Vec.
+2. `window_pane_find_up`, `window_pane_find_down`,
+   `window_pane_find_left`, and `window_pane_find_right` each build and free
+   a local candidate-pane pointer array before `window_pane_choose_best`.
+   Audit the chooser's synchronous pointer borrow and pane stability while
+   gathering candidates, then move the four sibling scratch lists to Vec.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2027,9 +2045,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–110. The remaining
+Current validation is recorded in increments 15–111. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–110 has its own local commit; none was pushed.
+Each of increments 15–111 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2062,3 +2080,11 @@ After increments 106–108 were integrated, `cargo test --workspace --quiet`,
 pre-existing import-layout differences in `menu.rs`, `command_prompt.rs`,
 and `mode_tree.rs`; the same check on their pre-increment `75ec29b` versions
 reports those exact sites. No combined sanitizer was run.
+After increments 109–111 were integrated, `RUST_TEST_THREADS=1 cargo test
+--workspace --quiet`, `cargo build --bin hmux2 --quiet`, the customize-option
+and menu-owner CLI checks, changed-file `rustfmt --edition 2021 --check`, and
+`git diff --check` passed on main. The first workspace run reused an
+`hmux-rt` test binary with a removed worktree's compile-time manifest path;
+`cargo clean -p hmux-rt` resolved it. The next parallel run had a collision
+between timestamp-based PTY test directories; that test passed by itself and
+the serialized full suite passed. No combined sanitizer was run.
