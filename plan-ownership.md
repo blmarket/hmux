@@ -2052,6 +2052,21 @@ legacy callers safe.
   scenario passed. The scenario checks UTF-8 top-buffer insertion in the
   middle of text and copied-word precedence. No sanitizer was run.
 
+### Increment 115 — format modifier arguments (2026-09-22)
+
+- `format_modifier.argv` now owns `Vec<CString>`; its argument count derives
+  from the Vec. Removed the raw argv array and count, `xcalloc`/`xreallocarray`
+  growth, and `cmd_free_argv` cleanup for modifier arguments. The record is no
+  longer `Copy` or `repr(C)` because its sole use is internal Rust parsing.
+- `format_build_modifiers` copies each C-owned `format_expand1` result into a
+  byte-preserving CString and frees the C result at that boundary. All
+  modifier operations borrow argument pointers from the stable CString
+  allocations; `format_replace` drops the owned records after use on success
+  and failure. Recursive expansion uses independent owners.
+- Isolated validation: focused empty and non-UTF-8 argument cases, workspace
+  tests with serialized test threads, binary build, changed-file rustfmt,
+  and `git diff --check` passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2092,9 +2107,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–114. The remaining
+Current validation is recorded in increments 15–115. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–114 has its own local commit; none was pushed.
+Each of increments 15–115 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

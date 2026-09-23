@@ -1,6 +1,6 @@
 use crate::src::arguments::args_escape;
 use crate::src::cfg::{cfg_files, cfg_nfiles};
-use crate::src::cmd::{cmd_free_argv, cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv};
+use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv};
 use crate::src::cmd_queue::{
     cmdq_get_client, cmdq_get_event, cmdq_get_target, cmdq_get_target_client, cmdq_merge_formats,
     cmdq_print,
@@ -76,9 +76,7 @@ use crate::src::window::{
 };
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
-use crate::src::window_copy::{
-    window_copy_get_hyperlink, window_copy_get_line, window_copy_get_word,
-};
+use crate::src::window_copy::{window_copy_get_hyperlink, window_copy_get_line, window_copy_get_word};
 use crate::src::window_tree::window_tree_mode;
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xmemdup, xrealloc, xreallocarray, xsnprintf, xstrdup, xstrndup,
@@ -157,9 +155,7 @@ pub use crate::src::shared::pane::{
     PANE_CMDRUNNING, PANE_INPUTOFF, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUSDRAWN,
     PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
-pub use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+pub use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 pub use crate::src::shared::posix_io::FNM_CASEFOLD;
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
@@ -230,13 +226,23 @@ pub use expression::{
     format_single_from_target, format_skip, format_true,
 };
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct format_modifier {
     pub modifier: [::core::ffi::c_char; 3],
     pub size: u_int,
-    pub argv: *mut *mut ::core::ffi::c_char,
-    pub argc: ::core::ffi::c_int,
+    pub argv: Vec<std::ffi::CString>,
+}
+
+impl format_modifier {
+    fn argc(&self) -> ::core::ffi::c_int {
+        self.argv
+            .len()
+            .try_into()
+            .expect("modifier argument count fits c_int")
+    }
+
+    fn arg(&self, index: usize) -> *const ::core::ffi::c_char {
+        self.argv[index].as_ptr()
+    }
 }
 #[derive(Copy, Clone)]
 #[repr(C)]

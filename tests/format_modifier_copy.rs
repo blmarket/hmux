@@ -11,6 +11,8 @@ fn modifier_key_survives_nested_expansion_and_failure_cleanup() {
             (b"#{n;l:literal}\0", b"7"),
             (b"#{s|#{l:a}|b|;l:a}\0", b"b"),
             (b"#{s|a|b|;s|b|c|;l:a}\0", b"c"),
+            (b"#{s|a||;l:a}\0", b""),
+            (b"#{s|\xff|done|;l:\xff}\0", b"done"),
             (b"#{l:\xff}\0", b"\xff"),
             (b"before#{R:bad}after\0", b"before"),
         ] {
