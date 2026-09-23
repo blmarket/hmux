@@ -125,13 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_command_state` has a bounded command string and optional source
-   filename. `args_make_commands_prepare` constructs the state, and
-   `args_make_commands_free` has both final frees. An offset-zero owner can
-   hold optional `CString` values while public pointers stay borrowed. The
-   command-list branch needs both absent. Preserve format-expansion and
-   parser callback ordering, and check sourced invalid nested commands for
-   filename and line diagnostics. This is separate from queue cancellation.
+1. `monitor_item.name` and `.format` are the next bounded live strings.
+   `monitor_add` constructs and replaces items; `monitor_free_item` has
+   their final frees. An offset-zero owner can lend both public pointers.
+   Copy incoming bytes before removing a replaced item because inputs may
+   alias its fields. Preserve index removal before owner drop and keep
+   callback reads valid through `monitor_report`. The monitor-storage test
+   has bare item fixtures that need owner-aware construction.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -747,6 +747,24 @@ libc allocation on success and leaves it with the caller on error, so a local
   passed; if-shell, hook insertion, and session CLI comparisons passed
   against pinned 3.8-rc. Changed-file rustfmt and diff checks passed. No
   sanitizer ran.
+
+### Increment 393 — owned argument command state strings (2026-09-23)
+
+- `ArgsCommandStateOwner` now boxes the public `args_command_state` at offset
+  zero and owns its optional command and parse-source filename as `CString`
+  values. Its raw `cmd` and `pi.file` pointers borrow them until
+  `args_make_commands_free`; the command-list branch leaves both absent.
+  Direct command input copies borrowed bytes, formatted command output is
+  copied before its C allocation is freed, and source filenames copy the
+  parsed command's bytes. Removed the state command `xstrdup`, source
+  filename `xstrdup`, and both final manual frees. The public state no
+  longer derives `Copy` or `Clone`.
+- Serialized workspace tests and binary build passed. Command-parser and
+  run-shell CLI comparisons passed against pinned 3.8-rc. The if-shell CLI
+  now sources an invalid nested command and compares its exact normalized
+  filename/line diagnostic, with source commands before and after; it also
+  covers string, formatted, and background paths. Changed-file rustfmt and
+  diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

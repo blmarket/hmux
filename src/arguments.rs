@@ -1294,6 +1294,16 @@ pub unsafe extern "C" fn args_make_commands_now(
     args_make_commands_free(state);
     return cmdlist;
 }
+/// The public command state borrows these strings until its matching free.
+#[repr(C)]
+struct ArgsCommandStateOwner {
+    node: args_command_state,
+    cmd: Option<CString>,
+    file: Option<CString>,
+}
+
+const _: () = assert!(::core::mem::offset_of!(ArgsCommandStateOwner, node) == 0);
+
 #[no_mangle]
 pub unsafe extern "C" fn args_make_commands_prepare(
     mut self_0: *mut cmd,
@@ -1310,7 +1320,12 @@ pub unsafe extern "C" fn args_make_commands_prepare(
     let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    state = Box::into_raw(Box::new(::core::mem::zeroed::<args_command_state>()));
+    state = Box::into_raw(Box::new(ArgsCommandStateOwner {
+        node: ::core::mem::zeroed::<args_command_state>(),
+        cmd: None,
+        file: None,
+    }))
+    .cast::<args_command_state>();
     if idx < (*args).count {
         value = (*args).values.offset(idx as isize) as *mut args_value;
         if (*value).type_0 as ::core::ffi::c_uint
@@ -1328,10 +1343,20 @@ pub unsafe extern "C" fn args_make_commands_prepare(
         cmd = default_command;
     }
     if expand != 0 {
-        (*state).cmd = format_single_from_target(item, cmd);
+        let raw_cmd = format_single_from_target(item, cmd);
+        (*state.cast::<ArgsCommandStateOwner>()).cmd = if raw_cmd.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(raw_cmd).to_owned())
+        };
+        free(raw_cmd.cast());
     } else {
-        (*state).cmd = xstrdup(cmd);
+        (*state.cast::<ArgsCommandStateOwner>()).cmd = Some(CStr::from_ptr(cmd).to_owned());
     }
+    (*state).cmd = (*state.cast::<ArgsCommandStateOwner>())
+        .cmd
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |cmd| cmd.as_ptr() as *mut _);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"args_make_commands_prepare\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1342,7 +1367,12 @@ pub unsafe extern "C" fn args_make_commands_prepare(
     }
     cmd_get_source(self_0, &raw mut file, &raw mut (*state).pi.line);
     if !file.is_null() {
-        (*state).pi.file = xstrdup(file);
+        (*state.cast::<ArgsCommandStateOwner>()).file = Some(CStr::from_ptr(file).to_owned());
+        (*state).pi.file = (*state.cast::<ArgsCommandStateOwner>())
+            .file
+            .as_ref()
+            .unwrap()
+            .as_ptr() as *mut _;
     }
     (*state).pi.c = tc;
     if !(*state).pi.c.is_null() {
@@ -1419,9 +1449,7 @@ pub unsafe extern "C" fn args_make_commands_free(mut state: *mut args_command_st
     if !(*state).pi.c.is_null() {
         server_client_unref((*state).pi.c);
     }
-    free((*state).pi.file as *mut ::core::ffi::c_void);
-    free((*state).cmd as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(state));
+    drop(Box::from_raw(state.cast::<ArgsCommandStateOwner>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_make_commands_get_command(

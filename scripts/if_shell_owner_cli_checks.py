@@ -16,6 +16,12 @@ baseline = pathlib.Path(os.environ["HMUX_BASELINE_BINARY"]).resolve()
 def trace(binary):
     with tempfile.TemporaryDirectory(prefix="if-shell-owner-") as tmp:
         socket = pathlib.Path(tmp) / "socket"
+        source = pathlib.Path(tmp) / "nested.conf"
+        source.write_text(
+            "set-option -g @source_before yes\n"
+            "if-shell true 'if-owner-unknown-command'\n"
+            "set-option -g @source_after yes\n"
+        )
         env = dict(os.environ, TERM="xterm-256color", LC_ALL="C.UTF-8", TMUX="", SHELL="/bin/sh")
         base = [str(binary), "-S", str(socket), "-f", "/dev/null"]
 
@@ -38,6 +44,16 @@ def trace(binary):
                 env=env, capture_output=True, timeout=10,
             )
             assert invalid.returncode != 0 and b"unknown command" in invalid.stderr, invalid
+            sourced = subprocess.run(
+                base + ["source-file", str(source)],
+                env=env, capture_output=True, timeout=10,
+            )
+            sourced_error = sourced.stderr.replace(os.fsencode(source), b"<source>")
+            assert sourced.returncode != 0 and sourced_error == (
+                b"<source>:2: unknown command: if-owner-unknown-command\n"
+            ), sourced
+            source_values = value("@source_before"), value("@source_after")
+            assert source_values == (b"yes\n", b"yes\n"), source_values
             run("if-shell", "-b", "true", "set-option -g @background yes")
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline and value("@background") != b"yes\n":
@@ -45,7 +61,10 @@ def trace(binary):
             background = value("@background")
             run("if-shell", "-F", "1", "set-option -g @format yes")
             formatted = value("@format")
-            result = true_values, false_values, (invalid.returncode, invalid.stderr), background, formatted
+            result = (
+                true_values, false_values, (invalid.returncode, invalid.stderr),
+                (sourced.returncode, sourced_error), source_values, background, formatted,
+            )
             assert true_values == (b"yes\n", b""), result
             assert false_values == (b"", b"yes\n"), result
             assert background == formatted == b"yes\n", result
