@@ -4469,7 +4469,6 @@ unsafe extern "C" fn window_customize_add_key_callback(
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut keystr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut keylen: size_t = 0;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
@@ -4503,8 +4502,10 @@ unsafe extern "C" fn window_customize_add_key_callback(
         );
         return PROMPT_CLOSE;
     }
-    keystr = xstrndup(s, keylen);
-    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
+    // strcspn stops before the first NUL, so this prefix is a valid C string.
+    let keystr = std::ffi::CString::new(std::slice::from_raw_parts(s.cast::<u8>(), keylen))
+        .expect("key name contains no NUL");
+    key = key_string_parse_cstr(&keystr).unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
@@ -4515,12 +4516,11 @@ unsafe extern "C" fn window_customize_add_key_callback(
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             b"Unknown key: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            keystr,
+            keystr.as_ptr(),
         );
-        free(keystr as *mut ::core::ffi::c_void);
         return PROMPT_CLOSE;
     }
-    free(keystr as *mut ::core::ffi::c_void);
+    drop(keystr);
     pr = cmd_parse_from_string(command, ::core::ptr::null_mut::<cmd_parse_input>());
     match (*pr).status as ::core::ffi::c_uint {
         0 => {

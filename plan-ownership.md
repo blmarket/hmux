@@ -1142,6 +1142,21 @@ legacy callers safe.
   Repository-wide rustfmt still reports unrelated existing differences;
   no live CLI or sanitizer run was performed.
 
+### Increment 56 — customize-mode key prompt scratch (2026-09-22)
+
+- `window_customize_add_key_callback` now owns the parsed key-name prefix
+  as a byte-preserving `CString`, removing `xstrndup` and both frees.
+  `strcspn` bounds the prefix before the first NUL. `key_string_parse_cstr`
+  reads it synchronously; `status_message_set` copies unknown-key text.
+  The valid path explicitly drops the owner before command parsing, as
+  the old code did.
+- An attached-client private-socket check entered an unknown key through
+  customize mode and observed `Unknown key: DefinitelyNotAKey`, then
+  entered `C-9 display-message ownership-key` and observed its binding
+  through `list-keys`. Workspace tests, binary build, file-specific
+  rustfmt, and `git diff --check` passed in the isolated worktree. The live
+  steps are not yet a committed test script; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1156,11 +1171,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the key-binding and user-option name scratch in
-   `window_customize.rs`. Audit UI prompt return paths before migration.
+2. Inspect the user-option name scratch in `window_customize.rs`, then
+   other local parser strings. Audit UI prompt return paths.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–55. The remaining
+Current validation is recorded in increments 15–56. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–55 has its own local commit; none was pushed.
+Each of increments 15–56 has its own local commit; none was pushed.
