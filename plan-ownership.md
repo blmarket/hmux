@@ -1584,6 +1584,16 @@ legacy callers safe.
   format-unescape, and embedded-NUL copy-view CLI checks matched the pinned
   baseline. No sanitizer was run.
 
+### Increment 238 — detached show-buffer path borrow (2026-09-23)
+
+- `cmd_save_buffer_exec` now borrows the static `"-"` path used by detached
+  `show-buffer`, removing its `xstrdup` and matching `free`. The synchronous
+  `file_write` call copies the path. The formatted `save-buffer` path still
+  returns a C-owned allocation and is freed after that call.
+- Library/binary build, changed-file rustfmt, diff check, and
+  `scripts/file_path_owner_cli_checks.py` against the pinned baseline passed.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1612,12 +1622,11 @@ non-string value.
    `%.*s` formatter. The first-NUL behavior is covered by
    `scripts/window_copy_vadd_owner_cli_checks.py`. Revisit the remaining
    direct caller when the callback return contract can change.
-4. `cmd_save_buffer_exec`'s `file_write` call copies its path
-   synchronously, but changing only its local expanded path to `CString`
-   would add a copy solely to replace the C-owned
-   `format_single_from_target` result. The expansion output now has a local
-   owner, but its exported result still crosses the C-owned return boundary.
-   Remaining `xstrndup` callers return
+4. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+   Changing only its formatted `save-buffer` path to `CString` would add a
+   copy solely to replace the C-owned `format_single_from_target` result.
+   The expansion output now has a local owner, but its exported result still
+   crosses the C-owned return boundary. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
 5. The remaining address-based registries, other UI tags, and session/winlink

@@ -70,7 +70,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::xstrdup;
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -164,7 +164,6 @@ unsafe extern "C" fn cmd_save_buffer_exec(
     let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufsize: size_t = 0;
-    let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     if bufname.is_null() {
         pb = paste_get_top(::core::ptr::null_mut::<*mut ::core::ffi::c_char>());
@@ -187,7 +186,8 @@ unsafe extern "C" fn cmd_save_buffer_exec(
         }
     }
     bufdata = paste_buffer_data(pb, &raw mut bufsize);
-    if cmd_get_entry(self_0) == &raw const cmd_show_buffer_entry {
+    let show_buffer = cmd_get_entry(self_0) == &raw const cmd_show_buffer_entry;
+    if show_buffer {
         if !(*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             evb = evbuffer_new();
             if evb.is_null() {
@@ -198,10 +198,11 @@ unsafe extern "C" fn cmd_save_buffer_exec(
             evbuffer_free(evb);
             return CMD_RETURN_NORMAL;
         }
-        path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
-    } else {
-        path = format_single_from_target(item, args_string(args, 0 as u_int));
     }
+    let expanded_path =
+        (!show_buffer).then(|| format_single_from_target(item, args_string(args, 0 as u_int)));
+    let dash_path = CStr::from_bytes_with_nul(b"-\0").unwrap();
+    let path: *const ::core::ffi::c_char = expanded_path.map_or(dash_path.as_ptr(), |path| path);
     if args_has(args, 'a' as i32 as u_char) != 0 {
         flags = O_APPEND;
     } else {
@@ -226,6 +227,8 @@ unsafe extern "C" fn cmd_save_buffer_exec(
         ),
         item as *mut ::core::ffi::c_void,
     );
-    free(path as *mut ::core::ffi::c_void);
+    if let Some(expanded_path) = expanded_path {
+        free(expanded_path as *mut ::core::ffi::c_void);
+    }
     return CMD_RETURN_WAIT;
 }
