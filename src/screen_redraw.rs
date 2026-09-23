@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{free, memcpy, memset, strlcat, strlen};
+use crate::src::ffi::libc::{memcpy, memset, strlcat, strlen};
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::log::{fatalx, log_debug, log_get_level};
@@ -115,7 +115,6 @@ use crate::src::window_border::{
     window_pane_get_border_cell, window_pane_get_border_style,
 };
 use crate::src::window_copy::window_copy_get_current_offset;
-use crate::src::xmalloc::xcalloc;
 use std::cell::RefCell;
 use std::mem::MaybeUninit;
 
@@ -1206,10 +1205,12 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
         ox: bctx.ox,
         oy: bctx.oy,
     }));
-    (*scene).lines = xcalloc(
-        bctx.sy as size_t,
-        ::core::mem::size_of::<redraw_line>() as size_t,
-    ) as *mut redraw_line;
+    if bctx.sy == 0 {
+        fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+    // The span-list tails point into their own rows, so fix row addresses first.
+    let lines = vec![::core::mem::zeroed::<redraw_line>(); bctx.sy as usize].into_boxed_slice();
+    (*scene).lines = Box::into_raw(lines) as *mut redraw_line;
     y = 0 as u_int;
     while y < bctx.sy {
         line = (*scene).lines.offset(y as isize) as *mut redraw_line;
@@ -1293,7 +1294,10 @@ pub unsafe extern "C" fn redraw_free_scene(mut scene: *mut redraw_scene) {
         }
         y = y.wrapping_add(1);
     }
-    free((*scene).lines as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(::core::ptr::slice_from_raw_parts_mut(
+        (*scene).lines,
+        (*scene).sy as usize,
+    )));
     drop(Box::from_raw(scene));
 }
 #[no_mangle]

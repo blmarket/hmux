@@ -82,7 +82,16 @@ with tempfile.TemporaryDirectory(prefix="pane-visible-ranges-", dir=root / "targ
         assert b"LEFT_MARK" in output, output[-500:]
         assert attached.poll() is None
 
+        drain(master)
+        run("resize-window", "-t", "ranges:0", "-x", "80", "-y", "20")
+        run("refresh-client", "-t", client_tty)
+        read_until(master, b"RIGHT_MARK")
+        assert attached.poll() is None
+
+        drain(master)
         run("kill-pane", "-t", "ranges:0.1")
+        run("refresh-client", "-t", client_tty)
+        read_until(master, b"RIGHT_MARK")
         run("kill-pane", "-t", "ranges:0.0")
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)

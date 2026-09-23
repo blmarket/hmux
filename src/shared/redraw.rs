@@ -11,6 +11,8 @@ use super::window::window;
 pub struct redraw_scene {
     pub c: *mut client,
     pub w: *mut window,
+    /// Stable boxed row slice owned by this scene, with length `sy`.
+    /// `redraw_free_scene` drains spans before releasing these rows.
     pub lines: *mut redraw_line,
     pub generation: uint64_t,
     pub sx: u_int,

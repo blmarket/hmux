@@ -2854,6 +2854,20 @@ legacy callers safe.
   `src/screen_write.rs` retains its pre-existing import-layout differences.
   No sanitizer was run.
 
+### Increment 327 — boxed redraw scene line array (2026-09-23)
+
+- `redraw_make_scene` now allocates a boxed slice of zeroed `redraw_line`
+  records, then initializes each row's self-referential intrusive span-list
+  tails at its stable address. `redraw_free_scene` drains all span lists before
+  reconstructing and dropping the slice using the scene's immutable `sy`.
+  Removed the row array's `xcalloc`/`free` pair; the raw `lines` pointer remains
+  a compatibility view within the scene. Zero-height construction retains the
+  previous fatal diagnostic.
+- Extended `scripts/pane_visible_ranges_cli_checks.py` to cover an attached
+  client's floating-pane redraw, window resize, and floating-pane close.
+  It passed on candidate and pinned baseline. Full workspace tests, binary
+  build, changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2864,11 +2878,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `redraw_scene.lines` in `src/screen_redraw.rs` has one constructor and
-   one destructor with an immutable `scene.sy` row count. Each row has an
-   intrusive span-list tail pointing into itself; box the slice before
-   initializing those tails. Attached redraw after resize/split/close
-   should cover cache invalidation and rebuild.
+1. `tty_term` in `src/tty_term.rs` has one zeroing allocation in
+   `tty_term_create` and one terminal `tty_term_free`; it is stored in an
+   intrusive global list and has subsidiary name/code allocations. Audit
+   by-value copies, failure teardown, and list aliases before boxing it.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
@@ -2884,9 +2897,7 @@ non-string value.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache
    design; window-copy backing remains larger.
    `window_copy_mode_data.backing` is larger:
-   its borrowed screen pointer is invalidated on refresh. The redraw scene's
-   line array has self-referential intrusive list tails and needs an alias
-   audit.
+   its borrowed screen pointer is invalidated on refresh.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
