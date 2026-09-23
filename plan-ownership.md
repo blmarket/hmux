@@ -125,14 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_trim_right` already builds its result in a `Vec<u8>` before
-   copying it to a C return. `menu_add_item` immediately copies that return
-   into its owned menu text and frees it. A private byte-return trim helper
-   can remove the intermediate C allocation while the exported formatter
-   retains its C-owned result. Then inspect `window_tree_draw_label`'s
-   analogous left-trim call: its zero-width early return currently skips
-   `free(new_label)`, so an owned local would close a live leak. Validate
-   with focused trim tests and the menu/mode-tree CLI comparisons.
+1. `window_tree_draw_label` still uses the exported C-returning
+   `format_trim_left` for its local preview label. Its zero-width early
+   return skips `free(new_label)` after trimming a wide glyph into a narrow
+   preview, so an owned left-trim result closes a live leak. Keep the
+   exported formatter's C result for expression callers and validate with
+   focused trim tests and the mode-tree preview-label CLI comparison.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1122,6 +1120,19 @@ name error.
   LF output with a following distinct control message and compares exact
   bytes. Command argv cannot contain an interior NUL. Changed-file rustfmt
   and diff checks passed. No sanitizer ran.
+
+### Increment 417 — owned menu trim bytes (2026-09-23)
+
+- Private `format_trim_right_bytes` now returns the existing trimmed
+  `Vec<u8>` directly, preserving style, UTF-8, invalid bytes, and the
+  first-NUL C-string view. `menu_add_item` extends that vector with suffix
+  and key text before storing its `CString`; its intermediate C allocation,
+  copy, and free are gone. Exported `format_trim_right` wraps the private
+  helper with its C-owned output contract.
+- Serialized workspace tests, including focused trim cases, and the binary
+  build passed. The menu overlay CLI script passed with both candidate and
+  pinned tmux, including a long trimmed label and key suffix. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

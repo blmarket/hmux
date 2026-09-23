@@ -70,7 +70,7 @@ pub use crate::src::shared::window::{
 use crate::src::style::{style_copy, style_link, style_parse, style_set, style_tostring};
 use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
 use crate::src::xmalloc::{xmalloc, xstrdup};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -1959,9 +1959,16 @@ pub unsafe extern "C" fn format_trim_left(
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_trim_right(
+    expanded: *const ::core::ffi::c_char,
+    limit: u_int,
+) -> *mut ::core::ffi::c_char {
+    format_trim_output(&format_trim_right_bytes(expanded, limit))
+}
+
+pub(crate) unsafe fn format_trim_right_bytes(
     mut expanded: *const ::core::ffi::c_char,
     mut limit: u_int,
-) -> *mut ::core::ffi::c_char {
+) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
     let mut cp: *const ::core::ffi::c_char = expanded;
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1980,7 +1987,7 @@ pub unsafe extern "C" fn format_trim_right(
     let mut more: utf8_state = UTF8_MORE;
     total_width = format_width(expanded);
     if total_width <= limit {
-        return xstrdup(expanded);
+        return CStr::from_ptr(expanded).to_bytes().to_vec();
     }
     skip = total_width.wrapping_sub(limit);
     while *cp as ::core::ffi::c_int != '\0' as i32 {
@@ -2054,7 +2061,7 @@ pub unsafe extern "C" fn format_trim_right(
             }
         }
     }
-    return format_trim_output(&out);
+    out
 }
 
 #[cfg(test)]

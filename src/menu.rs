@@ -7,7 +7,7 @@ use crate::src::ffi::libc::{free, memcpy, memset, strlen};
 use crate::src::format::{
     format_create_defaults, format_free, format_single, format_single_from_state,
 };
-use crate::src::format_draw::{format_trim_right, format_width};
+use crate::src::format_draw::{format_trim_right_bytes, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::options::options_get_number;
@@ -193,7 +193,6 @@ pub unsafe extern "C" fn menu_add_item(
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut trimmed: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut width: u_int = 0;
     let mut max_width: u_int = 0;
     let mut line: ::core::ffi::c_int = 0;
@@ -261,16 +260,13 @@ pub unsafe extern "C" fn menu_add_item(
         max_width = max_width.wrapping_sub(1);
         suffix = b">\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    trimmed = format_trim_right(s, max_width);
-    let mut name = Vec::new();
-    name.extend_from_slice(CStr::from_ptr(trimmed).to_bytes());
+    let mut name = format_trim_right_bytes(s, max_width);
     name.extend_from_slice(CStr::from_ptr(suffix).to_bytes());
     if !key.is_null() {
         name.extend_from_slice(b"#[default] #[align=right](");
         name.extend_from_slice(CStr::from_ptr(key).to_bytes());
         name.push(b')');
     }
-    free(trimmed as *mut ::core::ffi::c_void);
     {
         let owner = &mut *(menu as *mut MenuOwner);
         owner.strings[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
