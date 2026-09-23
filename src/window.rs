@@ -2922,8 +2922,8 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
         border_status_line: style_line_entry {
             expanded: ::core::ptr::null_mut::<::core::ffi::c_char>(),
             ranges: style_ranges {
-                tqh_first: ::core::ptr::null_mut::<style_range>(),
-                tqh_last: ::core::ptr::null_mut::<*mut style_range>(),
+                ranges: ::core::ptr::null_mut(),
+                _reserved: 0,
             },
         },
         pipe_fd: 0,

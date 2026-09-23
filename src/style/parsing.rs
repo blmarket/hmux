@@ -1232,26 +1232,22 @@ pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
 }
 #[no_mangle]
 pub unsafe extern "C" fn style_ranges_init(mut srs: *mut style_ranges) {
-    (*srs).tqh_first = ::core::ptr::null_mut::<style_range>();
-    (*srs).tqh_last = &raw mut (*srs).tqh_first;
+    if srs.is_null() {
+        return;
+    }
+    (*srs).ranges = Box::into_raw(Box::new(Vec::new()));
+    (*srs)._reserved = 0;
+}
+#[no_mangle]
+pub unsafe extern "C" fn style_ranges_clear(mut srs: *mut style_ranges) {
+    if !srs.is_null() {
+        (*srs).clear();
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn style_ranges_free(mut srs: *mut style_ranges) {
-    let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
-    let mut sr1: *mut style_range = ::core::ptr::null_mut::<style_range>();
-    sr = (*srs).tqh_first;
-    while !sr.is_null() && {
-        sr1 = (*sr).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*sr).entry.tqe_next.is_null() {
-            (*(*sr).entry.tqe_next).entry.tqe_prev = (*sr).entry.tqe_prev;
-        } else {
-            (*srs).tqh_last = (*sr).entry.tqe_prev;
-        }
-        *(*sr).entry.tqe_prev = (*sr).entry.tqe_next;
-        drop(Box::from_raw(sr));
-        sr = sr1;
+    if !srs.is_null() {
+        (*srs).release_storage();
     }
 }
 #[no_mangle]
@@ -1259,16 +1255,68 @@ pub unsafe extern "C" fn style_ranges_get_range(
     mut srs: *mut style_ranges,
     mut x: u_int,
 ) -> *mut style_range {
-    let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     if srs.is_null() {
         return ::core::ptr::null_mut::<style_range>();
     }
-    sr = (*srs).tqh_first;
-    while !sr.is_null() {
+    for range in (*srs).as_slice() {
+        let sr = range.as_ref();
         if x >= (*sr).start && x < (*sr).end {
-            return sr;
+            return sr as *const style_range as *mut style_range;
         }
-        sr = (*sr).entry.tqe_next;
     }
     return ::core::ptr::null_mut::<style_range>();
+}
+
+#[cfg(test)]
+mod style_ranges_tests {
+    use super::{
+        style_range, style_ranges, style_ranges_clear, style_ranges_free, style_ranges_get_range,
+        style_ranges_init, STYLE_RANGE_LEFT,
+    };
+    use crate::src::shared::abi::u_int;
+
+    fn range(start: u_int, end: u_int) -> Box<style_range> {
+        Box::new(style_range {
+            type_0: STYLE_RANGE_LEFT,
+            argument: 0,
+            string: [0; 16],
+            start,
+            end,
+            _reserved: [0; 2],
+        })
+    }
+
+    #[test]
+    fn style_ranges_own_stable_boxes_and_support_clear_and_release() {
+        let mut ranges = style_ranges {
+            ranges: ::core::ptr::null_mut(),
+            _reserved: 0,
+        };
+        unsafe {
+            style_ranges_init(&mut ranges);
+            let first = range(2, 4);
+            let first_ptr = (&*first) as *const style_range as *mut style_range;
+            ranges.push(first);
+            for i in 0..1024 {
+                ranges.push(range(10 + i, 11 + i));
+            }
+            assert_eq!(style_ranges_get_range(&mut ranges, 3), first_ptr);
+
+            style_ranges_clear(&mut ranges);
+            assert!(style_ranges_get_range(&mut ranges, 3).is_null());
+            let after_clear = range(30, 35);
+            let after_clear_ptr = (&*after_clear) as *const style_range as *mut style_range;
+            ranges.push(after_clear);
+            assert_eq!(style_ranges_get_range(&mut ranges, 32), after_clear_ptr);
+
+            style_ranges_free(&mut ranges);
+            assert!(ranges.ranges.is_null());
+            assert!(style_ranges_get_range(&mut ranges, 32).is_null());
+
+            style_ranges_init(&mut ranges);
+            ranges.push(range(40, 45));
+            assert!(!style_ranges_get_range(&mut ranges, 42).is_null());
+            style_ranges_free(&mut ranges);
+        }
+    }
 }

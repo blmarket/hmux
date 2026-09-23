@@ -30,7 +30,7 @@ use crate::src::server_client::{
 };
 pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::style::{
-    style_apply, style_ranges_free, style_ranges_get_range, style_ranges_init,
+    style_apply, style_ranges_clear, style_ranges_free, style_ranges_get_range, style_ranges_init,
 };
 use crate::src::tmux::global_s_options;
 use crate::src::xmalloc::xvasprintf_cstring;
@@ -487,7 +487,7 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
                         i as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    style_ranges_free(&raw mut (*sle).ranges);
+                    style_ranges_clear(&raw mut (*sle).ranges);
                     format_draw(
                         &raw mut ctx,
                         &raw mut gc,

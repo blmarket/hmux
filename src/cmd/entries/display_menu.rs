@@ -272,16 +272,17 @@ unsafe extern "C" fn cmd_display_menu_get_popup_pos(
             ranges = &raw mut (*(&raw mut (*tc).status.entries as *mut style_line_entry)
                 .offset(line as isize))
             .ranges;
-            sr = (*ranges).tqh_first;
-            while !sr.is_null() {
-                if !((*sr).type_0 as ::core::ffi::c_uint
+            sr = ::core::ptr::null_mut::<style_range>();
+            for range in (*ranges).as_slice() {
+                let candidate = range.as_ref();
+                if !((*candidate).type_0 as ::core::ffi::c_uint
                     != STYLE_RANGE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
-                    if (*sr).argument == (*wl).idx as u_int {
+                    if (*candidate).argument == (*wl).idx as u_int {
+                        sr = candidate as *const style_range as *mut style_range;
                         break;
                     }
                 }
-                sr = (*sr).entry.tqe_next;
             }
             if !sr.is_null() {
                 break;
@@ -709,16 +710,17 @@ unsafe extern "C" fn cmd_display_menu_get_menu_pos(
             ranges = &raw mut (*(&raw mut (*tc).status.entries as *mut style_line_entry)
                 .offset(line as isize))
             .ranges;
-            sr = (*ranges).tqh_first;
-            while !sr.is_null() {
-                if !((*sr).type_0 as ::core::ffi::c_uint
+            sr = ::core::ptr::null_mut::<style_range>();
+            for range in (*ranges).as_slice() {
+                let candidate = range.as_ref();
+                if !((*candidate).type_0 as ::core::ffi::c_uint
                     != STYLE_RANGE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
-                    if (*sr).argument == (*wl).idx as u_int {
+                    if (*candidate).argument == (*wl).idx as u_int {
+                        sr = candidate as *const style_range as *mut style_range;
                         break;
                     }
                 }
-                sr = (*sr).entry.tqe_next;
             }
             if !sr.is_null() {
                 break;

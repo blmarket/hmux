@@ -62,9 +62,45 @@ pub struct style_line_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct style_ranges {
-    /// Head of Box-owned nodes, invalidated by style_ranges_free.
-    pub tqh_first: *mut style_range,
-    pub tqh_last: *mut *mut style_range,
+    /// Box-owned Vec storage; null means empty or uninitialized.
+    pub ranges: *mut Vec<Box<style_range>>,
+    /// Retains the translated C structure size while the intrusive links are gone.
+    pub _reserved: usize,
+}
+
+impl style_ranges {
+    /// Access the owned ranges. The caller must preserve this value's storage invariant.
+    pub unsafe fn as_slice(&self) -> &[Box<style_range>] {
+        if self.ranges.is_null() {
+            &[]
+        } else {
+            (&*self.ranges).as_slice()
+        }
+    }
+
+    /// Append a stable-address range, allocating the collection lazily when needed.
+    pub unsafe fn push(&mut self, range: Box<style_range>) {
+        if self.ranges.is_null() {
+            self.ranges = Box::into_raw(Box::new(Vec::new()));
+        }
+        (*self.ranges).push(range);
+    }
+
+    /// Drop all range boxes while keeping the Vec allocation available for reuse.
+    pub unsafe fn clear(&mut self) {
+        if !self.ranges.is_null() {
+            (*self.ranges).clear();
+        }
+    }
+
+    /// Release the owned Vec and its ranges. Safe to call repeatedly after initialization.
+    pub unsafe fn release_storage(&mut self) {
+        if !self.ranges.is_null() {
+            drop(Box::from_raw(self.ranges));
+            self.ranges = ::core::ptr::null_mut();
+        }
+        self._reserved = 0;
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -75,14 +111,8 @@ pub struct style_range {
     pub string: [::core::ffi::c_char; 16],
     pub start: u_int,
     pub end: u_int,
-    pub entry: style_range_entry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct style_range_entry {
-    pub tqe_next: *mut style_range,
-    pub tqe_prev: *mut *mut style_range,
+    /// Legacy TAILQ link space retained for ABI size and alignment.
+    pub _reserved: [usize; 2],
 }
 
 #[cfg(test)]
@@ -106,10 +136,10 @@ mod tests {
         assert_eq!(offset_of!(style_line_entry, ranges), 8);
         assert_eq!(size_of::<style_ranges>(), 16);
         assert_eq!(align_of::<style_ranges>(), 8);
+        assert_eq!(offset_of!(style_ranges, ranges), 0);
+        assert_eq!(offset_of!(style_ranges, _reserved), 8);
         assert_eq!(size_of::<style_range>(), 48);
         assert_eq!(align_of::<style_range>(), 8);
-        assert_eq!(offset_of!(style_range, entry), 32);
-        assert_eq!(size_of::<style_range_entry>(), 16);
-        assert_eq!(align_of::<style_range_entry>(), 8);
+        assert_eq!(offset_of!(style_range, _reserved), 32);
     }
 }

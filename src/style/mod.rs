@@ -15,7 +15,7 @@ pub use self::parsing::{
     overlay_key_cb, overlay_mode_cb, overlay_resize_cb, prompt, redraw_scene, screen, screen_sel,
     screen_titles, screen_write_cline, session, session_entry, session_gentry, spawn_editor_state,
     status_line, style_add, style_apply, style_copy, style_link, style_parse, style_parse_colour,
-    style_ranges_free, style_ranges_get_range, style_ranges_init, style_set,
+    style_ranges_clear, style_ranges_free, style_ranges_get_range, style_ranges_init, style_set,
     style_set_scrollbar_style_from_option, style_tostring, tmuxpeer, tty, tty_code, tty_key,
     tty_term, tty_term_entry, visible_range, visible_ranges, window, window_alerts_entry,
     window_entry, window_mode, window_mode_entry, window_mode_entry_entry, window_pane,

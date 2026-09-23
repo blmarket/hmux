@@ -1160,7 +1160,6 @@ pub unsafe extern "C" fn format_draw(
     let mut more: utf8_state = UTF8_MORE;
     let mut fr: Option<format_range> = None;
     let mut frs: format_ranges = Vec::new();
-    let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     memcpy(
         &raw mut base_default as *mut ::core::ffi::c_void,
         base as *const ::core::ffi::c_void,
@@ -1697,32 +1696,26 @@ pub unsafe extern "C" fn format_draw(
                 _ => {}
             }
             for range in &frs {
-                sr = Box::into_raw(Box::new(style_range {
+                let mut owned = Box::new(style_range {
                     type_0: range.type_0,
                     argument: range.argument,
                     string: [0; 16],
                     start: range.start,
                     end: range.end,
-                    entry: style_range_entry {
-                        tqe_next: ::core::ptr::null_mut(),
-                        tqe_prev: ::core::ptr::null_mut(),
-                    },
-                }));
+                    _reserved: [0; 2],
+                });
                 strlcpy(
-                    &raw mut (*sr).string as *mut ::core::ffi::c_char,
+                    &raw mut owned.string as *mut ::core::ffi::c_char,
                     range.string.as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
                 );
-                (*sr).entry.tqe_prev = (*srs).tqh_last;
-                *(*srs).tqh_last = sr;
-                (*srs).tqh_last = &raw mut (*sr).entry.tqe_next;
-                match (*sr).type_0 as ::core::ffi::c_uint {
+                match owned.type_0 as ::core::ffi::c_uint {
                     1 => {
                         log_debug(
                             b"%s: range left at %u-%u\0" as *const u8 as *const ::core::ffi::c_char,
                             b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*sr).start,
-                            (*sr).end,
+                            owned.start,
+                            owned.end,
                         );
                     }
                     2 => {
@@ -1730,8 +1723,8 @@ pub unsafe extern "C" fn format_draw(
                             b"%s: range right at %u-%u\0" as *const u8
                                 as *const ::core::ffi::c_char,
                             b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*sr).start,
-                            (*sr).end,
+                            owned.start,
+                            owned.end,
                         );
                     }
                     3 => {
@@ -1739,9 +1732,9 @@ pub unsafe extern "C" fn format_draw(
                             b"%s: range pane|%%%u at %u-%u\0" as *const u8
                                 as *const ::core::ffi::c_char,
                             b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*sr).argument,
-                            (*sr).start,
-                            (*sr).end,
+                            owned.argument,
+                            owned.start,
+                            owned.end,
                         );
                     }
                     4 => {
@@ -1749,9 +1742,9 @@ pub unsafe extern "C" fn format_draw(
                             b"%s: range window|%u at %u-%u\0" as *const u8
                                 as *const ::core::ffi::c_char,
                             b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*sr).argument,
-                            (*sr).start,
-                            (*sr).end,
+                            owned.argument,
+                            owned.start,
+                            owned.end,
                         );
                     }
                     5 => {
@@ -1759,9 +1752,9 @@ pub unsafe extern "C" fn format_draw(
                             b"%s: range session|$%u at %u-%u\0" as *const u8
                                 as *const ::core::ffi::c_char,
                             b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*sr).argument,
-                            (*sr).start,
-                            (*sr).end,
+                            owned.argument,
+                            owned.start,
+                            owned.end,
                         );
                     }
                     6 => {
@@ -1769,9 +1762,9 @@ pub unsafe extern "C" fn format_draw(
                             b"%s: range user|%u at %u-%u\0" as *const u8
                                 as *const ::core::ffi::c_char,
                             b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*sr).argument,
-                            (*sr).start,
-                            (*sr).end,
+                            owned.argument,
+                            owned.start,
+                            owned.end,
                         );
                     }
                     7 => {
@@ -1779,12 +1772,15 @@ pub unsafe extern "C" fn format_draw(
                             b"%s: range control|%u at %u-%u\0" as *const u8
                                 as *const ::core::ffi::c_char,
                             b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*sr).argument,
-                            (*sr).start,
-                            (*sr).end,
+                            owned.argument,
+                            owned.start,
+                            owned.end,
                         );
                     }
                     0 | _ => {}
+                }
+                if !srs.is_null() {
+                    (*srs).push(owned);
                 }
             }
         }

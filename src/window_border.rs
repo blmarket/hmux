@@ -74,7 +74,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::style::{style_apply, style_ranges_free};
+use crate::src::style::{style_apply, style_ranges_clear};
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::utf8::{utf8_copy, utf8_set};
 use crate::src::window::{
@@ -475,7 +475,7 @@ pub unsafe extern "C" fn window_make_pane_status(
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    style_ranges_free(&raw mut (*sle).ranges);
+    style_ranges_clear(&raw mut (*sle).ranges);
     format_draw(
         &raw mut ctx,
         &raw mut gc,
