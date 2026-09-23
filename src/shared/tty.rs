@@ -375,6 +375,7 @@ pub struct tty {
 
 #[repr(C)]
 pub struct tty_term {
+    /// Borrowed view into the containing terminal owner's `CString`.
     pub name: *mut ::core::ffi::c_char,
     pub tty: *mut tty,
     pub applied_features: ::core::ffi::c_int,

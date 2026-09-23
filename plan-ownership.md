@@ -2944,6 +2944,19 @@ legacy callers safe.
   tests, binary build, changed-file rustfmt with the crate edition, and diff
   checks passed. No sanitizer was run.
 
+### Increment 333 — owned terminal name (2026-09-23)
+
+- `TtyTermOwner` now keeps `tty_term` at offset zero and owns its immutable
+  terminal name as a `CString`. `tty_term_create` installs `name.as_ptr()` as
+  the public borrowed field before exposing the stable Box address;
+  `tty_term_free` drops the wrapper after capability cleanup and list
+  unlink. Removed the name's `xstrdup`/`free` pair. Matching, logging, and
+  `show-messages -T` still borrow the same NUL-terminated bytes.
+- Attached terminal override output matched the pinned baseline. Custom
+  terminfo attach/detach and failed creation with missing `clear` passed on
+  candidate and baseline. Full workspace tests, binary build, changed-file
+  rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2954,11 +2967,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `tty_term.name` in `src/tty_term.rs` is duplicated once in
-   `tty_term_create`, borrowed by terminal matching, logging, and
-   `show-messages -T`, then freed in `tty_term_free`. A private Box owner
-   with `tty_term` at offset zero can hold the name as `CString` while
-   preserving the existing term pointer and intrusive-list address.
+1. `screen_write_cline.data` in `src/screen_write.rs` is lazily allocated
+   for one collected row and released in `screen_write_free_list`. The
+   boxed parent rows have a fixed grid width until that list is freed;
+   scrolling rotates data pointers among rows without changing width.
+   Box each byte slice and use the current grid width to reconstruct it
+   during list teardown. Attached output, scrolling, and resize should
+   cover allocation, pointer rotation, and release.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`

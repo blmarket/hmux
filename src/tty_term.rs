@@ -84,6 +84,16 @@ use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
 use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
+// The public term pointer addresses this first field. Matching, logs, and
+// terminal listings borrow the name until tty_term_free drops the owner.
+#[repr(C)]
+struct TtyTermOwner {
+    term: tty_term,
+    name: CString,
+}
+
+const _: () = assert!(std::mem::offset_of!(TtyTermOwner, term) == 0);
+
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 
@@ -1386,20 +1396,25 @@ pub unsafe extern "C" fn tty_term_create(
         name,
     );
     // The global list and tty keep this address until tty_term_free.
-    term = Box::into_raw(Box::new(tty_term {
-        name: ::core::ptr::null_mut(),
-        tty: ::core::ptr::null_mut(),
-        applied_features: 0,
-        acs: [[0; 2]; 256],
-        codes: ::core::ptr::null_mut(),
-        flags: 0,
-        entry: tty_term_entry {
-            le_next: ::core::ptr::null_mut(),
-            le_prev: ::core::ptr::null_mut(),
+    let mut owner = Box::new(TtyTermOwner {
+        term: tty_term {
+            name: ::core::ptr::null_mut(),
+            tty: ::core::ptr::null_mut(),
+            applied_features: 0,
+            acs: [[0; 2]; 256],
+            codes: ::core::ptr::null_mut(),
+            flags: 0,
+            entry: tty_term_entry {
+                le_next: ::core::ptr::null_mut(),
+                le_prev: ::core::ptr::null_mut(),
+            },
         },
-    }));
+        name: CStr::from_ptr(name).to_owned(),
+    });
+    owner.term.name = owner.name.as_ptr().cast_mut();
+    term = &raw mut owner.term;
+    let _ = Box::into_raw(owner);
     (*term).tty = tty as *mut tty;
-    (*term).name = xstrdup(name);
     let codes =
         vec![::core::mem::zeroed::<tty_code>(); tty_term_ncodes() as usize].into_boxed_slice();
     (*term).codes = Box::into_raw(codes) as *mut tty_code;
@@ -1603,8 +1618,7 @@ pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {
         (*(*term).entry.le_next).entry.le_prev = (*term).entry.le_prev;
     }
     *(*term).entry.le_prev = (*term).entry.le_next;
-    free((*term).name as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(term));
+    drop(Box::from_raw(term.cast::<TtyTermOwner>()));
 }
 pub(crate) unsafe fn tty_term_read_list(
     name: *const ::core::ffi::c_char,
