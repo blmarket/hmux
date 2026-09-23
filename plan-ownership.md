@@ -1101,6 +1101,19 @@ legacy callers safe.
   `git diff --check`, and the live CLI check passed in the isolated
   worktree. No sanitizer run was performed.
 
+### Increment 53 — fuzzy bracketed style scratch (2026-09-22)
+
+- `fuzzy_scan` now owns its bracketed style substring as a local,
+  byte-preserving `CString`, removing `xstrndup`/`free`. `format_skip`
+  locates the closing bracket before the first NUL; `style_parse` copies
+  tokens into local or fixed storage, and hyperlink text through
+  `hyperlinks_put`, before the owner drops.
+- A focused fuzzy-match test checks valid right alignment at column 7,
+  invalid style fallback, and an unmatched bracket. Workspace tests,
+  binary build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. A live format smoke check succeeded but did not
+  distinguish alignment; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1115,12 +1128,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the bracketed style scratch in `fuzzy.rs`, then the conditional
-   operand scratch in `format_replace`. Audit whether nested format
-   callbacks retain pointers.
+2. Inspect the conditional operand scratch in `format_replace`, then the
+   key-name scratch in `window_customize.rs`. Audit nested format callbacks
+   and UI prompt return paths before migration.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–52. The remaining
+Current validation is recorded in increments 15–53. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–52 has its own local commit; none was pushed.
+Each of increments 15–53 has its own local commit; none was pushed.

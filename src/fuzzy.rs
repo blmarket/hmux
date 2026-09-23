@@ -10,7 +10,8 @@ use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
 use crate::src::style::{style_parse, style_set};
 use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
-use crate::src::xmalloc::{xcalloc, xreallocarray, xstrndup};
+use crate::src::xmalloc::{xcalloc, xreallocarray};
+use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -255,7 +256,6 @@ unsafe extern "C" fn fuzzy_scan(
         size: 0,
         width: 0,
     };
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     *ncs = 0 as u_int;
     memset(
         widths as *mut ::core::ffi::c_void,
@@ -324,20 +324,18 @@ unsafe extern "C" fn fuzzy_scan(
                     if end.is_null() {
                         break;
                     }
-                    tmp = xstrndup(
-                        cp.offset(n as isize)
-                            .offset(1 as ::core::ffi::c_int as isize),
-                        end.offset_from(
-                            cp.offset(n as isize)
-                                .offset(1 as ::core::ffi::c_int as isize),
-                        ) as ::core::ffi::c_long as size_t,
-                    );
-                    if style_parse(&raw mut sy, &raw const grid_default_cell, tmp)
-                        == 0 as ::core::ffi::c_int
+                    let start = cp.add(n as usize + 1);
+                    let len = end.offset_from(start) as usize;
+                    let style_text =
+                        CString::new(&CStr::from_ptr(start).to_bytes()[..len]).unwrap();
+                    if style_parse(
+                        &raw mut sy,
+                        &raw const grid_default_cell,
+                        style_text.as_ptr(),
+                    ) == 0 as ::core::ffi::c_int
                     {
                         current = fuzzy_align(sy.align);
                     }
-                    free(tmp as *mut ::core::ffi::c_void);
                     cp = end.offset(1 as ::core::ffi::c_int as isize);
                 }
             }
@@ -984,4 +982,36 @@ pub unsafe extern "C" fn fuzzy_match(
         };
     }
     return mask;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bracketed_style_controls_fuzzy_match_columns() {
+        unsafe {
+            let pattern = c"R";
+            let right = c"L#[align=right]R";
+            let mask = fuzzy_match(pattern.as_ptr(), right.as_ptr(), 8, std::ptr::null_mut());
+            assert!(!mask.is_null());
+            assert_eq!(*mask, 1 << 7);
+            free(mask.cast());
+
+            let invalid = c"L#[align=bogus]R";
+            let mask = fuzzy_match(pattern.as_ptr(), invalid.as_ptr(), 8, std::ptr::null_mut());
+            assert!(!mask.is_null());
+            assert_eq!(*mask, 1 << 1);
+            free(mask.cast());
+
+            let incomplete = c"L#[align=right R";
+            let mask = fuzzy_match(
+                pattern.as_ptr(),
+                incomplete.as_ptr(),
+                8,
+                std::ptr::null_mut(),
+            );
+            assert!(mask.is_null());
+        }
+    }
 }
