@@ -7,7 +7,7 @@ use crate::src::events_payload::{
     event_payload_set_int, event_payload_set_pane, event_payload_set_session,
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::{free, strcmp};
+use crate::src::ffi::libc::strcmp;
 use crate::src::log::log_get_level;
 use crate::src::session::session_alive;
 use crate::src::shared::abi::*;
@@ -64,7 +64,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xcalloc, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -81,6 +81,15 @@ static mut events_sinks: events_sinks = events_sinks {
 };
 static mut events_dispatching: u_int = 0;
 static mut events_generation: u_int = 0;
+
+// The C-shaped sink must stay at offset zero: hooks and wait items retain its
+// address until events_remove_sink, including removal deferred by events_fire.
+#[repr(C)]
+struct EventsSinkOwner {
+    sink: events_sink,
+    name: CString,
+}
+
 unsafe extern "C" fn events_free_sink(mut es: *mut events_sink) {
     if !(*es).entry.tqe_next.is_null() {
         (*(*es).entry.tqe_next).entry.tqe_prev = (*es).entry.tqe_prev;
@@ -88,8 +97,7 @@ unsafe extern "C" fn events_free_sink(mut es: *mut events_sink) {
         events_sinks.tqh_last = (*es).entry.tqe_prev;
     }
     *(*es).entry.tqe_prev = (*es).entry.tqe_next;
-    free((*es).name as *mut ::core::ffi::c_void);
-    free(es as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(es.cast::<EventsSinkOwner>()));
 }
 unsafe extern "C" fn events_free_dead() {
     let mut es: *mut events_sink = ::core::ptr::null_mut::<events_sink>();
@@ -111,18 +119,29 @@ pub unsafe extern "C" fn events_add_sink(
     mut cb: events_cb,
     mut data: *mut ::core::ffi::c_void,
 ) -> *mut events_sink {
-    let mut es: *mut events_sink = ::core::ptr::null_mut::<events_sink>();
-    es = xcalloc(1 as size_t, ::core::mem::size_of::<events_sink>() as size_t) as *mut events_sink;
-    (*es).name = xstrdup(name);
-    (*es).cb = cb;
-    (*es).data = data;
     events_generation = events_generation.wrapping_add(1);
-    (*es).generation = events_generation;
+    let mut owner = Box::new(EventsSinkOwner {
+        sink: events_sink {
+            name: ::core::ptr::null_mut(),
+            cb,
+            data,
+            dead: 0,
+            generation: events_generation,
+            entry: events_sink_entry {
+                tqe_next: ::core::ptr::null_mut(),
+                tqe_prev: ::core::ptr::null_mut(),
+            },
+        },
+        name: CStr::from_ptr(name).to_owned(),
+    });
+    owner.sink.name = owner.name.as_ptr().cast_mut();
+    let es = &raw mut owner.sink;
     (*es).entry.tqe_next = ::core::ptr::null_mut::<events_sink>();
     (*es).entry.tqe_prev = events_sinks.tqh_last;
     *events_sinks.tqh_last = es;
     events_sinks.tqh_last = &raw mut (*es).entry.tqe_next;
-    return es;
+    let _ = Box::into_raw(owner);
+    es
 }
 #[no_mangle]
 pub unsafe extern "C" fn events_remove_sink(mut es: *mut events_sink) {

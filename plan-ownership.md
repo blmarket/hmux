@@ -1939,6 +1939,18 @@ legacy callers safe.
   baseline comparison covered immediate output, command mode, delayed
   background execution, and a failing job. No sanitizer was run.
 
+### Increment 263 — event sink owner (2026-09-23)
+
+- `EventsSinkOwner` now holds the C-layout `events_sink` prefix at a stable
+  address and owns its name as `CString`. Immediate removal and deferred
+  removal after dispatch both unlink the sink and drop the box, releasing the
+  name with it. The public sink pointer and queue layout remain unchanged.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and hook-monitor string/append CLI
+  checks passed on main and the pinned baseline. The focused ownership test
+  covers mutation of the caller's name, removal during dispatch, and adding a
+  new generation while dispatching. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1949,8 +1961,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit small callback leaves such as `events_sink` and `if-shell` callback
-   data for complete allocation, callback, and free ownership.
+1. Audit small callback leaves such as `if-shell` callback data for complete
+   allocation, callback, and free ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
