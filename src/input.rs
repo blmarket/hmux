@@ -61,8 +61,8 @@ use crate::src::window::{
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
     window_update_activity,
 };
-use crate::src::xmalloc::{xmalloc, xsnprintf, xstrdup, xvasprintf_cstring};
-use std::ffi::CString;
+use crate::src::xmalloc::{xmalloc, xsnprintf, xvasprintf_cstring};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::abi::__compar_fn_t;
 pub use crate::src::shared::abi::NULL_0;
@@ -167,6 +167,7 @@ pub const INPUT_END_ST: input_end_type = 0;
 struct InputCtxOwner {
     ctx: input_ctx,
     buffer: Vec<u8>,
+    param_strings: [Option<CString>; 24],
 }
 const _: () = assert!(::core::mem::offset_of!(InputCtxOwner, ctx) == 0);
 
@@ -175,6 +176,7 @@ impl InputCtxOwner {
         let mut owner = Box::new(Self {
             ctx: unsafe { ::core::mem::zeroed() },
             buffer: vec![0; INPUT_BUF_START as usize],
+            param_strings: std::array::from_fn(|_| None),
         });
         owner.sync_buffer();
         Box::into_raw(owner).cast()
@@ -194,9 +196,47 @@ impl InputCtxOwner {
     }
 }
 
+unsafe fn input_clear_param_strings(ictx: *mut input_ctx) {
+    let owner = ictx.cast::<InputCtxOwner>();
+    for i in 0..(*ictx).param_list_len as usize {
+        if (*owner).param_strings[i].is_some() {
+            (*ictx).param_list[i].c2rust_unnamed.str_0 = ::core::ptr::null_mut();
+            (*owner).param_strings[i] = None;
+        }
+    }
+}
+
 #[cfg(test)]
 mod input_buffer_ownership_tests {
     use super::*;
+
+    #[test]
+    fn colon_parameter_survives_later_numeric_error_until_next_split() {
+        unsafe {
+            let ictx = InputCtxOwner::new();
+            let invalid = b"38:5:196;invalid\0";
+            (&mut (*ictx).param_buf)[..invalid.len()].copy_from_slice(invalid);
+            (*ictx).param_len = invalid.len() - 1;
+            assert_eq!(input_split(ictx), -1);
+            assert_eq!((*ictx).param_list_len, 1);
+            assert_eq!(
+                CStr::from_ptr((*ictx).param_list[0].c2rust_unnamed.str_0),
+                c"38:5:196"
+            );
+
+            let next = b"48:5:25\0";
+            (&mut (*ictx).param_buf)[..next.len()].copy_from_slice(next);
+            (*ictx).param_len = next.len() - 1;
+            assert_eq!(input_split(ictx), 0);
+            assert_eq!((*ictx).param_list_len, 1);
+            assert_eq!(
+                CStr::from_ptr((*ictx).param_list[0].c2rust_unnamed.str_0),
+                c"48:5:25"
+            );
+            input_clear_param_strings(ictx);
+            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+        }
+    }
 
     #[test]
     fn parser_buffer_grows_preserves_bytes_and_shrinks() {
@@ -2379,16 +2419,7 @@ pub unsafe extern "C" fn input_init(
 pub unsafe extern "C" fn input_free(mut ictx: *mut input_ctx) {
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
     let mut ir1: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < (*ictx).param_list_len {
-        if (*ictx).param_list[i as usize].type_0 as ::core::ffi::c_uint
-            == INPUT_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            free((*ictx).param_list[i as usize].c2rust_unnamed.str_0 as *mut ::core::ffi::c_void);
-        }
-        i = i.wrapping_add(1);
-    }
+    input_clear_param_strings(ictx);
     ir = (*ictx).requests.tqh_first;
     while !ir.is_null() && {
         ir1 = (*ir).entry.tqe_next;
@@ -2565,15 +2596,7 @@ unsafe extern "C" fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ip: *mut input_param = ::core::ptr::null_mut::<input_param>();
     let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < (*ictx).param_list_len {
-        if (*ictx).param_list[i as usize].type_0 as ::core::ffi::c_uint
-            == INPUT_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            free((*ictx).param_list[i as usize].c2rust_unnamed.str_0 as *mut ::core::ffi::c_void);
-        }
-        i = i.wrapping_add(1);
-    }
+    input_clear_param_strings(ictx);
     (*ictx).param_list_len = 0 as u_int;
     if (*ictx).param_len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
@@ -2593,7 +2616,14 @@ unsafe extern "C" fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int
             (*ip).type_0 = INPUT_MISSING;
         } else if !strchr(out, ':' as i32).is_null() {
             (*ip).type_0 = INPUT_STRING;
-            (*ip).c2rust_unnamed.str_0 = xstrdup(out);
+            let owner = ictx.cast::<InputCtxOwner>();
+            let index = (*ictx).param_list_len as usize;
+            (*owner).param_strings[index] = Some(CStr::from_ptr(out).to_owned());
+            (*ip).c2rust_unnamed.str_0 = (*owner).param_strings[index]
+                .as_ref()
+                .unwrap()
+                .as_ptr()
+                .cast_mut();
         } else {
             (*ip).type_0 = INPUT_NUMBER;
             (*ip).c2rust_unnamed.num = strtonum(
@@ -4518,7 +4548,7 @@ mod sgr_colon_tests {
             let cell = parse(source);
             assert_eq!((cell.fg, cell.bg, cell.us), (11, 12, 13), "{source:?}");
         }
-        // Both xstrdup and CStr stop at the first NUL.
+        // Both the owned CStr copy and the parser stop at the first NUL.
         assert_eq!(parse(b"38:5:196\0:2:1:2:3\0").fg, 196 | COLOUR_FLAG_256);
     }
 }

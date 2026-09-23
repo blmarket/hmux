@@ -125,14 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. CSI colon parameter strings in `InputCtxOwner` are the next bounded live
-   owner. `input_split` has the sole `xstrdup` producer and frees strings from
-   the previous list; `input_free` has the final free. The existing boxed
-   context can own 24 optional `CString` values and lend pointers into the
-   public parameter union. Clear owners on the next split and at final drop,
-   preserving partially parsed lists on numeric parse failure. Colon SGR
-   handling reads the original string through a private mutable copy. A live
-   pane can exercise repeated colon SGR sequences against the pinned baseline.
+1. String-valued option array item payloads are the next bounded live owner.
+   `OwnedOptionArrayItem` already boxes each public item and owns its key; it
+   can also own an optional `CString` value while the public union lends the
+   pointer. `options_array_set` creates or appends the string, and
+   `options_value_free` has its manual free. Build new bytes before releasing
+   the previous owner because append or replacement input may alias it.
+   Preserve command-list free behavior and the exported pointer view.
+   Compare append, replacement, and unset against the pinned baseline.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -844,6 +844,21 @@ libc allocation on success and leaves it with the caller on error, so a local
   passed against pinned 3.8-rc: it waits through unchanged status timer ticks,
   changes the expanded option twice, observes both redraws, then detaches the
   client. Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 399 — owned CSI colon parameter strings (2026-09-23)
+
+- `InputCtxOwner` now holds the 24 optional `CString` slots for CSI colon
+  parameters. `input_split` copies each colon string directly into the owner
+  and lends a pointer through the public `input_param` union. Both the next
+  split and `input_free` clear owners at the old release points, invalidating
+  the borrowed pointer first. Removed the only parameter `xstrdup` and both
+  manual free loops. A numeric parse failure leaves earlier colon parameters
+  owned until the next split or parser destruction, as before.
+- A focused test checks that partial-list error and subsequent replacement.
+  Serialized workspace tests and binary build passed. A live pane CLI check
+  sends repeated valid and malformed colon SGR sequences, compares styled
+  captures with pinned 3.8-rc, and destroys the parser while colon parameters
+  remain. Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
