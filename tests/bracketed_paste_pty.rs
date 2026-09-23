@@ -244,6 +244,19 @@ impl PtyClient {
             }
         }
     }
+
+    fn command_output(&self, args: &[&str]) -> io::Result<std::process::Output> {
+        Command::new(&self.binary)
+            .args(["-f", "/dev/null", "-S"])
+            .arg(&self.socket)
+            .args(args)
+            .env("TERM", "xterm-256color")
+            .env("SHELL", "/bin/sh")
+            .env("TMUX", "")
+            .env("LC_ALL", "C")
+            .stdin(Stdio::null())
+            .output()
+    }
 }
 
 impl Drop for PtyClient {
@@ -331,4 +344,66 @@ fn split_end_boundary_delivers_paste_bytes_without_boundary_bytes() {
         !contains(&output, b"^[[201~"),
         "paste end leaked: {output:?}"
     );
+}
+
+#[test]
+fn clipboard_reply_decodes_counted_base64_and_preserves_first_nul() {
+    let directory = unique_directory().expect("create private PTY directory");
+    let socket = directory.join("socket");
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_hmux2"));
+    let mut client = PtyClient::new(binary, socket, directory).expect("start hmux2 in a PTY");
+    let deadline = Instant::now() + TEST_TIMEOUT;
+
+    client
+        .read_until(b"READY", deadline)
+        .expect("wait for the pane command");
+    let clients = client
+        .command_output(&["list-clients", "-F", "#{client_name}"])
+        .expect("list attached clients");
+    assert!(clients.status.success(), "{clients:?}");
+    let name = String::from_utf8(clients.stdout).expect("client name is UTF-8");
+    let name = name.trim();
+    assert!(!name.is_empty(), "attached client has a name");
+
+    let refresh = client
+        .command_output(&["refresh-client", "-l", "-t", name])
+        .expect("request terminal clipboard");
+    assert!(refresh.status.success(), "{refresh:?}");
+    client
+        .write_bytes(b"\x1b]52;c;QQBC\x07", deadline)
+        .expect("reply with binary clipboard data");
+    loop {
+        let shown = client
+            .command_output(&["show-buffer"])
+            .expect("read paste buffer");
+        if shown.status.success() && shown.stdout == b"A\0B" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "clipboard not decoded: {shown:?}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let refresh = client
+        .command_output(&["refresh-client", "-l", "-t", name])
+        .expect("request terminal clipboard again");
+    assert!(refresh.status.success(), "{refresh:?}");
+    client
+        .write_bytes(b"\x1b]52;c;QQ==\0QkI=\x1b\\", deadline)
+        .expect("reply with embedded NUL in the encoded input");
+    loop {
+        let shown = client
+            .command_output(&["show-buffer"])
+            .expect("read paste buffer");
+        if shown.status.success() && shown.stdout == b"A" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "first NUL not preserved: {shown:?}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
 }

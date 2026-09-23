@@ -1376,6 +1376,22 @@ legacy callers safe.
   worktree. CLI arguments cannot contain NUL; the CStr copy preserves the
   previous first-NUL view. No sanitizer run was performed.
 
+### Increment 72 — clipboard reply base64 scratch (2026-09-22)
+
+- `tty_keys_clipboard` now copies its counted encoded bytes into a local
+  `Vec<u8>` with a trailing NUL. `__b64_pton` borrows that stable buffer;
+  the old `xmalloc`/`memcpy` and three `free(copy)` paths are gone. On
+  success the Vec drops before logging and `input_request_reply`, as the
+  old copy did. Invalid and empty decode paths retain their cleanup order.
+  The separate decoded `out` allocation and paste-buffer transfer are
+  unchanged.
+- A PTY test in `tests/bracketed_paste_pty.rs` requests clipboard data and
+  checks decoded `A\0B`, then sends an encoded response with a middle NUL
+  and checks that the decoder still sees only the prefix. Focused and
+  workspace tests, binary build, changed-file rustfmt, and `git diff
+  --check` passed in the isolated worktree. The test does not exercise the
+  invalid-base64 decode branch; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1390,11 +1406,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `tty_keys_clipboard`'s local base64 copy and other bounded
-   buffers. Remaining `xstrndup` callers return or transfer C-owned strings.
+2. Inspect `utf8_cstrhas`'s temporary decoded array and other bounded
+   parser buffers. Remaining `xstrndup` callers return or transfer C-owned
+   strings; `window_copy` regex buffers grow through a shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–71. The remaining
+Current validation is recorded in increments 15–72. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–71 has its own local commit; none was pushed.
+Each of increments 15–72 has its own local commit; none was pushed.

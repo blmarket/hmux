@@ -2588,7 +2588,6 @@ unsafe extern "C" fn tty_keys_clipboard(
     let mut end: size_t = 0;
     let mut terminator: size_t = 0 as size_t;
     let mut needed: size_t = 0;
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut clip: ::core::ffi::c_char = 0 as ::core::ffi::c_char;
     let mut outlen: ::core::ffi::c_int = 0;
@@ -2666,29 +2665,26 @@ unsafe extern "C" fn tty_keys_clipboard(
     }
     buf = buf.offset(1);
     end = end.wrapping_sub(1);
-    copy = xmalloc(end.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
-    memcpy(
-        copy as *mut ::core::ffi::c_void,
-        buf as *const ::core::ffi::c_void,
-        end,
-    );
-    *copy.offset(end as isize) = '\0' as i32 as ::core::ffi::c_char;
+    let mut copy = ::core::slice::from_raw_parts(buf.cast::<u8>(), end).to_vec();
+    copy.push(0);
     needed = end
         .wrapping_add(3 as size_t)
         .wrapping_div(4 as size_t)
         .wrapping_mul(3 as size_t);
     if needed == 0 as size_t {
-        free(copy as *mut ::core::ffi::c_void);
         return 0 as ::core::ffi::c_int;
     }
     out = xmalloc(needed) as *mut ::core::ffi::c_char;
-    outlen = __b64_pton(copy, out as *mut ::core::ffi::c_uchar, needed);
+    outlen = __b64_pton(
+        copy.as_ptr().cast::<::core::ffi::c_char>(),
+        out as *mut ::core::ffi::c_uchar,
+        needed,
+    );
     if outlen == -(1 as ::core::ffi::c_int) {
         free(out as *mut ::core::ffi::c_void);
-        free(copy as *mut ::core::ffi::c_void);
         return 0 as ::core::ffi::c_int;
     }
-    free(copy as *mut ::core::ffi::c_void);
+    drop(copy);
     log_debug(
         b"%s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
         b"tty_keys_clipboard\0" as *const u8 as *const ::core::ffi::c_char,
