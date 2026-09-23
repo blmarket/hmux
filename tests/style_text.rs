@@ -389,6 +389,23 @@ fn frozen_x11_aliases() {
 }
 
 #[test]
+fn x11_name_trimming_preserves_bytes_and_c_termination() {
+    let alice_blue = Some(COLOUR_FLAG_RGB | 0xf0f8ff);
+    assert_eq!(colour_parse_x11(b"  AliceBlue  "), alice_blue);
+    assert_eq!(colour_parse_x11(b"  ALICEBLUE  "), alice_blue);
+    assert_eq!(colour_parse_x11(b"AliceBlue\t"), None);
+    assert_eq!(colour_parse_x11(b"   "), None);
+    assert_eq!(colour_parse_x11(b" \xff "), None);
+
+    // The C ABI sees only the prefix before the first NUL.
+    let c_input = b"  AliceBlue  \0red\0";
+    assert_eq!(
+        unsafe { colour_parseX11(c_input.as_ptr().cast()) },
+        alice_blue.unwrap()
+    );
+}
+
+#[test]
 fn safe_formatting_is_independent_across_threads() {
     let threads: Vec<_> = (0..8)
         .map(|n| {

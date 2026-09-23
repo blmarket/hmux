@@ -1047,6 +1047,18 @@ legacy callers safe.
   `git diff --check` passed in the isolated worktree. No sanitizer run was
   performed.
 
+### Increment 49 — trimmed X11 color name (2026-09-22)
+
+- `colour_parseX11_impl` now owns its space-trimmed name as a local,
+  byte-preserving `CString`. This removes the `xstrndup`/`free` pair.
+  `colour_byname_impl` compares against static names synchronously and
+  returns an integer; no pointer escapes. The source span comes from
+  `strlen` and cannot contain a NUL before its end.
+- A focused integration test covers spaces, case, tab distinction,
+  non-UTF-8, empty names, and the C ABI's first-NUL view. Workspace tests,
+  binary build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. No live terminal or sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1061,11 +1073,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect other local format expansion scratch and parser buffers for
-   synchronous borrow-only use, auditing return and callback contracts first.
+2. Inspect environment variable names in path expansion and `#()` command
+   names in format expansion for synchronous borrow-only use.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–48. The remaining
+Current validation is recorded in increments 15–49. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–48 has its own local commit; none was pushed.
+Each of increments 15–49 has its own local commit; none was pushed.

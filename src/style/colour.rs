@@ -65,7 +65,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xcalloc, xstrndup};
+use crate::src::xmalloc::xcalloc;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -3717,7 +3717,6 @@ unsafe fn colour_parseX11_impl(mut p: *const ::core::ffi::c_char) -> ::core::ffi
     let mut b: u_int = 0;
     let mut len: size_t = strlen(p);
     let mut colour: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if len == 12 as size_t
         && sscanf(
             p,
@@ -3810,9 +3809,11 @@ unsafe fn colour_parseX11_impl(mut p: *const ::core::ffi::c_char) -> ::core::ffi
         {
             len = len.wrapping_sub(1);
         }
-        copy = xstrndup(p, len);
-        colour = colour_byname_impl(copy);
-        free(copy as *mut ::core::ffi::c_void);
+        // `len` was derived from strlen(p), then reduced while trimming spaces.
+        // The span cannot contain NUL; byname only borrows it for this call.
+        let trimmed = std::slice::from_raw_parts(p.cast::<u8>(), len as usize);
+        let copy = std::ffi::CString::new(trimmed).expect("trimmed C string contains NUL");
+        colour = colour_byname_impl(copy.as_ptr());
     }
     return colour;
 }
