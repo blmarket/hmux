@@ -1525,6 +1525,23 @@ legacy callers safe.
   rustfmt, and diff checks passed. The new live CLI check matched the pinned
   baseline for invalid UTF-8 in both retained fields. No sanitizer was run.
 
+### Increment 234 — command-template output owner (2026-09-23)
+
+- `cmd_template_replace` now builds substituted and quoted bytes in a local
+  `Vec<u8>` and exposes a private `CString` result. It removes per-character
+  `xrealloc`, manual output length, and pointer writes. The exported function
+  still duplicates once for its callers' libc-freeable return contract;
+  literal, numbered, first-`%%`, single-quote, and double-quote behavior stays
+  byte-preserving through the first input NUL.
+- Focused substitution/quoting tests, binary build, changed-file rustfmt, and
+  diff checks passed. The attached-client mutable-prompt CLI check passed on
+  both the migrated and pinned baseline binaries. No sanitizer was run.
+- Combined validation after increments 232–234: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt,
+  Python AST, and commit diff checks passed. Hyperlink URI/ID, customize
+  environment prompt/rows, mutable prompt, and embedded-NUL copy-view CLI
+  checks passed with the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1535,11 +1552,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The command-list cache in `args_value_as_string` is retained in its
+1. `window_copy_match_at_cursor` has a private match-text buffer grown with
+   `xrealloc` while walking grid cells. Audit its two callers and embedded-NUL
+   behavior; a local `Vec<u8>` can own the full byte result before one C-owned
+   return copy. This is separate from the shared regex buffers below.
+2. The command-list cache in `args_value_as_string` is retained in its
    movable C-layout record. A pointer-keyed sidecar is disallowed by the type
    policy; migrate only with a real record owner that preserves the public
    layout and independent cache storage for copied values.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+3. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -1549,7 +1570,7 @@ non-string value.
    `%.*s` formatter. The first-NUL behavior is covered by
    `scripts/window_copy_vadd_owner_cli_checks.py`. Revisit the remaining
    direct caller when the callback return contract can change.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+4. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. The expansion output now has a local
@@ -1557,7 +1578,7 @@ non-string value.
    Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-4. The remaining address-based registries, other UI tags, and session/winlink
+5. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
@@ -1566,7 +1587,7 @@ non-string value.
    tag-only generated ID would violate the agreed type policy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–231 above, with increment 228 explicitly retracted.
+recorded in increments 226–234 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

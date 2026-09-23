@@ -1021,139 +1021,119 @@ pub unsafe extern "C" fn cmd_mouse_pane(
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_template_replace(
-    mut template: *const ::core::ffi::c_char,
-    mut s: *const ::core::ffi::c_char,
-    mut idx: ::core::ffi::c_int,
+    template: *const ::core::ffi::c_char,
+    s: *const ::core::ffi::c_char,
+    idx: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut ch: ::core::ffi::c_char = 0;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let dquote: [::core::ffi::c_char; 6] =
-        ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"\"\\$;~\0");
-    let mut replaced: ::core::ffi::c_int = 0;
-    let mut len: size_t = 0;
-    let mut slen: size_t = 0;
-    let mut quote: C2RustUnnamed_38 = NQ;
     if strchr(template, '%' as i32).is_null() {
         return xstrdup(template);
     }
-    buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
-    *buf = '\0' as i32 as ::core::ffi::c_char;
-    len = 0 as size_t;
-    replaced = 0 as ::core::ffi::c_int;
-    ptr = template;
-    let mut current_block_39: u64;
-    while *ptr as ::core::ffi::c_int != '\0' as i32 {
-        let fresh9 = ptr;
-        ptr = ptr.offset(1);
-        ch = *fresh9;
-        match ch as ::core::ffi::c_int {
-            37 => {
-                if *ptr as ::core::ffi::c_int >= '1' as i32
-                    && *ptr as ::core::ffi::c_int <= '9' as i32
-                    && *ptr as ::core::ffi::c_int - '0' as i32 == idx
-                {
-                    ptr = ptr.offset(1);
-                    quote = NQ;
-                    if *ptr as ::core::ffi::c_int == '%' as i32 {
-                        quote = DQ;
-                        ptr = ptr.offset(1);
-                    }
-                    current_block_39 = 26972500619410423;
-                } else if *ptr as ::core::ffi::c_int != '%' as i32 || replaced != 0 {
-                    current_block_39 = 17500079516916021833;
-                } else {
-                    replaced = 1 as ::core::ffi::c_int;
-                    ptr = ptr.offset(1);
-                    quote = SQ;
-                    if *ptr as ::core::ffi::c_int == '%' as i32 {
-                        quote = DQ;
-                        ptr = ptr.offset(1);
-                    }
-                    current_block_39 = 26972500619410423;
-                }
-                match current_block_39 {
-                    17500079516916021833 => {}
-                    _ => {
-                        slen = strlen(s);
-                        if slen >= (SIZE_MAX as size_t).wrapping_div(4 as size_t)
-                            || len
-                                > (SIZE_MAX as size_t)
-                                    .wrapping_sub(slen.wrapping_mul(4 as size_t))
-                                    .wrapping_sub(1 as size_t)
-                        {
-                            fatalx(
-                                b"argument too long\0" as *const u8 as *const ::core::ffi::c_char,
-                            );
-                        }
-                        buf = xrealloc(
-                            buf as *mut ::core::ffi::c_void,
-                            len.wrapping_add(slen.wrapping_mul(4 as size_t))
-                                .wrapping_add(1 as size_t),
-                        ) as *mut ::core::ffi::c_char;
-                        cp = s;
-                        while *cp as ::core::ffi::c_int != '\0' as i32 {
-                            if quote as ::core::ffi::c_uint
-                                == SQ as ::core::ffi::c_int as ::core::ffi::c_uint
-                                && *cp as ::core::ffi::c_int == '\'' as i32
-                            {
-                                let fresh10 = len;
-                                len = len.wrapping_add(1);
-                                *buf.offset(fresh10 as isize) = '\'' as i32 as ::core::ffi::c_char;
-                                let fresh11 = len;
-                                len = len.wrapping_add(1);
-                                *buf.offset(fresh11 as isize) = '\\' as i32 as ::core::ffi::c_char;
-                                let fresh12 = len;
-                                len = len.wrapping_add(1);
-                                *buf.offset(fresh12 as isize) = '\'' as i32 as ::core::ffi::c_char;
-                                let fresh13 = len;
-                                len = len.wrapping_add(1);
-                                *buf.offset(fresh13 as isize) = '\'' as i32 as ::core::ffi::c_char;
-                            } else {
-                                if quote as ::core::ffi::c_uint
-                                    == DQ as ::core::ffi::c_int as ::core::ffi::c_uint
-                                    && !strchr(
-                                        &raw const dquote as *const ::core::ffi::c_char,
-                                        *cp as ::core::ffi::c_int,
-                                    )
-                                    .is_null()
-                                {
-                                    let fresh14 = len;
-                                    len = len.wrapping_add(1);
-                                    *buf.offset(fresh14 as isize) =
-                                        '\\' as i32 as ::core::ffi::c_char;
-                                }
-                                let fresh15 = len;
-                                len = len.wrapping_add(1);
-                                *buf.offset(fresh15 as isize) = *cp;
-                            }
-                            cp = cp.offset(1);
-                        }
-                        *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
-                        continue;
-                    }
-                }
-            }
-            _ => {}
-        }
-        if len > (SIZE_MAX as size_t).wrapping_sub(2 as size_t) {
-            fatalx(b"argument too long\0" as *const u8 as *const ::core::ffi::c_char);
-        }
-        buf = xrealloc(
-            buf as *mut ::core::ffi::c_void,
-            len.wrapping_add(2 as size_t),
-        ) as *mut ::core::ffi::c_char;
-        let fresh16 = len;
-        len = len.wrapping_add(1);
-        *buf.offset(fresh16 as isize) = ch;
-        *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
-    }
+    let text = cmd_template_replace_cstring(template, s, idx);
     log_debug(
         b"%s: %s -> %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_template_replace\0" as *const u8 as *const ::core::ffi::c_char,
         template,
-        buf,
+        text.as_ptr(),
     );
-    return buf;
+    // Callers retain the exported malloc/free contract.
+    xstrdup(text.as_ptr())
+}
+
+unsafe fn cmd_template_replace_cstring(
+    template: *const ::core::ffi::c_char,
+    s: *const ::core::ffi::c_char,
+    idx: ::core::ffi::c_int,
+) -> CString {
+    let template_bytes = CStr::from_ptr(template).to_bytes();
+    if !template_bytes.contains(&b'%') {
+        return CStr::from_ptr(template).to_owned();
+    }
+
+    let mut output = Vec::new();
+    let mut replaced = false;
+    let mut offset = 0;
+    while offset < template_bytes.len() {
+        let ch = template_bytes[offset];
+        offset += 1;
+        if ch == b'%' {
+            let next = template_bytes.get(offset).copied().unwrap_or(0);
+            let quote = if (b'1'..=b'9').contains(&next) && (next - b'0') as i32 == idx {
+                offset += 1;
+                if template_bytes.get(offset) == Some(&b'%') {
+                    offset += 1;
+                    Some(DQ)
+                } else {
+                    Some(NQ)
+                }
+            } else if next == b'%' && !replaced {
+                replaced = true;
+                offset += 1;
+                if template_bytes.get(offset) == Some(&b'%') {
+                    offset += 1;
+                    Some(DQ)
+                } else {
+                    Some(SQ)
+                }
+            } else {
+                None
+            };
+            if let Some(quote) = quote {
+                let replacement = CStr::from_ptr(s).to_bytes();
+                if replacement.len() >= usize::MAX / 4
+                    || output.len() > usize::MAX - replacement.len() * 4 - 1
+                {
+                    fatalx(b"argument too long\0".as_ptr().cast());
+                }
+                output.reserve(replacement.len() * 4);
+                for &byte in replacement {
+                    if quote == SQ && byte == b'\'' {
+                        output.extend_from_slice(b"'\\''");
+                    } else {
+                        if quote == DQ && b"\"\\$;~".contains(&byte) {
+                            output.push(b'\\');
+                        }
+                        output.push(byte);
+                    }
+                }
+                continue;
+            }
+        }
+        if output.len() > usize::MAX - 2 {
+            fatalx(b"argument too long\0".as_ptr().cast());
+        }
+        output.push(ch);
+    }
+    CString::new(output).expect("C string template contains no embedded NUL")
+}
+
+#[cfg(test)]
+mod template_replace_tests {
+    use super::*;
+
+    #[test]
+    fn preserves_template_substitution_and_quoting_bytes() {
+        let cases: &[(&[u8], &[u8], i32, &[u8])] = &[
+            (b"plain\0", b"unused\0", 1, b"plain"),
+            (b"A%1B\0", b"\xff\0", 1, b"A\xffB"),
+            (b"A%2B\0", b"x\0", 1, b"A%2B"),
+            (b"A%%B%%C\0", b"a'b\0", 1, b"Aa'\\''bB%%C"),
+            (b"A%1%B\0", b"\"\\$;~\0", 1, b"A\\\"\\\\\\$\\;\\~B"),
+        ];
+        for &(template, replacement, idx, expected) in cases {
+            let actual = unsafe {
+                cmd_template_replace_cstring(
+                    template.as_ptr().cast(),
+                    replacement.as_ptr().cast(),
+                    idx,
+                )
+            };
+            assert_eq!(actual.as_bytes(), expected);
+        }
+
+        // The public ABI still returns an independently freeable C allocation.
+        let raw =
+            unsafe { cmd_template_replace(b"%1\0".as_ptr().cast(), b"x\0".as_ptr().cast(), 1) };
+        assert_eq!(unsafe { CStr::from_ptr(raw) }.to_bytes(), b"x");
+        unsafe { free(raw.cast()) };
+    }
 }
