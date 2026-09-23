@@ -1871,6 +1871,20 @@ legacy callers safe.
   display-panes check also passed with the pinned baseline. No sanitizer was
   run.
 
+### Increment 258 — session termios owner (2026-09-23)
+
+- `SessionOwner` now holds the C-layout `session` at offset zero and owns its
+  optional copied `termios` value in `Option<Box<termios>>`. The public
+  `session.tio` pointer borrows that stable value. `session_destroy` nulls the
+  view and drops the termios box at the former C free point; deferred
+  `session_free` drops the enclosing owner. The session allocation, termios
+  allocation, and matching destruction paths migrate together.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/session_tio_owner_cli_checks.py` passed on main. The pinned-baseline
+  attached PTY check verified custom VINTR/VEOF settings across two panes and
+  session teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1881,12 +1895,16 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. A validated `session.tio` owner migration is committed as `9d4468d` in
-   `/tmp/hmux2-session-tio-owner`; review and integrate it as the next
-   increment, then remove that temporary worktree. Tty key-event ownership
-   is under a separate caller/queue audit. OSC 52 decode output transfers
-   directly into `paste_add`, which retains its C allocation until
-   `paste_free`; a local Vec would add a copy without removing the lifetime.
+1. A tty key-event owner migration is committed as `6496538` in clean
+   `/tmp/hmux2-tty-key-event-owner`; review and integrate it as the next
+   increment, then remove that worktree. It covers terminal input,
+   `send-keys -K`, click timer, rejection, and queued callback completion.
+   Workspace tests and a pinned-baseline attached-client byte comparison
+   passed in isolation; the click-timer path has source audit but no live E2E.
+   OSC 52 decode output transfers directly into `paste_add`, which retains
+   its C allocation until `paste_free`; a local Vec would add a copy without
+   removing the lifetime. The existing clipboard-reply E2E covers decoded
+   `A\0B` and a first NUL in encoded input.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1918,7 +1936,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–257 above, with increment 228 explicitly retracted.
+recorded in increments 226–258 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

@@ -91,7 +91,7 @@ use crate::src::window::{
     winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push, winlink_stack_remove,
     winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xstrdup};
+use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -102,6 +102,15 @@ pub static mut sessions: sessions = sessions { storage: None };
 pub static mut next_session_id: u_int = 0;
 #[no_mangle]
 pub static mut session_groups: session_groups = session_groups { storage: None };
+
+/// The node stays at offset zero so existing session pointers retain their
+/// layout. Its `tio` pointer borrows the boxed value until session_destroy.
+#[repr(C)]
+struct SessionOwner {
+    node: session,
+    tio: Option<Box<termios>>,
+}
+const _: () = assert!(::core::mem::offset_of!(SessionOwner, node) == 0);
 #[no_mangle]
 pub unsafe extern "C" fn session_cmp(
     mut s1: *mut session,
@@ -475,7 +484,19 @@ pub unsafe extern "C" fn session_create(
     mut tio: *mut termios,
 ) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = Box::into_raw(Box::new(std::mem::zeroed::<session>()));
+    let mut owner = Box::new(SessionOwner {
+        node: std::mem::zeroed::<session>(),
+        tio: if tio.is_null() {
+            None
+        } else {
+            Some(Box::new(*tio))
+        },
+    });
+    owner.node.tio = owner
+        .tio
+        .as_deref_mut()
+        .map_or(::core::ptr::null_mut(), |tio| tio as *mut termios);
+    s = Box::into_raw(owner).cast::<session>();
     (*s).references = 1 as ::core::ffi::c_int;
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).cwd = xstrdup(cwd);
@@ -485,15 +506,6 @@ pub unsafe extern "C" fn session_create(
     (*s).environ = env;
     (*s).options = oo;
     status_update_cache(s);
-    (*s).tio = ::core::ptr::null_mut::<termios>();
-    if !tio.is_null() {
-        (*s).tio = xmalloc(::core::mem::size_of::<termios>() as size_t) as *mut termios;
-        memcpy(
-            (*s).tio as *mut ::core::ffi::c_void,
-            tio as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<termios>() as size_t,
-        );
-    }
     if !name.is_null() {
         (*s).name = xstrdup(name);
         let fresh0 = next_session_id;
@@ -596,7 +608,7 @@ unsafe extern "C" fn session_free(
         options_free((*s).options);
         crate::src::window::winlink_stack_clear(&raw mut (*s).lastw);
         free((*s).name as *mut ::core::ffi::c_void);
-        drop(Box::from_raw(s));
+        drop(Box::from_raw(s.cast::<SessionOwner>()));
     }
 }
 #[no_mangle]
@@ -622,7 +634,8 @@ pub unsafe extern "C" fn session_destroy(
             s,
         );
     }
-    free((*s).tio as *mut ::core::ffi::c_void);
+    (*s).tio = ::core::ptr::null_mut();
+    (*s.cast::<SessionOwner>()).tio = None;
     if event_initialized(&raw mut (*s).lock_timer) != 0 {
         event_del(&raw mut (*s).lock_timer);
     }
