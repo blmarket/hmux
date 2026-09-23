@@ -1400,43 +1400,28 @@ pub(super) unsafe extern "C" fn format_add_window_neighbour(
 ) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prefixed: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut oval: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    xasprintf(
-        &raw mut key,
-        b"%s_window_index\0" as *const u8 as *const ::core::ffi::c_char,
-        prefix,
-    );
+    let prefix = CStr::from_ptr(prefix).to_bytes();
+    let key = CString::new([prefix, b"_window_index"].concat()).expect("C string key");
     format_add(
         nft,
-        key,
+        key.as_ptr(),
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         (*wl).idx,
     );
-    free(key as *mut ::core::ffi::c_void);
-    xasprintf(
-        &raw mut key,
-        b"%s_window_active\0" as *const u8 as *const ::core::ffi::c_char,
-        prefix,
-    );
+    let key = CString::new([prefix, b"_window_active"].concat()).expect("C string key");
     format_add(
         nft,
-        key,
+        key.as_ptr(),
         b"%d\0" as *const u8 as *const ::core::ffi::c_char,
         (wl == (*s).curw) as ::core::ffi::c_int,
     );
-    free(key as *mut ::core::ffi::c_void);
     o = options_first((*(*wl).window).options);
     while !o.is_null() {
         oname = options_name(o);
         if *oname as ::core::ffi::c_int == '@' as i32 {
-            xasprintf(
-                &raw mut prefixed,
-                b"%s_%s\0" as *const u8 as *const ::core::ffi::c_char,
-                prefix,
-                oname,
-            );
+            let prefixed = CString::new([prefix, b"_", CStr::from_ptr(oname).to_bytes()].concat())
+                .expect("C string key");
             oval = options_to_string(
                 o,
                 ::core::ptr::null::<::core::ffi::c_char>(),
@@ -1444,12 +1429,11 @@ pub(super) unsafe extern "C" fn format_add_window_neighbour(
             );
             format_add(
                 nft,
-                prefixed,
+                prefixed.as_ptr(),
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 oval,
             );
             free(oval as *mut ::core::ffi::c_void);
-            free(prefixed as *mut ::core::ffi::c_void);
         }
         o = options_next(o);
     }

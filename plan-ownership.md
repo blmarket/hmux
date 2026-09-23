@@ -952,6 +952,19 @@ legacy callers safe.
   isolated worktree. The encoder-error return remains source-audited but was
   not forced by the test; no sanitizer run was performed.
 
+### Increment 42 — neighbouring window format keys (2026-09-22)
+
+- `format_add_window_neighbour` now builds its three local key forms with
+  byte-preserving `CString` values from C-string prefix and option names.
+  This removes the `xasprintf`/`free` pairs for index, active, and user-option
+  keys. `format_add` copies each key synchronously into its entry owner; the
+  separate `options_to_string` result remains C-owned and is still freed.
+- Production callers pass static `next` or `prev` prefixes. Workspace tests,
+  binary build, rustfmt, and `git diff --check` passed in the isolated
+  worktree. A private-socket three-window `#{W:...}` expansion checked
+  previous/next indexes, active flags, and `@label` option values. No
+  sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -966,12 +979,14 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `format_add_window_neighbour`'s local formatted key scratch and
-   other local format expansion scratch strings. Audit each return and
-   callback contract before changing its allocator.
+2. Inspect `input_osc_4`'s local mutable copy: it duplicates a C string,
+   tokenizes the copy with `strsep`, and frees it at function exit. A private
+   owned byte buffer with its NUL terminator may remove that pair. Then
+   inspect other local format expansion scratch strings, auditing each return
+   and callback contract before changing its allocator.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–41. The remaining
+Current validation is recorded in increments 15–42. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–41 has its own local commit; none was pushed.
+Each of increments 15–42 has its own local commit; none was pushed.
