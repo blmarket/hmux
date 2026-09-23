@@ -62,6 +62,7 @@ pub struct style_line_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct style_ranges {
+    /// Head of Box-owned nodes, invalidated by style_ranges_free.
     pub tqh_first: *mut style_range,
     pub tqh_last: *mut *mut style_range,
 }

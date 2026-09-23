@@ -1237,7 +1237,7 @@ pub unsafe extern "C" fn style_ranges_free(mut srs: *mut style_ranges) {
             (*srs).tqh_last = (*sr).entry.tqe_prev;
         }
         *(*sr).entry.tqe_prev = (*sr).entry.tqe_next;
-        free(sr as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(sr));
         sr = sr1;
     }
 }

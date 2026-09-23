@@ -2413,6 +2413,19 @@ legacy callers safe.
   `src/environ.rs` retains exactly its pre-existing rustfmt import-order
   difference. No sanitizer was run.
 
+### Increment 296 — boxed style-range list nodes (2026-09-23)
+
+- `format_draw` now boxes each `style_range` node, removing its `xcalloc`.
+  `style_ranges_free` unlinks nodes in the same order and consumes each `Box`
+  instead of libc-freeing it. Node addresses and intrusive tail links remain
+  stable; the zero-filled string buffer keeps the previous `strlcpy` result.
+  List pointers remain compatibility views and are invalidated on teardown.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, and
+  diff checks passed. The live status-style and mouse-range CLI check passed
+  separately on candidate and pinned baseline. The two changed implementation
+  files retain exactly their pre-existing rustfmt import-order differences;
+  no changed hunk adds a formatting difference. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2423,10 +2436,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_copy_mode_data.backing` is a larger screen owner with a borrowed
-   pointer invalidated on refresh. The redraw scene's line array has
-   self-referential intrusive list tails and needs its own alias audit. Re-rank
-   for a smaller independent leaf before taking either larger boundary.
+1. The outer `format_tree` record in `src/format/tree.rs` has one `xcalloc` in
+   `format_create` and one final libc `free` in `format_free`; its entry index
+   is already Box-owned. Preserve the zeroed C-layout fields, callback borrows,
+   and entry/client-ref teardown order when boxing this stable outer record.
+   `tty_key` trie nodes are another contained allocation/free pair with
+   recursive teardown. `window_copy_mode_data.backing` is larger: its borrowed
+   screen pointer is invalidated on refresh. The redraw scene's line array has
+   self-referential intrusive list tails and needs its own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

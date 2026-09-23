@@ -69,7 +69,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::style::{style_copy, style_link, style_parse, style_set, style_tostring};
 use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
-use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
+use crate::src::xmalloc::{xmalloc, xstrdup};
 use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -1693,18 +1693,22 @@ pub unsafe extern "C" fn format_draw(
                 _ => {}
             }
             for range in &frs {
-                sr = xcalloc(1 as size_t, ::core::mem::size_of::<style_range>() as size_t)
-                    as *mut style_range;
-                (*sr).type_0 = range.type_0;
-                (*sr).argument = range.argument;
+                sr = Box::into_raw(Box::new(style_range {
+                    type_0: range.type_0,
+                    argument: range.argument,
+                    string: [0; 16],
+                    start: range.start,
+                    end: range.end,
+                    entry: style_range_entry {
+                        tqe_next: ::core::ptr::null_mut(),
+                        tqe_prev: ::core::ptr::null_mut(),
+                    },
+                }));
                 strlcpy(
                     &raw mut (*sr).string as *mut ::core::ffi::c_char,
                     range.string.as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
                 );
-                (*sr).start = range.start;
-                (*sr).end = range.end;
-                (*sr).entry.tqe_next = ::core::ptr::null_mut::<style_range>();
                 (*sr).entry.tqe_prev = (*srs).tqh_last;
                 *(*srs).tqh_last = sr;
                 (*srs).tqh_last = &raw mut (*sr).entry.tqe_next;
