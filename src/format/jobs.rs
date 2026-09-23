@@ -32,8 +32,8 @@ unsafe fn format_job_set_out(fj: *mut format_job, value: CString) {
     owner.node.out = owner.out.as_ref().unwrap().as_ptr().cast_mut();
 }
 
-// evbuffer_readline and xmalloc return libc allocations. Copy their visible
-// C-string bytes into the job owner before releasing the original allocation.
+// evbuffer_readline returns a libc allocation. Copy its visible C-string
+// bytes into the job owner before releasing the original allocation.
 unsafe fn format_job_set_out_from_malloc(fj: *mut format_job, value: *mut ::core::ffi::c_char) {
     let owned = CStr::from_ptr(value).to_owned();
     free(value.cast());
@@ -89,38 +89,36 @@ pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
 pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
     let mut fj: *mut format_job = job_get_data(job) as *mut format_job;
     let mut evb: *mut evbuffer = (*job_get_event(job)).input;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
     (*fj).job = ::core::ptr::null_mut::<job>();
-    buf = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    line = evbuffer_readline(evb);
-    if line.is_null() {
-        len = evbuffer_get_length(evb);
-        buf = xmalloc(len.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
-        if len != 0 as size_t {
-            memcpy(
-                buf as *mut ::core::ffi::c_void,
-                evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t)
-                    as *const ::core::ffi::c_void,
+    let line = evbuffer_readline(evb);
+    let output = if line.is_null() {
+        let len = evbuffer_get_length(evb);
+        let bytes = if len == 0 {
+            &[][..]
+        } else {
+            std::slice::from_raw_parts(
+                evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t),
                 len,
-            );
-        }
-        *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
+            )
+        };
+        // The old malloc buffer was treated as a C string after copying all
+        // bytes, so only bytes before the first NUL became visible output.
+        let visible = bytes.iter().position(|&byte| byte == 0).unwrap_or(len);
+        CString::new(&bytes[..visible]).expect("visible job output contains no NUL")
     } else {
-        buf = line;
-    }
+        let output = CStr::from_ptr(line).to_owned();
+        free(line.cast());
+        output
+    };
     log_debug(
         b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"format_job_complete\0" as *const u8 as *const ::core::ffi::c_char,
         fj,
         (*fj).cmd,
-        buf,
+        output.as_ptr(),
     );
-    if *buf as ::core::ffi::c_int != '\0' as i32 || (*fj).updated == 0 {
-        format_job_set_out_from_malloc(fj, buf);
-    } else {
-        free(buf as *mut ::core::ffi::c_void);
+    if !output.as_bytes().is_empty() || (*fj).updated == 0 {
+        format_job_set_out(fj, output);
     }
     if (*fj).status != 0 {
         if !(*fj).client.is_null() {

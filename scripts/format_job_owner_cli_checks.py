@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix="format-job-owner-", dir=root / "target"
             if readable:
                 output.extend(os.read(master, 65536))
             if expected in output:
-                return
+                return bytes(output)
         raise AssertionError((expected, bytes(output)))
 
     attached = None
@@ -60,6 +60,9 @@ with tempfile.TemporaryDirectory(prefix="format-job-owner-", dir=root / "target"
         assert attached.poll() is None
         run("set-option", "-g", "@job_value", "second")
         wait_for_status(master, b"second")
+        assert attached.poll() is None
+        run("set-option", "-g", "@job_value", "visible\\000hidden")
+        assert b"hidden" not in wait_for_status(master, b"visible")
         assert attached.poll() is None
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=20)

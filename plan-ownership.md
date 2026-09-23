@@ -1622,6 +1622,19 @@ legacy callers safe.
   copy-view CLI checks matched the pinned baseline; the Linux `/proc` CLI
   check passed. No sanitizer was run.
 
+### Increment 241 — format job completion output owner (2026-09-23)
+
+- `format_job_complete` now owns its completion output in a `CString`. The
+  no-newline evbuffer branch copies bytes through the first NUL directly into
+  that owner, removing its temporary `xmalloc`, manual terminator write, and
+  matching free. The `evbuffer_readline` branch still copies and frees its
+  libc result before the same owner takes over. Empty output and `updated`
+  behavior are unchanged.
+- Focused format-job tests, library/binary build, changed-file rustfmt,
+  Python compile, diff check, and the live status-job CLI check passed. The
+  CLI check includes `visible\\000hidden` and passed with the pinned baseline.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1635,6 +1648,9 @@ non-string value.
 1. `cmd_capture_pane_append` is the next smaller possible boundary. Its grid,
    pending, hyperlink, and history producers plus the final C-owned output
    must be migrated together; audit all return and error paths first.
+   `set-buffer`'s payload is a less useful local target: `paste_set` retains
+   the libc allocation on success and leaves it with the caller on error, so
+   a local `Vec` alone would add an allocation and copy.
 2. The command-list cache in `args_value_as_string` is retained in its
    movable C-layout record. A pointer-keyed sidecar is disallowed by the type
    policy; migrate only with a real record owner that preserves the public
@@ -1656,8 +1672,7 @@ non-string value.
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
    crosses the C-owned return boundary. Remaining `xstrndup` callers return
-   or transfer C-owned strings; `window_copy` regex buffers grow through a
-   shared C API.
+   or transfer C-owned strings.
 5. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
