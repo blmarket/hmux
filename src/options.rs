@@ -145,23 +145,15 @@ unsafe fn set_scalar_string(o: *mut options_entry, value: CString) {
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-unsafe extern "C" fn options_array_correct_key(
-    key: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    match parse_array_index(std::ffi::CStr::from_ptr(key).to_bytes()) {
+unsafe fn options_array_correct_key(key: *const ::core::ffi::c_char) -> Option<CString> {
+    match parse_array_index(CStr::from_ptr(key).to_bytes()) {
         Ok(ArrayIndex::Numeric(number)) => {
-            let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
-            xasprintf(
-                &raw mut out,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                number,
-            );
-            out
+            Some(CString::new(number.to_string()).expect("numeric key has no NUL"))
         }
-        Ok(ArrayIndex::Text(_)) => xstrdup(key),
-        Err(ArrayIndexError::Empty | ArrayIndexError::NumericOverflow) => {
-            ::core::ptr::null_mut::<::core::ffi::c_char>()
+        Ok(ArrayIndex::Text(bytes)) => {
+            Some(CString::new(bytes).expect("C string key has no interior NUL"))
         }
+        Err(ArrayIndexError::Empty | ArrayIndexError::NumericOverflow) => None,
     }
 }
 // Internal callers pass keys already validated by options_array_correct_key.
@@ -634,16 +626,13 @@ pub unsafe extern "C" fn options_array_get(
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_value {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut new_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return ::core::ptr::null_mut::<options_value>();
     }
-    new_key = options_array_correct_key(key);
-    if new_key.is_null() {
+    let Some(new_key) = options_array_correct_key(key) else {
         return ::core::ptr::null_mut::<options_value>();
-    }
-    a = options_array_item(o, new_key);
-    free(new_key as *mut ::core::ffi::c_void);
+    };
+    a = options_array_item(o, new_key.as_ptr());
     if a.is_null() {
         return ::core::ptr::null_mut::<options_value>();
     }
@@ -670,7 +659,6 @@ pub unsafe extern "C" fn options_array_set(
 ) -> ::core::ffi::c_int {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut new: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut new_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
     let mut number: ::core::ffi::c_longlong = 0;
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
@@ -679,8 +667,7 @@ pub unsafe extern "C" fn options_array_set(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    new_key = options_array_correct_key(key);
-    if new_key.is_null() {
+    let Some(new_key) = options_array_correct_key(key) else {
         if !cause.is_null() {
             xasprintf(
                 cause,
@@ -689,13 +676,12 @@ pub unsafe extern "C" fn options_array_set(
             );
         }
         return -(1 as ::core::ffi::c_int);
-    }
+    };
     if value.is_null() {
-        a = options_array_item(o, new_key);
+        a = options_array_item(o, new_key.as_ptr());
         if !a.is_null() {
             options_array_free(o, a);
         }
-        free(new_key as *mut ::core::ffi::c_void);
         return 0 as ::core::ffi::c_int;
     }
     if !(*o).tableentry.is_null()
@@ -710,26 +696,24 @@ pub unsafe extern "C" fn options_array_set(
                 } else {
                     free((*pr).error as *mut ::core::ffi::c_void);
                 }
-                free(new_key as *mut ::core::ffi::c_void);
                 return -(1 as ::core::ffi::c_int);
             }
             1 | _ => {}
         }
-        a = options_array_item(o, new_key);
+        a = options_array_item(o, new_key.as_ptr());
         if a.is_null() {
-            a = options_array_new(o, new_key);
+            a = options_array_new(o, new_key.as_ptr());
         } else {
             options_value_free(o, &raw mut (*a).value);
         }
         (*a).value.cmdlist = (*pr).cmdlist;
-        free(new_key as *mut ::core::ffi::c_void);
         return 0 as ::core::ffi::c_int;
     }
     if (*o).tableentry.is_null()
         || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        a = options_array_item(o, new_key);
+        a = options_array_item(o, new_key.as_ptr());
         if !a.is_null() && append != 0 {
             xasprintf(
                 &raw mut new,
@@ -741,12 +725,11 @@ pub unsafe extern "C" fn options_array_set(
             new = xstrdup(value);
         }
         if a.is_null() {
-            a = options_array_new(o, new_key);
+            a = options_array_new(o, new_key.as_ptr());
         } else {
             options_value_free(o, &raw mut (*a).value);
         }
         (*a).value.string = new;
-        free(new_key as *mut ::core::ffi::c_void);
         return 0 as ::core::ffi::c_int;
     }
     if (*(*o).tableentry).type_0 as ::core::ffi::c_uint
@@ -760,23 +743,20 @@ pub unsafe extern "C" fn options_array_set(
                 b"bad colour: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 value,
             );
-            free(new_key as *mut ::core::ffi::c_void);
             return -(1 as ::core::ffi::c_int);
         }
-        a = options_array_item(o, new_key);
+        a = options_array_item(o, new_key.as_ptr());
         if a.is_null() {
-            a = options_array_new(o, new_key);
+            a = options_array_new(o, new_key.as_ptr());
         } else {
             options_value_free(o, &raw mut (*a).value);
         }
         (*a).value.number = number;
-        free(new_key as *mut ::core::ffi::c_void);
         return 0 as ::core::ffi::c_int;
     }
     if !cause.is_null() {
         *cause = xstrdup(b"wrong array type\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    free(new_key as *mut ::core::ffi::c_void);
     return -(1 as ::core::ffi::c_int);
 }
 #[no_mangle]
@@ -923,7 +903,6 @@ pub unsafe extern "C" fn options_to_string(
     let mut result: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut last: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut new_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if !(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if key.is_null() {
             a = options_array_first(o);
@@ -949,12 +928,10 @@ pub unsafe extern "C" fn options_to_string(
             }
             return result;
         }
-        new_key = options_array_correct_key(key);
-        if new_key.is_null() {
+        let Some(new_key) = options_array_correct_key(key) else {
             return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-        }
-        a = options_array_item(o, new_key);
-        free(new_key as *mut ::core::ffi::c_void);
+        };
+        a = options_array_item(o, new_key.as_ptr());
         if a.is_null() {
             return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
         }
@@ -987,12 +964,13 @@ pub unsafe extern "C" fn options_parse(
             .expect("parsed array option has an opening bracket");
         let raw = CString::new(&input[open + 1..input.len() - 1])
             .expect("C string option name has no interior NUL");
-        let new_key = options_array_correct_key(raw.as_ptr());
-        if new_key.is_null() {
+        let Some(new_key) = options_array_correct_key(raw.as_ptr()) else {
             free(copy as *mut ::core::ffi::c_void);
             return ::core::ptr::null_mut::<::core::ffi::c_char>();
-        }
-        *key = new_key;
+        };
+        // options_parse returns a C-owned key. Copy at this ABI boundary;
+        // normalized scratch remains owned by the local CString.
+        *key = xstrdup(new_key.as_ptr());
         *copy.add(parsed.name.len()) = '\0' as ::core::ffi::c_char;
     }
     return copy;

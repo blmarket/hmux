@@ -1,4 +1,5 @@
 //! Behavior of the Rust-owned option-name index through the existing API.
+use hmux2::src::ffi::libc::free;
 use hmux2::src::options::*;
 use std::ffi::{CStr, CString};
 use std::ptr::{null, null_mut};
@@ -201,6 +202,15 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             CStr::from_ptr((*options_array_item_value(two)).string),
             c"updated"
         );
+        for (key, expected) in [
+            (c"0002".as_ptr(), b"updated".as_slice()),
+            (non_utf8.as_ptr(), b"value".as_slice()),
+            (c"4294967296".as_ptr(), b"".as_slice()),
+        ] {
+            let output = options_to_string(array, key, 0);
+            assert_eq!(CStr::from_ptr(output).to_bytes(), expected);
+            free(output.cast());
+        }
         for invalid in [c"", c"4294967296"] {
             assert_eq!(
                 options_array_set(array, invalid.as_ptr(), c"bad".as_ptr(), 0, null_mut()),

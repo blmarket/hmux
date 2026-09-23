@@ -1200,6 +1200,22 @@ legacy callers safe.
   `git diff --check` passed in the isolated worktree. No sanitizer run was
   performed.
 
+### Increment 60 — normalized option array keys (2026-09-22)
+
+- The private `options_array_correct_key` now returns `Option<CString>`.
+  `options_array_get`, `options_array_set`, and `options_to_string` borrow
+  normalized keys synchronously, removing their repeated C allocation/free
+  paths. `options_array_new` copies keys retained in array items.
+  `options_parse` makes a separate `xstrdup` only at its public C-owned
+  `*key` transfer boundary; its callers retain the same `free` contract.
+  Decimal numeric normalization and arbitrary non-UTF-8 text bytes remain.
+- Focused options tests cover C-owned string output. A private-server CLI
+  check covers leading-zero numeric aliases, non-UTF-8 text indexes,
+  invalid empty/overflow indexes, and deletion. Workspace tests, binary
+  build, changed-file rustfmt, `git diff --check`, and the live CLI check
+  passed in the isolated worktree. Repository-wide rustfmt reports unrelated
+  existing differences; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1214,11 +1230,13 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect normalized option array-key scratch, including the transferred
-   key returned by `options_parse`.
+2. Inspect the local `all = xstrdup(fmt)` copies in the three format loops.
+   Their nested expansions and cleanup paths need a reentrancy audit before
+   replacing the local C owner. Remaining `xstrndup` callers return or
+   transfer C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–59. The remaining
+Current validation is recorded in increments 15–60. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–59 has its own local commit; none was pushed.
+Each of increments 15–60 has its own local commit; none was pushed.
