@@ -698,23 +698,23 @@ pub(super) unsafe extern "C" fn format_choose(
     mut right: *mut *mut ::core::ffi::c_char,
     mut expand: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut left0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut right0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    cp = format_skip1(es, s, b",\0" as *const u8 as *const ::core::ffi::c_char);
+    let cp = format_skip1(es, s, b",\0" as *const u8 as *const ::core::ffi::c_char);
     if cp.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    left0 = xstrndup(s, cp.offset_from(s) as ::core::ffi::c_long as size_t);
-    right0 = xstrdup(cp.offset(1 as ::core::ffi::c_int as isize));
+    let split = cp.offset_from(s) as usize;
     if expand != 0 {
-        *left = format_expand1(es, left0);
-        free(left0 as *mut ::core::ffi::c_void);
-        *right = format_expand1(es, right0);
-        free(right0 as *mut ::core::ffi::c_void);
+        // Clone both operands before expansion: a format callback may reenter
+        // the formatter or change the storage backing the original input.
+        let left0 = CString::new(&CStr::from_ptr(s).to_bytes()[..split]).unwrap();
+        let right0 = CStr::from_ptr(cp.add(1)).to_owned();
+        *left = format_expand1(es, left0.as_ptr());
+        drop(left0);
+        *right = format_expand1(es, right0.as_ptr());
     } else {
-        *left = left0;
-        *right = right0;
+        // Loop callers retain and later free these C-owned operands.
+        *left = xstrndup(s, split as size_t);
+        *right = xstrdup(cp.add(1));
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -4378,4 +4378,71 @@ pub unsafe extern "C" fn format_single_from_target(
 ) -> *mut ::core::ffi::c_char {
     let mut tc: *mut client = cmdq_get_target_client(item);
     return format_single_from_state(item, fmt, tc, cmdq_get_target(item));
+}
+
+#[cfg(test)]
+mod format_choose_tests {
+    use super::*;
+
+    #[test]
+    fn split_operands_preserve_escapes_nesting_and_bytes() {
+        unsafe {
+            let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
+            let mut es: format_expand_state = std::mem::zeroed();
+            es.ft = ft;
+            es.start_time = get_timer();
+
+            for (input, expand, expected_left, expected_right) in [
+                (
+                    b"one#,two,three\0".as_slice(),
+                    0,
+                    b"one#,two".as_slice(),
+                    b"three".as_slice(),
+                ),
+                (b"\xff,\xfe\0", 0, b"\xff", b"\xfe"),
+                (b"#{?1,a,b},tail\0", 0, b"#{?1,a,b}", b"tail"),
+                (b"one#,two,three\0", 1, b"one,two", b"three"),
+                (b"\xff,\xfe\0", 1, b"\xff", b"\xfe"),
+                (b",\0", 1, b"", b""),
+            ] {
+                let input = CStr::from_bytes_with_nul(input).unwrap();
+                let mut left = std::ptr::null_mut();
+                let mut right = std::ptr::null_mut();
+                assert_eq!(
+                    format_choose(
+                        &raw mut es,
+                        input.as_ptr(),
+                        &raw mut left,
+                        &raw mut right,
+                        expand
+                    ),
+                    0,
+                    "{input:?}"
+                );
+                assert_eq!(CStr::from_ptr(left).to_bytes(), expected_left, "{input:?}");
+                assert_eq!(
+                    CStr::from_ptr(right).to_bytes(),
+                    expected_right,
+                    "{input:?}"
+                );
+                free(left.cast());
+                free(right.cast());
+            }
+
+            let mut left = std::ptr::null_mut();
+            let mut right = std::ptr::null_mut();
+            assert_eq!(
+                format_choose(
+                    &raw mut es,
+                    b"no delimiter\0".as_ptr().cast(),
+                    &raw mut left,
+                    &raw mut right,
+                    1,
+                ),
+                -1
+            );
+            assert!(left.is_null() && right.is_null());
+            format_free(ft);
+        }
+    }
 }

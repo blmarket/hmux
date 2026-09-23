@@ -1031,6 +1031,22 @@ legacy callers safe.
   focused E2E test after formatting, rustfmt, and `git diff --check` passed
   in the isolated worktree. No sanitizer run was performed.
 
+### Increment 48 — expanded format choice operands (2026-09-22)
+
+- `format_choose` now owns the two scratch operands for its `expand != 0`
+  branch as byte-preserving `CString` values, removing their `xstrndup` /
+  `xstrdup` and manual `free` pairs. Both are cloned before expansion; the
+  left owner drops before right expansion as before. `format_expand1` still
+  returns C-owned strings to the three arithmetic, repeat, and comparison
+  callers. The three `expand == 0` loop callers still receive and free their
+  C-owned operands.
+- Direct tests cover escaped commas, nested expressions, non-UTF-8 bytes,
+  empty operands, missing delimiters, and both ownership branches. A CLI
+  integration test exercises compare, repeat, arithmetic, and nested
+  expansion. Workspace tests, binary build, changed-file rustfmt, and
+  `git diff --check` passed in the isolated worktree. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1045,11 +1061,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect local format expansion strings, auditing return and callback
-   contracts first.
+2. Inspect other local format expansion scratch and parser buffers for
+   synchronous borrow-only use, auditing return and callback contracts first.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–47. The remaining
+Current validation is recorded in increments 15–48. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–47 has its own local commit; none was pushed.
+Each of increments 15–48 has its own local commit; none was pushed.
