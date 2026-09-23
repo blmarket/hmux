@@ -109,6 +109,20 @@ with tempfile.TemporaryDirectory(prefix="prompt-mutable-", dir=root / "target") 
         command = None
         assert run("show-options", "-gqv", "@prompt_history_recall") == b"history-owner\n"
 
+        command = subprocess.Popen(
+            base + ["command-prompt", "-N", "-t", client_tty, "-p", "numeric",
+                    "set-option -g @prompt_numeric '%%'"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        wait_for_terminal(b"numeric")
+        os.write(master, b"42x")  # A non-digit closes the numeric prompt without Enter.
+        _, stderr = command.communicate(timeout=5)
+        assert command.returncode == 0, stderr
+        command = None
+        assert run("show-options", "-gqv", "@prompt_numeric") == b"42\n"
+
         run("command-prompt", "-i", "-t", client_tty, "-p", "incremental",
             "-I", "seed", "set-option -g @prompt_saved '%%'")
         wait_for_terminal(b"incremental")

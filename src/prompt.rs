@@ -1800,17 +1800,16 @@ pub unsafe extern "C" fn prompt_key(
         if key >= '0' as i32 as key_code && key <= '9' as i32 as key_code {
             current_block = 1115217863795707468;
         } else {
-            s = utf8_tocstr((*pr).buffer);
+            let input = utf8_tocstr_cstring((*pr).buffer);
             if prompt_fire_callback(
                 pr,
-                s,
+                input.as_ptr(),
                 PROMPT_KEY_CLOSE,
                 ::core::ptr::null_mut::<::core::ffi::c_int>(),
             ) == 0
             {
                 (*pr).closed = 1 as ::core::ffi::c_int;
             }
-            free(s as *mut ::core::ffi::c_void);
             return PROMPT_KEY_NOT_HANDLED;
         }
     } else if (*pr).flags & (PROMPT_SINGLE | PROMPT_QUOTENEXT) != 0 {
