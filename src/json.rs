@@ -12,7 +12,7 @@ pub use crate::src::shared::ctype::{
 };
 use crate::src::shared::event::*;
 pub use crate::src::shared::json::{
-    json_fields, json_fields_storage, json_members, json_node, json_node_aentry,
+    json_fields, json_fields_storage, json_members, json_members_storage, json_node,
     json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
@@ -58,6 +58,7 @@ struct JsonNodeOwner {
     node: json_node,
     key: Option<CString>,
     string: Option<CString>,
+    members: Option<Box<json_members_storage>>,
 }
 
 const _: () = assert!(::core::mem::offset_of!(JsonNodeOwner, node) == 0);
@@ -141,6 +142,40 @@ unsafe fn json_fields_next(head: *mut json_fields, elm: *mut json_node) -> *mut 
         .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
 
+unsafe fn json_members_first(head: *mut json_members) -> *mut json_node {
+    if head.is_null() || (*head).storage.is_null() {
+        return ::core::ptr::null_mut::<json_node>();
+    }
+    (*(*head).storage)
+        .members
+        .first()
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<json_node>())
+}
+
+unsafe fn json_members_next(head: *mut json_members, elm: *mut json_node) -> *mut json_node {
+    if head.is_null() || (*head).storage.is_null() || elm.is_null() {
+        return ::core::ptr::null_mut::<json_node>();
+    }
+    let storage = &*(*head).storage;
+    storage
+        .indices
+        .get(&elm)
+        .and_then(|index| storage.members.get(index + 1))
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<json_node>())
+}
+
+unsafe fn json_members_push(head: *mut json_members, elm: *mut json_node) {
+    if head.is_null() || (*head).storage.is_null() || elm.is_null() {
+        return;
+    }
+    let storage = &mut *(*head).storage;
+    let index = storage.members.len();
+    storage.members.push(elm);
+    storage.indices.insert(elm, index);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn json_parse(
     mut input: *const ::core::ffi::c_char,
@@ -187,7 +222,7 @@ pub unsafe extern "C" fn json_array_first(mut jn: *mut json_node) -> *mut json_n
     {
         return ::core::ptr::null_mut::<json_node>();
     }
-    return (*jn).c2rust_unnamed.members.tqh_first;
+    return json_members_first(&raw mut (*jn).c2rust_unnamed.members);
 }
 #[no_mangle]
 pub unsafe extern "C" fn json_array_next(mut member: *mut json_node) -> *mut json_node {
@@ -198,7 +233,7 @@ pub unsafe extern "C" fn json_array_next(mut member: *mut json_node) -> *mut jso
     {
         return ::core::ptr::null_mut::<json_node>();
     }
-    return (*member).aentry.tqe_next;
+    return json_members_next(&raw mut (*(*member).parent).c2rust_unnamed.members, member);
 }
 #[no_mangle]
 pub unsafe extern "C" fn json_get_string(
@@ -653,6 +688,7 @@ unsafe extern "C" fn json_create_node(
             Some(CStr::from_ptr(key).to_owned())
         },
         string: None,
+        members: None,
     });
     owner.node.key = owner
         .key
@@ -667,8 +703,9 @@ unsafe extern "C" fn json_create_node(
     } else if type_0 as ::core::ffi::c_uint
         == NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        (*node).c2rust_unnamed.members.tqh_first = ::core::ptr::null_mut::<json_node>();
-        (*node).c2rust_unnamed.members.tqh_last = &raw mut (*node).c2rust_unnamed.members.tqh_first;
+        let owner = node.cast::<JsonNodeOwner>();
+        (*owner).members = Some(Box::new(json_members_storage::default()));
+        (*node).c2rust_unnamed.members.storage = (*owner).members.as_deref_mut().unwrap();
     }
     if !val.is_null() {
         json_assign_value(node, val);
@@ -702,15 +739,13 @@ pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
             }
         }
         4 => {
-            while !(*node).c2rust_unnamed.members.tqh_first.is_null() {
-                member = (*node).c2rust_unnamed.members.tqh_first;
-                if !(*member).aentry.tqe_next.is_null() {
-                    (*(*member).aentry.tqe_next).aentry.tqe_prev = (*member).aentry.tqe_prev;
-                } else {
-                    (*node).c2rust_unnamed.members.tqh_last = (*member).aentry.tqe_prev;
+            let storage = (*node).c2rust_unnamed.members.storage;
+            if !storage.is_null() {
+                let members = ::core::mem::take(&mut (*storage).members);
+                (*storage).indices.clear();
+                for member in members {
+                    json_destroy_node(member);
                 }
-                *(*member).aentry.tqe_prev = (*member).aentry.tqe_next;
-                json_destroy_node(member);
             }
         }
         1 | 2 | _ => {}
@@ -736,10 +771,7 @@ unsafe extern "C" fn json_assign_value(
             json_fields_insert(&raw mut (*node).c2rust_unnamed.fields, child);
         }
         4 => {
-            (*child).aentry.tqe_next = ::core::ptr::null_mut::<json_node>();
-            (*child).aentry.tqe_prev = (*node).c2rust_unnamed.members.tqh_last;
-            *(*node).c2rust_unnamed.members.tqh_last = child;
-            (*node).c2rust_unnamed.members.tqh_last = &raw mut (*child).aentry.tqe_next;
+            json_members_push(&raw mut (*node).c2rust_unnamed.members, child);
         }
         _ => {
             fatalx(b"unknown node type\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1241,7 +1273,7 @@ unsafe extern "C" fn json_string_append(mut buffer: *mut evbuffer, mut node: *mu
                 b"[\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
-            member = (*node).c2rust_unnamed.members.tqh_first;
+            member = json_members_first(&raw mut (*node).c2rust_unnamed.members);
             while !member.is_null() {
                 if comma != 0 {
                     evbuffer_add(
@@ -1253,7 +1285,7 @@ unsafe extern "C" fn json_string_append(mut buffer: *mut evbuffer, mut node: *mu
                 }
                 json_string_append(buffer, member);
                 comma = 1 as ::core::ffi::c_int;
-                member = (*member).aentry.tqe_next;
+                member = json_members_next(&raw mut (*node).c2rust_unnamed.members, member);
             }
             evbuffer_add(
                 buffer,

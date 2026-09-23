@@ -17,7 +17,7 @@ fn original_copies_match() {
     record!(
         "src/json.rs::json_members",
         hmux2::src::json::json_members,
-        [tqh_first, tqh_last]
+        [storage]
     );
     record!(
         "src/cmd_display_message.rs::json_node",
@@ -27,17 +27,12 @@ fn original_copies_match() {
     record!(
         "src/json.rs::json_node",
         hmux2::src::json::json_node,
-        [type_0, key, parent, c2rust_unnamed, oentry, aentry]
+        [type_0, key, parent, c2rust_unnamed, oentry]
     );
     record!(
         "src/layout_custom.rs::json_node",
         *mut hmux2::src::layout_custom::json_node,
         []
-    );
-    record!(
-        "src/json.rs::C2RustUnnamed_0",
-        hmux2::src::json::json_node_aentry,
-        [tqe_next, tqe_prev]
     );
     record!(
         "src/json.rs::C2RustUnnamed_2",
