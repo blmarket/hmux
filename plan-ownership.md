@@ -1290,6 +1290,20 @@ legacy callers safe.
   for escaped separators, nested commands, and non-UTF-8 key-command text.
   No sanitizer was run.
 
+### Increment 218 — command-prompt name scratch owner (2026-09-23)
+
+- Private `args_make_commands_get_command_cstring` now owns the first parsed
+  command name or the raw command prefix. `cmd_command_prompt_exec` borrows it
+  while building the default prompt, removing its C-owned temporary and free.
+  The exported `args_make_commands_get_command` remains libc-freeable. The
+  prefix keeps the original `strcspn(" ,")` split, `c_int` printf precision
+  behavior, arbitrary bytes, and first-NUL view.
+- Workspace tests, library/binary build, changed-file rustfmt, Python syntax,
+  and diff checks passed. An attached-client
+  `scripts/command_prompt_name_owner_cli_checks.py` matched the pinned
+  baseline for raw-string and parsed command-list prompt labels and effects.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1300,11 +1314,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The command-prompt caller of `args_make_commands_get_command` still copies
-   its result into prompt bytes and frees the C allocation. A private owned
-   producer can cover that caller while the exported wrapper remains
-   libc-freeable. The command-list cache in `args_value_as_string` is retained
-   in its C-layout record and needs a record-owner migration.
+1. `server_client_exec` assembles a temporary `MSG_EXEC` byte payload with
+   `xmalloc`, two `memcpy` calls, and `free`; `proc_send` copies the payload
+   synchronously through `imsg_compose` and `ibuf_add`. A `Vec<u8>` can own the
+   payload without changing the wire format. The command-list cache in
+   `args_value_as_string` is retained in its C-layout record and needs a
+   record-owner migration.
    `file_get_path` remains deferred:
    `client_file.path` is a
    public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
@@ -1339,9 +1354,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–217. The remaining
+Current validation is recorded in increments 15–218. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–217 has its own local commit; none was pushed.
+Each of increments 15–218 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

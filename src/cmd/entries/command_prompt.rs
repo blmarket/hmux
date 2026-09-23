@@ -1,6 +1,6 @@
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_free,
-    args_make_commands_get_command, args_make_commands_prepare,
+    args_make_commands_get_command_cstring, args_make_commands_prepare,
 };
 use crate::src::cmd::{cmd_append_argv, cmd_copy_argv, cmd_free_argv, cmd_get_args, cmd_list_free};
 use crate::src::cmd_queue::{
@@ -57,8 +57,8 @@ pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 pub use crate::src::shared::prompt::{
-    prompt_free_cb, prompt_result, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE,
-    PROMPT_INCREMENTAL, PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE,
+    PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL, PROMPT_ISPANE,
+    PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE, prompt_free_cb, prompt_result,
 };
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
@@ -193,7 +193,6 @@ unsafe extern "C" fn cmd_command_prompt_exec(
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut prompt_bytes = Vec::<u8>::new();
     let mut wp: *mut window_pane = (*target).wp;
     let mut count: u_int = args_count(args);
@@ -240,11 +239,10 @@ unsafe extern "C" fn cmd_command_prompt_exec(
     s = args_get(args, 'p' as i32 as u_char);
     if s.is_null() {
         if count != 0 as u_int {
-            tmp = args_make_commands_get_command((*cdata).state);
+            let command = args_make_commands_get_command_cstring((*cdata).state);
             prompt_bytes.push(b'(');
-            prompt_bytes.extend_from_slice(CStr::from_ptr(tmp).to_bytes());
+            prompt_bytes.extend_from_slice(command.as_bytes());
             prompt_bytes.push(b')');
-            free(tmp as *mut ::core::ffi::c_void);
         } else {
             prompt_bytes.push(b':');
             space = 0;

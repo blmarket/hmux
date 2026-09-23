@@ -1347,27 +1347,32 @@ pub unsafe extern "C" fn args_make_commands_free(mut state: *mut args_command_st
 pub unsafe extern "C" fn args_make_commands_get_command(
     mut state: *mut args_command_state,
 ) -> *mut ::core::ffi::c_char {
-    let mut first: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    let mut n: ::core::ffi::c_int = 0;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let command = args_make_commands_get_command_cstring(state);
+    xstrdup(command.as_ptr())
+}
+
+pub(crate) unsafe fn args_make_commands_get_command_cstring(
+    state: *mut args_command_state,
+) -> CString {
     if !(*state).cmdlist.is_null() {
-        first = cmd_list_first((*state).cmdlist);
+        let first = cmd_list_first((*state).cmdlist);
         if first.is_null() {
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+            return CString::new(Vec::new()).expect("empty command name has no NUL");
         }
-        return xstrdup((*cmd_get_entry(first)).name);
+        return CStr::from_ptr((*cmd_get_entry(first)).name).to_owned();
     }
-    n = strcspn(
+    let n = strcspn(
         (*state).cmd,
         b" ,\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    xasprintf(
-        &raw mut s,
-        b"%.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        n,
-        (*state).cmd,
-    );
-    return s;
+    let command = CStr::from_ptr((*state).cmd).to_bytes();
+    // A negative printf precision leaves the whole string untruncated.
+    let prefix = if n < 0 {
+        command
+    } else {
+        &command[..n as usize]
+    };
+    CString::new(prefix).expect("command prefix has no NUL")
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_first_value(
