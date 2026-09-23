@@ -125,12 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_option_is_changed` still calls C-return
-   `options_to_string` for both array and scalar current values, compares
-   them synchronously, then manually frees them. Its default-value producer
-   is now owned. The existing private `options_to_cstring` can own the
-   current values too, provided the temporary defaults options tree remains
-   alive through both conversions and drops in the same order.
+1. `window_customize_set_array_key_callback` still calls C-return
+   `options_to_string` to snapshot the old array element, passes it to
+   `options_array_set`, then frees it on success and error. The existing
+   private `options_to_cstring` can own the snapshot because
+   `options_array_set` parses or copies its input before returning. Preserve
+   the error display and old-element deletion order; the customize array-key
+   prompt CLI covers the path.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1476,6 +1477,18 @@ name error.
 - The customize option prompt CLI now checks the rendered default text.
   Candidate and pinned tmux passed that script plus customize reset and
   array-key prompt scripts. Serialized workspace tests, binary build,
+  changed-file rustfmt, and diff check passed. No sanitizer ran.
+
+### Increment 442 — own customize changed-value comparisons (2026-09-23)
+
+- `window_customize_option_is_changed` now borrows `CString` results from
+  `options_to_cstring` for both current and default array values and for the
+  scalar current value. It drops the two array snapshots before freeing the
+  temporary defaults tree, preserving the former release order. Removed
+  the C-return copies and manual frees from this comparison path.
+- A new attached-client CLI check toggles the `C` changed-only filter for
+  equal and changed scalar and array values. Candidate and pinned tmux
+  passed the same four cases. Serialized workspace tests, binary build,
   changed-file rustfmt, and diff check passed. No sanitizer ran.
 
 ## Historical migration index

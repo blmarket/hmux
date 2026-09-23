@@ -961,9 +961,6 @@ unsafe extern "C" fn window_customize_option_is_changed(
     let mut defaults: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut default_ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut default_value: *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut changed: ::core::ffi::c_int = 0;
     if oe.is_null() || !options_get_monitor_data(o).is_null() {
         return 1 as ::core::ffi::c_int;
@@ -984,23 +981,25 @@ unsafe extern "C" fn window_customize_option_is_changed(
                 return changed;
             }
         }
-        value = options_to_string(o, array_key, 0 as ::core::ffi::c_int);
-        default_value = options_to_string(defaults, array_key, 0 as ::core::ffi::c_int);
-        changed = (strcmp(value, default_value) != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-        free(value as *mut ::core::ffi::c_void);
-        free(default_value as *mut ::core::ffi::c_void);
+        let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
+        let default_value = options_to_cstring(defaults, array_key, 0 as ::core::ffi::c_int);
+        changed = (strcmp(value.as_ptr(), default_value.as_ptr()) != 0 as ::core::ffi::c_int)
+            as ::core::ffi::c_int;
+        drop(value);
+        drop(default_value);
         options_free(oo);
         return changed;
     }
-    value = options_to_string(
+    let value = options_to_cstring(
         o,
         ::core::ptr::null::<::core::ffi::c_char>(),
         0 as ::core::ffi::c_int,
     );
     let default_value = options_default_to_cstring(oe);
-    changed =
-        (strcmp(value, default_value.as_ptr()) != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    free(value as *mut ::core::ffi::c_void);
+    changed = (strcmp(value.as_ptr(), default_value.as_ptr()) != 0 as ::core::ffi::c_int)
+        as ::core::ffi::c_int;
+    drop(value);
+    drop(default_value);
     return changed;
 }
 unsafe extern "C" fn window_customize_key_is_changed(
