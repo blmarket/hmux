@@ -2160,6 +2160,25 @@ legacy callers safe.
   custom-terminfo PTY scenario passed. Rustfmt reports only three import
   layout differences also present in the base commit. No sanitizer was run.
 
+### Increment 121 — sorted key-binding candidate lists (2026-09-22)
+
+- `sort_get_key_bindings` and `sort_get_key_bindings_table` now return a
+  caller-owned `Vec<*mut key_binding>`. `cmd_list_keys_exec` keeps that list
+  through filtering, width calculation, repeat checks, formatting, and output;
+  the prefix/root merge extends the same owned list. Key-binding objects stay
+  owned by their tables. Both process-global `xreallocarray` caches and their
+  capacity counters are gone.
+- Sorting retains the existing comparator and contiguous `sort_qsort` storage.
+  The translated sort symbols are no longer exported by the staticlib; no
+  in-tree or documented foreign consumer was found. An empty table now gives
+  an empty list, including `list-keys -N` after both relevant tables are
+  removed.
+- Isolated validation: serialized workspace tests, binary build, key and
+  command-queue CLI checks, and `git diff --check` passed. A live-server test
+  covers all-table enumeration and the empty-table case. Rustfmt reports two
+  import-layout differences also present in the base commit. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2201,9 +2220,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–120. The remaining
+Current validation is recorded in increments 15–121. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–120 has its own local commit; none was pushed.
+Each of increments 15–121 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

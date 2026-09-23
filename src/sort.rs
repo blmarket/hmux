@@ -916,40 +916,20 @@ pub unsafe extern "C" fn sort_get_winlinks_session(
     *n = i;
     return l;
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_key_bindings(
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut key_binding {
-    let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut i: u_int = 0 as u_int;
-    static mut l: *mut *mut key_binding =
-        ::core::ptr::null::<*mut key_binding>() as *mut *mut key_binding;
-    static mut lsz: u_int = 0 as u_int;
-    table = key_bindings_first_table();
+pub unsafe fn sort_get_key_bindings(sort_crit: *mut sort_criteria) -> Vec<*mut key_binding> {
+    let mut bindings = Vec::new();
+    let mut table = key_bindings_first_table();
     while !table.is_null() {
-        bd = key_bindings_first(table);
+        let mut bd = key_bindings_first(table);
         while !bd.is_null() {
-            if lsz <= i {
-                lsz = lsz.wrapping_add(100 as u_int);
-                l = xreallocarray(
-                    l as *mut ::core::ffi::c_void,
-                    lsz as size_t,
-                    ::core::mem::size_of::<*mut key_binding>() as size_t,
-                ) as *mut *mut key_binding;
-            }
-            let fresh18 = i;
-            i = i.wrapping_add(1);
-            let ref mut fresh19 = *l.offset(fresh18 as isize);
-            *fresh19 = bd;
+            bindings.push(bd);
             bd = key_bindings_next(table, bd);
         }
         table = key_bindings_next_table(table);
     }
     sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
+        bindings.as_mut_ptr() as *mut ::core::ffi::c_void,
+        u_int::try_from(bindings.len()).expect("too many key bindings to sort"),
         ::core::mem::size_of::<*mut key_binding>() as u_int,
         Some(
             sort_key_binding_cmp
@@ -960,39 +940,24 @@ pub unsafe extern "C" fn sort_get_key_bindings(
         ),
         sort_crit,
     );
-    *n = i;
-    return l;
+    bindings
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_key_bindings_table(
-    mut table: *mut key_table,
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut key_binding {
-    let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut i: u_int = 0 as u_int;
-    static mut l: *mut *mut key_binding =
-        ::core::ptr::null::<*mut key_binding>() as *mut *mut key_binding;
-    static mut lsz: u_int = 0 as u_int;
-    bd = key_bindings_first(table);
+pub unsafe fn sort_get_key_bindings_table(
+    table: *mut key_table,
+    sort_crit: *mut sort_criteria,
+) -> Vec<*mut key_binding> {
+    let mut bindings = Vec::new();
+    if table.is_null() {
+        return bindings;
+    }
+    let mut bd = key_bindings_first(table);
     while !bd.is_null() {
-        if lsz <= i {
-            lsz = lsz.wrapping_add(100 as u_int);
-            l = xreallocarray(
-                l as *mut ::core::ffi::c_void,
-                lsz as size_t,
-                ::core::mem::size_of::<*mut key_binding>() as size_t,
-            ) as *mut *mut key_binding;
-        }
-        let fresh20 = i;
-        i = i.wrapping_add(1);
-        let ref mut fresh21 = *l.offset(fresh20 as isize);
-        *fresh21 = bd;
+        bindings.push(bd);
         bd = key_bindings_next(table, bd);
     }
     sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
+        bindings.as_mut_ptr() as *mut ::core::ffi::c_void,
+        u_int::try_from(bindings.len()).expect("too many key bindings to sort"),
         ::core::mem::size_of::<*mut key_binding>() as u_int,
         Some(
             sort_key_binding_cmp
@@ -1003,6 +968,5 @@ pub unsafe extern "C" fn sort_get_key_bindings_table(
         ),
         sort_crit,
     );
-    *n = i;
-    return l;
+    bindings
 }

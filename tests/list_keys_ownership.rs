@@ -92,6 +92,14 @@ fn notes_listing_combines_tables_filters_and_repeats() {
     assert_eq!(listing(), expected);
     assert_eq!(listing(), expected);
 
+    let all = server.success(&["list-keys", "-F", "#{key_table}|#{key_string}"]);
+    assert!(all
+        .windows(b"prefix|C-a\n".len())
+        .any(|row| row == b"prefix|C-a\n"));
+    assert!(all
+        .windows(b"root|C-b\n".len())
+        .any(|row| row == b"root|C-b\n"));
+
     let filtered = server.success(&[
         "list-keys",
         "-N",
@@ -113,4 +121,6 @@ fn notes_listing_combines_tables_filters_and_repeats() {
 
     server.success(&["unbind-key", "-a", "-T", "root"]);
     assert_eq!(listing(), b"prefix|C-a|prefix-note\n");
+    server.success(&["unbind-key", "-a", "-T", "prefix"]);
+    assert_eq!(listing(), b"");
 }

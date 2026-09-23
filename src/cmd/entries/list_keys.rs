@@ -135,37 +135,22 @@ unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
     }
     key_string_format(prefix, false)
 }
-unsafe extern "C" fn cmd_list_keys_get_width(mut l: *mut *mut key_binding, mut n: u_int) -> u_int {
-    let mut i: u_int = 0;
-    let mut width: u_int = 0;
-    let mut keywidth: u_int = 0 as u_int;
-    i = 0 as u_int;
-    while i < n {
-        let key_string = key_string_format((**l.offset(i as isize)).key, false);
-        width = utf8_cstrwidth(key_string.as_ptr());
-        if width > keywidth {
-            keywidth = width;
-        }
-        i = i.wrapping_add(1);
-    }
-    return keywidth;
+unsafe fn cmd_list_keys_get_width(bindings: &[*mut key_binding]) -> u_int {
+    bindings
+        .iter()
+        .map(|&bd| {
+            let key_string = key_string_format((*bd).key, false);
+            utf8_cstrwidth(key_string.as_ptr())
+        })
+        .max()
+        .unwrap_or(0)
 }
-unsafe extern "C" fn cmd_list_keys_get_table_width(
-    mut l: *mut *mut key_binding,
-    mut n: u_int,
-) -> u_int {
-    let mut i: u_int = 0;
-    let mut width: u_int = 0;
-    let mut tablewidth: u_int = 0 as u_int;
-    i = 0 as u_int;
-    while i < n {
-        width = utf8_cstrwidth((**l.offset(i as isize)).tablename);
-        if width > tablewidth {
-            tablewidth = width;
-        }
-        i = i.wrapping_add(1);
-    }
-    return tablewidth;
+unsafe fn cmd_list_keys_get_table_width(bindings: &[*mut key_binding]) -> u_int {
+    bindings
+        .iter()
+        .map(|&bd| utf8_cstrwidth((*bd).tablename))
+        .max()
+        .unwrap_or(0)
 }
 unsafe fn cmd_list_keys_get_root_and_prefix(
     sort_crit: *mut sort_criteria,
@@ -177,41 +162,21 @@ unsafe fn cmd_list_keys_get_root_and_prefix(
     let mut bindings = Vec::new();
     for name in tables {
         let table = key_bindings_get_table(name, 0);
-        let mut count = 0;
-        let sorted = sort_get_key_bindings_table(table, &raw mut count, sort_crit);
-        if count != 0 {
-            // The sorter reuses its scratch array, so copy each table before
-            // requesting the next one.
-            bindings.extend_from_slice(std::slice::from_raw_parts(sorted, count as usize));
-        }
+        bindings.extend(sort_get_key_bindings_table(table, sort_crit));
     }
     bindings
 }
-unsafe extern "C" fn cmd_list_keys_filter_key_list(
-    mut filter_notes: ::core::ffi::c_int,
-    mut filter_key: ::core::ffi::c_int,
-    mut only: key_code,
-    mut l: *mut *mut key_binding,
-    mut n: *mut u_int,
+unsafe fn cmd_list_keys_filter_key_list(
+    filter_notes: ::core::ffi::c_int,
+    filter_key: ::core::ffi::c_int,
+    only: key_code,
+    bindings: &mut Vec<*mut key_binding>,
 ) {
-    let mut key: key_code = 0;
-    let mut i: u_int = 0;
-    let mut j: u_int = 0 as u_int;
-    i = 0 as u_int;
-    while i < *n {
-        key = ((**l.offset(i as isize)).key as ::core::ffi::c_ulonglong
-            & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS)) as key_code;
-        if !(filter_key != 0 && only != key) {
-            if !(filter_notes != 0 && (**l.offset(i as isize)).note.is_null()) {
-                let fresh0 = j;
-                j = j.wrapping_add(1);
-                let ref mut fresh1 = *l.offset(fresh0 as isize);
-                *fresh1 = *l.offset(i as isize);
-            }
-        }
-        i = i.wrapping_add(1);
-    }
-    *n = j;
+    bindings.retain(|&bd| {
+        let key = ((*bd).key as ::core::ffi::c_ulonglong & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
+            as key_code;
+        (filter_key == 0 || only == key) && (filter_notes == 0 || !(*bd).note.is_null())
+    });
 }
 unsafe fn cmd_list_keys_format_add_key_binding(
     mut ft: *mut format_tree,
@@ -287,14 +252,11 @@ unsafe extern "C" fn cmd_list_keys_exec(
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
-    let mut l: *mut *mut key_binding = ::core::ptr::null_mut::<*mut key_binding>();
     let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
-    let mut n: u_int = 0;
     let mut single: ::core::ffi::c_int = 0;
     let mut notes_only: ::core::ffi::c_int = 0;
     let mut filter_notes: ::core::ffi::c_int = 0;
@@ -304,7 +266,6 @@ unsafe extern "C" fn cmd_list_keys_exec(
         reversed: 0,
         order_seq: ::core::ptr::null_mut::<sort_order>(),
     };
-    let mut root_and_prefix = None;
     keystr = args_string(args, 0 as u_int);
     if !keystr.is_null() {
         only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
@@ -349,27 +310,20 @@ unsafe extern "C" fn cmd_list_keys_exec(
     if template.is_null() {
         template = LIST_KEYS_TEMPLATE.as_ptr();
     }
-    if !table.is_null() {
-        l = sort_get_key_bindings_table(table, &raw mut n, &raw mut sort_crit);
+    let mut bindings = if !table.is_null() {
+        sort_get_key_bindings_table(table, &raw mut sort_crit)
     } else if notes_only != 0 {
-        root_and_prefix = Some(cmd_list_keys_get_root_and_prefix(&raw mut sort_crit));
-        let bindings = root_and_prefix.as_mut().unwrap();
-        n = bindings.len() as u_int;
-        l = if bindings.is_empty() {
-            ::core::ptr::null_mut()
-        } else {
-            bindings.as_mut_ptr()
-        };
+        cmd_list_keys_get_root_and_prefix(&raw mut sort_crit)
     } else {
-        l = sort_get_key_bindings(&raw mut n, &raw mut sort_crit);
-    }
+        sort_get_key_bindings(&raw mut sort_crit)
+    };
     filter_notes =
         (notes_only != 0 && args_has(args, 'a' as i32 as u_char) == 0) as ::core::ffi::c_int;
     filter_key = (only != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code) as ::core::ffi::c_int;
     if filter_notes != 0 || filter_key != 0 {
-        cmd_list_keys_filter_key_list(filter_notes, filter_key, only, l, &raw mut n);
+        cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut bindings);
     }
-    if filter_key != 0 && n == 0 as u_int {
+    if filter_key != 0 && bindings.is_empty() {
         cmdq_error(
             item,
             b"unknown key: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -377,8 +331,8 @@ unsafe extern "C" fn cmd_list_keys_exec(
         );
         return CMD_RETURN_ERROR;
     }
-    if single != 0 && n > 1 as u_int {
-        n = 1 as u_int;
+    if single != 0 {
+        bindings.truncate(1);
     }
     ft = format_create(
         cmdq_get_client(item),
@@ -403,23 +357,25 @@ unsafe extern "C" fn cmd_list_keys_exec(
         ft,
         b"key_has_repeat\0" as *const u8 as *const ::core::ffi::c_char,
         b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-        key_bindings_has_repeat(l, n),
+        key_bindings_has_repeat(
+            bindings.as_mut_ptr(),
+            u_int::try_from(bindings.len()).expect("too many key bindings to list"),
+        ),
     );
     format_add(
         ft,
         b"key_string_width\0" as *const u8 as *const ::core::ffi::c_char,
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd_list_keys_get_width(l, n),
+        cmd_list_keys_get_width(&bindings),
     );
     format_add(
         ft,
         b"key_table_width\0" as *const u8 as *const ::core::ffi::c_char,
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd_list_keys_get_table_width(l, n),
+        cmd_list_keys_get_table_width(&bindings),
     );
-    i = 0 as u_int;
-    while i < n {
-        cmd_list_keys_format_add_key_binding(ft, *l.offset(i as isize), &prefix);
+    for &bd in &bindings {
+        cmd_list_keys_format_add_key_binding(ft, bd, &prefix);
         line = format_expand(ft, template);
         if single != 0 && !tc.is_null() && !(*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
             status_message_set(
@@ -442,9 +398,7 @@ unsafe extern "C" fn cmd_list_keys_exec(
         if single != 0 {
             break;
         }
-        i = i.wrapping_add(1);
     }
     format_free(ft);
-    drop(root_and_prefix);
     return CMD_RETURN_NORMAL;
 }
