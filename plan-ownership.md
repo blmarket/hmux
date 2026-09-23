@@ -1347,6 +1347,20 @@ legacy callers safe.
   staged `git diff --check` passed in the isolated worktree. No sanitizer
   run was performed.
 
+### Increment 70 — candidate session list (2026-09-22)
+
+- `cmd_find_best_session_with_window` now gathers borrowed session pointers
+  in a local `Vec`, replacing its `xreallocarray` growth, explicit count,
+  and both `free` paths. `cmd_find_best_session` borrows the array only for
+  its synchronous ranking pass. The selected session is stored before the
+  Vec drops at the former free point; winlink lookup follows that drop.
+  The zero-candidate branch still skips selection.
+- `tests/cmd_find_session_list.rs` uses a private server to check lookup of
+  a window owned by one session, shared by two sessions, and left with one
+  session after unlinking. Workspace tests, binary build, changed-file
+  rustfmt, and `git diff --check` passed in the isolated worktree. A live
+  window cannot exercise the zero-member branch; no sanitizer run was done.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1361,12 +1375,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `tty_keys_clipboard`'s local base64 copy and other bounded parser
-   buffers. Its decoded output has a separate transfer path. Remaining
-   `xstrndup` callers return or transfer C-owned strings.
+2. Inspect `tty_keys_clipboard`'s local base64 copy and
+   `cmd_find_target`'s mutable target split. Remaining `xstrndup` callers
+   return or transfer C-owned strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–69. The remaining
+Current validation is recorded in increments 15–70. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–69 has its own local commit; none was pushed.
+Each of increments 15–70 has its own local commit; none was pushed.

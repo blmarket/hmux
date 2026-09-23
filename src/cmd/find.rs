@@ -327,38 +327,37 @@ unsafe extern "C" fn cmd_find_best_session(
 unsafe extern "C" fn cmd_find_best_session_with_window(
     mut fs: *mut cmd_find_state,
 ) -> ::core::ffi::c_int {
-    let mut slist: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
-    let mut ssize: u_int = 0;
+    let mut slist: Vec<*mut session> = Vec::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     log_debug(
         b"%s: window is @%u\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_find_best_session_with_window\0" as *const u8 as *const ::core::ffi::c_char,
         (*(*fs).w).id,
     );
-    ssize = 0 as u_int;
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         if !(session_has(s, (*fs).w) == 0) {
-            slist = xreallocarray(
-                slist as *mut ::core::ffi::c_void,
-                ssize.wrapping_add(1 as u_int) as size_t,
-                ::core::mem::size_of::<*mut session>() as size_t,
-            ) as *mut *mut session;
-            let fresh2 = ssize;
-            ssize = ssize.wrapping_add(1);
-            let ref mut fresh3 = *slist.offset(fresh2 as isize);
-            *fresh3 = s;
+            slist.push(s);
         }
         s = sessions_next(s);
     }
-    if !(ssize == 0 as u_int) {
-        (*fs).s = cmd_find_best_session(slist, ssize, (*fs).flags);
+    let best = if slist.is_empty() {
+        None
+    } else {
+        Some(cmd_find_best_session(
+            slist.as_mut_ptr(),
+            slist.len() as u_int,
+            (*fs).flags,
+        ))
+    };
+    if let Some(best) = best {
+        (*fs).s = best;
         if !(*fs).s.is_null() {
-            free(slist as *mut ::core::ffi::c_void);
+            drop(slist);
             return cmd_find_best_winlink_with_window(fs);
         }
     }
-    free(slist as *mut ::core::ffi::c_void);
+    drop(slist);
     return -(1 as ::core::ffi::c_int);
 }
 unsafe extern "C" fn cmd_find_best_winlink_with_window(
