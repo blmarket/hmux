@@ -7176,8 +7176,7 @@ unsafe extern "C" fn window_copy_match_at_cursor(
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut sx: u_int = (*(*(*data).backing).grid).sx;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0 as size_t;
+    let mut output = Vec::<u8>::new();
     if (*data).searchmark.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
@@ -7208,30 +7207,23 @@ unsafe extern "C" fn window_copy_match_at_cursor(
             &raw mut gc,
         );
         if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-            buf = xrealloc(
-                buf as *mut ::core::ffi::c_void,
-                len.wrapping_add(2 as size_t),
-            ) as *mut ::core::ffi::c_char;
-            *buf.offset(len as isize) = '\t' as i32 as ::core::ffi::c_char;
-            len = len.wrapping_add(1);
+            output.push(b'\t');
         } else if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
-            buf = xrealloc(
-                buf as *mut ::core::ffi::c_void,
-                len.wrapping_add(gc.data.size as size_t)
-                    .wrapping_add(1 as size_t),
-            ) as *mut ::core::ffi::c_char;
-            memcpy(
-                buf.offset(len as isize) as *mut ::core::ffi::c_void,
-                &raw mut gc.data.data as *mut u_char as *const ::core::ffi::c_void,
-                gc.data.size as size_t,
-            );
-            len = len.wrapping_add(gc.data.size as size_t);
+            output.extend_from_slice(std::slice::from_raw_parts(
+                gc.data.data.as_ptr(),
+                gc.data.size as usize,
+            ));
         }
         at = at.wrapping_add(1);
     }
-    if len != 0 as size_t {
-        *buf.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
+    if output.is_empty() {
+        return ::core::ptr::null_mut();
     }
+    // Both callers treat the result as a libc-freeable C string. Keep all
+    // grid bytes, including any interior NUL, before the final terminator.
+    let buf = xmalloc(output.len() + 1) as *mut ::core::ffi::c_char;
+    std::ptr::copy_nonoverlapping(output.as_ptr(), buf.cast::<u8>(), output.len());
+    *buf.add(output.len()) = 0;
     return buf;
 }
 unsafe extern "C" fn window_copy_update_style(

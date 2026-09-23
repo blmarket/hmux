@@ -1542,6 +1542,19 @@ legacy callers safe.
   environment prompt/rows, mutable prompt, and embedded-NUL copy-view CLI
   checks passed with the pinned baseline. No sanitizer was run.
 
+### Increment 235 — copy-mode match text output owner (2026-09-23)
+
+- `window_copy_match_at_cursor` now accumulates tab and grid-cell bytes in a
+  local `Vec<u8>` and makes one final NUL-terminated C allocation for the
+  `search_match` format callback and selection fallback. Removed the
+  per-cell `xrealloc`, manual length, and pointer writes. Empty matches still
+  return null; interior NUL bytes stay in the allocated result even though
+  both C-string consumers stop at the first NUL.
+- Binary build, `copy_regex_cells` test, changed-file rustfmt, Python AST, and
+  diff checks passed. `scripts/copy_match_owner_cli_checks.py` matched the
+  pinned baseline for search-match formatting and copy fallback with a tab
+  and wide characters. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1552,10 +1565,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_copy_match_at_cursor` has a private match-text buffer grown with
-   `xrealloc` while walking grid cells. Audit its two callers and embedded-NUL
-   behavior; a local `Vec<u8>` can own the full byte result before one C-owned
-   return copy. This is separate from the shared regex buffers below.
+1. `format_trim_left` and `format_trim_right` still assemble output through
+   manual C-buffer growth. Their private callers can keep one C-owned result
+   while the complete scratch assembly moves to `Vec<u8>`; a focused baseline
+   comparison is being prepared.
 2. The command-list cache in `args_value_as_string` is retained in its
    movable C-layout record. A pointer-keyed sidecar is disallowed by the type
    policy; migrate only with a real record owner that preserves the public
