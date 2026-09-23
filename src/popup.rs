@@ -147,6 +147,7 @@ struct PopupOwner {
     title: Option<CString>,
     style: Option<CString>,
     border_style: Option<CString>,
+    overlay_ranges: [visible_range; 2],
 }
 const _: () = assert!(std::mem::offset_of!(PopupOwner, raw) == 0);
 
@@ -176,7 +177,6 @@ unsafe extern "C" fn popup_free(mut pd: *mut popup_data) {
     if !(*pd).ictx.is_null() {
         input_free((*pd).ictx);
     }
-    free((*pd).r.ranges as *mut ::core::ffi::c_void);
     screen_free(&raw mut (*pd).s);
     colour_palette_free(&raw mut (*pd).palette);
     drop(Box::from_raw(pd.cast::<PopupOwner>()));
@@ -1071,11 +1071,14 @@ pub unsafe extern "C" fn popup_display(
         title: popup_optional_string(title),
         style: popup_optional_string(style),
         border_style: popup_optional_string(border_style),
+        overlay_ranges: [visible_range { px: 0, nx: 0 }; 2],
     });
     pd = Box::into_raw(owner).cast::<popup_data>();
     (*pd).item = item;
     (*pd).flags = flags;
     let owner = &mut *pd.cast::<PopupOwner>();
+    owner.raw.r.ranges = owner.overlay_ranges.as_mut_ptr();
+    owner.raw.r.size = owner.overlay_ranges.len() as u_int;
     owner.raw.title = owner
         .title
         .as_ref()

@@ -3266,6 +3266,19 @@ legacy callers safe.
   baseline. Full workspace tests, binary build, changed-file rustfmt, and diff
   checks passed. No sanitizer was run.
 
+### Increment 356 — popup overlay range storage (2026-09-23)
+
+- `PopupOwner` now stores two `visible_range` elements inline and lends their
+  stable boxed address through `popup_data.r`. `popup_check_cb` is the only
+  producer of this view; `server_client_overlay_range` requests either one or
+  two slots, so its capacity check no longer reallocates this popup storage.
+  Removed `popup_free`'s range `free`. The view remains valid only while the
+  popup owner is installed; no C layout or exported callback signature changed.
+- The attached popup owner CLI check passed for both the candidate and pinned
+  baseline, covering display, replacement, automatic close, and client detach.
+  Full workspace tests, binary build, changed-file rustfmt, and diff checks
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3276,12 +3289,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Popup overlay ranges can move into two inline `visible_range` slots in the
-   already boxed `PopupOwner`; `server_client_overlay_range` requests at most
-   two slots. The two in-tree `monitor_parse` callers can also take owned
-   `CString` outputs while its exported C-owned result contract remains.
-   Exported `args_from_vector` still returns a C-owned array to external
-   callers; no in-tree production caller uses it now.
+1. The two in-tree `monitor_parse` callers can take owned `CString` outputs
+   while its exported C-owned result contract remains. Exported
+   `args_from_vector` still returns a C-owned array to external callers; no
+   in-tree production caller uses it now.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
