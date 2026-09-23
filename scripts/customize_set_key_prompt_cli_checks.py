@@ -7,6 +7,7 @@ import pathlib
 import pty
 import re
 import select
+import shlex
 import struct
 import subprocess
 import tempfile
@@ -85,7 +86,12 @@ def check(binary_path, kind):
                 # The prompt rejects an empty value, so clear the note using
                 # the customize tree's editor action and a deterministic editor.
                 editor = pathlib.Path(tmp) / "clear-note-editor"
-                editor.write_text("#!/bin/sh\nprintf '\\n' > \"$1\"\n")
+                editor_input = pathlib.Path(tmp) / "note-editor-input"
+                editor.write_text(
+                    "#!/bin/sh\n"
+                    f"cat \"$1\" > {shlex.quote(str(editor_input))}\n"
+                    "printf '\\n' > \"$1\"\n"
+                )
                 editor.chmod(0o700)
                 run("set-option", "-g", "editor", str(editor))
                 run("send-keys", "-t", "keys:0.0", "e")
@@ -95,6 +101,7 @@ def check(binary_path, kind):
                 ).strip():
                     assert time.monotonic() < deadline, "note editor did not clear note"
                     time.sleep(0.05)
+                assert editor_input.read_bytes() == edited_note, editor_input.read_bytes()
                 assert run(
                     "list-keys", "-F", "#{key_command}", "-T", "ownertable", "F12"
                 ).strip() == "display-message owner-command-é".encode()

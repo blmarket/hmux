@@ -125,12 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_start_edit` still prepares its editor input through
-   C-owned strings and frees them immediately after synchronous `spawn_editor`.
-   Option and command branches already have private `CString` producers;
-   key-note and environment values can be borrowed through the write.
-   Preserve empty-value newline substitution and audit every branch. Compare
-   option, key-note, and environment editor input with pinned tmux.
+1. `cmd_select_layout_exec` copies the C-owned `layout_dump` result into its
+   saved-layout `CString` owner and frees the temporary. The private
+   `LayoutString` serializer already owns its bytes; return a `CString`
+   directly to this caller while keeping the exported `layout_dump` adapter
+   libc-freeable for format consumers. Preserve the old control-client layout
+   format and signed-char checksum. Compare CLI layout behavior with pinned
+   tmux and cover old-format bytes separately.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1289,6 +1290,19 @@ name error.
   menu CLI passed with candidate and pinned tmux: an untitled menu rendered,
   accepted its selection, and closed. Existing explicit-title cases also
   passed. Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 430 — own customize editor input directly (2026-09-23)
+
+- `window_customize_start_edit` now holds option and key-command text in the
+  existing private `CString` producers, and borrows key-note and environment
+  C strings while `spawn_editor` synchronously writes its input. The old
+  C-owned string preparation and final `free` are gone. Empty values still
+  send one newline; `spawn_editor` retains no input pointer.
+- Serialized workspace tests and binary build passed. Existing option editor
+  and key prompt CLI checks passed with candidate and pinned tmux. The key
+  prompt check now asserts the note editor's exact input bytes. A new
+  environment editor CLI compares UTF-8 and empty input bytes with pinned
+  tmux. Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

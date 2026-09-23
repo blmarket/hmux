@@ -41,7 +41,7 @@ use crate::src::options::{
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_number,
     options_get_only, options_get_parent, options_match_owned, options_name, options_next,
     options_owner, options_push_changes, options_remove_or_default, options_set_number,
-    options_set_string, options_to_string,
+    options_set_string, options_to_cstring, options_to_string,
 };
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
@@ -3661,9 +3661,7 @@ unsafe extern "C" fn window_customize_start_edit(
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
+    let value: Cow<'_, CStr>;
     let mut edit_type: window_customize_edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
     if !(*data).editor.is_null() || item.is_null() {
         return;
@@ -3678,7 +3676,11 @@ unsafe extern "C" fn window_customize_start_edit(
         if o.is_null() {
             return;
         }
-        value = options_to_string(o, (*item).array_key, 0 as ::core::ffi::c_int);
+        value = Cow::Owned(options_to_cstring(
+            o,
+            (*item).array_key,
+            0 as ::core::ffi::c_int,
+        ));
         edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
     } else if (*item).type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -3694,16 +3696,19 @@ unsafe extern "C" fn window_customize_start_edit(
             b"Command\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
         {
-            value = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
+            value = Cow::Owned(cmd_list_print_cstring(
+                (*bd).cmdlist,
+                0 as ::core::ffi::c_int,
+            ));
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_COMMAND;
         } else if strcmp(name, b"Note\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            if (*bd).note.is_null() {
-                value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+            value = Cow::Borrowed(if (*bd).note.is_null() {
+                c""
             } else {
-                value = xstrdup((*bd).note);
-            }
+                CStr::from_ptr((*bd).note)
+            });
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_NOTE;
         } else {
             return;
@@ -3718,7 +3723,7 @@ unsafe extern "C" fn window_customize_start_edit(
         if envent.is_null() || (*envent).value.is_null() {
             return;
         }
-        value = xstrdup((*envent).value);
+        value = Cow::Borrowed(CStr::from_ptr((*envent).value));
         edit_type = WINDOW_CUSTOMIZE_EDIT_ENVIRONMENT;
     } else {
         return;
@@ -3730,8 +3735,8 @@ unsafe extern "C" fn window_customize_start_edit(
         item: window_customize_copy_item(item),
         editor: ::core::ptr::null_mut(),
     }));
-    buf = value;
-    len = strlen(value);
+    let mut buf = value.as_ref().as_ptr();
+    let mut len = value.as_ref().to_bytes().len();
     if len == 0 as size_t {
         buf = b"\n\0" as *const u8 as *const ::core::ffi::c_char;
         len = 1 as size_t;
@@ -3750,7 +3755,6 @@ unsafe extern "C" fn window_customize_start_edit(
         ),
         ed as *mut ::core::ffi::c_void,
     );
-    free(value as *mut ::core::ffi::c_void);
     if (*ed).editor.is_null() {
         window_customize_finish_edit(ed);
     } else {
