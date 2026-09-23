@@ -352,6 +352,18 @@ legacy callers safe.
   fallback is source-audited but not exercised by that E2E. No sanitizer was
   run.
 
+### Increment 150 — window linked-session list scratch (2026-09-22)
+
+- `format_cb_window_linked_sessions_list` now builds the ordered session-name
+  bytes in a local `Vec<u8>`, removing its intermediate `evbuffer` allocation,
+  append, pullup, and free. It still returns a C-owned `xmemdup` result for
+  the format callback and null for an empty byte list. Duplicate linked
+  sessions and non-UTF-8 bytes keep their existing output semantics.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. New `scripts/format_linked_sessions_cli_checks.py` passed with old
+  and new binaries for single and duplicate links, a UTF-8 session name,
+  unlink, and session teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -362,11 +374,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_cb_window_linked_sessions_list` has the same local `evbuffer`
-   assembly pattern for session names linked to a window. A Rust-owned
-   intermediate may remove its buffer allocation/free while retaining a
-   C-owned callback result and null for an empty list; audit window/winlink
-   traversal and duplicate links before changing it.
+1. `format_cb_window_active_sessions_list` still assembles a comma-separated
+   subset of linked session names in a local `evbuffer`, then duplicates the
+   bytes for its C-owned callback result. Audit its active-window filter and
+   null/empty behavior before replacing the intermediate buffer with `Vec`.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -391,9 +402,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–149. The remaining
+Current validation is recorded in increments 15–150. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–149 has its own local commit; none was pushed.
+Each of increments 15–150 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -521,3 +532,8 @@ build, server-message and pane-private-mode CLI checks, a detached `-vv`
 server log-file check, changed-file rustfmt, and `git diff --check` passed on
 main. The log check created one nonempty `tmux-server-<pid>.log` in a private
 temporary directory and shut down the server. No combined sanitizer was run.
+After increments 148–150 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, attached-client-list, Linux proc lookup, and linked-session-list CLI
+checks, changed-file rustfmt, Python syntax checks for the three new scripts,
+and `git diff --check` passed on main. No combined sanitizer was run.
