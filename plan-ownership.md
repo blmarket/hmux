@@ -2201,6 +2201,20 @@ legacy callers safe.
   `customize_array_key_prompt` scripts passed on main. The three E2E checks
   also passed with the pinned baseline. No sanitizer was run.
 
+### Increment 282 — mode-tree filter and search strings (2026-09-23)
+
+- `ModeTreeOwner` now embeds the unchanged C-layout `mode_tree_data` prefix
+  in a stable `Box` and owns its mutable search and filter strings as optional
+  `CString`s. A compile-time offset check protects the callback pointer cast.
+  The raw fields remain borrowed views updated only by the owner setters;
+  prompt callbacks copy input before replacing an owner. Mode teardown drops
+  both strings with the record, replacing the `xstrdup`/`free` pairs.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, and diff checks passed in the isolated worktree.
+  The attached-client filter/search script matched the pinned baseline for
+  initial `-f`, replacement, clear, successive searches, selection, and
+  active-prompt teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2211,11 +2225,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `mode_tree_menu` is a small `xmalloc`/`free` callback record. Its menu
-   callback and `menu_display` failure path both release it after the
-   mode-tree reference; a stable `Box` can replace that pair once callback
-   reentry and failure cleanup are checked. The larger `mode_tree_data`
-   filter/search strings and mode-tree items need their own alias audit.
+1. `redraw_span` in `src/screen_redraw.rs` is the next small leaf-record
+   candidate: `redraw_make_scene` allocates each span, links it into one
+   scene line, and `redraw_free_scene` unlinks and frees it. A stable `Box`
+   could remove that pair after checking scene invalidation and list traversal.
+   The scene and line array form a separate ownership boundary.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
@@ -2227,8 +2241,9 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
-   flags, and layout's `%c` values are fixed nonzero characters; neither has
-   an identified user path to a middle NUL. An attached-client `show-buffer`
+   flags, layout's `%c` values are fixed nonzero characters, and
+   `format_log1`'s `%c` values come from a non-NUL format scan. An
+   attached-client `show-buffer`
    of a binary `A\0B` buffer does reach `window_copy_vadd`'s `%.*s` formatter,
    but C formatting stops at the first NUL: the formatted output is `A`, not
    a string with an interior NUL. This first-NUL behavior is covered by
