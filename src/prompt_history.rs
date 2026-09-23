@@ -14,7 +14,6 @@ pub use crate::src::shared::stdio::{
     _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
 };
 use crate::src::tmux::{find_home, global_options};
-use crate::src::xmalloc::{xasprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 #[inline]
@@ -28,37 +27,28 @@ unsafe extern "C" fn getline(
 // The C API borrows each string until that entry is pruned or cleared. Moving
 // CString values within the vector does not move their NUL-terminated buffers.
 static mut prompt_hlist: [Vec<CString>; PROMPT_NTYPES as usize] = [Vec::new(), Vec::new()];
-unsafe extern "C" fn prompt_find_history_file() -> *mut ::core::ffi::c_char {
-    let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut history_file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    history_file = options_get_string(
+unsafe fn prompt_find_history_file() -> Option<CString> {
+    let history_file = options_get_string(
         global_options,
         b"history-file\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if *history_file as ::core::ffi::c_int == '\0' as i32 {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let history_file = CStr::from_ptr(history_file);
+    if history_file.is_empty() {
+        return None;
     }
-    if *history_file as ::core::ffi::c_int == '/' as i32 {
-        return xstrdup(history_file);
+    if history_file.to_bytes()[0] == b'/' {
+        return Some(history_file.to_owned());
     }
-    if *history_file.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '~' as i32
-        || *history_file.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-            != '/' as i32
-    {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    if !history_file.to_bytes().starts_with(b"~/") {
+        return None;
     }
-    home = find_home();
+    let home = find_home();
     if home.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
-    xasprintf(
-        &raw mut path,
-        b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-        home,
-        history_file.offset(1 as ::core::ffi::c_int as isize),
-    );
-    return path;
+    let mut path = CStr::from_ptr(home).to_bytes().to_vec();
+    path.extend_from_slice(&history_file.to_bytes()[1..]);
+    Some(CString::new(path).expect("C string paths contain no interior NUL"))
 }
 unsafe extern "C" fn prompt_add_typed_history(mut line: *mut ::core::ffi::c_char) {
     let mut typestr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -85,32 +75,29 @@ unsafe extern "C" fn prompt_add_typed_history(mut line: *mut ::core::ffi::c_char
 #[no_mangle]
 pub unsafe extern "C" fn prompt_load_history() {
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut history_file: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut length: size_t = 0 as size_t;
     let mut got: ssize_t = 0;
-    history_file = prompt_find_history_file();
-    if history_file.is_null() {
-        return;
-    }
+    let history_file = match prompt_find_history_file() {
+        Some(path) => path,
+        None => return,
+    };
     log_debug(
         b"loading history from %s\0" as *const u8 as *const ::core::ffi::c_char,
-        history_file,
+        history_file.as_ptr(),
     );
     f = fopen(
-        history_file,
+        history_file.as_ptr(),
         b"r\0" as *const u8 as *const ::core::ffi::c_char,
     ) as *mut FILE;
     if f.is_null() {
         log_debug(
             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            history_file,
+            history_file.as_ptr(),
             strerror(*__errno_location()),
         );
-        free(history_file as *mut ::core::ffi::c_void);
         return;
     }
-    free(history_file as *mut ::core::ffi::c_void);
     loop {
         got = getline(&raw mut line, &raw mut length, f) as ssize_t;
         if !(got != -(1 as ::core::ffi::c_int) as ssize_t) {
@@ -133,29 +120,26 @@ pub unsafe extern "C" fn prompt_save_history() {
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut i: u_int = 0;
     let mut type_0: u_int = 0;
-    let mut history_file: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    history_file = prompt_find_history_file();
-    if history_file.is_null() {
-        return;
-    }
+    let history_file = match prompt_find_history_file() {
+        Some(path) => path,
+        None => return,
+    };
     log_debug(
         b"saving history to %s\0" as *const u8 as *const ::core::ffi::c_char,
-        history_file,
+        history_file.as_ptr(),
     );
     f = fopen(
-        history_file,
+        history_file.as_ptr(),
         b"w\0" as *const u8 as *const ::core::ffi::c_char,
     ) as *mut FILE;
     if f.is_null() {
         log_debug(
             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            history_file,
+            history_file.as_ptr(),
             strerror(*__errno_location()),
         );
-        free(history_file as *mut ::core::ffi::c_void);
         return;
     }
-    free(history_file as *mut ::core::ffi::c_void);
     type_0 = 0 as u_int;
     while type_0 < PROMPT_NTYPES as u_int {
         i = 0 as u_int;

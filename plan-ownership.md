@@ -502,6 +502,20 @@ legacy callers safe.
   `-vv` source-file scenario produced a nested
   `cmd_parse_build_commands 0:3 0:0` log prefix. No sanitizer was run.
 
+### Increment 162 — prompt history file path (2026-09-22)
+
+- The private `prompt_find_history_file` helper now returns
+  `Option<CString>`, and both `prompt_load_history` and
+  `prompt_save_history` borrow that path through logging and `fopen` before
+  dropping it. Removed the absolute-path `xstrdup`, the `~/` `xasprintf`,
+  and the callers' four success/error frees. Raw C-string bytes are
+  preserved; empty and unsupported relative paths still return no path.
+- Isolated library/binary build, `prompt_history_owner` integration test,
+  changed-file rustfmt, and `git diff --check` passed. A live private-HOME
+  server using `history-file '~/history'` created the history file during
+  shutdown. The absolute-path and invalid-relative branches were source
+  audited but not exercised by that E2E. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -512,10 +526,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `prompt_find_history_file` still returns a C-owned path for prompt
-   history load/save, and both callers free it after synchronous `fopen`.
-   Audit absolute and `~/` byte paths, unsupported relative paths, and all
-   load/save error returns before moving the helper and callers to CString.
+1. `prompt_click_complete` still formats `"%s "` into a local C allocation,
+   passes it to synchronous `prompt_replace_complete`, then frees it. A
+   byte-preserving `CString` can own that click-completion temporary after
+   checking the replacement routine's borrow lifetime.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -540,9 +554,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–161. The remaining
+Current validation is recorded in increments 15–162. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–161 has its own local commit; none was pushed.
+Each of increments 15–162 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -693,3 +707,8 @@ build, pane-tabs and start-command-list CLI checks, changed-file rustfmt, and
 `git diff --check` passed on main. The workspace suite includes the new OSC
 52 attached-PTY test with text and binary clipboard data. No combined
 sanitizer was run.
+After increments 160–162 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, start-command-list CLI checks, changed-file rustfmt, and
+`git diff --check` passed on main. The isolated parser log-prefix and prompt
+history-file E2E scenarios also passed. No combined sanitizer was run.
