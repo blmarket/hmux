@@ -144,9 +144,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
-use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring,
-};
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -3581,7 +3579,6 @@ unsafe extern "C" fn window_customize_edit_close_cb(
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     wp = window_pane_find_by_id((*ed).wp_id);
     if !wp.is_null() {
@@ -3602,18 +3599,14 @@ unsafe extern "C" fn window_customize_edit_close_cb(
     if *buf.offset(len.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int == '\n' as i32 {
         len = len.wrapping_sub(1);
     }
-    value = xmalloc(len.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
-    memcpy(
-        value as *mut ::core::ffi::c_void,
-        buf as *const ::core::ffi::c_void,
-        len,
-    );
-    *value.offset(len as isize) = '\0' as i32 as ::core::ffi::c_char;
+    let mut value = ::core::slice::from_raw_parts(buf.cast::<u8>(), len).to_vec();
+    value.push(0);
     free(buf as *mut ::core::ffi::c_void);
+    let value_ptr = value.as_ptr().cast::<::core::ffi::c_char>();
     match (*ed).edit_type as ::core::ffi::c_uint {
         0 => {
             if window_customize_option_editable(data, item) != 0
-                && window_customize_set_option_value(item, value, &raw mut cause)
+                && window_customize_set_option_value(item, value_ptr, &raw mut cause)
                     != 0 as ::core::ffi::c_int
             {
                 free(cause as *mut ::core::ffi::c_void);
@@ -3623,7 +3616,7 @@ unsafe extern "C" fn window_customize_edit_close_cb(
             }
         }
         1 => {
-            if window_customize_set_command_value(item, value, &raw mut cause)
+            if window_customize_set_command_value(item, value_ptr, &raw mut cause)
                 != 0 as ::core::ffi::c_int
             {
                 free(cause as *mut ::core::ffi::c_void);
@@ -3633,7 +3626,7 @@ unsafe extern "C" fn window_customize_edit_close_cb(
             }
         }
         2 => {
-            if window_customize_set_note_value(item, value) != 0 as ::core::ffi::c_int {
+            if window_customize_set_note_value(item, value_ptr) != 0 as ::core::ffi::c_int {
                 current_block = 8846462416050848735;
             } else {
                 current_block = 1608152415753874203;
@@ -3645,7 +3638,7 @@ unsafe extern "C" fn window_customize_edit_close_cb(
             {
                 current_block = 8846462416050848735;
             } else {
-                window_customize_set_environment_value(item, value);
+                window_customize_set_environment_value(item, value_ptr);
                 current_block = 1608152415753874203;
             }
         }
@@ -3661,7 +3654,7 @@ unsafe extern "C" fn window_customize_edit_close_cb(
         }
         _ => {}
     }
-    free(value as *mut ::core::ffi::c_void);
+    drop(value);
     window_customize_finish_edit(ed);
 }
 unsafe extern "C" fn window_customize_start_edit(

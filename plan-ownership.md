@@ -2257,6 +2257,22 @@ legacy callers safe.
   candidate; both also passed on the pinned baseline during increment 283.
   No sanitizer was run.
 
+### Increment 286 — customize editor value buffer (2026-09-23)
+
+- `window_customize_edit_close_cb` now owns the copied editor bytes in a
+  local `Vec<u8>` with one appended NUL, removing its `xmalloc`/`free` pair
+  and manual `memcpy`/terminator write. The C-owned editor input is still freed
+  after copying, and the vector is dropped before `window_customize_finish_edit`.
+  Synchronous option, command, note, and environment setters borrow its
+  first-NUL C view; bytes after an embedded NUL remain in the temporary
+  vector just as they did in the old counted allocation.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, Python syntax, and diff checks passed. The new
+  attached-client customize-editor script matched the pinned baseline for
+  UTF-8, `A\0B` with first-NUL storage, empty editor output, cancellation,
+  and editor temporary-file cleanup. Existing customize-option and
+  spawn-editor command checks also passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2267,13 +2283,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_edit_close_cb` in `src/window_customize.rs` builds one
-   temporary `value` buffer from editor bytes and frees it after synchronous
-   option, command, note, or environment setters. A `Vec<u8>` with a terminal
-   NUL could own it, preserving its explicit length and first-NUL C views.
-   This needs an attached customize-editor E2E to cover the callback. The
-   redraw scene's line array is a separate allocation with self-referential
-   intrusive list tails and needs its own alias audit.
+1. `window_customize_editdata` in `src/window_customize.rs` is the next small
+   callback record: `window_customize_start_edit` allocates it, then both
+   editor completion and mode cancellation call `window_customize_finish_edit`
+   to release it after its copied item. A stable `Box` can remove that
+   `xcalloc`/`free` pair; the attached editor E2E now covers completion,
+   empty output, and cancellation. `window_copy_mode_data.backing` is a
+   larger follow-up whose borrowed screen pointer is invalidated on refresh.
+   The redraw scene's line array has self-referential intrusive list tails
+   and needs its own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
