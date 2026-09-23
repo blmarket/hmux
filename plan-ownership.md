@@ -1635,6 +1635,21 @@ legacy callers safe.
   CLI check includes `visible\\000hidden` and passed with the pinned baseline.
   No sanitizer was run.
 
+### Increment 242 — capture-pane output buffer owner (2026-09-23)
+
+- `cmd_capture_pane_append` and its grid, pending, hyperlink, and history
+  producers now use `Vec<u8>` for captured bytes. This removes repeated
+  `xrealloc`, scratch `xstrdup`, manual length, and associated frees. The
+  `-p` paths borrow bytes for synchronous control/file output; `paste_set`
+  alone receives a C-owned copy because it retains the payload on success.
+  Empty output remains distinct from a history error, and the control `%.*s`
+  path still stops at the first NUL.
+- Library/binary build, `osc8_hyperlink_id` test, changed-file rustfmt,
+  diff check, and live capture-pane checks passed. The new CLI check matched
+  the pinned baseline for grid, history, hyperlink, pending, paste transfer,
+  and error paths, including raw `ESC [ NUL` and escaped pending input. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1645,17 +1660,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_capture_pane_append` is the next smaller possible boundary. Its grid,
-   pending, hyperlink, and history producers plus the final C-owned output
-   must be migrated together; audit all return and error paths first.
-   `set-buffer`'s payload is a less useful local target: `paste_set` retains
-   the libc allocation on success and leaves it with the caller on error, so
-   a local `Vec` alone would add an allocation and copy.
-2. The command-list cache in `args_value_as_string` is retained in its
+1. The command-list cache in `args_value_as_string` is retained in its
    movable C-layout record. A pointer-keyed sidecar is disallowed by the type
    policy; migrate only with a real record owner that preserves the public
    layout and independent cache storage for copied values.
-3. The only direct `xvasprintf` production caller outside the `xmalloc`
+   `set-buffer`'s payload is a less useful local target: `paste_set` retains
+   the libc allocation on success and leaves it with the caller on error, so
+   a local `Vec` alone would add an allocation and copy.
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -1667,13 +1679,13 @@ non-string value.
    transforms also return C-owned strings to `format_replace`; local
    `_cstring` conversions would add copies. Revisit these paths when their
    callback/value return contracts can change.
-4. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
+3. `cmd_save_buffer_exec` now borrows its static detached `show-buffer` path.
    Changing only its formatted `save-buffer` path to `CString` would add a
    copy solely to replace the C-owned `format_single_from_target` result.
    The expansion output now has a local owner, but its exported result still
    crosses the C-owned return boundary. Remaining `xstrndup` callers return
    or transfer C-owned strings.
-5. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and

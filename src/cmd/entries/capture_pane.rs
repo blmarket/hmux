@@ -3,7 +3,7 @@ use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
 use crate::src::colour::colour_format;
 use crate::src::control::control_write;
-use crate::src::ffi::libc::{free, memcpy, snprintf, strcmp, strlen};
+use crate::src::ffi::libc::{free, memcpy, snprintf, strcmp};
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
 use crate::src::grid::{
     grid_cell_attr_string, grid_cell_flags_string, grid_clear_history, grid_get_cell,
@@ -80,7 +80,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::utf8::utf8_strvis;
 use crate::src::window::window_pane_reset_mode_all;
-use crate::src::xmalloc::{xrealloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::xmalloc;
 use std::ffi::{CStr, CString};
 use std::io::Write;
 
@@ -145,23 +145,8 @@ pub static mut cmd_clear_history_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_capture_pane_append(
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: *mut size_t,
-    mut line: *const ::core::ffi::c_char,
-    mut linelen: size_t,
-) -> *mut ::core::ffi::c_char {
-    buf = xrealloc(
-        buf as *mut ::core::ffi::c_void,
-        (*len).wrapping_add(linelen).wrapping_add(1 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    memcpy(
-        buf.offset(*len as isize) as *mut ::core::ffi::c_void,
-        line as *const ::core::ffi::c_void,
-        linelen,
-    );
-    *len = (*len).wrapping_add(linelen);
-    return buf;
+fn cmd_capture_pane_append(buf: &mut Vec<u8>, line: &[u8]) {
+    buf.extend_from_slice(line);
 }
 fn cmd_capture_pane_colour(value: ::core::ffi::c_int) -> CString {
     let mut bytes = colour_format(value).into_bytes();
@@ -260,16 +245,12 @@ unsafe fn cmd_capture_pane_cell(s: *mut screen, xx: u_int, yy: u_int) -> CString
     line.push(b'\n');
     CString::new(line).expect("cell fields contain no NUL")
 }
-unsafe extern "C" fn cmd_capture_pane_grid(
-    mut wp: *mut window_pane,
-    mut len: *mut size_t,
-) -> *mut ::core::ffi::c_char {
+unsafe fn cmd_capture_pane_grid(wp: *mut window_pane) -> Vec<u8> {
     let mut s: *mut screen = &raw mut (*wp).base;
     let mut gd: *mut grid = (*s).grid;
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut od: *mut osc133_data = ::core::ptr::null_mut::<osc133_data>();
-    let mut buf: *mut ::core::ffi::c_char =
-        xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+    let mut buf = Vec::new();
     let mut p: [::core::ffi::c_char; 11] = [0; 11];
     let mut yy: u_int = 0;
     let mut xx: u_int = 0;
@@ -281,7 +262,7 @@ unsafe extern "C" fn cmd_capture_pane_grid(
         (*gd).hsize,
         (*gd).hlimit
     );
-    buf = cmd_capture_pane_append(buf, len, header.as_ptr().cast(), header.len());
+    cmd_capture_pane_append(&mut buf, header.as_bytes());
     yy = 0 as u_int;
     while yy < total {
         gl = grid_get_line(gd, yy);
@@ -328,36 +309,31 @@ unsafe extern "C" fn cmd_capture_pane_grid(
             .expect("writing to a byte vector succeeds");
         }
         row.push(b'\n');
-        buf = cmd_capture_pane_append(buf, len, row.as_ptr().cast(), row.len());
+        cmd_capture_pane_append(&mut buf, &row);
         xx = 0 as u_int;
         while xx < (*gd).sx {
             let cell = cmd_capture_pane_cell(s, xx, yy);
-            buf = cmd_capture_pane_append(buf, len, cell.as_ptr(), cell.as_bytes().len());
+            cmd_capture_pane_append(&mut buf, cell.as_bytes());
             xx = xx.wrapping_add(1);
         }
         yy = yy.wrapping_add(1);
     }
-    return buf;
+    buf
 }
-unsafe extern "C" fn cmd_capture_pane_pending(
-    mut args: *mut args,
-    mut wp: *mut window_pane,
-    mut len: *mut size_t,
-) -> *mut ::core::ffi::c_char {
+unsafe fn cmd_capture_pane_pending(args: *mut args, wp: *mut window_pane) -> Vec<u8> {
     let mut pending: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf = Vec::new();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: [::core::ffi::c_char; 5] = [0; 5];
     let mut linelen: size_t = 0;
     let mut i: u_int = 0;
     pending = input_pending((*wp).ictx);
     if pending.is_null() {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        return buf;
     }
     line =
         evbuffer_pullup(pending, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_char;
     linelen = evbuffer_get_length(pending);
-    buf = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     if args_has(args, 'C' as i32 as u_char) != 0 {
         i = 0 as u_int;
         while (i as size_t) < linelen {
@@ -374,26 +350,22 @@ unsafe extern "C" fn cmd_capture_pane_pending(
                     *line.offset(i as isize) as ::core::ffi::c_int,
                 );
             }
-            buf = cmd_capture_pane_append(
-                buf,
-                len,
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                strlen(&raw mut tmp as *mut ::core::ffi::c_char),
-            );
+            cmd_capture_pane_append(&mut buf, CStr::from_ptr(tmp.as_ptr()).to_bytes());
             i = i.wrapping_add(1);
         }
     } else {
-        buf = cmd_capture_pane_append(buf, len, line, linelen);
+        if linelen != 0 {
+            cmd_capture_pane_append(&mut buf, std::slice::from_raw_parts(line.cast(), linelen));
+        }
     }
-    return buf;
+    buf
 }
 unsafe fn cmd_capture_pane_hyperlinks(
     mut gd: *mut grid,
     mut s: *mut screen,
     mut py: u_int,
     links: &mut Vec<u_int>,
-    mut len: *mut size_t,
-) -> *mut ::core::ffi::c_char {
+) -> Vec<u8> {
     let mut gl: *const grid_line = grid_peek_line(gd, py);
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -410,10 +382,8 @@ unsafe fn cmd_capture_pane_hyperlinks(
         link: 0,
     };
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut line: *mut ::core::ffi::c_char =
-        xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+    let mut line = Vec::new();
     let mut i: u_int = 0;
-    *len = 0 as size_t;
     if (*s).hyperlinks.is_null() || !((*gl).flags as ::core::ffi::c_int) & GRID_LINE_HYPERLINK != 0
     {
         return line;
@@ -435,28 +405,22 @@ unsafe fn cmd_capture_pane_hyperlinks(
                         break;
                     }
                     links.push(gc.link);
-                    if *len != 0 as size_t {
-                        line = cmd_capture_pane_append(
-                            line,
-                            len,
-                            b" \0" as *const u8 as *const ::core::ffi::c_char,
-                            1 as size_t,
-                        );
+                    if !line.is_empty() {
+                        cmd_capture_pane_append(&mut line, b" ");
                     }
-                    line = cmd_capture_pane_append(line, len, uri, strlen(uri));
+                    cmd_capture_pane_append(&mut line, CStr::from_ptr(uri).to_bytes());
                 }
             }
         }
         i = i.wrapping_add(1);
     }
-    return line;
+    line
 }
-unsafe extern "C" fn cmd_capture_pane_history(
+unsafe fn cmd_capture_pane_history(
     mut args: *mut args,
     mut item: *mut cmdq_item,
     mut wp: *mut window_pane,
-    mut len: *mut size_t,
-) -> *mut ::core::ffi::c_char {
+) -> Option<Vec<u8>> {
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
@@ -475,13 +439,11 @@ unsafe extern "C" fn cmd_capture_pane_history(
     let mut top: u_int = 0;
     let mut bottom: u_int = 0;
     let mut tmp: u_int = 0;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf = Vec::new();
     let mut b: [::core::ffi::c_char; 64] = [0; 64];
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut linelen: size_t = 0;
     sx = (*(*wp).base.grid).sx;
     if args_has(args, 'a' as i32 as u_char) != 0 {
         gd = (*wp).base.saved_grid;
@@ -491,9 +453,9 @@ unsafe extern "C" fn cmd_capture_pane_history(
                     item,
                     b"no alternate screen\0" as *const u8 as *const ::core::ffi::c_char,
                 );
-                return ::core::ptr::null_mut::<::core::ffi::c_char>();
+                return None;
             }
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+            return Some(buf);
         }
         s = &raw mut (*wp).base;
     } else if args_has(args, 'M' as i32 as u_char) != 0 {
@@ -598,15 +560,15 @@ unsafe extern "C" fn cmd_capture_pane_history(
     }
     i = top;
     while i <= bottom {
-        if hyperlinks != 0 {
-            line = cmd_capture_pane_hyperlinks(gd, s, i, &mut links, &raw mut linelen);
+        let line = if hyperlinks != 0 {
+            cmd_capture_pane_hyperlinks(gd, s, i, &mut links)
         } else {
-            line = grid_string_cells(gd, 0 as u_int, i, sx, &raw mut gc, flags, s);
-            linelen = strlen(line);
-        }
-        if hyperlinks != 0 && linelen == 0 as size_t {
-            free(line as *mut ::core::ffi::c_void);
-        } else {
+            let raw = grid_string_cells(gd, 0 as u_int, i, sx, &raw mut gc, flags, s);
+            let line = CStr::from_ptr(raw).to_bytes().to_vec();
+            free(raw.cast());
+            line
+        };
+        if hyperlinks == 0 || !line.is_empty() {
             gl = grid_peek_line(gd, i);
             if number_lines != 0 {
                 if i >= (*gd).hsize {
@@ -621,11 +583,9 @@ unsafe extern "C" fn cmd_capture_pane_history(
                     n,
                 );
                 if n >= 0 as ::core::ffi::c_int {
-                    buf = cmd_capture_pane_append(
-                        buf,
-                        len,
-                        &raw mut b as *mut ::core::ffi::c_char,
-                        n as size_t,
+                    cmd_capture_pane_append(
+                        &mut buf,
+                        &std::slice::from_raw_parts(b.as_ptr().cast(), n as usize),
                     );
                 }
             }
@@ -637,11 +597,9 @@ unsafe extern "C" fn cmd_capture_pane_history(
                     grid_line_time(gl) as ::core::ffi::c_ulonglong,
                 );
                 if n >= 0 as ::core::ffi::c_int {
-                    buf = cmd_capture_pane_append(
-                        buf,
-                        len,
-                        &raw mut b as *mut ::core::ffi::c_char,
-                        n as size_t,
+                    cmd_capture_pane_append(
+                        &mut buf,
+                        &std::slice::from_raw_parts(b.as_ptr().cast(), n as usize),
                     );
                 }
             }
@@ -687,28 +645,16 @@ unsafe extern "C" fn cmd_capture_pane_history(
                 cp = cp.offset(1);
                 *fresh7 = ' ' as i32 as ::core::ffi::c_char;
                 *cp = '\0' as i32 as ::core::ffi::c_char;
-                buf = cmd_capture_pane_append(
-                    buf,
-                    len,
-                    &raw mut b as *mut ::core::ffi::c_char,
-                    strlen(&raw mut b as *mut ::core::ffi::c_char),
-                );
+                cmd_capture_pane_append(&mut buf, CStr::from_ptr(b.as_ptr()).to_bytes());
             }
-            buf = cmd_capture_pane_append(buf, len, line, linelen);
+            cmd_capture_pane_append(&mut buf, &line);
             if join_lines == 0 || (*gl).flags as ::core::ffi::c_int & GRID_LINE_WRAPPED == 0 {
-                let fresh8 = *len;
-                *len = (*len).wrapping_add(1);
-                *buf.offset(fresh8 as isize) = '\n' as i32 as ::core::ffi::c_char;
+                buf.push(b'\n');
             }
-            free(line as *mut ::core::ffi::c_void);
         }
         i = i.wrapping_add(1);
     }
-    drop(links);
-    if buf.is_null() {
-        buf = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    return buf;
+    Some(buf)
 }
 unsafe extern "C" fn cmd_capture_pane_exec(
     mut self_0: *mut cmd,
@@ -717,10 +663,9 @@ unsafe extern "C" fn cmd_capture_pane_exec(
     let mut args: *mut args = cmd_get_args(self_0);
     let mut c: *mut client = cmdq_get_client(item);
     let mut wp: *mut window_pane = (*cmdq_get_target(item)).wp;
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf: Vec<u8>;
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
     if cmd_get_entry(self_0) == &raw const cmd_clear_history_entry {
         window_pane_reset_mode_all(wp);
         grid_clear_history((*wp).base.grid);
@@ -730,31 +675,32 @@ unsafe extern "C" fn cmd_capture_pane_exec(
         server_redraw_window((*wp).window as *mut window);
         return CMD_RETURN_NORMAL;
     }
-    len = 0 as size_t;
     if args_has(args, 'R' as i32 as u_char) != 0 {
-        buf = cmd_capture_pane_grid(wp, &raw mut len);
+        buf = cmd_capture_pane_grid(wp);
     } else if args_has(args, 'P' as i32 as u_char) != 0 && args_has(args, 'H' as i32 as u_char) == 0
     {
-        buf = cmd_capture_pane_pending(args, wp, &raw mut len);
+        buf = cmd_capture_pane_pending(args, wp);
     } else {
-        buf = cmd_capture_pane_history(args, item, wp, &raw mut len);
-    }
-    if buf.is_null() {
-        return CMD_RETURN_ERROR;
+        match cmd_capture_pane_history(args, item, wp) {
+            Some(history) => buf = history,
+            None => return CMD_RETURN_ERROR,
+        }
     }
     if args_has(args, 'p' as i32 as u_char) != 0 {
-        if len > 0 as size_t
-            && *buf.offset(len.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
-                == '\n' as i32
-        {
-            len = len.wrapping_sub(1);
-        }
+        let len = if buf.last() == Some(&b'\n') {
+            buf.len() - 1
+        } else {
+            buf.len()
+        };
+        // Give both C printing paths a valid pointer for empty output. The
+        // terminator also preserves control_write's first-NUL behavior.
+        buf.push(0);
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_write(
                 c,
                 b"%.*s\0" as *const u8 as *const ::core::ffi::c_char,
                 len as ::core::ffi::c_int,
-                buf,
+                buf.as_ptr().cast::<::core::ffi::c_char>(),
             );
         } else {
             if file_can_print(c) == 0 {
@@ -762,26 +708,30 @@ unsafe extern "C" fn cmd_capture_pane_exec(
                     item,
                     b"can't write to client\0" as *const u8 as *const ::core::ffi::c_char,
                 );
-                free(buf as *mut ::core::ffi::c_void);
                 return CMD_RETURN_ERROR;
             }
-            file_print_buffer(c, buf as *mut ::core::ffi::c_void, len);
+            file_print_buffer(c, buf.as_mut_ptr().cast(), len);
             file_print(c, b"\n\0" as *const u8 as *const ::core::ffi::c_char);
         }
-        free(buf as *mut ::core::ffi::c_void);
     } else {
         bufname = ::core::ptr::null::<::core::ffi::c_char>();
         if args_has(args, 'b' as i32 as u_char) != 0 {
             bufname = args_get(args, 'b' as i32 as u_char);
         }
-        if paste_set(buf, len, bufname, &raw mut cause) != 0 as ::core::ffi::c_int {
+        // paste_set takes ownership on success, so only this ABI boundary uses
+        // a libc allocation. It leaves ownership with us on failure.
+        let data = xmalloc(buf.len().max(1)) as *mut ::core::ffi::c_char;
+        if !buf.is_empty() {
+            memcpy(data.cast(), buf.as_ptr().cast(), buf.len());
+        }
+        if paste_set(data, buf.len(), bufname, &raw mut cause) != 0 as ::core::ffi::c_int {
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 cause,
             );
             free(cause as *mut ::core::ffi::c_void);
-            free(buf as *mut ::core::ffi::c_void);
+            free(data.cast());
             return CMD_RETURN_ERROR;
         }
     }
