@@ -1882,6 +1882,22 @@ legacy callers safe.
   passed. Live-server coverage now checks two files applied in order alongside
   existing absolute/relative/glob/no-match cases. No sanitizer was run.
 
+### Increment 105 — layout parser cell-context scratch (2026-09-22)
+
+- `layout_parse_ctx.cctxs` is now a `Vec<layout_parse_cell_ctx>` owned by the
+  parser's stack record. Added records use `push`; removal uses `swap_remove`,
+  matching the previous final-entry replacement. Removed `size`, `capacity`,
+  `xcalloc`, `xreallocarray`, `free`, and `memmove` for this array. The parser
+  still frees its separate layout-cell graph at the same error/success points.
+- All six C `qsort` calls still sort the contiguous POD records with their
+  original comparators, using a temporary `Vec::as_mut_ptr()` view. No record
+  reference crosses a sort and no context alias escapes `layout_parse`;
+  its C signature is unchanged.
+- Validation in the isolated worktree: workspace tests, binary build,
+  `scripts/layout_cli_checks.py`, and `git diff --check` passed. Direct
+  changed-file rustfmt reports only pre-existing import-order differences in
+  `layout/custom.rs`; the edited body is formatted. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1901,10 +1917,11 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `layout_parse_ctx.cctxs` is a local scratch array with last-entry
-   replacement and C sorting. Its allocation/free pair can move with the
-   parser's stack record. After that, `mode_tree_data.line_list` is a broader
-   candidate whose C-zeroed record and line aliases need a lifecycle audit.
+2. `mode_tree_data.line_list` still uses `xreallocarray` and a manual count.
+   Its C-zeroed record, many line aliases, and callback-driven rebuild need
+   one lifecycle audit before replacing the array with `Vec`. The menu item
+   array is another candidate, but menu rendering and overlay callbacks
+   borrow its row pointers.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1920,9 +1937,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–104. The remaining
+Current validation is recorded in increments 15–105. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–104 has its own local commit; none was pushed.
+Each of increments 15–105 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1943,3 +1960,9 @@ Changed-file rustfmt still reports only two import layout differences in
 `window_switch.rs` and `window_tree.rs`; running the same check on those exact
 files from the pre-migration `a5292e8` commit reports the same differences.
 No combined sanitizer or additional attached-terminal scenario was run.
+After increments 103–105 were integrated, `cargo test --workspace --quiet`,
+`cargo build --bin hmux2 --quiet`, `scripts/layout_cli_checks.py`, and
+`git diff --check` passed on main. Changed-file rustfmt reports only two
+pre-existing import-layout differences in `layout/custom.rs` at lines 7 and
+58; the same check on the pre-increment `204ab04` file reports both sites.
+No combined sanitizer or additional live UI scenario was run.

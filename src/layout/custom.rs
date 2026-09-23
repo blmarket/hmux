@@ -1,5 +1,5 @@
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::{__ctype_b_loc, free, memcpy, memmove, qsort, sscanf, strcmp};
+use crate::src::ffi::libc::{__ctype_b_loc, free, memcpy, qsort, sscanf, strcmp};
 use crate::src::json::{
     json_array_first, json_array_next, json_destroy_node, json_find, json_find_array,
     json_find_boolean, json_find_number, json_find_object, json_find_string, json_get_object,
@@ -16,7 +16,7 @@ use crate::src::window::{
     window_pane_stack_push, window_pane_stack_remove, window_pane_zindex, window_resize,
     window_set_active_pane,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xmalloc, xstrdup, xvasprintf_cstring};
 pub use crate::src::shared::json::{json_node};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -113,16 +113,13 @@ impl LayoutString {
         self.bytes.push(0);
     }
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct layout_parse_ctx {
     pub version: int64_t,
     pub num_active: ::core::ffi::c_int,
     pub root: *mut layout_cell,
     pub cause: *mut *mut ::core::ffi::c_char,
-    pub size: ::core::ffi::c_int,
-    pub capacity: ::core::ffi::c_int,
-    pub cctxs: *mut layout_parse_cell_ctx,
+    pub cctxs: Vec<layout_parse_cell_ctx>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -214,20 +211,12 @@ unsafe extern "C" fn layout_parse_init_ctx(
     (*pctx).num_active = 0 as ::core::ffi::c_int;
     (*pctx).root = ::core::ptr::null_mut::<layout_cell>();
     (*pctx).cause = cause;
-    (*pctx).size = 0 as ::core::ffi::c_int;
-    (*pctx).capacity = 64 as ::core::ffi::c_int;
-    (*pctx).cctxs = xcalloc(
-        (*pctx).capacity as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-    ) as *mut layout_parse_cell_ctx;
+    (*pctx).cctxs.clear();
 }
 unsafe extern "C" fn layout_parse_free_ctx(mut pctx: *mut layout_parse_ctx) {
     layout_free_cell((*pctx).root, 0 as ::core::ffi::c_int);
     (*pctx).root = ::core::ptr::null_mut::<layout_cell>();
-    free((*pctx).cctxs as *mut ::core::ffi::c_void);
-    (*pctx).cctxs = ::core::ptr::null_mut::<layout_parse_cell_ctx>();
-    (*pctx).size = 0 as ::core::ffi::c_int;
-    (*pctx).capacity = 0 as ::core::ffi::c_int;
+    (*pctx).cctxs.clear();
 }
 unsafe extern "C" fn layout_parse_add_cctx(
     mut pctx: *mut layout_parse_ctx,
@@ -237,44 +226,21 @@ unsafe extern "C" fn layout_parse_add_cctx(
     mut index: ::core::ffi::c_int,
     mut zindex: ::core::ffi::c_int,
 ) {
-    let mut cctx: *mut layout_parse_cell_ctx = ::core::ptr::null_mut::<layout_parse_cell_ctx>();
-    if (*pctx).size >= (*pctx).capacity {
-        (*pctx).capacity *= 2 as ::core::ffi::c_int;
-        (*pctx).cctxs = xreallocarray(
-            (*pctx).cctxs as *mut ::core::ffi::c_void,
-            (*pctx).capacity as size_t,
-            ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        ) as *mut layout_parse_cell_ctx;
-    }
-    let fresh0 = (*pctx).size;
-    (*pctx).size = (*pctx).size + 1;
-    cctx = (*pctx).cctxs.offset(fresh0 as isize) as *mut layout_parse_cell_ctx;
-    (*cctx).lc = lc;
-    (*cctx).active = active;
-    (*cctx).last = last;
-    (*cctx).index = index;
-    (*cctx).zindex = zindex;
+    (*pctx).cctxs.push(layout_parse_cell_ctx {
+        lc,
+        active,
+        last,
+        index,
+        zindex,
+    });
 }
 unsafe extern "C" fn layout_parse_remove_cctx(
     mut pctx: *mut layout_parse_ctx,
     mut lc: *mut layout_cell,
 ) -> ::core::ffi::c_int {
-    let mut cctx: *mut layout_parse_cell_ctx = ::core::ptr::null_mut::<layout_parse_cell_ctx>();
-    let mut i: ::core::ffi::c_int = 0;
-    i = 0 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        if lc == (*(*pctx).cctxs.offset(i as isize)).lc {
-            (*pctx).size -= 1;
-            cctx = (*pctx).cctxs.offset((*pctx).size as isize) as *mut layout_parse_cell_ctx;
-            memmove(
-                (*pctx).cctxs.offset(i as isize) as *mut layout_parse_cell_ctx
-                    as *mut ::core::ffi::c_void,
-                cctx as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-            );
-            return 0 as ::core::ffi::c_int;
-        }
-        i += 1;
+    if let Some(i) = (*pctx).cctxs.iter().position(|cctx| cctx.lc == lc) {
+        (*pctx).cctxs.swap_remove(i);
+        return 0 as ::core::ffi::c_int;
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -667,9 +633,7 @@ pub unsafe extern "C" fn layout_parse(
         num_active: 0,
         root: ::core::ptr::null_mut::<layout_cell>(),
         cause: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        size: 0,
-        capacity: 0,
-        cctxs: ::core::ptr::null_mut::<layout_parse_cell_ctx>(),
+        cctxs: Vec::new(),
     };
     let mut npanes: u_int = 0;
     let mut ncells: u_int = 0;
@@ -834,12 +798,10 @@ pub unsafe extern "C" fn layout_parse(
     return -(1 as ::core::ffi::c_int);
 }
 unsafe extern "C" fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
-    let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut i: ::core::ffi::c_int = 0;
     qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
+        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
+        (*pctx).cctxs.len() as size_t,
         ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
         Some(
             layout_parse_index_cmp
@@ -850,12 +812,9 @@ unsafe extern "C" fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut l
         ),
     );
     wp = (*w).panes.tqh_first;
-    i = 0 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        lc = (*(*pctx).cctxs.offset(i as isize)).lc;
-        layout_make_leaf(lc, wp);
+    for cctx in &(*pctx).cctxs {
+        layout_make_leaf(cctx.lc, wp);
         wp = (*wp).entry.tqe_next;
-        i += 1;
     }
 }
 unsafe extern "C" fn layout_assign_fallback_tiled(
@@ -913,7 +872,7 @@ unsafe extern "C" fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut
     }
 }
 unsafe extern "C" fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
-    if (*pctx).size > 0 as ::core::ffi::c_int {
+    if !(*pctx).cctxs.is_empty() {
         layout_assign_from_ctx(w, pctx);
     } else {
         layout_assign_fallback(w, (*w).layout_root);
@@ -1518,7 +1477,7 @@ unsafe extern "C" fn layout_construct(
                 xstrdup(b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char);
             return -(1 as ::core::ffi::c_int);
         }
-        if (*pctx).size == 0 as ::core::ffi::c_int {
+        if (*pctx).cctxs.is_empty() {
             *(*pctx).cause = xstrdup(b"no panes\0" as *const u8 as *const ::core::ffi::c_char);
             return -(1 as ::core::ffi::c_int);
         }
@@ -1529,10 +1488,8 @@ unsafe extern "C" fn layout_construct(
     return 0 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
-    let mut cctx: *mut layout_parse_cell_ctx = ::core::ptr::null_mut::<layout_parse_cell_ctx>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpnext: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut i: ::core::ffi::c_int = 0;
     wp = (*w).z_index.tqh_first;
     while !wp.is_null() {
         wpnext = (*wp).zentry.tqe_next;
@@ -1547,8 +1504,8 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
         wp = wpnext;
     }
     qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
+        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
+        (*pctx).cctxs.len() as size_t,
         ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
         Some(
             layout_parse_zindex_cmp
@@ -1558,10 +1515,8 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
                 ) -> ::core::ffi::c_int,
         ),
     );
-    i = 0 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        cctx = (*pctx).cctxs.offset(i as isize) as *mut layout_parse_cell_ctx;
-        wp = (*(*cctx).lc).wp;
+    for cctx in &(*pctx).cctxs {
+        wp = (*cctx.lc).wp;
         if window_pane_is_floating(wp) != 0 {
             (*wp).zentry.tqe_next = (*w).z_index.tqh_first;
             if !(*wp).zentry.tqe_next.is_null() {
@@ -1572,16 +1527,11 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
             (*w).z_index.tqh_first = wp;
             (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
         }
-        i += 1;
     }
-    i = 0 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        cctx = (*pctx).cctxs.offset(i as isize) as *mut layout_parse_cell_ctx;
-        if (*cctx).active == 1 as ::core::ffi::c_int {
-            window_set_active_pane(w, (*(*cctx).lc).wp, 1 as ::core::ffi::c_int);
+    for cctx in &(*pctx).cctxs {
+        if cctx.active == 1 as ::core::ffi::c_int {
+            window_set_active_pane(w, (*cctx.lc).wp, 1 as ::core::ffi::c_int);
             break;
-        } else {
-            i += 1;
         }
     }
     while !(*w).last_panes.tqh_first.is_null() {
@@ -1589,8 +1539,8 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
         window_pane_stack_remove(&raw mut (*w).last_panes, wp);
     }
     qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
+        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
+        (*pctx).cctxs.len() as size_t,
         ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
         Some(
             layout_parse_last_cmp
@@ -1600,24 +1550,19 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
                 ) -> ::core::ffi::c_int,
         ),
     );
-    i = 0 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        cctx = (*pctx).cctxs.offset(i as isize) as *mut layout_parse_cell_ctx;
-        wp = (*(*cctx).lc).wp;
-        if !((*cctx).last < 0 as ::core::ffi::c_int || (*cctx).active == 1 as ::core::ffi::c_int) {
+    for cctx in &(*pctx).cctxs {
+        wp = (*cctx.lc).wp;
+        if !(cctx.last < 0 as ::core::ffi::c_int || cctx.active == 1 as ::core::ffi::c_int) {
             window_pane_stack_push(&raw mut (*w).last_panes, wp);
         }
-        i += 1;
     }
 }
 unsafe extern "C" fn layout_parse_ctx_check_indexes(
     mut pctx: *mut layout_parse_ctx,
 ) -> ::core::ffi::c_int {
-    let mut i: ::core::ffi::c_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
     qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
+        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
+        (*pctx).cctxs.len() as size_t,
         ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
         Some(
             layout_parse_index_cmp
@@ -1627,20 +1572,18 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
                 ) -> ::core::ffi::c_int,
         ),
     );
-    i = 1 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        if (*(*pctx).cctxs.offset(i as isize)).index
-            == (*(*pctx).cctxs.offset((i - 1 as ::core::ffi::c_int) as isize)).index
-        {
-            *(*pctx).cause =
-                xstrdup(b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_int;
-        }
-        i += 1;
+    if (*pctx)
+        .cctxs
+        .windows(2)
+        .any(|pair| pair[0].index == pair[1].index)
+    {
+        *(*pctx).cause =
+            xstrdup(b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char);
+        return 0 as ::core::ffi::c_int;
     }
     qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
+        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
+        (*pctx).cctxs.len() as size_t,
         ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
         Some(
             layout_parse_zindex_cmp
@@ -1650,24 +1593,22 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
                 ) -> ::core::ffi::c_int,
         ),
     );
-    n = 0 as ::core::ffi::c_int;
-    while n < (*pctx).size && (*(*pctx).cctxs.offset(n as isize)).zindex == INT_MAX {
-        n += 1;
-    }
-    i = n + 1 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        if (*(*pctx).cctxs.offset(i as isize)).zindex
-            == (*(*pctx).cctxs.offset((i - 1 as ::core::ffi::c_int) as isize)).zindex
-        {
-            *(*pctx).cause =
-                xstrdup(b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_int;
-        }
-        i += 1;
+    let n = (*pctx)
+        .cctxs
+        .iter()
+        .take_while(|cctx| cctx.zindex == INT_MAX)
+        .count();
+    if (&(*pctx).cctxs)[n..]
+        .windows(2)
+        .any(|pair| pair[0].zindex == pair[1].zindex)
+    {
+        *(*pctx).cause =
+            xstrdup(b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char);
+        return 0 as ::core::ffi::c_int;
     }
     qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
+        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
+        (*pctx).cctxs.len() as size_t,
         ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
         Some(
             layout_parse_last_cmp
@@ -1677,20 +1618,18 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
                 ) -> ::core::ffi::c_int,
         ),
     );
-    n = 0 as ::core::ffi::c_int;
-    while n < (*pctx).size && (*(*pctx).cctxs.offset(n as isize)).last >= 0 as ::core::ffi::c_int {
-        n += 1;
-    }
-    i = 1 as ::core::ffi::c_int;
-    while i < n {
-        if (*(*pctx).cctxs.offset(i as isize)).last
-            == (*(*pctx).cctxs.offset((i - 1 as ::core::ffi::c_int) as isize)).last
-        {
-            *(*pctx).cause =
-                xstrdup(b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_int;
-        }
-        i += 1;
+    let n = (*pctx)
+        .cctxs
+        .iter()
+        .take_while(|cctx| cctx.last >= 0)
+        .count();
+    if (&(*pctx).cctxs)[..n]
+        .windows(2)
+        .any(|pair| pair[0].last == pair[1].last)
+    {
+        *(*pctx).cause =
+            xstrdup(b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char);
+        return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;
 }
