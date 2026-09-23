@@ -1172,6 +1172,19 @@ legacy callers safe.
   compilation, and `git diff --check` passed. The live check covers the
   valid prompt path; no sanitizer run was performed.
 
+### Increment 58 — startup path-list parser copy (2026-09-22)
+
+- `expand_paths` now owns its writable, NUL-terminated colon-list copy as
+  `Vec<u8>`, removing the local `xstrdup`/`free` pair. `strsep` borrows
+  pointers into stable vector storage during synchronous `expand_path`
+  and logging calls. The returned path array and individual paths retain
+  their C-owned contract, including duplicate and error branches.
+- A live-server regression checks that colon-separated HOME and XDG
+  configuration paths load in order, with the latter overriding the former.
+  Focused and workspace tests, binary build, changed-file rustfmt, and
+  `git diff --check` passed in the isolated worktree. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1186,12 +1199,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the `format_replace` mutable modifier copy (`copy0`) and other
-   local parser strings. Audit parser slices, early exits, and callback
-   reentrancy before changing the owner.
+2. Inspect the `format_replace` mutable modifier copy (`copy0`) and
+   normalized option array-key scratch. Audit parser slices, early exits,
+   and callback reentrancy before changing ownership.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–57. The remaining
+Current validation is recorded in increments 15–58. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–57 has its own local commit; none was pushed.
+Each of increments 15–58 has its own local commit; none was pushed.

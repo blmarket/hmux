@@ -110,6 +110,31 @@ fn variable_only_socket_base_and_suffixed_config_path_expand() {
 }
 
 #[test]
+fn startup_reads_colon_separated_config_paths_in_order() {
+    let server = Server::new();
+    fs::write(
+        server.home.join(".tmux.conf"),
+        b"set -g @home-config loaded\nset -g @expanded-config from-home\n",
+    )
+    .expect("write home config");
+
+    let create = server.run(&["new-session", "-d", "-s", "path-list-test"]);
+    assert!(
+        create.status.success(),
+        "new-session failed: {:?}",
+        create.stderr
+    );
+
+    let home_option = server.run(&["show-options", "-gqv", "@home-config"]);
+    assert!(home_option.status.success(), "home config query failed");
+    assert_eq!(home_option.stdout, b"loaded\n");
+
+    let xdg_option = server.run(&["show-options", "-gqv", "@expanded-config"]);
+    assert!(xdg_option.status.success(), "XDG config query failed");
+    assert_eq!(xdg_option.stdout, b"loaded\n");
+}
+
+#[test]
 fn missing_tmpdir_falls_back_to_tmp() {
     let server = Server::new();
     let create = server.run_without_tmpdir(&["new-session", "-d", "-s", "expansion-test"]);

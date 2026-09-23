@@ -588,7 +588,6 @@ unsafe extern "C" fn expand_paths(
     mut no_realpath: ::core::ffi::c_int,
 ) {
     let mut home: *const ::core::ffi::c_char = find_home();
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut resolved: [::core::ffi::c_char; 4096] = [0; 4096];
@@ -597,8 +596,10 @@ unsafe extern "C" fn expand_paths(
     let mut i: u_int = 0;
     *paths = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     *n = 0 as u_int;
-    tmp = xstrdup(s);
-    copy = tmp;
+    // strsep rewrites separators in place; keep its borrowed token pointers
+    // backed by one stable, NUL-terminated allocation for the entire loop.
+    let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
+    tmp = copy.as_mut_ptr().cast();
     loop {
         next = strsep(
             &raw mut tmp,
@@ -657,7 +658,6 @@ unsafe extern "C" fn expand_paths(
             }
         }
     }
-    free(copy as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn make_label(
     mut label: *const ::core::ffi::c_char,
