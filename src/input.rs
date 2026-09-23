@@ -61,7 +61,10 @@ use crate::src::window::{
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
     window_update_activity,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xsnprintf, xstrdup, xstrndup, xvasprintf};
+use crate::src::xmalloc::{
+    xcalloc, xmalloc, xrealloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring,
+};
+use std::ffi::CString;
 
 pub use crate::src::shared::abi::__compar_fn_t;
 pub use crate::src::shared::abi::NULL_0;
@@ -158,6 +161,89 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub const INPUT_END_BEL: input_end_type = 1;
 pub const INPUT_END_ST: input_end_type = 0;
+
+// Every request variant is allocated through input_make_request. The public
+// intrusive-list node stays at a stable address; queued replies borrow bytes
+// from the owner until input_free_request removes and drops the node.
+#[repr(C)]
+struct InputRequestOwner {
+    request: input_request,
+    reply: Option<CString>,
+}
+const _: () = assert!(::core::mem::offset_of!(InputRequestOwner, request) == 0);
+
+impl InputRequestOwner {
+    fn new() -> *mut input_request {
+        Box::into_raw(Box::new(Self {
+            request: unsafe { ::core::mem::zeroed() },
+            reply: None,
+        }))
+        .cast()
+    }
+
+    unsafe fn set_reply(ir: *mut input_request, reply: CString) {
+        let owner = &mut *ir.cast::<Self>();
+        owner.request.data = reply.as_ptr() as *mut ::core::ffi::c_void;
+        owner.reply = Some(reply);
+    }
+}
+
+#[cfg(test)]
+mod input_request_ownership_tests {
+    use super::*;
+    use std::ffi::CStr;
+
+    #[test]
+    fn queued_reply_survives_earlier_request_removal() {
+        unsafe {
+            let mut ictx: input_ctx = ::core::mem::zeroed();
+            ictx.requests.tqh_last = &raw mut ictx.requests.tqh_first;
+
+            // Seed one pending nonqueue request without starting a timer.
+            let pending = InputRequestOwner::new();
+            (*pending).ictx = &raw mut ictx;
+            (*pending).type_0 = INPUT_REQUEST_PALETTE;
+            (*pending).entry.tqe_prev = ictx.requests.tqh_last;
+            *ictx.requests.tqh_last = pending;
+            ictx.requests.tqh_last = &raw mut (*pending).entry.tqe_next;
+            ictx.request_count = 1;
+
+            input_reply(
+                &raw mut ictx,
+                1,
+                b"reply:%s\0".as_ptr().cast(),
+                b"\xff\xfe\0".as_ptr().cast::<::core::ffi::c_char>(),
+            );
+            let queued = (*pending).entry.tqe_next;
+            assert_eq!((*queued).type_0, INPUT_REQUEST_QUEUE);
+            assert_eq!(
+                CStr::from_ptr((*queued).data.cast()).to_bytes(),
+                b"reply:\xff\xfe"
+            );
+
+            input_free_request(pending);
+            assert_eq!(ictx.requests.tqh_first, queued);
+            assert_eq!(
+                CStr::from_ptr((*queued).data.cast()).to_bytes(),
+                b"reply:\xff\xfe"
+            );
+            input_free_request(queued);
+            assert!(ictx.requests.tqh_first.is_null());
+            assert_eq!(ictx.request_count, 0);
+        }
+    }
+
+    #[test]
+    fn reply_without_pending_request_does_not_queue() {
+        unsafe {
+            let mut ictx: input_ctx = ::core::mem::zeroed();
+            ictx.requests.tqh_last = &raw mut ictx.requests.tqh_first;
+            input_reply(&raw mut ictx, 1, b"\x1b[0n\0".as_ptr().cast());
+            assert!(ictx.requests.tqh_first.is_null());
+            assert_eq!(ictx.request_count, 0);
+        }
+    }
+}
 
 pub const INPUT_STRING: input_param_type_0 = 2;
 pub const INPUT_NUMBER: input_param_type_0 = 1;
@@ -2554,15 +2640,13 @@ unsafe extern "C" fn input_reply(
 ) {
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
     let mut ap: ::core::ffi::VaList;
-    let mut reply: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ap = args.clone();
-    xvasprintf(&raw mut reply, fmt, ap);
+    let reply = xvasprintf_cstring(fmt, ap);
     if add != 0 && !(*ictx).requests.tqh_first.is_null() {
         ir = input_make_request(ictx, INPUT_REQUEST_QUEUE);
-        (*ir).data = reply as *mut ::core::ffi::c_void;
+        InputRequestOwner::set_reply(ir, reply);
     } else {
-        input_send_reply(ictx, reply);
-        free(reply as *mut ::core::ffi::c_void);
+        input_send_reply(ictx, reply.as_ptr());
     };
 }
 unsafe extern "C" fn input_clear(mut ictx: *mut input_ctx) {
@@ -5905,10 +5989,7 @@ unsafe extern "C" fn input_make_request(
     mut type_0: input_request_type,
 ) -> *mut input_request {
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    ir = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<input_request>() as size_t,
-    ) as *mut input_request;
+    ir = InputRequestOwner::new();
     (*ir).type_0 = type_0;
     (*ir).ictx = ictx;
     (*ir).t = get_timer();
@@ -5939,8 +6020,7 @@ unsafe extern "C" fn input_free_request(mut ir: *mut input_request) {
         (*ictx).requests.tqh_last = (*ir).entry.tqe_prev;
     }
     *(*ir).entry.tqe_prev = (*ir).entry.tqe_next;
-    free((*ir).data);
-    free(ir as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(ir.cast::<InputRequestOwner>()));
 }
 unsafe extern "C" fn input_add_request(
     mut ictx: *mut input_ctx,

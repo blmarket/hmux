@@ -905,6 +905,27 @@ legacy callers safe.
   and null-client branch were source-audited but lack direct live assertions;
   no sanitizer run was performed.
 
+### Increment 39 — queued input reply strings (2026-09-22)
+
+- `input_reply` now formats with `xvasprintf_cstring`. A private
+  first-field `InputRequestOwner` keeps the ABI `input_request` pointer
+  stable and owns an optional `CString` for queued replies. The `data`
+  pointer borrows that buffer. All request variants use the same constructor
+  and `input_free_request` destructor, covering completion, timeout,
+  cancellation, and input-context teardown. Immediate replies borrow their
+  local owner only during synchronous delivery.
+- Removed the reply's direct `xvasprintf` and manual `free` paths. Intrusive
+  request lists and Box raw-pointer record lifetimes remain compatibility
+  boundaries. Production reply formats use fixed text, numeric conversions,
+  or `%s` from existing C strings; none has `%c` or a supported observable
+  suffix after an embedded NUL.
+- Focused unit tests cover queued non-UTF-8 bytes after an earlier request is
+  removed and the immediate path. `scripts/input_reply_cli_checks.py` covers
+  direct CSI 6n and a queued CSI 6n delayed behind an unanswered OSC 4 palette
+  query until timeout. Workspace tests, binary build, rustfmt, and
+  `git diff --check` passed in the isolated worktree. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -915,16 +936,18 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Outside the `xmalloc` ABI wrapper, no remaining direct `xvasprintf` caller
-   uses its returned byte length. The remaining values are observed as C
-   strings, so no supported embedded-NUL E2E case requires a full-byte
-   buffer. Continue with the next small containing lifecycle.
-2. `input_reply` stores formatted C strings in queued request records. Audit
-   the containing lifecycle before adding `CString`; a local owner would dangle.
-   `format_printf` and the `xmalloc` wrappers retain their C allocator ABI.
+1. The only direct `xvasprintf` production caller outside the `xmalloc`
+   wrappers is `format_printf`. Its callback ABI requires a C-owned return
+   that consumers libc-free, so a local `CString` does not remove manual
+   ownership. Revisit when the callback return contract can change.
+2. Next inspect `status_message_escape`: its sole caller in
+   `status_message_redraw` frees the returned `#`-escaped scratch string
+   immediately after `format_add` copies it. A local `CString` return should
+   remove that matched allocation/free pair without changing client layout.
+   Then inspect other local format expansion scratch strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
-   are separate ownership candidates after the simpler string lifetimes.
+   require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–38. The remaining
+Current validation is recorded in increments 15–39. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–38 has its own local commit; none was pushed.
+Each of increments 15–39 has its own local commit; none was pushed.
