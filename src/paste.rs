@@ -10,7 +10,7 @@ pub use crate::src::shared::paste::{
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::tmux::{clean_name, global_options};
+use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::utf8::utf8_strvis;
 use crate::src::xmalloc::{xasprintf, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
@@ -372,8 +372,7 @@ pub unsafe extern "C" fn paste_rename(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    let raw_name = clean_name(newname, 0 as ::core::ffi::c_int);
-    if raw_name.is_null() {
+    let Some(name) = clean_name_cstring(CStr::from_ptr(newname), 0) else {
         if !cause.is_null() {
             xasprintf(
                 cause,
@@ -382,9 +381,7 @@ pub unsafe extern "C" fn paste_rename(
             );
         }
         return -(1 as ::core::ffi::c_int);
-    }
-    let name = CStr::from_ptr(raw_name).to_owned();
-    free(raw_name.cast());
+    };
     pb = paste_get_name(oldname);
     if pb.is_null() {
         if !cause.is_null() {
@@ -470,8 +467,7 @@ unsafe fn paste_set_inner(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    let raw_name = clean_name(name, 0 as ::core::ffi::c_int);
-    if raw_name.is_null() {
+    let Some(newname) = clean_name_cstring(CStr::from_ptr(name), 0) else {
         if !cause.is_null() {
             xasprintf(
                 cause,
@@ -480,9 +476,7 @@ unsafe fn paste_set_inner(
             );
         }
         return -(1 as ::core::ffi::c_int);
-    }
-    let newname = CStr::from_ptr(raw_name).to_owned();
-    free(raw_name.cast());
+    };
     pb = paste_new_owned(newname);
     paste_store_data(pb, Some(data));
     free(c_producer);

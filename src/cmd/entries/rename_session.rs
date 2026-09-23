@@ -71,7 +71,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::tmux::{check_name, clean_name};
+use crate::src::tmux::{check_name, clean_name_cstring};
 use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -122,7 +122,6 @@ unsafe extern "C" fn cmd_rename_session_exec(
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut newname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     tmp = format_single_from_target(item, args_string(args, 0 as u_int));
     if check_name(tmp) == 0 {
@@ -134,19 +133,18 @@ unsafe extern "C" fn cmd_rename_session_exec(
         free(tmp as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
-    newname = clean_name(tmp, 0 as ::core::ffi::c_int);
+    let newname =
+        clean_name_cstring(CStr::from_ptr(tmp), 0).expect("check_name validated the session name");
     free(tmp as *mut ::core::ffi::c_void);
-    if strcmp(newname, (*s).name) == 0 as ::core::ffi::c_int {
-        free(newname as *mut ::core::ffi::c_void);
+    if strcmp(newname.as_ptr(), (*s).name) == 0 as ::core::ffi::c_int {
         return CMD_RETURN_NORMAL;
     }
-    if !session_find(newname).is_null() {
+    if !session_find(newname.as_ptr()).is_null() {
         cmdq_error(
             item,
             b"duplicate session: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            newname,
+            newname.as_ptr(),
         );
-        free(newname as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
     ep = event_payload_create();
@@ -167,12 +165,10 @@ unsafe extern "C" fn cmd_rename_session_exec(
         ep,
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        newname,
+        newname.as_ptr(),
     );
-    let owned_name = CStr::from_ptr(newname).to_owned();
-    free(newname.cast());
     sessions_remove(&raw mut sessions, s);
-    drop(session_replace_name(s, owned_name));
+    drop(session_replace_name(s, newname));
     sessions_insert(&raw mut sessions, s);
     server_status_session(s);
     events_fire(

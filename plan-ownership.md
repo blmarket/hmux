@@ -125,12 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `paste_rename`, `paste_set_inner`, and `rename-session` copy the C-owned
-   output of `clean_name` into `CString` and then free the C allocation. A
-   private `clean_name_cstring` can build the escaped name directly with the
-   existing UTF-8 `CString` helper; the exported `clean_name` adapter retains
-   its C-owned output. Preserve invalid UTF-8 rejection and the untrusted
-   `#(` rewrite. This is smaller than disconnected-client queue cancellation.
+1. `window_set_name` still runs `clean_name` through a C allocation before
+   `window_replace_name_from_c_owned` copies it into the existing `WindowOwned`
+   `CString`. Use `clean_name_cstring` and move the result directly into
+   `window_replace_name`, keeping the old name alive across synchronous rename
+   callbacks. The explicit-name branch of `break-pane` has the same copy/free
+   pattern and can be a separate small increment. Compare rename and
+   break-pane CLI results with pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1178,6 +1179,20 @@ name error.
   with pinned tmux matched normalized array-key lookup, session option override,
   ordinary format-table fallback, and missing/invalid option names. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 421 — own cleaned paste and session names directly (2026-09-23)
+
+- `clean_name_cstring` now validates, rewrites untrusted `#(`, and escapes into
+  a `CString` directly. The exported `clean_name` duplicates that owned result
+  only at its C return boundary. `paste_rename`, named `paste_set_inner`, and
+  `rename-session` move the owned result into their existing owners, removing
+  three C allocation/copy/free round trips. Other `clean_name` callers still
+  use its C-owned adapter for their raw C fields.
+- Serialized workspace tests, binary build, focused clean-name tests, and
+  sorted-buffer CLI checks passed. Named set/rename paste and session-name CLI
+  checks passed against pinned tmux, including invalid UTF-8, duplicate names,
+  and session rename hooks. Changed-file rustfmt and diff checks passed. No
+  sanitizer ran.
 
 ## Historical migration index
 

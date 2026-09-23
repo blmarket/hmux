@@ -53,7 +53,7 @@ pub use crate::src::shared::stdio::{
 pub use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tty_features::tty_parse_features;
-use crate::src::utf8::{utf8_isvalid, utf8_stravis};
+use crate::src::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
@@ -789,14 +789,19 @@ pub unsafe extern "C" fn get_timer() -> uint64_t {
 }
 #[no_mangle]
 pub unsafe extern "C" fn clean_name(
-    mut name: *const ::core::ffi::c_char,
-    mut untrusted: ::core::ffi::c_int,
+    name: *const ::core::ffi::c_char,
+    untrusted: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut new_name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if utf8_isvalid(name) == 0 {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    clean_name_cstring(CStr::from_ptr(name), untrusted)
+        .map_or(::core::ptr::null_mut(), |name| xstrdup(name.as_ptr()))
+}
+
+/// Escape a validated name once before moving it into its Rust owner.
+pub unsafe fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> Option<CString> {
+    if utf8_isvalid(name.as_ptr()) == 0 {
+        return None;
     }
-    let mut copy = CStr::from_ptr(name).to_bytes_with_nul().to_vec();
+    let mut copy = name.to_bytes_with_nul().to_vec();
     if untrusted != 0 {
         for i in 0..copy.len() - 1 {
             if copy[i] == b'#' && copy[i + 1] == b'(' {
@@ -804,12 +809,10 @@ pub unsafe extern "C" fn clean_name(
             }
         }
     }
-    utf8_stravis(
-        &raw mut new_name,
+    Some(utf8_stravis_cstring(
         copy.as_ptr().cast(),
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
-    );
-    return new_name;
+    ))
 }
 #[no_mangle]
 pub unsafe extern "C" fn check_name(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
