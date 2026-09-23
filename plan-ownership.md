@@ -943,6 +943,20 @@ legacy callers safe.
   and set-option prompt checks also matched the baseline. No sanitizer was
   run.
 
+### Increment 194 — window-tree target owner (2026-09-22)
+
+- `window_tree_get_target` now returns `Option<CString>`, preserving the
+  absent-target branch and exact session-name bytes and numeric target
+  syntax. Both callers borrow the target only during synchronous
+  `mode_tree_run_command` calls. Removed three `xasprintf` branches and both
+  matching frees; the internal helper no longer needs a C calling
+  convention.
+- In the isolated branch, library/binary build, two focused mode-tree/window
+  tests, changed-file rustfmt, Python syntax check, and `git diff --check`
+  passed. The new attached-client CLI check selected session, window, and
+  pane targets through both Enter and `:` and matched exact target bytes
+  with the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -953,11 +967,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_tree_get_target` still returns a C-owned target string assembled
-   by `xasprintf`. Its two callers pass it synchronously to
-   `mode_tree_run_command` and free it. Migrate the helper and both callers
-   together to `Option<CString>`, preserving the absent-target branch and
-   target bytes.
+1. `expand_path` in `src/tmux.rs` still returns a C-owned path assembled by
+   `xasprintf`/`xstrdup`. Its sole `expand_paths` caller uses it synchronously
+   and frees it after realpath handling. Migrate both together to
+   `Option<CString>` while preserving the absent-path and duplicate rules.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual

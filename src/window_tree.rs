@@ -122,7 +122,7 @@ use crate::src::window::{
     window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_index,
     window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::{xasprintf, xstrdup};
+use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -2001,55 +2001,46 @@ unsafe extern "C" fn window_tree_update(mut wme: *mut window_mode_entry) {
     mode_tree_draw((*data).data);
     (*(*data).wp).flags |= PANE_REDRAW;
 }
-unsafe extern "C" fn window_tree_get_target(
+unsafe fn window_tree_get_target(
     mut item: *mut window_tree_itemdata,
     mut fs: *mut cmd_find_state,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut target: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     window_tree_pull_item(item, &raw mut s, &raw mut wl, &raw mut wp);
-    target = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    match (*item).type_0 as ::core::ffi::c_uint {
-        1 => {
-            if !s.is_null() {
-                xasprintf(
-                    &raw mut target,
-                    b"=%s:\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*s).name,
-                );
-            }
+    let target = match (*item).type_0 as ::core::ffi::c_uint {
+        1 if !s.is_null() => {
+            let mut bytes = Vec::from(b"=".as_slice());
+            bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+            bytes.push(b':');
+            Some(CString::new(bytes).unwrap())
         }
-        2 => {
-            if !(s.is_null() || wl.is_null()) {
-                xasprintf(
-                    &raw mut target,
-                    b"=%s:%u.\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*s).name,
-                    (*wl).idx,
-                );
-            }
+        2 if !s.is_null() && !wl.is_null() => {
+            let mut bytes = Vec::from(b"=".as_slice());
+            bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+            bytes.push(b':');
+            bytes.extend_from_slice((*wl).idx.to_string().as_bytes());
+            bytes.push(b'.');
+            Some(CString::new(bytes).unwrap())
         }
-        3 => {
-            if !(s.is_null() || wl.is_null() || wp.is_null()) {
-                xasprintf(
-                    &raw mut target,
-                    b"=%s:%u.%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*s).name,
-                    (*wl).idx,
-                    (*wp).id,
-                );
-            }
+        3 if !s.is_null() && !wl.is_null() && !wp.is_null() => {
+            let mut bytes = Vec::from(b"=".as_slice());
+            bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+            bytes.push(b':');
+            bytes.extend_from_slice((*wl).idx.to_string().as_bytes());
+            bytes.extend_from_slice(b".%");
+            bytes.extend_from_slice((*wp).id.to_string().as_bytes());
+            Some(CString::new(bytes).unwrap())
         }
-        0 | _ => {}
-    }
-    if target.is_null() {
+        _ => None,
+    };
+    if target.is_none() {
         cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
     } else {
         cmd_find_from_winlink_pane(fs, wl, wp, 0 as ::core::ffi::c_int);
     }
-    return target;
+    target
 }
 unsafe extern "C" fn window_tree_command_each(
     mut modedata: *mut ::core::ffi::c_void,
@@ -2059,7 +2050,6 @@ unsafe extern "C" fn window_tree_command_each(
 ) {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -2069,11 +2059,9 @@ unsafe extern "C" fn window_tree_command_each(
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    name = window_tree_get_target(item, &raw mut fs);
-    if !name.is_null() {
-        mode_tree_run_command(c, &raw mut fs, (*data).entered, name);
+    if let Some(name) = window_tree_get_target(item, &raw mut fs) {
+        mode_tree_run_command(c, &raw mut fs, (*data).entered, name.as_ptr());
     }
-    free(name as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_tree_command_done(
     mut item: *mut cmdq_item,
@@ -2387,7 +2375,6 @@ unsafe extern "C" fn window_tree_key(
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
     let mut item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
     let mut new_item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -2594,17 +2581,15 @@ unsafe extern "C" fn window_tree_key(
             );
         }
         13 => {
-            name = window_tree_get_target(item, &raw mut fs);
-            if !name.is_null() {
+            if let Some(name) = window_tree_get_target(item, &raw mut fs) {
                 mode_tree_run_command(
                     c,
                     ::core::ptr::null_mut::<cmd_find_state>(),
                     (*data).command,
-                    name,
+                    name.as_ptr(),
                 );
             }
             finished = 1 as ::core::ffi::c_int;
-            free(name as *mut ::core::ffi::c_void);
         }
         _ => {}
     }
