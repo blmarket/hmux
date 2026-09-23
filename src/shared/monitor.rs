@@ -49,10 +49,9 @@ pub struct monitor_items {
     pub storage: *mut std::collections::BTreeMap<Vec<u8>, *mut monitor_item>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned by its monitor set. The item index borrows its stable address
-/// until `monitor_free_item` removes it and releases the nested records.
+/// and its name and format until `monitor_free_item` releases the record.
 pub struct monitor_item {
     pub name: *mut ::core::ffi::c_char,
     pub format: *mut ::core::ffi::c_char,

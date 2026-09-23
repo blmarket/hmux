@@ -125,13 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `monitor_item.name` and `.format` are the next bounded live strings.
-   `monitor_add` constructs and replaces items; `monitor_free_item` has
-   their final frees. An offset-zero owner can lend both public pointers.
-   Copy incoming bytes before removing a replaced item because inputs may
-   alias its fields. Preserve index removal before owner drop and keep
-   callback reads valid through `monitor_report`. The monitor-storage test
-   has bare item fixtures that need owner-aware construction.
+1. `paste_buffer.name` is the next bounded live owner. `paste_add` builds
+   automatic names, `paste_set` installs a cleaned explicit name, and
+   `paste_rename` replaces it; `paste_free` has the final free. An offset-zero
+   owner can lend the public name pointer while preserving buffer address
+   and both indexes. Rename must remove the old index before replacement
+   and retain the old name through deletion events, since callers may pass
+   the current name pointer. Leave paste data's separate C-owned transfer.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -765,6 +765,22 @@ libc allocation on success and leaves it with the caller on error, so a local
   filename/line diagnostic, with source commands before and after; it also
   covers string, formatted, and background paths. Changed-file rustfmt and
   diff checks passed. No sanitizer ran.
+
+### Increment 394 — owned monitor item name and format (2026-09-23)
+
+- `MonitorItemOwner` now boxes each public `monitor_item` at offset zero and
+  owns byte-preserving `CString` name and format fields. `monitor_add` copies
+  both incoming strings before finding and removing a replaced item, so
+  either input can alias the old item's borrowed fields. The item index is
+  removed before owner drop. Removed both creation `xstrdup` calls and both
+  final manual frees; the public item no longer derives `Copy` or `Clone`.
+  The distinct `last` values retain their separate lifetime.
+- The monitor-storage test now uses `monitor_add`, verifies raw `0xff` name
+  and format bytes after caller buffer mutation, replaces an item using its
+  own name and format pointers, and covers nested pane/window ordering and
+  removal. Serialized workspace tests and binary build passed. Monitor
+  leaf and hook append/string CLI comparisons passed against pinned 3.8-rc.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

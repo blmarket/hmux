@@ -81,6 +81,16 @@ use std::ffi::{CStr, CString};
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
+/// The public monitor item borrows its name and format from this stable box.
+#[repr(C)]
+struct MonitorItemOwner {
+    node: monitor_item,
+    name: CString,
+    format: CString,
+}
+
+const _: () = assert!(::core::mem::offset_of!(MonitorItemOwner, node) == 0);
+
 unsafe extern "C" fn monitor_get_session(mut ms: *mut monitor_set) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !(*ms).client.is_null() {
@@ -183,9 +193,7 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
     }
     free((*me).last as *mut ::core::ffi::c_void);
     monitor_items_remove(&raw mut (*ms).items, me);
-    free((*me).name as *mut ::core::ffi::c_void);
-    free((*me).format as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(me));
+    drop(Box::from_raw(me.cast::<MonitorItemOwner>()));
 }
 unsafe extern "C" fn monitor_report(
     mut ms: *mut monitor_set,
@@ -821,8 +829,11 @@ pub unsafe extern "C" fn monitor_add(
     mut flags: ::core::ffi::c_int,
 ) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
+    // Either input may borrow the item being replaced.
+    let owned_name = CStr::from_ptr(name).to_owned();
+    let owned_format = CStr::from_ptr(format).to_owned();
     let mut find: monitor_item = monitor_item {
-        name: name as *mut ::core::ffi::c_char,
+        name: owned_name.as_ptr() as *mut ::core::ffi::c_char,
         format: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         type_0: MONITOR_SESSION,
         id: 0,
@@ -848,9 +859,14 @@ pub unsafe extern "C" fn monitor_add(
     if !me.is_null() {
         monitor_free_item(ms, me);
     }
-    me = Box::into_raw(Box::new(::core::mem::zeroed::<monitor_item>()));
-    (*me).name = xstrdup(name);
-    (*me).format = xstrdup(format);
+    let mut owner = Box::new(MonitorItemOwner {
+        node: ::core::mem::zeroed::<monitor_item>(),
+        name: owned_name,
+        format: owned_format,
+    });
+    owner.node.name = owner.name.as_ptr() as *mut _;
+    owner.node.format = owner.format.as_ptr() as *mut _;
+    me = Box::into_raw(owner).cast::<monitor_item>();
     (*me).type_0 = type_0;
     (*me).id = id as u_int;
     (*me).flags = flags;
