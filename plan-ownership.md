@@ -1260,6 +1260,20 @@ legacy callers safe.
   and the live CLI check passed in the isolated worktree. No sanitizer run
   was performed.
 
+### Increment 64 — parsed window-name copy (2026-09-22)
+
+- `parse_window_name` now owns its writable, NUL-terminated input copy as
+  `Vec<u8>`, removing `xstrdup`/`free`. The stable buffer supports quote,
+  `exec `, leading space/dash, slash basename, and trailing-character
+  edits. `__xpg_basename` may write within it; `clean_name` reads it
+  synchronously and returns a separate C-owned string. An explicit drop
+  preserves the old release point before the empty-name fallback.
+- A direct C ABI test covers those parser branches, first-NUL behavior,
+  invalid UTF-8 fallback, empty input, and caller `free`. Workspace tests,
+  binary build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. Repository-wide rustfmt reports unrelated existing
+  differences; no live rename or sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1274,12 +1288,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `tty_parse_features`' writable feature list and
-   `parse_window_name`'s local name copy, then the width-cache parser copy.
-   Remaining `xstrndup` callers return or transfer C-owned strings.
+2. Inspect `tty_parse_features`' writable feature list and the width-cache
+   parser copy. Remaining `xstrndup` callers return or transfer C-owned
+   strings.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–63. The remaining
+Current validation is recorded in increments 15–64. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–63 has its own local commit; none was pushed.
+Each of increments 15–64 has its own local commit; none was pushed.

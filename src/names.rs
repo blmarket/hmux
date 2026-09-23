@@ -72,6 +72,7 @@ pub use crate::src::shared::window::{
 use crate::src::tmux::clean_name;
 use crate::src::window::window_set_name;
 use crate::src::xmalloc::xstrdup;
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -254,11 +255,12 @@ unsafe extern "C" fn format_window_name(mut w: *mut window) -> *mut ::core::ffi:
 pub unsafe extern "C" fn parse_window_name(
     mut in_0: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    copy = xstrdup(in_0);
-    name = copy;
+    // Keep the writable copy alive through basename and clean_name, which reads
+    // it synchronously and returns a separate C-owned string.
+    let mut copy = CStr::from_ptr(in_0).to_bytes_with_nul().to_vec();
+    name = copy.as_mut_ptr().cast();
     if *name as ::core::ffi::c_int == '"' as i32 {
         name = name.offset(1);
     }
@@ -304,7 +306,7 @@ pub unsafe extern "C" fn parse_window_name(
         name = __xpg_basename(name);
     }
     name = clean_name(name, 0 as ::core::ffi::c_int);
-    free(copy as *mut ::core::ffi::c_void);
+    drop(copy);
     if name.is_null() {
         return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     }
