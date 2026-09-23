@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned by its creator until `event_payload_free`. `events_fire` lends
+/// this stable address to callbacks, then frees items and target references.
 pub struct event_payload {
     pub items: event_payload_tree,
     pub target: cmd_find_state,

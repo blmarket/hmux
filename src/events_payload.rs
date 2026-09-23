@@ -292,10 +292,7 @@ unsafe extern "C" fn event_payload_set_item(
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_create() -> *mut event_payload {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
-    ep = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload>() as size_t,
-    ) as *mut event_payload;
+    ep = Box::into_raw(Box::new(::core::mem::zeroed::<event_payload>()));
     (*ep).items.entries = Box::into_raw(Box::new(event_payload_tree_storage::default()));
     cmd_find_clear_state(&raw mut (*ep).target, 0 as ::core::ffi::c_int);
     return ep;
@@ -317,7 +314,7 @@ pub unsafe extern "C" fn event_payload_free(mut ep: *mut event_payload) {
             (*ep).items.entries = ::core::ptr::null_mut::<event_payload_tree_storage>();
         }
         event_payload_free_target(ep);
-        free(ep as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(ep));
     }
 }
 #[no_mangle]

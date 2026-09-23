@@ -2595,6 +2595,18 @@ legacy callers safe.
   passed. `utf8.rs` retains exactly its pre-existing rustfmt differences. No
   sanitizer was run.
 
+### Increment 309 — boxed outer event payload records (2026-09-23)
+
+- `event_payload_create` now boxes its zeroed C-layout `event_payload` record.
+  `event_payload_free` still removes and releases each item, drops the separate
+  item-map Box, and releases target references before consuming the outer
+  Box. `events_fire` lends its stable pointer to callbacks until dispatch
+  ends; no callback or fixture owns an alternate outer allocation.
+- Focused event-sink, payload-item, and window-name tests passed, as did the
+  full workspace tests and binary build. Live event-payload-format and
+  wait-event CLI checks passed on candidate and pinned pre-migration binaries.
+  Changed files pass rustfmt and diff checks. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2605,12 +2617,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Outer `event_payload` records in `src/events_payload.rs` are the next
-   small owner. `event_payload_create` allocates one record and
-   `event_payload_free` is its final release after item-map teardown and
-   target-reference release. Callback consumers borrow it during
-   `events_fire`; preserve the C layout and cleanup order. The separate
-   `utf8_item` cache has no terminal free and needs a whole-cache design.
+1. Outer `hyperlinks` records in `src/hyperlinks.rs` have one constructor and
+   one final free, guarded by an explicit reference count. Audit copy/free
+   balancing, global URI eviction, and nested index teardown before boxing.
+   The separate `utf8_item` cache has no terminal free and needs a
+   whole-cache design.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias
