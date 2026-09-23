@@ -47,7 +47,7 @@ use crate::src::window::{
 };
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__off64_t, __off_t};
@@ -1122,7 +1122,6 @@ pub unsafe extern "C" fn spawn_editor(
     };
     let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut path: [::core::ffi::c_char; 19] =
         ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"/tmp/tmux.XXXXXXXX\0");
@@ -1175,12 +1174,18 @@ pub unsafe extern "C" fn spawn_editor(
         spawn_editor_free(es);
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
-    xasprintf(
-        &raw mut cmd,
-        b"%s %s\0" as *const u8 as *const ::core::ffi::c_char,
-        editor,
-        &raw mut path as *mut ::core::ffi::c_char,
-    );
+    let cmd = CString::new(
+        [
+            CStr::from_ptr(editor).to_bytes(),
+            b" ",
+            CStr::from_ptr(path.as_ptr()).to_bytes(),
+        ]
+        .concat(),
+    )
+    .expect("editor command components contain no NUL");
+    // spawn_pane copies sc.argv into the pane before forking. This pointer is
+    // only borrowed for that synchronous call.
+    let mut cmd_ptr = cmd.as_ptr() as *mut ::core::ffi::c_char;
     // `env_owner` remains outside the C `spawn_context` and releases this
     // temporary tree on every return path after the synchronous spawn call.
     let env_owner = EnvironOwner::new();
@@ -1191,13 +1196,13 @@ pub unsafe extern "C" fn spawn_editor(
     sc.wp0 = (*w).active;
     sc.lc = lc;
     sc.argc = 1 as ::core::ffi::c_int;
-    sc.argv = &raw mut cmd;
+    sc.argv = &raw mut cmd_ptr;
     sc.environ = env;
     sc.idx = -(1 as ::core::ffi::c_int);
     sc.cwd = _PATH_TMP.as_ptr();
     sc.flags = SPAWN_FLOATING | SPAWN_MODAL | SPAWN_FLOATOVERZOOM;
     wp = spawn_pane(&raw mut sc, &raw mut cause);
-    free(cmd as *mut ::core::ffi::c_void);
+    drop(cmd);
     if wp.is_null() {
         free(cause as *mut ::core::ffi::c_void);
         window_pop_zoom(w);
