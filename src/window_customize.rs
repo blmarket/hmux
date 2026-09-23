@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ffi::{c_char, CStr, CString};
 
 use crate::src::arguments::{args_get, args_has};
@@ -1599,10 +1600,8 @@ unsafe extern "C" fn window_customize_build_environment(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut global: ::core::ffi::c_int = 0;
     if (*data).hide_default != 0 {
         return;
@@ -1675,22 +1674,21 @@ unsafe extern "C" fn window_customize_build_environment(
             b"%d\0" as *const u8 as *const ::core::ffi::c_char,
             ((*envent).value == NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int,
         );
-        if (*envent).value.is_null() {
-            value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        let value = if (*envent).value.is_null() {
+            CStr::from_bytes_with_nul(b"\0").expect("empty C string")
         } else {
-            value = xstrdup((*envent).value);
-        }
+            CStr::from_ptr((*envent).value)
+        };
         format_add(
             ft,
             b"environment_value\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            value,
+            value.as_ptr(),
         );
         if !filter.is_null() {
             expanded = format_expand(ft, filter);
             if format_true(expanded) == 0 {
                 free(expanded as *mut ::core::ffi::c_void);
-                free(value as *mut ::core::ffi::c_void);
                 envent = environ_next(envent);
                 continue;
             } else {
@@ -1703,17 +1701,17 @@ unsafe extern "C" fn window_customize_build_environment(
         (*item).environ = env;
         (*item).environ_flags = (*envent).flags;
         window_customize_set_name(item, (*envent).name);
-        if (*envent).value.is_null() {
-            xasprintf(
-                &raw mut name,
-                b"-%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*envent).name,
-            );
+        let name: Cow<'_, CStr> = if (*envent).value.is_null() {
+            let entry_name = CStr::from_ptr((*envent).name);
+            let mut bytes = Vec::with_capacity(entry_name.to_bytes().len() + 1);
+            bytes.push(b'-');
+            bytes.extend_from_slice(entry_name.to_bytes());
             text = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            Cow::Owned(CString::new(bytes).expect("environment name contains no NUL"))
         } else {
-            name = xstrdup((*envent).name);
             text = format_expand(ft, (*data).format);
-        }
+            Cow::Borrowed(CStr::from_ptr((*envent).name))
+        };
         mode_tree_add_identity(
             (*data).data,
             top,
@@ -1725,13 +1723,11 @@ unsafe extern "C" fn window_customize_build_environment(
                 (*envent).name,
                 ::core::ptr::null(),
             ),
-            name,
+            name.as_ptr(),
             text,
             0 as ::core::ffi::c_int,
         );
-        free(name as *mut ::core::ffi::c_void);
         free(text as *mut ::core::ffi::c_void);
-        free(value as *mut ::core::ffi::c_void);
         envent = environ_next(envent);
     }
 }

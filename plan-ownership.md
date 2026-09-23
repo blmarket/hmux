@@ -798,6 +798,22 @@ legacy callers safe.
   updated buffer, and matched the pinned baseline output. No sanitizer was
   run.
 
+### Increment 183 — customize environment entry scratch (2026-09-22)
+
+- `window_customize_build_environment` now borrows each set or empty
+  environment value as `&CStr` through the synchronous `format_add` copy.
+  It uses `Cow<CStr>` for the displayed name: borrowed for set entries and
+  owned `-`-prefixed text for removed entries, copied synchronously by
+  `mode_tree_add_identity`. Removed the value `xstrdup`/free pair on both
+  normal and filter-rejected paths and the name `xasprintf`/`xstrdup`/free
+  pairs. Null removed values still display empty in formats and keep their
+  leading `-` in the tree; the separately expanded row text remains C-owned.
+- In the isolated branch, library/binary build, environment,
+  model_environment, and format_entry_owner tests, changed-file rustfmt,
+  Python syntax check, and `git diff --check` passed. The new attached-client
+  CLI check compared set UTF-8, removed, and empty rows with the pinned
+  baseline and verified filter rejection. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -808,11 +824,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_build_environment` still duplicates each environment
-   value for synchronous `format_add`, then frees it on both filter and
-   normal paths. Its displayed name is also a local `xasprintf`/`xstrdup`
-   allocation copied by `mode_tree_add_identity` and freed afterward. These
-   local owners can be migrated with the filter path checked explicitly.
+1. `systemd_move_to_new_cgroup` still formats a local UUID-derived scope
+   name with `xasprintf`, appends it synchronously to a bus message, and
+   frees it. The scope-name byte layout needs a precise UUID-format audit
+   before replacing that local owner.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -837,9 +852,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–180. The remaining
+Current validation is recorded in increments 15–183. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–180 has its own local commit; none was pushed.
+Each of increments 15–183 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1034,3 +1049,9 @@ passed on main. The socket-label-base and customize-key-detail checks
 compared with the pinned baseline binary; the login-record check confirmed
 matching pane IDs and label shape on both binaries. No combined sanitizer
 was run.
+After increments 181–183 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, systemd-pane-description, spawn-editor-command, and
+customize-environment CLI checks, changed-file rustfmt, Python syntax checks,
+and `git diff --check` passed on main. All three CLI checks also passed with
+the pinned baseline binary. No combined sanitizer was run.
