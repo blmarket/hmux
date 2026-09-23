@@ -72,6 +72,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -110,6 +111,14 @@ pub struct wait_event_item {
     pub filter: *mut ::core::ffi::c_char,
     pub verbose: ::core::ffi::c_int,
     pub entry: C2RustUnnamed_39,
+}
+// The queue and the event sink retain the C-shaped prefix address. The owner
+// keeps its name and optional filter alive until the waiter is removed.
+#[repr(C)]
+struct WaitEventOwner {
+    event: wait_event_item,
+    name: CString,
+    filter: Option<CString>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -349,9 +358,7 @@ unsafe extern "C" fn cmd_wait_for_event_cb(
 }
 unsafe extern "C" fn cmd_wait_for_event_free(mut wei: *mut wait_event_item) {
     events_remove_sink((*wei).sink);
-    free((*wei).name as *mut ::core::ffi::c_void);
-    free((*wei).filter as *mut ::core::ffi::c_void);
-    free(wei as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(wei.cast::<WaitEventOwner>()));
 }
 unsafe extern "C" fn cmd_wait_for_event(
     mut item: *mut cmdq_item,
@@ -381,18 +388,31 @@ unsafe extern "C" fn cmd_wait_for_event(
         );
         return CMD_RETURN_ERROR;
     }
-    wei = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<wait_event_item>() as size_t,
-    ) as *mut wait_event_item;
-    (*wei).item = item;
-    (*wei).name = xstrdup(name);
-    (*wei).filter = if !filter.is_null() {
-        xstrdup(filter)
-    } else {
-        ::core::ptr::null_mut::<::core::ffi::c_char>()
-    };
-    (*wei).verbose = args_has(args, 'v' as i32 as u_char);
+    let mut owner = Box::new(WaitEventOwner {
+        event: wait_event_item {
+            item,
+            sink: ::core::ptr::null_mut(),
+            name: ::core::ptr::null_mut(),
+            filter: ::core::ptr::null_mut(),
+            verbose: args_has(args, 'v' as i32 as u_char),
+            entry: C2RustUnnamed_39 {
+                tqe_next: ::core::ptr::null_mut(),
+                tqe_prev: ::core::ptr::null_mut(),
+            },
+        },
+        name: CStr::from_ptr(name).to_owned(),
+        filter: if filter.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(filter).to_owned())
+        },
+    });
+    owner.event.name = owner.name.as_ptr().cast_mut();
+    owner.event.filter = owner
+        .filter
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |filter| filter.as_ptr().cast_mut());
+    wei = &raw mut owner.event;
     (*wei).sink = events_add_sink(
         name,
         Some(
@@ -409,6 +429,7 @@ unsafe extern "C" fn cmd_wait_for_event(
     (*wei).entry.tqe_prev = wait_event_items.tqh_last;
     *wait_event_items.tqh_last = wei;
     wait_event_items.tqh_last = &raw mut (*wei).entry.tqe_next;
+    let _ = Box::into_raw(owner);
     return CMD_RETURN_WAIT;
 }
 unsafe extern "C" fn cmd_wait_for_event_list(

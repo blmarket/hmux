@@ -1978,6 +1978,19 @@ legacy callers safe.
   comparison covered group grant, duplicate grant, read-only/write updates,
   listing, and revocation. No sanitizer was run.
 
+### Increment 266 — wait-for event waiter owner (2026-09-23)
+
+- `WaitEventOwner` now keeps the C-layout `wait_event_item` prefix stable and
+  owns its event name and optional filter as `CString` values. Completion,
+  explicit wake, and server flush remove the registered sink before dropping
+  the box. Removal during event dispatch marks the sink dead until dispatch
+  ends, so its callback data is not read after the waiter drops.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and
+  `scripts/wait_event_owner_cli_checks.py` passed on main. The pinned-baseline
+  comparison covered filter rejection, event completion with verbose payload,
+  explicit wake, and server flush. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1988,8 +2001,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit `wait-for`'s event watch record and the status saved-screen record
-   for complete registration, callback, and free ownership.
+1. Audit the status saved-screen record for complete push/pop, prompt/message,
+   and client-teardown ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
