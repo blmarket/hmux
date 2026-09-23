@@ -1116,6 +1116,23 @@ legacy callers safe.
   rename, delete, and error paths, including UTF-8 and invalid non-UTF-8
   names. No sanitizer was run.
 
+### Increment 206 — command-list print buffer owner (2026-09-23)
+
+- Private `cmd_list_print_cstring` now assembles output in a `Vec<u8>` and
+  returns `CString`, eliminating its raw buffer length/realloc lifecycle.
+  `args_print_add_value`, `args_to_vector`, and both `cmd_list_copy` debug
+  paths borrow that owner synchronously, removing their returned-string
+  frees. Exported `cmd_list_print` still returns a libc-freeable duplicate.
+  `cmd_print` remains a C-owned producer and is copied/freed within the
+  helper; `args_value_as_string.cached` remains C-owned in its C-layout
+  record.
+- Library/binary build, `cmd_list_print_owner` and `arguments_conversion`
+  tests, changed-file rustfmt, Python syntax check, and `git diff --check`
+  passed. The focused test covers empty lists, grouped separators, and both
+  print flags. A private-server command/hook CLI check matched the pinned
+  baseline, including nested commands and non-UTF-8 bytes. No sanitizer was
+  run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1126,12 +1143,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_list_print` builds an output buffer with manual realloc and frees each
-   `cmd_print` result during concatenation. `args_print_add_value` and
-   `args_to_vector` consume its result synchronously and free it. Audit a
-   private owned command-list printer and those callers while retaining the
-   exported libc-freeable return; `cmd_print`'s own producer contract must be
-   traced before extending ownership through that branch.
+1. `format_quote_shell` and `format_quote_style` build local scratch strings
+   for quote modifiers. Audit the whole modifier subchain so intermediate
+   strings gain Rust ownership and lose their manual frees, while keeping
+   `format_find`'s returned C-owned contract.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in

@@ -1,6 +1,6 @@
 use crate::src::cmd::{
     cmd_append_argv, cmd_get_args, cmd_get_entry, cmd_get_source, cmd_list_copy, cmd_list_first,
-    cmd_list_free, cmd_list_print, cmd_log_argv, cmd_template_replace,
+    cmd_list_free, cmd_list_print, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace,
 };
 use crate::src::cmd_find::cmd_find_copy_state;
 use crate::src::cmd_parse::cmd_parse_from_string;
@@ -847,7 +847,6 @@ pub unsafe extern "C" fn args_to_vector(
     mut argc: *mut ::core::ffi::c_int,
     mut argv: *mut *mut *mut ::core::ffi::c_char,
 ) {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     *argc = 0 as ::core::ffi::c_int;
     *argv = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -862,12 +861,11 @@ pub unsafe extern "C" fn args_to_vector(
                 );
             }
             2 => {
-                s = cmd_list_print(
+                let s = cmd_list_print_cstring(
                     (*(*args).values.offset(i as isize)).c2rust_unnamed.cmdlist,
                     0 as ::core::ffi::c_int,
                 );
-                cmd_append_argv(argc, argv, s);
-                free(s as *mut ::core::ffi::c_void);
+                cmd_append_argv(argc, argv, s.as_ptr());
             }
             0 | _ => {}
         }
@@ -917,14 +915,13 @@ unsafe extern "C" fn args_print_add_value(
     }
     match (*value).type_0 as ::core::ffi::c_uint {
         2 => {
-            let expanded = cmd_list_print((*value).c2rust_unnamed.cmdlist, 0);
+            let expanded = cmd_list_print_cstring((*value).c2rust_unnamed.cmdlist, 0);
             args_print_add(
                 buf,
                 len,
                 b"{ %s }\0" as *const u8 as *const ::core::ffi::c_char,
-                expanded,
+                expanded.as_ptr(),
             );
-            free(expanded as *mut ::core::ffi::c_void);
         }
         1 => {
             let expanded = args_escape_cstring(CStr::from_ptr((*value).c2rust_unnamed.string));

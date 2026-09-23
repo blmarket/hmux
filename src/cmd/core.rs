@@ -155,6 +155,7 @@ use crate::src::window::{
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf_cstring,
 };
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -802,14 +803,12 @@ pub unsafe extern "C" fn cmd_list_copy(
     let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut group: u_int = (*cmdlist).group;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    s = cmd_list_print(cmdlist, 0 as ::core::ffi::c_int);
+    let s = cmd_list_print_cstring(cmdlist, 0);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_list_copy\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        s.as_ptr(),
     );
-    free(s as *mut ::core::ffi::c_void);
     new_cmdlist = cmd_list_new();
     cmd = (*(*cmdlist).list).tqh_first;
     while !cmd.is_null() {
@@ -823,59 +822,48 @@ pub unsafe extern "C" fn cmd_list_copy(
         cmd_list_append(new_cmdlist, new_cmd);
         cmd = (*cmd).qentry.tqe_next;
     }
-    s = cmd_list_print(new_cmdlist, 0 as ::core::ffi::c_int);
+    let s = cmd_list_print_cstring(new_cmdlist, 0);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_list_copy\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        s.as_ptr(),
     );
-    free(s as *mut ::core::ffi::c_void);
     return new_cmdlist;
 }
+pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: *const cmd_list, flags: i32) -> CString {
+    let mut buf = Vec::new();
+    let mut cmd = (*(*cmdlist).list).tqh_first;
+    while !cmd.is_null() {
+        // cmd_print's exported return remains libc-owned. Copy its C-string
+        // bytes into the Rust-owned result before releasing it.
+        let this = cmd_print(cmd);
+        buf.extend_from_slice(CStr::from_ptr(this).to_bytes());
+        free(this.cast());
+
+        let next = (*cmd).qentry.tqe_next;
+        if !next.is_null() {
+            let grouped = flags & CMD_LIST_PRINT_NO_GROUPS == 0 && (*cmd).group != (*next).group;
+            let separator: &[u8] = match (flags & CMD_LIST_PRINT_ESCAPED != 0, grouped) {
+                (false, false) => b" ; ",
+                (false, true) => b" ;; ",
+                (true, false) => b" \\; ",
+                (true, true) => b" \\;\\; ",
+            };
+            buf.extend_from_slice(separator);
+        }
+        cmd = next;
+    }
+    // All fragments came from C strings or nonzero literal bytes.
+    CString::new(buf).expect("command list contains no interior NUL")
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_print(
-    mut cmdlist: *const cmd_list,
-    mut flags: ::core::ffi::c_int,
+    cmdlist: *const cmd_list,
+    flags: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    let mut next: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut this: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
-    let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut escaped: ::core::ffi::c_int = flags & CMD_LIST_PRINT_ESCAPED;
-    let mut no_groups: ::core::ffi::c_int = flags & CMD_LIST_PRINT_NO_GROUPS;
-    let mut single_separator: *const ::core::ffi::c_char = if escaped != 0 {
-        b" \\; \0" as *const u8 as *const ::core::ffi::c_char
-    } else {
-        b" ; \0" as *const u8 as *const ::core::ffi::c_char
-    };
-    let mut double_separator: *const ::core::ffi::c_char = if escaped != 0 {
-        b" \\;\\; \0" as *const u8 as *const ::core::ffi::c_char
-    } else {
-        b" ;; \0" as *const u8 as *const ::core::ffi::c_char
-    };
-    len = 1 as size_t;
-    buf = xcalloc(1 as size_t, len) as *mut ::core::ffi::c_char;
-    cmd = (*(*cmdlist).list).tqh_first;
-    while !cmd.is_null() {
-        this = cmd_print(cmd);
-        len = len.wrapping_add(strlen(this).wrapping_add(6 as size_t));
-        buf = xrealloc(buf as *mut ::core::ffi::c_void, len) as *mut ::core::ffi::c_char;
-        strlcat(buf, this, len);
-        next = (*cmd).qentry.tqe_next;
-        if !next.is_null() {
-            if no_groups == 0 && (*cmd).group != (*next).group {
-                separator = double_separator;
-            } else {
-                separator = single_separator;
-            }
-            strlcat(buf, separator, len);
-        }
-        free(this as *mut ::core::ffi::c_void);
-        cmd = (*cmd).qentry.tqe_next;
-    }
-    return buf;
+    let printed = cmd_list_print_cstring(cmdlist, flags);
+    xstrdup(printed.as_ptr())
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_first(mut cmdlist: *mut cmd_list) -> *mut cmd {
