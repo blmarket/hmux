@@ -117,6 +117,7 @@ pub use crate::src::shared::client::{
 // The public client record keeps its C layout. Only server_client_create
 // allocates clients, and server_client_free drops this containing owner.
 // message_string borrows the CString until the next replacement or clear.
+// ttyname borrows the CString until a new identify payload or client loss.
 // term_caps borrows term_cap_ptrs, whose entries borrow term_cap_strings.
 // Both views are refreshed after every identify capability and cleared after
 // tty_free, before the client owner is eventually dropped.
@@ -125,6 +126,7 @@ pub use crate::src::shared::client::{
 struct ClientOwner {
     node: client,
     message: Option<CString>,
+    ttyname: Option<CString>,
     saved_status_screen: Option<Box<screen>>,
     term_cap_strings: Vec<CString>,
     term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
@@ -140,6 +142,16 @@ pub(crate) unsafe fn server_client_set_message(c: *mut client, message: Option<C
     (*owner).message = message;
     if let Some(message) = (*owner).message.as_ref() {
         (*c).message_string = message.as_ptr().cast_mut();
+    }
+}
+
+unsafe fn server_client_set_ttyname(c: *mut client, ttyname: Option<CString>) {
+    let owner = c.cast::<ClientOwner>();
+    // Invalidate the public view before replacing or releasing its owner.
+    (*c).ttyname = ::core::ptr::null_mut();
+    (*owner).ttyname = ttyname;
+    if let Some(ttyname) = (*owner).ttyname.as_ref() {
+        (*c).ttyname = ttyname.as_ptr().cast_mut();
     }
 }
 
@@ -192,7 +204,7 @@ unsafe fn server_client_clear_term_caps(c: *mut client) {
 mod client_message_owner_tests {
     use super::{
         client, server_client_add_term_cap, server_client_clear_term_caps,
-        server_client_set_message, visible_range, ClientOwner,
+        server_client_set_message, server_client_set_ttyname, visible_range, ClientOwner,
     };
     use crate::src::status::status_message_clear;
     use std::ffi::{CStr, CString};
@@ -203,6 +215,7 @@ mod client_message_owner_tests {
             let mut owner = Box::new(ClientOwner {
                 node: std::mem::zeroed::<client>(),
                 message: None,
+                ttyname: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -230,11 +243,41 @@ mod client_message_owner_tests {
     }
 
     #[test]
+    fn ttyname_replacement_and_clear_keep_a_borrowed_client_view() {
+        unsafe {
+            let mut owner = Box::new(ClientOwner {
+                node: std::mem::zeroed::<client>(),
+                message: None,
+                ttyname: None,
+                saved_status_screen: None,
+                term_cap_strings: Vec::new(),
+                term_cap_ptrs: Vec::new(),
+                tty_range: visible_range { px: 0, nx: 0 },
+            });
+            let c = &raw mut owner.node;
+            assert!((*c).ttyname.is_null());
+
+            server_client_set_ttyname(c, Some(CString::new(b"/dev/\xff".to_vec()).unwrap()));
+            assert_eq!(CStr::from_ptr((*c).ttyname).to_bytes(), b"/dev/\xff");
+            assert_eq!(c, &raw mut owner.node);
+
+            server_client_set_ttyname(c, Some(CString::new("").unwrap()));
+            assert!(!(*c).ttyname.is_null());
+            assert_eq!(CStr::from_ptr((*c).ttyname).to_bytes(), b"");
+
+            server_client_set_ttyname(c, None);
+            assert!((*c).ttyname.is_null());
+            assert!(owner.ttyname.is_none());
+        }
+    }
+
+    #[test]
     fn term_caps_view_survives_growth_and_preserves_order_and_bytes() {
         unsafe {
             let mut owner = Box::new(ClientOwner {
                 node: std::mem::zeroed::<client>(),
                 message: None,
+                ttyname: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -633,6 +676,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     c = &raw mut (*Box::into_raw(Box::new(ClientOwner {
         node: std::mem::zeroed::<client>(),
         message: None,
+        ttyname: None,
         saved_status_screen: None,
         term_cap_strings: Vec::new(),
         term_cap_ptrs: Vec::new(),
@@ -1052,7 +1096,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
         (*c).tty.r.size = 0;
         tty_free(&raw mut (*c).tty);
     }
-    free((*c).ttyname as *mut ::core::ffi::c_void);
+    server_client_set_ttyname(c, None);
     free((*c).clipboard_panes as *mut ::core::ffi::c_void);
     free((*c).term_name as *mut ::core::ffi::c_void);
     free((*c).term_type as *mut ::core::ffi::c_void);
@@ -4388,7 +4432,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
             {
                 return -(1 as ::core::ffi::c_int);
             }
-            (*c).ttyname = xstrdup(data);
+            server_client_set_ttyname(c, Some(CStr::from_ptr(data).to_owned()));
             log_debug(
                 b"client %p IDENTIFY_TTYNAME %s\0" as *const u8 as *const ::core::ffi::c_char,
                 c,

@@ -3434,6 +3434,20 @@ legacy callers safe.
   baseline customize-mode subprocess timed out in this environment; its
   spawned test processes were terminated. No sanitizer was run.
 
+### Increment 366 — owned client tty name (2026-09-23)
+
+- Existing `ClientOwner` now holds `client.ttyname` in an `Option<CString>`.
+  `server_client_set_ttyname` refreshes the exported borrowed pointer after
+  identify messages and clears it at the former free site in
+  `server_client_lost`, after client hooks and tty teardown. This replaces
+  the `MSG_IDENTIFY_TTYNAME` `xstrdup` and the final libc free, and safely
+  replaces a repeated identify payload. `client.name` and choose-client
+  entries retain their own copies; the public client layout is unchanged.
+- A focused owner test covers non-UTF-8 bytes, replacement, empty versus
+  absent, and pointer stability. Full workspace tests, the binary build,
+  attached-terminal `server_term_caps_cli_checks.py`, changed-file rustfmt,
+  and `git diff --check` passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3444,11 +3458,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `client.ttyname` is the next small live owner. Its only writer copies the
-   identify payload, and `server_client_lost` releases it after hooks and tty
-   teardown. The existing `ClientOwner` can own a `CString` and expose a
-   borrowed pointer without changing the public layout; clear it at the
-   current free site to preserve destruction order.
+1. `client.term_name` is the next small live owner. Its identify writer and
+   fallback-to-`unknown` replacement are both in `server_client`; tty-term
+   setup and format callbacks copy or borrow it synchronously. Existing
+   `ClientOwner` can hold a `CString` and clear its borrowed public pointer
+   at the current free site after tty teardown.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
