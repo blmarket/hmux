@@ -526,7 +526,6 @@ pub unsafe extern "C" fn file_write(
 ) {
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut msg: *mut msg_write_open = ::core::ptr::null_mut::<msg_write_open>();
     let mut msglen: size_t = 0;
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let fresh0 = file_next_stream;
@@ -579,12 +578,21 @@ pub unsafe extern "C" fn file_write(
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
                 (*cf).error = E2BIG;
             } else {
-                msg = xmalloc(msglen) as *mut msg_write_open;
-                (*msg).stream = (*cf).stream;
-                (*msg).fd = fd;
-                (*msg).flags = flags;
+                let mut msg = vec![0_u8; msglen];
+                let header = msg_write_open {
+                    stream: (*cf).stream,
+                    fd,
+                    flags,
+                };
                 memcpy(
-                    msg.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_void,
+                    msg.as_mut_ptr().cast(),
+                    (&raw const header).cast(),
+                    ::core::mem::size_of::<msg_write_open>(),
+                );
+                memcpy(
+                    msg.as_mut_ptr()
+                        .add(::core::mem::size_of::<msg_write_open>())
+                        .cast(),
                     (*cf).path as *const ::core::ffi::c_void,
                     msglen.wrapping_sub(::core::mem::size_of::<msg_write_open>() as size_t),
                 );
@@ -592,14 +600,12 @@ pub unsafe extern "C" fn file_write(
                     (*cf).peer,
                     MSG_WRITE_OPEN,
                     -(1 as ::core::ffi::c_int),
-                    msg as *const ::core::ffi::c_void,
+                    msg.as_ptr().cast(),
                     msglen,
                 ) != 0 as ::core::ffi::c_int
                 {
-                    free(msg as *mut ::core::ffi::c_void);
                     (*cf).error = EINVAL;
                 } else {
-                    free(msg as *mut ::core::ffi::c_void);
                     return;
                 }
             }
