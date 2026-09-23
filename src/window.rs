@@ -108,9 +108,7 @@ pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cell
 pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, UINT_MAX};
 pub use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
-pub use crate::src::shared::mouse::{
-    mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
-};
+pub use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
@@ -4130,26 +4128,17 @@ pub unsafe extern "C" fn window_pane_search(
     }
     return i.wrapping_add(1 as u_int);
 }
-unsafe extern "C" fn window_pane_choose_best(
-    mut list: *mut *mut window_pane,
-    mut size: u_int,
-) -> *mut window_pane {
-    let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut i: u_int = 0;
-    if size == 0 as u_int {
-        return ::core::ptr::null_mut::<window_pane>();
-    }
-    best = *list.offset(0 as ::core::ffi::c_int as isize);
-    i = 1 as u_int;
-    while i < size {
-        next = *list.offset(i as isize);
+unsafe fn window_pane_choose_best(list: &[*mut window_pane]) -> *mut window_pane {
+    let Some((&first, rest)) = list.split_first() else {
+        return ::core::ptr::null_mut();
+    };
+    let mut best = first;
+    for &next in rest {
         if (*next).active_point > (*best).active_point {
             best = next;
         }
-        i = i.wrapping_add(1);
     }
-    return best;
+    best
 }
 unsafe extern "C" fn window_pane_full_size_offset(
     mut wp: *mut window_pane,
@@ -4180,7 +4169,7 @@ pub unsafe extern "C" fn window_pane_find_up(mut wp: *mut window_pane) -> *mut w
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut list: *mut *mut window_pane = ::core::ptr::null_mut::<*mut window_pane>();
+    let mut list: Vec<*mut window_pane> = Vec::new();
     let mut edge: ::core::ffi::c_int = 0;
     let mut left: ::core::ffi::c_int = 0;
     let mut right: ::core::ffi::c_int = 0;
@@ -4189,7 +4178,6 @@ pub unsafe extern "C" fn window_pane_find_up(mut wp: *mut window_pane) -> *mut w
     let mut found: ::core::ffi::c_int = 0;
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
-    let mut size: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     if wp.is_null() {
@@ -4197,8 +4185,6 @@ pub unsafe extern "C" fn window_pane_find_up(mut wp: *mut window_pane) -> *mut w
     }
     w = (*wp).window as *mut window;
     status = window_get_pane_status(w);
-    list = ::core::ptr::null_mut::<*mut window_pane>();
-    size = 0 as u_int;
     window_pane_full_size_offset(wp, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
     edge = yoff;
     if status == PANE_STATUS_TOP {
@@ -4229,22 +4215,13 @@ pub unsafe extern "C" fn window_pane_find_up(mut wp: *mut window_pane) -> *mut w
                     found = 1 as ::core::ffi::c_int;
                 }
                 if !(found == 0) {
-                    list = xreallocarray(
-                        list as *mut ::core::ffi::c_void,
-                        size.wrapping_add(1 as u_int) as size_t,
-                        ::core::mem::size_of::<*mut window_pane>() as size_t,
-                    ) as *mut *mut window_pane;
-                    let fresh18 = size;
-                    size = size.wrapping_add(1);
-                    let ref mut fresh19 = *list.offset(fresh18 as isize);
-                    *fresh19 = next;
+                    list.push(next);
                 }
             }
         }
         next = (*next).entry.tqe_next;
     }
-    best = window_pane_choose_best(list, size);
-    free(list as *mut ::core::ffi::c_void);
+    best = window_pane_choose_best(&list);
     return best;
 }
 #[no_mangle]
@@ -4252,7 +4229,7 @@ pub unsafe extern "C" fn window_pane_find_down(mut wp: *mut window_pane) -> *mut
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut list: *mut *mut window_pane = ::core::ptr::null_mut::<*mut window_pane>();
+    let mut list: Vec<*mut window_pane> = Vec::new();
     let mut edge: ::core::ffi::c_int = 0;
     let mut left: ::core::ffi::c_int = 0;
     let mut right: ::core::ffi::c_int = 0;
@@ -4261,7 +4238,6 @@ pub unsafe extern "C" fn window_pane_find_down(mut wp: *mut window_pane) -> *mut
     let mut found: ::core::ffi::c_int = 0;
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
-    let mut size: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     if wp.is_null() {
@@ -4269,8 +4245,6 @@ pub unsafe extern "C" fn window_pane_find_down(mut wp: *mut window_pane) -> *mut
     }
     w = (*wp).window as *mut window;
     status = window_get_pane_status(w);
-    list = ::core::ptr::null_mut::<*mut window_pane>();
-    size = 0 as u_int;
     window_pane_full_size_offset(wp, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
     edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     if status == PANE_STATUS_TOP {
@@ -4301,22 +4275,13 @@ pub unsafe extern "C" fn window_pane_find_down(mut wp: *mut window_pane) -> *mut
                     found = 1 as ::core::ffi::c_int;
                 }
                 if !(found == 0) {
-                    list = xreallocarray(
-                        list as *mut ::core::ffi::c_void,
-                        size.wrapping_add(1 as u_int) as size_t,
-                        ::core::mem::size_of::<*mut window_pane>() as size_t,
-                    ) as *mut *mut window_pane;
-                    let fresh20 = size;
-                    size = size.wrapping_add(1);
-                    let ref mut fresh21 = *list.offset(fresh20 as isize);
-                    *fresh21 = next;
+                    list.push(next);
                 }
             }
         }
         next = (*next).entry.tqe_next;
     }
-    best = window_pane_choose_best(list, size);
-    free(list as *mut ::core::ffi::c_void);
+    best = window_pane_choose_best(&list);
     return best;
 }
 #[no_mangle]
@@ -4324,7 +4289,7 @@ pub unsafe extern "C" fn window_pane_find_left(mut wp: *mut window_pane) -> *mut
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut list: *mut *mut window_pane = ::core::ptr::null_mut::<*mut window_pane>();
+    let mut list: Vec<*mut window_pane> = Vec::new();
     let mut edge: ::core::ffi::c_int = 0;
     let mut top: ::core::ffi::c_int = 0;
     let mut bottom: ::core::ffi::c_int = 0;
@@ -4332,15 +4297,12 @@ pub unsafe extern "C" fn window_pane_find_left(mut wp: *mut window_pane) -> *mut
     let mut found: ::core::ffi::c_int = 0;
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
-    let mut size: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     if wp.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
     w = (*wp).window as *mut window;
-    list = ::core::ptr::null_mut::<*mut window_pane>();
-    size = 0 as u_int;
     window_pane_full_size_offset(wp, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
     edge = xoff;
     if edge == 0 as ::core::ffi::c_int {
@@ -4363,22 +4325,13 @@ pub unsafe extern "C" fn window_pane_find_left(mut wp: *mut window_pane) -> *mut
                     found = 1 as ::core::ffi::c_int;
                 }
                 if !(found == 0) {
-                    list = xreallocarray(
-                        list as *mut ::core::ffi::c_void,
-                        size.wrapping_add(1 as u_int) as size_t,
-                        ::core::mem::size_of::<*mut window_pane>() as size_t,
-                    ) as *mut *mut window_pane;
-                    let fresh22 = size;
-                    size = size.wrapping_add(1);
-                    let ref mut fresh23 = *list.offset(fresh22 as isize);
-                    *fresh23 = next;
+                    list.push(next);
                 }
             }
         }
         next = (*next).entry.tqe_next;
     }
-    best = window_pane_choose_best(list, size);
-    free(list as *mut ::core::ffi::c_void);
+    best = window_pane_choose_best(&list);
     return best;
 }
 #[no_mangle]
@@ -4386,7 +4339,7 @@ pub unsafe extern "C" fn window_pane_find_right(mut wp: *mut window_pane) -> *mu
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut list: *mut *mut window_pane = ::core::ptr::null_mut::<*mut window_pane>();
+    let mut list: Vec<*mut window_pane> = Vec::new();
     let mut edge: ::core::ffi::c_int = 0;
     let mut top: ::core::ffi::c_int = 0;
     let mut bottom: ::core::ffi::c_int = 0;
@@ -4394,15 +4347,12 @@ pub unsafe extern "C" fn window_pane_find_right(mut wp: *mut window_pane) -> *mu
     let mut found: ::core::ffi::c_int = 0;
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
-    let mut size: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     if wp.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
     w = (*wp).window as *mut window;
-    list = ::core::ptr::null_mut::<*mut window_pane>();
-    size = 0 as u_int;
     window_pane_full_size_offset(wp, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
     edge = xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     if edge >= (*w).sx as ::core::ffi::c_int {
@@ -4425,22 +4375,13 @@ pub unsafe extern "C" fn window_pane_find_right(mut wp: *mut window_pane) -> *mu
                     found = 1 as ::core::ffi::c_int;
                 }
                 if !(found == 0) {
-                    list = xreallocarray(
-                        list as *mut ::core::ffi::c_void,
-                        size.wrapping_add(1 as u_int) as size_t,
-                        ::core::mem::size_of::<*mut window_pane>() as size_t,
-                    ) as *mut *mut window_pane;
-                    let fresh24 = size;
-                    size = size.wrapping_add(1);
-                    let ref mut fresh25 = *list.offset(fresh24 as isize);
-                    *fresh25 = next;
+                    list.push(next);
                 }
             }
         }
         next = (*next).entry.tqe_next;
     }
-    best = window_pane_choose_best(list, size);
-    free(list as *mut ::core::ffi::c_void);
+    best = window_pane_choose_best(&list);
     return best;
 }
 #[no_mangle]

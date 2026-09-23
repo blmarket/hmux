@@ -2006,6 +2006,22 @@ legacy callers safe.
   with shared and unique names across all three scopes passed. The shared
   name appeared once with the pane value. No sanitizer was run.
 
+### Increment 112 — directional pane candidate lists (2026-09-22)
+
+- `window_pane_find_up`, `window_pane_find_down`, `window_pane_find_left`,
+  and `window_pane_find_right` now collect candidate pane pointers in local
+  Vecs. The internal `window_pane_choose_best` takes a slice. Removed four
+  `xreallocarray`/`free` pairs and their separate size counters.
+- Candidate order is unchanged. The chooser still selects the greatest
+  `active_point`, keeping the first candidate on ties. Window-owned pane
+  pointers are borrowed only through the synchronous collection and choice;
+  the geometry/status helpers do not invoke callbacks.
+- Isolated validation: workspace tests with serialized test threads, binary
+  build, changed-file rustfmt, `git diff --check`, and a private-socket pane
+  navigation CLI scenario passed. The scenario checks empty candidates, all
+  four directions, equal-activity order, and recent-activity priority. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2025,11 +2041,12 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `window_pane_find_up`, `window_pane_find_down`,
-   `window_pane_find_left`, and `window_pane_find_right` each build and free
-   a local candidate-pane pointer array before `window_pane_choose_best`.
-   Audit the chooser's synchronous pointer borrow and pane stability while
-   gathering candidates, then move the four sibling scratch lists to Vec.
+2. `prompt_paste` still allocates and frees a local UTF-8 conversion array.
+   Its borrowed `ud` pointer selects either that scratch array or the
+   existing copied buffer; preserve both paths when moving scratch to Vec.
+   The `format_modifier` backing array is another local owner, but its
+   element addresses must remain stable after parsing while replacements
+   use them.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2045,9 +2062,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–111. The remaining
+Current validation is recorded in increments 15–112. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–111 has its own local commit; none was pushed.
+Each of increments 15–112 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
