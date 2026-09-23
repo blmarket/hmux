@@ -682,6 +682,23 @@ legacy callers safe.
   and tagged-command labels. The untagged `(current)` branch is source
   audited but not in that E2E. No sanitizer was run.
 
+### Increment 175 — mode-tree row scratch (2026-09-22)
+
+- `mode_tree_draw` now owns each formatted row with `CString` through both
+  synchronous `format_width` and `format_draw` calls. Removed its local
+  `xasprintf` allocation and matching `free`; the borrowing raw pointer is
+  valid only while this row owner lives.
+- Audited `%*s%s%s` byte behavior: signed width pads the C string name by
+  byte length, with spaces before or after according to sign. The existing
+  printf-string helper preserves glibc's `(null)` representation if a name is
+  null. Tag and separator bytes are copied before constructing the CString.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. The attached-client `mode_tree_row_cli_checks.py` compared normal
+  and tagged choose-tree rows byte for byte with the pinned baseline binary.
+  A larger tree's raw PTY redraw could not reliably reconstruct all rows;
+  positive-width padding is source audited but lacks that E2E case. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -692,11 +709,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `mode_tree_draw` also formats each tree row with `%*s%s%s` into a local
-   C allocation, draws it synchronously, then frees it. A byte-preserving
-   `CString` could own each row after preserving signed field-width padding
-   and the drawing callback order.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. `window_customize_build_keys` formats a local key-table title with
+   `xasprintf`, passes it to `mode_tree_add_identity`, then frees it. The tree
+   copies the title, so a byte-preserving local `CString` can own it.
+2. `cmd_capture_pane_grid` formats a header and each grid-row description
+   with `xasprintf`, appends their bytes synchronously, then frees them.
+   A Rust-owned header and row byte vector can remove those local frees.
+3. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -705,14 +724,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+4. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-4. The remaining address-based registries, other UI tags, and session/winlink
+5. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and

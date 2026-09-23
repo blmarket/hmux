@@ -1114,7 +1114,6 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     let mut text_width: u_int = 0;
     let mut prefix_width: u_int = 0;
     let mut left: u_int = 0;
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1343,15 +1342,27 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             } else {
                 separator = b"\0" as *const u8 as *const ::core::ffi::c_char;
             }
-            xasprintf(
-                &raw mut text,
-                b"%*s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*mti).align * *alignlen.as_mut_ptr().offset((*line).depth as isize),
-                (*mti).name,
-                tag,
-                separator,
+            let field_width = (*mti).align * *alignlen.as_mut_ptr().offset((*line).depth as isize);
+            let mut name = Vec::new();
+            mode_tree_append_printf_string(&mut name, (*mti).name);
+            let padding = (field_width.unsigned_abs() as usize).saturating_sub(name.len());
+            let mut row = Vec::with_capacity(
+                name.len()
+                    + padding
+                    + CStr::from_ptr(tag).to_bytes().len()
+                    + CStr::from_ptr(separator).to_bytes().len(),
             );
-            text_width = format_width(text);
+            if field_width >= 0 {
+                row.extend(std::iter::repeat_n(b' ', padding));
+            }
+            row.extend_from_slice(&name);
+            if field_width < 0 {
+                row.extend(std::iter::repeat_n(b' ', padding));
+            }
+            row.extend_from_slice(CStr::from_ptr(tag).to_bytes());
+            row.extend_from_slice(CStr::from_ptr(separator).to_bytes());
+            let text = CString::new(row).expect("mode-tree row contains no NUL");
+            text_width = format_width(text.as_ptr());
             left = if prefix_width < w {
                 w.wrapping_sub(prefix_width)
             } else {
@@ -1386,7 +1397,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                         &raw mut ctx,
                         &raw mut gc0,
                         left,
-                        text,
+                        text.as_ptr(),
                         ::core::ptr::null_mut::<style_ranges>(),
                         0 as ::core::ffi::c_int,
                     );
@@ -1428,7 +1439,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                         &raw mut ctx,
                         &raw mut gc,
                         left,
-                        text,
+                        text.as_ptr(),
                         ::core::ptr::null_mut::<style_ranges>(),
                         1 as ::core::ffi::c_int,
                     );
@@ -1450,7 +1461,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     }
                 }
             }
-            free(text as *mut ::core::ffi::c_void);
+            drop(text);
             free(prefix as *mut ::core::ffi::c_void);
             if (*mti).tagged != 0 {
                 gc.fg = dfg;
