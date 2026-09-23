@@ -115,7 +115,9 @@ use crate::src::window_border::{
     window_pane_get_border_cell, window_pane_get_border_style,
 };
 use crate::src::window_copy::window_copy_get_current_offset;
-use crate::src::xmalloc::{xcalloc, xreallocarray};
+use crate::src::xmalloc::xcalloc;
+use std::cell::RefCell;
+use std::mem::MaybeUninit;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -180,9 +182,30 @@ pub const REDRAW_START_ISOLATE: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"\xE2\x81\xA6\0") };
 pub const REDRAW_END_ISOLATE: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"\xE2\x81\xA9\0") };
-static mut redraw_cells: *mut redraw_build_cell =
-    ::core::ptr::null::<redraw_build_cell>() as *mut redraw_build_cell;
-static mut redraw_ncells: size_t = 0;
+thread_local! {
+    static REDRAW_CELLS: RefCell<Vec<MaybeUninit<redraw_build_cell>>> = RefCell::new(Vec::new());
+}
+
+// Each scene build owns its scratch cells until it has copied them into spans.
+// Taking the cache leaves an empty slot for a nested scene build.
+struct RedrawCellScratch(Vec<MaybeUninit<redraw_build_cell>>);
+
+impl RedrawCellScratch {
+    fn take() -> Self {
+        REDRAW_CELLS.with(|cache| Self(std::mem::take(&mut *cache.borrow_mut())))
+    }
+}
+
+impl Drop for RedrawCellScratch {
+    fn drop(&mut self) {
+        REDRAW_CELLS.with(|cache| {
+            let mut cached = cache.borrow_mut();
+            if self.0.capacity() > cached.capacity() {
+                *cached = std::mem::take(&mut self.0);
+            }
+        });
+    }
+}
 pub const REDRAW_ISOLATES: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_DEFAULT_SET: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const REDRAW_STATUS_TOP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
@@ -1087,7 +1110,10 @@ unsafe extern "C" fn redraw_compare_data(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn redraw_build_cells(mut bctx: *mut redraw_build_ctx) {
+unsafe fn redraw_build_cells(
+    mut bctx: *mut redraw_build_ctx,
+    cells: &mut Vec<MaybeUninit<redraw_build_cell>>,
+) {
     let mut w: *mut window = (*bctx).w;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ncells: size_t = 0;
@@ -1103,15 +1129,16 @@ unsafe extern "C" fn redraw_build_cells(mut bctx: *mut redraw_build_ctx) {
         );
     }
     ncells = ((*bctx).sx as size_t).wrapping_mul((*bctx).sy as size_t);
-    if ncells > redraw_ncells {
-        redraw_cells = xreallocarray(
-            redraw_cells as *mut ::core::ffi::c_void,
-            ncells,
-            ::core::mem::size_of::<redraw_build_cell>() as size_t,
-        ) as *mut redraw_build_cell;
-        redraw_ncells = ncells;
+    if ncells > cells.len() {
+        if cells.try_reserve_exact(ncells - cells.len()).is_err() {
+            fatalx(
+                b"%s: too many cells\0" as *const u8 as *const ::core::ffi::c_char,
+                b"redraw_build_cells\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+        }
+        cells.resize_with(ncells, MaybeUninit::uninit);
     }
-    (*bctx).cells = redraw_cells;
+    (*bctx).cells = cells.as_mut_ptr().cast::<redraw_build_cell>();
     y = 0 as u_int;
     while y < (*bctx).sy {
         x = 0 as u_int;
@@ -1155,6 +1182,7 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
         return ::core::ptr::null_mut::<redraw_scene>();
     }
     redraw_set_context(c, &raw mut bctx);
+    let mut cells = RedrawCellScratch::take();
     log_debug(
         b"%s: building @%u scene (%ux%u %u,%u; generation %llu)\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -1166,7 +1194,7 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
         bctx.oy,
         (*w).redraw_scene_generation as ::core::ffi::c_ulonglong,
     );
-    redraw_build_cells(&raw mut bctx);
+    redraw_build_cells(&raw mut bctx, &mut cells.0);
     scene = xcalloc(
         1 as size_t,
         ::core::mem::size_of::<redraw_scene>() as size_t,

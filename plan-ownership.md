@@ -1971,6 +1971,24 @@ legacy callers safe.
   workspace tests, binary build, changed-file rustfmt, and `git diff --check`
   passed. No sanitizer was run.
 
+### Increment 110 — redraw scene scratch cells (2026-09-22)
+
+- `redraw_make_scene` now holds a `RedrawCellScratch` owner while building a
+  scene. `redraw_build_cells` grows a `Vec<MaybeUninit<redraw_build_cell>>`
+  instead of the global `redraw_cells`/`redraw_ncells` reallocarray cache.
+  The cell data is copied into spans before the owner returns its capacity
+  to a thread-local cache. Removed the global pointer/count and realloc path.
+- Taking the cached Vec leaves an empty slot, so a nested scene takes a
+  distinct buffer and cannot alias the outer scene's cells. The raw
+  `redraw_build_ctx.cells` pointer remains a borrow into the active Vec,
+  valid only until the scene build finishes; every used cell is reset before
+  reading. The existing size-product check remains, and failed reservation
+  still takes the fatal error path.
+- Isolated validation: workspace tests, binary build, changed-file rustfmt,
+  `git diff --check`, menu CLI checks, and an attached two-pane render,
+  layout, and resize scenario passed. A forced nested-scene runtime case was
+  not run; no sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1993,9 +2011,7 @@ non-string value.
 2. `window_customize_find_user_options` still builds a temporary borrowed
    name array with `xreallocarray`/`free`. Its three callers share it only
    within `window_customize_build_options`; audit name lifetime across the
-   mode-tree callbacks before moving this scratch list to Vec. The cached
-   redraw-cell buffer in `screen_redraw` is another later array owner whose
-   static lifetime and reentrant draw aliases need an audit.
+   mode-tree callbacks before moving this scratch list to Vec.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2011,9 +2027,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–109. The remaining
+Current validation is recorded in increments 15–110. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–109 has its own local commit; none was pushed.
+Each of increments 15–110 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
