@@ -1,6 +1,6 @@
-use crate::src::compat::vis::stravis;
+use crate::src::compat::vis::strvis;
 use crate::src::ffi::libc::{
-    __errno_location, exit, fclose, fflush, fopen, fprintf, free, getpid, gettimeofday, setvbuf,
+    __errno_location, exit, fclose, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf,
     snprintf, strerror,
 };
 pub use crate::src::reactor::event_log_cb;
@@ -88,7 +88,6 @@ unsafe extern "C" fn log_vwrite(
     mut ap: ::core::ffi::VaList,
     mut prefix: *const ::core::ffi::c_char,
 ) {
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -99,14 +98,25 @@ unsafe extern "C" fn log_vwrite(
     let Some(s) = try_vasprintf_cstring(msg, ap) else {
         return;
     };
-    if stravis(
-        &raw mut out,
-        s.as_ptr(),
-        VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
-    ) == -(1 as ::core::ffi::c_int)
-    {
+    // strvis writes at most four bytes per input byte plus the terminator.
+    let Some(capacity) = s
+        .as_bytes()
+        .len()
+        .checked_add(1)
+        .and_then(|n| n.checked_mul(4))
+    else {
+        return;
+    };
+    let mut out = Vec::<u8>::new();
+    if out.try_reserve_exact(capacity).is_err() {
         return;
     }
+    out.resize(capacity, 0);
+    strvis(
+        out.as_mut_ptr().cast(),
+        s.as_ptr(),
+        VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
+    );
     drop(s);
     gettimeofday(&raw mut tv, NULL);
     if fprintf(
@@ -115,12 +125,11 @@ unsafe extern "C" fn log_vwrite(
         tv.tv_sec as ::core::ffi::c_longlong,
         tv.tv_usec as ::core::ffi::c_int,
         prefix,
-        out,
+        out.as_ptr().cast::<::core::ffi::c_char>(),
     ) != -(1 as ::core::ffi::c_int)
     {
         fflush(log_file);
     }
-    free(out as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn log_debug(mut msg: *const ::core::ffi::c_char, mut args: ...) {

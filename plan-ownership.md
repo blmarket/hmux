@@ -1524,6 +1524,16 @@ name error.
   checks passed. No sanitizer ran. Queue waits without a registered file
   owner remain outside this scoped disconnect drain.
 
+### Increment 448 — own escaped log output (2026-09-23)
+
+- `log_vwrite` now allocates its escaped output in a checked `Vec<u8>`, calls
+  the same `strvis` converter and flags, and lends the NUL-terminated result
+  to synchronous `fprintf`. Removed its `stravis` output allocation and
+  manual `free`; the exported `stravis` C-return contract is unchanged.
+- The real formatted interior-NUL log E2E and escaped environment-log CLI
+  checks matched the pinned tmux binary. Serialized workspace tests, binary
+  build, changed-file rustfmt, and diff check passed. No sanitizer ran.
+
 ## Historical migration index
 
 Each retained increment was committed separately; increment 228 was reverted.
