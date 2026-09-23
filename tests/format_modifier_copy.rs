@@ -10,6 +10,7 @@ fn modifier_key_survives_nested_expansion_and_failure_cleanup() {
             (b"#{l:literal}\0".as_slice(), b"literal".as_slice()),
             (b"#{n;l:literal}\0", b"7"),
             (b"#{s|#{l:a}|b|;l:a}\0", b"b"),
+            (b"#{s|a|b|;s|b|c|;l:a}\0", b"c"),
             (b"#{l:\xff}\0", b"\xff"),
             (b"before#{R:bad}after\0", b"before"),
         ] {

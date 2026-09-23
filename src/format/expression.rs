@@ -2752,14 +2752,13 @@ pub(super) unsafe extern "C" fn format_replace(
     let mut list: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
     let mut cmp: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
     let mut search: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
-    let mut sub: *mut *mut format_modifier = ::core::ptr::null_mut::<*mut format_modifier>();
+    let mut sub: Vec<*mut format_modifier> = Vec::new();
     let mut mexp: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
     let mut fm: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
     let mut bool_op_n: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
     let mut cycle_count: u_int = 1 as u_int;
     let mut i: u_int = 0;
     let mut count: u_int = 0;
-    let mut nsub: u_int = 0 as u_int;
     let mut nrep: u_int = 0;
     let mut check: u_int = 0 as u_int;
     let mut loop_flags: *const ::core::ffi::c_char =
@@ -2830,15 +2829,7 @@ pub(super) unsafe extern "C" fn format_replace(
                 }
                 115 => {
                     if !((*fm).argc < 2 as ::core::ffi::c_int) {
-                        sub = xreallocarray(
-                            sub as *mut ::core::ffi::c_void,
-                            nsub.wrapping_add(1 as u_int) as size_t,
-                            ::core::mem::size_of::<*mut format_modifier>() as size_t,
-                        ) as *mut *mut format_modifier;
-                        let fresh16 = nsub;
-                        nsub = nsub.wrapping_add(1);
-                        let ref mut fresh17 = *sub.offset(fresh16 as isize);
-                        *fresh17 = fm;
+                        sub.push(fm);
                     }
                 }
                 61 => {
@@ -3777,7 +3768,7 @@ pub(super) unsafe extern "C" fn format_replace(
                     b"failed %s\0" as *const u8 as *const ::core::ffi::c_char,
                     copy0.as_ptr(),
                 );
-                free(sub as *mut ::core::ffi::c_void);
+                drop(sub);
                 format_free_modifiers(list, count);
                 drop(copy0);
                 free(time_format as *mut ::core::ffi::c_void);
@@ -3796,20 +3787,17 @@ pub(super) unsafe extern "C" fn format_replace(
         value = new;
     }
     i = 0 as u_int;
-    while i < nsub {
+    while (i as usize) < sub.len() {
+        let modifier = sub[i as usize];
         left = format_expand1(
             es,
-            *(**sub.offset(i as isize))
-                .argv
-                .offset(0 as ::core::ffi::c_int as isize),
+            *(*modifier).argv.offset(0 as ::core::ffi::c_int as isize),
         );
         right = format_expand1(
             es,
-            *(**sub.offset(i as isize))
-                .argv
-                .offset(1 as ::core::ffi::c_int as isize),
+            *(*modifier).argv.offset(1 as ::core::ffi::c_int as isize),
         );
-        new = format_sub(*sub.offset(i as isize), value, left, right);
+        new = format_sub(modifier, value, left, right);
         format_log1(
             es,
             b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3942,7 +3930,7 @@ pub(super) unsafe extern "C" fn format_replace(
         value,
     );
     free(value as *mut ::core::ffi::c_void);
-    free(sub as *mut ::core::ffi::c_void);
+    drop(sub);
     format_free_modifiers(list, count);
     drop(copy0);
     free(time_format as *mut ::core::ffi::c_void);

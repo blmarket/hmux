@@ -1957,6 +1957,20 @@ legacy callers safe.
   Detached `send-keys q` did not exit mode, so no quit-key coverage is
   claimed. No sanitizer was run.
 
+### Increment 109 — format substitution pointer list (2026-09-22)
+
+- `format_replace` now owns its local substitution pointers in
+  `Vec<*mut format_modifier>`. Removed the list `xreallocarray`, `nsub`
+  counter, and success/error `free(sub)` calls. Both exits drop the Vec before
+  `format_free_modifiers` to preserve destruction order.
+- `format_build_modifiers` finishes all growth of the backing modifier array
+  before the substitution pointers are collected. That array is not mutated
+  while substitutions run; recursive expansion has its own local list. The
+  modifier records and their C allocation/free contract remain unchanged.
+- Isolated validation: a new ordered two-substitution regression case,
+  workspace tests, binary build, changed-file rustfmt, and `git diff --check`
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1997,9 +2011,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–108. The remaining
+Current validation is recorded in increments 15–109. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–108 has its own local commit; none was pushed.
+Each of increments 15–109 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
