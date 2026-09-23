@@ -3054,6 +3054,19 @@ legacy callers safe.
   baseline. Full workspace tests, binary build, changed-file rustfmt, and
   diff checks passed. No sanitizer was run.
 
+### Increment 341 — boxed parser command-list headers (2026-09-23)
+
+- `cmd_parse_new_commands` now creates the parser's intrusive command-list
+  header in a Box; grammar cases 6 and 7 use that shared constructor.
+  `cmd_parse_free_commands` consumes the Box after releasing contained
+  commands, and the three grammar splice sites consume only their emptied
+  source headers after transferring commands. Removed the header's three
+  `xmalloc` calls, four matching libc frees, and `Copy`/`Clone` derives.
+- Command-list print and verbose parser CLI checks passed on candidate and
+  pinned baseline, covering semicolon lists, nested braces, and source-file
+  parsing. Full workspace tests, binary build, changed-file rustfmt, and
+  diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

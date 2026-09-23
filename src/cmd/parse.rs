@@ -101,8 +101,8 @@ use std::ffi::{CStr, CString};
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Box-owned header for a list of parser commands.
 pub struct cmd_parse_commands {
     pub tqh_first: *mut cmd_parse_command,
     pub tqh_last: *mut *mut cmd_parse_command,
@@ -641,8 +641,7 @@ unsafe extern "C" fn cmd_parse_free_command(mut cmd: *mut cmd_parse_command) {
 }
 unsafe extern "C" fn cmd_parse_new_commands() -> *mut cmd_parse_commands {
     let mut cmds: *mut cmd_parse_commands = ::core::ptr::null_mut::<cmd_parse_commands>();
-    cmds =
-        xmalloc(::core::mem::size_of::<cmd_parse_commands>() as size_t) as *mut cmd_parse_commands;
+    cmds = Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_commands>()));
     (*cmds).tqh_first = ::core::ptr::null_mut::<cmd_parse_command>();
     (*cmds).tqh_last = &raw mut (*cmds).tqh_first;
     return cmds;
@@ -664,7 +663,7 @@ unsafe extern "C" fn cmd_parse_free_commands(mut cmds: *mut cmd_parse_commands) 
         cmd_parse_free_command(cmd);
         cmd = cmd1;
     }
-    free(cmds as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(cmds));
 }
 unsafe extern "C" fn cmd_parse_run_parser(
     mut cause: *mut *mut ::core::ffi::c_char,
@@ -2108,26 +2107,15 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                                 .commands)
                                     .tqh_first;
                             }
-                            free(
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands
-                                    as *mut ::core::ffi::c_void,
-                            );
+                            drop(Box::from_raw(
+                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
+                            ));
                         }
                         6 => {
-                            yyval.commands =
-                                xmalloc(::core::mem::size_of::<cmd_parse_commands>() as size_t)
-                                    as *mut cmd_parse_commands;
-                            (*yyval.commands).tqh_first =
-                                ::core::ptr::null_mut::<cmd_parse_command>();
-                            (*yyval.commands).tqh_last = &raw mut (*yyval.commands).tqh_first;
+                            yyval.commands = cmd_parse_new_commands();
                         }
                         7 => {
-                            yyval.commands =
-                                xmalloc(::core::mem::size_of::<cmd_parse_commands>() as size_t)
-                                    as *mut cmd_parse_commands;
-                            (*yyval.commands).tqh_first =
-                                ::core::ptr::null_mut::<cmd_parse_command>();
-                            (*yyval.commands).tqh_last = &raw mut (*yyval.commands).tqh_first;
+                            yyval.commands = cmd_parse_new_commands();
                         }
                         8 => {
                             let mut ps_0: *mut cmd_parse_state = &raw mut parse_state;
@@ -2552,10 +2540,9 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                                 .commands)
                                     .tqh_first;
                             }
-                            free(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands
-                                    as *mut ::core::ffi::c_void,
-                            );
+                            drop(Box::from_raw(
+                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands,
+                            ));
                         }
                         30 => {
                             let mut ps_10: *mut cmd_parse_state = &raw mut parse_state;
@@ -3002,10 +2989,9 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                                 .commands)
                                     .tqh_first;
                             }
-                            free(
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands
-                                    as *mut ::core::ffi::c_void,
-                            );
+                            drop(Box::from_raw(
+                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
+                            ));
                         }
                         _ => {}
                     }
