@@ -79,6 +79,7 @@ use crate::src::window::{
     window_pane_has_prompt, window_pane_set_prompt, window_pane_update_prompt,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -165,6 +166,8 @@ unsafe extern "C" fn cmd_command_prompt_exec(
     let mut next_prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut inputs: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next_input: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut prompt_scratch = Vec::<u8>::new();
+    let mut input_scratch = Vec::<u8>::new();
     let mut wp: *mut window_pane = (*target).wp;
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
@@ -199,33 +202,56 @@ unsafe extern "C" fn cmd_command_prompt_exec(
         wait,
         args_has(args, 'F' as i32 as u_char),
     );
+    let literal = args_has(args, 'l' as i32 as u_char) != 0;
     s = args_get(args, 'p' as i32 as u_char);
     if s.is_null() {
         if count != 0 as u_int {
             tmp = args_make_commands_get_command((*cdata).state);
-            xasprintf(
-                &raw mut prompts,
-                b"(%s)\0" as *const u8 as *const ::core::ffi::c_char,
-                tmp,
-            );
+            if literal {
+                xasprintf(
+                    &raw mut prompts,
+                    b"(%s)\0" as *const u8 as *const ::core::ffi::c_char,
+                    tmp,
+                );
+            } else {
+                prompt_scratch.push(b'(');
+                prompt_scratch.extend_from_slice(CStr::from_ptr(tmp).to_bytes());
+                prompt_scratch.extend_from_slice(b")\0");
+            }
             free(tmp as *mut ::core::ffi::c_void);
         } else {
-            prompts = xstrdup(b":\0" as *const u8 as *const ::core::ffi::c_char);
+            if literal {
+                prompts = xstrdup(b":\0" as *const u8 as *const ::core::ffi::c_char);
+            } else {
+                prompt_scratch.extend_from_slice(b":\0");
+            }
             space = 0 as ::core::ffi::c_int;
         }
-        next_prompt = prompts;
     } else {
-        prompts = xstrdup(s);
-        next_prompt = prompts;
+        if literal {
+            prompts = xstrdup(s);
+        } else {
+            prompt_scratch.extend_from_slice(CStr::from_ptr(s).to_bytes_with_nul());
+        }
     }
+    next_prompt = if literal {
+        prompts
+    } else {
+        prompt_scratch.as_mut_ptr().cast()
+    };
     s = args_get(args, 'I' as i32 as u_char);
     if !s.is_null() {
-        inputs = xstrdup(s);
-        next_input = inputs;
+        if literal {
+            inputs = xstrdup(s);
+            next_input = inputs;
+        } else {
+            input_scratch.extend_from_slice(CStr::from_ptr(s).to_bytes_with_nul());
+            next_input = input_scratch.as_mut_ptr().cast();
+        }
     } else {
         next_input = ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    if args_has(args, 'l' as i32 as u_char) != 0 {
+    if literal {
         (*cdata).prompts = xcalloc(
             1 as size_t,
             ::core::mem::size_of::<cmd_command_prompt_prompt>() as size_t,
@@ -275,8 +301,8 @@ unsafe extern "C" fn cmd_command_prompt_exec(
             *fresh3 = xstrdup(input);
             (*cdata).count = (*cdata).count.wrapping_add(1);
         }
-        free(inputs as *mut ::core::ffi::c_void);
-        free(prompts as *mut ::core::ffi::c_void);
+        drop(input_scratch);
+        drop(prompt_scratch);
     }
     type_0 = args_get(args, 'T' as i32 as u_char);
     if !type_0.is_null() {

@@ -1464,6 +1464,23 @@ legacy callers safe.
   build, changed-file rustfmt, and `git diff --check` passed in the
   isolated worktree. No sanitizer run was performed.
 
+### Increment 78 — command-prompt split scratch (2026-09-22)
+
+- In `cmd_command_prompt_exec`, the nonliteral comma-split prompt and
+  input copies now live in stable `Vec<u8>` buffers rather than local
+  `xstrdup`/`xasprintf` allocations and frees. `strsep` mutates those
+  buffers; each stored prompt/input token remains separately C-owned.
+  The `-l` branch still transfers C-owned whole strings into `cdata`.
+  The input Vec drops before the prompt Vec at the former two-free point,
+  before prompt type checks and callback setup. First-NUL and empty-token
+  behavior are unchanged.
+- Workspace tests, binary build, changed-file rustfmt, and `git diff
+  --check` passed in the isolated worktree. A live attached PTY check
+  used `-p First,,Third, -I one,,three,` with four Enter keys and saw
+  `one//three/`; the `-l -p Literal,Prompt -I seed,tail` check saw
+  `seed,tail`. This PTY check was run manually rather than added as an
+  automated test. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1478,13 +1495,17 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `cmd_command_prompt_exec`'s nonliteral split buffers and the
-   private `cmd_source_file_quote_for_glob` cwd builder. Remaining
-   `xstrndup` callers return or transfer C-owned strings; `window_copy`
-   regex buffers grow through a shared C API.
+2. Inspect the private `cmd_source_file_quote_for_glob` cwd builder and
+   `window_copy_cellstring`'s extended-cell copy. Remaining `xstrndup`
+   callers return or transfer C-owned strings; `window_copy` regex buffers
+   grow through a shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–77. The remaining
+Current validation is recorded in increments 15–78. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–77 has its own local commit; none was pushed.
+Each of increments 15–78 has its own local commit; none was pushed.
+The combined main-branch workspace test initially reused a cached `hmux-rt`
+test binary containing a removed worktree's compile-time manifest path.
+After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
+changed-file rustfmt and `git diff --check` also passed.
