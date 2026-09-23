@@ -27,7 +27,7 @@ use crate::src::grid_reader::{
 use crate::src::hyperlinks::{hyperlinks_copy, hyperlinks_free};
 use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add, paste_buffer_data, paste_get_top, paste_set};
 use crate::src::reactor::{bufferevent_write, event_add, event_del, event_set};
@@ -181,6 +181,8 @@ pub struct window_copy_mode_data {
     pub searchdirection: ::core::ffi::c_int,
     pub searchregex: ::core::ffi::c_int,
     pub searchstr: *mut ::core::ffi::c_char,
+    /// Owns searchmark; the pointer is invalidated on replacement or clear.
+    searchmark_owner: Option<Box<[u8]>>,
     pub searchmark: *mut u_char,
     pub searchcount: ::core::ffi::c_int,
     pub searchmore: ::core::ffi::c_int,
@@ -578,6 +580,7 @@ unsafe extern "C" fn window_copy_common_init(
     let uninit_data = storage.as_mut_ptr();
     uninit_data.write_bytes(0, 1);
     (&raw mut (*uninit_data).jumpchar).write(Vec::new());
+    (&raw mut (*uninit_data).searchmark_owner).write(None);
     data = Box::into_raw(storage.assume_init());
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).cursordrag = CURSORDRAG_NONE;
@@ -742,7 +745,7 @@ unsafe extern "C" fn window_copy_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     event_del(&raw mut (*data).dragtimer);
     event_del(&raw mut (*data).refresh_timer);
-    free((*data).searchmark as *mut ::core::ffi::c_void);
+    window_copy_drop_searchmark(data);
     free((*data).searchstr as *mut ::core::ffi::c_void);
     if !(*data).ictx.is_null() {
         input_free((*data).ictx);
@@ -6796,6 +6799,32 @@ unsafe extern "C" fn window_copy_search_mark_match(
     }
     return w;
 }
+unsafe fn window_copy_drop_searchmark(data: *mut window_copy_mode_data) {
+    (*data).searchmark = ::core::ptr::null_mut::<u_char>();
+    (*data).searchmark_owner = None;
+}
+
+unsafe fn window_copy_replace_searchmark(data: *mut window_copy_mode_data, sx: u_int, sy: u_int) {
+    window_copy_drop_searchmark(data);
+    if sx == 0 || sy == 0 {
+        fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+    let Some(len) = (sx as usize).checked_mul(sy as usize) else {
+        fatalx(b"xcalloc: nmemb * size > SIZE_MAX\0" as *const u8 as *const ::core::ffi::c_char);
+    };
+    let mut marks = Vec::new();
+    if marks.try_reserve_exact(len).is_err() {
+        fatal(
+            b"xcalloc: allocating %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
+            len as size_t,
+        );
+    }
+    marks.resize(len, 0);
+    let mut marks = marks.into_boxed_slice();
+    (*data).searchmark = marks.as_mut_ptr();
+    (*data).searchmark_owner = Some(marks);
+}
+
 unsafe extern "C" fn window_copy_search_marks(
     mut wme: *mut window_mode_entry,
     mut ssp: *mut screen,
@@ -6931,8 +6960,7 @@ unsafe extern "C" fn window_copy_search_marks(
             cflags |= REG_ICASE;
         }
         if regcomp(&raw mut reg, sbuf.as_ptr().cast(), cflags) != 0 as ::core::ffi::c_int {
-            free((*data).searchmark as *mut ::core::ffi::c_void);
-            (*data).searchmark = ::core::ptr::null_mut::<u_char>();
+            window_copy_drop_searchmark(data);
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -6945,8 +6973,7 @@ unsafe extern "C" fn window_copy_search_marks(
         stop = get_timer().wrapping_add(WINDOW_COPY_SEARCH_ALL_TIMEOUT as uint64_t);
     }
     loop {
-        free((*data).searchmark as *mut ::core::ffi::c_void);
-        (*data).searchmark = xcalloc(sx as size_t, sy as size_t) as *mut u_char;
+        window_copy_replace_searchmark(data, sx, sy);
         (*data).searchgen = 1 as u_char;
         py = start;
         while py < end {
@@ -7036,8 +7063,7 @@ unsafe extern "C" fn window_copy_clear_marks(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     (*data).searchcount = -(1 as ::core::ffi::c_int);
     (*data).searchmore = 0 as ::core::ffi::c_int;
-    free((*data).searchmark as *mut ::core::ffi::c_void);
-    (*data).searchmark = ::core::ptr::null_mut::<u_char>();
+    window_copy_drop_searchmark(data);
 }
 unsafe extern "C" fn window_copy_search_up(
     mut wme: *mut window_mode_entry,

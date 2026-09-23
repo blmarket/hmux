@@ -2365,6 +2365,23 @@ legacy callers safe.
   copy-match CLI checks matched the pinned baseline, covering selection
   replacement, clear, and mode teardown. No sanitizer was run.
 
+### Increment 293 — boxed copy-mode search marks (2026-09-23)
+
+- `window_copy_mode_data.searchmark_owner` now holds the search-mark byte array
+  as a boxed slice. The raw `searchmark` pointer remains a synchronous index
+  view and is invalidated on replacement, regex failure, clear, and mode
+  teardown. `window_copy_replace_searchmark` preserves `xcalloc`'s zero-size
+  and overflow fatal checks, and allocation failure remains fatal. This removes
+  the array's `xcalloc` and all four manual free sites. The containing mode
+  record was already Box-owned and non-`Copy`; its zeroed initializer now writes
+  a valid `None` owner before use.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, Python
+  syntax, and diff checks passed. The extended copy-match CLI check matched
+  the pinned baseline through search-mark replacement, invalid-regex clear,
+  successful search, copy, and teardown. `src/window_copy.rs` has the same
+  pre-existing rustfmt import-order differences as before this increment; no
+  new rustfmt differences appear in changed code. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2375,14 +2392,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_copy_mode_data.searchmark` is a contained byte array in an already
-   boxed mode record. Search refresh, regex failure, clear, and mode teardown
-   currently free it manually; no pointer escapes `window_copy.rs`. A boxed
-   slice can own it while the raw pointer remains a synchronous view. Preserve
-   `xcalloc`'s zero-dimension and overflow fatal behavior. The larger
-   `window_copy_mode_data.backing` screen owner has a borrowed pointer
-   invalidated on refresh. The redraw scene's line array has self-referential
-   intrusive list tails and needs its own alias audit.
+1. `hooks_monitor` in `src/hooks.rs` is a stable leaf record with a private
+   duplicated format string. Monitor and event callbacks borrow its pointer;
+   monitor removal and options teardown release it after unregistering those
+   callbacks. A boxed record and `CString` format can replace both manual
+   allocation pairs after checking callbacks and the current `Copy` derive.
+   `window_copy_mode_data.backing` is a larger screen owner with a borrowed
+   pointer invalidated on refresh. The redraw scene's line array has
+   self-referential intrusive list tails and needs its own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

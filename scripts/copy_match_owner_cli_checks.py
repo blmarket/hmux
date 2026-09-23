@@ -34,16 +34,21 @@ def trace(binary):
                 time.sleep(0.02)
 
             run("copy-mode")
+            run("send-keys", "-X", "search-forward", "alpha")
+            first = run("display-message", "-p", "#{search_match}")
+            run("send-keys", "-X", "search-forward", "[")  # Invalid regex clears old marks.
+            invalid = run("display-message", "-p", "#{search_match}")
             run("send-keys", "-X", "search-forward", "beta\t漢字")
             formatted = run("display-message", "-p", "#{search_match}")
             run("send-keys", "-X", "copy-selection")
             copied = run("show-buffer")
-            return formatted, copied
+            return first, invalid, formatted, copied
         finally:
             subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
 
 
 expected = ("beta\t漢字\n".encode(), "beta\t漢字".encode())
-assert trace(baseline) == expected
-assert trace(candidate) == expected
+reference = trace(baseline)
+assert reference[2:] == expected, reference
+assert trace(candidate) == reference
 print("copy match owner CLI checks passed")
