@@ -2288,6 +2288,24 @@ legacy callers safe.
   import-layout differences also present in the base commit. No sanitizer
   was run.
 
+### Increment 128 — sorted panes within a window (2026-09-22)
+
+- `sort_get_panes_window` now returns a caller-owned
+  `Vec<*mut window_pane>` to `list-panes`, the format `P:` loop, and the
+  window-tree builder. Removed its process-global `xreallocarray` pointer
+  list and capacity counter. Pane objects remain owned by their windows;
+  each caller owns only its sorted snapshot through traversal.
+- Pane index/reverse/filter behavior, format loop index/last flags, and the
+  existing total-count `#{line}` value are preserved. Nested `P:` expansion
+  gets separate storage instead of overwriting an outer traversal. The
+  translated `sort_get_panes_window` staticlib symbol is gone; no in-tree or
+  documented foreign caller was found.
+- Isolated validation: serialized workspace tests, binary build,
+  `git diff --check`, focused format-loop checks, and a private-server pane
+  sorting, nested loop, and deletion scenario passed. Rustfmt reports two
+  import-layout differences also present in the base commit. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2331,9 +2349,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–127. The remaining
+Current validation is recorded in increments 15–128. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–127 has its own local commit; none was pushed.
+Each of increments 15–128 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

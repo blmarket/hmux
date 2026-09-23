@@ -742,37 +742,19 @@ pub unsafe extern "C" fn sort_get_panes_session(
     *n = i;
     return l;
 }
-#[no_mangle]
-pub unsafe extern "C" fn sort_get_panes_window(
-    mut w: *mut window,
-    mut n: *mut u_int,
-    mut sort_crit: *mut sort_criteria,
-) -> *mut *mut window_pane {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut i: u_int = 0;
-    static mut l: *mut *mut window_pane =
-        ::core::ptr::null::<*mut window_pane>() as *mut *mut window_pane;
-    static mut lsz: u_int = 0 as u_int;
-    i = 0 as u_int;
-    wp = (*w).panes.tqh_first;
+pub unsafe fn sort_get_panes_window(
+    w: *mut window,
+    sort_crit: *mut sort_criteria,
+) -> Vec<*mut window_pane> {
+    let mut panes = Vec::new();
+    let mut wp = (*w).panes.tqh_first;
     while !wp.is_null() {
-        if lsz <= i {
-            lsz = lsz.wrapping_add(100 as u_int);
-            l = xreallocarray(
-                l as *mut ::core::ffi::c_void,
-                lsz as size_t,
-                ::core::mem::size_of::<*mut window_pane>() as size_t,
-            ) as *mut *mut window_pane;
-        }
-        let fresh12 = i;
-        i = i.wrapping_add(1);
-        let ref mut fresh13 = *l.offset(fresh12 as isize);
-        *fresh13 = wp;
+        panes.push(wp);
         wp = (*wp).entry.tqe_next;
     }
     sort_qsort(
-        l as *mut ::core::ffi::c_void,
-        i,
+        panes.as_mut_ptr() as *mut ::core::ffi::c_void,
+        u_int::try_from(panes.len()).expect("too many panes to sort"),
         ::core::mem::size_of::<*mut window_pane>() as u_int,
         Some(
             sort_pane_cmp
@@ -783,8 +765,7 @@ pub unsafe extern "C" fn sort_get_panes_window(
         ),
         sort_crit,
     );
-    *n = i;
-    return l;
+    panes
 }
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winlink> {
     let mut links = Vec::new();

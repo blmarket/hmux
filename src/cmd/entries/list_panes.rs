@@ -163,9 +163,7 @@ unsafe extern "C" fn cmd_list_panes_window(
     let mut args: *mut args = cmd_get_args(self_0);
     let mut c: *mut client = cmdq_get_client(item);
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut l: *mut *mut window_pane = ::core::ptr::null_mut::<*mut window_pane>();
     let mut i: u_int = 0;
-    let mut n: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -198,10 +196,11 @@ unsafe extern "C" fn cmd_list_panes_window(
     filter = args_get(args, 'f' as i32 as u_char);
     sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    l = sort_get_panes_window((*wl).window, &raw mut n, &raw mut sort_crit);
+    let l = sort_get_panes_window((*wl).window, &raw mut sort_crit);
+    let n = u_int::try_from(l.len()).expect("too many panes to list");
     i = 0 as u_int;
     while i < n {
-        wp = *l.offset(i as isize);
+        wp = l[i as usize];
         ft = format_create(
             cmdq_get_client(item),
             item,

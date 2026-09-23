@@ -1558,9 +1558,7 @@ pub(super) unsafe extern "C" fn format_loop_panes(
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut size: size_t = 0;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut l: *mut *mut window_pane = ::core::ptr::null_mut::<*mut window_pane>();
     let mut i: ::core::ffi::c_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
     if (*ft).w.is_null() {
         format_log1(
             es,
@@ -1574,10 +1572,11 @@ pub(super) unsafe extern "C" fn format_loop_panes(
     if buffer.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    l = sort_get_panes_window((*ft).w, &raw mut n as *mut u_int, sc);
+    let l = sort_get_panes_window((*ft).w, sc);
+    let n = i32::try_from(l.len()).expect("too many panes in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
-        wp = *l.offset(i as isize);
+        wp = l[i as usize];
         format_log1(
             es,
             b"format_loop_panes\0" as *const u8 as *const ::core::ffi::c_char,

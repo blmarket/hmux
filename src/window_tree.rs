@@ -501,8 +501,6 @@ unsafe extern "C" fn window_tree_build_window(
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut l: *mut *mut window_pane = ::core::ptr::null_mut::<*mut window_pane>();
-    let mut n: u_int = 0;
     let mut i: u_int = 0;
     let mut found: u_int = 0;
     let mut expanded: ::core::ffi::c_int = 0;
@@ -557,14 +555,15 @@ unsafe extern "C" fn window_tree_build_window(
     free(text as *mut ::core::ffi::c_void);
     free(name as *mut ::core::ffi::c_void);
     mode_tree_align(mti, 1 as ::core::ffi::c_int);
-    l = sort_get_panes_window((*wl).window, &raw mut n, sort_crit);
+    let l = sort_get_panes_window((*wl).window, sort_crit);
+    let n = u_int::try_from(l.len()).expect("too many panes in window tree");
     found = 0 as u_int;
     i = 0 as u_int;
     while i < n {
-        if !(window_tree_filter_pane(s, wl, *l.offset(i as isize), filter) == 0) {
+        if !(window_tree_filter_pane(s, wl, l[i as usize], filter) == 0) {
             found = found.wrapping_add(1);
-            if !((*data).hide_preview_this_pane != 0 && *l.offset(i as isize) == (*data).wp) {
-                window_tree_build_pane(s, wl, *l.offset(i as isize), modedata, mti);
+            if !((*data).hide_preview_this_pane != 0 && l[i as usize] == (*data).wp) {
+                window_tree_build_pane(s, wl, l[i as usize], modedata, mti);
             }
         }
         i = i.wrapping_add(1);
