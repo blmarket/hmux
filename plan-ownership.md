@@ -125,13 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_capture_pane_exec`, `cmd_set_buffer_exec`, and window-copy selection
-   still allocate C byte buffers for `paste_set`. Its private
-   `paste_set_owned` now accepts boxed bytes and can remove each producer
-   allocation and copy. Re-rank these live producers by their source and
-   error paths; the exported C adapter retains its success-consumes and
-   error-retains contract. The existing capture-pane, set-buffer, and
-   window-copy CLI checks cover their visible buffer results.
+1. Window-copy selection still allocates C byte buffers for both `paste_add`
+   and `paste_set`, although its source is already a `Vec<u8>`. The private
+   owned paste helpers can move those bytes after the clipboard event. The
+   selection CLI check covers copy, append, pipe, and binary append. Next,
+   `cmd_set_buffer_exec` can replace its xmalloc/xrealloc append builder
+   with a `Vec<u8>` while retaining its `-w` terminal selection snapshot.
+   The exported C adapters retain their success-consumes and error-retains
+   contracts.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1048,6 +1049,18 @@ errors still leave the C producer allocation with the caller.
   passed for the exported C adapter. Changed-file rustfmt and diff checks
   passed. No sanitizer ran. Named replacement event reentrancy remains a
   pre-existing concern outside this boundary.
+
+### Increment 412 — owned capture-pane paste data (2026-09-23)
+
+- `cmd_capture_pane_exec` now moves its already owned `Vec<u8>` capture
+  result into `paste_set_owned` on the buffer path. Its xmalloc, memcpy,
+  success transfer, and error-path C free are gone. The separate `-p` print
+  path keeps its C-string terminator and existing first-NUL printing rule.
+- Serialized workspace tests and binary build passed. The pinned-baseline
+  capture-pane comparison passed for history, hyperlinks, raw pending bytes
+  including `ESC [ NUL`, empty-name error, named buffer, and newly checked
+  automatic buffer. Changed-file rustfmt and diff checks passed. No
+  sanitizer ran.
 
 ## Historical migration index
 

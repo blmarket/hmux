@@ -11,7 +11,7 @@ use crate::src::grid::{
 };
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::input::input_pending;
-use crate::src::paste::paste_set;
+use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::screen::screen_reset_hyperlinks;
 use crate::src::server_fn::server_redraw_window;
@@ -80,7 +80,6 @@ pub use crate::src::shared::window::{
 };
 use crate::src::utf8::utf8_strvis;
 use crate::src::window::window_pane_reset_mode_all;
-use crate::src::xmalloc::xmalloc;
 use std::ffi::{CStr, CString};
 use std::io::Write;
 
@@ -719,20 +718,15 @@ unsafe extern "C" fn cmd_capture_pane_exec(
         if args_has(args, 'b' as i32 as u_char) != 0 {
             bufname = args_get(args, 'b' as i32 as u_char);
         }
-        // paste_set takes ownership on success, so only this ABI boundary uses
-        // a libc allocation. It leaves ownership with us on failure.
-        let data = xmalloc(buf.len().max(1)) as *mut ::core::ffi::c_char;
-        if !buf.is_empty() {
-            memcpy(data.cast(), buf.as_ptr().cast(), buf.len());
-        }
-        if paste_set(data, buf.len(), bufname, &raw mut cause) != 0 as ::core::ffi::c_int {
+        if paste_set_owned(buf.into_boxed_slice(), bufname, &raw mut cause)
+            != 0 as ::core::ffi::c_int
+        {
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 cause,
             );
             free(cause as *mut ::core::ffi::c_void);
-            free(data.cast());
             return CMD_RETURN_ERROR;
         }
     }

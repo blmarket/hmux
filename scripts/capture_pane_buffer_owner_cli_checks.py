@@ -64,6 +64,10 @@ def capture(binary):
             results.append(run("show-buffer", "-b", "raw"))
             assert results[-2] == (0, b"", b"")
             assert results[-1] == (0, b"\033[\000", b"")
+            results.append(run("capture-pane", "-P"))
+            results.append(run("show-buffer"))
+            assert results[-2] == (0, b"", b"")
+            assert results[-1] == (0, b"\033[\000", b"")
             return results
         finally:
             run("kill-server")
