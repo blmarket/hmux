@@ -65,7 +65,6 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::xcalloc;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -3846,7 +3845,11 @@ pub unsafe extern "C" fn colour_palette_free(mut p: *mut colour_palette) {
             ));
         }
         (*p).palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
-        free((*p).default_palette as *mut ::core::ffi::c_void);
+        if !(*p).default_palette.is_null() {
+            drop(Box::from_raw(
+                (*p).default_palette.cast::<[::core::ffi::c_int; 256]>(),
+            ));
+        }
         (*p).default_palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
     }
 }
@@ -3913,16 +3916,15 @@ pub unsafe extern "C" fn colour_palette_from_option(
     a = options_array_first(o);
     if a.is_null() {
         if !(*p).default_palette.is_null() {
-            free((*p).default_palette as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(
+                (*p).default_palette.cast::<[::core::ffi::c_int; 256]>(),
+            ));
             (*p).default_palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
         }
         return;
     }
     if (*p).default_palette.is_null() {
-        (*p).default_palette = xcalloc(
-            256 as size_t,
-            ::core::mem::size_of::<::core::ffi::c_int>() as size_t,
-        ) as *mut ::core::ffi::c_int;
+        (*p).default_palette = Box::into_raw(Box::new([-(1 as ::core::ffi::c_int); 256])).cast();
     }
     i = 0 as u_int;
     while i < 256 as u_int {

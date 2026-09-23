@@ -12,6 +12,7 @@ pub struct colour_palette {
     pub bg: ::core::ffi::c_int,
     /// Box-owned fixed array, borrowed by palette lookup until clear/free.
     pub palette: *mut ::core::ffi::c_int,
+    /// Box-owned fixed array, rebuilt from `pane-colours` options.
     pub default_palette: *mut ::core::ffi::c_int,
 }
 
