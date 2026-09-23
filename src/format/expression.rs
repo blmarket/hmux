@@ -539,50 +539,34 @@ pub(super) unsafe extern "C" fn format_unescape(
 ) -> *mut ::core::ffi::c_char {
     xstrdup(format_unescape_cstring(es, s, n).as_ptr())
 }
-pub(super) unsafe extern "C" fn format_strip(
-    mut es: *mut format_expand_state,
-    mut s: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn format_strip_cstring(
+    es: *mut format_expand_state,
+    s: *const ::core::ffi::c_char,
+) -> CString {
+    let input = CStr::from_ptr(s).to_bytes();
+    let mut out = Vec::with_capacity(input.len());
     let mut brackets: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut check: u_int = 0 as u_int;
-    out = xmalloc(strlen(s).wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
-    cp = out;
-    while *s as ::core::ffi::c_int != '\0' as i32 {
+    for (index, &byte) in input.iter().enumerate() {
         if format_check_time(es, &raw mut check) == 0 {
-            free(out as *mut ::core::ffi::c_void);
-            return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+            return CString::default();
         }
-        if *s as ::core::ffi::c_int == '#' as i32
-            && *s.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '{' as i32
-        {
+        let next = input.get(index + 1).copied().unwrap_or(0);
+        if byte == b'#' && next == b'{' {
             brackets += 1;
         }
-        if *s as ::core::ffi::c_int == '#' as i32
-            && !strchr(
-                b",#{}:\0" as *const u8 as *const ::core::ffi::c_char,
-                *s.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int,
-            )
-            .is_null()
-        {
+        if byte == b'#' && (next == 0 || b",#{}:".contains(&next)) {
             if brackets != 0 as ::core::ffi::c_int {
-                let fresh24 = cp;
-                cp = cp.offset(1);
-                *fresh24 = *s;
+                out.push(byte);
             }
         } else {
-            if *s as ::core::ffi::c_int == '}' as i32 {
+            if byte == b'}' {
                 brackets -= 1;
             }
-            let fresh25 = cp;
-            cp = cp.offset(1);
-            *fresh25 = *s;
+            out.push(byte);
         }
-        s = s.offset(1);
     }
-    *cp = '\0' as i32 as ::core::ffi::c_char;
-    return out;
+    CString::new(out).expect("stripped C string contains no NUL")
 }
 pub(super) unsafe extern "C" fn format_skip1(
     mut es: *mut format_expand_state,
@@ -2595,7 +2579,7 @@ pub(super) unsafe extern "C" fn format_replace(
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp2: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut marker: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut time_format: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut time_format: Option<CString> = None;
     let mut found: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -2796,8 +2780,7 @@ pub(super) unsafe extern "C" fn format_replace(
                         } else if (*fm).argc() >= 2 as ::core::ffi::c_int
                             && !strchr((*fm).arg(0), 'f' as i32).is_null()
                         {
-                            free(time_format as *mut ::core::ffi::c_void);
-                            time_format = format_strip(es, (*fm).arg(1));
+                            time_format = Some(format_strip_cstring(es, (*fm).arg(1)));
                         }
                     }
                 }
@@ -3356,7 +3339,14 @@ pub(super) unsafe extern "C" fn format_replace(
                             b"condition is: %s\0" as *const u8 as *const ::core::ffi::c_char,
                             condition.as_ptr(),
                         );
-                        found = format_find(ft, condition.as_ptr(), modifiers, time_format);
+                        found = format_find(
+                            ft,
+                            condition.as_ptr(),
+                            modifiers,
+                            time_format
+                                .as_ref()
+                                .map_or(::core::ptr::null(), |s| s.as_ptr()),
+                        );
                         if found.is_null() {
                             found = format_expand1(es, condition.as_ptr());
                             if strcmp(found, condition.as_ptr()) == 0 as ::core::ffi::c_int {
@@ -3446,7 +3436,14 @@ pub(super) unsafe extern "C" fn format_replace(
                 );
                 value = format_expand1(es, copy);
             } else {
-                value = format_find(ft, copy, modifiers, time_format);
+                value = format_find(
+                    ft,
+                    copy,
+                    modifiers,
+                    time_format
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |s| s.as_ptr()),
+                );
                 if value.is_null() {
                     format_log1(
                         es,
@@ -3479,7 +3476,6 @@ pub(super) unsafe extern "C" fn format_replace(
                 drop(sub);
                 drop(list);
                 drop(copy0);
-                free(time_format as *mut ::core::ffi::c_void);
                 return -(1 as ::core::ffi::c_int);
             }
         }
@@ -3635,7 +3631,6 @@ pub(super) unsafe extern "C" fn format_replace(
     drop(sub);
     drop(list);
     drop(copy0);
-    free(time_format as *mut ::core::ffi::c_void);
     return 0 as ::core::ffi::c_int;
 }
 pub(super) unsafe extern "C" fn format_expand1(
