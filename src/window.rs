@@ -65,8 +65,8 @@ use crate::src::style::{
 use crate::src::tmux::{clean_name, global_options, global_w_options, setblocking};
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup};
-use std::ffi::CStr;
+use crate::src::xmalloc::{xcalloc, xmalloc, xreallocarray, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -4058,21 +4058,21 @@ pub unsafe extern "C" fn window_pane_search(
         can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0; 1],
         c2rust_padding: [0; 7],
     };
-    let mut new: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut found: ::core::ffi::c_int = 0;
     let mut n: size_t = 0;
-    if regex == 0 {
+    let glob = if regex == 0 {
         if ignore != 0 {
             flags |= FNM_CASEFOLD;
         }
-        xasprintf(
-            &raw mut new,
-            b"*%s*\0" as *const u8 as *const ::core::ffi::c_char,
-            term,
-        );
+        let term = CStr::from_ptr(term).to_bytes();
+        let mut pattern = Vec::with_capacity(term.len() + 2);
+        pattern.push(b'*');
+        pattern.extend_from_slice(term);
+        pattern.push(b'*');
+        Some(CString::new(pattern).expect("search term contains no NUL"))
     } else {
         if ignore != 0 {
             flags |= REG_ICASE;
@@ -4080,7 +4080,8 @@ pub unsafe extern "C" fn window_pane_search(
         if regcomp(&raw mut r, term, flags | REG_EXTENDED) != 0 as ::core::ffi::c_int {
             return 0 as u_int;
         }
-    }
+        None
+    };
     i = 0 as u_int;
     while i < (*(*s).grid).sy {
         line = grid_view_string_cells((*s).grid, 0 as u_int, i, (*(*s).grid).sx);
@@ -4102,7 +4103,13 @@ pub unsafe extern "C" fn window_pane_search(
             line,
         );
         if regex == 0 {
-            found = (fnmatch(new, line, flags) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+            found = (fnmatch(
+                glob.as_ref()
+                    .expect("nonregex search has a pattern")
+                    .as_ptr(),
+                line,
+                flags,
+            ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
         } else {
             found = (regexec(
                 &raw mut r,
@@ -4118,9 +4125,7 @@ pub unsafe extern "C" fn window_pane_search(
         }
         i = i.wrapping_add(1);
     }
-    if regex == 0 {
-        free(new as *mut ::core::ffi::c_void);
-    } else {
+    if regex != 0 {
         regfree(&raw mut r);
     }
     if i == (*(*s).grid).sy {

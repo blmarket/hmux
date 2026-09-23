@@ -558,6 +558,20 @@ legacy callers safe.
   the pre-migration and migrated binaries. Only the success path was live
   tested; no sanitizer was run.
 
+### Increment 166 — pane search glob pattern (2026-09-22)
+
+- `window_pane_search` now builds the nonregex `"*%s*"` pattern from the
+  C-string bytes of the search term and owns it in a local `CString`.
+  `fnmatch` borrows it during the synchronous grid scan; the local owner
+  drops after matching. Removed its `xasprintf`/free pair. The regex path
+  still compiles and releases its separate `regex_t` with `regfree`.
+- The library/binary build, `format_search_cli_checks.py`, and
+  `git diff --check` passed. The private-server CLI check passed with both
+  the pre-migration and migrated binaries for first/second-line hits,
+  misses, case-insensitive matching, and regex matching. Changed-file
+  rustfmt reports one pre-existing import-layout difference in `window.rs`;
+  the changed code follows rustfmt. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -568,10 +582,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_pane_search` in `src/window.rs` formats `"*%s*"` into a local
-   C allocation for `fnmatch`, then frees it after the grid scan. A
-   byte-preserving `CString` should own the glob pattern after checking its
-   borrow lifetime and the regex branch's separate cleanup.
+1. `menu_add_item` in `src/menu.rs` formats a name into a C allocation,
+   then immediately copies it into an existing `MenuRowStrings` `CString`
+   owner through `menu_take_string` and frees the C source. Build the
+   byte-preserving `CString` directly, preserving the optional key suffix
+   and `format_trim_right`'s separate source allocation.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
