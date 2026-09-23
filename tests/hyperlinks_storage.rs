@@ -41,9 +41,36 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
         );
         assert_eq!(external_id, first_external_id);
         assert_eq!(CStr::from_ptr(external_id), c"tmux1");
-        for _ in 0..MAX_HYPERLINKS {
-            hyperlinks_put(b, c"new".as_ptr(), c"".as_ptr());
+        let mut retained_inner = 0;
+        let mut retained_external_id = std::ptr::null();
+        for index in 0..MAX_HYPERLINKS {
+            let inserted = hyperlinks_put(b, c"new".as_ptr(), c"".as_ptr());
+            if index == 10 {
+                retained_inner = inserted;
+                assert_eq!(
+                    hyperlinks_get(
+                        b,
+                        retained_inner,
+                        &mut uri,
+                        null_mut(),
+                        &mut retained_external_id,
+                    ),
+                    1
+                );
+            }
         }
+        let mut external_id_after_growth = std::ptr::null();
+        assert_eq!(
+            hyperlinks_get(
+                b,
+                retained_inner,
+                &mut uri,
+                null_mut(),
+                &mut external_id_after_growth,
+            ),
+            1
+        );
+        assert_eq!(external_id_after_growth, retained_external_id);
         // Eviction applies across owners, removing both indexes in the victim.
         assert_eq!(
             hyperlinks_get(shared, first, &mut uri, null_mut(), null_mut()),
@@ -87,6 +114,31 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
             ),
             escaped
         );
+
+        // Resetting one table removes its interleaved records without
+        // disturbing another table's entry in global insertion order.
+        let c = hyperlinks_init();
+        let d = hyperlinks_init();
+        let c_first = hyperlinks_put(c, c"c-first".as_ptr(), c"".as_ptr());
+        let d_only = hyperlinks_put(d, c"d-only".as_ptr(), c"".as_ptr());
+        let c_second = hyperlinks_put(c, c"c-second".as_ptr(), c"".as_ptr());
+        hyperlinks_reset(c);
+        assert_eq!(
+            hyperlinks_get(c, c_first, &mut uri, null_mut(), null_mut()),
+            0
+        );
+        assert_eq!(
+            hyperlinks_get(c, c_second, &mut uri, null_mut(), null_mut()),
+            0
+        );
+        assert_eq!(
+            hyperlinks_get(d, d_only, &mut uri, null_mut(), null_mut()),
+            1
+        );
+        assert_eq!(CStr::from_ptr(uri), c"d-only");
+        hyperlinks_free(c);
+        hyperlinks_free(d);
+
         hyperlinks_free(shared);
         hyperlinks_free(b);
     }

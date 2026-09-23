@@ -1,13 +1,13 @@
 use crate::src::ffi::libc::strcmp;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::hyperlinks::{
-    hyperlink_inner_entry, hyperlink_list_entry, hyperlink_uri_entry, hyperlinks,
-    hyperlinks_by_inner_tree, hyperlinks_by_uri_tree, hyperlinks_list, hyperlinks_uri,
+    hyperlink_inner_entry, hyperlink_uri_entry, hyperlinks, hyperlinks_by_inner_tree,
+    hyperlinks_by_uri_tree, hyperlinks_uri,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 use crate::src::utf8::utf8_stravis_cstring;
-use std::ffi::CString;
+use std::{collections::VecDeque, ffi::CString};
 
 /// One retained reference to the mutable hyperlink table. The legacy table
 /// remains behind the raw C API; this owner never creates an aliased Rust
@@ -38,7 +38,7 @@ impl Drop for HyperlinksRef {
     }
 }
 
-// The C-layout record is the first field so tree and list pointers still point
+// The C-layout record is the first field so tree index pointers still point
 // at hyperlinks_uri. The external ID remains valid until hyperlinks_remove.
 #[repr(C)]
 struct HyperlinkUriOwner {
@@ -53,11 +53,9 @@ const _: () = assert!(std::mem::offset_of!(HyperlinkUriOwner, node) == 0);
 pub const MAX_HYPERLINKS: ::core::ffi::c_int = 5000 as ::core::ffi::c_int;
 pub const MAX_HYPERLINK_URI: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
 static mut hyperlinks_next_external_id: ::core::ffi::c_longlong = 1 as ::core::ffi::c_longlong;
-static mut global_hyperlinks_count: u_int = 0;
-static mut global_hyperlinks: hyperlinks_list = hyperlinks_list {
-    tqh_first: ::core::ptr::null::<hyperlinks_uri>() as *mut hyperlinks_uri,
-    tqh_last: ::core::ptr::null::<*mut hyperlinks_uri>() as *mut *mut hyperlinks_uri,
-};
+// This queue owns the records and their insertion order. Boxes keep each node
+// at a stable address for the per-table URI and inner-ID indexes.
+static mut GLOBAL_HYPERLINKS: VecDeque<Box<HyperlinkUriOwner>> = VecDeque::new();
 unsafe extern "C" fn hyperlinks_by_uri_cmp(
     mut left: *mut hyperlinks_uri,
     mut right: *mut hyperlinks_uri,
@@ -89,17 +87,18 @@ unsafe extern "C" fn hyperlinks_by_inner_cmp(
 }
 
 unsafe extern "C" fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
-    let mut hl: *mut hyperlinks = (*hlu).tree;
-    if !(*hlu).list_entry.tqe_next.is_null() {
-        (*(*hlu).list_entry.tqe_next).list_entry.tqe_prev = (*hlu).list_entry.tqe_prev;
-    } else {
-        global_hyperlinks.tqh_last = (*hlu).list_entry.tqe_prev;
-    }
-    *(*hlu).list_entry.tqe_prev = (*hlu).list_entry.tqe_next;
-    global_hyperlinks_count = global_hyperlinks_count.wrapping_sub(1);
+    let global_hyperlinks = std::ptr::addr_of_mut!(GLOBAL_HYPERLINKS);
+    let index = (*global_hyperlinks)
+        .iter()
+        .position(|owner| std::ptr::addr_of!((**owner).node).cast_mut() == hlu)
+        .expect("hyperlink record missing from global insertion order");
+    let owner = (*global_hyperlinks)
+        .remove(index)
+        .expect("hyperlink owner missing from global insertion order");
+    let hl = owner.node.tree;
     hyperlinks_by_inner_tree_remove(&raw mut (*hl).by_inner, hlu);
     hyperlinks_by_uri_tree_remove(&raw mut (*hl).by_uri, hlu);
-    drop(Box::from_raw(hlu.cast::<HyperlinkUriOwner>()));
+    drop(owner);
 }
 #[no_mangle]
 pub unsafe extern "C" fn hyperlinks_put(
@@ -113,10 +112,6 @@ pub unsafe extern "C" fn hyperlinks_put(
         internal_id: ::core::ptr::null::<::core::ffi::c_char>(),
         external_id: ::core::ptr::null::<::core::ffi::c_char>(),
         uri: ::core::ptr::null::<::core::ffi::c_char>(),
-        list_entry: hyperlink_list_entry {
-            tqe_next: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut hyperlinks_uri>(),
-        },
         by_inner_entry: hyperlink_inner_entry {
             owner: std::ptr::null_mut(),
         },
@@ -153,20 +148,21 @@ pub unsafe extern "C" fn hyperlinks_put(
     owner.node.internal_id = owner.internal_id.as_ptr();
     owner.node.external_id = owner.external_id.as_ptr();
     owner.node.uri = owner.uri.as_ptr();
-    hlu = Box::into_raw(owner).cast();
+    hlu = &mut owner.node;
     let fresh1 = (*hl).next_inner;
     (*hl).next_inner = (*hl).next_inner.wrapping_add(1);
     (*hlu).inner = fresh1;
     (*hlu).tree = hl;
     hyperlinks_by_uri_tree_insert(&raw mut (*hl).by_uri, hlu);
     hyperlinks_by_inner_tree_insert(&raw mut (*hl).by_inner, hlu);
-    (*hlu).list_entry.tqe_next = ::core::ptr::null_mut::<hyperlinks_uri>();
-    (*hlu).list_entry.tqe_prev = global_hyperlinks.tqh_last;
-    *global_hyperlinks.tqh_last = hlu;
-    global_hyperlinks.tqh_last = &raw mut (*hlu).list_entry.tqe_next;
-    global_hyperlinks_count = global_hyperlinks_count.wrapping_add(1);
-    if global_hyperlinks_count == MAX_HYPERLINKS as u_int {
-        hyperlinks_remove(global_hyperlinks.tqh_first);
+    let global_hyperlinks = std::ptr::addr_of_mut!(GLOBAL_HYPERLINKS);
+    (*global_hyperlinks).push_back(owner);
+    if (*global_hyperlinks).len() == MAX_HYPERLINKS as usize {
+        let oldest_owner = (*global_hyperlinks)
+            .front()
+            .expect("new hyperlink missing from global insertion order");
+        let oldest = std::ptr::addr_of!((**oldest_owner).node).cast_mut();
+        hyperlinks_remove(oldest);
     }
     return (*hlu).inner;
 }
@@ -184,10 +180,6 @@ pub unsafe extern "C" fn hyperlinks_get(
         internal_id: ::core::ptr::null::<::core::ffi::c_char>(),
         external_id: ::core::ptr::null::<::core::ffi::c_char>(),
         uri: ::core::ptr::null::<::core::ffi::c_char>(),
-        list_entry: hyperlink_list_entry {
-            tqe_next: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut hyperlinks_uri>(),
-        },
         by_inner_entry: hyperlink_inner_entry {
             owner: std::ptr::null_mut(),
         },
@@ -246,18 +238,6 @@ pub unsafe extern "C" fn hyperlinks_free(mut hl: *mut hyperlinks) {
         drop(Box::from_raw(hl));
     }
 }
-unsafe extern "C" fn run_static_initializers() {
-    global_hyperlinks = hyperlinks_list {
-        tqh_first: ::core::ptr::null_mut::<hyperlinks_uri>(),
-        tqh_last: &raw mut global_hyperlinks.tqh_first,
-    };
-}
-#[used]
-#[cfg_attr(target_os = "linux", link_section = ".init_array")]
-#[cfg_attr(target_os = "windows", link_section = ".CRT$XIB")]
-#[cfg_attr(target_os = "macos", link_section = "__DATA,__mod_init_func")]
-static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
-
 unsafe fn hyperlinks_by_inner_tree_key(elm: *mut hyperlinks_uri) -> u32 {
     (*elm).inner
 }

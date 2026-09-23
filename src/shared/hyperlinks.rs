@@ -25,7 +25,6 @@ pub struct hyperlinks_uri {
     pub internal_id: *const ::core::ffi::c_char,
     pub external_id: *const ::core::ffi::c_char,
     pub uri: *const ::core::ffi::c_char,
-    pub list_entry: hyperlink_list_entry,
     pub by_inner_entry: hyperlink_inner_entry,
     pub by_uri_entry: hyperlink_uri_entry,
 }
@@ -43,18 +42,6 @@ pub struct hyperlink_inner_entry {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct hyperlink_list_entry {
-    pub tqe_next: *mut hyperlinks_uri,
-    pub tqe_prev: *mut *mut hyperlinks_uri,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct hyperlinks_by_inner_tree {
     pub storage: *mut std::collections::BTreeMap<u32, *mut hyperlinks_uri>,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct hyperlinks_list {
-    pub tqh_first: *mut hyperlinks_uri,
-    pub tqh_last: *mut *mut hyperlinks_uri,
 }

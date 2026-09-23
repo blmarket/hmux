@@ -110,7 +110,6 @@ fn migrated_layouts_match_every_original_copy() {
     );
     family!(grid_reader, [gd, cx, cy], [grid_reader, window_copy]);
     family!(hyperlink_inner_entry, [owner], [hyperlinks]);
-    family!(hyperlink_list_entry, [tqe_next, tqe_prev], [hyperlinks]);
     family!(hyperlink_uri_entry, [owner], [hyperlinks]);
     family!(
         hyperlinks,
@@ -119,7 +118,6 @@ fn migrated_layouts_match_every_original_copy() {
     );
     family!(hyperlinks_by_inner_tree, [storage], [hyperlinks]);
     family!(hyperlinks_by_uri_tree, [storage], [hyperlinks]);
-    family!(hyperlinks_list, [tqh_first, tqh_last], [hyperlinks]);
     family!(
         hyperlinks_uri,
         [
@@ -128,7 +126,6 @@ fn migrated_layouts_match_every_original_copy() {
             internal_id,
             external_id,
             uri,
-            list_entry,
             by_inner_entry,
             by_uri_entry
         ],
