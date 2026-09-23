@@ -87,13 +87,12 @@ pub use crate::src::shared::window::{
 use crate::src::status::status_message_set;
 use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::xmalloc::{xcalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_run_shell_data {
     pub client: *mut client,
@@ -272,10 +271,17 @@ unsafe extern "C" fn cmd_run_shell_exec(
     } else if args_count(args) == 0 as u_int {
         return CMD_RETURN_NORMAL;
     }
-    cdata = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<cmd_run_shell_data>() as size_t,
-    ) as *mut cmd_run_shell_data;
+    cdata = Box::into_raw(Box::new(cmd_run_shell_data {
+        client: ::core::ptr::null_mut(),
+        cmd: ::core::ptr::null_mut(),
+        state: ::core::ptr::null_mut(),
+        cwd: ::core::ptr::null_mut(),
+        item: ::core::ptr::null_mut(),
+        s: ::core::ptr::null_mut(),
+        wp_id: 0,
+        timer: ::core::mem::zeroed(),
+        flags: 0,
+    }));
     if args_has(args, 'C' as i32 as u_char) == 0 {
         cmd = args_string(args, 0 as u_int);
         if !cmd.is_null() {
@@ -556,7 +562,7 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
     }
 }
 unsafe extern "C" fn cmd_run_shell_free(mut data: *mut ::core::ffi::c_void) {
-    let mut cdata: *mut cmd_run_shell_data = data as *mut cmd_run_shell_data;
+    let mut cdata = Box::from_raw(data as *mut cmd_run_shell_data);
     event_del(&raw mut (*cdata).timer);
     if !(*cdata).s.is_null() {
         session_remove_ref(
@@ -572,5 +578,4 @@ unsafe extern "C" fn cmd_run_shell_free(mut data: *mut ::core::ffi::c_void) {
     }
     free((*cdata).cwd as *mut ::core::ffi::c_void);
     free((*cdata).cmd as *mut ::core::ffi::c_void);
-    free(cdata as *mut ::core::ffi::c_void);
 }

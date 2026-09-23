@@ -1927,6 +1927,18 @@ legacy callers safe.
   resized the window, waited for timer redraw, and exited through a key.
   No sanitizer was run.
 
+### Increment 262 — run-shell callback data owner (2026-09-23)
+
+- `cmd_run_shell_data` now uses `Box` for its stable allocation across timer,
+  command, and job callbacks. Its single free callback cancels the timer,
+  releases session/client references and nested C-owned state/strings, then
+  drops the box. The record is no longer `Copy`.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/run_shell_data_owner_cli_checks.py` passed on main. The pinned
+  baseline comparison covered immediate output, command mode, delayed
+  background execution, and a failing job. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1937,8 +1949,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit small callback leaves such as `events_sink` and the shell-command
-   callback records for complete allocation, callback, and free ownership.
+1. Audit small callback leaves such as `events_sink` and `if-shell` callback
+   data for complete allocation, callback, and free ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
