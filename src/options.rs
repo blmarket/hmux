@@ -41,7 +41,7 @@ use crate::src::window::{
     window_pane_tree_minmax, window_pane_tree_next, windows_minmax, windows_next,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -985,12 +985,9 @@ pub unsafe extern "C" fn options_parse(
             .iter()
             .position(|&byte| byte == b'[')
             .expect("parsed array option has an opening bracket");
-        let raw = xstrndup(
-            input.as_ptr().add(open + 1) as *const ::core::ffi::c_char,
-            (input.len() - open - 2) as size_t,
-        );
-        let new_key = options_array_correct_key(raw);
-        free(raw as *mut ::core::ffi::c_void);
+        let raw = CString::new(&input[open + 1..input.len() - 1])
+            .expect("C string option name has no interior NUL");
+        let new_key = options_array_correct_key(raw.as_ptr());
         if new_key.is_null() {
             free(copy as *mut ::core::ffi::c_void);
             return ::core::ptr::null_mut::<::core::ffi::c_char>();

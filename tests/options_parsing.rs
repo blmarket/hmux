@@ -1,7 +1,7 @@
 //! Isolated option-name regressions for set-option/show-options parsing.
 
 use hmux2::src::ffi::libc::free;
-use hmux2::src::options::{options_match, options_match_command};
+use hmux2::src::options::{options_match, options_match_command, options_parse};
 use std::ffi::{CStr, CString};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -32,6 +32,46 @@ unsafe fn run_match(input: &[u8], abi_adapter: bool) -> MatchOutcome {
         free(key.cast());
     }
     outcome
+}
+
+unsafe fn run_parse(input: &[u8]) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    let mut nul_terminated = input.to_vec();
+    nul_terminated.push(0);
+    let mut key = std::ptr::null_mut();
+    let name = options_parse(nul_terminated.as_ptr().cast(), &mut key);
+    let result = (
+        (!name.is_null()).then(|| CStr::from_ptr(name).to_bytes().to_vec()),
+        (!key.is_null()).then(|| CStr::from_ptr(key).to_bytes().to_vec()),
+    );
+    if !name.is_null() {
+        free(name.cast());
+    }
+    if !key.is_null() {
+        free(key.cast());
+    }
+    result
+}
+
+#[test]
+fn options_parse_array_key_owns_c_results_and_preserves_bytes() {
+    let cases: &[(&[u8], Option<&[u8]>, Option<&[u8]>)] = &[
+        (b"status-format[0007]", Some(b"status-format"), Some(b"7")),
+        (b"@test[\xff]", Some(b"@test"), Some(b"\xff")),
+        (
+            b"status-format[0007]\0ignored",
+            Some(b"status-format"),
+            Some(b"7"),
+        ),
+        (b"status-format[]", None, None),
+        (b"status-format[4294967296]", None, None),
+    ];
+    for &(input, name, key) in cases {
+        assert_eq!(
+            unsafe { run_parse(input) },
+            (name.map(<[u8]>::to_vec), key.map(<[u8]>::to_vec)),
+            "input={input:?}"
+        );
+    }
 }
 
 const CASES: &[(&[u8], Option<&[u8]>, Option<&[u8]>, i32)] = &[

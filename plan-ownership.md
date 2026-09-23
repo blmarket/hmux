@@ -1128,6 +1128,20 @@ legacy callers safe.
   build, changed-file rustfmt, and `git diff --check` passed in the
   isolated worktree. No sanitizer run was performed.
 
+### Increment 55 — parsed option array-key scratch (2026-09-22)
+
+- `options_parse` now owns its temporary bracketed array key as a
+  byte-preserving `CString`, removing the `xstrndup`/`free` pair.
+  `options_array_correct_key` reads it synchronously and returns a separate
+  C allocation for normalized numeric or text keys. The parsed option
+  name and returned `*key` retain their C-owned contract.
+- A direct parser regression covers numeric normalization, non-UTF-8
+  bytes, first-NUL truncation, empty and overflow keys, and C-freeable
+  outputs. Focused and workspace tests, binary build, changed-file
+  rustfmt, and `git diff --check` passed in the isolated worktree.
+  Repository-wide rustfmt still reports unrelated existing differences;
+  no live CLI or sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1142,11 +1156,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect the key-name scratch in `window_customize.rs` and other local
-   parser strings. Audit UI prompt return paths before migration.
+2. Inspect the key-binding and user-option name scratch in
+   `window_customize.rs`. Audit UI prompt return paths before migration.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–54. The remaining
+Current validation is recorded in increments 15–55. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–54 has its own local commit; none was pushed.
+Each of increments 15–55 has its own local commit; none was pushed.
