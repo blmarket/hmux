@@ -3946,7 +3946,6 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if item.is_null() {
         return PROMPT_CLOSE;
@@ -3969,11 +3968,16 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
     if !options_array_get(o, s).is_null() {
         return PROMPT_CLOSE;
     }
-    value = options_to_string(o, array_key, 0 as ::core::ffi::c_int);
-    if options_array_set(o, s, value, 0 as ::core::ffi::c_int, &raw mut cause)
-        != 0 as ::core::ffi::c_int
+    let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
+    if options_array_set(
+        o,
+        s,
+        value.as_ptr(),
+        0 as ::core::ffi::c_int,
+        &raw mut cause,
+    ) != 0 as ::core::ffi::c_int
     {
-        free(value as *mut ::core::ffi::c_void);
+        drop(value);
         *cause = ({
             let mut __res: ::core::ffi::c_int = 0;
             if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
@@ -4007,7 +4011,7 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
         free(cause as *mut ::core::ffi::c_void);
         return PROMPT_CLOSE;
     } else {
-        free(value as *mut ::core::ffi::c_void);
+        drop(value);
         options_array_set(
             o,
             array_key,

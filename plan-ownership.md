@@ -125,13 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_set_array_key_callback` still calls C-return
-   `options_to_string` to snapshot the old array element, passes it to
-   `options_array_set`, then frees it on success and error. The existing
-   private `options_to_cstring` can own the snapshot because
-   `options_array_set` parses or copies its input before returning. Preserve
-   the error display and old-element deletion order; the customize array-key
-   prompt CLI covers the path.
+1. `window_customize_build_array` and `window_customize_build_option`
+   still call C-return `options_to_string` for each option row, pass the
+   result to `format_add`, then free it. `format_add` copies the bytes
+   synchronously into its own entry, so the existing private
+   `options_to_cstring` can own the temporary for both row builders. The
+   array-name and changed-only customize CLI checks cover row rendering.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1490,6 +1489,17 @@ name error.
   equal and changed scalar and array values. Candidate and pinned tmux
   passed the same four cases. Serialized workspace tests, binary build,
   changed-file rustfmt, and diff check passed. No sanitizer ran.
+
+### Increment 443 — own customize array-key value snapshot (2026-09-23)
+
+- `window_customize_set_array_key_callback` now keeps the old array value
+  as a `CString` from `options_to_cstring` while `options_array_set` parses
+  or copies it. Explicit drops preserve the former free points before error
+  display and before deleting the old key on success. Removed the
+  C-return duplicate and branch-specific manual frees.
+- The candidate and pinned tmux passed the customize array-key prompt CLI
+  check. Serialized workspace tests, binary build, changed-file rustfmt,
+  and diff check passed. No sanitizer ran.
 
 ## Historical migration index
 
