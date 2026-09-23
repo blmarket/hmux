@@ -3085,6 +3085,20 @@ legacy callers safe.
   waiting command-queue item retained after a disconnected source remains
   for a queue-cancellation migration. No sanitizer was run.
 
+### Increment 343 — boxed parser argument-list headers (2026-09-23)
+
+- Grammar action 41 now creates its standalone `cmd_parse_arguments` header
+  through a boxed constructor that initializes the intrusive tail at its
+  final address. Action 34 consumes the emptied Box after moving arguments
+  into the command's embedded header. `yydestruct` now releases a discarded
+  `arguments` value's items and Box on syntax errors. Removed `Copy`/`Clone`
+  from this header and the containing `cmd_parse_command` record.
+- Verbose parser and lexer CLI checks passed against the pinned baseline,
+  including nested commands, malformed inputs, and recovery after an
+  unclosed conditional. Full workspace tests, binary build, changed-file
+  rustfmt, and diff checks passed. Other parser semantic values still have
+  their pre-existing error-path cleanup gaps; no sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

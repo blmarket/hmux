@@ -107,7 +107,6 @@ pub struct cmd_parse_commands {
     pub tqh_first: *mut cmd_parse_command,
     pub tqh_last: *mut *mut cmd_parse_command,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_parse_command {
     pub line: u_int,
@@ -120,8 +119,8 @@ pub struct C2RustUnnamed_39 {
     pub tqe_next: *mut cmd_parse_command,
     pub tqe_prev: *mut *mut cmd_parse_command,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Inline in commands, or Box-owned until a grammar action transfers its items.
 pub struct cmd_parse_arguments {
     pub tqh_first: *mut cmd_parse_argument,
     pub tqh_last: *mut *mut cmd_parse_argument,
@@ -348,6 +347,11 @@ unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
 }
 pub const YYNTOKENS: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const YYMAXUTOK: ::core::ffi::c_int = 266 as ::core::ffi::c_int;
+unsafe fn cmd_parse_new_arguments() -> *mut cmd_parse_arguments {
+    let args = Box::into_raw(Box::new(::core::mem::zeroed::<cmd_parse_arguments>()));
+    (*args).tqh_last = &raw mut (*args).tqh_first;
+    args
+}
 unsafe extern "C" fn cmd_parse_free_arguments(mut args: *mut cmd_parse_arguments) {
     let mut arg: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
     let mut arg1: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
@@ -1765,6 +1769,13 @@ unsafe extern "C" fn yydestruct(
     if yymsg.is_null() {
         yymsg = b"Deleting\0" as *const u8 as *const ::core::ffi::c_char;
     }
+    if yykind == YYSYMBOL_arguments {
+        let args = (*yyvaluep).arguments;
+        if !args.is_null() {
+            cmd_parse_free_arguments(args);
+            drop(Box::from_raw(args));
+        }
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_parse_from_buffer(
@@ -2669,10 +2680,9 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                                 .arguments)
                                     .tqh_first;
                             }
-                            free(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments
-                                    as *mut ::core::ffi::c_void,
-                            );
+                            drop(Box::from_raw(
+                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments,
+                            ));
                             arg_0 = xcalloc(
                                 1 as size_t,
                                 ::core::mem::size_of::<cmd_parse_argument>() as size_t,
@@ -2838,14 +2848,7 @@ unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
                             }
                         }
                         41 => {
-                            yyval.arguments = xcalloc(
-                                1 as size_t,
-                                ::core::mem::size_of::<cmd_parse_arguments>() as size_t,
-                            )
-                                as *mut cmd_parse_arguments;
-                            (*yyval.arguments).tqh_first =
-                                ::core::ptr::null_mut::<cmd_parse_argument>();
-                            (*yyval.arguments).tqh_last = &raw mut (*yyval.arguments).tqh_first;
+                            yyval.arguments = cmd_parse_new_arguments();
                             let ref mut fresh17 =
                                 (*(*yyvsp.offset(0 as ::core::ffi::c_int as isize)).argument)
                                     .entry
