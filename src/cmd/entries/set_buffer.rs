@@ -3,7 +3,8 @@ use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::ffi::libc::{free, memcpy, strlen};
 use crate::src::paste::{
-    paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set,
+    paste_buffer_data, paste_buffer_name, paste_free, paste_get_name, paste_get_top, paste_rename,
+    paste_set,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
@@ -69,7 +70,8 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tty::tty_set_selection;
-use crate::src::xmalloc::{xmalloc, xrealloc, xstrdup};
+use crate::src::xmalloc::{xmalloc, xrealloc};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -139,27 +141,30 @@ unsafe extern "C" fn cmd_set_buffer_exec(
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut bufname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut bufname: Option<CString> = None;
     let mut bufdata: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut olddata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufsize: size_t = 0 as size_t;
     let mut newsize: size_t = 0;
     if !args_get(args, 'b' as i32 as u_char).is_null() {
-        bufname = xstrdup(args_get(args, 'b' as i32 as u_char));
-        pb = paste_get_name(bufname);
+        bufname = Some(CStr::from_ptr(args_get(args, 'b' as i32 as u_char)).to_owned());
+        pb = paste_get_name(bufname.as_ref().unwrap().as_ptr());
     }
     if cmd_get_entry(self_0) == &raw const cmd_delete_buffer_entry {
         if pb.is_null() {
-            if !bufname.is_null() {
+            if let Some(bufname) = bufname.as_ref() {
                 cmdq_error(
                     item,
                     b"unknown buffer: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    bufname,
+                    bufname.as_ptr(),
                 );
                 current_block = 17843714670734105592;
             } else {
-                pb = paste_get_top(&raw mut bufname);
+                pb = paste_get_top(::core::ptr::null_mut());
+                if !pb.is_null() {
+                    bufname = Some(CStr::from_ptr(paste_buffer_name(pb)).to_owned());
+                }
                 current_block = 3640593987805443782;
             }
         } else {
@@ -175,22 +180,24 @@ unsafe extern "C" fn cmd_set_buffer_exec(
                     );
                 } else {
                     paste_free(pb);
-                    free(bufname as *mut ::core::ffi::c_void);
                     return CMD_RETURN_NORMAL;
                 }
             }
         }
     } else if args_has(args, 'n' as i32 as u_char) != 0 {
         if pb.is_null() {
-            if !bufname.is_null() {
+            if let Some(bufname) = bufname.as_ref() {
                 cmdq_error(
                     item,
                     b"unknown buffer: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    bufname,
+                    bufname.as_ptr(),
                 );
                 current_block = 17843714670734105592;
             } else {
-                pb = paste_get_top(&raw mut bufname);
+                pb = paste_get_top(::core::ptr::null_mut());
+                if !pb.is_null() {
+                    bufname = Some(CStr::from_ptr(paste_buffer_name(pb)).to_owned());
+                }
                 current_block = 15904375183555213903;
             }
         } else {
@@ -205,7 +212,7 @@ unsafe extern "C" fn cmd_set_buffer_exec(
                         b"no buffer\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                 } else if paste_rename(
-                    bufname,
+                    bufname.as_ref().unwrap().as_ptr(),
                     args_get(args, 'n' as i32 as u_char),
                     &raw mut cause,
                 ) != 0 as ::core::ffi::c_int
@@ -216,7 +223,6 @@ unsafe extern "C" fn cmd_set_buffer_exec(
                         cause,
                     );
                 } else {
-                    free(bufname as *mut ::core::ffi::c_void);
                     return CMD_RETURN_NORMAL;
                 }
             }
@@ -229,7 +235,6 @@ unsafe extern "C" fn cmd_set_buffer_exec(
     } else {
         newsize = strlen(args_string(args, 0 as u_int));
         if newsize == 0 as size_t {
-            free(bufname as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'a' as i32 as u_char) != 0 && !pb.is_null() {
@@ -251,7 +256,10 @@ unsafe extern "C" fn cmd_set_buffer_exec(
             newsize,
         );
         bufsize = bufsize.wrapping_add(newsize);
-        if paste_set(bufdata, bufsize, bufname, &raw mut cause) != 0 as ::core::ffi::c_int {
+        let name = bufname
+            .as_ref()
+            .map_or(::core::ptr::null(), |name| name.as_ptr());
+        if paste_set(bufdata, bufsize, name, &raw mut cause) != 0 as ::core::ffi::c_int {
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -266,12 +274,10 @@ unsafe extern "C" fn cmd_set_buffer_exec(
                     bufsize,
                 );
             }
-            free(bufname as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     }
     free(bufdata as *mut ::core::ffi::c_void);
-    free(bufname as *mut ::core::ffi::c_void);
     free(cause as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }

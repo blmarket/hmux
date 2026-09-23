@@ -1102,6 +1102,20 @@ legacy callers safe.
   cases including empty, quotes, tilde, newline, UTF-8, and non-UTF-8 bytes.
   No sanitizer was run.
 
+### Increment 205 — set-buffer scratch name owner (2026-09-23)
+
+- `cmd_set_buffer_exec` now keeps its optional temporary buffer name as
+  `Option<CString>` across delete, rename, and set branches. The automatic
+  top-buffer paths call `paste_get_top` without requesting a C-owned name,
+  then clone `paste_buffer_name` before callbacks can delete or rename its
+  record. Removed the local `xstrdup`, the top-name allocation, and all five
+  local name frees. `paste_buffer.name` and the public paste API stay C-owned.
+- Library/binary build, six `paste::tests`, changed-file rustfmt, Python
+  syntax check, and `git diff --check` passed. A private-server CLI check
+  matched the pinned baseline across named/automatic buffer set, append,
+  rename, delete, and error paths, including UTF-8 and invalid non-UTF-8
+  names. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
