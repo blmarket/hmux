@@ -463,6 +463,18 @@ legacy callers safe.
   old and new binaries for no-pane/empty, spacing, apostrophe quoting,
   non-UTF-8 bytes, and a long argument. No sanitizer was run.
 
+### Increment 159 — terminal selection base64 scratch (2026-09-22)
+
+- `tty_set_selection` now owns the local `__b64_ntop` output in a `Vec<u8>`
+  through synchronous `tty_putcode_ss`/terminal buffer output. Removed its
+  `xmalloc` allocation/free pair and sole `xmalloc` import in `tty.rs`.
+  Early returns for an unstarted tty or missing selection capability remain;
+  the OSC 52 payload and NUL terminator are preserved.
+- Isolated focused `bracketed_paste_pty` suite (3 tests), changed-file
+  rustfmt, and `git diff --check` passed. Its new attached-PTY test checks
+  OSC 52 output from `set-buffer -w` for text and `load-buffer -w` for
+  binary `A\0B`. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -473,9 +485,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `tty_set_selection` still allocates and frees a local base64 output
-   buffer around synchronous terminal output. A `Vec<u8>` can own that
-   scratch while preserving OSC 52 bytes and its early-return conditions.
+1. `format_cb_start_command_list` still calls the C-owned
+   `format_quote_shell_single` helper once per argument and frees each result
+   after copying its bytes. The helper has one other caller in
+   `format_replace_modifier`, where the result enters a C-owned transform
+   chain. Audit a CString-returning internal variant for the callback while
+   preserving that chain's C-owned return contract.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -500,9 +515,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–158. The remaining
+Current validation is recorded in increments 15–159. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–158 has its own local commit; none was pushed.
+Each of increments 15–159 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -647,3 +662,9 @@ by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
 build, session-group-list, grouped-attached-list, and event-payload hook CLI
 checks, changed-file rustfmt, and `git diff --check` passed on main. No
 combined sanitizer was run.
+After increments 157–159 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, pane-tabs and start-command-list CLI checks, changed-file rustfmt, and
+`git diff --check` passed on main. The workspace suite includes the new OSC
+52 attached-PTY test with text and binary clipboard data. No combined
+sanitizer was run.

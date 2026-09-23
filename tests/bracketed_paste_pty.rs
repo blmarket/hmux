@@ -407,3 +407,48 @@ fn clipboard_reply_decodes_counted_base64_and_preserves_first_nul() {
         thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn set_buffer_writes_base64_selection_to_attached_terminal() {
+    let directory = unique_directory().expect("create private PTY directory");
+    let socket = directory.join("socket");
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_hmux2"));
+    let mut client = PtyClient::new(binary, socket, directory).expect("start hmux2 in a PTY");
+    let deadline = Instant::now() + TEST_TIMEOUT;
+
+    client
+        .read_until(b"READY", deadline)
+        .expect("wait for the pane command");
+    let clients = client
+        .command_output(&["list-clients", "-F", "#{client_name}"])
+        .expect("list attached clients");
+    assert!(clients.status.success(), "{clients:?}");
+    let name = String::from_utf8(clients.stdout).expect("client name is UTF-8");
+    let name = name.trim();
+    assert!(!name.is_empty(), "attached client has a name");
+
+    let result = client
+        .command_output(&["set-buffer", "-w", "-t", name, "A+B/!"])
+        .expect("set clipboard buffer");
+    assert!(result.status.success(), "{result:?}");
+    client
+        .read_until(b"\x1b]52;;QStCLyE=\x07", deadline)
+        .expect("receive encoded clipboard data");
+
+    let path = client.directory.join("binary-clipboard");
+    fs::write(&path, b"A\0B").expect("write binary clipboard data");
+    let result = client
+        .command_output(&[
+            "load-buffer",
+            "-w",
+            "-t",
+            name,
+            path.to_str().expect("clipboard path is UTF-8"),
+        ])
+        .expect("load binary clipboard buffer");
+    assert!(result.status.success(), "{result:?}");
+    client
+        .read_until(b"\x1b]52;;QQBC\x07", deadline)
+        .expect("receive encoded binary clipboard data");
+    fs::remove_file(path).expect("remove binary clipboard file");
+}

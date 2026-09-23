@@ -123,7 +123,7 @@ use crate::src::tty_term::{
     tty_term_string_s, tty_term_string_ss,
 };
 use crate::src::utf8::utf8_set;
-use crate::src::xmalloc::{xmalloc, xsnprintf};
+use crate::src::xmalloc::xsnprintf;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
@@ -2654,7 +2654,6 @@ pub unsafe extern "C" fn tty_set_selection(
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
 ) {
-    let mut encoded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut size: size_t = 0;
     if !(*tty).flags & TTY_STARTED != 0 {
         return;
@@ -2665,11 +2664,15 @@ pub unsafe extern "C" fn tty_set_selection(
     size = (4 as size_t)
         .wrapping_mul(len.wrapping_add(2 as size_t).wrapping_div(3 as size_t))
         .wrapping_add(1 as size_t);
-    encoded = xmalloc(size) as *mut ::core::ffi::c_char;
-    __b64_ntop(buf as *const ::core::ffi::c_uchar, len, encoded, size);
+    let mut encoded = vec![0; size];
+    __b64_ntop(
+        buf as *const ::core::ffi::c_uchar,
+        len,
+        encoded.as_mut_ptr().cast(),
+        size,
+    );
     (*tty).flags |= TTY_NOBLOCK;
-    tty_putcode_ss(tty, TTYC_MS, clip, encoded);
-    free(encoded as *mut ::core::ffi::c_void);
+    tty_putcode_ss(tty, TTYC_MS, clip, encoded.as_ptr().cast());
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_cmd_rawstring(mut tty: *mut tty, mut ctx: *const tty_ctx) {
