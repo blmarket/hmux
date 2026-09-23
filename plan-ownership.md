@@ -1086,6 +1086,22 @@ legacy callers safe.
   former 1,024-token capacity on success and parse error. The layout CLI
   check passed on candidate and pinned baseline. No sanitizer was run.
 
+### Increment 204 — argument escaping scratch owner (2026-09-23)
+
+- Private `args_escape_cstring` now owns quote selection, UTF-8 escaping,
+  and byte-preserving assembly. `args_print_add_value` borrows it only through
+  its synchronous append; its string branch no longer allocates and frees a
+  C result. Removed the escape helper's `xasprintf` branches, temporary
+  `utf8_stravis` allocation/free, and the print caller's escaped-string free.
+  Exported `args_escape` still returns a libc-freeable `xstrdup` duplicate
+  for its other callers. The command-list branch still frees the C-owned
+  `cmd_list_print` result.
+- Library/binary build, eight `arguments_conversion` tests, changed-file
+  rustfmt, Python syntax check, and `git diff --check` passed. A private
+  server `bind-key`/`list-keys` CLI check matched the pinned baseline for ten
+  cases including empty, quotes, tilde, newline, UTF-8, and non-UTF-8 bytes.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1096,10 +1112,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_escape` builds escaped argument text and returns a C-owned string.
-   `args_print_add_value` uses it synchronously and frees it, while other
-   exported callers retain the libc-freeable contract. Migrate the private
-   print path to an owned escaped string and keep the C wrapper.
+1. `cmd_list_print` builds an output buffer with manual realloc and frees each
+   `cmd_print` result during concatenation. `args_print_add_value` and
+   `args_to_vector` consume its result synchronously and free it. Audit a
+   private owned command-list printer and those callers while retaining the
+   exported libc-freeable return; `cmd_print`'s own producer contract must be
+   traced before extending ownership through that branch.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
@@ -1132,9 +1150,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–201. The remaining
+Current validation is recorded in increments 15–204. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–201 has its own local commit; none was pushed.
+Each of increments 15–204 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1375,8 +1393,15 @@ build, prompt-completion, capture-pane-grid-cell, and socket-label-base CLI
 checks, Python syntax checks, and `git diff --check` passed on main. The
 prompt-completion check passed separately on the pinned baseline. Capture
 output matched byte for byte; socket-label output matched after normalizing
-the private socket paths. Rustfmt
-passed for `capture_pane.rs` and `tmux.rs`. `prompt.rs` has the same two
-pre-existing rustfmt differences at lines 1 and 62 as its pre-increment-199
-version; rustfmt reports no differences in the changed code. No combined
+the private socket paths. Rustfmt passed for `capture_pane.rs` and `tmux.rs`.
+`prompt.rs` has the same two pre-existing rustfmt differences at lines 1 and
+62 as its pre-increment-199 version; rustfmt reports no differences in the
+changed code. No combined
 sanitizer was run.
+After increments 202–204 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, option-value-owner, layout, and argument-escape-owner CLI checks,
+changed-file rustfmt, Python syntax checks, and `git diff --check` passed on
+main. Option-value and argument-escape output matched the pinned baseline
+byte for byte; the layout check passed separately on candidate and baseline.
+No combined sanitizer was run.

@@ -3,10 +3,10 @@ use std::mem::size_of;
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_create, args_first_value, args_free, args_has, args_next_value, args_percentage_result,
-    args_print, args_set, args_string, args_string_percentage_and_expand_result, args_strtonum,
-    args_strtonum_and_expand_result, args_strtonum_result, parse_number, parse_percentage,
-    ArgumentValueError,
+    args_create, args_escape, args_first_value, args_free, args_has, args_next_value,
+    args_percentage_result, args_print, args_set, args_string,
+    args_string_percentage_and_expand_result, args_strtonum, args_strtonum_and_expand_result,
+    args_strtonum_result, parse_number, parse_percentage, ArgumentValueError,
 };
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
 use hmux2::src::cmd_queue::{cmdq_free_state, cmdq_get_callback1};
@@ -28,6 +28,21 @@ fn printing_options_uses_formatted_flag_and_string_fragments() {
         assert_eq!(CStr::from_ptr(printed).to_bytes(), b"-v -n hello");
         free(printed.cast());
         args_free(args);
+    }
+}
+
+#[test]
+fn exported_argument_escape_keeps_c_owned_byte_output() {
+    unsafe {
+        for (input, expected) in [
+            (b"\xff".as_slice(), b"\\377".as_slice()),
+            (b"\"".as_slice(), b"\\\"".as_slice()),
+        ] {
+            let input = CString::new(input).unwrap();
+            let escaped = args_escape(input.as_ptr());
+            assert_eq!(CStr::from_ptr(escaped).to_bytes(), expected);
+            free(escaped.cast());
+        }
     }
 }
 

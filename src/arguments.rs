@@ -80,7 +80,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::utf8::utf8_stravis;
+use crate::src::utf8::utf8_strvis;
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xrealloc, xrecallocarray, xstrdup, xvasprintf_cstring,
 };
@@ -912,32 +912,31 @@ unsafe extern "C" fn args_print_add_value(
     mut len: *mut size_t,
     mut value: *mut args_value,
 ) {
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if **buf as ::core::ffi::c_int != '\0' as i32 {
         args_print_add(buf, len, b" \0" as *const u8 as *const ::core::ffi::c_char);
     }
     match (*value).type_0 as ::core::ffi::c_uint {
         2 => {
-            expanded = cmd_list_print((*value).c2rust_unnamed.cmdlist, 0 as ::core::ffi::c_int);
+            let expanded = cmd_list_print((*value).c2rust_unnamed.cmdlist, 0);
             args_print_add(
                 buf,
                 len,
                 b"{ %s }\0" as *const u8 as *const ::core::ffi::c_char,
                 expanded,
             );
+            free(expanded as *mut ::core::ffi::c_void);
         }
         1 => {
-            expanded = args_escape((*value).c2rust_unnamed.string);
+            let expanded = args_escape_cstring(CStr::from_ptr((*value).c2rust_unnamed.string));
             args_print_add(
                 buf,
                 len,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                expanded,
+                expanded.as_ptr(),
             );
         }
         0 | _ => {}
     }
-    free(expanded as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_char {
@@ -1037,84 +1036,65 @@ pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_
     }
     return buf;
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_escape(
-    mut s: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    static mut dquoted: [::core::ffi::c_char; 9] =
-        unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b" #';${}%\0") };
-    static mut squoted: [::core::ffi::c_char; 3] =
-        unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b" \"\0") };
-    let mut escaped: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut result: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut flags: ::core::ffi::c_int = 0;
-    let mut quotes: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if *s as ::core::ffi::c_int == '\0' as i32 {
-        xasprintf(
-            &raw mut result,
-            b"''\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        return result;
+unsafe fn args_escape_cstring(s: &CStr) -> CString {
+    let source = s.to_bytes();
+    if source.is_empty() {
+        return CString::new(b"''".to_vec()).expect("literal has no NUL");
     }
-    if *s.offset(strcspn(s, &raw const dquoted as *const ::core::ffi::c_char) as isize)
-        as ::core::ffi::c_int
-        != '\0' as i32
-    {
-        quotes = '"' as i32;
-    } else if *s.offset(strcspn(s, &raw const squoted as *const ::core::ffi::c_char) as isize)
-        as ::core::ffi::c_int
-        != '\0' as i32
-    {
-        quotes = '\'' as i32;
+
+    let quotes = if source.iter().any(|byte| b" #';${}%".contains(byte)) {
+        b'"'
+    } else if source.iter().any(|byte| b" \"".contains(byte)) {
+        b'\''
+    } else {
+        0
+    };
+    if source.len() == 1 && source[0] != b' ' && (quotes != 0 || source[0] == b'~') {
+        return CString::new(vec![b'\\', source[0]]).expect("source has no NUL");
     }
-    if *s.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != ' ' as i32
-        && *s.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32
-        && (quotes != 0 as ::core::ffi::c_int
-            || *s.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '~' as i32)
-    {
-        xasprintf(
-            &raw mut escaped,
-            b"\\%c\0" as *const u8 as *const ::core::ffi::c_char,
-            *s.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int,
-        );
-        return escaped;
-    }
-    flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
-    if quotes == '"' as i32 {
+
+    let mut flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
+    if quotes == b'"' {
         flags |= VIS_DQ;
     }
-    utf8_stravis(&raw mut escaped, s, flags);
-    if quotes == '\'' as i32 {
-        xasprintf(
-            &raw mut result,
-            b"'%s'\0" as *const u8 as *const ::core::ffi::c_char,
-            escaped,
-        );
-    } else if quotes == '"' as i32 {
-        if *escaped as ::core::ffi::c_int == '~' as i32 {
-            xasprintf(
-                &raw mut result,
-                b"\"\\%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-                escaped,
-            );
-        } else {
-            xasprintf(
-                &raw mut result,
-                b"\"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-                escaped,
-            );
+    // utf8_strvis writes at most four bytes per source byte and one terminator.
+    let mut escaped = vec![
+        0;
+        source
+            .len()
+            .checked_mul(4)
+            .and_then(|n| n.checked_add(1))
+            .expect("escaped argument too long")
+    ];
+    let length = utf8_strvis(escaped.as_mut_ptr().cast(), s.as_ptr(), source.len(), flags);
+    escaped.truncate(length);
+
+    let mut result = Vec::with_capacity(escaped.len() + 3);
+    if quotes == b'\'' {
+        result.push(b'\'');
+        result.extend_from_slice(&escaped);
+        result.push(b'\'');
+    } else if quotes == b'"' {
+        result.push(b'"');
+        if escaped.first() == Some(&b'~') {
+            result.push(b'\\');
         }
-    } else if *escaped as ::core::ffi::c_int == '~' as i32 {
-        xasprintf(
-            &raw mut result,
-            b"\\%s\0" as *const u8 as *const ::core::ffi::c_char,
-            escaped,
-        );
+        result.extend_from_slice(&escaped);
+        result.push(b'"');
     } else {
-        result = xstrdup(escaped);
+        if escaped.first() == Some(&b'~') {
+            result.push(b'\\');
+        }
+        result.extend_from_slice(&escaped);
     }
-    free(escaped as *mut ::core::ffi::c_void);
-    return result;
+    CString::new(result).expect("utf8_strvis output has no interior NUL")
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn args_escape(s: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char {
+    // C callers still own and libc-free the returned duplicate.
+    let escaped = args_escape_cstring(CStr::from_ptr(s));
+    xstrdup(escaped.as_ptr())
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_has(mut args: *mut args, mut flag: u_char) -> ::core::ffi::c_int {
