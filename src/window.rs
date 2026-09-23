@@ -3079,12 +3079,13 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
     return window_pane_tree_find(&raw mut all_window_panes, &raw mut wp);
 }
 /// A pane keeps its C layout and address at offset zero. Trailing fields own
-/// the range storage and cached search string borrowed through the pane.
+/// the range storage and strings borrowed through the pane.
 #[repr(C)]
 struct WindowPaneOwned {
     pane: window_pane,
     visible_ranges: Vec<visible_range>,
     searchstr_owner: Option<CString>,
+    shell_owner: Option<CString>,
 }
 
 const _: () = assert!(::core::mem::offset_of!(WindowPaneOwned, pane) == 0);
@@ -3095,6 +3096,16 @@ pub(crate) unsafe fn window_pane_set_searchstr(wp: *mut window_pane, searchstr: 
     (*owner).searchstr_owner = searchstr;
     (*wp).searchstr = (*owner)
         .searchstr_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+}
+
+/// `pane.shell` is a borrowed view, invalidated on replacement or clear.
+pub(crate) unsafe fn window_pane_set_shell(wp: *mut window_pane, shell: Option<CString>) {
+    let owner = wp.cast::<WindowPaneOwned>();
+    (*owner).shell_owner = shell;
+    (*wp).shell = (*owner)
+        .shell_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
 }
@@ -3128,6 +3139,7 @@ unsafe extern "C" fn window_pane_create(
         pane: std::mem::zeroed::<window_pane>(),
         visible_ranges: Vec::new(),
         searchstr_owner: None,
+        shell_owner: None,
     })) as *mut window_pane;
     (*wp).references = 1 as ::core::ffi::c_int;
     (*wp).window = w as *mut window;
@@ -3318,7 +3330,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     screen_free(&raw mut (*wp).base);
     options_free((*wp).options);
     free((*wp).cwd as *mut ::core::ffi::c_void);
-    free((*wp).shell as *mut ::core::ffi::c_void);
+    window_pane_set_shell(wp, None);
     cmd_free_argv((*wp).argc, (*wp).argv);
     colour_palette_free(&raw mut (*wp).palette);
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);

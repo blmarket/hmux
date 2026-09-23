@@ -48,7 +48,20 @@ def exercise(binary_path):
                 time.sleep(0.05)
             current = run(b"display-message", b"-p", b"-t", b"owner:2", b"#{pane_current_command}")
             assert current == b"sh\n", current
-            return empty, event, start, name, current
+            alternate_shell = os.fsencode(pathlib.Path(tmp) / "alternate-shell")
+            os.symlink(b"/bin/sh", alternate_shell)
+            run(b"set-option", b"-g", b"default-shell", alternate_shell)
+            assert run(b"show-option", b"-gqv", b"default-shell") == alternate_shell + b"\n"
+            run(b"respawn-pane", b"-t", b"owner:2")
+            deadline = time.monotonic() + 5
+            while run(b"display-message", b"-p", b"-t", b"owner:2", b"#{pane_dead}") != b"1\n":
+                assert time.monotonic() < deadline, "respawned pane did not exit"
+                time.sleep(0.05)
+            after_respawn = run(b"display-message", b"-p", b"-t", b"owner:2", b"#{pane_current_command}")
+            assert after_respawn == b"sh\n", after_respawn
+            # The automatic window name starts as the executable's own name
+            # before its async rename; that initial name differs by binary.
+            return empty, event, start, current, after_respawn
         finally:
             subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=15)
 

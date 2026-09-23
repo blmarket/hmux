@@ -41,9 +41,9 @@ use crate::src::tmux::{checkshell, find_home, global_options, ptm_fd};
 pub use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_add_pane, window_create, window_destroy_panes, window_pane_index,
-    window_pane_reset_mode_all, window_pane_set_event, window_pop_zoom, window_push_zoom,
-    window_redraw_active_switch, window_remove_pane, window_set_active_pane, winlink_add,
-    winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
+    window_pane_reset_mode_all, window_pane_set_event, window_pane_set_shell, window_pop_zoom,
+    window_push_zoom, window_redraw_active_switch, window_remove_pane, window_set_active_pane,
+    winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
@@ -741,8 +741,7 @@ pub unsafe extern "C" fn spawn_pane(
         if checkshell(tmp) == 0 {
             tmp = _PATH_BSHELL.as_ptr();
         }
-        free((*new_wp).shell as *mut ::core::ffi::c_void);
-        (*new_wp).shell = xstrdup(tmp);
+        window_pane_set_shell(new_wp, Some(CStr::from_ptr(tmp).to_owned()));
     }
     environ_set(
         child,

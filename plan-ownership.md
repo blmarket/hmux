@@ -125,11 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The pane's `shell` string is duplicated from the validated default shell
-   during initial spawn, read by spawn/event/format callbacks, and freed in
-   `window_pane_free`. The existing `WindowPaneOwned` box can own a CString
-   while the pane's public pointer remains a borrowed view. Respawn reuses
-   the same shell; its initial absent state must stay distinct.
+1. The pane's `cwd` is assembled in `spawn_pane`, then transferred into the
+   pane and freed at teardown. Its producer has format expansion, relative
+   path construction, and early error returns. Audit these paths together
+   before moving the value into `WindowPaneOwned`; preserve the public pane
+   pointer as a borrowed view and the respawn reuse rule.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -571,6 +571,21 @@ libc allocation on success and leaves it with the caller on error, so a local
   backing CLI comparisons against the pinned 3.8-rc baseline passed. The
   copy-match CLI reads `pane_search_string` after repeated and formatted
   searches. Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 382 — owned pane shell string (2026-09-23)
+
+- `WindowPaneOwned` now stores `shell_owner: Option<CString>`; the pane's
+  public `shell` pointer borrows it until replacement or clear. Initial
+  `spawn_pane` copies the validated default-shell bytes into this owner.
+  Respawn keeps the existing value. Pane teardown clears it at the former
+  free point, removing the shell's `xstrdup` and manual free.
+- Serialized workspace tests and binary build passed. Shell argv, command
+  format, and live `/proc` CLI checks passed; the first two compared with
+  the pinned 3.8-rc baseline. The command-format CLI now changes the default
+  shell before respawn and confirms the pane retains its original shell.
+  It excludes the initial asynchronous automatic window name from binary
+  equality because that name can initially be the executable's own name.
+  Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
