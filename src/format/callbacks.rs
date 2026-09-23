@@ -1546,11 +1546,8 @@ unsafe extern "C" fn format_cb_client_theme(mut ft: *mut format_tree) -> *mut ::
 unsafe extern "C" fn format_cb_config_files(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut slen: size_t = 0 as size_t;
-    let mut i: u_int = 0;
-    let mut n: size_t = 0;
-    i = 0 as u_int;
-    while i < cfg_nfiles {
-        n = strlen(*cfg_files.offset(i as isize)).wrapping_add(1 as size_t);
+    for path in cfg_files() {
+        let n = path.as_bytes().len().wrapping_add(1 as size_t);
         s = xrealloc(
             s as *mut ::core::ffi::c_void,
             slen.wrapping_add(n).wrapping_add(1 as size_t),
@@ -1559,9 +1556,8 @@ unsafe extern "C" fn format_cb_config_files(mut ft: *mut format_tree) -> *mut ::
             s.offset(slen as isize),
             n.wrapping_add(1 as size_t),
             b"%s,\0" as *const u8 as *const ::core::ffi::c_char,
-            *cfg_files.offset(i as isize),
+            path.as_ptr(),
         ) as size_t);
-        i = i.wrapping_add(1);
     }
     if s.is_null() {
         return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char)

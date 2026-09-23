@@ -84,7 +84,7 @@ use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -99,11 +99,20 @@ pub(crate) static CFG_TEST_LOCK: Mutex<()> = Mutex::new(());
 static mut cfg_item: *mut cmdq_item = ::core::ptr::null::<cmdq_item>() as *mut cmdq_item;
 #[no_mangle]
 pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-#[no_mangle]
-pub static mut cfg_files: *mut *mut ::core::ffi::c_char =
-    ::core::ptr::null::<*mut ::core::ffi::c_char>() as *mut *mut ::core::ffi::c_char;
-#[no_mangle]
-pub static mut cfg_nfiles: u_int = 0;
+// Startup publishes the list before client_main can start a server. C readers
+// borrow the stable CString storage; the list is never mutated after publication.
+static CFG_FILES: OnceLock<Vec<CString>> = OnceLock::new();
+
+pub(crate) fn cfg_set_files(files: Vec<CString>) {
+    assert!(
+        CFG_FILES.set(files).is_ok(),
+        "configuration paths initialized twice"
+    );
+}
+
+pub(crate) fn cfg_files() -> &'static [CString] {
+    CFG_FILES.get().map_or(&[], Vec::as_slice)
+}
 unsafe extern "C" fn cfg_client_done(
     mut item: *mut cmdq_item,
     mut data: *mut ::core::ffi::c_void,
@@ -131,7 +140,6 @@ unsafe extern "C" fn cfg_done(
 #[no_mangle]
 pub unsafe extern "C" fn start_cfg() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut i: u_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     c = clients.tqh_first;
     cfg_client = c;
@@ -149,17 +157,15 @@ pub unsafe extern "C" fn start_cfg() {
     if cfg_quiet != 0 {
         flags = CMD_PARSE_QUIET;
     }
-    i = 0 as u_int;
-    while i < cfg_nfiles {
+    for path in cfg_files() {
         load_cfg(
-            *cfg_files.offset(i as isize),
+            path.as_ptr(),
             c,
             ::core::ptr::null_mut::<cmdq_item>(),
             ::core::ptr::null_mut::<cmd_find_state>(),
             flags,
             ::core::ptr::null_mut::<*mut cmdq_item>(),
         );
-        i = i.wrapping_add(1);
     }
     cmdq_append(
         ::core::ptr::null_mut::<client>(),

@@ -2067,6 +2067,25 @@ legacy callers safe.
   tests with serialized test threads, binary build, changed-file rustfmt,
   and `git diff --check` passed. No sanitizer was run.
 
+### Increment 116 — startup configuration paths (2026-09-22)
+
+- `expand_paths` now returns `Vec<CString>` to both socket-label construction
+  and startup config handling. Removed its raw path-array realloc/count/free
+  lifecycle. The first socket path is borrowed while formatting the label.
+- `main_0` collects default paths and repeated `-f` overrides locally, then
+  publishes the final Vec once in `CFG_FILES`. `start_cfg` and the
+  `config_files` format callback borrow its immutable entries. Removed the
+  `cfg_files`/`cfg_nfiles` raw globals, their override free/realloc loop,
+  and the related string frees. Deduplication and path order are unchanged;
+  repeated `-f` arguments remain repeated. `main_0` has one process-exiting
+  call site. No in-tree foreign/header contract for the old exported globals
+  was found; staticlib consumers of those symbols would need the new API.
+- Isolated validation: workspace tests with serialized test threads, binary
+  build, changed-file rustfmt, `git diff --check`, and a private-server CLI
+  scenario passed. It covers default path order and deduplication, repeated
+  `-f`, non-UTF-8 and empty paths, and socket-label resolution. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2090,8 +2109,7 @@ non-string value.
    `prompt_complete` either frees immediately or transfers to
    `prompt.complete_list`; `prompt_clear_complete` frees the retained list.
    Audit prompt record allocation/destruction and callback reentrancy before
-   migrating the whole list lifetime. `expand_paths` in `tmux.rs` is another
-   list producer, but one caller transfers the list to global `cfg_files`.
+   migrating the whole list lifetime.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2107,9 +2125,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–115. The remaining
+Current validation is recorded in increments 15–116. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–115 has its own local commit; none was pushed.
+Each of increments 15–116 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

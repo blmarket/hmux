@@ -7,7 +7,7 @@
     unused_mut
 )]
 #![feature(extern_types, raw_ref_op)]
-use crate::src::cfg::{cfg_files, cfg_nfiles, cfg_quiet};
+use crate::src::cfg::{cfg_quiet, cfg_set_files};
 use crate::src::client::client_main;
 use crate::src::compat::fdforkpty::getptmfd;
 use crate::src::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
@@ -54,7 +54,7 @@ pub use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tty_features::tty_parse_features;
 use crate::src::utf8::{utf8_isvalid, utf8_stravis};
-use crate::src::xmalloc::{xasprintf, xreallocarray, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
@@ -581,21 +581,13 @@ unsafe extern "C" fn expand_path(
     }
     return xstrdup(path);
 }
-unsafe extern "C" fn expand_paths(
-    mut s: *const ::core::ffi::c_char,
-    mut paths: *mut *mut *mut ::core::ffi::c_char,
-    mut n: *mut u_int,
-    mut no_realpath: ::core::ffi::c_int,
-) {
+unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<CString> {
     let mut home: *const ::core::ffi::c_char = find_home();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut resolved: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
-    *paths = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    *n = 0 as u_int;
+    let mut paths = Vec::new();
     // strsep rewrites separators in place; keep its borrowed token pointers
     // backed by one stable, NUL-terminated allocation for the entire loop.
     let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
@@ -616,8 +608,8 @@ unsafe extern "C" fn expand_paths(
                 next,
             );
         } else {
-            if no_realpath != 0 {
-                path = expanded;
+            let path = if no_realpath {
+                Some(CStr::from_ptr(expanded).to_owned())
             } else if realpath(expanded, &raw mut resolved as *mut ::core::ffi::c_char).is_null() {
                 log_debug(
                     b"%s: realpath(\"%s\") failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -625,50 +617,32 @@ unsafe extern "C" fn expand_paths(
                     expanded,
                     strerror(*__errno_location()),
                 );
-                free(expanded as *mut ::core::ffi::c_void);
-                continue;
+                None
             } else {
-                path = xstrdup(&raw mut resolved as *mut ::core::ffi::c_char);
-                free(expanded as *mut ::core::ffi::c_void);
-            }
-            i = 0 as u_int;
-            while i < *n {
-                if strcmp(path, *(*paths).offset(i as isize)) == 0 as ::core::ffi::c_int {
-                    break;
+                Some(CStr::from_ptr(resolved.as_ptr()).to_owned())
+            };
+            free(expanded as *mut ::core::ffi::c_void);
+            if let Some(path) = path {
+                if paths.iter().any(|existing| existing == &path) {
+                    log_debug(
+                        b"%s: duplicate path: %s\0" as *const u8 as *const ::core::ffi::c_char,
+                        b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
+                        path.as_ptr(),
+                    );
+                } else {
+                    paths.push(path);
                 }
-                i = i.wrapping_add(1);
-            }
-            if i != *n {
-                log_debug(
-                    b"%s: duplicate path: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
-                    path,
-                );
-                free(path as *mut ::core::ffi::c_void);
-            } else {
-                *paths = xreallocarray(
-                    *paths as *mut ::core::ffi::c_void,
-                    (*n).wrapping_add(1 as u_int) as size_t,
-                    ::core::mem::size_of::<*mut *mut ::core::ffi::c_char>() as size_t,
-                ) as *mut *mut ::core::ffi::c_char;
-                let fresh0 = *n;
-                *n = (*n).wrapping_add(1);
-                let ref mut fresh1 = *(*paths).offset(fresh0 as isize);
-                *fresh1 = path;
             }
         }
     }
+    paths
 }
 unsafe extern "C" fn make_label(
     mut label: *const ::core::ffi::c_char,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut paths: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut base: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
-    let mut n: u_int = 0;
     let mut sb: stat = stat {
         st_dev: 0,
         st_ino: 0,
@@ -701,33 +675,23 @@ unsafe extern "C" fn make_label(
         label = b"default\0" as *const u8 as *const ::core::ffi::c_char;
     }
     uid = getuid() as uid_t;
-    expand_paths(
+    let paths = expand_paths(
         b"$TMUX_TMPDIR:/tmp/\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut paths,
-        &raw mut n,
-        0 as ::core::ffi::c_int,
+        false,
     );
-    if n == 0 as u_int {
+    if paths.is_empty() {
         xasprintf(
             cause,
             b"no suitable socket path\0" as *const u8 as *const ::core::ffi::c_char,
         );
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    path = *paths.offset(0 as ::core::ffi::c_int as isize);
-    i = 1 as u_int;
-    while i < n {
-        free(*paths.offset(i as isize) as *mut ::core::ffi::c_void);
-        i = i.wrapping_add(1);
-    }
-    free(paths as *mut ::core::ffi::c_void);
     xasprintf(
         &raw mut base,
         b"%s/tmux-%ld\0" as *const u8 as *const ::core::ffi::c_char,
-        path,
+        paths[0].as_ptr(),
         uid as ::core::ffi::c_long,
     );
-    free(path as *mut ::core::ffi::c_void);
     if mkdir(base, S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int && *__errno_location() != EEXIST
     {
         xasprintf(
@@ -947,7 +911,6 @@ unsafe fn main_0(
     let mut fflag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut flags: uint64_t = 0 as uint64_t;
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut i: u_int = 0;
     if setlocale(
         LC_CTYPE,
         b"en_US.UTF-8\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1000,12 +963,7 @@ unsafe fn main_0(
             cwd,
         );
     }
-    expand_paths(
-        TMUX_CONF.as_ptr(),
-        &raw mut cfg_files,
-        &raw mut cfg_nfiles,
-        1 as ::core::ffi::c_int,
-    );
+    let mut config_paths = expand_paths(TMUX_CONF.as_ptr(), true);
     loop {
         opt = BSDgetopt(
             argc,
@@ -1040,22 +998,9 @@ unsafe fn main_0(
             102 => {
                 if fflag == 0 {
                     fflag = 1 as ::core::ffi::c_int;
-                    i = 0 as u_int;
-                    while i < cfg_nfiles {
-                        free(*cfg_files.offset(i as isize) as *mut ::core::ffi::c_void);
-                        i = i.wrapping_add(1);
-                    }
-                    cfg_nfiles = 0 as u_int;
+                    config_paths.clear();
                 }
-                cfg_files = xreallocarray(
-                    cfg_files as *mut ::core::ffi::c_void,
-                    cfg_nfiles.wrapping_add(1 as u_int) as size_t,
-                    ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-                ) as *mut *mut ::core::ffi::c_char;
-                let fresh2 = cfg_nfiles;
-                cfg_nfiles = cfg_nfiles.wrapping_add(1);
-                let ref mut fresh3 = *cfg_files.offset(fresh2 as isize);
-                *fresh3 = xstrdup(BSDoptarg);
+                config_paths.push(CStr::from_ptr(BSDoptarg).to_owned());
                 cfg_quiet = 0 as ::core::ffi::c_int;
             }
             104 => {
@@ -1102,6 +1047,7 @@ unsafe fn main_0(
             }
         }
     }
+    cfg_set_files(config_paths);
     argc -= BSDoptind;
     argv = argv.offset(BSDoptind as isize);
     if !shell_command.is_null() && argc != 0 as ::core::ffi::c_int {
