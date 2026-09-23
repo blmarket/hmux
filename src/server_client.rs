@@ -119,6 +119,7 @@ pub use crate::src::shared::client::{
 // message_string borrows the CString until the next replacement or clear.
 // ttyname borrows the CString until a new identify payload or client loss.
 // term_name borrows the CString until identify completion or client loss.
+// term_type borrows the CString until the extended DA reply or client loss.
 // cwd borrows the CString until a new identify payload or client loss.
 // term_caps borrows term_cap_ptrs, whose entries borrow term_cap_strings.
 // Both views are refreshed after every identify capability and cleared after
@@ -130,6 +131,7 @@ struct ClientOwner {
     message: Option<CString>,
     ttyname: Option<CString>,
     term_name: Option<CString>,
+    term_type: Option<CString>,
     cwd: Option<CString>,
     saved_status_screen: Option<Box<screen>>,
     term_cap_strings: Vec<CString>,
@@ -174,6 +176,15 @@ unsafe fn server_client_set_cwd(c: *mut client, cwd: Option<CString>) {
     (*owner).cwd = cwd;
     if let Some(cwd) = (*owner).cwd.as_ref() {
         (*c).cwd = cwd.as_ptr();
+    }
+}
+
+pub(crate) unsafe fn server_client_set_term_type(c: *mut client, term_type: Option<CString>) {
+    let owner = c.cast::<ClientOwner>();
+    (*c).term_type = ::core::ptr::null_mut();
+    (*owner).term_type = term_type;
+    if let Some(term_type) = (*owner).term_type.as_ref() {
+        (*c).term_type = term_type.as_ptr().cast_mut();
     }
 }
 
@@ -233,7 +244,8 @@ mod client_message_owner_tests {
     use super::{
         client, server_client_add_term_cap, server_client_clear_term_caps,
         server_client_ensure_term_name, server_client_set_cwd, server_client_set_message,
-        server_client_set_term_name, server_client_set_ttyname, visible_range, ClientOwner,
+        server_client_set_term_name, server_client_set_term_type, server_client_set_ttyname,
+        visible_range, ClientOwner,
     };
     use crate::src::status::status_message_clear;
     use std::ffi::{CStr, CString};
@@ -246,6 +258,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                term_type: None,
                 cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
@@ -281,6 +294,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                term_type: None,
                 cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
@@ -312,6 +326,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                term_type: None,
                 cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
@@ -344,6 +359,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                term_type: None,
                 cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
@@ -368,6 +384,38 @@ mod client_message_owner_tests {
     }
 
     #[test]
+    fn term_type_replacement_and_clear_keep_a_borrowed_client_view() {
+        unsafe {
+            let mut owner = Box::new(ClientOwner {
+                node: std::mem::zeroed::<client>(),
+                message: None,
+                ttyname: None,
+                term_name: None,
+                term_type: None,
+                cwd: None,
+                saved_status_screen: None,
+                term_cap_strings: Vec::new(),
+                term_cap_ptrs: Vec::new(),
+                tty_range: visible_range { px: 0, nx: 0 },
+            });
+            let c = &raw mut owner.node;
+            assert!((*c).term_type.is_null());
+
+            server_client_set_term_type(c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
+            assert_eq!(CStr::from_ptr((*c).term_type).to_bytes(), b"term-\xff");
+            assert_eq!(c, &raw mut owner.node);
+
+            server_client_set_term_type(c, Some(CString::new("").unwrap()));
+            assert!(!(*c).term_type.is_null());
+            assert_eq!(CStr::from_ptr((*c).term_type).to_bytes(), b"");
+
+            server_client_set_term_type(c, None);
+            assert!((*c).term_type.is_null());
+            assert!(owner.term_type.is_none());
+        }
+    }
+
+    #[test]
     fn term_caps_view_survives_growth_and_preserves_order_and_bytes() {
         unsafe {
             let mut owner = Box::new(ClientOwner {
@@ -375,6 +423,7 @@ mod client_message_owner_tests {
                 message: None,
                 ttyname: None,
                 term_name: None,
+                term_type: None,
                 cwd: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
@@ -776,6 +825,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         message: None,
         ttyname: None,
         term_name: None,
+        term_type: None,
         cwd: None,
         saved_status_screen: None,
         term_cap_strings: Vec::new(),
@@ -1199,7 +1249,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     server_client_set_ttyname(c, None);
     free((*c).clipboard_panes as *mut ::core::ffi::c_void);
     server_client_set_term_name(c, None);
-    free((*c).term_type as *mut ::core::ffi::c_void);
+    server_client_set_term_type(c, None);
     server_client_clear_term_caps(c);
     status_free(c);
     input_cancel_requests(c);

@@ -17,7 +17,8 @@ use crate::src::reactor::{
     event_pending, event_set,
 };
 use crate::src::server_client::{
-    server_client_handle_key, server_client_update_theme_colours, OwnedKeyEvent,
+    server_client_handle_key, server_client_set_term_type, server_client_update_theme_colours,
+    OwnedKeyEvent,
 };
 use crate::src::session::session_theme_changed;
 pub use crate::src::shared::abi::ssize_t;
@@ -108,7 +109,8 @@ use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
 use crate::src::tty_term::tty_term_string;
 use crate::src::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::src::window::window_update_focus;
-use crate::src::xmalloc::{xmalloc, xstrdup};
+use crate::src::xmalloc::xmalloc;
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -3252,8 +3254,7 @@ unsafe extern "C" fn tty_keys_extended_device_attributes(
         *size as ::core::ffi::c_int,
         buf,
     );
-    free((*c).term_type as *mut ::core::ffi::c_void);
-    (*c).term_type = xstrdup(&raw mut tmp as *mut ::core::ffi::c_char);
+    server_client_set_term_type(c, Some(CStr::from_ptr(tmp.as_ptr()).to_owned()));
     tty_update_features(tty);
     (*tty).flags |= TTY_HAVEXDA;
     return 0 as ::core::ffi::c_int;

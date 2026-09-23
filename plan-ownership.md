@@ -125,12 +125,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `client.term_type` has one writer in `tty_keys` and one free on client loss;
-   its format callback copies the value. A shared `ClientOwner` setter is the
-   next small boundary. `client.title` and `client.path` are nearby owner
-   candidates after that. `options_array_item.key` is an independent small
-   boundary: its map stores copied semantic keys and the public field can
-   borrow a private `CString` until item destruction.
+1. `options_array_item.key` is an independent small boundary: its map stores
+   copied semantic keys and the public field can borrow a private `CString`
+   until item destruction. `client.title` and `client.path` are nearby owner
+   candidates after that; their tty consumers copy bytes synchronously.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -385,6 +383,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   check now resolves relative non-UTF-8 paths through IDENTIFY_CWD; candidate
   and pinned baseline passed. Serialized workspace tests, binary build,
   changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
+### Increment 369 — owned client terminal type (2026-09-23)
+
+- `ClientOwner` now owns `client.term_type` as `Option<CString>`. The extended
+  device-attributes parser sets the borrowed public pointer through a shared
+  setter, preserving its first-NUL C-string view, absent versus empty values,
+  and replacement before `tty_update_features`. Client loss clears it at the
+  former free site after tty teardown. The format callback still returns its
+  separately C-owned copy, and the public client layout is unchanged.
+- A focused owner test checks replacement, non-UTF-8 bytes, empty versus
+  absent, and clearing. The attached-terminal CLI now sends a reproducible
+  `ESC P > | XTerm(370) ESC \\` reply and checks `#{client_termtype}`; both
+  candidate and pinned baseline passed. Serialized workspace tests, binary
+  build, changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
 ## Historical migration index
 

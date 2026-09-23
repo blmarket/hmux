@@ -58,6 +58,16 @@ with tempfile.TemporaryDirectory(prefix="server-term-caps-", dir=root / "target"
         client_tty = run("list-clients", "-F", "#{client_tty}").strip().decode()
         assert client_tty, "attached terminal client is missing"
         assert run("list-clients", "-F", "#{client_termname}") == b"hmux-owner-cap\n"
+        assert run("list-clients", "-F", "#{client_termtype}") == b"\n"
+        os.write(master, b"\x1bP>|XTerm(370)\x1b\\")
+        deadline = time.monotonic() + 10
+        term_type = b""
+        while time.monotonic() < deadline:
+            term_type = run("list-clients", "-F", "#{client_termtype}")
+            if term_type == b"XTerm(370)\n":
+                break
+            time.sleep(0.05)
+        assert term_type == b"XTerm(370)\n", term_type
         run("detach-client", "-t", client_tty)
         os.waitpid(pid, 0)
         pid = None
