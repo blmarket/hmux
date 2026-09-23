@@ -3329,6 +3329,19 @@ legacy callers safe.
   invalid bytes with that baseline. Full workspace tests, binary build,
   changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
+### Increment 360 — inline screen-print result buffer (2026-09-23)
+
+- Exported `screen_print` now writes into a fixed inline static 16 KiB array.
+  Removed its lazy `xmalloc` and the raw global heap pointer. The returned
+  pointer remains stable across calls, with the same capacity, truncation
+  checks, and overwrite-on-next-call lifetime. The function has no in-tree
+  production caller; this removes a persistent allocation at its exported
+  boundary without changing its signature.
+- A direct API regression test passed against the old implementation and the
+  new one, checking filtered line output and pointer reuse. Full workspace
+  tests, binary build, changed-file rustfmt, and diff checks passed. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3339,20 +3352,19 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen_print` has a fixed 16 KiB static heap buffer with no in-tree
-   caller; inline static storage could remove its one-time allocation while
-   preserving the exported pointer's lifetime and truncation behavior. This
-   is lower priority than a live caller boundary. Exported `fuzzy_match`,
-   `args_from_vector`, and `monitor_parse` retain C-owned output contracts
-   for external callers; no in-tree production caller uses those raw-output
-   paths now.
-2. Disconnected file-reading clients can leave a waiting command-queue item.
+1. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
    `cmdq_free` with a nonempty queue and abort, so queue cancellation needs
    wait-owner detach hooks, callback-data destruction, and queue draining as
    one coordinated boundary. A closed file may still invoke its normal
    callback after client loss, and duplicate terminal scheduling needs audit.
+2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
+   C-owned output contracts for external callers; no in-tree production caller
+   uses their raw-output paths now. `ibufq_new`/`ibufq_free` are a small
+   standalone allocation pair, but have no in-tree production caller. The
+   current leaf audit found no comparably small live caller boundary after
+   the fuzzy mask migration. Revisit this ranking after each graph step.
 3. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

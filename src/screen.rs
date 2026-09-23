@@ -51,12 +51,12 @@ pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{
-    ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR, MODE_CURSOR_BLINKING,
+    screen, screen_sel, screen_title_entry, screen_title_link, screen_titles, ALL_MODES,
+    EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR, MODE_CURSOR_BLINKING,
     MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON, MODE_INSERT, MODE_KCURSOR,
     MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
     MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8, MODE_ORIGIN, MODE_SYNC,
-    MODE_THEME_UPDATES, MODE_WRAP, screen, screen_sel, screen_title_entry, screen_title_link,
-    screen_titles,
+    MODE_THEME_UPDATES, MODE_WRAP,
 };
 pub use crate::src::shared::screen_write::screen_write_cline;
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
@@ -74,7 +74,7 @@ use crate::src::style::style_apply;
 use crate::src::tmux::{clean_name, global_options};
 use crate::src::tty_acs::tty_acs_get;
 use crate::src::utf8::{utf8_copy, utf8_to_data};
-use crate::src::xmalloc::{xmalloc, xstrdup};
+use crate::src::xmalloc::xstrdup;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -1016,9 +1016,10 @@ pub unsafe extern "C" fn screen_print(
     mut s: *mut screen,
     mut line: ::core::ffi::c_int,
 ) -> *const ::core::ffi::c_char {
-    static mut buf: *mut ::core::ffi::c_char =
-        ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char;
-    static mut len: size_t = 16384 as size_t;
+    // The exported result remains valid until the next call, as before.
+    static mut PRINT_BUFFER: [::core::ffi::c_char; 16384] = [0; 16384];
+    let buf = (&raw mut PRINT_BUFFER).cast::<::core::ffi::c_char>();
+    let len: size_t = 16384;
     let mut acs: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -1032,9 +1033,6 @@ pub unsafe extern "C" fn screen_print(
     };
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut gce: *mut grid_cell_entry = ::core::ptr::null_mut::<grid_cell_entry>();
-    if buf.is_null() {
-        buf = xmalloc(len) as *mut ::core::ffi::c_char;
-    }
     y = 0 as u_int;
     's_28: while y < (*(*s).grid).hsize.wrapping_add((*(*s).grid).sy) {
         if !(line >= 0 as ::core::ffi::c_int && y != line as u_int) {
