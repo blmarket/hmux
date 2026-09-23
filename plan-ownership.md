@@ -376,6 +376,18 @@ legacy callers safe.
   old and new binaries for inactive links, active links, duplicate links,
   Unicode names, and an empty result. No sanitizer was run.
 
+### Increment 152 — window active-client list scratch (2026-09-22)
+
+- `format_cb_window_active_clients_list` now collects filtered client-name
+  bytes in a local `Vec<u8>`, removing its `evbuffer` allocation/free and
+  append/pullup calls. It retains the client traversal order, current-window
+  filter, separator-on-nonempty rule, null result for no bytes, and final
+  C-owned `xmemdup` callback result.
+- Isolated library/binary build, changed-file rustfmt, and `git diff --check`
+  passed. New `scripts/format_active_clients_cli_checks.py` passed against
+  old and new binaries for empty, multiple, linked-window, and detached
+  client cases. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -386,10 +398,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `format_cb_window_active_clients_list` still assembles a comma-separated
-   subset of client names in a local `evbuffer` before duplicating the result
-   for its C-owned callback. Audit the client's active-window filter and
-   traversal before replacing the intermediate buffer with `Vec`.
+1. `format_cb_session_group_list` still assembles group session names in a
+   local `evbuffer`, then duplicates them for its C-owned callback result.
+   Audit group traversal, absence of a group, and empty-byte behavior before
+   replacing the intermediate buffer with `Vec`.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -414,9 +426,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–151. The remaining
+Current validation is recorded in increments 15–152. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–151 has its own local commit; none was pushed.
+Each of increments 15–152 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
