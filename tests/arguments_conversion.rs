@@ -3,7 +3,7 @@ use std::mem::size_of;
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_create, args_escape, args_first_value, args_free, args_has, args_next_value,
+    args_copy, args_create, args_escape, args_first_value, args_free, args_has, args_next_value,
     args_percentage_result, args_print, args_set, args_string,
     args_string_percentage_and_expand_result, args_strtonum, args_strtonum_and_expand_result,
     args_strtonum_result, parse_number, parse_percentage, ArgumentValueError,
@@ -12,7 +12,7 @@ use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
 use hmux2::src::cmd_queue::{cmdq_free_state, cmdq_get_callback1};
 use hmux2::src::ffi::libc::free;
 use hmux2::src::shared::arguments::{args_value, ARGS_COMMANDS, ARGS_STRING};
-use hmux2::src::xmalloc::{xcalloc, xstrdup};
+use hmux2::src::xmalloc::{xcalloc, xrecallocarray, xstrdup};
 
 fn cstring(value: &str) -> CString {
     CString::new(value).expect("test input contains no NUL")
@@ -259,6 +259,18 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         let first = args_string(args, 0);
         let second = args_string(args, 0);
         assert_eq!(first, second);
+        assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
+
+        let copied = args_copy(args, 0, ptr::null_mut());
+        let copied_string = args_string(copied, 0);
+        assert_ne!(first, copied_string);
+        assert_eq!(CStr::from_ptr(copied_string).to_bytes(), b"");
+
+        (*args).values =
+            xrecallocarray((*args).values.cast(), 1, 2, size_of::<args_value>()) as *mut args_value;
+        (*args).count = 2;
+        assert_eq!(args_string(args, 0), first);
+        args_free(copied);
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
         args_free(args);
     }

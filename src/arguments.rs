@@ -82,7 +82,9 @@ pub use crate::src::shared::window::{
 };
 use crate::src::utf8::utf8_strvis;
 use crate::src::xmalloc::{xasprintf, xcalloc, xrecallocarray, xstrdup, xvasprintf_cstring};
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
+use std::sync::{Mutex, OnceLock};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_21;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_20;
@@ -327,6 +329,15 @@ unsafe extern "C" fn args_type_to_string(mut type_0: args_type) -> *const ::core
     }
     return b"INVALID\0" as *const u8 as *const ::core::ffi::c_char;
 }
+
+// Positional args_value records can move when their C array grows. Key the
+// owner by the stable character allocation, not by the record's address.
+static ARGS_CACHED_COMMANDS: OnceLock<Mutex<HashMap<usize, CString>>> = OnceLock::new();
+
+fn args_cached_commands() -> &'static Mutex<HashMap<usize, CString>> {
+    ARGS_CACHED_COMMANDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 unsafe extern "C" fn args_value_as_string(
     mut value: *mut args_value,
 ) -> *const ::core::ffi::c_char {
@@ -334,8 +345,13 @@ unsafe extern "C" fn args_value_as_string(
         0 => return b"\0" as *const u8 as *const ::core::ffi::c_char,
         2 => {
             if (*value).cached.is_null() {
-                (*value).cached =
-                    cmd_list_print((*value).c2rust_unnamed.cmdlist, 0 as ::core::ffi::c_int);
+                let printed = cmd_list_print_cstring((*value).c2rust_unnamed.cmdlist, 0);
+                let cached = printed.as_ptr();
+                args_cached_commands()
+                    .lock()
+                    .expect("argument cache lock poisoned")
+                    .insert(cached as usize, printed);
+                (*value).cached = cached.cast_mut();
             }
             return (*value).cached;
         }
@@ -790,7 +806,18 @@ pub unsafe extern "C" fn args_free_value(mut value: *mut args_value) {
         }
         0 | _ => {}
     }
-    free((*value).cached as *mut ::core::ffi::c_void);
+    if !(*value).cached.is_null() {
+        let owned = ARGS_CACHED_COMMANDS.get().and_then(|cache| {
+            cache
+                .lock()
+                .expect("argument cache lock poisoned")
+                .remove(&((*value).cached as usize))
+        });
+        if owned.is_none() {
+            // Preserve the exported free function for C-created values.
+            free((*value).cached as *mut ::core::ffi::c_void);
+        }
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_free_values(mut values: *mut args_value, mut count: u_int) {
