@@ -137,6 +137,34 @@ pub struct mode_tree_menu {
     pub c: *mut client,
     pub line: u_int,
 }
+
+// The C-facing item stays at offset zero because its intrusive links and
+// callbacks retain its address until mode_tree_free_item removes it.
+#[repr(C)]
+struct ModeTreeItemOwner {
+    item: mode_tree_item,
+    identity_name: Option<CString>,
+    identity_detail: Option<CString>,
+    name: CString,
+    text: Option<CString>,
+    keystr: Option<CString>,
+}
+const _: () = assert!(std::mem::offset_of!(ModeTreeItemOwner, item) == 0);
+
+impl ModeTreeItemOwner {
+    unsafe fn from_item(item: *mut mode_tree_item) -> *mut Self {
+        item.cast()
+    }
+
+    fn set_keystr(&mut self, keystr: Option<CString>) {
+        self.keystr = keystr;
+        self.item.keystr = self
+            .keystr
+            .as_ref()
+            .map_or(::core::ptr::null(), |s| s.as_ptr());
+        self.item.keylen = self.keystr.as_ref().map_or(0, |s| s.as_bytes().len());
+    }
+}
 pub type mode_tree_preview = ::core::ffi::c_uint;
 pub const MODE_TREE_PREVIEW_BIG: mode_tree_preview = 2;
 pub const MODE_TREE_PREVIEW_NORMAL: mode_tree_preview = 1;
@@ -289,12 +317,7 @@ unsafe extern "C" fn mode_tree_find_item(
 }
 unsafe extern "C" fn mode_tree_free_item(mut mti: *mut mode_tree_item) {
     mode_tree_free_items(&raw mut (*mti).children);
-    free((*mti).identity.name as *mut ::core::ffi::c_void);
-    free((*mti).identity.detail as *mut ::core::ffi::c_void);
-    free((*mti).name as *mut ::core::ffi::c_void);
-    free((*mti).text as *mut ::core::ffi::c_void);
-    free((*mti).keystr as *mut ::core::ffi::c_void);
-    free(mti as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(ModeTreeItemOwner::from_item(mti)));
 }
 unsafe extern "C" fn mode_tree_free_items(mut mtl: *mut mode_tree_list) {
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
@@ -395,14 +418,9 @@ unsafe extern "C" fn mode_tree_build_lines(
         } else {
             (*mti).key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         }
-        if (*mti).key != KEYC_NONE as ::core::ffi::c_ulong as key_code {
-            let key_string = key_string_format((*mti).key, false);
-            (*mti).keystr = xstrdup(key_string.as_ptr());
-            (*mti).keylen = strlen((*mti).keystr);
-        } else {
-            (*mti).keystr = ::core::ptr::null::<::core::ffi::c_char>();
-            (*mti).keylen = 0 as size_t;
-        }
+        let keystr = ((*mti).key != KEYC_NONE as ::core::ffi::c_ulong as key_code)
+            .then(|| key_string_format((*mti).key, false));
+        (*ModeTreeItemOwner::from_item(mti)).set_keystr(keystr);
         mti = (*mti).entry.tqe_next;
     }
     mti = (*mtl).tqh_first;
@@ -948,23 +966,37 @@ pub unsafe fn mode_tree_add_identity(
             },
         );
     }
-    mti = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<mode_tree_item>() as size_t,
-    ) as *mut mode_tree_item;
+    let identity_name =
+        (!identity.name.is_null()).then(|| CStr::from_ptr(identity.name).to_owned());
+    let identity_detail =
+        (!identity.detail.is_null()).then(|| CStr::from_ptr(identity.detail).to_owned());
+    let name = CStr::from_ptr(name).to_owned();
+    let text = (!text.is_null()).then(|| CStr::from_ptr(text).to_owned());
+    let mut owner = Box::new(ModeTreeItemOwner {
+        item: ::core::mem::zeroed(),
+        identity_name,
+        identity_detail,
+        name,
+        text,
+        keystr: None,
+    });
+    owner.item.identity = identity;
+    owner.item.identity.name = owner
+        .identity_name
+        .as_ref()
+        .map_or(::core::ptr::null(), |s| s.as_ptr());
+    owner.item.identity.detail = owner
+        .identity_detail
+        .as_ref()
+        .map_or(::core::ptr::null(), |s| s.as_ptr());
+    owner.item.name = owner.name.as_ptr();
+    owner.item.text = owner
+        .text
+        .as_ref()
+        .map_or(::core::ptr::null(), |s| s.as_ptr());
+    mti = Box::into_raw(owner).cast::<mode_tree_item>();
     (*mti).parent = parent;
     (*mti).itemdata = itemdata;
-    (*mti).identity = identity;
-    if !identity.name.is_null() {
-        (*mti).identity.name = xstrdup(identity.name);
-    }
-    if !identity.detail.is_null() {
-        (*mti).identity.detail = xstrdup(identity.detail);
-    }
-    (*mti).name = xstrdup(name);
-    if !text.is_null() {
-        (*mti).text = xstrdup(text);
-    }
     saved = mode_tree_find_item(&raw mut (*mtd).saved, identity);
     if !saved.is_null() {
         if parent.is_null() || (*parent).expanded != 0 {
@@ -2792,6 +2824,56 @@ pub unsafe extern "C" fn mode_tree_run_command(
 mod identity_tests {
     use super::*;
     use std::ffi::CString;
+
+    unsafe extern "C" fn changing_key(
+        data: *mut ::core::ffi::c_void,
+        _: *mut ::core::ffi::c_void,
+        _: u_int,
+    ) -> key_code {
+        *(data as *const key_code)
+    }
+
+    #[test]
+    fn item_key_label_tracks_repeated_line_builds() {
+        unsafe {
+            let mtd = mode_tree_alloc_data();
+            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
+            let mut key = b'x' as key_code;
+            (*mtd).keycb = Some(changing_key);
+            (*mtd).modedata = (&raw mut key).cast();
+            let item = mode_tree_add_identity(
+                mtd,
+                ::core::ptr::null_mut(),
+                ::core::ptr::null_mut(),
+                ModeTreeIdentity::legacy(1),
+                c"row".as_ptr(),
+                ::core::ptr::null(),
+                1,
+            );
+            for (next, expected) in [
+                (b'x' as key_code, Some(b"x".as_slice())),
+                (KEYC_NONE, None),
+                (b'y' as key_code, Some(b"y".as_slice())),
+            ] {
+                key = next;
+                mode_tree_clear_lines(mtd);
+                mode_tree_build_lines(mtd, &raw mut (*mtd).children, 0);
+                match expected {
+                    Some(expected) => {
+                        assert_eq!(CStr::from_ptr((*item).keystr).to_bytes(), expected);
+                        assert_eq!((*item).keylen, expected.len());
+                    }
+                    None => {
+                        assert!((*item).keystr.is_null());
+                        assert_eq!((*item).keylen, 0);
+                    }
+                }
+            }
+            mode_tree_free_items(&raw mut (*mtd).children);
+            mode_tree_clear_lines(mtd);
+            mode_tree_remove_ref(mtd);
+        }
+    }
 
     struct NestedBuildState {
         mtd: *mut mode_tree_data,

@@ -2187,6 +2187,20 @@ legacy callers safe.
   on every path, so its error branch was reviewed but could not be reached
   through this E2E. No sanitizer was run.
 
+### Increment 281 — mode-tree item and row strings (2026-09-23)
+
+- `ModeTreeItemOwner` now holds the C-layout `mode_tree_item` prefix in a
+  stable `Box` and owns its optional identity name/detail, required row name,
+  optional row text, and mutable key label as `CString`. Intrusive lists and
+  callbacks keep the existing item pointer. Recursive item cleanup drops the
+  owner after its children; repeated key-label builds replace the old string
+  without leaking it. A compile-time offset check fixes the prefix layout.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, a focused repeated-key-build test, and
+  attached-client `mode_tree_row`, `window_tree_target`, and
+  `customize_array_key_prompt` scripts passed on main. The three E2E checks
+  also passed with the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
