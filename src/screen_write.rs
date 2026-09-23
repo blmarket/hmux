@@ -74,8 +74,7 @@ pub use crate::src::shared::screen::{
     MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_ORIGIN, MODE_SYNC, MODE_WRAP,
 };
 pub use crate::src::shared::screen_write::{
-    screen_write_citem, screen_write_cline, screen_write_item_link, screen_write_item_type,
-    screen_write_items, CLEAR, TEXT,
+    screen_write_citem, screen_write_cline, screen_write_item_type, screen_write_items, CLEAR, TEXT,
 };
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
@@ -129,13 +128,6 @@ use crate::src::xmalloc::xvasprintf_cstring;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_16;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_15;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_41 {
-    pub tqh_first: *mut screen_write_citem,
-    pub tqh_last: *mut *mut screen_write_citem,
-}
-
 pub const PADDED_BORDERS: [::core::ffi::c_char; 14] =
     unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b"             \0") };
 pub const SCREEN_WRITE_SYNC: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -155,16 +147,14 @@ fn screen_write_get_citem() -> Box<screen_write_citem> {
     item
 }
 fn screen_write_free_citem(item: Box<screen_write_citem>) {
-    assert!(item.entry.tqe_next.is_none());
     WRITE_ITEM_POOL.with(|pool| pool.borrow_mut().push_back(item));
 }
 unsafe fn screen_write_current_item(ctx: *mut screen_write_ctx) -> *mut screen_write_citem {
     &raw mut **(*ctx).item.as_mut().expect("active screen write context")
 }
 unsafe fn screen_write_recycle_items(items: &mut screen_write_items) {
-    while items.tqh_first.is_some() {
-        let first = items.first_ptr();
-        screen_write_free_citem(items.remove(first));
+    while let Some(item) = items.pop_front() {
+        screen_write_free_citem(item);
     }
 }
 unsafe extern "C" fn screen_write_offset_timer(
@@ -475,23 +465,14 @@ unsafe extern "C" fn screen_write_initctx(
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_write_make_list(mut s: *mut screen) {
-    let mut y: u_int = 0;
     if (*(*s).grid).sy == 0 {
         fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     let rows = (0..(*(*s).grid).sy)
-        .map(|_| ::core::mem::zeroed::<screen_write_cline>())
+        .map(|_| screen_write_cline::default())
         .collect::<Vec<_>>()
         .into_boxed_slice();
     (*s).write_list = Box::into_raw(rows) as *mut screen_write_cline;
-    y = 0 as u_int;
-    while y < (*(*s).grid).sy {
-        let ref mut fresh0 = (*(*s).write_list.offset(y as isize)).items.tqh_first;
-        *fresh0 = None;
-        let ref mut fresh1 = (*(*s).write_list.offset(y as isize)).items.tqh_last;
-        *fresh1 = &raw mut (*(*s).write_list.offset(y as isize)).items.tqh_first;
-        y = y.wrapping_add(1);
-    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_write_free_list(mut s: *mut screen) {
@@ -3556,22 +3537,27 @@ unsafe fn screen_write_collect_trim(
     let items = &mut (*(*(*ctx).s).write_list.offset(y as isize)).items;
     let sx = x;
     let ex = x.wrapping_add(used).wrapping_sub(1);
-    let mut ci = items.first_ptr();
-    while !ci.is_null() {
-        let next = (*ci).next_ptr();
+    let mut index = 0;
+    loop {
+        let ci = items.get_ptr(index);
+        if ci.is_null() {
+            break;
+        }
         let csx = (*ci).x;
         let cex = csx.wrapping_add((*ci).used).wrapping_sub(1);
         if cex < sx {
             // Entirely before the replacement interval.
+            index += 1;
         } else if csx > ex {
             return ci;
         } else if csx >= sx && cex <= ex {
             if csx == 0 && (*ci).wrapped != 0 && !wrapped.is_null() {
                 *wrapped = 1;
             }
-            screen_write_free_citem(items.remove(ci));
+            screen_write_free_citem(items.remove_at(index));
         } else if csx < sx && cex >= sx && cex <= ex {
             (*ci).used = sx.wrapping_sub(csx);
+            index += 1;
         } else if cex > ex && csx >= sx && csx <= ex {
             (*ci).x = ex.wrapping_add(1);
             (*ci).used = cex.wrapping_sub(ex);
@@ -3585,10 +3571,9 @@ unsafe fn screen_write_collect_trim(
             right.used = cex.wrapping_sub(ex);
             (*ci).used = sx.wrapping_sub(csx);
             let right_ptr = &raw mut *right;
-            items.insert_before(next, right);
+            items.insert_at(index + 1, right);
             return right_ptr;
         }
-        ci = next;
     }
     std::ptr::null_mut()
 }
@@ -3751,7 +3736,6 @@ unsafe extern "C" fn screen_write_collect_flush_line(
     let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
     let mut s: *mut screen = (*ctx).s;
     let mut ci: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
-    let mut tmp: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
     let mut cl: *mut screen_write_cline =
         (*s).write_list.offset(y as isize) as *mut screen_write_cline;
     let mut last: u_int = UINT_MAX;
@@ -3836,11 +3820,12 @@ unsafe extern "C" fn screen_write_collect_flush_line(
         wsx,
         ::core::ptr::null_mut::<visible_ranges>(),
     );
-    ci = (*cl).items.first_ptr();
-    while !ci.is_null() && {
-        tmp = (*ci).next_ptr();
-        1 as ::core::ffi::c_int != 0
-    } {
+    let mut index = 0;
+    loop {
+        ci = (*cl).items.get_ptr(index);
+        if ci.is_null() {
+            break;
+        }
         log_debug(
             b"collect list: x=%u (last %u), y=%u, used=%u\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -3931,9 +3916,10 @@ unsafe extern "C" fn screen_write_collect_flush_line(
         }
         if written != 0 {
             last = (*ci).x;
-            screen_write_free_citem((*cl).items.remove(ci));
+            screen_write_free_citem((*cl).items.remove_at(index));
+        } else {
+            index += 1;
         }
-        ci = tmp;
     }
     return items;
 }
@@ -3949,8 +3935,6 @@ unsafe extern "C" fn screen_write_collect_flush(
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
     let mut items: u_int = 0 as u_int;
-    let mut ci: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
-    let mut tmp: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
     let mut cl: *mut screen_write_cline = ::core::ptr::null_mut::<screen_write_cline>();
     if !(!wp.is_null() && (*wp).flags & (PANE_REDRAW | PANE_DROP) != 0) {
         if (*s).mode & MODE_SYNC != 0 {
@@ -3966,7 +3950,7 @@ unsafe extern "C" fn screen_write_collect_flush(
             y = 0 as u_int;
             while y < (*(*s).grid).sy {
                 cl = (*s).write_list.offset(y as isize) as *mut screen_write_cline;
-                if (*cl).items.tqh_first.is_some() {
+                if !(*cl).items.is_empty() {
                     screen_write_should_draw_line(ctx, y);
                 }
                 y = y.wrapping_add(1);
@@ -4012,13 +3996,8 @@ unsafe extern "C" fn screen_write_collect_flush(
     y = 0 as u_int;
     while y < (*(*s).grid).sy {
         cl = (*s).write_list.offset(y as isize) as *mut screen_write_cline;
-        ci = (*cl).items.first_ptr();
-        while !ci.is_null() && {
-            tmp = (*ci).next_ptr();
-            1 as ::core::ffi::c_int != 0
-        } {
-            screen_write_free_citem((*cl).items.remove(ci));
-            ci = tmp;
+        while let Some(item) = (*cl).items.pop_front() {
+            screen_write_free_citem(item);
         }
         y = y.wrapping_add(1);
     }
@@ -5275,10 +5254,14 @@ mod write_row_tests {
                 screen_write_collect_insert(&raw mut ctx, item);
             }
             let mut intervals = Vec::new();
-            let mut item = (*row).items.first_ptr();
-            while !item.is_null() {
+            let mut index = 0;
+            loop {
+                let item = (*row).items.get_ptr(index);
+                if item.is_null() {
+                    break;
+                }
                 intervals.push(((*item).x, (*item).used, (*item).wrapped));
-                item = (*item).next_ptr();
+                index += 1;
             }
             assert_eq!(intervals, [(0, 3, 1), (3, 3, 0), (6, 4, 0)]);
             let mut wrapped = 0;
@@ -5288,7 +5271,7 @@ mod write_row_tests {
             screen_write_collect_trim(&raw mut ctx, 0, 9, 1, std::ptr::null_mut());
             assert_eq!(((*tail).x, (*tail).used), (8, 1));
             screen_write_collect_trim(&raw mut ctx, 0, 0, 20, std::ptr::null_mut());
-            assert!((*row).items.tqh_first.is_none());
+            assert!((*row).items.is_empty());
             screen_write_free_citem(ctx.item.take().unwrap());
             screen_write_free_list(&raw mut s);
             assert!(s.write_list.is_null());

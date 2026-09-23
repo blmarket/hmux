@@ -48,10 +48,6 @@ prompt_free_cb 8 8
 prompt_input_cb 8 8
 screen 200 8 title=0 path=8 titles=16 ntitles=24 grid=32 cx=40 cy=44 cstyle=48 default_cstyle=52 ccolour=56 default_ccolour=60 rupper=64 rlower=68 mode=72 default_mode=76 saved_cx=80 saved_cy=84 saved_grid=88 saved_cell=96 saved_flags=152 tabs=160 sel=168 write_list=176 hyperlinks=184 progress_bar=192
 screen_sel 88 4 hidden=0 rectangle=4 modekeys=8 sx=12 sy=16 ex=20 ey=24 clipx=28 cell=32
-screen_write_citem 96 8 x=0 wrapped=4 type_0=8 used=12 bg=16 gc=20 entry=80
-screen_write_cline 24 8 data=0 items=8
-screen_write_item_link 16 8 tqe_next=0 tqe_prev=8
-screen_write_items 16 8 tqh_first=0 tqh_last=8
 socklen_t 4 4
 sort_criteria 16 8 order=0 reversed=4 order_seq=8
 ssize_t 8 8

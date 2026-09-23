@@ -584,14 +584,6 @@ fn migrated_layouts_match_every_original_copy() {
         [screen]
     );
     family!(
-        screen_write_citem,
-        [x, wrapped, type_0, used, bg, gc, entry],
-        [screen_write]
-    );
-    family!(screen_write_cline, [data, items], [screen_write]);
-    family!(screen_write_item_link, [tqe_next, tqe_prev], [screen_write]);
-    family!(screen_write_items, [tqh_first, tqh_last], [screen_write]);
-    family!(
         sort_criteria,
         [order, reversed, order_seq],
         [
