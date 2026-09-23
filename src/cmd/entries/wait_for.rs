@@ -4,7 +4,7 @@ use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_pri
 use crate::src::events::{events_add_sink, events_remove_sink};
 use crate::src::events_payload::{
     event_payload_add_formats, event_payload_first, event_payload_item_name,
-    event_payload_item_print, event_payload_next,
+    event_payload_item_print_owned, event_payload_next,
 };
 use crate::src::ffi::libc::{free, strcmp};
 use crate::src::format::{format_create, format_expand, format_free, format_true};
@@ -323,19 +323,17 @@ unsafe extern "C" fn cmd_wait_for_event_print(
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     epi = event_payload_first(ep);
     while !epi.is_null() {
         key = event_payload_item_name(epi);
         if *key as ::core::ffi::c_int != '_' as i32 {
-            value = event_payload_item_print(epi);
+            let value = event_payload_item_print_owned(epi);
             cmdq_print(
                 (*wei).item,
                 b"%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
-                value,
+                value.as_ptr().cast::<::core::ffi::c_char>(),
             );
-            free(value as *mut ::core::ffi::c_void);
         }
         epi = event_payload_next(epi);
     }

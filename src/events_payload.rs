@@ -3,7 +3,6 @@ use crate::src::cmd_find::{
     cmd_find_from_session_window, cmd_find_from_winlink, cmd_find_from_winlink_pane,
     cmd_find_valid_state,
 };
-use crate::src::ffi::libc::free;
 use crate::src::format::format_add;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::reactor::{
@@ -76,7 +75,7 @@ use crate::src::window::{
     window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
     window_remove_ref, winlink_find_by_index,
 };
-use crate::src::xmalloc::{xmemdup, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xmemdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -669,10 +668,18 @@ unsafe extern "C" fn event_payload_add_item(
 }
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_item_print(
-    mut epi: *mut event_payload_item,
+    epi: *mut event_payload_item,
 ) -> *mut ::core::ffi::c_char {
+    // External callers own the libc allocation, including bytes after an
+    // interior NUL written by a pointer print callback.
+    let value = event_payload_item_print_owned(epi);
+    xmemdup(value.as_ptr().cast(), value.len() - 1)
+}
+
+/// Printed payload bytes with one trailing NUL for synchronous C consumers.
+/// The bytes before that terminator may themselves contain NULs.
+pub(crate) unsafe fn event_payload_item_print_owned(epi: *mut event_payload_item) -> Vec<u8> {
     let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut size: size_t = 0;
     evb = evbuffer_new();
     if evb.is_null() {
@@ -680,29 +687,32 @@ pub unsafe extern "C" fn event_payload_item_print(
     }
     event_payload_add_item(epi, evb);
     size = evbuffer_get_length(evb);
+    let mut value = Vec::with_capacity(size + 1);
     if size != 0 as size_t {
-        value = xmemdup(
-            evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t)
-                as *const ::core::ffi::c_void,
-            size,
-        );
-    } else {
-        value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        let bytes = evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *const u8;
+        value.extend_from_slice(std::slice::from_raw_parts(bytes, size));
     }
+    value.push(0);
     evbuffer_free(evb);
-    return value;
+    value
 }
+
+pub(crate) unsafe fn event_payload_print_owned(
+    ep: *mut event_payload,
+    name: *const ::core::ffi::c_char,
+) -> Option<Vec<u8>> {
+    let epi = event_payload_find(ep, name);
+    (!epi.is_null()).then(|| event_payload_item_print_owned(epi))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_print(
-    mut ep: *mut event_payload,
-    mut name: *const ::core::ffi::c_char,
+    ep: *mut event_payload,
+    name: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
-    epi = event_payload_find(ep, name);
-    if epi.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    return event_payload_item_print(epi);
+    event_payload_print_owned(ep, name).map_or(::core::ptr::null_mut(), |value| {
+        xmemdup(value.as_ptr().cast(), value.len() - 1)
+    })
 }
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_add_formats(
@@ -719,7 +729,7 @@ pub unsafe extern "C" fn event_payload_add_formats(
     while !epi.is_null() {
         let key = (*epi).name;
         if !(*key as ::core::ffi::c_int == '_' as i32) {
-            let value = event_payload_item_print(epi);
+            let value = event_payload_item_print_owned(epi);
             let key_bytes = CStr::from_ptr(key).to_bytes();
             let mut name_bytes = Vec::with_capacity(prefix.len() + key_bytes.len());
             name_bytes.extend_from_slice(prefix);
@@ -730,9 +740,8 @@ pub unsafe extern "C" fn event_payload_add_formats(
                 ft,
                 name.as_ptr(),
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                value,
+                value.as_ptr().cast::<::core::ffi::c_char>(),
             );
-            free(value as *mut ::core::ffi::c_void);
             let named = if (*epi).type_0 as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -949,10 +958,40 @@ pub unsafe extern "C" fn event_payload_get_pointer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::reactor::evbuffer_add;
     use std::ffi::{CStr, CString};
 
     unsafe extern "C" fn count_pointer_release(ptr: *mut ::core::ffi::c_void) {
         *(ptr as *mut usize) += 1;
+    }
+
+    unsafe extern "C" fn print_binary_pointer(_ptr: *mut ::core::ffi::c_void, evb: *mut evbuffer) {
+        let bytes = b"A\0B";
+        evbuffer_add(evb, bytes.as_ptr().cast(), bytes.len());
+    }
+
+    #[test]
+    fn printed_pointer_bytes_keep_an_interior_nul_and_c_free_contract() {
+        unsafe {
+            let ep = event_payload_create();
+            event_payload_set_pointer(
+                ep,
+                c"binary".as_ptr(),
+                ::core::ptr::null_mut(),
+                None,
+                Some(print_binary_pointer),
+            );
+            let item = event_payload_first(ep);
+            assert_eq!(event_payload_item_print_owned(item), b"A\0B\0");
+            let exported = event_payload_print(ep, c"binary".as_ptr());
+            assert_eq!(
+                std::slice::from_raw_parts(exported.cast::<u8>(), 4),
+                b"A\0B\0"
+            );
+            crate::src::ffi::libc::free(exported.cast());
+            assert!(event_payload_print(ep, c"missing".as_ptr()).is_null());
+            event_payload_free(ep);
+        }
     }
 
     #[test]

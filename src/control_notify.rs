@@ -2,7 +2,7 @@ use crate::src::control::control_notify_write;
 use crate::src::events::events_add_sink;
 use crate::src::events_payload::{
     event_payload_get_client, event_payload_get_pane, event_payload_get_session,
-    event_payload_get_string, event_payload_get_window, event_payload_print,
+    event_payload_get_string, event_payload_get_window, event_payload_print_owned,
 };
 use crate::src::ffi::libc::free;
 use crate::src::format::{format_create, format_defaults, format_expand, format_free};
@@ -83,7 +83,6 @@ unsafe extern "C" fn control_pane_mode_changed_cb(
 ) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     wp = event_payload_get_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char);
     if !wp.is_null() {
         c = clients.tqh_first;
@@ -103,10 +102,11 @@ unsafe extern "C" fn control_pane_mode_changed_cb(
         }
         return;
     }
-    value = event_payload_print(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char);
-    if value.is_null() {
+    let Some(value) =
+        event_payload_print_owned(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char)
+    else {
         return;
-    }
+    };
     c = clients.tqh_first;
     while !c.is_null() {
         if !c.is_null()
@@ -117,12 +117,11 @@ unsafe extern "C" fn control_pane_mode_changed_cb(
             control_notify_write(
                 c,
                 b"%%pane-mode-changed %s\0" as *const u8 as *const ::core::ffi::c_char,
-                value,
+                value.as_ptr().cast::<::core::ffi::c_char>(),
             );
         }
         c = (*c).entry.tqe_next;
     }
-    free(value as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn control_window_layout_changed_cb(
     mut name: *const ::core::ffi::c_char,

@@ -1333,6 +1333,22 @@ name error.
   literal commas in `-S`, and exact `#{socket_path}` bytes. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
 
+### Increment 433 — own printed event payload bytes locally (2026-09-23)
+
+- `event_payload_item_print_owned` now copies evbuffer bytes into a local
+  `Vec<u8>` with a trailing NUL. In-tree event format, verbose wait-event,
+  and control notification consumers borrow that buffer synchronously and
+  drop it without C-owned allocation or manual `free`. Exported
+  `event_payload_item_print` and `event_payload_print` still duplicate into
+  libc-freeable bytes. An interior NUL from a pointer print callback remains
+  in the returned allocation; C `%s` consumers still see its first-NUL view.
+- Serialized workspace tests and binary build passed. A new unit test checks
+  exact `A\0B\0` bytes through both the owned and exported paths, plus the
+  missing-item null result. Event format and verbose wait-event CLI checks
+  passed with candidate and pinned tmux. The control notification fallback
+  for a non-pane `pane` value was not directly exercised by CLI. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
+
 ## Historical migration index
 
 Each retained increment was committed separately; increment 228 was reverted.
