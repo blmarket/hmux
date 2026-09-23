@@ -248,6 +248,18 @@ legacy callers safe.
   isolated library/binary build and `git diff --check` also pass. No
   sanitizer was run.
 
+### Increment 142 — grid hyperlink ID scratch (2026-09-22)
+
+- `grid_string_cells_add_hyperlink` now owns its temporary `id=%s;`
+  fragment as a byte-preserving `CString` built from the borrowed ID's
+  first-NUL C-string view. `strlcat` consumes that pointer synchronously;
+  removed the only `xasprintf` import in `src/grid/core.rs` and the local
+  allocation/free pair. Length checks, empty-ID output, and escape modes
+  remain unchanged.
+- Isolated library/binary build, `tests/osc8_hyperlink_id.rs`, changed-file
+  rustfmt, and `git diff --check` passed. The OSC 8 test verifies captured
+  hyperlink IDs and exact escape output. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -262,7 +274,10 @@ non-string value.
    `utf8_tocstr((*pr).buffer)` call in `prompt.rs`; it still has a local
    allocation/free pair. Audit its callback outcome and any combined flags
    before using `utf8_tocstr_cstring` there.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+2. `window_copy_mode_data.jumpchar` still holds a C-owned decoded cell
+   array across copy-mode commands and frees it on replacement and teardown.
+   It needs a containing-record lifecycle audit before adding a Vec owner.
+3. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -271,14 +286,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+4. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-4. The remaining address-based registries, other UI tags, and session/winlink
+5. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and

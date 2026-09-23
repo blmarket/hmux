@@ -14,7 +14,8 @@ use crate::src::tmux::start_time;
 use crate::src::utf8::{
     utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xsnprintf};
+use crate::src::xmalloc::{xcalloc, xmalloc, xreallocarray, xsnprintf};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
@@ -1423,7 +1424,6 @@ unsafe extern "C" fn grid_string_cells_add_hyperlink(
     mut uri: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if strlen(uri)
         .wrapping_add(strlen(id))
         .wrapping_add(17 as size_t)
@@ -1445,13 +1445,13 @@ unsafe extern "C" fn grid_string_cells_add_hyperlink(
         );
     }
     if *id as ::core::ffi::c_int != '\0' as i32 {
-        xasprintf(
-            &raw mut tmp,
-            b"id=%s;\0" as *const u8 as *const ::core::ffi::c_char,
-            id,
-        );
-        strlcat(buf, tmp, len);
-        free(tmp as *mut ::core::ffi::c_void);
+        let id_bytes = CStr::from_ptr(id).to_bytes();
+        let mut bytes = Vec::with_capacity(id_bytes.len() + 4);
+        bytes.extend_from_slice(b"id=");
+        bytes.extend_from_slice(id_bytes);
+        bytes.push(b';');
+        let tmp = CString::new(bytes).expect("C string ID contains no interior NUL");
+        strlcat(buf, tmp.as_ptr(), len);
     } else {
         strlcat(buf, b";\0" as *const u8 as *const ::core::ffi::c_char, len);
     }
