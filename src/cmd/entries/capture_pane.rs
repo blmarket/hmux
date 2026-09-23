@@ -81,6 +81,7 @@ pub use crate::src::shared::window::{
 use crate::src::utf8::utf8_stravis;
 use crate::src::window::window_pane_reset_mode_all;
 use crate::src::xmalloc::{xasprintf, xrealloc, xreallocarray, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -161,6 +162,11 @@ unsafe extern "C" fn cmd_capture_pane_append(
     *len = (*len).wrapping_add(linelen);
     return buf;
 }
+fn cmd_capture_pane_colour(value: ::core::ffi::c_int) -> CString {
+    let mut bytes = colour_format(value).into_bytes();
+    bytes.extend_from_slice(format!("[{:x}]", value as u32).as_bytes());
+    CString::new(bytes).expect("colour text and hexadecimal suffix contain no NUL")
+}
 unsafe extern "C" fn cmd_capture_pane_cell(
     mut s: *mut screen,
     mut xx: u_int,
@@ -184,11 +190,6 @@ unsafe extern "C" fn cmd_capture_pane_cell(
     };
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut link: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut linkid: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut f: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut b: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut u: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut c: [::core::ffi::c_char; 33] = [0; 33];
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut iid: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -205,7 +206,7 @@ unsafe extern "C" fn cmd_capture_pane_cell(
         &raw mut c as *mut ::core::ffi::c_char,
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
     );
-    if gc.link != 0 as u_int
+    let (link, linkid) = if gc.link != 0 as u_int
         && hyperlinks_get(
             hl,
             gc.link,
@@ -214,33 +215,16 @@ unsafe extern "C" fn cmd_capture_pane_cell(
             ::core::ptr::null_mut::<*const ::core::ffi::c_char>(),
         ) != 0
     {
-        xasprintf(
-            &raw mut link,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            uri,
-        );
-        if !iid.is_null() && *iid as ::core::ffi::c_int != '\0' as i32 {
-            xasprintf(
-                &raw mut linkid,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                iid,
-            );
+        let link = CStr::from_ptr(uri).to_owned();
+        let linkid = if !iid.is_null() && *iid as ::core::ffi::c_int != '\0' as i32 {
+            CStr::from_ptr(iid).to_owned()
         } else {
-            xasprintf(
-                &raw mut linkid,
-                b"NONE\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-        }
+            c"NONE".to_owned()
+        };
+        (link, linkid)
     } else {
-        xasprintf(
-            &raw mut link,
-            b"NONE\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        xasprintf(
-            &raw mut linkid,
-            b"NONE\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-    }
+        (c"NONE".to_owned(), c"NONE".to_owned())
+    };
     flags = gc.flags as u_int;
     if gc.fg & COLOUR_FLAG_256 != 0 {
         flags |= GRID_FLAG_FG256 as u_int;
@@ -248,24 +232,9 @@ unsafe extern "C" fn cmd_capture_pane_cell(
     if gc.bg & COLOUR_FLAG_256 != 0 {
         flags |= GRID_FLAG_BG256 as u_int;
     }
-    xasprintf(
-        &raw mut f,
-        b"%s[%x]\0" as *const u8 as *const ::core::ffi::c_char,
-        colour_format(gc.fg).as_ptr(),
-        gc.fg,
-    );
-    xasprintf(
-        &raw mut b,
-        b"%s[%x]\0" as *const u8 as *const ::core::ffi::c_char,
-        colour_format(gc.bg).as_ptr(),
-        gc.bg,
-    );
-    xasprintf(
-        &raw mut u,
-        b"%s[%x]\0" as *const u8 as *const ::core::ffi::c_char,
-        colour_format(gc.us).as_ptr(),
-        gc.us,
-    );
+    let f = cmd_capture_pane_colour(gc.fg);
+    let b = cmd_capture_pane_colour(gc.bg);
+    let u = cmd_capture_pane_colour(gc.us);
     xasprintf(
         &raw mut line,
         b"\t\tC %u,%u data=(%u,%u,%s) flags=%s[%x] attr=%s[%x] fg=%s bg=%s us=%s link=%s linkid=%s\n\0"
@@ -279,17 +248,12 @@ unsafe extern "C" fn cmd_capture_pane_cell(
         flags,
         grid_cell_attr_string(gc.attr as ::core::ffi::c_int),
         gc.attr as ::core::ffi::c_int,
-        f,
-        b,
-        u,
-        link,
-        linkid,
+        f.as_ptr(),
+        b.as_ptr(),
+        u.as_ptr(),
+        link.as_ptr(),
+        linkid.as_ptr(),
     );
-    free(f as *mut ::core::ffi::c_void);
-    free(b as *mut ::core::ffi::c_void);
-    free(u as *mut ::core::ffi::c_void);
-    free(link as *mut ::core::ffi::c_void);
-    free(linkid as *mut ::core::ffi::c_void);
     free(data as *mut ::core::ffi::c_void);
     return line;
 }
