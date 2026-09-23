@@ -12,7 +12,7 @@ pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::{clean_name, global_options};
 use crate::src::utf8::utf8_strvis;
-use crate::src::xmalloc::{xasprintf, xmalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xasprintf, xreallocarray, xstrdup};
 
 #[derive(Default)]
 pub struct paste_time_tree {
@@ -228,7 +228,7 @@ pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
     }
     free((*pb).data as *mut ::core::ffi::c_void);
     free((*pb).name as *mut ::core::ffi::c_void);
-    free(pb as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(pb));
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_add(
@@ -263,7 +263,7 @@ pub unsafe extern "C" fn paste_add(
         }
         pb = pb1;
     }
-    pb = xmalloc(::core::mem::size_of::<paste_buffer>() as size_t) as *mut paste_buffer;
+    pb = Box::into_raw(Box::new(::core::mem::zeroed::<paste_buffer>()));
     (*pb).name = ::core::ptr::null_mut::<::core::ffi::c_char>();
     loop {
         free((*pb).name as *mut ::core::ffi::c_void);
@@ -404,7 +404,7 @@ pub unsafe extern "C" fn paste_set(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    pb = xmalloc(::core::mem::size_of::<paste_buffer>() as size_t) as *mut paste_buffer;
+    pb = Box::into_raw(Box::new(::core::mem::zeroed::<paste_buffer>()));
     (*pb).name = newname;
     (*pb).data = data;
     (*pb).size = size;

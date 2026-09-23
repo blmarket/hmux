@@ -53,6 +53,15 @@ def check(binary, socket):
         assert success(b"list-buffers", b"-F", b"#{buffer_name}:#{buffer_size}") == b"from-top:9\n"
         observed.append(run(b"delete-buffer", b"-b", b"renamed"))
         assert observed[-1][0] != 0, observed[-1]
+
+        success(b"set-option", b"-g", b"buffer-limit", b"1")
+        success(b"set-buffer", b"evict me")
+        success(b"set-buffer", b"keep me")
+        assert success(b"show-buffer") == b"keep me"
+        names = success(b"list-buffers", b"-F", b"#{buffer_name}").splitlines()
+        assert names.count(b"from-top") == 1 and len(names) == 2, names
+        success(b"delete-buffer")
+        assert success(b"list-buffers", b"-F", b"#{buffer_name}") == b"from-top\n"
         return tuple(observed)
     finally:
         subprocess.run(command + [b"kill-server"], env=env, capture_output=True, timeout=15)

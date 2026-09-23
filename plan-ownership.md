@@ -2567,6 +2567,19 @@ legacy callers safe.
   pre-existing `monitor.rs` rustfmt import-order difference. No sanitizer was
   run.
 
+### Increment 307 — boxed paste buffer records (2026-09-23)
+
+- `paste_add` and `paste_set` now box their `paste_buffer` records;
+  `paste_free` still fires deletion, removes both name/order indexes, updates
+  the automatic count, and frees separately owned data/name before consuming
+  the `Box`. Rename and data replacement retain the stable record address.
+  Indexes and transient callers still borrow raw pointers until removal.
+- Extended the set-buffer-name CLI check to cover automatic buffer-limit
+  eviction and final deletion. It matched the pinned pre-migration binary;
+  sorted-buffer checks passed on both binaries. Focused paste tests, full
+  workspace tests, binary build, rustfmt, and diff checks passed. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2577,11 +2590,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `paste_buffer` in `src/paste.rs` is the next small record: `paste_add` and
-   `paste_set` allocate it, and `paste_free` is its sole record destructor.
-   Preserve event order, data/name cleanup, and stable pointers borrowed by
-   the name/time indexes across eviction, rename, replacement, and deletion.
-   The set-buffer-name and sorted-buffer CLI checks cover these paths.
+1. Dynamic `utf8_width_item` records in `src/text/utf8.rs` are the next small
+   leaf owner. `utf8_insert_width_cache` allocates them; duplicate replacement
+   and `utf8_update_width_cache` free them. Static default entries share the
+   map and must remain outside Box cleanup; preserve the `allocated` flag.
    `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias
