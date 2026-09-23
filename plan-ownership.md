@@ -125,11 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `options_default_to_string` still builds C-owned scalar default text for
-   two live customize-mode callers that compare or display it and then free
-   it. A private `CString` producer can serve those callers while the
-   exported function retains its libc-freeable contract. Audit both render
-   and change-detection paths and check the displayed default directly.
+1. `window_customize_option_is_changed` still calls C-return
+   `options_to_string` for both array and scalar current values, compares
+   them synchronously, then manually frees them. Its default-value producer
+   is now owned. The existing private `options_to_cstring` can own the
+   current values too, provided the temporary defaults options tree remains
+   alive through both conversions and drops in the same order.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1462,6 +1463,19 @@ name error.
   The exported `options_to_string` contract remains unchanged.
 - The attached-client customize set-option prompt script passed for the
   candidate and pinned tmux. Serialized workspace tests, binary build,
+  changed-file rustfmt, and diff check passed. No sanitizer ran.
+
+### Increment 441 — own customize default option text (2026-09-23)
+
+- Private `options_default_to_cstring` now formats built-in scalar defaults
+  as owned `CString` values. `window_customize_option_is_changed` borrows its
+  default for comparison, and `window_customize_draw_option` retains an
+  optional owned default only when it differs from the current value. Their
+  C allocation/free paths are removed. Exported
+  `options_default_to_string` still returns a libc-freeable duplicate.
+- The customize option prompt CLI now checks the rendered default text.
+  Candidate and pinned tmux passed that script plus customize reset and
+  array-key prompt scripts. Serialized workspace tests, binary build,
   changed-file rustfmt, and diff check passed. No sanitizer ran.
 
 ## Historical migration index

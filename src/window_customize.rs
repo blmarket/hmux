@@ -37,7 +37,7 @@ pub use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_array_first, options_array_get, options_array_getv, options_array_item_key,
     options_array_next, options_array_set, options_create, options_default,
-    options_default_to_string, options_first, options_free, options_from_string, options_get,
+    options_default_to_cstring, options_first, options_free, options_from_string, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_number,
     options_get_only, options_get_parent, options_match_owned, options_name, options_next,
     options_owner, options_push_changes, options_remove_or_default, options_set_number,
@@ -997,10 +997,10 @@ unsafe extern "C" fn window_customize_option_is_changed(
         ::core::ptr::null::<::core::ffi::c_char>(),
         0 as ::core::ffi::c_int,
     );
-    default_value = options_default_to_string(oe);
-    changed = (strcmp(value, default_value) != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+    let default_value = options_default_to_cstring(oe);
+    changed =
+        (strcmp(value, default_value.as_ptr()) != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     free(value as *mut ::core::ffi::c_void);
-    free(default_value as *mut ::core::ffi::c_void);
     return changed;
 }
 unsafe extern "C" fn window_customize_key_is_changed(
@@ -2027,8 +2027,7 @@ unsafe extern "C" fn window_customize_draw_option(
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut label: [::core::ffi::c_char; 64] = [0; 64];
-    let mut default_value: *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut default_value: Option<CString> = None;
     let mut choices: [::core::ffi::c_char; 256] = ::core::mem::transmute::<
         [u8; 256],
         [::core::ffi::c_char; 256],
@@ -2295,13 +2294,11 @@ unsafe extern "C" fn window_customize_draw_option(
                                             0 as ::core::ffi::c_int,
                                         );
                                         if !oe.is_null() && array_key.is_null() {
-                                            default_value = options_default_to_string(oe);
-                                            if strcmp(default_value, value)
-                                                == 0 as ::core::ffi::c_int
+                                            let rendered = options_default_to_cstring(oe);
+                                            if strcmp(rendered.as_ptr(), value)
+                                                != 0 as ::core::ffi::c_int
                                             {
-                                                free(default_value as *mut ::core::ffi::c_void);
-                                                default_value =
-                                                    ::core::ptr::null_mut::<::core::ffi::c_char>();
+                                                default_value = Some(rendered);
                                             }
                                         }
                                         if is_any_hook != 0 {
@@ -2593,7 +2590,7 @@ unsafe extern "C" fn window_customize_draw_option(
                                                                                 match current_block {
                                                                                     4086289836260337793 => {}
                                                                                     _ => {
-                                                                                        if !default_value.is_null() {
+                                                                                        if let Some(default_value) = &default_value {
                                                                                             if window_customize_write_value(
                                                                                                 ctx,
                                                                                                 cx,
@@ -2603,7 +2600,7 @@ unsafe extern "C" fn window_customize_draw_option(
                                                                                                 b"The default is: \0" as *const u8
                                                                                                     as *const ::core::ffi::c_char,
                                                                                                 b"%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                                                                                default_value,
+                                                                                                default_value.as_ptr(),
                                                                                                 space,
                                                                                                 unit,
                                                                                             ) == 0
@@ -2739,7 +2736,7 @@ unsafe extern "C" fn window_customize_draw_option(
         }
     }
     free(value as *mut ::core::ffi::c_void);
-    free(default_value as *mut ::core::ffi::c_void);
+    drop(default_value);
     format_free(ft);
 }
 unsafe extern "C" fn window_customize_draw_environment(

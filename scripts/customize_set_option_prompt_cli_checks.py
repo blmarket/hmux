@@ -69,6 +69,7 @@ def check(binary_path, kind):
             run("send-keys", "-t", "optsé:0.0", "Down", "Right")
             if kind == "scalar":
                 run("send-keys", "-t", "optsé:0.0", "Down")
+                wait_for(b"The default is: [#{session_name}]")
                 expected = b"(status-left, for session opts\xc3\xa9) caf\xc3\xa9"
             elif kind == "array-add":
                 run("send-keys", "-t", "optsé:0.0", "Down")

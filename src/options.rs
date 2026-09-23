@@ -436,44 +436,32 @@ pub unsafe extern "C" fn options_default(
     }
     return o;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_default_to_string(
-    mut oe: *const options_table_entry,
-) -> *mut ::core::ffi::c_char {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+/// Format a built-in default for Rust callers. The exported C API keeps its
+/// libc-owned return value below.
+pub(crate) unsafe fn options_default_to_cstring(oe: *const options_table_entry) -> CString {
     match (*oe).type_0 as ::core::ffi::c_uint {
-        0 | 6 => {
-            s = xstrdup((*oe).default_str);
+        0 | 6 => CStr::from_ptr((*oe).default_str).to_owned(),
+        1 => CString::new((*oe).default_num.to_string())
+            .expect("decimal option default contains no NUL"),
+        2 => key_string_format((*oe).default_num as key_code, false),
+        3 => colour_format((*oe).default_num as ::core::ffi::c_int),
+        4 => if (*oe).default_num != 0 {
+            c"on"
+        } else {
+            c"off"
         }
-        1 => {
-            xasprintf(
-                &raw mut s,
-                b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
-                (*oe).default_num,
-            );
-        }
-        2 => {
-            let key_string = key_string_format((*oe).default_num as key_code, false);
-            s = xstrdup(key_string.as_ptr());
-        }
-        3 => {
-            s = xstrdup(colour_format((*oe).default_num as ::core::ffi::c_int).as_ptr());
-        }
-        4 => {
-            s = xstrdup(if (*oe).default_num != 0 {
-                b"on\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                b"off\0" as *const u8 as *const ::core::ffi::c_char
-            });
-        }
-        5 => {
-            s = xstrdup(*(*oe).choices.offset((*oe).default_num as isize));
-        }
+        .to_owned(),
+        5 => CStr::from_ptr(*(*oe).choices.offset((*oe).default_num as isize)).to_owned(),
         _ => {
             fatalx(b"unknown option type\0" as *const u8 as *const ::core::ffi::c_char);
         }
     }
-    return s;
+}
+#[no_mangle]
+pub unsafe extern "C" fn options_default_to_string(
+    oe: *const options_table_entry,
+) -> *mut ::core::ffi::c_char {
+    xstrdup(options_default_to_cstring(oe).as_ptr())
 }
 unsafe extern "C" fn options_add(
     mut oo: *mut options,
