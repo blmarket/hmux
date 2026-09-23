@@ -125,15 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Named paste-set payload producers still allocate C byte buffers before
-   `paste_set` copies accepted data into `PasteBufferOwner`. Add a private
-   owned helper while preserving exported `paste_set`'s success-consumes and
-   error-retains contract. Start with `cmd_load_buffer_done`, which copies
-   evbuffer bytes into xmalloc storage only for `paste_set`; its `-w`
-   selection borrows those bytes synchronously. The existing load-buffer CLI
-   check covers binary, empty, invalid name/path, and pending FIFO client
-   cancellation. Capture-pane, set-buffer, and window-copy producers can
-   follow as independent boundaries.
+1. `cmd_capture_pane_exec`, `cmd_set_buffer_exec`, and window-copy selection
+   still allocate C byte buffers for `paste_set`. Its private
+   `paste_set_owned` now accepts boxed bytes and can remove each producer
+   allocation and copy. Re-rank these live producers by their source and
+   error paths; the exported C adapter retains its success-consumes and
+   error-retains contract. The existing capture-pane, set-buffer, and
+   window-copy CLI checks cover their visible buffer results.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1029,6 +1027,27 @@ errors still leave the C producer allocation with the caller.
   and the exact new paste buffer. Invalid base64 and empty terminal replies
   create neither an application response nor a new buffer. Changed-file
   rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 411 — owned load-buffer paste data (2026-09-23)
+
+- Private `paste_set_owned` accepts boxed bytes and stores accepted named
+  data directly in `PasteBufferOwner`, or moves unnamed data to
+  `paste_add_owned`. Exported `paste_set` copies its C input into the owner,
+  consumes the C allocation on success, and leaves it with the caller on a
+  name error. It still consumes zero-length input before name validation;
+  accepted named C data is freed before synchronous change events.
+  `cmd_load_buffer_done` now copies completed evbuffer bytes once into a
+  boxed slice and calls the owned helper. The evbuffer bytes remain available
+  for the synchronous `-w` terminal selection. Its xmalloc, memcpy, and
+  error-path C free are removed.
+- Serialized workspace tests and binary build passed. Pinned-baseline CLI
+  comparisons passed for binary and empty file loads, automatic and named
+  replacement buffers, invalid empty/non-UTF-8 names, missing path, FIFO
+  client cancellation, and observed `-w` OSC 52 output with `A\0B\xff`.
+  Existing set-buffer, capture-pane, and window-copy selection comparisons
+  passed for the exported C adapter. Changed-file rustfmt and diff checks
+  passed. No sanitizer ran. Named replacement event reentrancy remains a
+  pre-existing concern outside this boundary.
 
 ## Historical migration index
 

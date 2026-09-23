@@ -1,10 +1,10 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
-use crate::src::ffi::libc::{free, memcpy, strerror};
+use crate::src::ffi::libc::{free, strerror};
 use crate::src::file::file_read_with_owned_data;
 use crate::src::format::format_single_from_target;
-use crate::src::paste::paste_set;
+use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::server_client_unref;
 pub use crate::src::shared::abi::ssize_t;
@@ -68,7 +68,6 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tty::tty_set_selection;
-use crate::src::xmalloc::xmalloc;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -143,7 +142,6 @@ unsafe extern "C" fn cmd_load_buffer_done(
     let mut bdata: *mut ::core::ffi::c_void =
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
     let mut bsize: size_t = evbuffer_get_length(buffer);
-    let mut copy: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(
@@ -153,11 +151,9 @@ unsafe extern "C" fn cmd_load_buffer_done(
             path,
         );
     } else if bsize != 0 as size_t {
-        copy = xmalloc(bsize);
-        memcpy(copy, bdata, bsize);
-        if paste_set(
-            copy as *mut ::core::ffi::c_char,
-            bsize,
+        let owned: Box<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
+        if paste_set_owned(
+            owned,
             cdata
                 .name
                 .as_ref()
@@ -171,7 +167,6 @@ unsafe extern "C" fn cmd_load_buffer_done(
                 cause,
             );
             free(cause as *mut ::core::ffi::c_void);
-            free(copy);
         } else if !tc.is_null()
             && !(*tc).session.is_null()
             && !(*tc).flags & CLIENT_DEAD as uint64_t != 0

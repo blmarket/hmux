@@ -422,22 +422,46 @@ pub unsafe extern "C" fn paste_rename(
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_set(
-    mut data: *mut ::core::ffi::c_char,
-    mut size: size_t,
-    mut name: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    data: *mut ::core::ffi::c_char,
+    size: size_t,
+    name: *const ::core::ffi::c_char,
+    cause: *mut *mut ::core::ffi::c_char,
+) -> ::core::ffi::c_int {
+    let owned = if size == 0 {
+        Box::<[u8]>::default()
+    } else {
+        std::slice::from_raw_parts(data.cast::<u8>(), size).into()
+    };
+    paste_set_inner(owned, name, cause, data.cast())
+}
+
+pub(crate) unsafe fn paste_set_owned(
+    data: Box<[u8]>,
+    name: *const ::core::ffi::c_char,
+    cause: *mut *mut ::core::ffi::c_char,
+) -> ::core::ffi::c_int {
+    paste_set_inner(data, name, cause, ::core::ptr::null_mut())
+}
+
+unsafe fn paste_set_inner(
+    data: Box<[u8]>,
+    name: *const ::core::ffi::c_char,
+    cause: *mut *mut ::core::ffi::c_char,
+    // Null for Rust callers; on a name error the C caller still owns this.
+    c_producer: *mut ::core::ffi::c_void,
 ) -> ::core::ffi::c_int {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut old: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if !cause.is_null() {
         *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    if size == 0 as size_t {
-        free(data as *mut ::core::ffi::c_void);
+    if data.is_empty() {
+        free(c_producer);
         return 0 as ::core::ffi::c_int;
     }
     if name.is_null() {
-        paste_add(::core::ptr::null::<::core::ffi::c_char>(), data, size);
+        paste_add_owned(::core::ptr::null(), data);
+        free(c_producer);
         return 0 as ::core::ffi::c_int;
     }
     if *name as ::core::ffi::c_int == '\0' as i32 {
@@ -460,7 +484,8 @@ pub unsafe extern "C" fn paste_set(
     let newname = CStr::from_ptr(raw_name).to_owned();
     free(raw_name.cast());
     pb = paste_new_owned(newname);
-    paste_take_data(pb, data, size);
+    paste_store_data(pb, Some(data));
+    free(c_producer);
     (*pb).automatic = 0 as ::core::ffi::c_int;
     let fresh1 = paste_next_order;
     paste_next_order = paste_next_order.wrapping_add(1);

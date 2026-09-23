@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Exercise load-buffer completion, errors, and source-client cancellation."""
+"""Compare load-buffer ownership paths with the pinned tmux baseline."""
 
+import base64
 import fcntl
 import os
 import pathlib
 import pty
+import select
 import struct
 import subprocess
 import tempfile
@@ -16,6 +18,29 @@ root = pathlib.Path(__file__).resolve().parents[1]
 candidate = pathlib.Path(os.environ.get("HMUX_BINARY", root / "target/debug/hmux2")).resolve()
 baseline = pathlib.Path(os.environ["HMUX_BASELINE_BINARY"]).resolve()
 env = dict(os.environ, TERM="xterm-256color", LC_ALL="C", TMUX="", SHELL="/bin/sh")
+payload = b"A\0B\xff"
+
+
+def drain_pty(master):
+    while select.select([master], [], [], 0)[0]:
+        os.read(master, 65536)
+
+
+def read_osc52(master):
+    output = bytearray()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        ready, _, _ = select.select([master], [], [], 0.1)
+        if ready:
+            output.extend(os.read(master, 65536))
+        start = output.find(b"\x1b]52;")
+        if start >= 0:
+            bell = output.find(b"\x07", start)
+            st = output.find(b"\x1b\\", start)
+            end = min((i for i in (bell, st) if i >= 0), default=-1)
+            if end >= 0:
+                return bytes(output[start:end])
+    raise AssertionError(("OSC 52 output missing", output[-300:]))
 
 
 def trace(binary):
@@ -23,7 +48,7 @@ def trace(binary):
         directory = pathlib.Path(tmp)
         base = [str(binary), "-S", str(directory / "socket"), "-f", "/dev/null"]
         source = directory / "source"
-        source.write_bytes(b"A\0B\xff")
+        source.write_bytes(payload)
         empty = directory / "empty"
         empty.touch()
         fifo = directory / "pending"
@@ -43,6 +68,7 @@ def trace(binary):
         pending = None
         try:
             run("new-session", "-d", "-s", "owner", "sleep 30")
+            run("set-option", "-g", "terminal-features", "xterm-256color:clipboard")
             attached = subprocess.Popen(
                 base + ["attach-session", "-t", "owner"], env=env,
                 stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
@@ -63,7 +89,35 @@ def trace(binary):
 
             run("load-buffer", "-w", "-t", target, "-b", "filled", str(source))
             filled = run("show-buffer", "-b", "filled")
-            assert filled == b"A\0B\xff", filled
+            assert filled == payload, filled
+
+            drain_pty(master)
+            run("load-buffer", "-w", "-t", target, "-b", "clipboard-output", str(source))
+            osc52 = read_osc52(master)
+            assert osc52 == b"\x1b]52;;" + base64.b64encode(payload), osc52
+
+            before_auto = run("list-buffers", "-F", "#{buffer_name}").splitlines()
+            run("load-buffer", str(source))
+            automatic = run("show-buffer")
+            after_auto = run("list-buffers", "-F", "#{buffer_name}").splitlines()
+            assert automatic == payload, automatic
+            assert len(after_auto) == len(before_auto) + 1, (before_auto, after_auto)
+
+            run("set-buffer", "-b", "replacement", "old")
+            before_replace = run("list-buffers", "-F", "#{buffer_name}").splitlines()
+            run("load-buffer", "-b", "replacement", str(source))
+            replacement = run("show-buffer", "-b", "replacement")
+            after_replace = run("list-buffers", "-F", "#{buffer_name}").splitlines()
+            assert replacement == payload, replacement
+            assert len(after_replace) == len(before_replace), (before_replace, after_replace)
+
+            raw_name = b"\xff-name"
+            before_raw = run("list-buffers", "-F", "#{buffer_name}").splitlines()
+            invalid_utf8 = command("load-buffer", "-b", raw_name, str(source))
+            assert invalid_utf8.returncode != 0, invalid_utf8
+            assert b"invalid buffer name" in invalid_utf8.stderr, invalid_utf8
+            after_raw = run("list-buffers", "-F", "#{buffer_name}").splitlines()
+            assert after_raw == before_raw, (before_raw, after_raw)
 
             run("load-buffer", "-w", "-t", target, "-b", "empty", str(empty))
             empty_lookup = command("show-buffer", "-b", "empty")
@@ -94,7 +148,13 @@ def trace(binary):
             while run("list-clients", "-F", "#{client_name}") != b"":
                 assert time.monotonic() < deadline, "target client remained attached"
                 time.sleep(0.02)
-            return set_clipboard, filled, empty_lookup.returncode, missing.returncode, invalid.returncode, cancelled.returncode
+            return (
+                set_clipboard, filled, osc52, automatic, len(after_auto),
+                replacement, len(after_replace), invalid_utf8.returncode,
+                invalid_utf8.stderr,
+                empty_lookup.returncode, missing.returncode, invalid.returncode,
+                cancelled.returncode,
+            )
         finally:
             if pending is not None:
                 pending.terminate()
