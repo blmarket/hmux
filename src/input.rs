@@ -5834,7 +5834,6 @@ unsafe extern "C" fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core
     };
 }
 unsafe extern "C" fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_long = 0;
     let mut bad: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -5844,8 +5843,8 @@ unsafe extern "C" fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::cor
         screen_write_fullredraw(&raw mut (*ictx).ctx);
         return;
     }
-    s = xstrdup(p);
-    copy = s;
+    let mut copy = std::ffi::CStr::from_ptr(p).to_bytes_with_nul().to_vec();
+    s = copy.as_mut_ptr().cast();
     while *s as ::core::ffi::c_int != '\0' as i32 {
         idx = strtol(s, &raw mut s, 10 as ::core::ffi::c_int);
         if *s as ::core::ffi::c_int != '\0' as i32 && *s as ::core::ffi::c_int != ';' as i32 {
@@ -5877,7 +5876,6 @@ unsafe extern "C" fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::cor
     if redraw != 0 {
         screen_write_fullredraw(&raw mut (*ictx).ctx);
     }
-    free(copy as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn input_reply_clipboard(

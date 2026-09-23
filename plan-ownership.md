@@ -978,6 +978,20 @@ legacy callers safe.
   the isolated worktree. Malformed numeric/color branches were source-audited
   but not forced by the live check; no sanitizer run was performed.
 
+### Increment 44 — OSC 104 mutable parser copy (2026-09-22)
+
+- `input_osc_104` now keeps its writable NUL-terminated parser copy in a
+  local `Vec<u8>`. `strtol` advances a scoped pointer within that storage;
+  normal and malformed-list exits drop the vector. This removes the local
+  `xstrdup`/`free` pair without changing palette clear, redraw, or logging
+  order. The empty-input clear-all branch still returns before copying.
+- `scripts/input_osc_104_cli_checks.py` exercises individual and full palette
+  clears, a malformed list that stops after a prior valid index, a two-index
+  clear, and forwarded palette queries on a private socket. Workspace tests,
+  binary build, rustfmt, and `git diff --check` passed in the isolated
+  worktree. Redraw pixels and log text were source-audited rather than
+  asserted directly; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -992,12 +1006,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect other OSC parser scratch (`input_osc_104` and
-   `input_osc_133_exit_status`) and local format expansion strings. Audit
+2. Inspect `input_osc_133_exit_status` scratch and local format expansion strings. Audit
    each return and callback contract before changing its allocator.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–43. The remaining
+Current validation is recorded in increments 15–44. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–43 has its own local commit; none was pushed.
+Each of increments 15–44 has its own local commit; none was pushed.
