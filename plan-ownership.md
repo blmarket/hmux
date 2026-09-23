@@ -1480,6 +1480,24 @@ legacy callers safe.
   check and existing job-name CLI check passed against both the migrated and
   pinned baseline binaries. No sanitizer was run.
 
+### Increment 231 — customize change option-name owner (2026-09-23)
+
+- `window_customize_change_each` and
+  `window_customize_change_current_callback` now copy option names into local
+  `Option<CString>` values before destructive unset/reset operations. The
+  copies stay alive through the synchronous `options_push_changes` call and
+  then drop automatically. This removes both `xstrdup`/`free` pairs without
+  changing record layout or callback ABI.
+- Workspace tests, binary build, changed-file rustfmt, and diff checks passed.
+  The customize reset and unset prompt CLI checks matched the pinned baseline.
+  No sanitizer was run.
+- Combined validation after the correction and increments 229–231:
+  `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, library/binary build,
+  changed-file rustfmt, Python AST, and commit diff checks passed. The
+  hyperlink capture, format-job output, customize reset/unset, format
+  expansion, file path, and embedded-NUL copy-view CLI checks passed with the
+  pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1490,11 +1508,16 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The command-list cache in `args_value_as_string` is retained in its
+1. `window_customize_add_environment_callback` and `environ_put` still
+   duplicate a `NAME=value` string, write a NUL at `=`, pass the isolated name
+   to `environ_set`, and free it in the same operation. `environ_set` copies a
+   new name into its map or only looks up an existing one, so these names can
+   be local `CString`s. This is the next small owner boundary.
+2. The command-list cache in `args_value_as_string` is retained in its
    movable C-layout record. A pointer-keyed sidecar is disallowed by the type
    policy; migrate only with a real record owner that preserves the public
    layout and independent cache storage for copied values.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+3. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. `args_print_add`'s `%c` values are validated nonzero option
@@ -1504,7 +1527,7 @@ non-string value.
    `%.*s` formatter. The first-NUL behavior is covered by
    `scripts/window_copy_vadd_owner_cli_checks.py`. Revisit the remaining
    direct caller when the callback return contract can change.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+4. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. The expansion output now has a local
@@ -1512,7 +1535,7 @@ non-string value.
    Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-4. The remaining address-based registries, other UI tags, and session/winlink
+5. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
@@ -1522,9 +1545,11 @@ non-string value.
    Other URI and internal ID fields in `hyperlinks_uri` still use their C-owned
    allocations and must be migrated with their full record lifecycle.
 
-Current validation is recorded in increments 15–225. The remaining
-address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–225 has its own local commit; none was pushed.
+Historical validation for increments 15–225 follows. Newer validation is
+recorded in increments 226–231 above, with increment 228 explicitly retracted.
+The remaining address-based registries and UI tags above are separate
+migration candidates. Each retained increment has its own local commit; none
+was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

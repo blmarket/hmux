@@ -4561,12 +4561,13 @@ unsafe extern "C" fn window_customize_change_each(
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut type_0: window_customize_item_type = (*item).type_0;
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if type_0 as ::core::ffi::c_uint
+    let name = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        name = xstrdup((*item).name);
-    }
+        Some(CStr::from_ptr((*item).name).to_owned())
+    } else {
+        None
+    };
     match (*data).change as ::core::ffi::c_uint {
         0 => {
             if type_0 as ::core::ffi::c_uint
@@ -4597,9 +4598,8 @@ unsafe extern "C" fn window_customize_change_each(
     if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        options_push_changes(name);
+        options_push_changes(name.as_ref().expect("option name was copied").as_ptr());
     }
-    free(name as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_customize_change_current_callback(
     mut c: *mut client,
@@ -4611,7 +4611,6 @@ unsafe extern "C" fn window_customize_change_current_callback(
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut type_0: window_customize_item_type = WINDOW_CUSTOMIZE_ITEM_OPTION;
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
@@ -4647,11 +4646,13 @@ unsafe extern "C" fn window_customize_change_current_callback(
         return PROMPT_CLOSE;
     }
     type_0 = (*item).type_0;
-    if type_0 as ::core::ffi::c_uint
+    let name = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        name = xstrdup((*item).name);
-    }
+        Some(CStr::from_ptr((*item).name).to_owned())
+    } else {
+        None
+    };
     match (*data).change as ::core::ffi::c_uint {
         0 => {
             if type_0 as ::core::ffi::c_uint
@@ -4682,9 +4683,8 @@ unsafe extern "C" fn window_customize_change_current_callback(
     if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        options_push_changes(name);
+        options_push_changes(name.as_ref().expect("option name was copied").as_ptr());
     }
-    free(name as *mut ::core::ffi::c_void);
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
     (*(*data).wp).flags |= PANE_REDRAW;
