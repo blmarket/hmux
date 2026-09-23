@@ -90,12 +90,61 @@ pub use crate::src::shared::window::{
 };
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::window::window_update_focus;
-use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
+
+// Keep the public menu as a contiguous C-shaped view for rendering and overlay
+// callbacks. The allocation and the strings behind its rows belong to this
+// record; menu.items is only a borrowed view of items.
+#[repr(C)]
+struct MenuOwner {
+    raw: menu,
+    strings: Vec<MenuRowStrings>,
+    items: Vec<menu_item>,
+    title: CString,
+}
+
+#[derive(Default)]
+struct MenuRowStrings {
+    name: Option<CString>,
+    command: Option<CString>,
+}
+
+impl MenuOwner {
+    fn refresh_items(&mut self) {
+        self.raw.items = if self.items.is_empty() {
+            ::core::ptr::null_mut()
+        } else {
+            self.items.as_mut_ptr()
+        };
+        self.raw.count = self.items.len().try_into().expect("too many menu items");
+    }
+
+    fn push_empty(&mut self) -> usize {
+        let index = self.items.len();
+        self.items.push(menu_item {
+            name: ::core::ptr::null(),
+            key: 0,
+            command: ::core::ptr::null(),
+        });
+        self.strings.push(MenuRowStrings::default());
+        self.refresh_items();
+        index
+    }
+}
+
+// The formatting helpers still return libc-owned strings. Copy their bytes
+// into the menu's Rust-owned storage at this boundary and release the source.
+unsafe fn menu_take_string(ptr: *mut ::core::ffi::c_char) -> CString {
+    let string = CStr::from_ptr(ptr).to_owned();
+    free(ptr as *mut ::core::ffi::c_void);
+    string
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn menu_add_items(
@@ -120,7 +169,7 @@ pub unsafe extern "C" fn menu_add_item(
     mut c: *mut client,
     mut fs: *mut cmd_find_state,
 ) {
-    let mut new_item: *mut menu_item = ::core::ptr::null_mut::<menu_item>();
+    let index: usize;
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut key_owned: Option<std::ffi::CString> = None;
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -148,19 +197,7 @@ pub unsafe extern "C" fn menu_add_item(
     {
         return;
     }
-    (*menu).items = xreallocarray(
-        (*menu).items as *mut ::core::ffi::c_void,
-        (*menu).count.wrapping_add(1 as u_int) as size_t,
-        ::core::mem::size_of::<menu_item>() as size_t,
-    ) as *mut menu_item;
-    let fresh0 = (*menu).count;
-    (*menu).count = (*menu).count.wrapping_add(1);
-    new_item = (*menu).items.offset(fresh0 as isize) as *mut menu_item;
-    memset(
-        new_item as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<menu_item>() as size_t,
-    );
+    index = (*(menu as *mut MenuOwner)).push_empty();
     if line != 0 {
         return;
     }
@@ -178,7 +215,12 @@ pub unsafe extern "C" fn menu_add_item(
     }
     if *s as ::core::ffi::c_int == '\0' as i32 {
         free(s as *mut ::core::ffi::c_void);
-        (*menu).count = (*menu).count.wrapping_sub(1);
+        let owner = &mut *(menu as *mut MenuOwner);
+        // The menu is still local during formatting, so this placeholder is
+        // the last row if expansion suppresses it.
+        owner.items.pop();
+        owner.strings.pop();
+        owner.refresh_items();
         return;
     }
     max_width = (*c).tty.sx.wrapping_sub(4 as u_int);
@@ -220,7 +262,11 @@ pub unsafe extern "C" fn menu_add_item(
         );
     }
     free(trimmed as *mut ::core::ffi::c_void);
-    (*new_item).name = name;
+    {
+        let owner = &mut *(menu as *mut MenuOwner);
+        owner.strings[index].name = Some(menu_take_string(name));
+        owner.items[index].name = owner.strings[index].name.as_ref().unwrap().as_ptr();
+    }
     free(s as *mut ::core::ffi::c_void);
     cmd = (*item).command;
     if !cmd.is_null() {
@@ -239,10 +285,17 @@ pub unsafe extern "C" fn menu_add_item(
     } else {
         s = ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    (*new_item).command = s;
-    (*new_item).key = (*item).key;
-    width = format_width((*new_item).name);
-    if *(*new_item).name as ::core::ffi::c_int == '-' as i32 {
+    {
+        let owner = &mut *(menu as *mut MenuOwner);
+        if !s.is_null() {
+            owner.strings[index].command = Some(menu_take_string(s));
+            owner.items[index].command = owner.strings[index].command.as_ref().unwrap().as_ptr();
+        }
+        owner.items[index].key = (*item).key;
+    }
+    let row_name = (*(*menu).items.add(index)).name;
+    width = format_width(row_name);
+    if *row_name as ::core::ffi::c_int == '-' as i32 {
         width = width.wrapping_sub(1);
     }
     if width > (*menu).width {
@@ -251,27 +304,27 @@ pub unsafe extern "C" fn menu_add_item(
 }
 #[no_mangle]
 pub unsafe extern "C" fn menu_create(mut title: *const ::core::ffi::c_char) -> *mut menu {
-    let mut menu: *mut menu = ::core::ptr::null_mut::<menu>();
-    menu = xcalloc(1 as size_t, ::core::mem::size_of::<menu>() as size_t) as *mut menu;
-    (*menu).title = xstrdup(title);
-    (*menu).width = format_width(title);
-    return menu;
+    let title = CStr::from_ptr(title).to_owned();
+    let width = format_width(title.as_ptr());
+    let owner = Box::new(MenuOwner {
+        raw: menu {
+            title: title.as_ptr(),
+            items: ::core::ptr::null_mut(),
+            count: 0,
+            width,
+        },
+        strings: Vec::new(),
+        items: Vec::new(),
+        title,
+    });
+    Box::into_raw(owner) as *mut menu
 }
 #[no_mangle]
 pub unsafe extern "C" fn menu_free(mut menu: *mut menu) {
-    let mut i: u_int = 0;
     if menu.is_null() {
         return;
     }
-    i = 0 as u_int;
-    while i < (*menu).count {
-        free((*(*menu).items.offset(i as isize)).name as *mut ::core::ffi::c_void);
-        free((*(*menu).items.offset(i as isize)).command as *mut ::core::ffi::c_void);
-        i = i.wrapping_add(1);
-    }
-    free((*menu).items as *mut ::core::ffi::c_void);
-    free((*menu).title as *mut ::core::ffi::c_void);
-    free(menu as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(menu as *mut MenuOwner));
 }
 unsafe extern "C" fn menu_reapply_styles(mut md: *mut menu_data) {
     let mut o: *mut options = (*(*md).w).options;

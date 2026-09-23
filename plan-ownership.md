@@ -1898,6 +1898,26 @@ legacy callers safe.
   changed-file rustfmt reports only pre-existing import-order differences in
   `layout/custom.rs`; the edited body is formatted. No sanitizer was run.
 
+### Increment 106 — menu rows and strings (2026-09-22)
+
+- `MenuOwner` embeds the unchanged C-shaped `menu` view and owns its title,
+  contiguous item rows, and per-row name/command `CString`s. `menu_create`
+  returns the first-field compatibility pointer; `menu_add_item` refreshes
+  that view after Vec growth, and `menu_free` drops row strings before row
+  storage and title. This removes menu/row `xcalloc` and `xreallocarray`,
+  manual count maintenance as an owner, and the item/string/free loop.
+- Formatting helpers still return libc-owned strings, so `menu_take_string`
+  copies their first-NUL C view into the menu owner and frees the source
+  immediately. Both production callers finish building a local menu before
+  `menu_display` publishes it; no Rust owner borrow spans formatting calls.
+  Overlay callbacks continue to receive the C-shaped view and its borrowed
+  contiguous item pointer, valid until `menu_free` or a later add.
+- Validation in the isolated worktree: cargo check, workspace tests, binary
+  build, changed-file rustfmt, `git diff --check`, and a real attached-terminal
+  menu scenario passed. The scenario covers row rendering, duplicate
+  separator suppression, empty formatted-name filtering, selected command,
+  and overlay teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1919,9 +1939,8 @@ non-string value.
    callback return contract can change.
 2. `mode_tree_data.line_list` still uses `xreallocarray` and a manual count.
    Its C-zeroed record, many line aliases, and callback-driven rebuild need
-   one lifecycle audit before replacing the array with `Vec`. The menu item
-   array is another candidate, but menu rendering and overlay callbacks
-   borrow its row pointers.
+   one lifecycle audit before replacing the array with `Vec`. Command-prompt
+   rows also have a bounded callback-owned list of copied C strings.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -1937,9 +1956,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–105. The remaining
+Current validation is recorded in increments 15–106. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–105 has its own local commit; none was pushed.
+Each of increments 15–106 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
