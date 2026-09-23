@@ -125,11 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit `client.exit_session` next: `server_client_detach` duplicates the
-   attached session name, `server_client_check_exit` sends it, and client
-   loss frees it. Preserve detach/exit message ordering and repeated-detach
-   behavior. `client.exit_message` has several writers across control,
-   access control, and server shutdown, so trace that field separately.
+1. `client.user` is a single lazy cache written by
+   `format_cb_client_user` and freed at final client destruction. A
+   `ClientOwner` string could own the cache while the format callback still
+   returns its separate C-owned copy. Audit the passwd lookup's borrowed
+   source and the delayed client lifetime. `client.exit_message` has several
+   writers across control, access control, and server shutdown, including a
+   transferred C-owned cause, so trace that field separately.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -441,6 +443,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   first, repeated, changed, and empty values; candidate and matching 3.8-rc
   baseline passed. Serialized workspace tests, binary build, changed-file
   rustfmt, and diff checks passed. No sanitizer was run.
+
+### Increment 373 — owned detached client session name (2026-09-23)
+
+- `ClientOwner` now owns `client.exit_session` as `Option<CString>`.
+  `server_client_detach` captures the attached session name after setting
+  its exit flags and message type, and `server_client_check_exit` still sends
+  its NUL-terminated borrowed view through `MSG_DETACH`. Client loss clears
+  it at the former free site. The public client layout and detach ordering
+  are unchanged; replacement also releases a prior owner if invoked again.
+- A focused owner test checks replacement, non-UTF-8 bytes, empty versus
+  absent, pointer stability, and clearing. An attached-PTY CLI renames the
+  session before detach and checks the client-reported session name against
+  the matching 3.8-rc baseline. Serialized workspace tests, binary build,
+  changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
 ## Historical migration index
 
