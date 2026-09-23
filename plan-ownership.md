@@ -516,6 +516,21 @@ legacy callers safe.
   shutdown. The absolute-path and invalid-relative branches were source
   audited but not exercised by that E2E. No sanitizer was run.
 
+### Increment 163 — mouse completion replacement scratch (2026-09-22)
+
+- `prompt_mouse_complete` now copies the selected completion name's C-string
+  bytes, appends its trailing space, and owns the result in a local `CString`.
+  `prompt_replace_complete` only reads that pointer synchronously, including
+  its early-return path. Removed the local `xasprintf` allocation/free pair;
+  the independent copy remains valid if replacement clears the completion
+  choices. Existing prompt text and C callback contracts remain unchanged.
+- The library/binary build and extended `prompt_completion_cli_checks.py`
+  passed. The attached-client scenario enables mouse input, clicks a displayed
+  completion choice, submits the prompt, and checks the selected command with
+  its trailing space. `git diff --check` passed. Changed-file rustfmt reports
+  the two pre-existing import-layout differences in `prompt.rs`. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -526,10 +541,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `prompt_click_complete` still formats `"%s "` into a local C allocation,
-   passes it to synchronous `prompt_replace_complete`, then frees it. A
-   byte-preserving `CString` can own that click-completion temporary after
-   checking the replacement routine's borrow lifetime.
+1. `window_panes_run_command`'s pane-ID text and
+   `cmd_run_shell_callback`'s status message each have a local
+   `xasprintf`/free pair with synchronous consumers. Audit and migrate each
+   complete boundary separately.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual

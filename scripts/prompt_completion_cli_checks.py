@@ -98,6 +98,15 @@ with tempfile.TemporaryDirectory(prefix="prompt-completion-", dir=root / "target
         finish_prompt()
         assert run("show-options", "-gqv", "@completion_multi") == b"zzownerA \n"
 
+        # Mouse selection borrows a completion name while replacing the prompt text.
+        run("set-option", "-g", "mouse", "on")
+        prompt(client_tty, "click", "zzowner", "@completion_click")
+        os.write(master, b"\t")
+        wait_for_terminal(b"zzownerA", b"zzownerB")
+        os.write(master, b"\x1b[<0;16;24M\x1b[<0;16;24m\r")
+        finish_prompt()
+        assert run("show-options", "-gqv", "@completion_click") == b"zzownerA \n"
+
         # The next prompt can retain and then discard its choices on close.
         prompt(client_tty, "close", "zzowner", "@completion_close")
         os.write(master, b"\t")

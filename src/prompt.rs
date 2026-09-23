@@ -876,7 +876,6 @@ unsafe extern "C" fn prompt_mouse_complete(
     mut aw: u_int,
     mut redraw: *mut ::core::ffi::c_int,
 ) -> prompt_key_result {
-    let mut replace: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut avail: u_int = 0;
     let mut clicked: u_int = 0;
     let mut end: u_int = 0;
@@ -916,18 +915,15 @@ unsafe extern "C" fn prompt_mouse_complete(
         if clicked < start || clicked >= end {
             i = i.wrapping_add(1);
         } else {
-            xasprintf(
-                &raw mut replace,
-                b"%s \0" as *const u8 as *const ::core::ffi::c_char,
-                (&(*pr).completion.names)[i as usize].as_ptr(),
-            );
-            if prompt_replace_complete(pr, replace) != 0 {
+            let mut replacement = (&(*pr).completion.names)[i as usize].as_bytes().to_vec();
+            replacement.push(b' ');
+            let replacement = CString::new(replacement).expect("completion name contains no NUL");
+            if prompt_replace_complete(pr, replacement.as_ptr()) != 0 {
                 prompt_clear_complete(pr);
                 if !redraw.is_null() {
                     *redraw = 1 as ::core::ffi::c_int;
                 }
             }
-            free(replace as *mut ::core::ffi::c_void);
             return PROMPT_KEY_HANDLED;
         }
     }
