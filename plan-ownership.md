@@ -2037,6 +2037,21 @@ legacy callers safe.
   substitutions, workspace tests, binary build, format-loop CLI checks,
   changed-file rustfmt, and `git diff --check` passed. No sanitizer was run.
 
+### Increment 114 — prompt paste UTF-8 scratch (2026-09-22)
+
+- `prompt_paste` now owns its temporary `utf8_data` conversion cells in a
+  local Vec. Removed the scratch `xreallocarray` and conditional `free(ud)`;
+  the Vec drops at function exit. The prompt record and its existing buffer
+  allocation remain unchanged.
+- `ud` still borrows `pr.copied` when a copied prompt word exists and otherwise
+  points into the fixed-length Vec during paste decoding and insertion. The
+  Vec is not grown after `ud` is set. The prompt buffer can reallocate while
+  the scratch pointer remains valid.
+- Isolated validation: workspace tests with serialized test threads, binary
+  build, changed-file rustfmt, `git diff --check`, and an attached-client CLI
+  scenario passed. The scenario checks UTF-8 top-buffer insertion in the
+  middle of text and copied-word precedence. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2056,9 +2071,12 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `prompt_paste` still allocates and frees a local UTF-8 conversion array.
-   Its borrowed `ud` pointer selects either that scratch array or the
-   existing copied buffer; preserve both paths when moving scratch to Vec.
+2. `prompt_complete_commands` builds an owned completion-name array that
+   `prompt_complete` either frees immediately or transfers to
+   `prompt.complete_list`; `prompt_clear_complete` frees the retained list.
+   Audit prompt record allocation/destruction and callback reentrancy before
+   migrating the whole list lifetime. `expand_paths` in `tmux.rs` is another
+   list producer, but one caller transfers the list to global `cfg_files`.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2074,9 +2092,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–113. The remaining
+Current validation is recorded in increments 15–114. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–113 has its own local commit; none was pushed.
+Each of increments 15–114 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2117,3 +2135,9 @@ and menu-owner CLI checks, changed-file `rustfmt --edition 2021 --check`, and
 `cargo clean -p hmux-rt` resolved it. The next parallel run had a collision
 between timestamp-based PTY test directories; that test passed by itself and
 the serialized full suite passed. No combined sanitizer was run.
+After increments 112–114 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the binary build,
+pane-navigation, prompt-paste, and format-loop CLI checks, changed-file
+rustfmt, and `git diff --check` passed on main. Serial test threads avoid the
+known timestamp-based PTY test-directory collision. No combined sanitizer
+was run.

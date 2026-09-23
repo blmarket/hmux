@@ -64,9 +64,7 @@ pub use crate::src::shared::pane::{
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
 };
-pub use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+pub use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
@@ -1333,6 +1331,7 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
     let mut udp: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
+    let mut scratch: Vec<utf8_data> = Vec::new();
     let mut more: utf8_state = UTF8_MORE;
     size = utf8_strlen((*pr).buffer);
     if !(*pr).copied.is_null() {
@@ -1344,11 +1343,16 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
             return 0 as ::core::ffi::c_int;
         }
         bufdata = paste_buffer_data(pb, &raw mut bufsize);
-        udp = xreallocarray(
-            NULL,
+        scratch.resize(
             bufsize.wrapping_add(1 as size_t),
-            ::core::mem::size_of::<utf8_data>() as size_t,
-        ) as *mut utf8_data;
+            utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            },
+        );
+        udp = scratch.as_mut_ptr();
         ud = udp;
         i = 0 as u_int;
         while i as size_t != bufsize {
@@ -1416,9 +1420,6 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
             );
             (*pr).index = (*pr).index.wrapping_add(n);
         }
-    }
-    if ud != (*pr).copied {
-        free(ud as *mut ::core::ffi::c_void);
     }
     return 1 as ::core::ffi::c_int;
 }
