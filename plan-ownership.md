@@ -125,12 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd.file` is the next bounded live owner. `cmd_parse` and `cmd_copy`
-   each `xstrdup` the source filename, and `cmd_free` releases it. The
-   already boxed command can use a private offset-zero `CmdOwner` with an
-   optional `CString`; public `cmd.file` remains borrowed. Test parser
-   source errors and copy independence, including raw non-UTF-8 filename
-   bytes. `cmd_copy` is reached through `cmd_append_argv`.
+1. `json_node.key` is the next bounded live owner. `json_create_node` is
+   the sole production writer (`xstrdup`), and recursive
+   `json_destroy_node` has the sole free. A private offset-zero owner can
+   hold an optional byte-preserving `CString` while the public key pointer
+   borrows it. Check field ordering, duplicate keys, parser temporaries,
+   and the bare node test fixture before changing destruction.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -699,6 +699,21 @@ libc allocation on success and leaves it with the caller on error, so a local
   `show-messages -J` while live, and covers completion and teardown; it
   passed on both candidate and pinned baseline. Changed-file rustfmt and
   diff checks passed. No sanitizer ran.
+
+### Increment 390 — owned command source filename (2026-09-23)
+
+- `CmdOwner` now boxes each parsed or copied `cmd` at offset zero and owns
+  its optional source filename as `CString`. The public `cmd.file` pointer
+  borrows that value until `cmd_free`. `cmd_parse` copies caller-owned file
+  bytes after argument parsing succeeds; `cmd_copy` copies the original
+  owner's bytes. Removed both filename `xstrdup` calls and the manual free.
+- The command-printer integration fixture now obtains commands through
+  `cmd_parse` rather than allocating bare public records. A focused API test
+  checks null filenames, raw `0xff` filename bytes, mutation of the input,
+  and copy independence after the original is freed. Serialized workspace
+  tests and binary build passed; lexer/source-file and verbose parser CLI
+  comparisons passed against pinned 3.8-rc. Changed-file rustfmt and diff
+  checks passed. No sanitizer ran.
 
 ## Historical migration index
 

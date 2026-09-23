@@ -617,6 +617,31 @@ pub unsafe extern "C" fn cmd_find(
         return found;
     };
 }
+/// The public command borrows its source filename from this stable box.
+#[repr(C)]
+struct CmdOwner {
+    node: cmd,
+    file: Option<CString>,
+}
+
+const _: () = assert!(::core::mem::offset_of!(CmdOwner, node) == 0);
+
+unsafe fn cmd_new_owned(file: *const ::core::ffi::c_char) -> *mut cmd {
+    let mut owner = Box::new(CmdOwner {
+        node: ::core::mem::zeroed::<cmd>(),
+        file: if file.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(file).to_owned())
+        },
+    });
+    owner.node.file = owner
+        .file
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |file| file.as_ptr() as *mut _);
+    Box::into_raw(owner).cast::<cmd>()
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn cmd_parse(
     mut values: *mut args_value,
@@ -669,21 +694,17 @@ pub unsafe extern "C" fn cmd_parse(
         free(error as *mut ::core::ffi::c_void);
         return ::core::ptr::null_mut::<cmd>();
     }
-    cmd = Box::into_raw(Box::new(::core::mem::zeroed::<cmd>()));
+    cmd = cmd_new_owned(file);
     (*cmd).entry = entry;
     (*cmd).args = args;
     (*cmd).parse_flags = parse_flags;
-    if !file.is_null() {
-        (*cmd).file = xstrdup(file);
-    }
     (*cmd).line = line;
     return cmd;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_free(mut cmd: *mut cmd) {
-    free((*cmd).file as *mut ::core::ffi::c_void);
     args_free((*cmd).args);
-    drop(Box::from_raw(cmd));
+    drop(Box::from_raw(cmd.cast::<CmdOwner>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_copy(
@@ -692,12 +713,9 @@ pub unsafe extern "C" fn cmd_copy(
     mut argv: *mut *mut ::core::ffi::c_char,
 ) -> *mut cmd {
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    new_cmd = Box::into_raw(Box::new(::core::mem::zeroed::<cmd>()));
+    new_cmd = cmd_new_owned((*cmd).file);
     (*new_cmd).entry = (*cmd).entry;
     (*new_cmd).args = args_copy((*cmd).args, argc, argv);
-    if !(*cmd).file.is_null() {
-        (*new_cmd).file = xstrdup((*cmd).file);
-    }
     (*new_cmd).line = (*cmd).line;
     return new_cmd;
 }
