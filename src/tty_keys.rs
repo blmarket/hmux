@@ -108,7 +108,7 @@ use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
 use crate::src::tty_term::tty_term_string;
 use crate::src::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::src::window::window_update_focus;
-use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
+use crate::src::xmalloc::{xmalloc, xstrdup};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -1333,10 +1333,14 @@ unsafe extern "C" fn tty_keys_add1(
     let mut tk: *mut tty_key = ::core::ptr::null_mut::<tty_key>();
     tk = *tkp;
     if tk.is_null() {
-        *tkp = xcalloc(1 as size_t, ::core::mem::size_of::<tty_key>() as size_t) as *mut tty_key;
+        *tkp = Box::into_raw(Box::new(tty_key {
+            ch: *s,
+            key: KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code,
+            left: ::core::ptr::null_mut(),
+            right: ::core::ptr::null_mut(),
+            next: ::core::ptr::null_mut(),
+        }));
         tk = *tkp;
-        (*tk).ch = *s;
-        (*tk).key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
     }
     if *s as ::core::ffi::c_int == (*tk).ch as ::core::ffi::c_int {
         s = s.offset(1);
@@ -1455,7 +1459,7 @@ unsafe extern "C" fn tty_keys_free1(mut tk: *mut tty_key) {
     if !(*tk).right.is_null() {
         tty_keys_free1((*tk).right);
     }
-    free(tk as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(tk));
 }
 unsafe extern "C" fn tty_keys_find(
     mut tty: *mut tty,

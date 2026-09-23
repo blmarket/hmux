@@ -2441,6 +2441,19 @@ legacy callers safe.
   and shared declarations pass rustfmt; `src/format.rs` has exactly its
   pre-existing import-order differences. No sanitizer was run.
 
+### Increment 298 — boxed terminal-key trie nodes (2026-09-23)
+
+- `tty_keys_add1` now boxes each `tty_key` trie node instead of `xcalloc`ing
+  it. `tty_keys_free1` consumes each `Box` after recursively freeing `next`,
+  `left`, and `right`, replacing the matching libc `free`. The root and child
+  pointers remain stable compatibility views, invalid after rebuild or
+  `tty_close`; in-place key replacement still uses the same node address.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, and diff
+  checks passed. The attached-terminal key-event CLI check passed on candidate
+  and pinned baseline with identical captured pane lines, including NUL input
+  and synthetic events. Changed files retain exactly their pre-existing
+  rustfmt import-order differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2451,12 +2464,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `tty_key` trie nodes in `src/tty_keys.rs` have one `xcalloc` creation and a
-   recursive free path. Boxed nodes can retain stable child pointers and the
-   current postorder teardown. `window_copy_mode_data.backing` is larger: its
-   borrowed screen pointer is invalidated on refresh. The redraw scene's line
-   array has self-referential intrusive list tails and needs its own alias
-   audit.
+1. `options_array_item` in `src/options.rs` has one outer `xcalloc` in
+   `options_array_new` and one final libc `free` in `options_array_free`. Its
+   value and key retain their existing owners and cleanup order; the index and
+   callers borrow the stable item pointer. `window_copy_mode_data.backing` is
+   larger: its borrowed screen pointer is invalidated on refresh. The redraw
+   scene's line array has self-referential intrusive list tails and needs its
+   own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

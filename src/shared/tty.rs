@@ -368,6 +368,7 @@ pub struct tty {
     pub mouse_drag_update: Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>,
     pub mouse_drag_release: Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>,
     pub key_timer: event,
+    /// Root of Box-owned nodes, invalid after rebuild or tty_close.
     pub key_tree: *mut tty_key,
 }
 
