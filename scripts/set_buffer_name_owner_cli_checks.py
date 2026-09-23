@@ -3,8 +3,10 @@
 
 import os
 import pathlib
+import select
 import subprocess
 import tempfile
+import time
 
 
 root = pathlib.Path(__file__).resolve().parents[1]
@@ -26,18 +28,48 @@ def check(binary, socket):
         assert result[0] == 0, (args, result)
         return result[1]
 
+    def read_until(marker, start=0):
+        deadline = time.monotonic() + 10
+        while marker not in output[start:]:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, (marker, output[start:], control.poll())
+            ready, _, _ = select.select([control.stdout], [], [], remaining)
+            assert ready, (marker, output[start:], control.poll())
+            chunk = os.read(control.stdout.fileno(), 65536)
+            assert chunk, (marker, output[start:], control.poll())
+            output.extend(chunk)
+
     observed = []
+    control = None
     try:
         success(b"new-session", b"-d", b"-s", b"buffers", b"sleep 60")
+        control = subprocess.Popen(
+            command + [b"-C", b"attach-session", b"-t", b"buffers"],
+            env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        output = bytearray()
+        read_until(b"%session-changed ")
+
         observed.append(run(b"delete-buffer"))
         observed.append(run(b"set-buffer", b"-n", b"unused"))
         observed.append(run(b"delete-buffer", b"-b", b"missing"))
         assert all(result[0] != 0 for result in observed), observed
 
+        start = len(output)
         success(b"set-buffer", b"-b", "café".encode(), b"one")
+        read_until("%paste-buffer-changed café\n".encode(), start)
+        start = len(output)
         success(b"set-buffer", b"-a", b"-b", "café".encode(), b" two")
+        read_until("%paste-buffer-changed café\n".encode(), start)
         assert success(b"show-buffer", b"-b", "café".encode()) == b"one two"
+        start = len(output)
         success(b"set-buffer", b"-b", "café".encode(), b"-n", b"renamed")
+        read_until(b"%paste-buffer-changed renamed\n", start)
+        renamed = output[start:]
+        assert "%paste-buffer-deleted café\n".encode() in renamed, renamed
+        assert renamed.index("%paste-buffer-deleted café\n".encode()) < renamed.index(
+            b"%paste-buffer-changed renamed\n"
+        ), renamed
         assert success(b"show-buffer", b"-b", b"renamed") == b"one two"
         observed.append(run(b"set-buffer", b"-b", b"missing", b"-n", b"unused"))
         observed.append(run(b"set-buffer", b"-b", b"\xff", b"bad"))
@@ -49,7 +81,9 @@ def check(binary, socket):
         assert success(b"show-buffer", b"-b", b"from-top") == b"automatic"
         success(b"set-buffer", b"second automatic")
         success(b"delete-buffer")
+        start = len(output)
         success(b"delete-buffer", b"-b", b"renamed")
+        read_until(b"%paste-buffer-deleted renamed\n", start)
         assert success(b"list-buffers", b"-F", b"#{buffer_name}:#{buffer_size}") == b"from-top:9\n"
         observed.append(run(b"delete-buffer", b"-b", b"renamed"))
         assert observed[-1][0] != 0, observed[-1]
@@ -64,6 +98,9 @@ def check(binary, socket):
         assert success(b"list-buffers", b"-F", b"#{buffer_name}") == b"from-top\n"
         return tuple(observed)
     finally:
+        if control is not None:
+            control.terminate()
+            control.communicate(timeout=5)
         subprocess.run(command + [b"kill-server"], env=env, capture_output=True, timeout=15)
 
 

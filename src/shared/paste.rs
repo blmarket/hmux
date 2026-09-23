@@ -2,10 +2,10 @@
 
 use super::abi::{size_t, time_t, u_int};
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned from `paste_add` or `paste_set` until `paste_free`. The name and
-/// order indexes borrow its stable address; data and name retain libc owners.
+/// order indexes borrow its stable address. Data is C-owned; the name borrows
+/// the enclosing Rust owner.
 pub struct paste_buffer {
     pub data: *mut ::core::ffi::c_char,
     pub size: size_t,

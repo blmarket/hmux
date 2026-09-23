@@ -125,13 +125,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `paste_buffer.name` is the next bounded live owner. `paste_add` builds
-   automatic names, `paste_set` installs a cleaned explicit name, and
-   `paste_rename` replaces it; `paste_free` has the final free. An offset-zero
-   owner can lend the public name pointer while preserving buffer address
-   and both indexes. Rename must remove the old index before replacement
-   and retain the old name through deletion events, since callers may pass
-   the current name pointer. Leave paste data's separate C-owned transfer.
+1. `cmd_run_shell_data.cmd` is the next small live owner. The boxed callback
+   record already owns its cwd as `CString`; `cmd_run_shell_exec` has the sole
+   command writer from `format_expand`, and `cmd_run_shell_free` has the sole
+   free. An optional `CString` can preserve the `-C` and no-command branches.
+   Keep command borrows scoped before `cmdq_continue` can reenter. The
+   run-shell CLI covers immediate, delayed, cwd, command-list, and failure
+   paths. Event-payload item names are a broader later target because string
+   items already have a specialized owner and pointer free callbacks.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -781,6 +782,25 @@ libc allocation on success and leaves it with the caller on error, so a local
   removal. Serialized workspace tests and binary build passed. Monitor
   leaf and hook append/string CLI comparisons passed against pinned 3.8-rc.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 395 — owned paste buffer name (2026-09-23)
+
+- `PasteBufferOwner` now boxes public paste buffers at offset zero and owns
+  each name as a byte-preserving `CString`; the public pointer borrows it
+  while name and time indexes retain the stable buffer address. Automatic
+  names are assembled from raw prefix bytes and the decimal index without
+  `xasprintf`. Explicit `paste_set` and `paste_rename` copy `clean_name`'s
+  C-owned result and free that producer allocation. Rename removes the old
+  name index before replacing the owner and retains the previous `CString`
+  through the deletion event, including when `oldname` aliases the public
+  pointer. Removed all name manual frees. Paste data retains its separate
+  C-owned transfer contract; the raw buffer no longer derives `Copy`.
+- A focused unit test calls rename with the buffer's borrowed current-name
+  pointer and verifies old/new lookup and teardown. Serialized workspace
+  tests and binary build passed. The set-buffer CLI comparison covers
+  automatic, explicit, renamed, deleted, and evicted names and now checks
+  rename/delete notifications. Changed-file rustfmt and diff checks passed.
+  No sanitizer ran.
 
 ## Historical migration index
 
