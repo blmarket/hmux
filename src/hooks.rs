@@ -1,4 +1,4 @@
-use crate::src::cmd::cmd_list_print;
+use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd_find::{
     cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_nothing,
     cmd_find_from_pane, cmd_find_from_session, cmd_find_from_winlink, cmd_find_from_winlink_pane,
@@ -164,19 +164,17 @@ unsafe extern "C" fn hooks_insert_one(
     mut state: *mut cmdq_state,
 ) -> *mut cmdq_item {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if cmdlist.is_null() {
         return item;
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
-        s = cmd_list_print(cmdlist, 0 as ::core::ffi::c_int);
+        let s = cmd_list_print_cstring(cmdlist, 0 as ::core::ffi::c_int);
         log_debug(
             b"%s: hook %s is: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"hooks_insert_one\0" as *const u8 as *const ::core::ffi::c_char,
             (*hd).name,
-            s,
+            s.as_ptr(),
         );
-        free(s as *mut ::core::ffi::c_void);
     }
     new_item = cmdq_get_command(cmdlist, state);
     if !item.is_null() {
