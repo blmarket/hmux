@@ -125,9 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `client.path` is the next small owner candidate. Its source is the active
-   pane's OSC 7 path or an empty string, and its tty consumer copies bytes
-   synchronously. Preserve the bytewise comparison and output ordering.
+1. Audit `client.exit_session` next: `server_client_detach` duplicates the
+   attached session name, `server_client_check_exit` sends it, and client
+   loss frees it. Preserve detach/exit message ordering and repeated-detach
+   behavior. `client.exit_message` has several writers across control,
+   access control, and server shutdown, so trace that field separately.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -425,6 +427,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   changed, unchanged, and empty OSC title output against the matching 3.8-rc
   baseline. Serialized workspace tests, binary build, changed-file rustfmt,
   and diff checks passed. No sanitizer was run.
+
+### Increment 372 — owned client terminal path (2026-09-23)
+
+- `ClientOwner` now owns the retained `client.path` as `Option<CString>`.
+  `server_client_set_path` keeps its active-pane lookup, null-to-empty
+  fallback, bytewise changed-path comparison, and `tty_set_path` call after
+  refreshing the exported borrowed pointer. Client loss clears it at the
+  former free site. The public client layout and tty output order remain.
+- A focused owner test covers non-UTF-8 bytes, replacement, empty versus
+  absent, pointer stability, and clear. An attached-PTY CLI sends OSC 7
+  through the pane and checks a distinctive outer terminal path code for
+  first, repeated, changed, and empty values; candidate and matching 3.8-rc
+  baseline passed. Serialized workspace tests, binary build, changed-file
+  rustfmt, and diff checks passed. No sanitizer was run.
 
 ## Historical migration index
 
