@@ -2215,6 +2215,20 @@ legacy callers safe.
   initial `-f`, replacement, clear, successive searches, selection, and
   active-prompt teardown. No sanitizer was run.
 
+### Increment 283 — redraw scene spans (2026-09-23)
+
+- `redraw_make_scene` now boxes each `redraw_span` at its stable intrusive-list
+  address, and `redraw_free_scene` drops that box after unlinking the span.
+  This removes the span `xcalloc`/`free` pair while keeping list links,
+  traversal, scene invalidation, and public pointer layout unchanged. The
+  span record is no longer `Copy`; the containing scene and line array retain
+  their separate C allocations.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, and diff checks passed. Attached-client
+  `pane_visible_ranges` and `window_clock_owner` checks passed on both the
+  candidate and pinned baseline, exercising scene rebuild on floating-pane
+  changes, resize, timer redraw, and teardown. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2225,11 +2239,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `redraw_span` in `src/screen_redraw.rs` is the next small leaf-record
-   candidate: `redraw_make_scene` allocates each span, links it into one
-   scene line, and `redraw_free_scene` unlinks and frees it. A stable `Box`
-   could remove that pair after checking scene invalidation and list traversal.
-   The scene and line array form a separate ownership boundary.
+1. The `options_from_string` string branch in `src/options.rs` snapshots the
+   previous value with `xstrdup` before replacing it, then frees the snapshot
+   after success or rollback. A local `CString` can own the snapshot through
+   either path; the producer copies its `%s` input synchronously. The redraw
+   scene and line array remain a separate, larger ownership boundary.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

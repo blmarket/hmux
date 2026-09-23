@@ -33,7 +33,6 @@ pub struct redraw_spans {
     pub tqh_last: *mut *mut redraw_span,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct redraw_span {
     pub x: u_int,

@@ -1236,12 +1236,16 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
             }
             bc = redraw_get_build_cell(&raw mut bctx, x0, y);
             type_0 = (*bc).data.type_0;
-            span = xcalloc(1 as size_t, ::core::mem::size_of::<redraw_span>() as size_t)
-                as *mut redraw_span;
-            (*span).x = x0;
-            (*span).width = x.wrapping_sub(x0);
-            (*span).data = (*bc).data;
-            (*span).entry.tqe_next = ::core::ptr::null_mut::<redraw_span>();
+            // The scene owns each stable span until redraw_free_scene unlinks it.
+            span = Box::into_raw(Box::new(redraw_span {
+                x: x0,
+                width: x.wrapping_sub(x0),
+                data: (*bc).data,
+                entry: redraw_span_entry {
+                    tqe_next: ::core::ptr::null_mut(),
+                    tqe_prev: ::core::ptr::null_mut(),
+                },
+            }));
             (*span).entry.tqe_prev = (*line).spans[type_0 as usize].tqh_last;
             *(*line).spans[type_0 as usize].tqh_last = span;
             (*line).spans[type_0 as usize].tqh_last = &raw mut (*span).entry.tqe_next;
@@ -1282,7 +1286,7 @@ pub unsafe extern "C" fn redraw_free_scene(mut scene: *mut redraw_scene) {
                     (*spans).tqh_last = (*span).entry.tqe_prev;
                 }
                 *(*span).entry.tqe_prev = (*span).entry.tqe_next;
-                free(span as *mut ::core::ffi::c_void);
+                drop(Box::from_raw(span));
                 span = span1;
             }
             type_0 = type_0.wrapping_add(1);
