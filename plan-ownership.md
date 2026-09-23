@@ -125,10 +125,9 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `client.title` and `client.path` are nearby owner candidates. Their tty
-   consumers copy bytes synchronously, but retain the existing bytewise
-   comparison and output ordering when migrating them. The title formatter
-   still returns a separate C-owned result that must be freed.
+1. `client.path` is the next small owner candidate. Its source is the active
+   pane's OSC 7 path or an empty string, and its tty consumer copies bytes
+   synchronously. Preserve the bytewise comparison and output ordering.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -411,6 +410,21 @@ libc allocation on success and leaves it with the caller on error, so a local
   matching 3.8-rc baseline, changed-file rustfmt, and diff checks passed.
   The older 3.7b baseline rejects the raw `0x80` test key, so it is not a
   usable reference for that rendering check. No sanitizer was run.
+
+### Increment 371 — owned client terminal title (2026-09-23)
+
+- `ClientOwner` now owns the retained `client.title` as `Option<CString>`.
+  `server_client_set_title` keeps its bytewise changed-title comparison,
+  refreshes the exported borrowed pointer before `tty_set_title`, and still
+  frees the separate C-owned `format_expand_time` result after the tty call.
+  Client loss clears the title at the former free site; the public client
+  layout and output order are unchanged.
+- A focused owner test covers non-UTF-8 bytes, replacement, empty versus
+  absent, pointer stability, and clear. An attached-PTY CLI check enables
+  `set-titles`, changes its template, forces redraw, and verifies initial,
+  changed, unchanged, and empty OSC title output against the matching 3.8-rc
+  baseline. Serialized workspace tests, binary build, changed-file rustfmt,
+  and diff checks passed. No sanitizer was run.
 
 ## Historical migration index
 
