@@ -3312,6 +3312,23 @@ legacy callers safe.
   test build exposed a missing test-module type import, which was fixed before
   rerunning the suite. No sanitizer was run.
 
+### Increment 359 — owned fuzzy match masks (2026-09-23)
+
+- `fuzzy_match_owned` now builds its bit mask in a `Vec<bitstr_t>` on empty
+  patterns and successful matches. `format_match_fuzzy` owns the temporary
+  mask through boolean or position formatting, and boxed
+  `window_switch_itemdata` retains an `Option<Vec<bitstr_t>>` through redraw
+  and item teardown. Removed both in-tree mask frees and their `calloc`
+  allocations. Window-switch draw only borrows a raw mask pointer for its
+  existing synchronous rendering pass. Exported `fuzzy_match` still returns
+  a libc-owned, C-freeable mask by copying the owned result into `calloc`
+  storage for external callers.
+- Fuzzy matcher unit tests passed. Window-switch mode-string and target CLI
+  checks passed against the pinned baseline; a new fuzzy format CLI check
+  compares positions, boolean matches, empty patterns, misses, UTF-8, and
+  invalid bytes with that baseline. Full workspace tests, binary build,
+  changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3322,12 +3339,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The in-tree `fuzzy_match` consumers can own the returned bit mask as a
-   `Vec<bitstr_t>`: `format_match_fuzzy` uses it locally, while the boxed
-   `window_switch_itemdata` can retain it through redraw. The exported
-   `fuzzy_match` result must remain C-freeable. Exported `args_from_vector`
-   and `monitor_parse` likewise retain C-owned output contracts for external
-   callers; no in-tree production caller uses either raw-output path now.
+1. `screen_print` has a fixed 16 KiB static heap buffer with no in-tree
+   caller; inline static storage could remove its one-time allocation while
+   preserving the exported pointer's lifetime and truncation behavior. This
+   is lower priority than a live caller boundary. Exported `fuzzy_match`,
+   `args_from_vector`, and `monitor_parse` retain C-owned output contracts
+   for external callers; no in-tree production caller uses those raw-output
+   paths now.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach

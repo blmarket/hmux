@@ -6,7 +6,7 @@ use crate::src::cmd_queue::{cmdq_free_state, cmdq_new_state};
 use crate::src::ffi::libc::{__ctype_toupper_loc, free, memset, qsort};
 use crate::src::format::{format_create, format_defaults, format_expand, format_free};
 use crate::src::format_draw::format_draw;
-use crate::src::fuzzy::fuzzy_match;
+use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_default_cell, grid_get_cell};
 use crate::src::prompt::{
     prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
@@ -129,7 +129,7 @@ pub struct window_switch_itemdata {
     pub session: ::core::ffi::c_int,
     pub winlink: ::core::ffi::c_int,
     pub text: *mut ::core::ffi::c_char,
-    pub match_0: *mut bitstr_t,
+    match_mask: Option<Vec<bitstr_t>>,
     pub score: u_int,
     pub order: u_int,
 }
@@ -137,7 +137,6 @@ pub struct window_switch_itemdata {
 impl Drop for window_switch_itemdata {
     fn drop(&mut self) {
         unsafe {
-            free(self.match_0 as *mut ::core::ffi::c_void);
             free(self.text as *mut ::core::ffi::c_void);
         }
     }
@@ -212,7 +211,7 @@ unsafe extern "C" fn window_switch_add_item(
         session: 0,
         winlink: 0,
         text: ::core::ptr::null_mut(),
-        match_0: ::core::ptr::null_mut(),
+        match_mask: None,
         score: 0,
         order: 0,
     });
@@ -339,8 +338,8 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
         if *f as ::core::ffi::c_int == '\0' as i32 {
             m.push(item);
         } else {
-            (*item).match_0 = fuzzy_match(f, (*item).text, sx, &raw mut (*item).score);
-            if !(*item).match_0.is_null() {
+            (*item).match_mask = fuzzy_match_owned(f, (*item).text, sx, &raw mut (*item).score);
+            if (*item).match_mask.is_some() {
                 m.push(item);
             }
         }
@@ -516,12 +515,11 @@ unsafe extern "C" fn window_switch_draw_screen(mut wme: *mut window_mode_entry) 
                 0 as ::core::ffi::c_int,
             );
         }
-        if !(*item).match_0.is_null() {
+        let match_mask = (*item).match_mask.as_ref().map(|mask| mask.as_ptr());
+        if let Some(match_mask) = match_mask {
             j = 0 as u_int;
             while j < sx {
-                if !(*(*item)
-                    .match_0
-                    .offset((j >> 3 as ::core::ffi::c_int) as isize)
+                if !(*match_mask.offset((j >> 3 as ::core::ffi::c_int) as isize)
                     as ::core::ffi::c_int
                     & (1 as ::core::ffi::c_int) << (j & 0x7 as u_int)
                     == 0)

@@ -854,7 +854,6 @@ pub(super) unsafe extern "C" fn format_match_fuzzy(
     mut positions: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut bs: *mut bitstr_t = ::core::ptr::null_mut::<bitstr_t>();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut size: size_t = 0;
     let mut i: u_int = 0;
@@ -863,16 +862,14 @@ pub(super) unsafe extern "C" fn format_match_fuzzy(
     if width == 0 as u_int {
         width = 1 as u_int;
     }
-    bs = fuzzy_match(pattern, text, width, ::core::ptr::null_mut::<u_int>());
-    if bs.is_null() {
+    let Some(bs) = fuzzy_match_owned(pattern, text, width, ::core::ptr::null_mut::<u_int>()) else {
         return xstrdup(if positions != 0 {
             b"\0" as *const u8 as *const ::core::ffi::c_char
         } else {
             b"0\0" as *const u8 as *const ::core::ffi::c_char
         });
-    }
+    };
     if positions == 0 {
-        free(bs as *mut ::core::ffi::c_void);
         return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
     }
     buffer = evbuffer_new();
@@ -881,7 +878,7 @@ pub(super) unsafe extern "C" fn format_match_fuzzy(
     }
     i = 0 as u_int;
     while i < width {
-        if !(*bs.offset((i >> 3 as ::core::ffi::c_int) as isize) as ::core::ffi::c_int
+        if !(bs[(i >> 3 as ::core::ffi::c_int) as usize] as ::core::ffi::c_int
             & (1 as ::core::ffi::c_int) << (i & 0x7 as u_int)
             == 0)
         {
@@ -911,7 +908,6 @@ pub(super) unsafe extern "C" fn format_match_fuzzy(
         value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     }
     evbuffer_free(buffer);
-    free(bs as *mut ::core::ffi::c_void);
     return value;
 }
 pub(super) unsafe extern "C" fn format_match(

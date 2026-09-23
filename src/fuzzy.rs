@@ -728,18 +728,17 @@ unsafe extern "C" fn fuzzy_match_group(
     }
     return any;
 }
-#[no_mangle]
-pub unsafe extern "C" fn fuzzy_match(
+pub(crate) unsafe fn fuzzy_match_owned(
     mut pattern: *const ::core::ffi::c_char,
     mut text: *const ::core::ffi::c_char,
     mut width: u_int,
     mut score: *mut u_int,
-) -> *mut bitstr_t {
+) -> Option<Vec<bitstr_t>> {
     let mut cs: Vec<fuzzy_char>;
     let mut matched: Vec<::core::ffi::c_char>;
     let mut best: Vec<::core::ffi::c_char>;
     let mut tok: Vec<utf8_data>;
-    let mut mask: *mut bitstr_t = ::core::ptr::null_mut::<bitstr_t>();
+    let mut mask: Vec<bitstr_t>;
     let ncs: u_int;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
@@ -759,7 +758,7 @@ pub unsafe extern "C" fn fuzzy_match(
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut fold: ::core::ffi::c_int = 0;
     if width == 0 as u_int {
-        return ::core::ptr::null_mut::<bitstr_t>();
+        return None;
     }
     cp = pattern;
     while *cp as ::core::ffi::c_int == ' ' as i32 || *cp as ::core::ffi::c_int == '|' as i32 {
@@ -769,10 +768,11 @@ pub unsafe extern "C" fn fuzzy_match(
         if !score.is_null() {
             *score = 0 as u_int;
         }
-        return calloc(
-            (width.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as size_t,
-            ::core::mem::size_of::<bitstr_t>() as size_t,
-        ) as *mut bitstr_t;
+        return Some(vec![
+            0;
+            (width.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int)
+                as usize
+        ]);
     }
     fold = 1 as ::core::ffi::c_int;
     cp = pattern;
@@ -833,7 +833,7 @@ pub unsafe extern "C" fn fuzzy_match(
         drop(best);
         drop(matched);
         drop(cs);
-        return ::core::ptr::null_mut::<bitstr_t>();
+        return None;
     }
     wl = widths[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize];
     wc = widths[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize];
@@ -875,10 +875,7 @@ pub unsafe extern "C" fn fuzzy_match(
         width.wrapping_sub(wa).wrapping_div(2 as u_int);
     src[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize] = 0 as u_int;
     vis[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize] = wa;
-    mask = calloc(
-        (width.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as size_t,
-        ::core::mem::size_of::<bitstr_t>() as size_t,
-    ) as *mut bitstr_t;
+    mask = vec![0; (width.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize];
     i = 0 as u_int;
     while i < ncs {
         if best[i as usize] != 0 {
@@ -893,7 +890,7 @@ pub unsafe extern "C" fn fuzzy_match(
                 j = 0 as u_int;
                 while j < cs[i as usize].width && column.wrapping_add(j) < width {
                     let ref mut fresh0 =
-                        *mask.offset((column.wrapping_add(j) >> 3 as ::core::ffi::c_int) as isize);
+                        mask[(column.wrapping_add(j) >> 3 as ::core::ffi::c_int) as usize];
                     *fresh0 = (*fresh0 as ::core::ffi::c_int
                         | (1 as ::core::ffi::c_int) << (column.wrapping_add(j) & 0x7 as u_int))
                         as bitstr_t;
@@ -913,7 +910,25 @@ pub unsafe extern "C" fn fuzzy_match(
             bestscore as u_int
         };
     }
-    return mask;
+    Some(mask)
+}
+
+/// Return a libc-owned mask for callers of the exported C interface.
+#[no_mangle]
+pub unsafe extern "C" fn fuzzy_match(
+    pattern: *const ::core::ffi::c_char,
+    text: *const ::core::ffi::c_char,
+    width: u_int,
+    score: *mut u_int,
+) -> *mut bitstr_t {
+    let Some(mask) = fuzzy_match_owned(pattern, text, width, score) else {
+        return ::core::ptr::null_mut();
+    };
+    let result = calloc(mask.len(), ::core::mem::size_of::<bitstr_t>()) as *mut bitstr_t;
+    if !result.is_null() {
+        ::core::ptr::copy_nonoverlapping(mask.as_ptr(), result, mask.len());
+    }
+    result
 }
 
 #[cfg(test)]

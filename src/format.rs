@@ -19,7 +19,7 @@ use crate::src::ffi::libc::{
 };
 use crate::src::ffi::libm::{fabs, fmod};
 use crate::src::format_draw::{format_trim_left, format_trim_right, format_width};
-use crate::src::fuzzy::fuzzy_match;
+use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_get_cell, grid_get_line, grid_line_length, grid_peek_line};
 use crate::src::grid_view::grid_view_get_cell;
 use crate::src::hyperlinks::hyperlinks_get;
