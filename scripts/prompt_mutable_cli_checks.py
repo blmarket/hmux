@@ -81,6 +81,34 @@ with tempfile.TemporaryDirectory(prefix="prompt-mutable-", dir=root / "target") 
         command = None
         assert run("show-options", "-gqv", "@prompt_rows") == b"alpha:beta\n"
 
+        command = subprocess.Popen(
+            base + ["command-prompt", "-t", client_tty, "-p", "history-entry",
+                    "set-option -g @prompt_history_entry '%%'"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        wait_for_terminal(b"history-entry")
+        os.write(master, b"history-owner\r")
+        _, stderr = command.communicate(timeout=5)
+        assert command.returncode == 0, stderr
+        command = None
+        assert run("show-options", "-gqv", "@prompt_history_entry") == b"history-owner\n"
+
+        command = subprocess.Popen(
+            base + ["command-prompt", "-t", client_tty, "-p", "history-recall",
+                    "set-option -g @prompt_history_recall '%%'"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        wait_for_terminal(b"history-recall")
+        os.write(master, b"\x1b[A\r")  # Recall the previous command prompt input.
+        _, stderr = command.communicate(timeout=5)
+        assert command.returncode == 0, stderr
+        command = None
+        assert run("show-options", "-gqv", "@prompt_history_recall") == b"history-owner\n"
+
         run("command-prompt", "-i", "-t", client_tty, "-p", "incremental",
             "-I", "seed", "set-option -g @prompt_saved '%%'")
         wait_for_terminal(b"incremental")

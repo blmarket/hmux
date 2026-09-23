@@ -2359,6 +2359,27 @@ legacy callers safe.
   Rustfmt reports one import-layout difference also present in the base
   commit. No sanitizer was run.
 
+### Increment 132 — prompt editable UTF-8 buffer (2026-09-22)
+
+- The Box-owned prompt record now keeps its editable input cells in
+  `buffer_storage: Vec<utf8_data>`, including the final size-zero sentinel.
+  `prompt.buffer` remains a borrowed pointer view for the translated UTF-8
+  edit/draw code; creation, every replacement/reset, and all three growth
+  sites refresh it after the Vec may move. The view is valid only until the
+  next replacement/resize or prompt destruction, and is assigned only by the
+  two owner helpers in `prompt.rs`.
+- A direct byte-preserving decoder fills the Vec through the first NUL,
+  replacing `utf8_fromcstr` allocations on the prompt-buffer paths. The 106
+  history/incremental reset sites use the same owner helper; `prompt_free`
+  no longer manually frees the buffer. The prompt Box drops the Vec after
+  its callback and completion teardown. The internal prompt layout fixture
+  now records 440 bytes; no foreign prompt layout consumer was identified.
+- Isolated validation: decoder equivalence tests against `utf8_fromcstr`
+  cover empty, ASCII, multibyte, invalid/truncated, and first-NUL input.
+  Serialized workspace tests, binary build, changed-file rustfmt,
+  `git diff --check`, and attached-client prompt history, incremental,
+  completion, and paste checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2369,9 +2390,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The Box-owned prompt record still has its editable `buffer` as a separately
-   allocated UTF-8 data array. Audit its edit, resize, and callback paths
-   before moving that complete field to Rust-owned storage.
+1. `prompt_draw` still creates a temporary `utf8_fromcstr(display)` array,
+   walks it synchronously for cell output, then manually frees it. Its new
+   local decoder helper from increment 132 can own that complete scratch
+   lifetime; audit draw callbacks and byte equivalence first.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -2396,9 +2418,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–131. The remaining
+Current validation is recorded in increments 15–132. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–131 has its own local commit; none was pushed.
+Each of increments 15–132 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2483,3 +2505,10 @@ Changed-file rustfmt reports three import-layout differences in `sort.rs`,
 `window_switch.rs`, and `window_tree.rs`; checking the exact files from
 pre-increment `b7a5535` reports the same three sites. No combined sanitizer
 was run.
+After increments 130–132 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, prompt-mutable, prompt-completion, prompt-paste, sorted-window-pane,
+and format-loop CLI checks, staticlib symbol absence, and `git diff --check`
+passed on main. Changed-file rustfmt reports one import-layout difference in
+`sort.rs`; checking its exact pre-increment `3f35a0a` version reports the
+same site. No combined sanitizer was run.

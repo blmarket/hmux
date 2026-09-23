@@ -424,7 +424,8 @@ fn original_copies_match() {
             closed,
             hindex,
             copied,
-            completion
+            completion,
+            buffer_storage
         ]
     );
     record!("src/resize.rs::prompt", *mut hmux2::src::resize::prompt, []);
