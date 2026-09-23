@@ -4,6 +4,7 @@
 // facade supplies shared types, logging/state helpers, tree CRUD, callbacks,
 // and job-cache lookup.
 use super::*;
+use std::ffi::{CStr, CString};
 
 pub(super) unsafe extern "C" fn format_strftime(
     mut s: *mut ::core::ffi::c_char,
@@ -1175,7 +1176,6 @@ pub(super) unsafe extern "C" fn format_bool_op_n(
     let mut result: ::core::ffi::c_int = 0;
     let mut cp1: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp2: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut raw: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     result = if and != 0 {
         1 as ::core::ffi::c_int
@@ -1190,13 +1190,14 @@ pub(super) unsafe extern "C" fn format_bool_op_n(
     } != 0
     {
         cp2 = format_skip1(es, cp1, b",\0" as *const u8 as *const ::core::ffi::c_char);
-        if cp2.is_null() {
-            raw = xstrdup(cp1);
+        let operand = if cp2.is_null() {
+            CStr::from_ptr(cp1).to_owned()
         } else {
-            raw = xstrndup(cp1, cp2.offset_from(cp1) as ::core::ffi::c_long as size_t);
-        }
-        expanded = format_expand1(es, raw);
-        free(raw as *mut ::core::ffi::c_void);
+            let length = cp2.offset_from(cp1) as usize;
+            CString::new(std::slice::from_raw_parts(cp1.cast::<u8>(), length))
+                .expect("format operand contains no NUL before its delimiter")
+        };
+        expanded = format_expand1(es, operand.as_ptr());
         format_log1(
             es,
             b"format_bool_op_n\0" as *const u8 as *const ::core::ffi::c_char,

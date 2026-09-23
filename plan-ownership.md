@@ -866,6 +866,24 @@ legacy callers safe.
   binary build, rustfmt, and `git diff --check` passed in the isolated
   worktree. Existing compiler warnings remain; no sanitizer run was performed.
 
+### Increment 37 — format boolean operand scratch (2026-09-22)
+
+- `format_bool_op_n` now owns each comma-delimited operand in a local
+  `CString`, borrowing its pointer only during `format_expand1`. This removes
+  the `xstrdup`/`xstrndup` and matching manual `free` for the operand scratch.
+  Result strings still follow the existing C-owned format expansion ABI.
+- `tests/format_boolean_scratch.rs` covers multi-operand AND/OR, nested
+  expansion, empty operands, and non-UTF-8 input. Focused and workspace tests,
+  binary build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree.
+- Audited the remaining `format_printf` helper: all 72 production calls use
+  literal numeric or `%s` formats (plus escaped percent), with no `%c` and no
+  supported embedded-NUL suffix case. Its malloc-owned return crosses the
+  callback ABI and is libc-freed by `format_each`/`format_replace`; the lazy
+  entry cache copies then libc-frees it. A local `CString` returned as a raw
+  pointer would preserve manual ownership, so this helper is deferred until
+  the callback return contract can change.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -883,11 +901,10 @@ non-string value.
 2. `input_reply` and `status_message_set`
    store formatted C strings in records or queues. Audit each containing
    lifecycle before adding `CString`; a local owner alone would dangle.
-   `format_printf` returns a C-owned allocation to callback consumers, and
-   the `xmalloc` wrappers retain their C allocator ABI.
+   `format_printf` and the `xmalloc` wrappers retain their C allocator ABI.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–36. The remaining
+Current validation is recorded in increments 15–37. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–36 has its own local commit; none was pushed.
+Each of increments 15–37 has its own local commit; none was pushed.
