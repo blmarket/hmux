@@ -78,7 +78,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::status::status_message_set;
 use crate::src::window::window_pane_start_input;
-use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -134,6 +134,14 @@ unsafe extern "C" fn cmd_display_message_each(
         value,
     );
 }
+
+// format_expand_time and json_to_string return libc-owned C strings. Copy
+// their visible C-string bytes before releasing the foreign allocation.
+unsafe fn cmd_display_message_take_string(raw: *mut ::core::ffi::c_char) -> CString {
+    let owned = CStr::from_ptr(raw).to_owned();
+    free(raw as *mut ::core::ffi::c_void);
+    owned
+}
 unsafe extern "C" fn cmd_display_message_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
@@ -146,7 +154,6 @@ unsafe extern "C" fn cmd_display_message_exec(
     let mut wl: *mut winlink = (*target).wl;
     let mut wp: *mut window_pane = (*target).wp;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut flags: ::core::ffi::c_int = 0;
@@ -241,13 +248,13 @@ unsafe extern "C" fn cmd_display_message_exec(
         format_free(ft);
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'l' as i32 as u_char) != 0 {
-        msg = xstrdup(template);
+    let mut msg = if args_has(args, 'l' as i32 as u_char) != 0 {
+        CStr::from_ptr(template).to_owned()
     } else {
-        msg = format_expand_time(ft, template);
-    }
+        cmd_display_message_take_string(format_expand_time(ft, template))
+    };
     if args_has(args, 'j' as i32 as u_char) != 0 {
-        jn = json_parse(msg, &raw mut cause);
+        jn = json_parse(msg.as_ptr(), &raw mut cause);
         if jn.is_null() {
             cmdq_error(
                 item,
@@ -255,25 +262,25 @@ unsafe extern "C" fn cmd_display_message_exec(
                 cause,
             );
             free(cause as *mut ::core::ffi::c_void);
-            free(msg as *mut ::core::ffi::c_void);
+            drop(msg);
             format_free(ft);
             return CMD_RETURN_ERROR;
         }
-        free(msg as *mut ::core::ffi::c_void);
-        msg = json_to_string(jn);
+        drop(msg);
+        msg = cmd_display_message_take_string(json_to_string(jn));
         json_destroy_node(jn);
     }
     if cmdq_get_client(item).is_null() {
         cmdq_error(
             item,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg,
+            msg.as_ptr(),
         );
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
         cmdq_print(
             item,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg,
+            msg.as_ptr(),
         );
     } else if !tc.is_null() && (*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
         evb = evbuffer_new();
@@ -283,7 +290,7 @@ unsafe extern "C" fn cmd_display_message_exec(
         evbuffer_add_printf(
             evb,
             b"%%message %s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg,
+            msg.as_ptr(),
         );
         server_client_print(tc, 0 as ::core::ffi::c_int, evb);
         evbuffer_free(evb);
@@ -295,10 +302,10 @@ unsafe extern "C" fn cmd_display_message_exec(
             Nflag,
             Cflag,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg,
+            msg.as_ptr(),
         );
     }
-    free(msg as *mut ::core::ffi::c_void);
+    drop(msg);
     format_free(ft);
     return CMD_RETURN_NORMAL;
 }

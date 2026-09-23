@@ -1507,6 +1507,23 @@ legacy callers safe.
   branch passed `cargo test --workspace --quiet`, `cargo build --bin hmux2
   --quiet`, and changed-file `rustfmt --check`.
 
+### Increment 81 — display-message local message (2026-09-22)
+
+- `cmd_display_message_exec` now keeps its literal, expanded, and JSON
+  message as one local `CString`. The literal branch borrows `template`
+  directly instead of `xstrdup`. A private adapter copies the first-NUL
+  C-string view from the C-owned `format_expand_time` and `json_to_string`
+  outputs, then frees each foreign allocation with libc. The three former
+  `msg` frees are now owner drops at the same error, JSON replacement, and
+  final output points. JSON nodes, causes, and the format tree retain their
+  existing teardown order. Output routines borrow `msg.as_ptr()` only for
+  synchronous calls.
+- The binary build, changed-file rustfmt, and `git diff --check` passed.
+  A private live server check covered literal output, format expansion,
+  valid JSON with an escaped NUL, and invalid JSON. The CLI normalized the
+  non-ASCII inputs attempted before this path, so those checks do not prove
+  byte preservation for such input. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1532,9 +1549,9 @@ non-string value.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–80. The remaining
+Current validation is recorded in increments 15–81. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–80 has its own local commit; none was pushed.
+Each of increments 15–81 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
