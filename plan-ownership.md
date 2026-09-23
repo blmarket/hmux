@@ -2320,6 +2320,21 @@ legacy callers safe.
   tests, changed-file rustfmt, Python syntax, and diff checks passed. No
   sanitizer was run.
 
+### Increment 290 — borrowed CLI socket label (2026-09-23)
+
+- `main_0` now keeps `-L` as an optional borrowed `&CStr` into argv instead
+  of duplicating each label and freeing the previous/final copy. `main` keeps
+  the byte buffers behind argv alive through `main_0`; `BSDgetopt` changes
+  argument pointers, not those bytes. Repeated `-L` replaces the borrow.
+  `make_label` consumes the selected bytes synchronously and creates its own
+  independently owned socket path. Null versus empty and non-UTF-8 labels
+  retain their existing meanings.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, Python syntax, and diff checks passed. The extended
+  socket-label CLI check matched the pinned baseline for success, errors,
+  repeated `-L`, and a non-UTF-8 final label; it checked both raw socket path
+  bytes and the displayed path. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2330,13 +2345,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The `-L` socket label in `src/tmux.rs::main_0` is copied from argv with
-   `xstrdup`, replaced on repeated `-L`, used only by `make_label`, and freed.
-   A borrowed `&CStr` can follow argv's stable lifetime through that call,
-   removing the copy and free. `window_copy_mode_data.backing` is a larger
-   screen owner whose borrowed pointer is invalidated on refresh. The redraw
-   scene's line array has self-referential intrusive list tails and needs its
-   own alias audit.
+1. The `PROMPT_NOFORMAT` branches in `prompt_create` and `prompt_update`
+   (`src/prompt.rs`) duplicate an input C string only for synchronous copies
+   into prompt-owned storage, then free the duplicate. Borrowing the original
+   input in those branches could remove both pairs while retaining the
+   formatted branch's separately owned expansion. `window_copy_mode_data`
+   backing is a larger screen owner whose borrowed pointer is invalidated on
+   refresh. The redraw scene's line array has self-referential intrusive
+   list tails and needs its own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

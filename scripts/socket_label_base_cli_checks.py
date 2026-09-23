@@ -15,6 +15,7 @@ root = pathlib.Path(__file__).resolve().parents[1]
 binary = os.fsencode(pathlib.Path(os.environ.get("HMUX_BINARY", root / "target/debug/hmux2")).resolve())
 baseline = os.environ.get("HMUX_BASELINE_BINARY")
 label = b"socket-base-e2e"
+final_label = b"socket-final-\xff"
 uid = os.fsencode(str(os.getuid()))
 
 
@@ -22,7 +23,8 @@ def check_case(binary_path, parent, case):
     parent = os.fsencode(parent)
     socket_base = parent + b"/socket-\xff"
     uid_dir = socket_base + b"/tmux-" + uid
-    socket_path = uid_dir + b"/" + label
+    selected_label = final_label if case == "repeated-label" else label
+    socket_path = uid_dir + b"/" + selected_label
     os.mkdir(socket_base)
     env = os.environb.copy()
     env.update(
@@ -36,6 +38,8 @@ def check_case(binary_path, parent, case):
     )
     env.pop(b"TMUX", None)
     options = [binary_path, b"-L", label, b"-f", b"/dev/null"]
+    if case == "repeated-label":
+        options = [binary_path, b"-L", b"first", b"-L", final_label, b"-f", b"/dev/null"]
 
     def run(*args):
         return subprocess.run(options + list(args), env=env, capture_output=True, timeout=15)
@@ -51,12 +55,20 @@ def check_case(binary_path, parent, case):
 
     try:
         create = run(b"new-session", b"-d", b"-s", b"socketbase", b"sleep", b"60")
-        if case == "success":
+        if case in ("success", "repeated-label"):
             assert create.returncode == 0, (case, create.stdout, create.stderr)
             assert os.path.exists(socket_path), socket_path
+            if case == "repeated-label":
+                assert not os.path.exists(uid_dir + b"/first")
             display = run(b"list-sessions", b"-F", b"#{session_name}")
             assert display.returncode == 0, (case, display.stdout, display.stderr)
             assert display.stdout == b"socketbase\n", display.stdout
+            if case == "repeated-label":
+                path_display = run(b"display-message", b"-p", b"#{socket_path}")
+                assert path_display.returncode == 0, (case, path_display.stderr)
+                assert path_display.stdout == socket_path.replace(b"\xff", b"_") + b"\n", path_display.stdout
+            else:
+                path_display = None
         else:
             assert create.returncode != 0, (case, create.stdout, create.stderr)
             expected = {
@@ -70,6 +82,7 @@ def check_case(binary_path, parent, case):
                 assert b"Permission denied" in create.stderr, create.stderr
             assert not os.path.exists(socket_path), socket_path
             display = None
+            path_display = None
 
         def normalized(data):
             return data.replace(parent, b"<private-dir>")
@@ -79,16 +92,17 @@ def check_case(binary_path, parent, case):
             normalized(create.stdout),
             normalized(create.stderr),
             None if display is None else normalized(display.stdout),
+            None if path_display is None else normalized(path_display.stdout),
         )
     finally:
-        if case == "success":
+        if case in ("success", "repeated-label"):
             run(b"kill-server")
         elif case == "mkdir-error":
             os.chmod(socket_base, 0o700)
 
 
 with tempfile.TemporaryDirectory(prefix="socket-label-base-", dir="/tmp") as tmp:
-    cases = ["success", "not-directory", "unsafe-permissions"]
+    cases = ["success", "repeated-label", "not-directory", "unsafe-permissions"]
     if os.geteuid() != 0:
         cases.append("mkdir-error")
     for case in cases:

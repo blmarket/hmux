@@ -894,7 +894,8 @@ unsafe fn main_0(
     mut argv: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut label: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    // BSDoptarg points into argv, which main keeps alive through main_0.
+    let mut label: Option<&CStr> = None;
     let mut var: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1011,8 +1012,7 @@ unsafe fn main_0(
                 flags |= CLIENT_LOGIN as uint64_t;
             }
             76 => {
-                free(label as *mut ::core::ffi::c_void);
-                label = xstrdup(BSDoptarg);
+                label = Some(CStr::from_ptr(BSDoptarg));
             }
             78 => {
                 flags |= CLIENT_NOSTARTSERVER as uint64_t;
@@ -1136,7 +1136,7 @@ unsafe fn main_0(
             keys as ::core::ffi::c_longlong,
         );
     }
-    if path.is_null() && label.is_null() {
+    if path.is_null() && label.is_none() {
         s = getenv(b"TMUX\0" as *const u8 as *const ::core::ffi::c_char);
         if !s.is_null()
             && *s as ::core::ffi::c_int != '\0' as i32
@@ -1149,7 +1149,7 @@ unsafe fn main_0(
         }
     }
     if path.is_null() {
-        path = match make_label(label) {
+        path = match make_label(label.map_or(::core::ptr::null(), |label| label.as_ptr())) {
             Ok(path) => path,
             Err(cause) => {
                 fprintf(
@@ -1164,7 +1164,6 @@ unsafe fn main_0(
         flags |= CLIENT_DEFAULTSOCKET as uint64_t;
     }
     socket_path = path;
-    free(label as *mut ::core::ffi::c_void);
     exit(client_main(osdep_event_init(), argc, argv, flags, feat));
 }
 pub const TMUX_VERSION: [::core::ffi::c_char; 9] =
