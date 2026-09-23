@@ -125,10 +125,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `options_array_item.key` is an independent small boundary: its map stores
-   copied semantic keys and the public field can borrow a private `CString`
-   until item destruction. `client.title` and `client.path` are nearby owner
-   candidates after that; their tty consumers copy bytes synchronously.
+1. `client.title` and `client.path` are nearby owner candidates. Their tty
+   consumers copy bytes synchronously, but retain the existing bytewise
+   comparison and output ordering when migrating them. The title formatter
+   still returns a separate C-owned result that must be freed.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -397,6 +397,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   `ESC P > | XTerm(370) ESC \\` reply and checks `#{client_termtype}`; both
   candidate and pinned baseline passed. Serialized workspace tests, binary
   build, changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
+### Increment 370 — owned option array item keys (2026-09-23)
+
+- `OwnedOptionArrayItem` now keeps each normalized key in a `CString`; the
+  exported `options_array_item.key` borrows it until item removal. The map
+  still stores a copied semantic `OptionsArrayKey`, and `options_array_free`
+  preserves value destruction before map removal before key destruction.
+  Removed the per-item `xstrdup`/`free` pair and the public record's `Copy`
+  implementation; the record layout and stable boxed address remain.
+- Serialized workspace tests, binary build, array-key CLI checks with raw
+  non-UTF-8 keys and deletion, value-rendering CLI comparison with the
+  matching 3.8-rc baseline, changed-file rustfmt, and diff checks passed.
+  The older 3.7b baseline rejects the raw `0x80` test key, so it is not a
+  usable reference for that rendering check. No sanitizer was run.
 
 ## Historical migration index
 

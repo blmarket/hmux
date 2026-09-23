@@ -121,7 +121,7 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
 // The first field keeps pointers returned by the options API ABI-compatible.
 // Its name and scalar string pointers borrow the adjacent owners until removal
-// or replacement, respectively. Array items retain their separate C lifecycle.
+// or replacement, respectively.
 #[repr(C)]
 struct OwnedOptionEntry {
     record: options_entry,
@@ -130,6 +130,16 @@ struct OwnedOptionEntry {
 }
 
 const _: () = assert!(std::mem::offset_of!(OwnedOptionEntry, record) == 0);
+
+// The public item key borrows this CString until options_array_free removes
+// the item from its map and drops the containing owner.
+#[repr(C)]
+struct OwnedOptionArrayItem {
+    record: options_array_item,
+    key: CString,
+}
+
+const _: () = assert!(std::mem::offset_of!(OwnedOptionArrayItem, record) == 0);
 
 unsafe fn owned_option(o: *mut options_entry) -> *mut OwnedOptionEntry {
     o.cast()
@@ -569,10 +579,13 @@ unsafe extern "C" fn options_array_new(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    a = Box::into_raw(Box::new(::core::mem::zeroed::<options_array_item>()));
-    (*a).key = xstrdup(key);
-    (*a).owner = o;
+    let mut owner = Box::new(OwnedOptionArrayItem {
+        record: ::core::mem::zeroed(),
+        key: CStr::from_ptr(key).to_owned(),
+    });
+    owner.record.key = owner.key.as_ptr().cast_mut();
+    owner.record.owner = o;
+    let a = Box::into_raw(owner).cast::<options_array_item>();
     (*(*o).value.array.storage)
         .entries
         .insert(options_array_index(key), a);
@@ -583,8 +596,7 @@ unsafe extern "C" fn options_array_free(mut o: *mut options_entry, mut a: *mut o
     (*(*o).value.array.storage)
         .entries
         .remove(&options_array_index((*a).key));
-    free((*a).key as *mut ::core::ffi::c_void);
-    drop(Box::from_raw(a));
+    drop(Box::from_raw(a.cast::<OwnedOptionArrayItem>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_array_clear(mut o: *mut options_entry) {

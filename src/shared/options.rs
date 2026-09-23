@@ -72,8 +72,8 @@ pub struct options {
     pub parent: *mut options,
 }
 
-/// Box-owned by options_array_new; map and caller pointers expire on removal.
-#[derive(Copy, Clone)]
+/// Stored in a private owner by options_array_new; key and caller pointers
+/// expire when the item is removed.
 #[repr(C)]
 pub struct options_array_item {
     pub key: *mut ::core::ffi::c_char,
