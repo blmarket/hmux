@@ -73,7 +73,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::utf8::{utf8_from_data, utf8_fromcstr};
+use crate::src::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use crate::src::window::window_pane_key;
 use crate::src::xmalloc::xcalloc;
 
@@ -208,8 +208,6 @@ unsafe extern "C" fn cmd_send_keys_inject_string(
     mut i: ::core::ffi::c_int,
 ) -> *mut cmdq_item {
     let mut s: *const ::core::ffi::c_char = args_string(args, i as u_int);
-    let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut loop_0: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
     let mut uc: utf8_char = 0;
     let mut key: key_code = 0;
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -240,17 +238,16 @@ unsafe extern "C" fn cmd_send_keys_inject_string(
         literal = 1 as ::core::ffi::c_int;
     }
     if literal != 0 {
-        ud = utf8_fromcstr(s);
+        let cells = utf8_fromcstr_vec(s);
         let mut current_block_20: u64;
-        loop_0 = ud;
-        while (*loop_0).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-            if (*loop_0).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
-                && (*loop_0).data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+        for cell in cells.iter().take_while(|cell| cell.size != 0) {
+            if cell.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+                && cell.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
                     <= 0x7f as ::core::ffi::c_int
             {
-                key = (*loop_0).data[0 as ::core::ffi::c_int as usize] as key_code;
+                key = cell.data[0 as ::core::ffi::c_int as usize] as key_code;
                 current_block_20 = 12147880666119273379;
-            } else if utf8_from_data(loop_0, &raw mut uc) as ::core::ffi::c_uint
+            } else if utf8_from_data(cell, &raw mut uc) as ::core::ffi::c_uint
                 != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 current_block_20 = 1054647088692577877;
@@ -264,9 +261,7 @@ unsafe extern "C" fn cmd_send_keys_inject_string(
                 }
                 _ => {}
             }
-            loop_0 = loop_0.offset(1);
         }
-        free(ud as *mut ::core::ffi::c_void);
     }
     return after;
 }

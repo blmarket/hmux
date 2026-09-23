@@ -2409,6 +2409,19 @@ legacy callers safe.
   test, customize-option CLI check, changed-file rustfmt, and
   `git diff --check` passed. No sanitizer was run.
 
+### Increment 135 — literal send-keys decoded cells (2026-09-22)
+
+- `cmd_send_keys_inject_string` now owns the literal operand's decoded cells
+  in a local `Vec<utf8_data>` via `utf8_fromcstr_vec`. Replaced the raw
+  sentinel loop with a bounded slice walk and removed the final C-array
+  `free`. Key injection still visits cells in order; callback dispatch can
+  reenter the command machinery without retaining the local cells.
+- Added `scripts/send_keys_cli_checks.py` for real-pane Unicode order,
+  malformed-byte replacement, and unknown-key literal fallback.
+  Isolated validation: library/binary build, six UTF-8 decoder tests, new
+  send-keys CLI and existing key CLI checks, and `git diff --check` passed.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2419,10 +2432,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_send_keys_inject_string` still creates a temporary
-   `utf8_fromcstr` array for literal keys and manually frees it after the
-   key loop. The shared decoder can own those cells; audit callback
-   reentrancy and key ordering.
+1. `prompt_check_move` makes a local `utf8_tocstr((*pr).buffer)` result,
+   passes it to `prompt_fire_callback`, then manually frees it on both
+   callback outcomes. Audit first-NUL behavior and the callback borrowing
+   contract before adding a Rust-owned text conversion helper.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -2541,3 +2554,10 @@ and format-loop CLI checks, staticlib symbol absence, and `git diff --check`
 passed on main. Changed-file rustfmt reports one import-layout difference in
 `sort.rs`; checking its exact pre-increment `3f35a0a` version reports the
 same site. No combined sanitizer was run.
+After increments 133–135 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, prompt-completion, prompt-mutable, prompt-paste, customize-option,
+send-keys, and key CLI checks, and `git diff --check` passed on main.
+Changed-file rustfmt reports two import-layout differences in `prompt.rs`;
+checking its exact pre-increment `0c279d5` version reports the same sites.
+The other changed Rust files pass rustfmt. No combined sanitizer was run.
