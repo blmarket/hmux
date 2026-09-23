@@ -1690,6 +1690,17 @@ legacy callers safe.
   embedded NUL and `0xff` through load, show, and save paths. No sanitizer
   was run.
 
+### Increment 245 — file read message scratch owner (2026-09-23)
+
+- `file_read_callback` now reuses a `Vec<u8>` for each `MSG_READ` header and
+  payload, removing its `msg_read_data` `xmalloc`/`xrealloc`/`free` lifecycle.
+  `proc_send` copies the message synchronously before evbuffer input is
+  drained. The previous chunking, send result handling, and drain order stay
+  the same.
+- Library/binary build, workspace tests, changed-file rustfmt, diff check,
+  and the 65,809-byte pinned-baseline file-message CLI comparison passed. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

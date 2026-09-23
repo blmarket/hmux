@@ -80,7 +80,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::find_home;
-use crate::src::xmalloc::{xmalloc, xrealloc};
+use crate::src::xmalloc::xmalloc;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -1202,9 +1202,8 @@ unsafe extern "C" fn file_read_callback(
     let mut cf: *mut client_file = arg as *mut client_file;
     let mut bdata: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut bsize: size_t = 0;
-    let mut msg: *mut msg_read_data = ::core::ptr::null_mut::<msg_read_data>();
-    let mut msglen: size_t = 0;
-    msg = xmalloc(::core::mem::size_of::<msg_read_data>() as size_t) as *mut msg_read_data;
+    let mut msg = Vec::<u8>::new();
+    let header_len = ::core::mem::size_of::<msg_read_data>();
     loop {
         bsize = evbuffer_get_length((*(*cf).event).input);
         if bsize == 0 as size_t {
@@ -1226,25 +1225,26 @@ unsafe extern "C" fn file_read_callback(
             bsize,
             (*cf).stream,
         );
-        msglen = (::core::mem::size_of::<msg_read_data>() as usize).wrapping_add(bsize as usize)
-            as size_t;
-        msg = xrealloc(msg as *mut ::core::ffi::c_void, msglen) as *mut msg_read_data;
-        (*msg).stream = (*cf).stream;
+        let msglen = header_len + bsize;
+        msg.resize(msglen, 0);
+        let header = msg_read_data {
+            stream: (*cf).stream,
+        };
         memcpy(
-            msg.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_void,
-            bdata,
-            bsize,
+            msg.as_mut_ptr().cast(),
+            (&raw const header).cast(),
+            header_len,
         );
+        memcpy(msg.as_mut_ptr().add(header_len).cast(), bdata, bsize);
         proc_send(
             (*cf).peer,
             MSG_READ,
             -(1 as ::core::ffi::c_int),
-            msg as *const ::core::ffi::c_void,
+            msg.as_ptr().cast(),
             msglen,
         );
         evbuffer_drain((*(*cf).event).input, bsize);
     }
-    free(msg as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn file_read_open(
