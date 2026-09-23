@@ -141,16 +141,17 @@ pub struct hooks_data {
     pub client: *mut client,
     pub expand: ::core::ffi::c_int,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hooks_monitor {
+    // options_entry.monitor_data owns the boxed record; callbacks only borrow it.
     pub oo: *mut options,
     pub set: *mut monitor_set,
     pub sink: *mut events_sink,
     pub fs: cmd_find_state,
     pub type_0: monitor_type,
     pub id: ::core::ffi::c_int,
-    pub format: *mut ::core::ffi::c_char,
+    /// hooks_monitor_get lends this pointer until the monitor is removed.
+    pub format: CString,
 }
 
 static mut hooks_events: hooks_events = hooks_events {
@@ -534,8 +535,7 @@ pub unsafe extern "C" fn hooks_monitor_free(mut data: *mut ::core::ffi::c_void) 
     let mut hm: *mut hooks_monitor = data as *mut hooks_monitor;
     events_remove_sink((*hm).sink);
     monitor_destroy((*hm).set);
-    free((*hm).format as *mut ::core::ffi::c_void);
-    free(hm as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(hm));
 }
 #[no_mangle]
 pub unsafe extern "C" fn hooks_monitor_remove(
@@ -712,15 +712,24 @@ pub unsafe extern "C" fn hooks_monitor_add(
             b"\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    hm = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<hooks_monitor>() as size_t,
-    ) as *mut hooks_monitor;
-    (*hm).oo = oo;
+    hm = Box::into_raw(Box::new(hooks_monitor {
+        oo,
+        set: ::core::ptr::null_mut(),
+        sink: ::core::ptr::null_mut(),
+        fs: cmd_find_state {
+            flags: 0,
+            current: ::core::ptr::null_mut(),
+            s: ::core::ptr::null_mut(),
+            wl: ::core::ptr::null_mut(),
+            w: ::core::ptr::null_mut(),
+            wp: ::core::ptr::null_mut(),
+            idx: 0,
+        },
+        type_0,
+        id,
+        format: CStr::from_ptr(format).to_owned(),
+    }));
     cmd_find_copy_state(&raw mut (*hm).fs, fs);
-    (*hm).type_0 = type_0;
-    (*hm).id = id;
-    (*hm).format = xstrdup(format);
     (*hm).set = monitor_create_session(
         s,
         Some(
@@ -770,7 +779,7 @@ pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<C
         bytes.extend_from_slice((*hm).id.to_string().as_bytes());
         bytes.push(b':');
     }
-    bytes.extend_from_slice(CStr::from_ptr((*hm).format).to_bytes());
+    bytes.extend_from_slice((*hm).format.as_bytes());
     Some(CString::new(bytes).expect("C string parts contain no NUL"))
 }
 #[no_mangle]
@@ -786,7 +795,7 @@ pub unsafe extern "C" fn hooks_monitor_get(
     }
     *type_0 = (*hm).type_0;
     *id = (*hm).id;
-    *format = (*hm).format;
+    *format = (*hm).format.as_ptr();
     return 1 as ::core::ffi::c_int;
 }
 #[no_mangle]

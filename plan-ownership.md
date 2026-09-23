@@ -2382,6 +2382,22 @@ legacy callers safe.
   pre-existing rustfmt import-order differences as before this increment; no
   new rustfmt differences appear in changed code. No sanitizer was run.
 
+### Increment 294 — owned hook-monitor record and format (2026-09-23)
+
+- `hooks_monitor_add` now allocates its stable record with `Box` and stores the
+  format as a byte-preserving `CString`. `hooks_monitor_free` unregisters the
+  event sink, destroys the monitor set, then drops the boxed record and format
+  in the original order. This removes the record `xcalloc`/`free` and format
+  `xstrdup`/`free` pairs. The monitor's `Copy` derive is gone. The options entry
+  owns the raw boxed pointer; event and monitor callbacks borrow it, and
+  `hooks_monitor_get` lends the format pointer only until monitor removal.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, and
+  diff checks passed. Hook-monitor string CLI checks matched the pinned
+  baseline across non-UTF-8 formats, show-hooks, customize-mode, and teardown;
+  append/replacement checks passed separately on candidate and baseline.
+  `src/hooks.rs` retains exactly its pre-existing rustfmt import-order
+  differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2392,14 +2408,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `hooks_monitor` in `src/hooks.rs` is a stable leaf record with a private
-   duplicated format string. Monitor and event callbacks borrow its pointer;
-   monitor removal and options teardown release it after unregistering those
-   callbacks. A boxed record and `CString` format can replace both manual
-   allocation pairs after checking callbacks and the current `Copy` derive.
-   `window_copy_mode_data.backing` is a larger screen owner with a borrowed
+1. `window_copy_mode_data.backing` is a larger screen owner with a borrowed
    pointer invalidated on refresh. The redraw scene's line array has
-   self-referential intrusive list tails and needs its own alias audit.
+   self-referential intrusive list tails and needs its own alias audit. Re-rank
+   for a smaller independent leaf before taking either larger boundary.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
