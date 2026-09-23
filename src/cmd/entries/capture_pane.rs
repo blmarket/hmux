@@ -82,6 +82,7 @@ use crate::src::utf8::utf8_stravis;
 use crate::src::window::window_pane_reset_mode_all;
 use crate::src::xmalloc::{xasprintf, xrealloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
+use std::io::Write;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -272,16 +273,14 @@ unsafe extern "C" fn cmd_capture_pane_grid(
     let mut yy: u_int = 0;
     let mut xx: u_int = 0;
     let mut total: u_int = (*gd).hsize.wrapping_add((*gd).sy);
-    xasprintf(
-        &raw mut line,
-        b"G %ux%u (%u/%u)\n\0" as *const u8 as *const ::core::ffi::c_char,
+    let header = format!(
+        "G {}x{} ({}/{})\n",
         (*gd).sx,
         (*gd).sy,
         (*gd).hsize,
-        (*gd).hlimit,
+        (*gd).hlimit
     );
-    buf = cmd_capture_pane_append(buf, len, line, strlen(line));
-    free(line as *mut ::core::ffi::c_void);
+    buf = cmd_capture_pane_append(buf, len, header.as_ptr().cast(), header.len());
     yy = 0 as u_int;
     while yy < total {
         gl = grid_get_line(gd, yy);
@@ -300,37 +299,35 @@ unsafe extern "C" fn cmd_capture_pane_grid(
             );
         }
         od = &raw mut (*gl).osc133_data;
+        let mut row = Vec::new();
+        write!(&mut row, "\tL {} (", yy).expect("writing to a byte vector succeeds");
+        row.extend_from_slice(CStr::from_ptr(p.as_ptr()).to_bytes());
+        row.extend_from_slice(b") flags=");
+        row.extend_from_slice(
+            CStr::from_ptr(grid_line_flags_string((*gl).flags as ::core::ffi::c_int)).to_bytes(),
+        );
+        write!(
+            &mut row,
+            "[{:x}] {}/{}",
+            (*gl).flags as u32,
+            (*gl).cellused as u32,
+            (*gl).cellsize as u32
+        )
+        .expect("writing to a byte vector succeeds");
         if (*gl).flags as ::core::ffi::c_int & GRID_LINE_OSC133_FLAGS != 0 {
-            xasprintf(
-                &raw mut line,
-                b"\tL %u (%s) flags=%s[%x] %u/%u osc133=%u,%u,%u,%u,%u\n\0" as *const u8
-                    as *const ::core::ffi::c_char,
-                yy,
-                &raw mut p as *mut ::core::ffi::c_char,
-                grid_line_flags_string((*gl).flags as ::core::ffi::c_int),
-                (*gl).flags as ::core::ffi::c_int,
-                (*gl).cellused as ::core::ffi::c_int,
-                (*gl).cellsize as ::core::ffi::c_int,
-                (*od).prompt_col as ::core::ffi::c_int,
-                (*od).cmd_col as ::core::ffi::c_int,
-                (*od).out_start_col as ::core::ffi::c_int,
-                (*od).out_end_col as ::core::ffi::c_int,
-                (*od).exit_status as ::core::ffi::c_int,
-            );
-        } else {
-            xasprintf(
-                &raw mut line,
-                b"\tL %u (%s) flags=%s[%x] %u/%u\n\0" as *const u8 as *const ::core::ffi::c_char,
-                yy,
-                &raw mut p as *mut ::core::ffi::c_char,
-                grid_line_flags_string((*gl).flags as ::core::ffi::c_int),
-                (*gl).flags as ::core::ffi::c_int,
-                (*gl).cellused as ::core::ffi::c_int,
-                (*gl).cellsize as ::core::ffi::c_int,
-            );
+            write!(
+                &mut row,
+                " osc133={},{},{},{},{}",
+                (*od).prompt_col as u32,
+                (*od).cmd_col as u32,
+                (*od).out_start_col as u32,
+                (*od).out_end_col as u32,
+                (*od).exit_status as u32
+            )
+            .expect("writing to a byte vector succeeds");
         }
-        buf = cmd_capture_pane_append(buf, len, line, strlen(line));
-        free(line as *mut ::core::ffi::c_void);
+        row.push(b'\n');
+        buf = cmd_capture_pane_append(buf, len, row.as_ptr().cast(), row.len());
         xx = 0 as u_int;
         while xx < (*gd).sx {
             line = cmd_capture_pane_cell(s, xx, yy);

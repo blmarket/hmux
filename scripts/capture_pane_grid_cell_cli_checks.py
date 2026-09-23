@@ -22,16 +22,24 @@ cases = (
         "colour-and-id",
         "printf '\\033[31mRED\\033[0m\\n\\033]8;id=demo;https://example.test/a\\033\\\\LINK\\033]8;;\\033\\\\\\n'; sleep 30",
         b"link=https://example.test/a linkid=demo",
+        b"\t\tC ",
     ),
     (
         "no-id",
         "printf '\\033]8;;https://example.test/plain\\033\\\\NOID\\033]8;;\\033\\\\\\n'; sleep 30",
         b"link=https://example.test/plain linkid=NONE",
+        b"\t\tC ",
+    ),
+    (
+        "osc133-row",
+        "printf '\\033]133;A\\007prompt\\033]133;B\\007\\033]133;C\\007out\\033]133;D;42;k=v\\007'; sleep 30",
+        b"osc133=0,6,6,9,42",
+        b"\tL ",
     ),
 )
 
 
-def capture(binary_path, name, command, expected, tempdir):
+def capture(binary_path, name, command, expected, line_prefix, tempdir):
     base = [str(binary_path), "-S", str(tempdir / f"socket-{name}"), "-f", "/dev/null"]
 
     def run(*args):
@@ -49,10 +57,10 @@ def capture(binary_path, name, command, expected, tempdir):
             assert time.monotonic() < deadline, (name, output[:1000])
             time.sleep(0.05)
 
-        cells = [line for line in output.splitlines() if line.startswith(b"\t\tC ")]
-        assert any(expected in line for line in cells), (name, expected)
+        lines = [line for line in output.splitlines() if line.startswith(line_prefix)]
+        assert any(expected in line for line in lines), (name, expected)
         if name == "colour-and-id":
-            assert any(b"data=(1,1,R)" in line and b"fg=red[1]" in line for line in cells)
+            assert any(b"data=(1,1,R)" in line and b"fg=red[1]" in line for line in lines)
         return output
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
@@ -60,11 +68,16 @@ def capture(binary_path, name, command, expected, tempdir):
 
 with tempfile.TemporaryDirectory(prefix="capture-grid-cell-", dir=root / "target") as tmp:
     tempdir = pathlib.Path(tmp)
-    for name, command, expected in cases:
-        output = capture(binary, f"candidate-{name}", command, expected, tempdir)
+    for name, command, expected, line_prefix in cases:
+        output = capture(binary, f"candidate-{name}", command, expected, line_prefix, tempdir)
         if baseline is not None:
             baseline_output = capture(
-                pathlib.Path(baseline).resolve(), f"baseline-{name}", command, expected, tempdir
+                pathlib.Path(baseline).resolve(),
+                f"baseline-{name}",
+                command,
+                expected,
+                line_prefix,
+                tempdir,
             )
             assert output == baseline_output, f"{name} capture differs from baseline"
 

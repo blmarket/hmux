@@ -711,6 +711,23 @@ legacy callers safe.
   rendered a custom key table containing UTF-8 `é` on both the pre-change
   main binary and the migrated binary. No sanitizer was run.
 
+### Increment 177 — capture-pane grid header and row scratch (2026-09-22)
+
+- `cmd_capture_pane_grid` now owns its ASCII header in a Rust `String` and
+  each grid-row description in a `Vec<u8>`. Removed three local `xasprintf`
+  allocations and the matching header/row frees. `cmd_capture_pane_append`
+  copies each temporary byte slice synchronously; its returned C-owned
+  aggregate buffer and the separately allocated cell descriptions retain
+  their existing ownership paths.
+- Source audit preserves `%u`, `%x`, line and OSC 133 field ordering, and
+  appends C string fields as bytes without UTF-8 conversion. The temporary
+  pointers from `as_ptr()` remain valid through each append call.
+- In the isolated branch, library/binary build, the focused
+  `osc133_exit_status` test, changed-file rustfmt, and `git diff --check`
+  passed. The capture-pane CLI check compared complete output byte for byte
+  with the pinned baseline for two OSC 8 cases and an OSC 133 row. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -721,9 +738,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_capture_pane_grid` formats a header and each grid-row description
-   with `xasprintf`, appends their bytes synchronously, then frees them.
-   A Rust-owned header and row byte vector can remove those local frees.
+1. `window_customize_build_keys` still formats local command, note, and
+   repeat detail text with `xasprintf`/`xstrdup`, passes each to
+   `mode_tree_add_identity`, then frees it. The tree copies these strings;
+   the three branches can be audited as one small, byte-preserving owner.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -748,9 +766,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–162. The remaining
+Current validation is recorded in increments 15–177. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–162 has its own local commit; none was pushed.
+Each of increments 15–177 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -931,3 +949,9 @@ by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
 build, mode-tree-preview-label, customize-array-name, and window-tree-prompt
 CLI checks, changed-file rustfmt, and `git diff --check` passed on main.
 No combined sanitizer was run.
+After increments 175–177 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, mode-tree-row, customize-key-table-title, and capture-pane-grid-cell
+CLI checks, changed-file rustfmt, and `git diff --check` passed on main.
+The mode-tree-row and capture-pane checks compared against the pinned
+baseline binary. No combined sanitizer was run.
