@@ -1556,6 +1556,20 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check`. No sanitizer run was
   performed.
 
+### Increment 84 — fuzzy-match scratch arrays (2026-09-22)
+
+- `fuzzy_match_fuzzy` now owns its backtracking positions as `Vec<u_int>`.
+  `fuzzy_match` owns its matched flags, best flags, and decoded-token slots
+  as Vecs. This removes four local calloc/reallocarray allocations and their
+  corresponding frees, as well as the explicit memset and memcpy between
+  matched and best flags. Early no-match returns drop the position Vec; the
+  remaining explicit drops follow the former free order before the C-owned
+  `fuzzy_scan` result is freed. The libc-owned result mask retains its ABI.
+- Focused fuzzy tests passed, including repeated-character backtracking,
+  alternative group ordering/reset, and no match. Changed-file rustfmt and
+  `git diff --check` passed in the isolated worktree. No sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1587,9 +1601,9 @@ non-string value.
    IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
    be represented losslessly in its current u64 tag without new bounds.
 
-Current validation is recorded in increments 15–83. The remaining
+Current validation is recorded in increments 15–84. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–83 has its own local commit; none was pushed.
+Each of increments 15–84 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

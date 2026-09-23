@@ -10,7 +10,7 @@ use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
 use crate::src::style::{style_parse, style_set};
 use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
-use crate::src::xmalloc::{xcalloc, xreallocarray};
+use crate::src::xmalloc::xreallocarray;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -459,13 +459,13 @@ unsafe extern "C" fn fuzzy_match_fuzzy(
 ) -> ::core::ffi::c_int {
     let mut pi: u_int = 0;
     let mut ci: u_int = 0;
-    let mut pos: *mut u_int = ::core::ptr::null_mut::<u_int>();
+    let mut pos: Vec<u_int>;
     let mut found: ::core::ffi::c_int = 0;
     let mut value: ::core::ffi::c_int = 0;
     if toklen == 0 as u_int || ncs == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    pos = xcalloc(toklen as size_t, ::core::mem::size_of::<u_int>() as size_t) as *mut u_int;
+    pos = vec![0; toklen as usize];
     ci = 0 as u_int;
     pi = 0 as u_int;
     while pi < toklen {
@@ -479,15 +479,14 @@ unsafe extern "C" fn fuzzy_match_fuzzy(
             ci = ci.wrapping_add(1);
         }
         if ci == ncs {
-            free(pos as *mut ::core::ffi::c_void);
             return 0 as ::core::ffi::c_int;
         }
         let fresh1 = ci;
         ci = ci.wrapping_add(1);
-        *pos.offset(pi as isize) = fresh1;
+        pos[pi as usize] = fresh1;
         pi = pi.wrapping_add(1);
     }
-    ci = *pos.offset(toklen.wrapping_sub(1 as u_int) as isize);
+    ci = pos[toklen.wrapping_sub(1 as u_int) as usize];
     pi = toklen;
     while pi > 0 as u_int {
         found = 0 as ::core::ffi::c_int;
@@ -498,7 +497,7 @@ unsafe extern "C" fn fuzzy_match_fuzzy(
                 fold,
             ) != 0
             {
-                *pos.offset(pi.wrapping_sub(1 as u_int) as isize) = ci;
+                pos[pi.wrapping_sub(1 as u_int) as usize] = ci;
                 found = 1 as ::core::ffi::c_int;
                 break;
             } else {
@@ -509,7 +508,6 @@ unsafe extern "C" fn fuzzy_match_fuzzy(
             }
         }
         if found == 0 {
-            free(pos as *mut ::core::ffi::c_void);
             return 0 as ::core::ffi::c_int;
         }
         if pi != 1 as u_int {
@@ -517,14 +515,13 @@ unsafe extern "C" fn fuzzy_match_fuzzy(
         }
         pi = pi.wrapping_sub(1);
     }
-    value = fuzzy_score_positions(pos, toklen, cs);
+    value = fuzzy_score_positions(pos.as_ptr(), toklen, cs);
     *score += value;
     pi = 0 as u_int;
     while pi < toklen {
-        *matched.offset(*pos.offset(pi as isize) as isize) = 1 as ::core::ffi::c_char;
+        *matched.offset(pos[pi as usize] as isize) = 1 as ::core::ffi::c_char;
         pi = pi.wrapping_add(1);
     }
-    free(pos as *mut ::core::ffi::c_void);
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn fuzzy_score_exact(
@@ -793,10 +790,9 @@ pub unsafe extern "C" fn fuzzy_match(
     mut score: *mut u_int,
 ) -> *mut bitstr_t {
     let mut cs: *mut fuzzy_char = ::core::ptr::null_mut::<fuzzy_char>();
-    let mut matched: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut best: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut groupmatched: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut tok: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
+    let mut matched: Vec<::core::ffi::c_char>;
+    let mut best: Vec<::core::ffi::c_char>;
+    let mut tok: Vec<utf8_data>;
     let mut mask: *mut bitstr_t = ::core::ptr::null_mut::<bitstr_t>();
     let mut ncs: u_int = 0;
     let mut i: u_int = 0;
@@ -843,19 +839,17 @@ pub unsafe extern "C" fn fuzzy_match(
         }
     }
     cs = fuzzy_scan(text, &raw mut ncs, &raw mut widths as *mut u_int);
-    matched = xcalloc(
-        (if ncs == 0 as u_int { 1 as u_int } else { ncs }) as size_t,
-        ::core::mem::size_of::<::core::ffi::c_char>() as size_t,
-    ) as *mut ::core::ffi::c_char;
-    best = xcalloc(
-        (if ncs == 0 as u_int { 1 as u_int } else { ncs }) as size_t,
-        ::core::mem::size_of::<::core::ffi::c_char>() as size_t,
-    ) as *mut ::core::ffi::c_char;
-    tok = xreallocarray(
-        NULL,
-        strlen(pattern).wrapping_add(1 as size_t),
-        ::core::mem::size_of::<utf8_data>() as size_t,
-    ) as *mut utf8_data;
+    matched = vec![0; ncs.max(1) as usize];
+    best = vec![0; ncs.max(1) as usize];
+    tok = vec![
+        utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
+        strlen(pattern).wrapping_add(1 as size_t) as usize
+    ];
     cp = pattern;
     while *cp as ::core::ffi::c_int != '\0' as i32 {
         while *cp as ::core::ffi::c_int == ' ' as i32 || *cp as ::core::ffi::c_int == '|' as i32 {
@@ -868,38 +862,29 @@ pub unsafe extern "C" fn fuzzy_match(
         while *cp as ::core::ffi::c_int != '\0' as i32 && *cp as ::core::ffi::c_int != '|' as i32 {
             cp = cp.offset(1);
         }
-        memset(
-            matched as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            (if ncs == 0 as u_int { 1 as u_int } else { ncs }) as size_t,
-        );
-        groupmatched = matched;
+        matched.fill(0);
         if fuzzy_match_group(
             sp,
             cp,
-            tok,
+            tok.as_mut_ptr(),
             cs,
             ncs,
             fold,
             &raw mut groupscore,
-            groupmatched,
+            matched.as_mut_ptr(),
         ) != 0
         {
             if found == 0 || groupscore > bestscore {
                 found = 1 as ::core::ffi::c_int;
                 bestscore = groupscore;
-                memcpy(
-                    best as *mut ::core::ffi::c_void,
-                    matched as *const ::core::ffi::c_void,
-                    (if ncs == 0 as u_int { 1 as u_int } else { ncs }) as size_t,
-                );
+                best.copy_from_slice(&matched);
             }
         }
     }
-    free(tok as *mut ::core::ffi::c_void);
+    drop(tok);
     if found == 0 {
-        free(best as *mut ::core::ffi::c_void);
-        free(matched as *mut ::core::ffi::c_void);
+        drop(best);
+        drop(matched);
         free(cs as *mut ::core::ffi::c_void);
         return ::core::ptr::null_mut::<bitstr_t>();
     }
@@ -949,7 +934,7 @@ pub unsafe extern "C" fn fuzzy_match(
     ) as *mut bitstr_t;
     i = 0 as u_int;
     while i < ncs {
-        if !(*best.offset(i as isize) == 0) {
+        if best[i as usize] != 0 {
             if !(fuzzy_column(
                 cs.offset(i as isize) as *mut fuzzy_char,
                 &raw mut start as *mut u_int,
@@ -971,8 +956,8 @@ pub unsafe extern "C" fn fuzzy_match(
         }
         i = i.wrapping_add(1);
     }
-    free(best as *mut ::core::ffi::c_void);
-    free(matched as *mut ::core::ffi::c_void);
+    drop(best);
+    drop(matched);
     free(cs as *mut ::core::ffi::c_void);
     if !score.is_null() {
         *score = if bestscore < 0 as ::core::ffi::c_int {
@@ -1012,6 +997,35 @@ mod tests {
                 std::ptr::null_mut(),
             );
             assert!(mask.is_null());
+        }
+    }
+
+    #[test]
+    fn fuzzy_match_backtracks_and_resets_between_alternatives() {
+        unsafe {
+            let mask = fuzzy_match(
+                c"q|abc".as_ptr(),
+                c"aabcbc".as_ptr(),
+                6,
+                std::ptr::null_mut(),
+            );
+            assert!(!mask.is_null());
+            assert_eq!(*mask, 0b001110);
+            free(mask.cast());
+
+            let mask = fuzzy_match(
+                c"abc|q".as_ptr(),
+                c"aabcbc".as_ptr(),
+                6,
+                std::ptr::null_mut(),
+            );
+            assert!(!mask.is_null());
+            assert_eq!(*mask, 0b001110);
+            free(mask.cast());
+
+            assert!(
+                fuzzy_match(c"abc".as_ptr(), c"abx".as_ptr(), 3, std::ptr::null_mut()).is_null()
+            );
         }
     }
 }
