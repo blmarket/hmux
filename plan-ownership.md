@@ -125,12 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_new_session_exec` duplicates the default cwd from
-   `server_client_get_cwd` solely for `session_create`, then frees it on both
-   exits. `session_create` immediately copies the cwd into `SessionOwner.cwd`.
-   Borrow the default client cwd through that synchronous call while retaining
-   ownership for a formatted `-c` path. Check the intervening client-open
-   path before borrowing and compare no-`-c` creation with pinned tmux.
+1. `cmd_display_popup_exec` in `src/cmd/entries/display_menu.rs` duplicates
+   the default cwd from `server_client_get_cwd` before passing it to
+   `popup_display`, then frees it on all exits. `popup_display` passes cwd to
+   synchronous `job_run`. Audit callback/reentrancy before borrowing the
+   client/session cwd through that call, while keeping the formatted `-d`
+   path C-owned. Compare popup job cwd with pinned tmux.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1214,6 +1214,19 @@ name error.
 - Serialized workspace tests, binary build, and the window-name CLI comparison
   with pinned tmux passed, covering explicit and default broken-pane names.
   Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 424 — borrow default new-session cwd (2026-09-23)
+
+- `cmd_new_session_exec` now borrows the default cwd from
+  `server_client_get_cwd` until `session_create` immediately copies it into
+  `SessionOwner.cwd`. The default-path `xstrdup` and its matching frees are
+  gone. The formatted `-c` path still owns its C allocation and frees it on
+  both exits. `server_client_open` between selection and creation does not
+  replace the client cwd.
+- Serialized workspace tests and binary build passed. The extended session
+  cwd CLI comparison with pinned tmux covers detached creation without `-c`,
+  explicit `-c`, attach replacement, and inherited pane cwd. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

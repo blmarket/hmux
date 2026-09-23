@@ -99,7 +99,6 @@ use crate::src::spawn::spawn_window;
 use crate::src::tmux::{check_name, clean_name, global_s_options};
 use crate::src::utf8::utf8_stravis_cstring;
 use crate::src::window::winlinks_minmax;
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -198,7 +197,8 @@ unsafe extern "C" fn cmd_new_session_exec(
     let mut group: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut formatted_cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ename: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut wname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -377,7 +377,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                         }
                         tmp = args_get(args, 'c' as i32 as u_char);
                         if !tmp.is_null() {
-                            cwd = format_single(
+                            formatted_cwd = format_single(
                                 item,
                                 tmp,
                                 c,
@@ -385,11 +385,10 @@ unsafe extern "C" fn cmd_new_session_exec(
                                 ::core::ptr::null_mut::<winlink>(),
                                 ::core::ptr::null_mut::<window_pane>(),
                             );
+                            cwd = formatted_cwd;
                         } else {
-                            cwd = xstrdup(server_client_get_cwd(
-                                c,
-                                ::core::ptr::null_mut::<session>(),
-                            ));
+                            // session_create copies this borrowed cwd into SessionOwner.
+                            cwd = server_client_get_cwd(c, ::core::ptr::null_mut::<session>());
                         }
                         if detached == 0
                             && already_attached == 0
@@ -805,7 +804,10 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                             if !sc.argv.is_null() {
                                                                 cmd_free_argv(sc.argc, sc.argv);
                                                             }
-                                                            free(cwd as *mut ::core::ffi::c_void);
+                                                            free(
+                                                                formatted_cwd
+                                                                    as *mut ::core::ffi::c_void,
+                                                            );
                                                             free(wname as *mut ::core::ffi::c_void);
                                                             free(sname as *mut ::core::ffi::c_void);
                                                             return CMD_RETURN_NORMAL;
@@ -827,7 +829,7 @@ unsafe extern "C" fn cmd_new_session_exec(
     if !sc.argv.is_null() {
         cmd_free_argv(sc.argc, sc.argv);
     }
-    free(cwd as *mut ::core::ffi::c_void);
+    free(formatted_cwd as *mut ::core::ffi::c_void);
     free(wname as *mut ::core::ffi::c_void);
     free(sname as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;

@@ -36,6 +36,15 @@ def trace(binary):
             return run(b"display-message", b"-p", b"-t", b"cwd:" + index + b".0", b"#{pane_start_path}")
 
         try:
+            run(b"new-session", b"-d", b"-s", b"default", b"exec sleep 60")
+            default_session = run(b"display-message", b"-p", b"-t", b"default", b"#{session_path}")
+            default_pane = run(
+                b"display-message", b"-p", b"-t", b"default:0.0", b"#{pane_start_path}"
+            )
+            assert default_session == first + b"\n", default_session
+            assert default_pane == default_session, default_pane
+            run(b"kill-session", b"-t", b"default")
+
             run(b"new-session", b"-d", b"-s", b"cwd", b"-c", first, b"exec sleep 60")
             initial = session_path()
             assert initial == first + b"\n", initial
@@ -72,7 +81,10 @@ def trace(binary):
             inherited = pane_start_path(b"2")
             assert inherited == second + b"\n", inherited
             assert session_path() == after_attach
-            return tuple(value.replace(directory, b"$ROOT") for value in (initial, before_attach, after_attach, inherited))
+            return tuple(
+                value.replace(directory, b"$ROOT")
+                for value in (default_session, default_pane, initial, before_attach, after_attach, inherited)
+            )
         finally:
             if attached is not None:
                 if attached.poll() is None:
