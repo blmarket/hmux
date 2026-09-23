@@ -1650,6 +1650,34 @@ legacy callers safe.
   and error paths, including raw `ESC [ NUL` and escaped pending input. No
   sanitizer was run.
 
+### Increment 243 — positional argument command-cache owner (2026-09-23)
+
+- `args_create` now allocates an `ArgsOwner` with the public `args` record at
+  offset zero and a `Vec<Option<CString>>` indexed by positional argument.
+  `args_string` caches command-list print output there and publishes a
+  borrowed pointer through the unchanged `args_value.cached` field. This
+  removes that cache's C allocation/free pair while allowing positional
+  values to move under `xrecallocarray`. `args_free` clears only these borrowed
+  pointers before the exported `args_free_value` handles independently
+  C-owned values, then drops the owner. `args_copy` starts with independent
+  cache storage; parse/log-only values use scoped `Cow<CStr>` and do not
+  acquire a cache. The `args` and `args_value` layouts and exported signatures
+  remain unchanged, and `args` is no longer `Copy` in Rust.
+- Every in-tree `args` allocation uses `args_create` and destruction uses
+  `args_free`; callers of exported `args_free_value` on separate source arrays
+  retain their libc-owned cache contract. The enclosing owner requires this
+  creator/destructor pairing for foreign callers as well.
+- All 10 `arguments_conversion` tests, library/binary build, changed-file
+  rustfmt, diff check, and pinned-baseline command-list, command-parse, and
+  argument-print CLI comparisons passed. The new test covers caching before
+  positional-array growth, independent copied caches, and rejection cleanup.
+  No sanitizer was run.
+- Combined validation after increments 241–243: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt, and
+  per-commit diff checks passed. Format-job and capture-pane CLI checks passed;
+  capture-pane and the three argument-print checks matched the pinned
+  baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1660,11 +1688,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The command-list cache in `args_value_as_string` is retained in its
-   movable C-layout record. A pointer-keyed sidecar is disallowed by the type
-   policy; migrate only with a real record owner that preserves the public
-   layout and independent cache storage for copied values.
-   `set-buffer`'s payload is a less useful local target: `paste_set` retains
+1. `yylex_append` grows scratch buffers for `yylex_get_word`, `yylex_format`,
+   and `yylex_token`. Their returned strings cross parser ownership paths;
+   audit all lexer success, error, and token-destruction paths before changing
+   the shared `(buf, len)` lifecycle. `set-buffer`'s payload is a less useful
+   local target: `paste_set` retains
    the libc allocation on success and leaves it with the caller on error, so
    a local `Vec` alone would add an allocation and copy.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
@@ -1694,7 +1722,7 @@ non-string value.
    tag-only generated ID would violate the agreed type policy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–237 above, with increment 228 explicitly retracted.
+recorded in increments 226–243 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

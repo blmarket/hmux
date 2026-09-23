@@ -1,6 +1,6 @@
 use crate::src::cmd::{
     cmd_append_argv, cmd_get_args, cmd_get_entry, cmd_get_source, cmd_list_copy, cmd_list_first,
-    cmd_list_free, cmd_list_print, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace,
+    cmd_list_free, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace,
 };
 use crate::src::cmd_find::cmd_find_copy_state;
 use crate::src::cmd_parse::cmd_parse_from_string;
@@ -82,7 +82,18 @@ pub use crate::src::shared::window::{
 };
 use crate::src::utf8::utf8_strvis;
 use crate::src::xmalloc::{xasprintf, xcalloc, xrecallocarray, xstrdup, xvasprintf_cstring};
+use std::borrow::Cow;
 use std::ffi::{CStr, CString};
+
+// The public args layout remains at offset zero. Its positional values may be
+// moved by xrecallocarray, so cache ownership follows their stable indexes.
+#[repr(C)]
+struct ArgsOwner {
+    raw: args,
+    positional_caches: Vec<Option<CString>>,
+}
+
+const _: () = assert!(std::mem::offset_of!(ArgsOwner, raw) == 0);
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_21;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_20;
@@ -327,29 +338,27 @@ unsafe extern "C" fn args_type_to_string(mut type_0: args_type) -> *const ::core
     }
     return b"INVALID\0" as *const u8 as *const ::core::ffi::c_char;
 }
-unsafe extern "C" fn args_value_as_string(
-    mut value: *mut args_value,
-) -> *const ::core::ffi::c_char {
-    match (*value).type_0 as ::core::ffi::c_uint {
-        0 => return b"\0" as *const u8 as *const ::core::ffi::c_char,
-        2 => {
-            if (*value).cached.is_null() {
-                (*value).cached =
-                    cmd_list_print((*value).c2rust_unnamed.cmdlist, 0 as ::core::ffi::c_int);
-            }
-            return (*value).cached;
-        }
-        1 => return (*value).c2rust_unnamed.string,
-        _ => {}
+unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
+    match value.type_0 as ::core::ffi::c_uint {
+        0 => Cow::Borrowed(CStr::from_bytes_with_nul_unchecked(b"\0")),
+        1 => Cow::Borrowed(CStr::from_ptr(value.c2rust_unnamed.string)),
+        2 => Cow::Owned(cmd_list_print_cstring(value.c2rust_unnamed.cmdlist, 0)),
+        _ => fatalx(b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char),
     }
-    fatalx(b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char);
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_create() -> *mut args {
-    let mut args: *mut args = ::core::ptr::null_mut::<args>();
-    args = xcalloc(1 as size_t, ::core::mem::size_of::<args>() as size_t) as *mut args;
-    (*args).tree.entries = Box::into_raw(Box::new(args_tree_storage::default()));
-    return args;
+    let owner = Box::new(ArgsOwner {
+        raw: args {
+            tree: args_tree {
+                entries: Box::into_raw(Box::new(args_tree_storage::default())),
+            },
+            count: 0,
+            values: ::core::ptr::null_mut(),
+        },
+        positional_caches: Vec::new(),
+    });
+    Box::into_raw(owner).cast::<args>()
 }
 unsafe extern "C" fn args_parse_flag_argument(
     mut values: *mut args_value,
@@ -446,7 +455,8 @@ unsafe extern "C" fn args_parse_flag_argument(
         args_copy_value(new, argument);
         *i = (*i).wrapping_add(1);
     }
-    s = args_value_as_string(new);
+    let printed = args_value_for_log(&*new);
+    s = printed.as_ptr();
     log_debug(
         b"%s: -%c = %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
@@ -589,7 +599,8 @@ pub unsafe extern "C" fn args_parse(
     if i != count {
         while i < count {
             value = values.offset(i as isize) as *mut args_value;
-            s = args_value_as_string(value);
+            let printed = args_value_for_log(&*value);
+            s = printed.as_ptr();
             log_debug(
                 b"%s: %u = %s (type %s)\0" as *const u8 as *const ::core::ffi::c_char,
                 b"args_parse\0" as *const u8 as *const ::core::ffi::c_char,
@@ -807,6 +818,17 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
     let mut entry1: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut value1: *mut args_value = ::core::ptr::null_mut::<args_value>();
+    // The C-layout cached fields borrow strings in ArgsOwner. Clear those
+    // pointers before args_free_value handles any independently C-owned cache.
+    let owner = &mut *args.cast::<ArgsOwner>();
+    for (index, cache) in owner.positional_caches.iter().enumerate() {
+        if let Some(cache) = cache {
+            debug_assert!(index < (*args).count as usize);
+            let value = (*args).values.add(index);
+            debug_assert_eq!((*value).cached, cache.as_ptr().cast_mut());
+            (*value).cached = ::core::ptr::null_mut();
+        }
+    }
     args_free_values((*args).values, (*args).count);
     free((*args).values as *mut ::core::ffi::c_void);
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
@@ -837,7 +859,7 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         drop(Box::from_raw((*args).tree.entries));
         (*args).tree.entries = ::core::ptr::null_mut::<args_tree_storage>();
     }
-    free(args as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(args.cast::<ArgsOwner>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_to_vector(
@@ -1174,7 +1196,27 @@ pub unsafe extern "C" fn args_string(
     if idx >= (*args).count {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    return args_value_as_string((*args).values.offset(idx as isize) as *mut args_value);
+    let value = (*args).values.add(idx as usize);
+    match (*value).type_0 as ::core::ffi::c_uint {
+        0 => b"\0".as_ptr().cast(),
+        1 => (*value).c2rust_unnamed.string,
+        2 => {
+            if !(*value).cached.is_null() {
+                return (*value).cached;
+            }
+            let printed = cmd_list_print_cstring((*value).c2rust_unnamed.cmdlist, 0);
+            let owner = &mut *args.cast::<ArgsOwner>();
+            let caches = &mut owner.positional_caches;
+            if caches.len() <= idx as usize {
+                caches.resize_with(idx as usize + 1, || None);
+            }
+            let pointer = printed.as_ptr().cast_mut();
+            caches[idx as usize] = Some(printed);
+            (*value).cached = pointer;
+            pointer
+        }
+        _ => fatalx(b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char),
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_make_commands_now(

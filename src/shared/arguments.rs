@@ -32,7 +32,6 @@ mod tests {
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct args {
     pub tree: args_tree,

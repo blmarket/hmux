@@ -3,15 +3,18 @@ use std::mem::size_of;
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_create, args_escape, args_first_value, args_free, args_has, args_next_value,
-    args_percentage_result, args_print, args_set, args_string,
-    args_string_percentage_and_expand_result, args_strtonum, args_strtonum_and_expand_result,
-    args_strtonum_result, parse_number, parse_percentage, ArgumentValueError,
+    args_copy, args_create, args_escape, args_first_value, args_free, args_free_values, args_has,
+    args_next_value, args_parse as parse_args, args_percentage_result, args_print, args_set,
+    args_string, args_string_percentage_and_expand_result, args_strtonum,
+    args_strtonum_and_expand_result, args_strtonum_result, parse_number, parse_percentage,
+    ArgumentValueError,
 };
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
 use hmux2::src::cmd_queue::{cmdq_free_state, cmdq_get_callback1};
 use hmux2::src::ffi::libc::free;
-use hmux2::src::shared::arguments::{args_value, ARGS_COMMANDS, ARGS_STRING};
+use hmux2::src::shared::arguments::{
+    args, args_parse, args_value, ARGS_COMMANDS, ARGS_PARSE_COMMANDS, ARGS_STRING,
+};
 use hmux2::src::xmalloc::{xcalloc, xstrdup};
 
 fn cstring(value: &str) -> CString {
@@ -261,5 +264,87 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         assert_eq!(first, second);
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
         args_free(args);
+    }
+}
+
+#[test]
+fn positional_command_cache_survives_array_growth_and_copy() {
+    unsafe extern "C" fn command_argument(
+        args: *mut args,
+        count: core::ffi::c_uint,
+        _: *mut *mut core::ffi::c_char,
+    ) -> core::ffi::c_uint {
+        if count == 1 {
+            args_string(args, 0);
+        }
+        ARGS_PARSE_COMMANDS
+    }
+
+    unsafe {
+        let values = xcalloc(3, size_of::<args_value>()) as *mut args_value;
+        (*values).type_0 = ARGS_STRING;
+        (*values).c2rust_unnamed.string = xstrdup(c"command".as_ptr());
+        for index in 1..3 {
+            let value = values.add(index);
+            (*value).type_0 = ARGS_COMMANDS;
+            (*value).c2rust_unnamed.cmdlist = cmd_list_new();
+        }
+        let spec = args_parse {
+            template: c"".as_ptr(),
+            lower: 0,
+            upper: -1,
+            cb: Some(command_argument),
+        };
+        let mut cause = ptr::null_mut();
+        let args = parse_args(&spec, values, 3, &mut cause);
+        assert!(!args.is_null());
+        assert!(cause.is_null());
+        args_free_values(values, 3);
+        free(values.cast());
+
+        let first = (*(*args).values).cached as *const core::ffi::c_char;
+        assert!(!first.is_null());
+        assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
+        assert_eq!(args_string(args, 0), first);
+        let second = args_string(args, 1);
+        assert_ne!(first, second);
+
+        let copied = args_copy(args, 0, ptr::null_mut());
+        let copied_first = args_string(copied, 0);
+        let copied_second = args_string(copied, 1);
+        assert_ne!(copied_first, first);
+        assert_ne!(copied_second, second);
+        assert_eq!(CStr::from_ptr(copied_first).to_bytes(), b"");
+        assert_eq!(CStr::from_ptr(copied_second).to_bytes(), b"");
+        args_free(args);
+        assert_eq!(CStr::from_ptr(copied_first).to_bytes(), b"");
+        args_free(copied);
+    }
+}
+
+#[test]
+fn rejected_command_argument_keeps_source_value_ownership() {
+    unsafe {
+        let values = xcalloc(2, size_of::<args_value>()) as *mut args_value;
+        (*values).type_0 = ARGS_STRING;
+        (*values).c2rust_unnamed.string = xstrdup(c"command".as_ptr());
+        let command_value = values.add(1);
+        (*command_value).type_0 = ARGS_COMMANDS;
+        (*command_value).c2rust_unnamed.cmdlist = cmd_list_new();
+        let spec = args_parse {
+            template: c"".as_ptr(),
+            lower: 0,
+            upper: -1,
+            cb: None,
+        };
+        let mut cause = ptr::null_mut();
+        assert!(parse_args(&spec, values, 2, &mut cause).is_null());
+        assert_eq!(
+            CStr::from_ptr(cause).to_bytes(),
+            b"argument 1 must be \"string\""
+        );
+        free(cause.cast());
+        args_free_values(values, 2);
+        free(values.cast());
     }
 }
