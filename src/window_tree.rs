@@ -1,10 +1,10 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::src::cmd_queue::{cmdq_append, cmdq_get_callback1, cmdq_set_cancel_data};
-use crate::src::ffi::libc::{__ctype_tolower_loc, free, memcpy, strcasestr, strstr};
+use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strstr};
 use crate::src::format::{
-    format_add, format_create, format_defaults, format_expand, format_free, format_single,
-    format_true,
+    format_add, format_create, format_defaults, format_expand_cstring, format_free,
+    format_single_cstring, format_true,
 };
 use crate::src::format_draw::{format_draw, format_trim_left_bytes, format_width};
 use crate::src::grid::grid_default_cell;
@@ -427,7 +427,6 @@ unsafe extern "C" fn window_tree_build_pane(
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     window_pane_index(wp, &raw mut idx);
@@ -443,7 +442,7 @@ unsafe extern "C" fn window_tree_build_pane(
         0 as ::core::ffi::c_int,
     );
     format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
-    text = format_expand(ft, (*data).format.as_ptr());
+    let text = format_expand_cstring(ft, (*data).format.as_ptr());
     let name = CString::new(idx.to_string()).expect("pane index contains NUL");
     format_free(ft);
     mti = mode_tree_add_identity(
@@ -454,10 +453,9 @@ unsafe extern "C" fn window_tree_build_pane(
         // the same shared selection/tag behavior as the former pane pointer.
         ModeTreeIdentity::pane((*wp).id),
         name.as_ptr(),
-        text,
+        text.as_ptr(),
         -(1 as ::core::ffi::c_int),
     ) as *mut mode_tree_item;
-    free(text as *mut ::core::ffi::c_void);
     mode_tree_align(mti, 1 as ::core::ffi::c_int);
 }
 unsafe extern "C" fn window_tree_filter_pane(
@@ -466,12 +464,11 @@ unsafe extern "C" fn window_tree_filter_pane(
     mut wp: *mut window_pane,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut result: ::core::ffi::c_int = 0;
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    cp = format_single(
+    let cp = format_single_cstring(
         ::core::ptr::null_mut::<cmdq_item>(),
         filter,
         ::core::ptr::null_mut::<client>(),
@@ -479,8 +476,7 @@ unsafe extern "C" fn window_tree_filter_pane(
         wl,
         wp,
     );
-    result = format_true(cp);
-    free(cp as *mut ::core::ffi::c_void);
+    result = format_true(cp.as_ptr());
     return result;
 }
 unsafe extern "C" fn window_tree_build_window(
@@ -494,7 +490,6 @@ unsafe extern "C" fn window_tree_build_window(
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut found: u_int = 0;
     let mut expanded: ::core::ffi::c_int = 0;
@@ -521,7 +516,7 @@ unsafe extern "C" fn window_tree_build_window(
         wl,
         ::core::ptr::null_mut::<window_pane>(),
     );
-    text = format_expand(ft, (*data).format.as_ptr());
+    let text = format_expand_cstring(ft, (*data).format.as_ptr());
     let name = CString::new(((*wl).idx as u_int).to_string()).expect("window index contains NUL");
     format_free(ft);
     if (*data).type_0 as ::core::ffi::c_uint
@@ -539,10 +534,9 @@ unsafe extern "C" fn window_tree_build_window(
         item as *mut ::core::ffi::c_void,
         ModeTreeIdentity::winlink((*s).id, (*wl).idx),
         name.as_ptr(),
-        text,
+        text.as_ptr(),
         expanded,
     ) as *mut mode_tree_item;
-    free(text as *mut ::core::ffi::c_void);
     mode_tree_align(mti, 1 as ::core::ffi::c_int);
     let l = sort_get_panes_window((*wl).window, sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes in window tree");
@@ -572,7 +566,6 @@ unsafe extern "C" fn window_tree_build_session(
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut item: *mut window_tree_itemdata = ::core::ptr::null_mut::<window_tree_itemdata>();
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut wl: *mut winlink = (*s).curw;
     let mut i: u_int = 0;
     let mut empty: u_int = 0;
@@ -600,7 +593,7 @@ unsafe extern "C" fn window_tree_build_session(
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
     );
-    text = format_expand(ft, (*data).format.as_ptr());
+    let text = format_expand_cstring(ft, (*data).format.as_ptr());
     format_free(ft);
     if (*data).type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -615,10 +608,9 @@ unsafe extern "C" fn window_tree_build_session(
         item as *mut ::core::ffi::c_void,
         ModeTreeIdentity::session((*s).id),
         (*s).name,
-        text,
+        text.as_ptr(),
         expanded,
     ) as *mut mode_tree_item;
-    free(text as *mut ::core::ffi::c_void);
     let l = sort_get_winlinks_session(s, sort_crit);
     let n = u_int::try_from(l.len()).expect("too many winlinks in window tree");
     empty = 0 as u_int;
@@ -856,7 +848,6 @@ unsafe extern "C" fn window_tree_draw_session(
     };
     let mut left: ::core::ffi::c_int = 0;
     let mut right: ::core::ffi::c_int = 0;
-    let mut label: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
@@ -1046,8 +1037,8 @@ unsafe extern "C" fn window_tree_draw_session(
                 b"tree-mode-preview-format\0" as *const u8 as *const ::core::ffi::c_char,
             );
             if *format as ::core::ffi::c_int != '\0' as i32 {
-                label = format_expand(ft, format);
-                if *label as ::core::ffi::c_int != '\0' as i32 {
+                let label = format_expand_cstring(ft, format);
+                if !label.as_bytes().is_empty() {
                     window_tree_draw_label(
                         ctx,
                         cx.wrapping_add(offset),
@@ -1056,10 +1047,9 @@ unsafe extern "C" fn window_tree_draw_session(
                         sy,
                         &raw mut gc,
                         &raw mut label_gc,
-                        label,
+                        label.as_ptr(),
                     );
                 }
-                free(label as *mut ::core::ffi::c_void);
             }
             format_free(ft);
             if loop_0 != end.wrapping_sub(1 as u_int) {
@@ -1136,7 +1126,6 @@ unsafe extern "C" fn window_tree_draw_window(
     };
     let mut left: ::core::ffi::c_int = 0;
     let mut right: ::core::ffi::c_int = 0;
-    let mut label: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
@@ -1328,8 +1317,8 @@ unsafe extern "C" fn window_tree_draw_window(
                     b"tree-mode-preview-format\0" as *const u8 as *const ::core::ffi::c_char,
                 );
                 if *format as ::core::ffi::c_int != '\0' as i32 {
-                    label = format_expand(ft, format);
-                    if *label as ::core::ffi::c_int != '\0' as i32 {
+                    let label = format_expand_cstring(ft, format);
+                    if !label.as_bytes().is_empty() {
                         window_tree_draw_label(
                             ctx,
                             cx.wrapping_add(offset),
@@ -1338,10 +1327,9 @@ unsafe extern "C" fn window_tree_draw_window(
                             sy,
                             &raw mut gc,
                             &raw mut label_gc,
-                            label,
+                            label.as_ptr(),
                         );
                     }
-                    free(label as *mut ::core::ffi::c_void);
                 }
                 format_free(ft);
                 if loop_0 != end.wrapping_sub(1 as u_int) {
@@ -1398,7 +1386,6 @@ unsafe extern "C" fn window_tree_draw_info(
     let mut j: u_int = 0;
     let mut k: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut lines: [*const *const ::core::ffi::c_char; 3] =
         [::core::ptr::null::<*const ::core::ffi::c_char>(); 3];
     let mut count: [u_int; 3] = [0; 3];
@@ -1488,7 +1475,7 @@ unsafe extern "C" fn window_tree_draw_info(
             if i == sy {
                 break;
             }
-            expanded = format_expand(ft, *lines[j as usize].offset(k as isize));
+            let expanded = format_expand_cstring(ft, *lines[j as usize].offset(k as isize));
             screen_write_cursormove(
                 ctx,
                 cx as ::core::ffi::c_int,
@@ -1499,11 +1486,10 @@ unsafe extern "C" fn window_tree_draw_info(
                 ctx,
                 &raw const grid_default_cell,
                 sx,
-                expanded,
+                expanded.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
                 0 as ::core::ffi::c_int,
             );
-            free(expanded as *mut ::core::ffi::c_void);
             i = i.wrapping_add(1);
             k = k.wrapping_add(1);
         }
@@ -1659,7 +1645,6 @@ unsafe extern "C" fn window_tree_get_key(
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: key_code = 0;
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
@@ -1697,9 +1682,8 @@ unsafe extern "C" fn window_tree_get_key(
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         line,
     );
-    expanded = format_expand(ft, (*data).key_format.as_ptr());
-    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(KEYC_UNKNOWN);
-    free(expanded as *mut ::core::ffi::c_void);
+    let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
+    key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     format_free(ft);
     return key;
 }

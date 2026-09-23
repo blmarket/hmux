@@ -69,16 +69,23 @@ def exercise(binary_path):
             tty = run("list-clients", "-F", "#{client_tty}")
 
             # The first key is supplied by -K and selects the first client.
-            run("choose-client", "-F", "OWNED-ROW:#{client_tty}", "-K", "1",
+            run("choose-client", "-F", "OWNED-ROW:#{client_tty}",
+                "-f", "#{==:#{client_tty}," + tty.decode() + "}",
+                "-K", "#{e|+|:#{line},1}",
                 "-t", "mode:0.0", "set-option -gq @client-picked '%%'")
             wait_for_output(b"OWNED-ROW:" + tty)
+            run("send-keys", "-t", "mode:0.0", "i")
+            wait_for_output(b"Client Name")
             run("send-keys", "-t", "mode:0.0", "1")
             selected = wait_for_option("@client-picked")
             assert selected == tty, (selected, tty)
 
             # Recreate and cancel the mode, then detach while its data is live.
-            run("choose-client", "-F", "CANCEL-ROW", "-K", "2", "-t", "mode:0.0")
-            wait_for_output(b"CANCEL-ROW")
+            # An empty filter result rejects the client before the tree's
+            # no-match fallback rebuilds it without the filter.
+            run("choose-client", "-F", "CANCEL-ROW", "-f", "#{l:}",
+                "-K", "2", "-t", "mode:0.0")
+            wait_for_output(b"no matches")
             run("send-keys", "-t", "mode:0.0", "q")
             run("choose-client", "-F", "DETACH-ROW", "-K", "3", "-t", "mode:0.0")
             wait_for_output(b"DETACH-ROW")

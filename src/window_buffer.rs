@@ -1,9 +1,9 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd_find::{cmd_find_copy_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{__ctype_tolower_loc, free, memcpy, strcasestr, strlen, strstr};
+use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strlen, strstr};
 use crate::src::format::{
-    format_add, format_create, format_defaults, format_defaults_paste_buffer, format_expand,
-    format_free, format_true,
+    format_add, format_create, format_defaults, format_defaults_paste_buffer,
+    format_expand_cstring, format_free, format_true,
 };
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_parse_cstr;
@@ -300,8 +300,6 @@ unsafe extern "C" fn window_buffer_build(
     let mut item: *mut window_buffer_itemdata = ::core::ptr::null_mut::<window_buffer_itemdata>();
     let mut i: u_int = 0;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -337,13 +335,11 @@ unsafe extern "C" fn window_buffer_build(
             format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
             format_defaults_paste_buffer(ft, pb);
             if !filter.is_null() {
-                cp = format_expand(ft, filter);
-                if format_true(cp) == 0 {
-                    free(cp as *mut ::core::ffi::c_void);
+                let cp = format_expand_cstring(ft, filter);
+                if format_true(cp.as_ptr()) == 0 {
                     format_free(ft);
                     current_block_32 = 5948590327928692120;
                 } else {
-                    free(cp as *mut ::core::ffi::c_void);
                     current_block_32 = 1608152415753874203;
                 }
             } else {
@@ -352,17 +348,16 @@ unsafe extern "C" fn window_buffer_build(
             match current_block_32 {
                 5948590327928692120 => {}
                 _ => {
-                    text = format_expand(ft, (*data).format.as_ptr());
+                    let text = format_expand_cstring(ft, (*data).format.as_ptr());
                     mode_tree_add(
                         (*data).data,
                         ::core::ptr::null_mut::<mode_tree_item>(),
                         item as *mut ::core::ffi::c_void,
                         (*item).order as uint64_t,
                         (*item).name,
-                        text,
+                        text.as_ptr(),
                         -(1 as ::core::ffi::c_int),
                     );
-                    free(text as *mut ::core::ffi::c_void);
                     format_free(ft);
                 }
             }
@@ -588,7 +583,6 @@ unsafe extern "C" fn window_buffer_get_key(
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: key_code = 0;
     if cmd_find_valid_state(&raw mut (*data).fs) != 0 {
         s = (*data).fs.s;
@@ -620,9 +614,8 @@ unsafe extern "C" fn window_buffer_get_key(
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         line,
     );
-    expanded = format_expand(ft, (*data).key_format.as_ptr());
-    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(KEYC_UNKNOWN);
-    free(expanded as *mut ::core::ffi::c_void);
+    let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
+    key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     format_free(ft);
     return key;
 }

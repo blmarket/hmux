@@ -117,11 +117,15 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate the remaining choose-mode expansion consumers (buffer, client,
-switch, and tree) as a group using `format_expand_cstring`. Customize-mode
-expansion consumers and the save-buffer path now use the owned API. Internal
-expression helpers still use the C-return `format_expand1` adapter; their
-producer/consumer contracts are a separate batch. Exported `format_expand`,
+Next, migrate internal expression helpers away from the C-return
+`format_expand1` adapter. Audit its producer/consumer contracts in
+`src/format/expression.rs` and `src/format/jobs.rs` together, carrying owned
+results through recursive expansion, conditions, loops, and job expansion.
+Split only at complete return contracts if that batch is too broad; do not
+replace it with unrelated leaf conversions.
+
+Customize, buffer, client, switch, and tree modes now use owned expansion
+results, as does the save-buffer path. Exported `format_expand`,
 `format_expand_time`, and `format_single*` retain libc-freeable results.
 
 Remaining lifecycle and compatibility boundaries:
@@ -1562,6 +1566,27 @@ name error.
 - Execution now groups related boundaries, removes the three-small-migrations
   cap, and runs full validation once per batch. Next: remaining choose-mode
   expansion consumers using the shared owned API.
+
+### Batch — owned choose-mode expansion consumers (2026-09-23)
+
+- Buffer, client, switch, and tree modes now use `format_expand_cstring` or
+  `format_single_cstring` for every expansion result: 17 production call sites
+  across rows, filters, shortcut keys, previews, and info panels. Removed 18
+  manual frees. Switch-mode session/window rows move the result into their
+  existing `CString` field, removing the copy-and-free helper. Mode-tree row
+  insertion copies borrowed strings; drawing and key parsing borrow only for
+  the call. Results remain owned across format-tree destruction.
+- Serialized workspace tests (396), binary build, changed-file rustfmt, and
+  diff checks passed. Eight CLI checks passed with the pinned tmux baseline:
+  buffer/client/tree/switch mode strings, tree filter/search, tree rows,
+  preview labels, and switch targets. Existing tests now cover buffer exclusion,
+  computed shortcut keys, client no-match fallback, and client/tree info views.
+  The row comparison initially failed on baseline startup/redraw timing; it now
+  waits for pane commands and collects distinct rows using cursor boundaries.
+  No sanitizer ran.
+- No C-return expansion calls remain in these four modes. Exported C format
+  contracts and unrelated callbacks remain unchanged. Next: internal expression
+  and job expansion producer/consumer contracts around `format_expand1`.
 
 ## Historical migration index
 

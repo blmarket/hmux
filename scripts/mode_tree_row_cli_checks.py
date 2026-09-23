@@ -19,7 +19,7 @@ binary = pathlib.Path(os.environ.get("HMUX_BINARY", root / "target/debug/hmux2")
 baseline = os.environ.get("HMUX_BASELINE_BINARY")
 env = dict(os.environ, TERM="xterm-256color", LC_ALL="C", TMUX="", SHELL="/bin/sh")
 csi = re.compile(rb"\x1b\[[0-9;?]*[ -/]*[@-~]")
-row_start = re.compile(rb"^\([0-9]+\) ")
+row_start = re.compile(rb"^\(([0-9]+)\) ")
 
 
 def rows(binary_path, tagged):
@@ -41,16 +41,30 @@ def rows(binary_path, tagged):
                 if select.select([master], [], [], 0.1)[0]:
                     output.extend(os.read(master, 65536))
                 if b"(view: preview)" in output:
-                    cleaned = csi.sub(b"", output).replace(b"\x1b(B", b"")
-                    found = [line for line in cleaned.splitlines() if row_start.match(line)]
-                    if len(found) >= 6:
-                        return found[:6]
+                    # Absolute cursor moves delimit screen rows even when the
+                    # redraw does not emit a newline. Keep the latest copy of
+                    # each row instead of comparing duplicate redraw fragments.
+                    cleaned = csi.sub(
+                        lambda match: b"\n" if match[0][-1:] in (b"H", b"f") else b"",
+                        output,
+                    ).replace(b"\x1b(B", b"")
+                    found = {}
+                    for line in cleaned.splitlines():
+                        match = row_start.match(line)
+                        if match:
+                            found[int(match[1])] = line
+                    if all(index in found for index in range(6)):
+                        return [found[index] for index in range(6)]
             raise AssertionError(f"missing tree rows: {output[-1000:]!r}")
 
         try:
             run("new-session", "-d", "-s", "a", "-n", "fixed", "-x", "100", "-y", "30", "sleep 120")
             run("new-session", "-d", "-s", "longname", "-n", "fixed", "sleep 120")
             run("set-window-option", "-g", "automatic-rename", "off")
+            deadline = time.monotonic() + 5
+            while run("list-panes", "-a", "-F", "#{pane_current_command}").splitlines() != [b"sleep", b"sleep"]:
+                assert time.monotonic() < deadline, "pane commands did not start"
+                time.sleep(0.05)
             client = subprocess.Popen(
                 base + ["attach-session", "-t", "a"],
                 env=env,

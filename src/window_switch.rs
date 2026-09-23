@@ -4,7 +4,7 @@ use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_from_session, cmd_find
 use crate::src::cmd_parse::cmd_parse_and_append;
 use crate::src::cmd_queue::{cmdq_free_state, cmdq_new_state};
 use crate::src::ffi::libc::{__ctype_toupper_loc, free, memset, qsort};
-use crate::src::format::{format_create, format_defaults, format_expand, format_free};
+use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::format_draw;
 use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_default_cell, grid_get_cell};
@@ -212,15 +212,6 @@ unsafe extern "C" fn window_switch_add_item(
     (*data).item_list.push(item);
     ptr
 }
-unsafe fn window_switch_expand_text(
-    ft: *mut format_tree,
-    format: *const ::core::ffi::c_char,
-) -> CString {
-    let text = format_expand(ft, format);
-    let owned = CStr::from_ptr(text).to_owned();
-    free(text.cast());
-    owned
-}
 unsafe extern "C" fn window_switch_add_session(
     mut data: *mut window_switch_modedata,
     mut s: *mut session,
@@ -248,7 +239,7 @@ unsafe extern "C" fn window_switch_add_session(
     let fresh7 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh7;
-    (*item).text = window_switch_expand_text(ft, (*data).format.as_ptr());
+    (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
     format_free(ft);
 }
 unsafe extern "C" fn window_switch_add_window(
@@ -278,7 +269,7 @@ unsafe extern "C" fn window_switch_add_window(
     let fresh4 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh4;
-    (*item).text = window_switch_expand_text(ft, (*data).format.as_ptr());
+    (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
     format_free(ft);
 }
 unsafe extern "C" fn window_switch_compare(

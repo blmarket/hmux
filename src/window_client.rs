@@ -1,8 +1,8 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::ffi::libc::{free, memcpy};
+use crate::src::ffi::libc::memcpy;
 use crate::src::format::{
-    format_add, format_create, format_create_defaults, format_defaults, format_expand, format_free,
-    format_single, format_true,
+    format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
+    format_free, format_single_cstring, format_true,
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
@@ -337,8 +337,6 @@ unsafe extern "C" fn window_client_build(
     let mut item: *mut window_client_itemdata = ::core::ptr::null_mut::<window_client_itemdata>();
     let mut i: u_int = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     (*data).items.clear();
     let clients_sorted = sort_get_clients(sort_crit);
     i = 0 as u_int;
@@ -358,7 +356,7 @@ unsafe extern "C" fn window_client_build(
         };
         c = (*item).c;
         if !filter.is_null() {
-            cp = format_single(
+            let cp = format_single_cstring(
                 ::core::ptr::null_mut::<cmdq_item>(),
                 filter,
                 c,
@@ -366,11 +364,9 @@ unsafe extern "C" fn window_client_build(
                 ::core::ptr::null_mut::<winlink>(),
                 ::core::ptr::null_mut::<window_pane>(),
             );
-            if format_true(cp) == 0 {
-                free(cp as *mut ::core::ffi::c_void);
+            if format_true(cp.as_ptr()) == 0 {
                 current_block_21 = 3512920355445576850;
             } else {
-                free(cp as *mut ::core::ffi::c_void);
                 current_block_21 = 12147880666119273379;
             }
         } else {
@@ -378,7 +374,7 @@ unsafe extern "C" fn window_client_build(
         }
         match current_block_21 {
             12147880666119273379 => {
-                text = format_single(
+                let text = format_single_cstring(
                     ::core::ptr::null_mut::<cmdq_item>(),
                     (*data).format.as_ptr(),
                     c,
@@ -392,10 +388,9 @@ unsafe extern "C" fn window_client_build(
                     item as *mut ::core::ffi::c_void,
                     c as uint64_t,
                     (*c).name,
-                    text,
+                    text.as_ptr(),
                     -(1 as ::core::ffi::c_int),
                 );
-                free(text as *mut ::core::ffi::c_void);
             }
             _ => {}
         }
@@ -431,7 +426,6 @@ unsafe extern "C" fn window_client_draw_info(
     let mut cy: u_int = (*s).cy;
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
         c,
@@ -466,7 +460,7 @@ unsafe extern "C" fn window_client_draw_info(
         if i == sy {
             break;
         }
-        expanded = format_expand(ft, window_client_info_lines[i as usize]);
+        let expanded = format_expand_cstring(ft, window_client_info_lines[i as usize]);
         screen_write_cursormove(
             ctx,
             cx as ::core::ffi::c_int,
@@ -477,11 +471,10 @@ unsafe extern "C" fn window_client_draw_info(
             ctx,
             &raw const grid_default_cell,
             sx,
-            expanded,
+            expanded.as_ptr(),
             ::core::ptr::null_mut::<style_ranges>(),
             0 as ::core::ffi::c_int,
         );
-        free(expanded as *mut ::core::ffi::c_void);
         i = i.wrapping_add(1);
     }
     if sx > 14 as u_int && i < sy {
@@ -672,7 +665,6 @@ unsafe extern "C" fn window_client_get_key(
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
     let mut item: *mut window_client_itemdata = itemdata as *mut window_client_itemdata;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: key_code = 0;
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
@@ -693,9 +685,8 @@ unsafe extern "C" fn window_client_get_key(
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         line,
     );
-    expanded = format_expand(ft, (*data).key_format.as_ptr());
-    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(KEYC_UNKNOWN);
-    free(expanded as *mut ::core::ffi::c_void);
+    let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
+    key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     format_free(ft);
     return key;
 }

@@ -31,13 +31,16 @@ def exercise(binary_path):
             assert result.returncode == 0, (args, result.stdout, result.stderr)
             return result.stdout.strip()
 
-        def wait_for_output(needle):
+        def wait_for_output(needle, excluded=()):
             output = bytearray()
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
                 if select.select([master], [], [], 0.1)[0]:
                     output.extend(os.read(master, 65536))
                 if needle in output:
+                    while select.select([master], [], [], 0.05)[0]:
+                        output.extend(os.read(master, 65536))
+                    assert all(marker not in output for marker in excluded), output[-1200:]
                     return
             raise AssertionError((needle, output[-1200:]))
 
@@ -69,11 +72,13 @@ def exercise(binary_path):
             tty = run("list-clients", "-F", "#{client_tty}")
 
             run("set-buffer", "-b", "alpha", "owned payload")
+            run("set-buffer", "-b", "beta", "filtered payload")
             run(
                 "choose-buffer", "-F", "OWNED-ROW:#{buffer_name}:#{buffer_sample}",
-                "-K", "1", "-t", "mode:0.0", "set-option -gq @buffer-picked '%%'",
+                "-f", "#{==:#{buffer_name},alpha}", "-K", "#{e|+|:#{line},1}",
+                "-t", "mode:0.0", "set-option -gq @buffer-picked '%%'",
             )
-            wait_for_output(b"OWNED-ROW:alpha:owned payload")
+            wait_for_output(b"OWNED-ROW:alpha:owned payload", (b"OWNED-ROW:beta",))
             run("send-keys", "-t", "mode:0.0", "1")
             selected = wait_for_option("@buffer-picked")
             assert selected == b"alpha", selected
