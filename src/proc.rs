@@ -90,7 +90,7 @@ unsafe extern "C" fn proc_event_cb(
                 peer,
                 imsg.hdr.type_0,
             );
-            let owned_buf = OwnedIbuf::from_raw(imsg.buf);
+            let owned_buf = Box::from_raw(imsg.buf);
             if peer_check_version(peer, &raw mut imsg) != 0 as ::core::ffi::c_int {
                 drop(owned_buf);
                 imsg.buf = ::core::ptr::null_mut::<ibuf>();

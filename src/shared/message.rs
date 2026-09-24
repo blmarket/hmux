@@ -86,6 +86,25 @@ pub struct ibuf {
     pub wpos: size_t,
     pub rpos: size_t,
     pub fd: ::core::ffi::c_int,
+    pub(crate) storage: Option<Box<[u8]>>,
+}
+
+impl Drop for ibuf {
+    fn drop(&mut self) {
+        unsafe {
+            let saved_errno = *crate::src::ffi::libc::__errno_location();
+            if self.fd >= 0 {
+                crate::src::ffi::libc::close(self.fd);
+                self.fd = -1;
+            }
+            if let Some(mut bytes) = self.storage.take() {
+                bytes.fill(0);
+                drop(bytes);
+            }
+            self.buf = ::core::ptr::null_mut();
+            *crate::src::ffi::libc::__errno_location() = saved_errno;
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -130,7 +149,7 @@ pub struct imsgbuf {
 }
 
 pub struct ibufqueue_bufs {
-    entries: VecDeque<OwnedIbuf>,
+    entries: VecDeque<Box<ibuf>>,
 }
 
 impl ibufqueue_bufs {
@@ -141,7 +160,7 @@ impl ibufqueue_bufs {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = *mut ibuf> + '_ {
-        self.entries.iter().map(OwnedIbuf::as_ptr)
+        self.entries.iter().map(|buf| (&**buf as *const ibuf).cast_mut())
     }
 
     pub fn len(&self) -> usize {
@@ -153,23 +172,23 @@ impl ibufqueue_bufs {
     }
 
     pub(crate) fn push_back_raw(&mut self, buf: *mut ibuf) {
-        self.entries.push_back(unsafe { OwnedIbuf::from_raw(buf) });
+        self.entries.push_back(unsafe { Box::from_raw(buf) });
     }
 
     pub(crate) fn push_front_raw(&mut self, buf: *mut ibuf) {
-        self.entries.push_front(unsafe { OwnedIbuf::from_raw(buf) });
+        self.entries.push_front(unsafe { Box::from_raw(buf) });
     }
 
     pub(crate) fn pop_front_raw(&mut self) -> Option<*mut ibuf> {
-        self.entries.pop_front().map(OwnedIbuf::into_raw)
+        self.entries.pop_front().map(Box::into_raw)
     }
 
-    pub(crate) fn pop_front_owned(&mut self) -> Option<OwnedIbuf> {
+    pub(crate) fn pop_front_owned(&mut self) -> Option<Box<ibuf>> {
         self.entries.pop_front()
     }
 
     pub(crate) fn front(&self) -> Option<*mut ibuf> {
-        self.entries.front().map(OwnedIbuf::as_ptr)
+        self.entries.front().map(|buf| (&**buf as *const ibuf).cast_mut())
     }
 
     pub(crate) fn append(&mut self, other: &mut Self) {
@@ -178,32 +197,6 @@ impl ibufqueue_bufs {
 
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
-    }
-}
-
-pub(crate) struct OwnedIbuf(Option<Box<ibuf>>);
-
-impl OwnedIbuf {
-    pub(crate) unsafe fn from_raw(buf: *mut ibuf) -> Self {
-        Self(Some(Box::from_raw(buf)))
-    }
-
-    fn as_ptr(&self) -> *mut ibuf {
-        self.0.as_deref().unwrap() as *const ibuf as *mut ibuf
-    }
-
-    fn into_raw(mut self) -> *mut ibuf {
-        Box::into_raw(self.0.take().unwrap())
-    }
-}
-
-impl Drop for OwnedIbuf {
-    fn drop(&mut self) {
-        if let Some(buf) = self.0.take() {
-            unsafe {
-                crate::src::compat::imsg_buffer::ibuf_release_owned(buf);
-            }
-        }
     }
 }
 

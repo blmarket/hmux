@@ -1,7 +1,7 @@
 use hmux2::src::compat::imsg::{imsgbuf_clear, imsgbuf_init};
 use hmux2::src::compat::imsg_buffer::{
-    ibuf_add, ibuf_data, ibuf_dynamic, ibuf_fd_get, ibuf_fd_set, ibuf_free, ibuf_get_string,
-    ibuf_open, ibuf_read, ibuf_reserve, ibuf_size, ibuf_write, ibufq_concat, ibufq_flush,
+    ibuf_add, ibuf_data, ibuf_dynamic, ibuf_fd_get, ibuf_fd_set, ibuf_free, ibuf_from_buffer,
+    ibuf_from_ibuf, ibuf_get, ibuf_get_string, ibuf_open, ibuf_read, ibuf_reserve, ibuf_size, ibuf_write, ibufq_concat, ibufq_flush,
     ibufq_free, ibufq_new, ibufq_pop, ibufq_push, ibufq_queuelen, ibufqueue, msgbuf_clear,
     msgbuf_free, msgbuf_new, msgbuf_new_reader, msgbuf_write, EINVAL,
 };
@@ -236,6 +236,55 @@ fn reader_scratch_parses_and_queues_complete_messages() {
             );
             ibuf_free(buf);
         }
+        msgbuf_free(owner);
+    }
+}
+
+#[test]
+fn borrowed_views_keep_source_bytes_and_cursor_separate() {
+    unsafe {
+        let mut bytes = *b"abcd";
+        let mut view = MaybeUninit::uninit();
+        ibuf_from_buffer(view.as_mut_ptr(), bytes.as_mut_ptr().cast(), bytes.len());
+        let mut view = view.assume_init();
+        let mut read = [0u8; 2];
+        assert_eq!(ibuf_get(&raw mut view, read.as_mut_ptr().cast(), 2), 0);
+        assert_eq!(&read, b"ab");
+        assert_eq!(ibuf_size(&raw mut view), 2);
+
+        let owner = ibuf_open(3);
+        ibuf_add(owner, b"xyz".as_ptr().cast(), 3);
+        let mut subview = MaybeUninit::uninit();
+        ibuf_from_ibuf(subview.as_mut_ptr(), owner);
+        let mut subview = subview.assume_init();
+        assert_eq!(ibuf_size(&raw mut subview), 3);
+        drop(subview);
+        ibuf_free(owner);
+        drop(view);
+        assert_eq!(&bytes, b"abcd");
+    }
+}
+
+#[test]
+fn read_header_failure_drops_borrowed_view_without_queueing() {
+    unsafe extern "C" fn reject_header(
+        header: *mut hmux2::src::compat::imsg_buffer::ibuf,
+        arg: *mut std::ffi::c_void,
+        _: *mut std::ffi::c_int,
+    ) -> *mut hmux2::src::compat::imsg_buffer::ibuf {
+        *(arg as *mut bool) = ibuf_size(header) == 1 && *(ibuf_data(header) as *const u8) == b'x';
+        null_mut()
+    }
+
+    unsafe {
+        let (mut writer, reader) = UnixStream::pair().unwrap();
+        let mut saw_header = false;
+        let owner = msgbuf_new_reader(1, Some(reject_header), (&raw mut saw_header).cast());
+        use std::io::Write;
+        writer.write_all(b"x").unwrap();
+        assert_eq!(ibuf_read(reader.as_raw_fd(), owner), -1);
+        assert!(saw_header);
+        assert_eq!(ibufq_queuelen(&raw mut (*owner).rbufs), 0);
         msgbuf_free(owner);
     }
 }

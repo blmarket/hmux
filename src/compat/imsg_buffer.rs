@@ -117,33 +117,8 @@ fn try_zeroed_boxed_slice(len: usize) -> Result<Box<[u8]>, std::collections::Try
     Ok(bytes.into_boxed_slice())
 }
 
-unsafe fn raw_boxed_bytes(buf: *mut ::core::ffi::c_uchar, len: size_t) -> Box<[u8]> {
+unsafe fn raw_boxed_bytes(buf: *mut u8, len: size_t) -> Box<[u8]> {
     Box::from_raw(slice_from_raw_parts_mut(buf, len))
-}
-
-// The raw ibuf record is retained for translated callbacks. Its payload pointer
-// always refers to a Rust-owned boxed slice for owned records; stack views use
-// IBUF_FD_MARK_ON_STACK and must never be reconstructed as an owner.
-pub(crate) unsafe fn ibuf_release_owned(mut buf: Box<ibuf>) {
-    let save_errno = *__errno_location();
-    if buf.fd == IBUF_FD_MARK_ON_STACK {
-        abort();
-    }
-    if buf.fd >= 0 {
-        close(buf.fd);
-    }
-    if !buf.buf.is_null() && buf.size > 0 {
-        memset(
-            buf.buf as *mut ::core::ffi::c_void,
-            0,
-            buf.size,
-        );
-        drop(raw_boxed_bytes(buf.buf, buf.size));
-        buf.buf = ::core::ptr::null_mut();
-        buf.size = 0;
-    }
-    drop(buf);
-    *__errno_location() = save_errno;
 }
 
 /// A temporary borrowed byte span used while parsing data in the reader
@@ -152,15 +127,28 @@ pub(crate) unsafe fn ibuf_release_owned(mut buf: Box<ibuf>) {
 struct IbufView<'a> {
     bytes: &'a [u8],
     cursor: usize,
+    record: ibuf,
 }
 
 impl<'a> IbufView<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, cursor: 0 }
+        Self {
+            bytes,
+            cursor: 0,
+            record: ibuf {
+                buf: bytes.as_ptr().cast_mut(),
+                size: bytes.len(),
+                max: 0,
+                wpos: bytes.len(),
+                rpos: 0,
+                fd: IBUF_FD_MARK_ON_STACK,
+                storage: None,
+            },
+        }
     }
 
-    fn as_ptr(&self) -> *mut ::core::ffi::c_uchar {
-        self.bytes.as_ptr().wrapping_add(self.cursor) as *mut ::core::ffi::c_uchar
+    fn as_ibuf_ptr(&mut self) -> *mut ibuf {
+        &raw mut self.record
     }
 
     fn take(&mut self, len: usize) -> Option<&'a [u8]> {
@@ -180,13 +168,17 @@ pub unsafe extern "C" fn ibuf_open(mut len: size_t) -> *mut ibuf {
         wpos: 0,
         rpos: 0,
         fd: -(1 as ::core::ffi::c_int),
+        storage: None,
     }) else {
         *__errno_location() = ENOMEM;
         return ::core::ptr::null_mut::<ibuf>();
     };
     if len > 0 as size_t {
         match try_zeroed_boxed_slice(len) {
-            Ok(bytes) => buf.buf = Box::into_raw(bytes) as *mut ::core::ffi::c_uchar,
+            Ok(mut bytes) => {
+                buf.buf = bytes.as_mut_ptr();
+                buf.storage = Some(bytes);
+            }
             Err(_) => {
                 *__errno_location() = ENOMEM;
                 return ::core::ptr::null_mut::<ibuf>();
@@ -208,13 +200,17 @@ pub unsafe extern "C" fn ibuf_dynamic(mut len: size_t, mut max: size_t) -> *mut 
         wpos: 0,
         rpos: 0,
         fd: -(1 as ::core::ffi::c_int),
+        storage: None,
     }) else {
         *__errno_location() = ENOMEM;
         return ::core::ptr::null_mut::<ibuf>();
     };
     if len > 0 as size_t {
         match try_zeroed_boxed_slice(len) {
-            Ok(bytes) => buf.buf = Box::into_raw(bytes) as *mut ::core::ffi::c_uchar,
+            Ok(mut bytes) => {
+                buf.buf = bytes.as_mut_ptr();
+                buf.storage = Some(bytes);
+            }
             Err(_) => {
                 *__errno_location() = ENOMEM;
                 return ::core::ptr::null_mut::<ibuf>();
@@ -253,9 +249,12 @@ pub unsafe extern "C" fn ibuf_reserve(
         };
         if old_size > 0 {
             ::core::ptr::copy_nonoverlapping((*buf).buf, bytes.as_mut_ptr(), old_size);
-            drop(raw_boxed_bytes((*buf).buf, old_size));
+            if let Some(mut old) = (*buf).storage.take() {
+                old.fill(0);
+            }
         }
-        (*buf).buf = Box::into_raw(bytes) as *mut u8;
+        (*buf).buf = bytes.as_mut_ptr();
+        (*buf).storage = Some(bytes);
         (*buf).size = new_size;
     }
     b = if (*buf).buf.is_null() {
@@ -658,15 +657,15 @@ pub unsafe extern "C" fn ibuf_from_buffer(
     mut data: *mut ::core::ffi::c_void,
     mut len: size_t,
 ) {
-    memset(
-        buf as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<ibuf>() as size_t,
-    );
-    (*buf).buf = data as *mut ::core::ffi::c_uchar;
-    (*buf).wpos = len;
-    (*buf).size = (*buf).wpos;
-    (*buf).fd = IBUF_FD_MARK_ON_STACK;
+    ::core::ptr::write(buf, ibuf {
+        buf: data as *mut ::core::ffi::c_uchar,
+        size: len,
+        max: 0,
+        wpos: len,
+        rpos: 0,
+        fd: IBUF_FD_MARK_ON_STACK,
+        storage: None,
+    });
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_from_ibuf(mut buf: *mut ibuf, mut from: *const ibuf) {
@@ -845,15 +844,13 @@ pub unsafe extern "C" fn ibuf_skip(mut buf: *mut ibuf, mut len: size_t) -> ::cor
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_free(mut buf: *mut ibuf) {
-    let mut save_errno: ::core::ffi::c_int = *__errno_location();
     if buf.is_null() {
         return;
     }
     if (*buf).fd == IBUF_FD_MARK_ON_STACK {
         abort();
     }
-    ibuf_release_owned(Box::from_raw(buf));
-    *__errno_location() = save_errno;
+    drop(Box::from_raw(buf));
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_fd_avail(mut buf: *mut ibuf) -> ::core::ffi::c_int {
@@ -1128,14 +1125,6 @@ unsafe extern "C" fn ibuf_read_process(
     mut msgbuf: *mut msgbuf,
     mut fd: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut msg: ibuf = ibuf {
-        buf: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-        size: 0,
-        max: 0,
-        wpos: 0,
-        rpos: 0,
-        fd: 0,
-    };
     let mut sz: ssize_t = 0;
     let scratch = (*msgbuf).rbuf as *mut u8;
     let read_len = (*msgbuf).roff;
@@ -1146,22 +1135,10 @@ unsafe extern "C" fn ibuf_read_process(
             if read_len.wrapping_sub(cursor) < (*msgbuf).hdrsize {
                 break;
             }
-            let header_ptr = {
-                let header = std::slice::from_raw_parts(
-                    scratch.add(cursor),
-                    (*msgbuf).hdrsize,
-                );
-                IbufView::new(header).as_ptr()
-            };
-            ibuf_from_buffer(
-                &raw mut msg,
-                header_ptr as *mut ::core::ffi::c_void,
-                (*msgbuf).hdrsize,
-            );
+            let header = std::slice::from_raw_parts(scratch.add(cursor), (*msgbuf).hdrsize);
+            let mut view = IbufView::new(header);
             (*msgbuf).rpmsg = (*msgbuf).readhdr.expect("non-null function pointer")(
-                &raw mut msg,
-                (*msgbuf).rarg,
-                &raw mut fd,
+                view.as_ibuf_ptr(), (*msgbuf).rarg, &raw mut fd,
             );
             if (*msgbuf).rpmsg.is_null() {
                 failed = true;
