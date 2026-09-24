@@ -1,3 +1,4 @@
+use hmux2::src::shared::pane::window_pane_tree;
 use hmux2::src::window::*;
 use hmux2::src::shared::pane::{window_pane, window_pane_history, window_panes};
 use refbox::{BorrowError, RefBox};

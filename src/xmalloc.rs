@@ -3,8 +3,8 @@ use crate::src::ffi::libc::{
 };
 use crate::src::log::{fatal, fatalx};
 use crate::src::shared::abi::*;
-pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, SIZE_MAX};
-pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
+use crate::src::shared::limits::{__INT_MAX__, INT_MAX, SIZE_MAX};
+use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 use std::ffi::{CStr, CString};
 
 #[no_mangle]

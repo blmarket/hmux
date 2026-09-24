@@ -1,13 +1,13 @@
 use crate::src::ffi::libc::memcmp;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-pub use crate::src::shared::utf8::wchar_t;
+use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
-pub use crate::src::shared::utf8::{
+use crate::src::shared::utf8::{
     hanguljamo_state, HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE,
     HANGULJAMO_STATE_NOT_COMPOSABLE, HANGULJAMO_STATE_NOT_HANGULJAMO,
 };
-use crate::src::utf8::utf8_towc;
+use crate::src::text::utf8::utf8_towc;
 
 pub const HANGULJAMO_CLASS_NOT_HANGULJAMO: hanguljamo_class = 0;
 pub const HANGULJAMO_CLASS_JUNGSEONG: hanguljamo_class = 2;

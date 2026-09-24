@@ -1,3 +1,4 @@
+use hmux2::src::shared::session::{session, sessions};
 use hmux2::src::session::*;
 use std::ffi::CStr;
 

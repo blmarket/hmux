@@ -1,5 +1,5 @@
-use crate::src::attributes::{attributes_format, attributes_parse_cstr};
-use crate::src::colour::{colour_format, colour_parse_cstr};
+use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
+use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{
     memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strlcpy, strncasecmp, strspn,
@@ -8,7 +8,7 @@ use crate::src::format::{format_create, format_free, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_debug};
-pub use crate::src::options::options_table_entry;
+pub use crate::src::shared::options::options_table_entry;
 use crate::src::options::{options_get, options_get_string, options_string_to_style};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -64,7 +64,7 @@ pub use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
-use crate::src::utf8::utf8_set;
+use crate::src::text::utf8::utf8_set;
 use crate::src::xmalloc::xsnprintf;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -1182,7 +1182,7 @@ pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
     if o.is_null() {
         fatalx(b"missing pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    oe = options_table_entry(o);
+    oe = crate::src::options::options_table_entry(o);
     let style = format_single_cstring(
         ::core::ptr::null_mut::<cmdq_item>(),
         (*oe).default_str,

@@ -4,10 +4,10 @@ use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{fgetc, fopen, ioctl, readlink, setenv, tcgetpgrp, unsetenv};
 use crate::src::reactor::event_init;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
+use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
 use crate::src::shared::event::*;
-pub use crate::src::shared::stdio::EOF;
-pub use crate::src::shared::stdio::{
+use crate::src::shared::stdio::EOF;
+use crate::src::shared::stdio::{
     _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
 };
 

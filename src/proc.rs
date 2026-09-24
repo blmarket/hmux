@@ -4,7 +4,7 @@ use crate::src::compat::imsg::{
     imsgbuf_queuelen, imsgbuf_read, imsgbuf_write,
 };
 use crate::src::compat::setproctitle::setproctitle;
-pub use crate::src::ffi::libc::utsname;
+use crate::src::ffi::libc::utsname;
 use crate::src::ffi::libc::{
     close, daemon, fork, getpid, memset, sigaction, sigemptyset, socketpair, uname,
 };
@@ -14,14 +14,14 @@ use crate::src::reactor::{
     event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
 };
 use crate::src::shared::abi::*;
-pub use crate::src::shared::abi::{
+use crate::src::shared::abi::{
     __clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t,
 };
-pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
+use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::message::*;
-pub use crate::src::shared::message::{ibuf, imsg, imsgbuf, msgbuf};
-pub use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
-pub use crate::src::shared::process::{tmuxpeer, tmuxproc};
+use crate::src::shared::message::{ibuf, imsg, imsgbuf, msgbuf};
+use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
+use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, __sigval_t, sigaction, sigaction___sigaction_handler, siginfo_t,
     siginfo_t__sifields, siginfo_t__sifields__kill, siginfo_t__sifields__rt,
@@ -31,7 +31,7 @@ pub use crate::src::shared::signal::{
     sigset_t, sigval, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN,
     SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH, SIG_DFL,
 };
-pub use crate::src::shared::socket::{
+use crate::src::shared::socket::{
     __socket_type, AF_UNIX, PF_LOCAL, PF_UNIX, PF_UNSPEC, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
     SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
 };

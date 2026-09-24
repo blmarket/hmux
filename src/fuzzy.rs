@@ -1,13 +1,13 @@
 use crate::src::ffi::libc::{__ctype_tolower_loc, memcmp, memset, strchr, strlen};
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
-pub use crate::src::shared::abi::__int32_t;
+use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
 use crate::src::style::{style_parse, style_set};
-use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
+use crate::src::text::utf8::{utf8_append, utf8_open, utf8_set};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]

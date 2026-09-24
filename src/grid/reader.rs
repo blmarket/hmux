@@ -3,12 +3,12 @@ use crate::src::grid::{
     grid_get_cell, grid_get_line, grid_in_set, grid_line_length, grid_line_limit,
 };
 use crate::src::shared::abi::*;
-pub use crate::src::shared::grid::grid_reader;
-pub use crate::src::shared::grid::WHITESPACE;
+use crate::src::shared::grid::grid_reader;
+use crate::src::shared::grid::WHITESPACE;
 use crate::src::shared::grid::*;
 
-pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
-pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
+use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
+use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 
 #[no_mangle]
 pub unsafe extern "C" fn grid_reader_start(

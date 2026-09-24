@@ -1,12 +1,12 @@
 use crate::src::ffi::libc::strcmp;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::hyperlinks::{
+use crate::src::shared::hyperlinks::{
     hyperlink_inner_entry, hyperlink_uri_entry, hyperlinks, hyperlinks_by_inner_tree,
     hyperlinks_by_uri_tree, hyperlinks_uri,
 };
-pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
-use crate::src::utf8::utf8_stravis_cstring;
+use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
+use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
+use crate::src::text::utf8::utf8_stravis_cstring;
 use std::{collections::VecDeque, ffi::CString};
 
 /// One retained reference to the mutable hyperlink table. The legacy table

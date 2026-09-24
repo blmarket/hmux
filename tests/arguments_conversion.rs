@@ -10,7 +10,7 @@ use hmux2::src::arguments::{
     args_strtonum_result, parse_number, parse_percentage, ArgumentValueError,
 };
 use hmux2::src::cmd::{cmd_list_free, cmd_list_new, cmd_list_print};
-use hmux2::src::cmd_queue::{
+use hmux2::src::cmd::queue::{
     cmdq_free_detached, cmdq_get_callback1, cmdq_get_error, cmdq_get_name,
 };
 use hmux2::src::ffi::libc::snprintf;

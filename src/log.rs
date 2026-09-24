@@ -4,15 +4,15 @@ use crate::src::ffi::libc::{
     __errno_location, exit, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf,
     snprintf, strerror,
 };
-pub use crate::src::reactor::event_log_cb;
+use crate::src::reactor::event_log_cb;
 use crate::src::reactor::event_set_log_callback;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::abi::{__off64_t, __off_t};
-pub use crate::src::shared::stdio::{
+use crate::src::shared::abi::{__off64_t, __off_t};
+use crate::src::shared::stdio::{
     _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
 };
-pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
-pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
+use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::xmalloc::try_vasprintf_cstring;
 use std::ffi::{CStr, CString};
 

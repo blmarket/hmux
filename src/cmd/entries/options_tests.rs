@@ -1,7 +1,7 @@
 use crate::src::cfg::{cfg_finished, cfg_test_take_causes, CFG_TEST_LOCK};
 use crate::src::cmd::{cmd_list_free, cmdq_item};
-use crate::src::cmd_parse::cmd_parse_from_string;
-use crate::src::cmd_queue::{cmdq_free_detached, cmdq_get_command, cmdq_get_name};
+use crate::src::cmd::parse::cmd_parse_from_string;
+use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_command, cmdq_get_name};
 use crate::src::ffi::libc::snprintf;
 use crate::src::options::{options_create, options_free};
 use crate::src::shared::command::{cmd_retval, CMD_PARSE_SUCCESS, CMD_RETURN_ERROR};

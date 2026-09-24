@@ -1,5 +1,5 @@
 //! C callbacks retain their signatures and can cross former translation-unit boundaries.
-use hmux2::src::{arguments, client, cmd_choose_tree, screen, tty, window};
+use hmux2::src::{arguments, client, screen, tty, window};
 use std::ptr::null_mut;
 
 unsafe extern "C" fn parse(
@@ -34,7 +34,7 @@ unsafe extern "C" fn mode_screen(_: *mut window::window_mode_entry) -> *mut scre
 #[test]
 fn callbacks_cross_original_module_paths_without_conversion() {
     let parse_callback: arguments::args_parse_cb = Some(parse);
-    let parser_callback: cmd_choose_tree::args_parse_cb = parse_callback;
+    let parser_callback: hmux2::src::shared::arguments::args_parse_cb = parse_callback;
     let tty_callback: tty::tty_ctx_set_client_cb = Some(set_client);
     let draw_callback: hmux2::src::popup::tty_ctx_set_client_cb = tty_callback;
     let overlay_callback: client::overlay_mode_cb = Some(overlay);

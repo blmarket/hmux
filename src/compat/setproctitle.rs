@@ -1,7 +1,7 @@
 use crate::src::compat::getprogname::getprogname;
 use crate::src::ffi::libc::{prctl, snprintf, strrchr, vsnprintf};
 use crate::src::shared::abi::*;
-pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
+use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
 
 pub const PR_SET_NAME: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
 #[no_mangle]

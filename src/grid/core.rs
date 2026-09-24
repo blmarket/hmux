@@ -1,4 +1,4 @@
-use crate::src::colour::{colour_split_rgb, colour_theme_terminal_colour};
+use crate::src::style::colour::{colour_split_rgb, colour_theme_terminal_colour};
 use crate::src::ffi::libc::{memcmp, memcpy, memmove, memset, strchr, strlcat, strlen};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatalx, log_debug};
@@ -11,7 +11,7 @@ pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
 use crate::src::tmux::start_time;
-use crate::src::utf8::{
+use crate::src::text::utf8::{
     utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
 };
 use crate::src::xmalloc::xsnprintf;

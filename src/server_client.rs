@@ -1,13 +1,13 @@
 use crate::src::alerts::alerts_check_session;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
-use crate::src::cmd_find::{cmd_find_from_client, cmd_find_from_mouse};
-use crate::src::cmd_parse::cmd_parse_from_argv;
-use crate::src::cmd_queue::{
+use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
+use crate::src::cmd::parse::cmd_parse_from_argv;
+use crate::src::cmd::queue::{
     cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback1, cmdq_get_client,
     cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_set_cancel_data,
 };
-use crate::src::colour::{
+use crate::src::style::colour::{
     colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
 };
 use crate::src::compat::imsg::imsg_get_fd;
@@ -64,9 +64,9 @@ use crate::src::server_fn::{
 };
 use crate::src::session::{session_find_by_id, session_theme_changed, session_update_activity};
 use crate::src::shared::command::unpack_argv;
-pub use crate::src::shared::events::event_payload;
-pub use crate::src::shared::message::msg_command;
-pub use crate::src::shared::pane::window_pane_tree;
+use crate::src::shared::events::event_payload;
+use crate::src::shared::message::msg_command;
+use crate::src::shared::pane::window_pane_tree;
 use crate::src::status::{
     status_at_line, status_free, status_get_range, status_init, status_line_size,
     status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
@@ -81,8 +81,8 @@ use crate::src::tty::{
 };
 use crate::src::tty_features::tty_get_features;
 use crate::src::tty_term::tty_term_has;
-use crate::src::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
-pub use crate::src::window::windows;
+use crate::src::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
+use crate::src::window::windows;
 use crate::src::window::{
     all_window_panes, window_get_active_at, window_pane_clear_resizes, window_pane_contains,
     window_pane_find_by_id, window_pane_get_new_data, window_pane_get_pane_lines,
@@ -103,9 +103,9 @@ use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
-pub use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
+use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
 use crate::src::shared::arguments::*;
-pub use crate::src::shared::arguments::{
+use crate::src::shared::arguments::{
     args, args_value, args_value_entry,
 };
 use crate::src::shared::client::*;
@@ -768,7 +768,7 @@ mod client_message_owner_tests {
         }
     }
 }
-pub use crate::src::shared::client::{
+use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
     CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER,
     CLIENT_CONTROL_WAITEXIT, CLIENT_DEAD, CLIENT_DOUBLECLICK, CLIENT_EXIT, CLIENT_EXITED,
@@ -779,92 +779,92 @@ pub use crate::src::shared::client::{
     CLIENT_SUSPENDED, CLIENT_TERMINAL, CLIENT_TRIPLECLICK, CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
 };
 use crate::src::shared::colour::*;
-pub use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
-pub use crate::src::shared::command::CMD_READONLY;
+use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
+use crate::src::shared::command::CMD_READONLY;
 use crate::src::shared::command::*;
 use crate::src::shared::command::*;
-pub use crate::src::shared::command::{
+use crate::src::shared::command::{
     cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_list, cmdq_state, cmds,
 };
-pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-pub use crate::src::shared::control::control_state;
+use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
-pub use crate::src::shared::display::{visible_range, visible_ranges};
-pub use crate::src::shared::environment::{environ, environ_entry};
-pub use crate::src::shared::errno::EINTR;
+use crate::src::shared::display::{visible_range, visible_ranges};
+use crate::src::shared::environment::{environ, environ_entry};
+use crate::src::shared::errno::EINTR;
 use crate::src::shared::event::*;
-pub use crate::src::shared::event::{
+use crate::src::shared::event::{
     evbuffer_eol_style, EVBUFFER_EOL_ANY, EVBUFFER_EOL_CRLF, EVBUFFER_EOL_CRLF_STRICT,
     EVBUFFER_EOL_LF, EVBUFFER_EOL_NUL, EV_READ, EV_TIMEOUT,
 };
-pub use crate::src::shared::format::{format_job_tree, format_tree};
-pub use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use crate::src::shared::format::{format_job_tree, format_tree};
+use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::grid::*;
-pub use crate::src::shared::hyperlinks::hyperlinks;
-pub use crate::src::shared::input::{input_ctx, input_request, input_requests};
-pub use crate::src::shared::key::KEY_BINDING_REPEAT;
+use crate::src::shared::hyperlinks::hyperlinks;
+use crate::src::shared::input::{input_ctx, input_request, input_requests};
+use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
-pub use crate::src::shared::key::{
+use crate::src::shared::key::{
     key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
 };
-pub use crate::src::shared::layout::layout_geometry;
+use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::layout::*;
-pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-pub use crate::src::shared::limits::{__INT_MAX__, SIZE_MAX, UINT_MAX};
-pub use crate::src::shared::menu::menu_data;
+use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
+use crate::src::shared::limits::{__INT_MAX__, SIZE_MAX, UINT_MAX};
+use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
-pub use crate::src::shared::message::{ibuf, imsg};
-pub use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE};
-pub use crate::src::shared::mouse::{
+use crate::src::shared::message::{ibuf, imsg};
+use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE};
+use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
     MOUSE_BUTTON_6, MOUSE_BUTTON_7, MOUSE_BUTTON_8, MOUSE_BUTTON_9, MOUSE_MASK_BUTTONS,
     MOUSE_MASK_CTRL, MOUSE_MASK_DRAG, MOUSE_MASK_META, MOUSE_MASK_SHIFT, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
 };
-pub use crate::src::shared::options::{options, options_entry};
-pub use crate::src::shared::pane::{
+use crate::src::shared::options::{options, options_entry};
+use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
-pub use crate::src::shared::pane::{
+use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_ACTIVITY,
     PANE_CAPTUREALLKEYS, PANE_CLOSEONCANCEL, PANE_CLOSEONCLICK, PANE_EXITED, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
     PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
 };
-pub use crate::src::shared::posix_io::{
+use crate::src::shared::posix_io::{
     _PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK,
 };
-pub use crate::src::shared::process::{tmuxpeer, tmuxproc};
-pub use crate::src::shared::prompt::prompt;
-pub use crate::src::shared::redraw::redraw_scene;
-pub use crate::src::shared::screen::{
+use crate::src::shared::process::{tmuxpeer, tmuxproc};
+use crate::src::shared::prompt::prompt;
+use crate::src::shared::redraw::redraw_scene;
+use crate::src::shared::screen::{
     screen, screen_sel, screen_titles, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE,
     MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_VERY_VISIBLE, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
     MODE_MOUSE_STANDARD, MODE_SYNC,
 };
-pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry};
-pub use crate::src::shared::spawn::spawn_editor_state;
-pub use crate::src::shared::status::status_line;
+use crate::src::shared::screen_write::screen_write_cline;
+use crate::src::shared::session::{session, session_entry};
+use crate::src::shared::spawn::spawn_editor_state;
+use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
-pub use crate::src::shared::tree::RB_NEGINF;
+use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::tty::*;
-pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-pub use crate::src::shared::tty::{TTY_BLOCK, TTY_FREEZE, TTY_NOCURSOR, TTY_OPENED};
-pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
-pub use crate::src::shared::window::{
+use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
+use crate::src::shared::tty::{TTY_BLOCK, TTY_FREEZE, TTY_NOCURSOR, TTY_OPENED};
+use crate::src::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
+use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
-pub use crate::src::shared::window::{
+use crate::src::shared::window::{
     WINDOW_RESIZE, WINDOW_SIZE_LATEST, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL,
     WINLINK_SILENCE,
 };
 
-pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
-pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
+use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
+use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
 pub const _PATH_TTY: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"/dev/tty\0") };

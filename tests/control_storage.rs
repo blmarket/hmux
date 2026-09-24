@@ -1,3 +1,6 @@
+use hmux2::src::shared::client::client;
+use hmux2::src::shared::control::{control_pane, control_pane_entry};
+use hmux2::src::shared::pane::window_pane_offset;
 use hmux2::src::control::*;
 use std::collections::VecDeque;
 

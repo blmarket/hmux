@@ -1,7 +1,7 @@
 use hmux2::src::shared::grid::utf8_data;
 use hmux2::src::shared::utf8::{UTF8_DONE, UTF8_ERROR, UTF8_MORE};
-use hmux2::src::utf8::{utf8_append, utf8_cstrhas, utf8_open, utf8_towc};
-use hmux2::src::utf8_decode::{decode_utf8, DecodeResult};
+use hmux2::src::text::utf8::{utf8_append, utf8_cstrhas, utf8_open, utf8_towc};
+use hmux2::src::text::utf8_decode::{decode_utf8, DecodeResult};
 
 fn empty_data() -> utf8_data {
     utf8_data {

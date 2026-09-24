@@ -8,24 +8,24 @@ use crate::src::log::{fatalx, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
 };
-pub use crate::src::shared::abi::ssize_t;
+use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::command::{cmd_list, cmds};
-pub use crate::src::shared::ctype::{
+use crate::src::shared::command::{cmd_list, cmds};
+use crate::src::shared::ctype::{
     _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
     _ISspace, _ISupper, _ISxdigit, ctype_code,
 };
-pub use crate::src::shared::errno::ERANGE;
+use crate::src::shared::errno::ERANGE;
 use crate::src::shared::grid::*;
-pub use crate::src::shared::limits::__LONG_LONG_MAX__;
-pub use crate::src::shared::options::{
+use crate::src::shared::limits::__LONG_LONG_MAX__;
+use crate::src::shared::options::{
     options, options_array, options_array_item, options_entry, options_value,
 };
 use crate::src::shared::style::*;
-pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
+use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::utf8::*;
-pub use crate::src::shared::utf8::{wchar_t, UTF8_SIZE};
-pub use crate::src::shared::vis::VIS_DQ;
+use crate::src::shared::utf8::{wchar_t, UTF8_SIZE};
+use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::tmux::global_options;
 use std::ffi::{CStr, CString};

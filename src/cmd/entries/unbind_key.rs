@@ -1,22 +1,22 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
-use crate::src::cmd_queue::cmdq_error;
+use crate::src::cmd::queue::cmdq_error;
 use crate::src::key_bindings::{
     key_bindings_get_table, key_bindings_remove, key_bindings_remove_table,
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
-pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
-pub use crate::src::shared::command::CMD_AFTERHOOK;
+use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
+use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
-pub use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item, cmds};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item, cmds};
 use crate::src::shared::key::*;
-pub use crate::src::shared::key::{
+use crate::src::shared::key::{
     key_binding, key_binding_entry, key_bindings, key_table, key_table_entry,
 };
 
-pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_1;
+use crate::src::shared::key::key_code_enum as C2RustUnnamed_1;
 
 #[no_mangle]
 pub static mut cmd_unbind_key_entry: cmd_entry = unsafe {

@@ -4,15 +4,15 @@ use crate::src::events_payload::{event_payload_create, event_payload_set_string}
 use crate::src::ffi::libc::{free, time};
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::events::event_payload;
-pub use crate::src::shared::options::options;
-pub use crate::src::shared::paste::{
+use crate::src::shared::events::event_payload;
+use crate::src::shared::options::options;
+use crate::src::shared::paste::{
     paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
 };
-pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
-pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
+use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::{clean_name_cstring, global_options};
-use crate::src::utf8::utf8_strvis;
+use crate::src::text::utf8::utf8_strvis;
 use std::ffi::{CStr, CString};
 
 macro_rules! set_paste_cause {

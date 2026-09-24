@@ -1,5 +1,5 @@
 use crate::src::cmd::cmd_table;
-use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
+use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::ffi::libc::{memcpy, memmove, memset, strchr, strcmp, strlcat, strlen, strncmp};
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
@@ -20,90 +20,90 @@ use crate::src::screen_write::{
     screen_write_cell, screen_write_clearcharacter, screen_write_cursormove,
 };
 use crate::src::shared::abi::*;
-pub use crate::src::shared::abi::{__compar_fn_t, ssize_t};
+use crate::src::shared::abi::{__compar_fn_t, ssize_t};
 use crate::src::shared::arguments::*;
-pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
+use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 use crate::src::shared::client::*;
-pub use crate::src::shared::client::{
+use crate::src::shared::client::{
     client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
     overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
-pub use crate::src::shared::command::{
+use crate::src::shared::command::{
     cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds,
 };
-pub use crate::src::shared::control::control_state;
-pub use crate::src::shared::display::{visible_range, visible_ranges};
-pub use crate::src::shared::environment::environ;
+use crate::src::shared::control::control_state;
+use crate::src::shared::display::{visible_range, visible_ranges};
+use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
-pub use crate::src::shared::format::{format_job_tree, format_tree};
+use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
-pub use crate::src::shared::hyperlinks::hyperlinks;
-pub use crate::src::shared::input::{input_ctx, input_request, input_requests};
-pub use crate::src::shared::key::MODEKEY_VI;
+use crate::src::shared::hyperlinks::hyperlinks;
+use crate::src::shared::input::{input_ctx, input_request, input_requests};
+use crate::src::shared::key::MODEKEY_VI;
 use crate::src::shared::key::*;
-pub use crate::src::shared::key::{
+use crate::src::shared::key::{
     key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
 };
-pub use crate::src::shared::layout::layout_geometry;
+use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
-pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-pub use crate::src::shared::menu::menu_data;
+use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
+use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
-pub use crate::src::shared::mouse::mouse_event;
-pub use crate::src::shared::options::{
+use crate::src::shared::mouse::mouse_event;
+use crate::src::shared::options::{
     options, options_array, options_array_item, options_entry, options_value,
 };
-pub use crate::src::shared::pane::{
+use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
-pub use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-pub use crate::src::shared::paste::{
+use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
+use crate::src::shared::paste::{
     paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
 };
-pub use crate::src::shared::process::tmuxpeer;
-pub use crate::src::shared::prompt::prompt;
+use crate::src::shared::process::tmuxpeer;
+use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
-pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
-pub use crate::src::shared::prompt::{
+use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::src::shared::prompt::{
     prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_ACCEPT, PROMPT_BSPACE_EXIT,
     PROMPT_CLOSE, PROMPT_COMMANDMODE, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL,
     PROMPT_ISMODE, PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE, PROMPT_NTYPES,
     PROMPT_NUMERIC, PROMPT_QUOTENEXT, PROMPT_SINGLE,
 };
-pub use crate::src::shared::redraw::redraw_scene;
-pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
-pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-pub use crate::src::shared::session::{session, session_entry};
-pub use crate::src::shared::spawn::spawn_editor_state;
-pub use crate::src::shared::status::status_line;
+use crate::src::shared::redraw::redraw_scene;
+use crate::src::shared::screen::{screen, screen_sel, screen_titles};
+use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
+use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
+use crate::src::shared::session::{session, session_entry};
+use crate::src::shared::spawn::spawn_editor_state;
+use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
-pub use crate::src::shared::tty::{
+use crate::src::shared::tty::{
     tty, tty_code, tty_ctx, tty_ctx_c2rust_unnamed, tty_ctx_c2rust_unnamed_data,
     tty_ctx_c2rust_unnamed_sel, tty_ctx_redraw_cb, tty_ctx_set_client_cb, tty_key, tty_style_ctx,
     tty_term, tty_term_entry,
 };
 use crate::src::shared::utf8::*;
-pub use crate::src::shared::window::{
+use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::tmux::{global_options, global_s_options};
-use crate::src::utf8::{
+use crate::src::text::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set, utf8_strlen,
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
 use std::ffi::{CStr, CString};
 use std::mem::MaybeUninit;
 
-pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
-pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
+use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
+use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
+use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
 unsafe fn prompt_buffer_cells(pr: *mut prompt) -> *mut utf8_data {
     (*pr).buffer.as_mut_ptr()

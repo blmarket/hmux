@@ -1,3 +1,4 @@
+use hmux2::src::shared::monitor::{monitor_item, monitor_set, MONITOR_SESSION};
 use hmux2::src::monitor::*;
 use std::{ffi::CStr, ptr::null_mut};
 
