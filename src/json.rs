@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, free, strlen, strncmp, strtoll};
+use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, strlen, strncmp, strtoll};
 use crate::src::log::fatalx;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
@@ -16,21 +16,34 @@ pub use crate::src::shared::json::{
     json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::xmalloc::{xasprintf, xmalloc, xmemdup};
+use crate::src::xmalloc::{xmalloc, xmemdup};
 use std::ffi::CStr;
 use std::ffi::CString;
 
 macro_rules! json_format_cause {
-    ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+    ($cause:expr, $fmt:expr, $arg:expr $(,)?) => {{
         let cause = $cause;
         if !cause.is_null() {
-            let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
-            xasprintf(&raw mut raw, $fmt $(, $arg)*);
-            let message = CStr::from_ptr(raw).to_owned();
-            free(raw.cast());
-            *cause = Some(message);
+            *cause = Some(json_one_arg_cause($fmt, $arg));
         }
     }};
+}
+
+unsafe fn json_one_arg_cause(
+    fmt: *const ::core::ffi::c_char,
+    arg: *const ::core::ffi::c_char,
+) -> CString {
+    let fmt = CStr::from_ptr(fmt).to_bytes();
+    let at = fmt
+        .windows(2)
+        .position(|part| part == b"%s")
+        .expect("JSON diagnostic has %s");
+    let arg = CStr::from_ptr(arg).to_bytes();
+    let mut message = Vec::with_capacity(fmt.len() + arg.len());
+    message.extend_from_slice(&fmt[..at]);
+    message.extend_from_slice(arg);
+    message.extend_from_slice(&fmt[at + 2..]);
+    CString::new(message).expect("JSON diagnostic contains no NUL")
 }
 
 pub const NODE_ARRAY: json_node_type = 4;
@@ -488,9 +501,6 @@ unsafe fn json_error(
     mut reason: *const ::core::ffi::c_char,
     mut loc: *const ::core::ffi::c_char,
 ) {
-    let mut ellipsis: *const ::core::ffi::c_char =
-        b"...\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut i: ::core::ffi::c_int = 0;
     if cause.is_null() {
         return;
     }
@@ -502,23 +512,17 @@ unsafe fn json_error(
         );
         return;
     }
-    i = 0 as ::core::ffi::c_int;
-    while i < ERROR_CTX_LEN + 1 as ::core::ffi::c_int {
-        if *loc.offset(i as isize) as ::core::ffi::c_int == '\0' as i32 {
-            ellipsis = b"\0" as *const u8 as *const ::core::ffi::c_char;
-            break;
-        } else {
-            i += 1;
-        }
+    let reason = CStr::from_ptr(reason).to_bytes();
+    let loc = CStr::from_ptr(loc).to_bytes();
+    let context_len = loc.len().min(ERROR_CTX_LEN as usize);
+    let mut message = Vec::with_capacity(reason.len() + 2 + context_len + 3);
+    message.extend_from_slice(reason);
+    message.extend_from_slice(b": ");
+    message.extend_from_slice(&loc[..context_len]);
+    if loc.len() > context_len {
+        message.extend_from_slice(b"...");
     }
-    json_format_cause!(
-        cause,
-        b"%s: %.*s%s\0" as *const u8 as *const ::core::ffi::c_char,
-        reason,
-        ERROR_CTX_LEN,
-        loc,
-        ellipsis,
-    );
+    *cause = Some(CString::new(message).expect("JSON diagnostic contains no NUL"));
 }
 unsafe fn json_tokenize_input(
     mut input: *const ::core::ffi::c_char,
@@ -1331,6 +1335,17 @@ pub unsafe extern "C" fn json_to_string(mut node: *mut json_node) -> *mut ::core
 mod json_fields_tests {
     use super::*;
     use std::ffi::{CStr, CString};
+
+    #[test]
+    fn diagnostics_preserve_bytes_and_context_truncation() {
+        unsafe {
+            let mut cause = None;
+            json_error(&raw mut cause, c"\xff".as_ptr(), c"abcdefghZ".as_ptr());
+            assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: abcdefgh...");
+            json_error(&raw mut cause, c"\xff".as_ptr(), c"ab".as_ptr());
+            assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: ab");
+        }
+    }
 
     unsafe fn new_node(key: &CString) -> *mut json_node {
         json_create_node(
