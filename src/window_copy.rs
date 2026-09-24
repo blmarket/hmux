@@ -131,7 +131,7 @@ use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_pane_set_searchstr, window_set_active_pane,
 };
-use crate::src::xmalloc::{xmalloc, xreallocarray, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xmalloc, xreallocarray, xvasprintf_cstring};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
@@ -1151,15 +1151,6 @@ unsafe extern "C" fn window_copy_next_paragraph(mut wme: *mut window_mode_entry)
     ox = window_copy_find_length(wme, oy);
     window_copy_scroll_to(wme, ox, oy, 0 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_copy_get_word(
-    wp: *mut window_pane,
-    x: u_int,
-    y: u_int,
-) -> *mut ::core::ffi::c_char {
-    window_copy_get_word_cstring(wp, x, y)
-        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
-}
 pub(crate) unsafe fn window_copy_get_word_cstring(
     mut wp: *mut window_pane,
     mut x: u_int,
@@ -1174,14 +1165,6 @@ pub(crate) unsafe fn window_copy_get_word_cstring(
         (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_copy_get_line(
-    wp: *mut window_pane,
-    y: u_int,
-) -> *mut ::core::ffi::c_char {
-    window_copy_get_line_cstring(wp, y)
-        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
-}
 pub(crate) unsafe fn window_copy_get_line_cstring(
     mut wp: *mut window_pane,
     mut y: u_int,
@@ -1193,15 +1176,6 @@ pub(crate) unsafe fn window_copy_get_line_cstring(
         gd,
         (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy),
     );
-}
-#[no_mangle]
-pub unsafe extern "C" fn window_copy_get_hyperlink(
-    wp: *mut window_pane,
-    x: u_int,
-    y: u_int,
-) -> *mut ::core::ffi::c_char {
-    window_copy_get_hyperlink_cstring(wp, x, y)
-        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
 }
 pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
     mut wp: *mut window_pane,
