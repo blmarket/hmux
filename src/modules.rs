@@ -76,6 +76,7 @@ pub use self::style::colour;
 pub mod compat {
     pub mod fdforkpty;
     pub mod freezero;
+    pub mod glob;
     pub mod getdtablecount;
     pub mod getopt_long;
     pub mod getpeereid;

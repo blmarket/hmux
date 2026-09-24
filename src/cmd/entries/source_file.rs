@@ -5,7 +5,8 @@ use crate::src::cmd_queue::{
     cmdq_continue, cmdq_error, cmdq_get_callback1, cmdq_get_client, cmdq_get_target,
     cmdq_insert_after, cmdq_set_cancel_data,
 };
-use crate::src::ffi::libc::{__ctype_b_loc, free, glob, globfree, strcmp, strerror};
+use crate::src::compat::glob::GlobResult;
+use crate::src::ffi::libc::{__ctype_b_loc, free, strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::format_single_from_target;
 use crate::src::log::log_debug;
@@ -299,18 +300,6 @@ unsafe extern "C" fn cmd_source_file_exec(
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut g: glob_t = glob_t {
-        gl_pathc: 0,
-        gl_pathv: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        gl_offs: 0,
-        gl_flags: 0,
-        gl_closedir: None,
-        gl_readdir: None,
-        gl_opendir: None,
-        gl_lstat: None,
-        gl_stat: None,
-    };
-    let mut result: ::core::ffi::c_int = 0;
     let mut parse_flags: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
@@ -400,7 +389,7 @@ unsafe extern "C" fn cmd_source_file_exec(
                 b"cmd_source_file_exec\0" as *const u8 as *const ::core::ffi::c_char,
                 pattern.as_ptr(),
             );
-            result = glob(pattern.as_ptr(), 0 as ::core::ffi::c_int, None, &raw mut g);
+            let (matches, result) = GlobResult::run(pattern.as_c_str());
             if result != 0 as ::core::ffi::c_int {
                 if result != GLOB_NOMATCH || !(*cdata).flags & CMD_PARSE_QUIET != 0 {
                     if result == GLOB_NOMATCH {
@@ -418,16 +407,14 @@ unsafe extern "C" fn cmd_source_file_exec(
                     );
                     retval = CMD_RETURN_ERROR;
                 }
-                globfree(&raw mut g);
                 drop(pattern);
             } else {
                 drop(pattern);
                 j = 0 as u_int;
-                while (j as __size_t) < g.gl_pathc {
-                    cmd_source_file_add(cdata, *g.gl_pathv.offset(j as isize));
+                while (j as __size_t) < matches.len() {
+                    cmd_source_file_add(cdata, matches.path(j as usize));
                     j = j.wrapping_add(1);
                 }
-                globfree(&raw mut g);
             }
         }
         i = i.wrapping_add(1);
