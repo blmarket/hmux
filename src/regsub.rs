@@ -4,7 +4,6 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::regex::{
     __re_long_size_t, re_dfa_t, re_pattern_buffer, reg_syntax_t, regex_t, regmatch_t, regoff_t,
 };
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 unsafe fn regsub_copy(
@@ -61,16 +60,6 @@ unsafe fn regsub_expand(
         }
         cp = cp.offset(1);
     }
-}
-#[no_mangle]
-pub unsafe extern "C" fn regsub(
-    pattern: *const ::core::ffi::c_char,
-    with: *const ::core::ffi::c_char,
-    text: *const ::core::ffi::c_char,
-    flags: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    regsub_cstring(pattern, with, text, flags)
-        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
 }
 pub(crate) unsafe fn regsub_cstring(
     mut pattern: *const ::core::ffi::c_char,

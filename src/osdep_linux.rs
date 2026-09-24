@@ -9,21 +9,11 @@ pub use crate::src::shared::stdio::EOF;
 pub use crate::src::shared::stdio::{
     _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
 };
-use crate::src::xmalloc::xstrdup;
 
 pub const MAXPATHLEN: ::core::ffi::c_int = PATH_MAX;
 pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;
 
 pub const TIOCGSID: ::core::ffi::c_int = 0x5429 as ::core::ffi::c_int;
-#[no_mangle]
-pub unsafe extern "C" fn osdep_get_name(
-    fd: ::core::ffi::c_int,
-    tty: *mut ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    // Keep the exported libc-owned return contract for external callers.
-    osdep_get_name_cstring(fd, tty).map_or(::core::ptr::null_mut(), |name| xstrdup(name.as_ptr()))
-}
-
 pub(crate) unsafe fn osdep_get_name_cstring(
     fd: ::core::ffi::c_int,
     _tty: *mut ::core::ffi::c_char,

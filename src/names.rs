@@ -4,7 +4,8 @@ use crate::src::ffi::libc::{
     strncmp,
 };
 use crate::src::format::{
-    format_create, format_defaults_pane, format_defaults_window, format_expand, format_free,
+    format_create, format_defaults_pane, format_defaults_window, format_expand_cstring,
+    format_free,
 };
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
@@ -71,7 +72,6 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::clean_name_cstring;
 use crate::src::window::window_set_name;
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
@@ -119,7 +119,6 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
         tv_sec: 0,
         tv_usec: 0,
     };
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut left: ::core::ffi::c_int = 0;
     if (*w).active.is_null() {
         return;
@@ -195,15 +194,15 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
         event_del(&raw mut (*w).name_event);
     }
     (*(*w).active).flags &= !PANE_CHANGED;
-    name = format_window_name(w);
-    if strcmp(name, (*w).name) != 0 as ::core::ffi::c_int {
+    let name = format_window_name(w);
+    if strcmp(name.as_ptr().cast_mut(), (*w).name) != 0 as ::core::ffi::c_int {
         log_debug(
             b"@%u new name %s (was %s)\0" as *const u8 as *const ::core::ffi::c_char,
             (*w).id,
-            name,
+            name.as_ptr(),
             (*w).name,
         );
-        window_set_name(w, name, 1 as ::core::ffi::c_int);
+        window_set_name(w, name.as_ptr().cast_mut(), 1 as ::core::ffi::c_int);
         server_redraw_window_borders(w);
         server_status_window(w);
     } else {
@@ -213,12 +212,6 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
             (*w).name,
         );
     }
-    free(name as *mut ::core::ffi::c_void);
-}
-#[no_mangle]
-pub unsafe extern "C" fn default_window_name(w: *mut window) -> *mut ::core::ffi::c_char {
-    let name = default_window_name_cstring(w);
-    xstrdup(name.as_ptr())
 }
 
 pub(crate) unsafe fn default_window_name_cstring(w: *mut window) -> CString {
@@ -232,10 +225,9 @@ pub(crate) unsafe fn default_window_name_cstring(w: *mut window) -> CString {
         parse_window_name_cstring(CStr::from_ptr((*(*w).active).shell))
     }
 }
-unsafe extern "C" fn format_window_name(mut w: *mut window) -> *mut ::core::ffi::c_char {
+unsafe fn format_window_name(w: *mut window) -> CString {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut fmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ft = format_create(
         ::core::ptr::null_mut::<client>(),
         ::core::ptr::null_mut::<cmdq_item>(),
@@ -248,16 +240,9 @@ unsafe extern "C" fn format_window_name(mut w: *mut window) -> *mut ::core::ffi:
         (*w).options,
         b"automatic-rename-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    name = format_expand(ft, fmt);
+    let name = format_expand_cstring(ft, fmt);
     format_free(ft);
-    return name;
-}
-#[no_mangle]
-pub unsafe extern "C" fn parse_window_name(
-    in_0: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let name = parse_window_name_cstring(CStr::from_ptr(in_0));
-    xstrdup(name.as_ptr())
+    name
 }
 
 pub(crate) unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
@@ -324,9 +309,6 @@ mod owned_name_tests {
             let w = std::mem::MaybeUninit::<window>::zeroed();
             let w = w.as_ptr().cast_mut();
             assert_eq!(default_window_name_cstring(w), c"");
-            let raw = default_window_name(w);
-            assert_eq!(CStr::from_ptr(raw), c"");
-            crate::src::ffi::libc::free(raw.cast());
         }
     }
 }

@@ -54,7 +54,7 @@ pub use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tty_features::tty_parse_features;
 use crate::src::utf8::{utf8_isvalid, utf8_stravis_cstring};
-use crate::src::xmalloc::{xsnprintf, xstrdup};
+use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
 
@@ -725,15 +725,6 @@ unsafe fn make_label(mut label: *const ::core::ffi::c_char) -> Result<CString, C
         return Ok(CString::new(path).expect("socket label path contains no NUL"));
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn shell_argv0(
-    shell: *const ::core::ffi::c_char,
-    is_login: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    let argv0 = shell_argv0_cstring(shell, is_login != 0);
-    xstrdup(argv0.as_ptr())
-}
-
 pub(crate) unsafe fn shell_argv0_cstring(
     shell: *const ::core::ffi::c_char,
     is_login: bool,
@@ -779,15 +770,6 @@ pub unsafe extern "C" fn get_timer() -> uint64_t {
                 .wrapping_div(1000000 as ::core::ffi::c_ulonglong),
         ) as uint64_t;
 }
-#[no_mangle]
-pub unsafe extern "C" fn clean_name(
-    name: *const ::core::ffi::c_char,
-    untrusted: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    clean_name_cstring(CStr::from_ptr(name), untrusted)
-        .map_or(::core::ptr::null_mut(), |name| xstrdup(name.as_ptr()))
-}
-
 /// Escape a validated name once before moving it into its Rust owner.
 pub unsafe fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> Option<CString> {
     if utf8_isvalid(name.as_ptr()) == 0 {

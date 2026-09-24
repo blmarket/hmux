@@ -106,7 +106,6 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::global_s_options;
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -747,13 +746,6 @@ pub unsafe extern "C" fn hooks_monitor_add(
     options_set_monitor_data(o, hm as *mut ::core::ffi::c_void);
     monitor_add((*hm).set, name, type_0, id, format, flags);
 }
-#[no_mangle]
-pub unsafe extern "C" fn hooks_monitor_to_string(
-    o: *mut options_entry,
-) -> *mut ::core::ffi::c_char {
-    hooks_monitor_to_cstring(o).map_or(::core::ptr::null_mut(), |s| xstrdup(s.as_ptr()))
-}
-
 pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<CString> {
     let hm = options_get_monitor_data(o) as *mut hooks_monitor;
     if hm.is_null() {
