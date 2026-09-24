@@ -166,7 +166,6 @@ pub struct cmdq_item {
     pub cmd: *mut cmd,
     pub cb: cmdq_cb,
     pub data: *mut ::core::ffi::c_void,
-    pub entry: cmdq_item_entry,
     pub(crate) error: Option<std::ffi::CString>,
     pub(crate) cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
     pub(crate) wait_file: *mut super::client::client_file,
@@ -192,7 +191,6 @@ impl cmdq_item {
             cmd: unsafe { ::core::mem::zeroed() },
             cb: unsafe { ::core::mem::zeroed() },
             data: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
             error: Default::default(),
             cancel_data: Default::default(),
             wait_file: Default::default(),
@@ -202,13 +200,27 @@ impl cmdq_item {
 
 pub type cmds = Vec<*mut cmd>;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned by a client until `cmdq_free`; the lazy global queue lives for
-/// the process. An empty queue's tail link points into this stable record.
+/// the process. The deque owns stable command item allocations.
 pub struct cmdq_list {
     pub item: *mut cmdq_item,
-    pub list: cmdq_item_list,
+    pub list: std::collections::VecDeque<Box<cmdq_item>>,
+}
+
+impl cmdq_list {
+    pub fn first_ptr(&self) -> *mut cmdq_item {
+        self.list
+            .front()
+            .map_or(std::ptr::null_mut(), |item| std::ptr::from_ref(&**item).cast_mut())
+    }
+
+    pub fn position(&self, item: *mut cmdq_item) -> usize {
+        self.list
+            .iter()
+            .position(|owner| std::ptr::eq(&**owner, item))
+            .expect("command item belongs to queue")
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -290,21 +302,7 @@ pub struct cmdq_state {
 pub type cmdq_cb =
     Option<unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval>;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmdq_item_entry {
-    pub tqe_next: *mut cmdq_item,
-    pub tqe_prev: *mut *mut cmdq_item,
-}
-
 pub type cmdq_type = ::core::ffi::c_uint;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmdq_item_list {
-    pub tqh_first: *mut cmdq_item,
-    pub tqh_last: *mut *mut cmdq_item,
-}
 
 #[derive(Copy, Clone)]
 #[repr(C)]

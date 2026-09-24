@@ -43,8 +43,8 @@ pub use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
 pub use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_item_entry,
-    cmdq_item_list, cmdq_list, cmdq_state, cmdq_type, cmds,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_item,
+    cmdq_list, cmdq_state, cmdq_type, cmds,
 };
 pub use crate::src::shared::command::{
     CMDQ_FIRED, CMDQ_STATE_CONTROL, CMDQ_STATE_NOHOOKS, CMDQ_WAITING, CMD_AFTERHOOK,
@@ -129,13 +129,10 @@ unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_it
     bytes.push(b'/');
     bytes.extend_from_slice(address.as_bytes());
     bytes.push(b']');
-    owner.name = Some(CString::new(bytes).expect("queue item label has no NUL"));
+    (*item).name = Some(CString::new(bytes).expect("queue item label has no NUL"));
 
-    Box::into_raw(owner).cast::<cmdq_item>()
-}
-
-unsafe fn cmdq_drop_owner(item: *mut cmdq_item) {
-    drop(Box::from_raw(item));
+    // The caller owns this detached allocation until enqueue or explicit free.
+    Box::into_raw(owner)
 }
 
 /// Register the release path for callback data when this item is removed
@@ -187,7 +184,7 @@ pub(crate) unsafe fn cmdq_clear_wait_file(item: *mut cmdq_item, cf: *mut client_
 /// Other wait families need their own cancellation before they can be drained.
 pub(crate) unsafe fn cmdq_abort_file_wait(c: *mut client) {
     let queue = (*c).queue;
-    let first = (*queue).list.tqh_first;
+    let first = (*queue).first_ptr();
     if first.is_null() || (*first).flags & CMDQ_WAITING == 0 {
         return;
     }
@@ -197,13 +194,14 @@ pub(crate) unsafe fn cmdq_abort_file_wait(c: *mut client) {
     }
     file_cancel_cmdq_wait(cf);
     (*queue).item = ::core::ptr::null_mut();
-    while !(*queue).list.tqh_first.is_null() {
-        cmdq_remove((*queue).list.tqh_first);
+    while !(*queue).list.is_empty() {
+        cmdq_remove((*queue).first_ptr());
     }
 }
 
 /// Release an item that has not been linked into a command queue.
 pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
+    let owner = Box::from_raw(item);
     cmdq_cancel_unfired_data(item);
     if !(*item).client.is_null() {
         server_client_unref((*item).client);
@@ -212,7 +210,7 @@ pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
         cmd_list_free((*item).cmdlist);
     }
     cmdq_free_state((*item).state);
-    cmdq_drop_owner(item);
+    drop(owner);
 }
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_36;
@@ -251,15 +249,14 @@ unsafe extern "C" fn cmdq_get(mut c: *mut client) -> *mut cmdq_list {
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_new() -> *mut cmdq_list {
-    let mut queue: *mut cmdq_list = ::core::ptr::null_mut::<cmdq_list>();
-    queue = Box::into_raw(Box::new(::core::mem::zeroed::<cmdq_list>()));
-    (*queue).list.tqh_first = ::core::ptr::null_mut::<cmdq_item>();
-    (*queue).list.tqh_last = &raw mut (*queue).list.tqh_first;
-    return queue;
+    Box::into_raw(Box::new(cmdq_list {
+        item: std::ptr::null_mut(),
+        list: std::collections::VecDeque::new(),
+    }))
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_free(mut queue: *mut cmdq_list) {
-    if !(*queue).list.tqh_first.is_null() {
+    if !(*queue).list.is_empty() {
         fatalx(b"queue not empty\0" as *const u8 as *const ::core::ffi::c_char);
     }
     drop(Box::from_raw(queue));
@@ -434,10 +431,8 @@ pub unsafe extern "C" fn cmdq_append(
         }
         (*item).client = c;
         (*item).queue = queue;
-        (*item).entry.tqe_next = ::core::ptr::null_mut::<cmdq_item>();
-        (*item).entry.tqe_prev = (*queue).list.tqh_last;
-        *(*queue).list.tqh_last = item;
-        (*queue).list.tqh_last = &raw mut (*item).entry.tqe_next;
+        // Enqueue consumes the detached allocation without moving the item.
+        (*queue).list.push_back(Box::from_raw(item));
         log_debug(
             b"%s %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_append\0" as *const u8 as *const ::core::ffi::c_char,
@@ -449,7 +444,7 @@ pub unsafe extern "C" fn cmdq_append(
             break;
         }
     }
-    return *(*((*queue).list.tqh_last as *mut cmdq_item_list)).tqh_last;
+    return std::ptr::from_ref(&**(*queue).list.back().expect("appended command item")).cast_mut();
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_insert_after(
@@ -459,6 +454,7 @@ pub unsafe extern "C" fn cmdq_insert_after(
     let mut c: *mut client = (*after).client;
     let mut queue: *mut cmdq_list = (*after).queue;
     let mut next: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
+    let mut position = (*queue).position(after) + 1;
     loop {
         next = (*item).next;
         (*item).next = (*after).next;
@@ -468,14 +464,9 @@ pub unsafe extern "C" fn cmdq_insert_after(
         }
         (*item).client = c;
         (*item).queue = queue;
-        (*item).entry.tqe_next = (*after).entry.tqe_next;
-        if !(*item).entry.tqe_next.is_null() {
-            (*(*item).entry.tqe_next).entry.tqe_prev = &raw mut (*item).entry.tqe_next;
-        } else {
-            (*queue).list.tqh_last = &raw mut (*item).entry.tqe_next;
-        }
-        (*after).entry.tqe_next = item;
-        (*item).entry.tqe_prev = &raw mut (*after).entry.tqe_next;
+        // Enqueue consumes the detached allocation without moving the item.
+        (*queue).list.insert(position, Box::from_raw(item));
+        position += 1;
         log_debug(
             b"%s %s: %s after %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_insert_after\0" as *const u8 as *const ::core::ffi::c_char,
@@ -611,27 +602,27 @@ unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
         cmd_list_free((*item).cmdlist);
     }
     cmdq_free_state((*item).state);
-    if !(*item).entry.tqe_next.is_null() {
-        (*(*item).entry.tqe_next).entry.tqe_prev = (*item).entry.tqe_prev;
-    } else {
-        (*(*item).queue).list.tqh_last = (*item).entry.tqe_prev;
+    let queue = (*item).queue;
+    let position = (*queue).position(item);
+    let owner = (*queue).list.remove(position).expect("queued command item");
+    if (*queue).item == item {
+        (*queue).item = std::ptr::null_mut();
     }
-    *(*item).entry.tqe_prev = (*item).entry.tqe_next;
-    cmdq_drop_owner(item);
+    drop(owner);
 }
 unsafe extern "C" fn cmdq_remove_group(mut item: *mut cmdq_item) {
-    let mut this: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut next: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if (*item).group == 0 as u_int {
         return;
     }
-    this = (*item).entry.tqe_next;
-    while !this.is_null() {
-        next = (*this).entry.tqe_next;
+    let queue = (*item).queue;
+    let mut position = (*queue).position(item) + 1;
+    while let Some(owner) = (*queue).list.get(position) {
+        let this = std::ptr::from_ref(&**owner).cast_mut();
         if (*this).group == (*item).group {
             cmdq_remove(this);
+        } else {
+            position += 1;
         }
-        this = next;
     }
 }
 unsafe extern "C" fn cmdq_empty_command(
@@ -980,7 +971,7 @@ pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let mut items: u_int = 0 as u_int;
     static mut number: u_int = 0;
-    if (*queue).list.tqh_first.is_null() {
+    if (*queue).list.is_empty() {
         log_debug(
             b"%s %s: empty\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
@@ -988,7 +979,7 @@ pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {
         );
         return 0 as u_int;
     }
-    if (*(*queue).list.tqh_first).flags & CMDQ_WAITING != 0 {
+    if (*(*queue).first_ptr()).flags & CMDQ_WAITING != 0 {
         log_debug(
             b"%s %s: waiting\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1002,7 +993,7 @@ pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {
         name,
     );
     loop {
-        (*queue).item = (*queue).list.tqh_first;
+        (*queue).item = (*queue).first_ptr();
         item = (*queue).item;
         if item.is_null() {
             current_block = 7056779235015430508;
@@ -1219,6 +1210,62 @@ mod cancellation_tests {
 
     unsafe fn cancel_payload(data: *mut ::core::ffi::c_void) {
         drop(Box::from_raw(data.cast::<Payload>()));
+    }
+
+    unsafe extern "C" fn record_and_insert(
+        item: *mut cmdq_item,
+        data: *mut ::core::ffi::c_void,
+    ) -> cmd_retval {
+        (*data.cast::<Vec<u32>>()).push((*item).group);
+        if (*item).group == 1 {
+            let inserted = cmdq_get_callback1(c"inserted".as_ptr(), Some(record_and_insert), data);
+            (*inserted).group = 9;
+            cmdq_insert_after(item, inserted);
+            CMD_RETURN_WAIT
+        } else {
+            CMD_RETURN_NORMAL
+        }
+    }
+
+    #[test]
+    fn boxed_queue_preserves_order_waits_and_stable_addresses() {
+        unsafe {
+            let queue = cmdq_get(std::ptr::null_mut());
+            assert!((*queue).list.is_empty());
+            let mut trace = Vec::<u32>::new();
+            let data = (&raw mut trace).cast();
+            let first = cmdq_get_callback1(c"first".as_ptr(), Some(record_and_insert), data);
+            let middle = cmdq_get_callback1(c"middle".as_ptr(), Some(record_and_insert), data);
+            let last = cmdq_get_callback1(c"last".as_ptr(), Some(record_and_insert), data);
+            (*first).group = 1;
+            (*middle).group = 2;
+            (*last).group = 3;
+            (*first).next = last;
+            assert_eq!(cmdq_append(std::ptr::null_mut(), first), last);
+            assert_eq!(cmdq_insert_after(first, middle), middle);
+            assert_eq!((*queue).first_ptr(), first);
+
+            // Force deque growth, then remove a group spanning unrelated items.
+            for _ in 0..64 {
+                let extra = cmdq_get_callback1(c"extra".as_ptr(), None, data);
+                (*extra).group = 2;
+                cmdq_append(std::ptr::null_mut(), extra);
+            }
+            cmdq_remove_group(middle);
+            assert_eq!((*queue).list.len(), 3);
+            assert_eq!((*queue).first_ptr(), first);
+
+            // The callback inserts into its own queue and waits at the front.
+            assert_eq!(cmdq_next(std::ptr::null_mut()), 0);
+            assert_eq!(trace, [1]);
+            assert_eq!((*queue).first_ptr(), first);
+            assert_eq!(cmdq_next(std::ptr::null_mut()), 0);
+            cmdq_continue(first);
+            assert_eq!(cmdq_next(std::ptr::null_mut()), 3);
+            assert_eq!(trace, [1, 9, 2, 3]);
+            assert!((*queue).list.is_empty());
+            assert!((*queue).item.is_null());
+        }
     }
 
     #[test]
