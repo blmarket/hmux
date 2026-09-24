@@ -395,13 +395,12 @@ mod tests {
     }
 
     #[test]
-    fn libc_output_crosses_into_job_owner_and_replacement_stays_address_stable() {
+    fn line_output_crosses_into_job_owner_and_replacement_stays_address_stable() {
         unsafe {
             let mut cache = format_job_tree::default();
             let cmd = CString::new(b"printf '\xff'".to_vec()).unwrap();
             let fj = format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_ptr());
-            let output = xstrdup(b"first\0".as_ptr().cast());
-            format_job_set_out_from_malloc(fj, output);
+            format_job_set_out_from_line(fj, b"first\0ignored");
             assert_eq!(
                 CStr::from_ptr(
                     ((*fj).out)
