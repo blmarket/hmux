@@ -1,5 +1,5 @@
 use crate::src::arguments::{
-    args_create, args_free, args_has, args_set, args_set_owned_string, args_string,
+    args_create, args_free, args_has, args_set_flag, args_set_owned_string, args_string,
 };
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::cmdq_get_target;
@@ -141,12 +141,7 @@ unsafe extern "C" fn cmd_find_window_exec(
     );
     new_args = args_create();
     if args_has(args, 'Z' as i32 as u_char) != 0 {
-        args_set(
-            new_args,
-            'Z' as i32 as u_char,
-            ::core::ptr::null_mut::<args_value>(),
-            0 as ::core::ffi::c_int,
-        );
+        args_set_flag(new_args, 'Z' as i32 as u_char, 0);
     }
     args_set_owned_string(new_args, 'f' as i32 as u_char, filter_value, 0);
     window_pane_set_mode(

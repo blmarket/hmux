@@ -7,7 +7,7 @@ use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn};
-use crate::src::format::format_single_from_target;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::server_client::server_client_unref;
 use crate::src::shared::abi::*;
@@ -455,24 +455,22 @@ pub unsafe extern "C" fn args_create() -> *mut args {
     });
     Box::into_raw(owner).cast::<args>()
 }
-/// Append a zeroed positional value and return its temporary write pointer.
-/// The pointer is invalidated by the next append; `args` retains the value.
-pub unsafe fn args_push_positional(args: *mut args) -> *mut args_value {
-    let owner = &mut *args;
-    owner
-        .values
-        .push(::core::mem::zeroed::<args_value>());
-    owner.positional_strings.push(None);
-    owner.count = owner.values.len() as u_int;
-    owner.values.as_mut_ptr().add(owner.values.len() - 1)
-}
-
 unsafe fn args_push_positional_owned(args: *mut args, value: OwnedArgsValue) {
     let owner = &mut *args;
     let (value, string) = value.into_parts();
     owner.values.push(*value);
     owner.positional_strings.push(string);
     owner.count = owner.values.len() as u_int;
+}
+
+/// Append a positional string and transfer its storage into `args`.
+pub unsafe fn args_push_positional_string(args: *mut args, value: CString) {
+    args_push_positional_owned(args, OwnedArgsValue::string(value));
+}
+
+/// Append a positional command list and transfer its reference into `args`.
+pub unsafe fn args_push_positional_commands(args: *mut args, cmdlist: *mut cmd_list) {
+    args_push_positional_owned(args, OwnedArgsValue::commands(cmdlist));
 }
 
 unsafe fn args_parse_flag_argument(
@@ -504,12 +502,7 @@ unsafe fn args_parse_flag_argument(
                     b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
                     flag,
                 );
-                args_set(
-                    args,
-                    flag as u_char,
-                    ::core::ptr::null_mut::<args_value>(),
-                    ARGS_ENTRY_OPTIONAL_VALUE,
-                );
+                args_set_flag(args, flag as u_char, ARGS_ENTRY_OPTIONAL_VALUE);
                 return Ok(());
             }
             return Err(parse_flag_error(b"-", flag as u_char, b" expects an argument"));
@@ -528,12 +521,7 @@ unsafe fn args_parse_flag_argument(
                     b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
                     flag,
                 );
-                args_set(
-                    args,
-                    flag as u_char,
-                    ::core::ptr::null_mut::<args_value>(),
-                    ARGS_ENTRY_OPTIONAL_VALUE,
-                );
+                args_set_flag(args, flag as u_char, ARGS_ENTRY_OPTIONAL_VALUE);
                 return Ok(());
             }
         }
@@ -547,7 +535,7 @@ unsafe fn args_parse_flag_argument(
         flag,
         printed.as_ptr(),
     );
-    args_set_owned(args, flag as u_char, new, 0);
+    args_set_value(args, flag as u_char, Some(new), 0);
     Ok(())
 }
 unsafe fn args_parse_flags(
@@ -619,12 +607,7 @@ unsafe fn args_parse_flags(
                 b"args_parse_flags\0" as *const u8 as *const ::core::ffi::c_char,
                 flag as ::core::ffi::c_int,
             );
-            args_set(
-                args,
-                flag,
-                ::core::ptr::null_mut::<args_value>(),
-                0 as ::core::ffi::c_int,
-            );
+            args_set_flag(args, flag, 0);
         } else {
             optional_argument = (*found.offset(2 as ::core::ffi::c_int as isize)
                 as ::core::ffi::c_int
@@ -821,21 +804,16 @@ pub unsafe extern "C" fn args_copy(
         if args_value_count(entry) == 0 {
             i = 0 as u_int;
             while i < (*entry).count {
-                args_set(
-                    new_args,
-                    (*entry).flag,
-                    ::core::ptr::null_mut::<args_value>(),
-                    0 as ::core::ffi::c_int,
-                );
+                args_set_flag(new_args, (*entry).flag, 0);
                 i = i.wrapping_add(1);
             }
         } else {
             value = args_value_at(entry, 0);
             while !value.is_null() {
-                args_set_owned(
+                args_set_value(
                     new_args,
                     (*entry).flag,
-                    args_copy_copy_value(value, argc, argv),
+                    Some(args_copy_copy_value(value, argc, argv)),
                     0,
                 );
                 value = args_next_value(value);
@@ -860,55 +838,25 @@ pub unsafe extern "C" fn args_copy(
     }
     return new_args;
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_free_value(mut value: *mut args_value) {
+unsafe fn args_value_release(value: *mut args_value) {
     match (*value).type_0 as ::core::ffi::c_uint {
-        1 => {
-            free((*value).c2rust_unnamed.string as *mut ::core::ffi::c_void);
-        }
+        // String and cache pointers borrow from Rust owners alongside args.
+        1 => {}
         2 => {
             cmd_list_free((*value).c2rust_unnamed.cmdlist as *mut cmd_list);
         }
         0 | _ => {}
-    }
-    free((*value).cached as *mut ::core::ffi::c_void);
-}
-#[no_mangle]
-pub unsafe extern "C" fn args_free_values(mut values: *mut args_value, mut count: u_int) {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < count {
-        args_free_value(values.offset(i as isize) as *mut args_value);
-        i = i.wrapping_add(1);
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_free(mut args: *mut args) {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut entry1: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-// The C-layout cached fields borrow strings in args. Clear those
-    // pointers before args_free_value handles any independently C-owned cache.
+    // The C-layout fields borrow the string and cache owners kept beside them.
+    // Drop command-list references here, then let the Rust side storage drop.
     let owner = &mut *args;
-    for (index, cache) in owner.positional_caches.iter().enumerate() {
-        if let Some(cache) = cache {
-            debug_assert!(index < (*args).count as usize);
-            let value = (*args).values.as_mut_ptr().add(index);
-            debug_assert_eq!((*value).cached, cache.as_ptr().cast_mut());
-            (*value).cached = ::core::ptr::null_mut();
-        }
-    }
-    for (index, value) in owner.values.iter_mut().enumerate() {
-        if let Some(string) = owner
-            .positional_strings
-            .get_mut(index)
-            .and_then(Option::take)
-        {
-            if value.type_0 as ::core::ffi::c_uint == ARGS_STRING {
-                debug_assert_eq!(value.c2rust_unnamed.string, string.as_ptr().cast_mut());
-                value.c2rust_unnamed.string = ::core::ptr::null_mut();
-            }
-        }
-        args_free_value(value as *mut args_value);
+    for value in owner.values.iter_mut() {
+        args_value_release(value as *mut args_value);
     }
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() && {
@@ -919,18 +867,9 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         let values_owner = args_values_owner(entry);
         if !values_owner.is_null() {
             let mut values_owner = Box::from_raw(values_owner);
-            let args_values_storage { values, strings } = &mut *values_owner;
-            for (index, value) in values.iter_mut().enumerate() {
-                if let Some(string) = strings.get_mut(index).and_then(Option::take) {
-                    if value.type_0 as ::core::ffi::c_uint == ARGS_STRING {
-                        debug_assert_eq!(
-                            value.c2rust_unnamed.string,
-                            string.as_ptr().cast_mut()
-                        );
-                        value.c2rust_unnamed.string = ::core::ptr::null_mut();
-                    }
-                }
-                args_free_value((&mut **value) as *mut args_value);
+            let args_values_storage { values, .. } = &mut *values_owner;
+            for value in values.iter_mut() {
+                args_value_release((&mut **value) as *mut args_value);
             }
         }
         drop(Box::from_raw(entry));
@@ -1189,8 +1128,7 @@ pub unsafe extern "C" fn args_has(mut args: *mut args, mut flag: u_char) -> ::co
 unsafe fn args_set_value(
     args: *mut args,
     flag: u_char,
-    value: Option<Box<args_value>>,
-    string_owner: Option<CString>,
+    value: Option<OwnedArgsValue>,
     flags: ::core::ffi::c_int,
 ) {
     let mut entry = args_find(args, flag);
@@ -1205,7 +1143,8 @@ unsafe fn args_set_value(
     } else {
         (*entry).count = (*entry).count.wrapping_add(1);
     }
-    if let Some(mut boxed_value) = value {
+    if let Some(value) = value {
+        let (mut boxed_value, string_owner) = value.into_parts();
         if boxed_value.type_0 as ::core::ffi::c_uint
             != ARGS_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -1223,41 +1162,28 @@ unsafe fn args_set_value(
     }
 }
 
-/// Transfer a Rust-owned value into an args flag entry.
-unsafe fn args_set_owned(
-    args: *mut args,
-    flag: u_char,
-    value: OwnedArgsValue,
-    flags: ::core::ffi::c_int,
-) {
-    let (boxed_value, string_owner) = value.into_parts();
-    args_set_value(args, flag, Some(boxed_value), string_owner, flags);
-}
-
-pub(crate) unsafe fn args_set_owned_string(
+pub unsafe fn args_set_owned_string(
     args: *mut args,
     flag: u_char,
     value: CString,
     flags: ::core::ffi::c_int,
 ) {
-    args_set_owned(args, flag, OwnedArgsValue::string(value), flags);
+    args_set_value(args, flag, Some(OwnedArgsValue::string(value)), flags);
 }
 
-#[no_mangle]
-/// `value`, when non-null, transfers a Box-allocated flag record to `args`.
-/// String and command-list payloads remain under their existing C free contract.
-pub unsafe extern "C" fn args_set(
+/// Add an occurrence of a flag that has no associated value.
+pub unsafe fn args_set_flag(args: *mut args, flag: u_char, flags: ::core::ffi::c_int) {
+    args_set_value(args, flag, None, flags);
+}
+
+/// Transfer a command-list reference into a flag value.
+pub unsafe fn args_set_owned_commands(
     args: *mut args,
     flag: u_char,
-    value: *mut args_value,
+    cmdlist: *mut cmd_list,
     flags: ::core::ffi::c_int,
 ) {
-    let boxed_value = if value.is_null() {
-        None
-    } else {
-        Some(Box::from_raw(value))
-    };
-    args_set_value(args, flag, boxed_value, None, flags);
+    args_set_value(args, flag, Some(OwnedArgsValue::commands(cmdlist)), flags);
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_get(
@@ -1411,13 +1337,7 @@ pub unsafe extern "C" fn args_make_commands_prepare(
         cmd = default_command;
     }
     if expand != 0 {
-        let raw_cmd = format_single_from_target(item, cmd);
-        (*state).cmd = if raw_cmd.is_null() {
-            None
-        } else {
-            Some(CStr::from_ptr(raw_cmd).to_owned())
-        };
-        free(raw_cmd.cast());
+        (*state).cmd = Some(format_single_from_target_cstring(item, cmd));
     } else {
         (*state).cmd = Some(CStr::from_ptr(cmd).to_owned());
     }
@@ -1648,16 +1568,13 @@ pub unsafe fn parse_percentage_and_expand(
     let bytes = value.to_bytes();
     if let Some(percentage) = bytes.strip_suffix(b"%") {
         let percentage = CString::new(percentage).map_err(|_| ArgumentValueError::Invalid)?;
-        let formatted = format_single_from_target(item, percentage.as_ptr());
-        let result = parse_number(CStr::from_ptr(formatted), 0, 1000)
+        let formatted = format_single_from_target_cstring(item, percentage.as_ptr());
+        let result = parse_number(formatted.as_c_str(), 0, 1000)
             .and_then(|percentage| percentage_share(curval, percentage, minval, maxval));
-        free(formatted as *mut ::core::ffi::c_void);
         return result;
     }
-    let formatted = format_single_from_target(item, value.as_ptr());
-    let result = parse_number(CStr::from_ptr(formatted), minval, maxval);
-    free(formatted as *mut ::core::ffi::c_void);
-    result
+    let formatted = format_single_from_target_cstring(item, value.as_ptr());
+    parse_number(formatted.as_c_str(), minval, maxval)
 }
 
 /// Converts the last string value stored for `flag` to a bounded integer.
@@ -1688,10 +1605,8 @@ pub unsafe fn args_strtonum_and_expand_result(
 ) -> Result<i64, ArgumentValueError> {
     let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
     let value = CStr::from_ptr(value);
-    let formatted = format_single_from_target(item, value.as_ptr());
-    let result = parse_number(CStr::from_ptr(formatted), minval, maxval);
-    free(formatted as *mut ::core::ffi::c_void);
-    result
+    let formatted = format_single_from_target_cstring(item, value.as_ptr());
+    parse_number(formatted.as_c_str(), minval, maxval)
 }
 
 /// Converts the last stored string as an integer or percentage.

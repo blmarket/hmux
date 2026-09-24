@@ -1,23 +1,22 @@
 use std::ffi::{CStr, CString};
-use std::mem::size_of;
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_copy, args_create, args_escape, args_first_value, args_free, args_free_values, args_get,
-    args_has, args_next_value, args_parse as parse_args, args_percentage_result, args_print,
-    args_push_positional, args_set, args_string, args_string_percentage_and_expand_result,
-    args_strtonum_and_expand_result, args_strtonum_result, parse_number,
-    parse_percentage, ArgumentValueError,
+    args_copy, args_create, args_escape, args_first_value, args_free, args_get, args_has,
+    args_next_value, args_parse as parse_args, args_percentage_result, args_print,
+    args_push_positional_commands, args_push_positional_string, args_set_flag,
+    args_set_owned_commands, args_set_owned_string, args_string,
+    args_string_percentage_and_expand_result, args_strtonum_and_expand_result,
+    args_strtonum_result, parse_number, parse_percentage, ArgumentValueError,
 };
-use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
+use hmux2::src::cmd::{cmd_list_free, cmd_list_new, cmd_list_print};
 use hmux2::src::cmd_queue::{
     cmdq_free_detached, cmdq_get_callback1, cmdq_get_error, cmdq_get_name,
 };
-use hmux2::src::ffi::libc::{free, snprintf};
+use hmux2::src::ffi::libc::snprintf;
 use hmux2::src::shared::arguments::{
     args, args_parse, args_value, ARGS_COMMANDS, ARGS_PARSE_COMMANDS, ARGS_STRING,
 };
-use hmux2::src::xmalloc::{xcalloc, xstrdup};
 
 fn cstring(value: &str) -> CString {
     CString::new(value).expect("test input contains no NUL")
@@ -27,8 +26,8 @@ fn cstring(value: &str) -> CString {
 fn printing_options_uses_formatted_flag_and_string_fragments() {
     unsafe {
         let args = args_create();
-        args_set(args, b'v', ptr::null_mut(), 0);
-        args_set(args, b'n', string_value(c"hello"), 0);
+        args_set_flag(args, b'v', 0);
+        args_set_owned_string(args, b'n', c"hello".to_owned(), 0);
         let printed = args_print(args);
         assert_eq!(printed.as_bytes(), b"-v -n hello");
         args_free(args);
@@ -53,10 +52,19 @@ fn error_message(error: ArgumentValueError) -> &'static [u8] {
     error.message().to_bytes()
 }
 
-unsafe fn string_value(value: &CStr) -> *mut args_value {
-    let result = Box::into_raw(Box::new(std::mem::zeroed::<args_value>()));
-    (*result).type_0 = ARGS_STRING;
-    (*result).c2rust_unnamed.string = xstrdup(value.as_ptr());
+unsafe fn borrowed_string_value(value: &CStr) -> args_value {
+    let mut result = std::mem::zeroed::<args_value>();
+    result.type_0 = ARGS_STRING;
+    result.c2rust_unnamed.string = value.as_ptr().cast_mut();
+    result
+}
+
+unsafe fn borrowed_commands_value(
+    cmdlist: *mut hmux2::src::shared::command::cmd_list,
+) -> args_value {
+    let mut result = std::mem::zeroed::<args_value>();
+    result.type_0 = ARGS_COMMANDS;
+    result.c2rust_unnamed.cmdlist = cmdlist;
     result
 }
 
@@ -149,12 +157,12 @@ fn expanded_helpers_convert_formatted_values_and_keep_errors_typed() {
         let empty = cstring("");
 
         let args = hmux2::src::arguments::args_create();
-        args_set(args, b'n', string_value(number.as_c_str()), 0);
+        args_set_owned_string(args, b'n', number.clone(), 0);
         assert_eq!(
             args_strtonum_and_expand_result(args, b'n', 0, 20, item),
             Ok(17)
         );
-        args_set(args, b'n', string_value(malformed.as_c_str()), 0);
+        args_set_owned_string(args, b'n', malformed.clone(), 0);
         assert_eq!(
             args_strtonum_and_expand_result(args, b'n', 0, 20, item),
             Err(ArgumentValueError::Invalid)
@@ -218,8 +226,8 @@ fn repeated_flags_keep_order_and_numeric_helpers_use_the_last_value() {
         let args = args_create();
         let first_text = cstring("12");
         let second_text = cstring("34");
-        args_set(args, b'v', string_value(first_text.as_c_str()), 0);
-        args_set(args, b'v', string_value(second_text.as_c_str()), 0);
+        args_set_owned_string(args, b'v', first_text.clone(), 0);
+        args_set_owned_string(args, b'v', second_text.clone(), 0);
 
         assert_eq!(args_has(args, b'v'), 2);
         let first = args_first_value(args, b'v');
@@ -243,12 +251,12 @@ fn flag_value_collection_keeps_addresses_stable_and_returns_the_last_value() {
     unsafe {
         let args = args_create();
         let first_text = cstring("first");
-        args_set(args, b'n', string_value(first_text.as_c_str()), 0);
+        args_set_owned_string(args, b'n', first_text.clone(), 0);
         let first = args_first_value(args, b'n');
 
         for index in 1..512 {
             let text = CString::new(index.to_string()).unwrap();
-            args_set(args, b'n', string_value(text.as_c_str()), 0);
+            args_set_owned_string(args, b'n', text, 0);
         }
 
         assert_eq!(args_first_value(args, b'n'), first);
@@ -276,7 +284,7 @@ fn c_boundary_translates_typed_errors_without_changing_success_values() {
             args_strtonum_result(missing, b'n', 0, 50),
             Err(ArgumentValueError::Missing)
         );
-        args_set(missing, b'p', ptr::null_mut(), 0);
+        args_set_flag(missing, b'p', 0);
         assert_eq!(
             args_percentage_result(missing, b'p', 0, 50, 50),
             Err(ArgumentValueError::Empty)
@@ -285,7 +293,7 @@ fn c_boundary_translates_typed_errors_without_changing_success_values() {
 
         let args = args_create();
         let value = cstring("42");
-        args_set(args, b'n', string_value(value.as_c_str()), 0);
+        args_set_owned_string(args, b'n', value.clone(), 0);
 
         assert_eq!(args_strtonum_result(args, b'n', 0, 50), Ok(42));
         assert_eq!(
@@ -300,10 +308,9 @@ fn c_boundary_translates_typed_errors_without_changing_success_values() {
 fn command_values_and_cached_strings_keep_their_storage_ownership() {
     unsafe {
         let args = args_create();
-        let value = Box::into_raw(Box::new(std::mem::zeroed::<args_value>()));
-        (*value).type_0 = ARGS_COMMANDS;
-        (*value).c2rust_unnamed.cmdlist = cmd_list_new();
-        args_set(args, b'c', value, 0);
+        let cmdlist = cmd_list_new();
+        args_set_owned_commands(args, b'c', cmdlist, 0);
+        let value = args_first_value(args, b'c');
 
         assert_eq!(
             args_strtonum_result(args, b'c', 0, 100),
@@ -319,9 +326,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         args_free(args);
 
         let args = args_create();
-        let positional = args_push_positional(args);
-        (*positional).type_0 = ARGS_COMMANDS;
-        (*positional).c2rust_unnamed.cmdlist = cmd_list_new();
+        args_push_positional_commands(args, cmd_list_new());
         let first = args_string(args, 0);
         let second = args_string(args, 0);
         assert_eq!(first, second);
@@ -344,23 +349,24 @@ fn positional_command_cache_survives_array_growth_and_copy() {
     }
 
     unsafe {
-        let values = xcalloc(3, size_of::<args_value>()) as *mut args_value;
-        (*values).type_0 = ARGS_STRING;
-        (*values).c2rust_unnamed.string = xstrdup(c"command".as_ptr());
-        for index in 1..3 {
-            let value = values.add(index);
-            (*value).type_0 = ARGS_COMMANDS;
-            (*value).c2rust_unnamed.cmdlist = cmd_list_new();
-        }
+        let command = cstring("command");
+        let command_lists = [cmd_list_new(), cmd_list_new()];
+        let mut values = [
+            borrowed_string_value(command.as_c_str()),
+            borrowed_commands_value(command_lists[0]),
+            borrowed_commands_value(command_lists[1]),
+        ];
         let spec = args_parse {
             template: c"".as_ptr(),
             lower: 0,
             upper: -1,
             cb: Some(command_argument),
         };
-        let args = parse_args(&spec, values, 3).expect("valid command arguments");
-        args_free_values(values, 3);
-        free(values.cast());
+        let args = parse_args(&spec, values.as_mut_ptr(), values.len() as u32)
+            .expect("valid command arguments");
+        for cmdlist in command_lists {
+            cmd_list_free(cmdlist);
+        }
 
         let first = (&(*args).values)[0].cached as *const core::ffi::c_char;
         assert!(!first.is_null());
@@ -386,11 +392,9 @@ fn positional_command_cache_survives_array_growth_and_copy() {
 fn copied_argument_templates_own_intermediate_and_final_strings() {
     unsafe {
         let source = args_create();
-        args_set(source, b'n', string_value(c"left-%1-right-%2"), 0);
-        args_set(source, b'q', string_value(c"%%"), 0);
-        let positional = args_push_positional(source);
-        (*positional).type_0 = ARGS_STRING;
-        (*positional).c2rust_unnamed.string = xstrdup(c"%2:%1".as_ptr());
+        args_set_owned_string(source, b'n', c"left-%1-right-%2".to_owned(), 0);
+        args_set_owned_string(source, b'q', c"%%".to_owned(), 0);
+        args_push_positional_string(source, c"%2:%1".to_owned());
 
         let mut argv = [c"A'B".as_ptr().cast_mut(), c"X Y".as_ptr().cast_mut()];
         let copied = args_copy(source, argv.len() as i32, argv.as_mut_ptr());
@@ -422,19 +426,20 @@ fn copied_argument_templates_own_intermediate_and_final_strings() {
 #[test]
 fn rejected_command_argument_keeps_source_value_ownership() {
     unsafe {
-        let values = xcalloc(2, size_of::<args_value>()) as *mut args_value;
-        (*values).type_0 = ARGS_STRING;
-        (*values).c2rust_unnamed.string = xstrdup(c"command".as_ptr());
-        let command_value = values.add(1);
-        (*command_value).type_0 = ARGS_COMMANDS;
-        (*command_value).c2rust_unnamed.cmdlist = cmd_list_new();
+        let command = cstring("command");
+        let command_list = cmd_list_new();
+        let mut values = [
+            borrowed_string_value(command.as_c_str()),
+            borrowed_commands_value(command_list),
+        ];
         let spec = args_parse {
             template: c"".as_ptr(),
             lower: 0,
             upper: -1,
             cb: None,
         };
-        let error = parse_args(&spec, values, 2).expect_err("command value must be rejected");
+        let error = parse_args(&spec, values.as_mut_ptr(), values.len() as u32)
+            .expect_err("command value must be rejected");
         let error = match error {
             hmux2::src::arguments::ArgsParseError::Message(error) => error,
             hmux2::src::arguments::ArgsParseError::Usage => panic!("expected a diagnostic"),
@@ -443,7 +448,6 @@ fn rejected_command_argument_keeps_source_value_ownership() {
             error.to_bytes(),
             b"argument 1 must be \"string\""
         );
-        args_free_values(values, 2);
-        free(values.cast());
+        cmd_list_free(command_list);
     }
 }

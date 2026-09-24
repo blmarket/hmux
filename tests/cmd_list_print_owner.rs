@@ -2,14 +2,14 @@ use std::ffi::CStr;
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_create, args_free, args_print, args_push_positional, args_to_vector,
+    args_create, args_free, args_print, args_push_positional_commands, args_to_vector,
 };
 use hmux2::src::cmd::{
     cmd, cmd_free, cmd_list_append, cmd_list_append_all, cmd_list_copy,
     cmd_list_first, cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print,
     cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
-use hmux2::src::shared::arguments::{args_value, ARGS_COMMANDS, ARGS_STRING};
+use hmux2::src::shared::arguments::{args_value, ARGS_STRING};
 
 unsafe fn display_message_command() -> *mut cmd {
     let mut value: args_value = std::mem::zeroed();
@@ -73,9 +73,7 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             assert_eq!(printed.as_bytes(), expected);
         }
         let args = args_create();
-        let positional = args_push_positional(args);
-        (*positional).type_0 = ARGS_COMMANDS;
-        (*positional).c2rust_unnamed.cmdlist = list;
+        args_push_positional_commands(args, list);
 
         let printed = args_print(args);
         assert_eq!(
