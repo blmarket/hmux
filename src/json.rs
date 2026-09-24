@@ -16,7 +16,7 @@ pub use crate::src::shared::json::{
     json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::xmalloc::{xmalloc, xmemdup};
+use crate::src::xmalloc::xmalloc;
 use std::ffi::CStr;
 use std::ffi::CString;
 
@@ -1310,25 +1310,25 @@ unsafe extern "C" fn json_string_append(mut buffer: *mut evbuffer, mut node: *mu
         _ => {}
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_to_string(mut node: *mut json_node) -> *mut ::core::ffi::c_char {
+pub unsafe fn json_to_string(node: *mut json_node) -> Option<CString> {
     let mut buffer: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if node.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
     buffer = evbuffer_new();
     if buffer.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     json_string_append(buffer, node);
-    out = xmemdup(
-        evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t)
-            as *const ::core::ffi::c_void,
-        evbuffer_get_length(buffer),
-    );
+    let len = evbuffer_get_length(buffer);
+    let bytes = if len == 0 {
+        Vec::new()
+    } else {
+        let ptr = evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t);
+        ::core::slice::from_raw_parts(ptr.cast::<u8>(), len).to_vec()
+    };
     evbuffer_free(buffer);
-    return out;
+    Some(CString::new(bytes).expect("serialized JSON contains no NUL"))
 }
 
 #[cfg(test)]

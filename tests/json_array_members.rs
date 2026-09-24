@@ -2,7 +2,7 @@ use hmux2::src::json::{
     json_array_first, json_array_next, json_destroy_node, json_find, json_get_number, json_parse,
     json_to_string, NODE_ARRAY, NODE_OBJECT,
 };
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 
 #[test]
 fn array_owned_members_preserve_order_and_iteration() {
@@ -34,12 +34,11 @@ fn array_owned_members_preserve_order_and_iteration() {
         assert_eq!(json_get_number(last_value, &mut number), 0);
         assert_eq!(number, 3);
 
-        let serialized = json_to_string(root);
+        let serialized = json_to_string(root).unwrap();
         assert_eq!(
-            CStr::from_ptr(serialized).to_bytes(),
+            serialized.to_bytes(),
             br#"{"items":[{"x":1},{"y":2},{"z":3}]}"#
         );
-        libc::free(serialized.cast());
         json_destroy_node(root);
     }
 }

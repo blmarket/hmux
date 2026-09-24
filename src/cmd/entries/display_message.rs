@@ -265,7 +265,7 @@ unsafe extern "C" fn cmd_display_message_exec(
             return CMD_RETURN_ERROR;
         }
         drop(msg);
-        msg = cmd_display_message_take_string(json_to_string(jn));
+        msg = json_to_string(jn).expect("parsed JSON is not null");
         json_destroy_node(jn);
     }
     if cmdq_get_client(item).is_null() {
