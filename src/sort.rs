@@ -40,8 +40,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -68,7 +67,10 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::window::{window_pane_index, window_pane_zindex, winlinks_minmax, winlinks_next};
+use crate::src::window::{
+    window_pane_first, window_pane_index, window_pane_next, window_pane_zindex,
+    winlinks_minmax, winlinks_next,
+};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -665,10 +667,10 @@ pub unsafe fn sort_get_panes_window(
     sort_crit: *mut sort_criteria,
 ) -> Vec<*mut window_pane> {
     let mut panes = Vec::new();
-    let mut wp = (*w).panes.tqh_first;
+    let mut wp = window_pane_first(w);
     while !wp.is_null() {
         panes.push(wp);
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     sort_qsort(
         panes.as_mut_ptr() as *mut ::core::ffi::c_void,

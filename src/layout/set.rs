@@ -38,8 +38,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -61,7 +60,9 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::window::{window_count_panes, window_resize};
+use crate::src::window::{
+    window_count_panes, window_pane_first, window_pane_next, window_resize,
+};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -204,27 +205,27 @@ pub unsafe extern "C" fn layout_set_previous(mut w: *mut window) -> u_int {
 }
 unsafe extern "C" fn layout_set_first_tiled(mut w: *mut window) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if !(*wp).layout_cell.is_null()
             && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) != 0
         {
             return wp;
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
 unsafe extern "C" fn layout_set_link_floating(mut w: *mut window, mut lcroot: *mut layout_cell) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
         if layout_cell_is_tiled(lc) == 0 {
             layout_cells_push_back(lcroot, lc);
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
 }
 unsafe extern "C" fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
@@ -273,7 +274,7 @@ unsafe extern "C" fn layout_set_even(mut w: *mut window, mut type_0: layout_type
         0 as ::core::ffi::c_int,
     );
     layout_make_node(lcroot, type_0);
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         lcchild = (*wp).layout_cell as *mut layout_cell;
         layout_cells_push_back(lcroot, lcchild);
@@ -282,7 +283,7 @@ unsafe extern "C" fn layout_set_even(mut w: *mut window, mut type_0: layout_type
             (*lcchild).g.sx = (*w).sx;
             (*lcchild).g.sy = (*w).sy;
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     layout_spread_cell(w, lcroot);
     layout_fix_offsets(w);
@@ -404,9 +405,9 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
     );
     layout_cells_push_back(lcroot, lcmain);
     if n == 1 as u_int {
-        wp = (*wpmain).entry.tqe_next;
+        wp = window_pane_next(wpmain);
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         layout_cells_push_back(lcroot, (*wp).layout_cell as *mut layout_cell);
         (*(*wp).layout_cell).parent = lcroot;
@@ -429,7 +430,7 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
         );
         layout_make_node(lcother, LAYOUT_LEFTRIGHT);
         layout_cells_push_back(lcroot, lcother);
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
@@ -445,7 +446,7 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
                     );
                 }
             }
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         layout_spread_cell(w, lcother);
     }
@@ -562,9 +563,9 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
     );
     layout_cells_push_back(lcroot, lcmain);
     if n == 1 as u_int {
-        wp = (*wpmain).entry.tqe_next;
+        wp = window_pane_next(wpmain);
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         layout_cells_push_front(lcroot, (*wp).layout_cell as *mut layout_cell);
         (*(*wp).layout_cell).parent = lcroot;
@@ -587,7 +588,7 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
         );
         layout_make_node(lcother, LAYOUT_LEFTRIGHT);
         layout_cells_push_front(lcroot, lcother);
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
@@ -603,7 +604,7 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
                     );
                 }
             }
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         layout_spread_cell(w, lcother);
     }
@@ -720,9 +721,9 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
     );
     layout_cells_push_back(lcroot, lcmain);
     if n == 1 as u_int {
-        wp = (*wpmain).entry.tqe_next;
+        wp = window_pane_next(wpmain);
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         layout_cells_push_back(lcroot, (*wp).layout_cell as *mut layout_cell);
         (*(*wp).layout_cell).parent = lcroot;
@@ -745,7 +746,7 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
             0 as ::core::ffi::c_int,
         );
         layout_cells_push_back(lcroot, lcother);
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
@@ -761,7 +762,7 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
                     );
                 }
             }
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         layout_spread_cell(w, lcother);
     }
@@ -878,9 +879,9 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
     );
     layout_cells_push_back(lcroot, lcmain);
     if n == 1 as u_int {
-        wp = (*wpmain).entry.tqe_next;
+        wp = window_pane_next(wpmain);
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         layout_cells_push_front(lcroot, (*wp).layout_cell as *mut layout_cell);
         (*(*wp).layout_cell).parent = lcroot;
@@ -903,7 +904,7 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
             0 as ::core::ffi::c_int,
         );
         layout_cells_push_front(lcroot, lcother);
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
@@ -919,7 +920,7 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
                     );
                 }
             }
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         layout_spread_cell(w, lcother);
     }
@@ -1020,11 +1021,11 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
         0 as ::core::ffi::c_int,
     );
     layout_make_node(lcroot, LAYOUT_TOPBOTTOM);
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     j = 0 as u_int;
     while j < rows {
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         if wp.is_null() {
             break;
@@ -1040,7 +1041,7 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         } else {
             lcrow = layout_create_cell(lcroot);
             layout_make_node(lcrow, LAYOUT_LEFTRIGHT);
@@ -1063,11 +1064,11 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                wp = (*wp).entry.tqe_next;
+                wp = window_pane_next(wp);
                 while !wp.is_null()
                     && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0
                 {
-                    wp = (*wp).entry.tqe_next;
+                    wp = window_pane_next(wp);
                 }
                 if wp.is_null() {
                     break;

@@ -12,7 +12,7 @@ use super::layout::layout_cell;
 use super::menu::{menu, menu_data};
 use super::mouse::mouse_event;
 use super::options::options;
-use super::pane::{window_pane, window_panes, PANE_MINIMUM};
+use super::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
 use super::screen::screen;
 use super::session::session;
 
@@ -93,7 +93,7 @@ pub struct window {
     pub modal: *mut window_pane,
     pub modal_last: *mut window_pane,
     pub was_zoomed: *mut window_pane,
-    pub last_panes: window_panes,
+    pub last_panes: window_pane_history,
     pub z_index: window_panes,
     pub panes: window_panes,
     pub lastlayout: ::core::ffi::c_int,

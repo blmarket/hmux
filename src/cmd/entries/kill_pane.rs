@@ -42,8 +42,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -64,7 +63,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::window::window_remove_pane;
+use crate::src::window::{window_pane_first, window_pane_next, window_remove_pane};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -136,9 +135,9 @@ unsafe extern "C" fn cmd_kill_pane_all(
     let mut loopwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut tmpwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     server_unzoom_window((*wl).window);
-    loopwp = (*(*wl).window).panes.tqh_first;
+    loopwp = window_pane_first((*wl).window);
     while !loopwp.is_null() && {
-        tmpwp = (*loopwp).entry.tqe_next;
+        tmpwp = window_pane_next(loopwp);
         1 as ::core::ffi::c_int != 0
     } {
         if !(loopwp == wp) {

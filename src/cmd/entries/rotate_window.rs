@@ -39,8 +39,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize_entry, window_pane_resizes,
@@ -62,7 +61,11 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 pub use crate::src::window::window_pane_resize;
-use crate::src::window::{window_pop_zoom, window_push_zoom, window_set_active_pane};
+use crate::src::window::{
+    window_pane_first, window_pane_last, window_pane_next, window_pane_previous,
+    window_pane_list_insert_back, window_pane_list_insert_front, window_pane_list_remove,
+    window_pop_zoom, window_push_zoom, window_set_active_pane,
+};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -117,29 +120,17 @@ unsafe extern "C" fn cmd_rotate_window_exec(
         args_has(args, 'Z' as i32 as u_char),
     );
     if args_has(args, 'D' as i32 as u_char) != 0 {
-        wp = *(*((*w).panes.tqh_last as *mut window_panes)).tqh_last;
-        if !(*wp).entry.tqe_next.is_null() {
-            (*(*wp).entry.tqe_next).entry.tqe_prev = (*wp).entry.tqe_prev;
-        } else {
-            (*w).panes.tqh_last = (*wp).entry.tqe_prev;
-        }
-        *(*wp).entry.tqe_prev = (*wp).entry.tqe_next;
-        (*wp).entry.tqe_next = (*w).panes.tqh_first;
-        if !(*wp).entry.tqe_next.is_null() {
-            (*(*w).panes.tqh_first).entry.tqe_prev = &raw mut (*wp).entry.tqe_next;
-        } else {
-            (*w).panes.tqh_last = &raw mut (*wp).entry.tqe_next;
-        }
-        (*w).panes.tqh_first = wp;
-        (*wp).entry.tqe_prev = &raw mut (*w).panes.tqh_first;
+        wp = window_pane_last(w);
+        window_pane_list_remove(w, wp);
+        window_pane_list_insert_front(w, wp);
         lc = (*wp).layout_cell as *mut layout_cell;
         xoff = (*wp).xoff as u_int;
         yoff = (*wp).yoff as u_int;
         sx = (*wp).sx;
         sy = (*wp).sy;
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
-            wp2 = (*wp).entry.tqe_next;
+            wp2 = window_pane_next(wp);
             if wp2.is_null() {
                 break;
             }
@@ -150,7 +141,7 @@ unsafe extern "C" fn cmd_rotate_window_exec(
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
             window_pane_resize(wp, (*wp2).sx, (*wp2).sy);
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         (*wp).layout_cell = lc as *mut layout_cell;
         if !(*wp).layout_cell.is_null() {
@@ -159,30 +150,22 @@ unsafe extern "C" fn cmd_rotate_window_exec(
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
         window_pane_resize(wp, sx, sy);
-        wp = *(*((*(*w).active).entry.tqe_prev as *mut window_panes)).tqh_last;
+        wp = window_pane_previous((*w).active);
         if wp.is_null() {
-            wp = *(*((*w).panes.tqh_last as *mut window_panes)).tqh_last;
+            wp = window_pane_last(w);
         }
     } else {
-        wp = (*w).panes.tqh_first;
-        if !(*wp).entry.tqe_next.is_null() {
-            (*(*wp).entry.tqe_next).entry.tqe_prev = (*wp).entry.tqe_prev;
-        } else {
-            (*w).panes.tqh_last = (*wp).entry.tqe_prev;
-        }
-        *(*wp).entry.tqe_prev = (*wp).entry.tqe_next;
-        (*wp).entry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-        (*wp).entry.tqe_prev = (*w).panes.tqh_last;
-        *(*w).panes.tqh_last = wp;
-        (*w).panes.tqh_last = &raw mut (*wp).entry.tqe_next;
+        wp = window_pane_first(w);
+        window_pane_list_remove(w, wp);
+        window_pane_list_insert_back(w, wp);
         lc = (*wp).layout_cell as *mut layout_cell;
         xoff = (*wp).xoff as u_int;
         yoff = (*wp).yoff as u_int;
         sx = (*wp).sx;
         sy = (*wp).sy;
-        wp = *(*((*w).panes.tqh_last as *mut window_panes)).tqh_last;
+        wp = window_pane_last(w);
         while !wp.is_null() {
-            wp2 = *(*((*wp).entry.tqe_prev as *mut window_panes)).tqh_last;
+            wp2 = window_pane_previous(wp);
             if wp2.is_null() {
                 break;
             }
@@ -193,7 +176,7 @@ unsafe extern "C" fn cmd_rotate_window_exec(
             (*wp).xoff = (*wp2).xoff;
             (*wp).yoff = (*wp2).yoff;
             window_pane_resize(wp, (*wp2).sx, (*wp2).sy);
-            wp = *(*((*wp).entry.tqe_prev as *mut window_panes)).tqh_last;
+            wp = window_pane_previous(wp);
         }
         (*wp).layout_cell = lc as *mut layout_cell;
         if !(*wp).layout_cell.is_null() {
@@ -202,9 +185,9 @@ unsafe extern "C" fn cmd_rotate_window_exec(
         (*wp).xoff = xoff as ::core::ffi::c_int;
         (*wp).yoff = yoff as ::core::ffi::c_int;
         window_pane_resize(wp, sx, sy);
-        wp = (*(*w).active).entry.tqe_next;
+        wp = window_pane_next((*w).active);
         if wp.is_null() {
-            wp = (*w).panes.tqh_first;
+            wp = window_pane_first(w);
         }
     }
     window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);

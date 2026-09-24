@@ -61,8 +61,7 @@ pub use crate::src::shared::mode_tree::{
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -95,7 +94,7 @@ pub use crate::src::shared::window::{
 use crate::src::sort::sort_get_clients;
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::style::style_apply;
-use crate::src::window::window_pane_reset_mode;
+use crate::src::window::{window_pane_reset_mode, window_pane_stack_first};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -554,8 +553,8 @@ unsafe extern "C" fn window_client_draw(
     w = (*(*session).curw).window;
     wp = (*w).active;
     if (*data).hide_preview_this_pane != 0 && wp == (*data).wp {
-        if !(*w).last_panes.tqh_first.is_null() {
-            wp = (*w).last_panes.tqh_first;
+        if !window_pane_stack_first(w).is_null() {
+            wp = window_pane_stack_first(w);
         } else {
             wp = ::core::ptr::null_mut::<window_pane>();
         }

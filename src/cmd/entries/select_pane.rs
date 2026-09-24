@@ -24,8 +24,10 @@ pub use crate::src::shared::events::event_payload;
 use crate::src::tty::tty_window_bigger;
 use crate::src::window::{
     window_count_panes, window_pane_find_down, window_pane_find_left, window_pane_find_right,
-    window_pane_find_up, window_pane_is_floating, window_pane_is_visible, window_pop_zoom,
-    window_push_zoom, window_redraw_active_switch, window_set_active_pane,
+    window_pane_find_up, window_pane_is_floating, window_pane_is_visible, window_pane_next,
+    window_pane_previous, window_pane_stack_first, window_pop_zoom, window_push_zoom,
+    window_redraw_active_switch,
+    window_set_active_pane,
 };
 
 use crate::src::shared::abi::*;
@@ -64,8 +66,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -305,11 +306,11 @@ unsafe extern "C" fn cmd_select_pane_exec(
     let mut visible: ::core::ffi::c_int = 0;
     let mut Zflag: ::core::ffi::c_int = args_has(args, 'Z' as i32 as u_char);
     if entry == &raw const cmd_last_pane_entry || args_has(args, 'l' as i32 as u_char) != 0 {
-        lastwp = (*w).last_panes.tqh_first;
+        lastwp = window_pane_stack_first(w);
         if lastwp.is_null() && window_count_panes(w, 1 as ::core::ffi::c_int) == 2 as u_int {
-            lastwp = *(*((*(*w).active).entry.tqe_prev as *mut window_panes)).tqh_last;
+            lastwp = window_pane_previous((*w).active);
             if lastwp.is_null() {
-                lastwp = (*(*w).active).entry.tqe_next;
+                lastwp = window_pane_next((*w).active);
             }
         }
         if lastwp.is_null() {

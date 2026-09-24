@@ -54,7 +54,7 @@ use crate::src::server_fn::{
 };
 use crate::src::session::session_has;
 pub use crate::src::shared::events::event_payload;
-pub use crate::src::shared::pane::{window_pane_tree, window_panes_zindex};
+pub use crate::src::shared::pane::window_pane_tree;
 pub use crate::src::shared::prompt::prompt_create_data;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::status::status_at_line;
@@ -111,8 +111,8 @@ pub use crate::src::shared::mouse::{
 };
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_history, window_pane_modes, window_pane_prompt, window_pane_tree_entry,
+    window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -184,6 +184,11 @@ pub const WINDOW_WASZOOMED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub static mut windows: windows = windows { storage: None };
 #[no_mangle]
 pub static mut all_window_panes: window_pane_tree = window_pane_tree { storage: None };
+/// Owns every pane allocation until the manual reference protocol reaches its
+/// existing final release point. `all_window_panes` remains a live index and
+/// is intentionally removed earlier during pane destruction.
+static mut window_pane_owners:
+    Option<std::collections::BTreeMap<usize, refbox::RefBox<window_pane>>> = None;
 static mut next_window_pane_id: u_int = 0;
 static mut next_window_id: u_int = 0;
 static mut next_active_point: u_int = 0;
@@ -1244,18 +1249,9 @@ pub unsafe extern "C" fn window_find_by_id(mut id: u_int) -> *mut window {
         modal: ::core::ptr::null_mut::<window_pane>(),
         modal_last: ::core::ptr::null_mut::<window_pane>(),
         was_zoomed: ::core::ptr::null_mut::<window_pane>(),
-        last_panes: window_panes {
-            tqh_first: ::core::ptr::null_mut::<window_pane>(),
-            tqh_last: ::core::ptr::null_mut::<*mut window_pane>(),
-        },
-        z_index: window_panes {
-            tqh_first: ::core::ptr::null_mut::<window_pane>(),
-            tqh_last: ::core::ptr::null_mut::<*mut window_pane>(),
-        },
-        panes: window_panes {
-            tqh_first: ::core::ptr::null_mut::<window_pane>(),
-            tqh_last: ::core::ptr::null_mut::<*mut window_pane>(),
-        },
+        last_panes: window_pane_history::default(),
+        z_index: window_panes::default(),
+        panes: window_panes::default(),
         lastlayout: 0,
         layout_root: ::core::ptr::null_mut::<layout_cell>(),
         saved_layout_root: ::core::ptr::null_mut::<layout_cell>(),
@@ -1377,12 +1373,9 @@ pub unsafe extern "C" fn window_create(
     })) as *mut window;
     (*w).name = (*w.cast::<WindowOwned>()).name.as_ptr() as *mut _;
     (*w).flags = 0 as ::core::ffi::c_int;
-    (*w).panes.tqh_first = ::core::ptr::null_mut::<window_pane>();
-    (*w).panes.tqh_last = &raw mut (*w).panes.tqh_first;
-    (*w).z_index.tqh_first = ::core::ptr::null_mut::<window_pane>();
-    (*w).z_index.tqh_last = &raw mut (*w).z_index.tqh_first;
-    (*w).last_panes.tqh_first = ::core::ptr::null_mut::<window_pane>();
-    (*w).last_panes.tqh_last = &raw mut (*w).last_panes.tqh_first;
+    (*w).panes = window_panes::default();
+    (*w).z_index = window_panes::default();
+    (*w).last_panes = window_pane_history::default();
     (*w).active = ::core::ptr::null_mut::<window_pane>();
     (*w).lastlayout = -(1 as ::core::ffi::c_int);
     (*w).layout_root = ::core::ptr::null_mut::<layout_cell>();
@@ -1634,12 +1627,12 @@ pub unsafe extern "C" fn window_pane_send_resize(
 #[no_mangle]
 pub unsafe extern "C" fn window_has_floating_panes(mut w: *mut window) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if window_pane_is_floating(wp) != 0 {
             return 1 as ::core::ffi::c_int;
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -1649,12 +1642,12 @@ pub unsafe extern "C" fn window_has_pane(
     mut wp: *mut window_pane,
 ) -> ::core::ffi::c_int {
     let mut wp1: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp1 = (*w).panes.tqh_first;
+    wp1 = window_pane_first(w);
     while !wp1.is_null() {
         if wp1 == wp {
             return 1 as ::core::ffi::c_int;
         }
-        wp1 = (*wp1).entry.tqe_next;
+        wp1 = window_pane_next(wp1);
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -1877,20 +1870,8 @@ pub unsafe extern "C" fn window_redraw_active_switch(mut w: *mut window, mut wp:
             break;
         }
         if window_pane_is_floating(wp) != 0 {
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-            } else {
-                (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-            }
-            *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-            (*wp).zentry.tqe_next = (*w).z_index.tqh_first;
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*w).z_index.tqh_first).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-            } else {
-                (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-            }
-            (*w).z_index.tqh_first = wp;
-            (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
+            window_pane_z_remove(w, wp);
+            window_pane_z_insert_front(w, wp);
             (*wp).flags |= PANE_REDRAW;
             redraw_invalidate_scene(w);
         }
@@ -1920,7 +1901,7 @@ pub unsafe extern "C" fn window_get_active_at(
         return ::core::ptr::null_mut::<window_pane>();
     }
     if pane_status == PANE_STATUS_TOP {
-        wp = (*w).z_index.tqh_first;
+        wp = window_pane_z_first(w);
         while !wp.is_null() {
             if !(window_pane_is_visible(wp) == 0 || window_pane_is_floating(wp) != 0) {
                 window_pane_full_size_offset(
@@ -1936,11 +1917,11 @@ pub unsafe extern "C" fn window_get_active_at(
                     }
                 }
             }
-            wp = (*wp).zentry.tqe_next;
+            wp = window_pane_z_next(wp);
         }
     }
     let mut current_block_15: u64;
-    wp = (*w).z_index.tqh_first;
+    wp = window_pane_z_first(w);
     while !wp.is_null() {
         if !(window_pane_is_visible(wp) == 0) {
             window_pane_full_size_offset(
@@ -1996,7 +1977,7 @@ pub unsafe extern "C" fn window_get_active_at(
                 _ => return wp,
             }
         }
-        wp = (*wp).zentry.tqe_next;
+        wp = window_pane_z_next(wp);
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
@@ -2087,15 +2068,15 @@ pub unsafe extern "C" fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     }
     (*wp).flags |= PANE_ZOOMED;
-    wp1 = (*w).panes.tqh_first;
+    wp1 = window_pane_first(w);
     while !wp1.is_null() {
         (*wp1).saved_layout_cell = (*wp1).layout_cell as *mut layout_cell;
         (*wp1).layout_cell = ::core::ptr::null_mut::<layout_cell>();
-        wp1 = (*wp1).entry.tqe_next;
+        wp1 = window_pane_next(wp1);
     }
     (*w).saved_layout_root = (*w).layout_root;
     layout_init(w, wp);
-    wp1 = (*w).panes.tqh_first;
+    wp1 = window_pane_first(w);
     while !wp1.is_null() {
         lc = (*wp1).saved_layout_cell;
         if !(wp1 == wp
@@ -2111,19 +2092,11 @@ pub unsafe extern "C" fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c
             lc = layout_floating_pane(w, wp, &raw mut lg);
             layout_assign_pane(lc, wp1, 0 as ::core::ffi::c_int);
         }
-        wp1 = (*wp1).entry.tqe_next;
+        wp1 = window_pane_next(wp1);
     }
     if (*(*wp).saved_layout_cell).flags & LAYOUT_CELL_FLOATING != 0 {
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-        } else {
-            (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-        }
-        *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-        (*wp).zentry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-        (*wp).zentry.tqe_prev = (*w).z_index.tqh_last;
-        *(*w).z_index.tqh_last = wp;
-        (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
+        window_pane_z_remove(w, wp);
+        window_pane_z_insert_back(w, wp);
     }
     (*w).flags |= WINDOW_ZOOMED;
     events_fire_window(
@@ -2148,7 +2121,7 @@ pub unsafe extern "C" fn window_unzoom(
     if !(*w).flags & WINDOW_ZOOMED != 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if (*wp).flags & PANE_ZOOMED != 0 {
             zoomed = wp;
@@ -2170,53 +2143,35 @@ pub unsafe extern "C" fn window_unzoom(
                 }
             }
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     (*w).flags &= !WINDOW_ZOOMED;
     layout_free(w, 0 as ::core::ffi::c_int);
     (*w).layout_root = (*w).saved_layout_root;
     (*w).saved_layout_root = ::core::ptr::null_mut::<layout_cell>();
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         (*wp).layout_cell = (*wp).saved_layout_cell as *mut layout_cell;
         (*wp).saved_layout_cell = ::core::ptr::null_mut::<layout_cell>();
         (*wp).flags &= !PANE_ZOOMED;
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     if !zoomed.is_null() && window_pane_is_floating(zoomed) != 0 {
-        if !(*zoomed).zentry.tqe_next.is_null() {
-            (*(*zoomed).zentry.tqe_next).zentry.tqe_prev = (*zoomed).zentry.tqe_prev;
-        } else {
-            (*w).z_index.tqh_last = (*zoomed).zentry.tqe_prev;
-        }
-        *(*zoomed).zentry.tqe_prev = (*zoomed).zentry.tqe_next;
+        window_pane_z_remove(w, zoomed);
         if zoomed == (*w).active {
-            (*zoomed).zentry.tqe_next = (*w).z_index.tqh_first;
-            if !(*zoomed).zentry.tqe_next.is_null() {
-                (*(*w).z_index.tqh_first).zentry.tqe_prev = &raw mut (*zoomed).zentry.tqe_next;
-            } else {
-                (*w).z_index.tqh_last = &raw mut (*zoomed).zentry.tqe_next;
-            }
-            (*w).z_index.tqh_first = zoomed;
-            (*zoomed).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
+            window_pane_z_insert_front(w, zoomed);
         } else {
-            wp = (*w).z_index.tqh_first;
+            wp = window_pane_z_first(w);
             while !wp.is_null() {
                 if window_pane_is_floating(wp) == 0 {
                     break;
                 }
-                wp = (*wp).zentry.tqe_next;
+                wp = window_pane_z_next(wp);
             }
             if wp.is_null() {
-                (*zoomed).zentry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-                (*zoomed).zentry.tqe_prev = (*w).z_index.tqh_last;
-                *(*w).z_index.tqh_last = zoomed;
-                (*w).z_index.tqh_last = &raw mut (*zoomed).zentry.tqe_next;
+                window_pane_z_insert_back(w, zoomed);
             } else {
-                (*zoomed).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-                (*zoomed).zentry.tqe_next = wp;
-                *(*wp).zentry.tqe_prev = zoomed;
-                (*wp).zentry.tqe_prev = &raw mut (*zoomed).zentry.tqe_next;
+                window_pane_z_insert_before(w, wp, zoomed);
             }
         }
     }
@@ -2240,12 +2195,12 @@ pub unsafe extern "C" fn window_zoomed_pane(mut w: *mut window) -> *mut window_p
     if !(*w).flags & WINDOW_ZOOMED != 0 {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    wp = *(*((*w).z_index.tqh_last as *mut window_panes_zindex)).tqh_last;
+    wp = window_pane_z_last(w);
     while !wp.is_null() {
         if !(*wp).layout_cell.is_null() && window_pane_is_floating(wp) == 0 {
             return wp;
         }
-        wp = *(*((*wp).zentry.tqe_prev as *mut window_panes_zindex)).tqh_last;
+        wp = window_pane_z_previous(wp);
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
@@ -2327,20 +2282,13 @@ pub unsafe extern "C" fn window_add_pane(
         other = (*w).active;
     }
     wp = window_pane_create(w, (*w).sx, (*w).sy, hlimit);
-    if (*w).panes.tqh_first.is_null() {
+    if window_pane_first(w).is_null() {
         log_debug(
             b"%s: @%u at start\0" as *const u8 as *const ::core::ffi::c_char,
             b"window_add_pane\0" as *const u8 as *const ::core::ffi::c_char,
             (*w).id,
         );
-        (*wp).entry.tqe_next = (*w).panes.tqh_first;
-        if !(*wp).entry.tqe_next.is_null() {
-            (*(*w).panes.tqh_first).entry.tqe_prev = &raw mut (*wp).entry.tqe_next;
-        } else {
-            (*w).panes.tqh_last = &raw mut (*wp).entry.tqe_next;
-        }
-        (*w).panes.tqh_first = wp;
-        (*wp).entry.tqe_prev = &raw mut (*w).panes.tqh_first;
+        window_pane_list_insert_front(w, wp);
     } else if flags & SPAWN_BEFORE != 0 {
         log_debug(
             b"%s: @%u before %%%u\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2349,19 +2297,9 @@ pub unsafe extern "C" fn window_add_pane(
             (*wp).id,
         );
         if flags & SPAWN_FULLSIZE != 0 {
-            (*wp).entry.tqe_next = (*w).panes.tqh_first;
-            if !(*wp).entry.tqe_next.is_null() {
-                (*(*w).panes.tqh_first).entry.tqe_prev = &raw mut (*wp).entry.tqe_next;
-            } else {
-                (*w).panes.tqh_last = &raw mut (*wp).entry.tqe_next;
-            }
-            (*w).panes.tqh_first = wp;
-            (*wp).entry.tqe_prev = &raw mut (*w).panes.tqh_first;
+            window_pane_list_insert_front(w, wp);
         } else {
-            (*wp).entry.tqe_prev = (*other).entry.tqe_prev;
-            (*wp).entry.tqe_next = other;
-            *(*other).entry.tqe_prev = wp;
-            (*other).entry.tqe_prev = &raw mut (*wp).entry.tqe_next;
+            window_pane_list_insert_before(w, other, wp);
         }
     } else {
         log_debug(
@@ -2371,44 +2309,17 @@ pub unsafe extern "C" fn window_add_pane(
             (*wp).id,
         );
         if flags & (SPAWN_FULLSIZE | SPAWN_FLOATING) != 0 {
-            (*wp).entry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-            (*wp).entry.tqe_prev = (*w).panes.tqh_last;
-            *(*w).panes.tqh_last = wp;
-            (*w).panes.tqh_last = &raw mut (*wp).entry.tqe_next;
+            window_pane_list_insert_back(w, wp);
         } else {
-            (*wp).entry.tqe_next = (*other).entry.tqe_next;
-            if !(*wp).entry.tqe_next.is_null() {
-                (*(*wp).entry.tqe_next).entry.tqe_prev = &raw mut (*wp).entry.tqe_next;
-            } else {
-                (*w).panes.tqh_last = &raw mut (*wp).entry.tqe_next;
-            }
-            (*other).entry.tqe_next = wp;
-            (*wp).entry.tqe_prev = &raw mut (*other).entry.tqe_next;
+            window_pane_list_insert_after(w, other, wp);
         }
     }
-    if !flags & SPAWN_FLOATING != 0 {
-        (*wp).zentry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-        (*wp).zentry.tqe_prev = (*w).z_index.tqh_last;
-        *(*w).z_index.tqh_last = wp;
-        (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
+    if flags & SPAWN_FLOATING == 0 {
+        window_pane_z_insert_back(w, wp);
     } else if !(*w).modal.is_null() {
-        (*wp).zentry.tqe_next = (*(*w).modal).zentry.tqe_next;
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*wp).zentry.tqe_next).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-        } else {
-            (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-        }
-        (*(*w).modal).zentry.tqe_next = wp;
-        (*wp).zentry.tqe_prev = &raw mut (*(*w).modal).zentry.tqe_next;
+        window_pane_z_insert_after(w, (*w).modal, wp);
     } else {
-        (*wp).zentry.tqe_next = (*w).z_index.tqh_first;
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*w).z_index.tqh_first).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-        } else {
-            (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-        }
-        (*w).z_index.tqh_first = wp;
-        (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
+        window_pane_z_insert_front(w, wp);
     }
     redraw_invalidate_scene(w);
     return wp;
@@ -2442,12 +2353,12 @@ pub unsafe extern "C" fn window_lost_pane(mut w: *mut window, mut wp: *mut windo
         if !lastwp.is_null() && window_has_pane(w, lastwp) != 0 {
             (*w).active = lastwp;
         } else {
-            (*w).active = (*w).last_panes.tqh_first;
+            (*w).active = window_pane_stack_first(w);
         }
         if (*w).active.is_null() {
-            (*w).active = *(*((*wp).entry.tqe_prev as *mut window_panes)).tqh_last;
+            (*w).active = window_pane_previous(wp);
             if (*w).active.is_null() {
-                (*w).active = (*wp).entry.tqe_next;
+                (*w).active = window_pane_next(wp);
             }
         }
         if !(*w).active.is_null() {
@@ -2465,18 +2376,8 @@ pub unsafe extern "C" fn window_lost_pane(mut w: *mut window, mut wp: *mut windo
 #[no_mangle]
 pub unsafe extern "C" fn window_remove_pane(mut w: *mut window, mut wp: *mut window_pane) {
     window_lost_pane(w, wp);
-    if !(*wp).entry.tqe_next.is_null() {
-        (*(*wp).entry.tqe_next).entry.tqe_prev = (*wp).entry.tqe_prev;
-    } else {
-        (*w).panes.tqh_last = (*wp).entry.tqe_prev;
-    }
-    *(*wp).entry.tqe_prev = (*wp).entry.tqe_next;
-    if !(*wp).zentry.tqe_next.is_null() {
-        (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-    } else {
-        (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-    }
-    *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
+    window_pane_list_remove(w, wp);
+    window_pane_z_remove(w, wp);
     redraw_invalidate_scene(w);
     window_pane_destroy(wp);
 }
@@ -2491,13 +2392,13 @@ pub unsafe extern "C" fn window_pane_at_index(
         (*w).options,
         b"pane-base-index\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if n == idx {
             return wp;
         }
         n = n.wrapping_add(1);
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     return ::core::ptr::null_mut::<window_pane>();
 }
@@ -2508,9 +2409,9 @@ pub unsafe extern "C" fn window_pane_next_by_number(
     mut n: u_int,
 ) -> *mut window_pane {
     while n > 0 as u_int {
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
         if wp.is_null() {
-            wp = (*w).panes.tqh_first;
+            wp = window_pane_first(w);
         }
         n = n.wrapping_sub(1);
     }
@@ -2523,9 +2424,9 @@ pub unsafe extern "C" fn window_pane_previous_by_number(
     mut n: u_int,
 ) -> *mut window_pane {
     while n > 0 as u_int {
-        wp = *(*((*wp).entry.tqe_prev as *mut window_panes)).tqh_last;
+        wp = window_pane_previous(wp);
         if wp.is_null() {
-            wp = *(*((*w).panes.tqh_last as *mut window_panes)).tqh_last;
+            wp = window_pane_last(w);
         }
         n = n.wrapping_sub(1);
     }
@@ -2542,13 +2443,13 @@ pub unsafe extern "C" fn window_pane_index(
         (*w).options,
         b"pane-base-index\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    wq = (*w).panes.tqh_first;
+    wq = window_pane_first(w);
     while !wq.is_null() {
         if wp == wq {
             return 0 as ::core::ffi::c_int;
         }
         *i = (*i).wrapping_add(1);
-        wq = (*wq).entry.tqe_next;
+        wq = window_pane_next(wq);
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -2560,7 +2461,7 @@ pub unsafe extern "C" fn window_pane_zindex(
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     *i = 0 as u_int;
-    wq = (*w).z_index.tqh_first;
+    wq = window_pane_z_first(w);
     while !wq.is_null() {
         if wq == wp {
             if window_pane_is_floating(wp) == 0 {
@@ -2571,7 +2472,7 @@ pub unsafe extern "C" fn window_pane_zindex(
         if window_pane_is_floating(wq) != 0 {
             *i = (*i).wrapping_add(1);
         }
-        wq = (*wq).zentry.tqe_next;
+        wq = window_pane_z_next(wq);
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -2583,13 +2484,13 @@ pub unsafe extern "C" fn window_pane_last_index(
     let mut w: *mut window = (*wp).window as *mut window;
     let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     *i = 0 as u_int;
-    wq = (*w).last_panes.tqh_first;
+    wq = window_pane_stack_first(w);
     while !wq.is_null() {
         if wq == wp {
             return 0 as ::core::ffi::c_int;
         }
         *i = (*i).wrapping_add(1);
-        wq = (*wq).sentry.tqe_next;
+        wq = window_pane_stack_next(w, wq);
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -2600,36 +2501,26 @@ pub unsafe extern "C" fn window_count_panes(
 ) -> u_int {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut n: u_int = 0 as u_int;
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if with_floating != 0 || window_pane_is_floating(wp) == 0 {
             n = n.wrapping_add(1);
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     return n;
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_destroy_panes(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    while !(*w).last_panes.tqh_first.is_null() {
-        wp = (*w).last_panes.tqh_first;
+    while !window_pane_stack_first(w).is_null() {
+        wp = window_pane_stack_first(w);
         window_pane_stack_remove(&raw mut (*w).last_panes, wp);
     }
-    while !(*w).panes.tqh_first.is_null() {
-        wp = (*w).panes.tqh_first;
-        if !(*wp).entry.tqe_next.is_null() {
-            (*(*wp).entry.tqe_next).entry.tqe_prev = (*wp).entry.tqe_prev;
-        } else {
-            (*w).panes.tqh_last = (*wp).entry.tqe_prev;
-        }
-        *(*wp).entry.tqe_prev = (*wp).entry.tqe_next;
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-        } else {
-            (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-        }
-        *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
+    while !window_pane_first(w).is_null() {
+        wp = window_pane_first(w);
+        window_pane_list_remove(w, wp);
+        window_pane_z_remove(w, wp);
         window_pane_destroy(wp);
     }
 }
@@ -2701,7 +2592,7 @@ pub unsafe extern "C" fn window_pane_printable_flags(
         pos = pos + 1;
         flags[fresh12 as usize] = '*' as i32 as ::core::ffi::c_char;
     }
-    if wp == (*w).last_panes.tqh_first {
+    if wp == window_pane_stack_first(w) {
         let fresh13 = pos;
         pos = pos + 1;
         flags[fresh13 as usize] = '-' as i32 as ::core::ffi::c_char;
@@ -3036,36 +2927,160 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
             link: 0,
         },
         r: visible_ranges::default(),
-        entry: window_pane_entry {
-            tqe_next: ::core::ptr::null_mut::<window_pane>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut window_pane>(),
-        },
-        sentry: window_pane_sentry {
-            tqe_next: ::core::ptr::null_mut::<window_pane>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut window_pane>(),
-        },
-        zentry: window_pane_zentry {
-            tqe_next: ::core::ptr::null_mut::<window_pane>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut window_pane>(),
-        },
         tree_entry: window_pane_tree_entry {
             owner: std::ptr::null_mut(),
         },
+        searchstr_owner: None,
+        shell_owner: None,
+        cwd_owner: None,
     };
     wp.id = id;
     return window_pane_tree_find(&raw mut all_window_panes, &raw mut wp);
 }
-/// A pane keeps its C layout and address at offset zero. Trailing fields own
-/// the range storage and strings borrowed through the pane.
-#[repr(C)]
-struct WindowPaneOwned {
-    pane: window_pane,
-    searchstr_owner: Option<CString>,
-    shell_owner: Option<CString>,
-    cwd_owner: Option<CString>,
+pub(crate) unsafe fn window_pane_weak(wp: *mut window_pane) -> refbox::Weak<window_pane> {
+    let owners = window_pane_owners
+        .as_ref()
+        .expect("pane owner registry must be initialized");
+    let owner = owners
+        .get(&(wp as usize))
+        .expect("pane must belong to the owner registry");
+    assert_eq!(owner.as_ptr(), wp as *const window_pane);
+    owner.downgrade()
 }
 
-const _: () = assert!(::core::mem::offset_of!(WindowPaneOwned, pane) == 0);
+pub unsafe fn window_pane_first(w: *mut window) -> *mut window_pane {
+    if w.is_null() { std::ptr::null_mut() } else { (*w).panes.first() }
+}
+
+pub unsafe fn window_pane_last(w: *mut window) -> *mut window_pane {
+    if w.is_null() { std::ptr::null_mut() } else { (*w).panes.last() }
+}
+
+pub unsafe fn window_pane_next(wp: *mut window_pane) -> *mut window_pane {
+    if wp.is_null() { std::ptr::null_mut() } else { (*(*wp).window).panes.next(wp) }
+}
+
+pub unsafe fn window_pane_previous(wp: *mut window_pane) -> *mut window_pane {
+    if wp.is_null() { std::ptr::null_mut() } else { (*(*wp).window).panes.previous(wp) }
+}
+
+pub unsafe fn window_pane_z_first(w: *mut window) -> *mut window_pane {
+    if w.is_null() { std::ptr::null_mut() } else { (*w).z_index.first() }
+}
+
+pub unsafe fn window_pane_z_last(w: *mut window) -> *mut window_pane {
+    if w.is_null() { std::ptr::null_mut() } else { (*w).z_index.last() }
+}
+
+pub unsafe fn window_pane_z_next(wp: *mut window_pane) -> *mut window_pane {
+    if wp.is_null() { std::ptr::null_mut() } else { (*(*wp).window).z_index.next(wp) }
+}
+
+pub unsafe fn window_pane_z_previous(wp: *mut window_pane) -> *mut window_pane {
+    if wp.is_null() { std::ptr::null_mut() } else { (*(*wp).window).z_index.previous(wp) }
+}
+
+pub unsafe fn window_pane_stack_first(w: *mut window) -> *mut window_pane {
+    if w.is_null() { std::ptr::null_mut() } else { (*w).last_panes.first() }
+}
+
+pub unsafe fn window_pane_stack_next(w: *mut window, wp: *mut window_pane) -> *mut window_pane {
+    if w.is_null() { std::ptr::null_mut() } else { (*w).last_panes.next(wp) }
+}
+
+pub unsafe fn window_pane_list_remove(w: *mut window, wp: *mut window_pane) {
+    assert!(!w.is_null() && !wp.is_null());
+    assert!((*w).panes.remove_ptr(wp), "pane is not in its window order");
+}
+
+pub unsafe fn window_pane_z_remove(w: *mut window, wp: *mut window_pane) {
+    assert!(!w.is_null() && !wp.is_null());
+    assert!((*w).z_index.remove_ptr(wp), "pane is not in its stacking order");
+}
+
+pub unsafe fn window_pane_list_insert_front(w: *mut window, wp: *mut window_pane) {
+    (*w).panes.push_front(window_pane_weak(wp));
+}
+
+pub unsafe fn window_pane_list_insert_back(w: *mut window, wp: *mut window_pane) {
+    (*w).panes.push_back(window_pane_weak(wp));
+}
+
+pub unsafe fn window_pane_list_insert_before(
+    w: *mut window,
+    before: *mut window_pane,
+    wp: *mut window_pane,
+) {
+    (*w).panes.insert_before(before, window_pane_weak(wp));
+}
+
+pub unsafe fn window_pane_list_insert_after(
+    w: *mut window,
+    after: *mut window_pane,
+    wp: *mut window_pane,
+) {
+    (*w).panes.insert_after(after, window_pane_weak(wp));
+}
+
+pub unsafe fn window_pane_z_insert_front(w: *mut window, wp: *mut window_pane) {
+    (*w).z_index.push_front(window_pane_weak(wp));
+}
+
+pub unsafe fn window_pane_z_insert_back(w: *mut window, wp: *mut window_pane) {
+    (*w).z_index.push_back(window_pane_weak(wp));
+}
+
+pub unsafe fn window_pane_z_insert_before(
+    w: *mut window,
+    before: *mut window_pane,
+    wp: *mut window_pane,
+) {
+    (*w).z_index.insert_before(before, window_pane_weak(wp));
+}
+
+pub unsafe fn window_pane_z_insert_after(
+    w: *mut window,
+    after: *mut window_pane,
+    wp: *mut window_pane,
+) {
+    (*w).z_index.insert_after(after, window_pane_weak(wp));
+}
+
+pub unsafe fn window_pane_swap_order(
+    first_window: *mut window,
+    first: *mut window_pane,
+    second_window: *mut window,
+    second: *mut window_pane,
+) {
+    if first_window == second_window {
+        (*first_window).panes.swap_ptrs(first, second);
+        return;
+    }
+    let first_position = (*first_window).panes.position(first).expect("first pane is not in order");
+    let second_position = (*second_window).panes.position(second).expect("second pane is not in order");
+    let first_weak = (*first_window).panes.remove_at(first);
+    let second_weak = (*second_window).panes.remove_at(second);
+    (*first_window).panes.insert_at(first_position, second_weak);
+    (*second_window).panes.insert_at(second_position, first_weak);
+}
+
+pub unsafe fn window_pane_z_swap_order(
+    first_window: *mut window,
+    first: *mut window_pane,
+    second_window: *mut window,
+    second: *mut window_pane,
+) {
+    if first_window == second_window {
+        (*first_window).z_index.swap_ptrs(first, second);
+        return;
+    }
+    let first_position = (*first_window).z_index.position(first).expect("first pane is not in stacking order");
+    let second_position = (*second_window).z_index.position(second).expect("second pane is not in stacking order");
+    let first_weak = (*first_window).z_index.remove_at(first);
+    let second_weak = (*second_window).z_index.remove_at(second);
+    (*first_window).z_index.insert_at(first_position, second_weak);
+    (*second_window).z_index.insert_at(second_position, first_weak);
+}
 
 /// Return the next mode in a pane's stack. Entries are boxed individually,
 /// so this derives ordering from the owning collection without putting queue
@@ -3203,9 +3218,8 @@ mod window_mode_collection_tests {
 
 /// `pane.searchstr` is a borrowed view, invalidated on replacement or clear.
 pub(crate) unsafe fn window_pane_set_searchstr(wp: *mut window_pane, searchstr: Option<CString>) {
-    let owner = wp.cast::<WindowPaneOwned>();
-    (*owner).searchstr_owner = searchstr;
-    (*wp).searchstr = (*owner)
+    (*wp).searchstr_owner = searchstr;
+    (*wp).searchstr = (*wp)
         .searchstr_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
@@ -3213,9 +3227,8 @@ pub(crate) unsafe fn window_pane_set_searchstr(wp: *mut window_pane, searchstr: 
 
 /// `pane.shell` is a borrowed view, invalidated on replacement or clear.
 pub(crate) unsafe fn window_pane_set_shell(wp: *mut window_pane, shell: Option<CString>) {
-    let owner = wp.cast::<WindowPaneOwned>();
-    (*owner).shell_owner = shell;
-    (*wp).shell = (*owner)
+    (*wp).shell_owner = shell;
+    (*wp).shell = (*wp)
         .shell_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
@@ -3223,9 +3236,8 @@ pub(crate) unsafe fn window_pane_set_shell(wp: *mut window_pane, shell: Option<C
 
 /// `pane.cwd` is a borrowed view, invalidated on replacement or clear.
 pub(crate) unsafe fn window_pane_set_cwd(wp: *mut window_pane, cwd: Option<CString>) {
-    let owner = wp.cast::<WindowPaneOwned>();
-    (*owner).cwd_owner = cwd;
-    (*wp).cwd = (*owner)
+    (*wp).cwd_owner = cwd;
+    (*wp).cwd = (*wp)
         .cwd_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
@@ -3246,12 +3258,12 @@ unsafe extern "C" fn window_pane_create(
 ) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
-    wp = Box::into_raw(Box::new(WindowPaneOwned {
-        pane: window_pane::empty(),
-        searchstr_owner: None,
-        shell_owner: None,
-        cwd_owner: None,
-    })) as *mut window_pane;
+    let owner = refbox::RefBox::new(window_pane::empty());
+    wp = owner.as_ptr() as *mut window_pane;
+    let previous = window_pane_owners
+        .get_or_insert_with(std::collections::BTreeMap::new)
+        .insert(wp as usize, owner);
+    assert!(previous.is_none(), "pane allocation identity was reused");
     (*wp).references = 1 as ::core::ffi::c_int;
     (*wp).window = w as *mut window;
     (*wp).options = options_create((*w).options);
@@ -3438,7 +3450,12 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     window_pane_set_shell(wp, None);
     colour_palette_free(&raw mut (*wp).palette);
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);
-    drop(Box::from_raw(wp as *mut WindowPaneOwned));
+    let owner = window_pane_owners
+        .as_mut()
+        .expect("pane owner registry must be initialized")
+        .remove(&(wp as usize))
+        .expect("final pane release must have an owner");
+    drop(owner);
 }
 unsafe extern "C" fn window_pane_read_callback(
     mut bufev: *mut bufferevent,
@@ -4009,7 +4026,7 @@ unsafe extern "C" fn window_pane_copy_paste(
     mut len: size_t,
 ) {
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    loop_0 = (*(*wp).window).panes.tqh_first;
+    loop_0 = window_pane_first((*wp).window);
     while !loop_0.is_null() {
         if loop_0 != wp
             && (*loop_0).modes.active.is_null()
@@ -4029,12 +4046,12 @@ unsafe extern "C" fn window_pane_copy_paste(
             );
             bufferevent_write((*loop_0).event, buf as *const ::core::ffi::c_void, len);
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = window_pane_next(loop_0);
     }
 }
 unsafe extern "C" fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key_code) {
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    loop_0 = (*(*wp).window).panes.tqh_first;
+    loop_0 = window_pane_first((*wp).window);
     while !loop_0.is_null() {
         if loop_0 != wp
             && (*loop_0).modes.active.is_null()
@@ -4048,7 +4065,7 @@ unsafe extern "C" fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key
         {
             input_key_pane(loop_0, key, ::core::ptr::null_mut::<mouse_event>());
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = window_pane_next(loop_0);
     }
 }
 #[no_mangle]
@@ -4331,7 +4348,7 @@ pub unsafe extern "C" fn window_pane_find_up(mut wp: *mut window_pane) -> *mut w
     }
     left = xoff;
     right = xoff + sx as ::core::ffi::c_int;
-    next = (*w).panes.tqh_first;
+    next = window_pane_first(w);
     while !next.is_null() {
         window_pane_full_size_offset(next, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
         if !(next == wp) {
@@ -4350,7 +4367,7 @@ pub unsafe extern "C" fn window_pane_find_up(mut wp: *mut window_pane) -> *mut w
                 }
             }
         }
-        next = (*next).entry.tqe_next;
+        next = window_pane_next(next);
     }
     best = window_pane_choose_best(&list);
     return best;
@@ -4391,7 +4408,7 @@ pub unsafe extern "C" fn window_pane_find_down(mut wp: *mut window_pane) -> *mut
     }
     left = (*wp).xoff;
     right = (*wp).xoff + (*wp).sx as ::core::ffi::c_int;
-    next = (*w).panes.tqh_first;
+    next = window_pane_first(w);
     while !next.is_null() {
         window_pane_full_size_offset(next, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
         if !(next == wp) {
@@ -4410,7 +4427,7 @@ pub unsafe extern "C" fn window_pane_find_down(mut wp: *mut window_pane) -> *mut
                 }
             }
         }
-        next = (*next).entry.tqe_next;
+        next = window_pane_next(next);
     }
     best = window_pane_choose_best(&list);
     return best;
@@ -4441,7 +4458,7 @@ pub unsafe extern "C" fn window_pane_find_left(mut wp: *mut window_pane) -> *mut
     }
     top = yoff;
     bottom = yoff + sy as ::core::ffi::c_int;
-    next = (*w).panes.tqh_first;
+    next = window_pane_first(w);
     while !next.is_null() {
         window_pane_full_size_offset(next, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
         if !(next == wp) {
@@ -4460,7 +4477,7 @@ pub unsafe extern "C" fn window_pane_find_left(mut wp: *mut window_pane) -> *mut
                 }
             }
         }
-        next = (*next).entry.tqe_next;
+        next = window_pane_next(next);
     }
     best = window_pane_choose_best(&list);
     return best;
@@ -4491,7 +4508,7 @@ pub unsafe extern "C" fn window_pane_find_right(mut wp: *mut window_pane) -> *mu
     }
     top = (*wp).yoff;
     bottom = (*wp).yoff + (*wp).sy as ::core::ffi::c_int;
-    next = (*w).panes.tqh_first;
+    next = window_pane_first(w);
     while !next.is_null() {
         window_pane_full_size_offset(next, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
         if !(next == wp) {
@@ -4510,41 +4527,29 @@ pub unsafe extern "C" fn window_pane_find_right(mut wp: *mut window_pane) -> *mu
                 }
             }
         }
-        next = (*next).entry.tqe_next;
+        next = window_pane_next(next);
     }
     best = window_pane_choose_best(&list);
     return best;
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_stack_push(
-    mut stack: *mut window_panes,
+    mut stack: *mut window_pane_history,
     mut wp: *mut window_pane,
 ) {
     if !wp.is_null() {
         window_pane_stack_remove(stack, wp);
-        (*wp).sentry.tqe_next = (*stack).tqh_first;
-        if !(*wp).sentry.tqe_next.is_null() {
-            (*(*stack).tqh_first).sentry.tqe_prev = &raw mut (*wp).sentry.tqe_next;
-        } else {
-            (*stack).tqh_last = &raw mut (*wp).sentry.tqe_next;
-        }
-        (*stack).tqh_first = wp;
-        (*wp).sentry.tqe_prev = &raw mut (*stack).tqh_first;
+        (*stack).push_front(window_pane_weak(wp));
         (*wp).flags |= PANE_VISITED;
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_stack_remove(
-    mut stack: *mut window_panes,
+    mut stack: *mut window_pane_history,
     mut wp: *mut window_pane,
 ) {
     if !wp.is_null() && (*wp).flags & PANE_VISITED != 0 {
-        if !(*wp).sentry.tqe_next.is_null() {
-            (*(*wp).sentry.tqe_next).sentry.tqe_prev = (*wp).sentry.tqe_prev;
-        } else {
-            (*stack).tqh_last = (*wp).sentry.tqe_prev;
-        }
-        *(*wp).sentry.tqe_prev = (*wp).sentry.tqe_next;
+        (*stack).remove_ptr(wp);
         (*wp).flags &= !PANE_VISITED;
     }
 }

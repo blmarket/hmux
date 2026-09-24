@@ -34,7 +34,7 @@ use crate::src::tmux::sig2name;
 use crate::src::tty::{tty_raw, tty_stop_tty};
 use crate::src::tty_term::tty_term_string;
 use crate::src::window::{
-    window_add_ref, window_count_panes, window_pop_zoom, window_push_zoom, window_remove_pane,
+    window_add_ref, window_count_panes, window_pane_first, window_pop_zoom, window_push_zoom, window_remove_pane,
     window_remove_ref, window_unzoom, winlink_find_by_index, winlink_find_by_window,
     winlink_remove, winlink_stack_remove,
 };
@@ -77,8 +77,7 @@ pub use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -625,7 +624,7 @@ pub unsafe extern "C" fn server_destroy_pane(
     server_client_remove_pane(wp);
     layout_close_pane(wp);
     window_remove_pane(w, wp);
-    if (*w).panes.tqh_first.is_null() {
+    if window_pane_first(w).is_null() {
         server_kill_window(w, 1 as ::core::ffi::c_int);
     } else {
         window_pop_zoom(w);

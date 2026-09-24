@@ -38,7 +38,7 @@ use crate::src::utf8::utf8_update_width_cache;
 pub use crate::src::window::windows;
 use crate::src::window::{
     all_window_panes, window_pane_destroy_ready, window_pane_wait_finish, windows_minmax,
-    windows_next,
+    window_pane_first, window_pane_next, windows_next,
 };
 use crate::src::xmalloc::xvasprintf_cstring;
 
@@ -90,8 +90,7 @@ pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::window_pane_tree;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -874,7 +873,7 @@ unsafe extern "C" fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi
         w1 = windows_next(w);
         1 as ::core::ffi::c_int != 0
     } {
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if (*wp).pid == pid {
                 (*wp).status = status;
@@ -891,7 +890,7 @@ unsafe extern "C" fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi
                 }
                 break;
             } else {
-                wp = (*wp).entry.tqe_next;
+                wp = window_pane_next(wp);
             }
         }
         w = w1;
@@ -908,14 +907,14 @@ unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ff
     }
     w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if (*wp).pid == pid {
                 if killpg(pid as __pid_t, SIGCONT) != 0 as ::core::ffi::c_int {
                     kill(pid as __pid_t, SIGCONT);
                 }
             }
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         w = windows_next(w);
     }

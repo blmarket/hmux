@@ -38,8 +38,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize_entry, window_pane_resizes, PANE_MAXIMUM, PANE_MINIMUM,
@@ -68,7 +67,8 @@ pub use crate::src::shared::window::{
 pub use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_active_pane_is_over_zoom, window_get_pane_status, window_pane_get_pane_lines,
-    window_pane_get_pane_status, window_pane_is_floating, window_pane_scrollbar_reserve,
+    window_pane_first, window_pane_get_pane_status, window_pane_is_floating,
+    window_pane_next, window_pane_scrollbar_reserve, window_pane_z_first, window_pane_z_next,
     window_push_zoom,
 };
 use std::ffi::{CStr, CString};
@@ -484,7 +484,7 @@ pub unsafe extern "C" fn layout_fix_panes(mut w: *mut window, mut skip: *mut win
     let mut sy: u_int = 0;
     let mut old_sx: u_int = 0;
     let mut old_sy: u_int = 0;
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
         if !(lc.is_null() || wp == skip) {
@@ -540,7 +540,7 @@ pub unsafe extern "C" fn layout_fix_panes(mut w: *mut window, mut skip: *mut win
                 changed = 1 as ::core::ffi::c_int;
             }
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     if changed != 0 {
         redraw_invalidate_scene(w);
@@ -826,7 +826,7 @@ unsafe extern "C" fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_i
     let mut avail: u_int = 0;
     let mut csx: u_int = 0;
     let mut csy: u_int = 0;
-    wp = (*w).z_index.tqh_first;
+    wp = window_pane_z_first(w);
     while !wp.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
         if !(lc.is_null() || !(*lc).flags & LAYOUT_CELL_FLOATING != 0) {
@@ -891,7 +891,7 @@ unsafe extern "C" fn layout_clamp_floating_panes(mut w: *mut window, mut sx: u_i
                 }
             }
         }
-        wp = (*wp).zentry.tqe_next;
+        wp = window_pane_z_next(wp);
     }
 }
 #[no_mangle]

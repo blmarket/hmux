@@ -41,7 +41,9 @@ pub use crate::src::shared::spawn::spawn_context;
 use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
 pub use crate::src::window::window_pane_resize;
 use crate::src::window::{
-    window_add_pane, window_create, window_destroy_panes, window_pane_index,
+    window_add_pane, window_create, window_destroy_panes, window_pane_first, window_pane_index,
+    window_pane_list_insert_front, window_pane_list_remove, window_pane_next,
+    window_pane_z_remove, window_pane_z_insert_back,
     window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
     window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_remove_pane,
     window_replace_name, window_set_active_pane, winlink_add, winlink_find_by_index,
@@ -95,8 +97,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize_entry, window_pane_resizes, PANE_EMPTY, PANE_EXITED,
@@ -332,12 +333,12 @@ pub unsafe fn spawn_window(
     if (*sc).flags & SPAWN_RESPAWN != 0 {
         w = (*(*sc).wl).window;
         if !(*sc).flags & SPAWN_KILL != 0 {
-            wp = (*w).panes.tqh_first;
+            wp = window_pane_first(w);
             while !wp.is_null() {
                 if (*wp).fd != -(1 as ::core::ffi::c_int) {
                     break;
                 }
-                wp = (*wp).entry.tqe_next;
+                wp = window_pane_next(wp);
             }
             if !wp.is_null() {
                 set_spawn_cause(
@@ -353,23 +354,13 @@ pub unsafe fn spawn_window(
                 return ::core::ptr::null_mut::<winlink>();
             }
         }
-        (*sc).wp0 = (*w).panes.tqh_first;
-        if !(*(*sc).wp0).entry.tqe_next.is_null() {
-            (*(*(*sc).wp0).entry.tqe_next).entry.tqe_prev = (*(*sc).wp0).entry.tqe_prev;
-        } else {
-            (*w).panes.tqh_last = (*(*sc).wp0).entry.tqe_prev;
-        }
-        *(*(*sc).wp0).entry.tqe_prev = (*(*sc).wp0).entry.tqe_next;
+        (*sc).wp0 = window_pane_first(w);
+        window_pane_list_remove(w, (*sc).wp0);
+        window_pane_z_remove(w, (*sc).wp0);
         layout_free(w, 0 as ::core::ffi::c_int);
         window_destroy_panes(w);
-        (*(*sc).wp0).entry.tqe_next = (*w).panes.tqh_first;
-        if !(*(*sc).wp0).entry.tqe_next.is_null() {
-            (*(*w).panes.tqh_first).entry.tqe_prev = &raw mut (*(*sc).wp0).entry.tqe_next;
-        } else {
-            (*w).panes.tqh_last = &raw mut (*(*sc).wp0).entry.tqe_next;
-        }
-        (*w).panes.tqh_first = (*sc).wp0;
-        (*(*sc).wp0).entry.tqe_prev = &raw mut (*w).panes.tqh_first;
+        window_pane_list_insert_front(w, (*sc).wp0);
+        window_pane_z_insert_back(w, (*sc).wp0);
         window_pane_resize((*sc).wp0, (*w).sx, (*w).sy);
         layout_init(w, (*sc).wp0);
         (*w).active = ::core::ptr::null_mut::<window_pane>();

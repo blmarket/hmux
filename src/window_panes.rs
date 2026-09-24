@@ -61,10 +61,8 @@ pub use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
-pub use crate::src::shared::pane::window_panes_zindex;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -98,8 +96,9 @@ use crate::src::style::style_apply;
 use crate::src::utf8::utf8_set;
 use crate::src::window::{
     window_find_by_id, window_get_pane_status, window_pane_at_index, window_pane_find_by_id,
-    window_pane_index, window_pane_is_visible, window_pane_reset_mode, window_unzoom, window_zoom,
-    winlink_find_by_window,
+    window_pane_first, window_pane_index, window_pane_is_visible, window_pane_next,
+    window_pane_reset_mode, window_pane_z_last, window_pane_z_previous, window_unzoom,
+    window_zoom, winlink_find_by_window,
 };
 use crate::src::window_clock::window_clock_table;
 use crate::src::xmalloc::xsnprintf;
@@ -576,7 +575,7 @@ unsafe extern "C" fn window_panes_mark_pane_status_borders(
     if status != PANE_STATUS_TOP && status != PANE_STATUS_BOTTOM {
         return;
     }
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if !(window_panes_pane_visible(wp) == 0) {
             lc = (*wp).saved_layout_cell;
@@ -599,7 +598,7 @@ unsafe extern "C" fn window_panes_mark_pane_status_borders(
                 window_panes_mark_hline(map, dsx, dsy, x, x2, y);
             }
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
 }
 unsafe extern "C" fn window_panes_get_floating_borders(
@@ -1552,16 +1551,16 @@ unsafe extern "C" fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     window_panes_free_areas(data);
     screen_write_start(&raw mut ctx, &raw mut (*data).screen);
     screen_write_clearscreen(&raw mut ctx, 8 as u_int);
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if !(window_panes_pane_floating(wp) != 0) {
             window_panes_draw_pane(data, &raw mut ctx, wp, root, osx, osy, sx, sy);
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     window_panes_get_border_cell(data, &raw mut border_gc);
     window_panes_draw_borders(&raw mut ctx, w, root, &raw mut border_gc, osx, osy, sx, sy);
-    wp = *(*((*w).z_index.tqh_last as *mut window_panes_zindex)).tqh_last;
+    wp = window_pane_z_last(w);
     while !wp.is_null() {
         if !(window_panes_pane_floating(wp) == 0) {
             window_panes_clear_floating_area(&raw mut ctx, wp, osx, osy, sx, sy);
@@ -1576,7 +1575,7 @@ unsafe extern "C" fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
                 sy,
             );
         }
-        wp = *(*((*wp).zentry.tqe_prev as *mut window_panes_zindex)).tqh_last;
+        wp = window_pane_z_previous(wp);
     }
     screen_write_stop(&raw mut ctx);
     (*(*data).wp).flags |= PANE_REDRAW;

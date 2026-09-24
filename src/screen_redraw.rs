@@ -49,10 +49,8 @@ pub use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
-pub use crate::src::shared::pane::window_panes_zindex;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -105,9 +103,10 @@ use crate::src::tty_term::tty_term_has;
 use crate::src::utf8::utf8_set;
 pub use crate::src::window::windows;
 use crate::src::window::{
-    window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_is_floating,
-    window_pane_is_visible, window_pane_mode, window_pane_scrollbar_overlay,
-    window_pane_scrollbar_visible, windows_minmax, windows_next,
+    window_pane_first, window_pane_get_pane_lines, window_pane_get_pane_status,
+    window_pane_is_floating, window_pane_is_visible, window_pane_mode, window_pane_next,
+    window_pane_scrollbar_overlay, window_pane_scrollbar_visible, window_pane_z_last,
+    window_pane_z_previous, windows_minmax, windows_next,
 };
 use crate::src::window_border::{
     window_get_border_cell, window_get_fill_cell, window_make_pane_status,
@@ -431,7 +430,7 @@ unsafe extern "C" fn redraw_check_two_pane_colours(
 ) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut count: u_int = 0 as u_int;
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if !(window_pane_is_floating(wp) != 0 || (*wp).layout_cell.is_null()) {
             count = count.wrapping_add(1);
@@ -440,7 +439,7 @@ unsafe extern "C" fn redraw_check_two_pane_colours(
             }
             *type_0 = (*(*(*wp).layout_cell).parent).type_0;
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     return (count == 2 as u_int) as ::core::ffi::c_int;
 }
@@ -1146,10 +1145,10 @@ unsafe fn redraw_build_cells(
         }
         y = y.wrapping_add(1);
     }
-    wp = *(*((*w).z_index.tqh_last as *mut window_panes_zindex)).tqh_last;
+    wp = window_pane_z_last(w);
     while !wp.is_null() {
         redraw_mark_pane(bctx, wp);
-        wp = *(*((*wp).zentry.tqe_prev as *mut window_panes_zindex)).tqh_last;
+        wp = window_pane_z_previous(wp);
     }
     redraw_mark_two_pane_colours(bctx);
     redraw_mark_menu(bctx);
@@ -2559,16 +2558,16 @@ unsafe extern "C" fn redraw_draw(
         menu_update((*w).menu);
     }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
-        loop_0 = (*(*scene).w).panes.tqh_first;
+        loop_0 = window_pane_first((*scene).w);
         while !loop_0.is_null() {
             (*loop_0).border_gc_set = 0 as ::core::ffi::c_int;
             (*loop_0).active_border_gc_set = 0 as ::core::ffi::c_int;
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = window_pane_next(loop_0);
         }
     }
     if flags & REDRAW_PANE_STATUS != 0 {
         redraw = 0 as ::core::ffi::c_int;
-        loop_0 = (*(*scene).w).panes.tqh_first;
+        loop_0 = window_pane_first((*scene).w);
         while !loop_0.is_null() {
             if flags == REDRAW_ALL {
                 (*loop_0).flags |= PANE_NEWSTATUS;
@@ -2587,7 +2586,7 @@ unsafe extern "C" fn redraw_draw(
                     redraw = 1 as ::core::ffi::c_int;
                 }
             }
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = window_pane_next(loop_0);
         }
         if redraw == 0 && !(flags == REDRAW_ALL) {
             flags &= !REDRAW_PANE_STATUS;
@@ -2603,7 +2602,7 @@ unsafe extern "C" fn redraw_draw(
             }
             screen_write_clear_dirty(wp);
         } else {
-            loop_0 = (*(*scene).w).panes.tqh_first;
+            loop_0 = window_pane_first((*scene).w);
             while !loop_0.is_null() {
                 if !(window_pane_is_visible(loop_0) == 0) {
                     if (*loop_0).base.mode & MODE_SYNC != 0 {
@@ -2611,7 +2610,7 @@ unsafe extern "C" fn redraw_draw(
                     }
                     screen_write_clear_dirty(loop_0);
                 }
-                loop_0 = (*loop_0).entry.tqe_next;
+                loop_0 = window_pane_next(loop_0);
             }
         }
     }
@@ -2630,12 +2629,12 @@ unsafe extern "C" fn redraw_draw(
         if !wp.is_null() {
             redraw_draw_pane_prompt(&raw mut dctx, wp);
         } else {
-            loop_0 = (*(*scene).w).panes.tqh_first;
+            loop_0 = window_pane_first((*scene).w);
             while !loop_0.is_null() {
                 if window_pane_is_visible(loop_0) != 0 {
                     redraw_draw_pane_prompt(&raw mut dctx, loop_0);
                 }
-                loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = window_pane_next(loop_0);
             }
         }
     }

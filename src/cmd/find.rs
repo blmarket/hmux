@@ -16,7 +16,8 @@ use crate::src::window::{
     all_window_panes, window_find_by_id_str, window_find_string, window_has_pane,
     window_pane_at_index, window_pane_find_by_id_str, window_pane_find_down, window_pane_find_left,
     window_pane_find_right, window_pane_find_up, window_pane_next_by_number,
-    window_pane_previous_by_number, window_pane_tree_minmax, window_pane_tree_next,
+    window_pane_previous_by_number, window_pane_stack_first, window_pane_tree_minmax,
+    window_pane_tree_next,
     winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
     winlinks_next,
 };
@@ -59,8 +60,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -766,7 +766,7 @@ unsafe extern "C" fn cmd_find_get_pane_with_window(
         return 0 as ::core::ffi::c_int;
     }
     if strcmp(pane, b"!\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        (*fs).wp = (*(*fs).w).last_panes.tqh_first;
+        (*fs).wp = window_pane_stack_first((*fs).w);
         if (*fs).wp.is_null() {
             return -(1 as ::core::ffi::c_int);
         }

@@ -1,6 +1,7 @@
 //! Authoritative pane declarations, shared by the C translation units.
 
 use std::collections::VecDeque;
+use std::ffi::CString;
 
 use super::abi::{bitstr_t, pid_t, size_t, time_t, timeval, u_int, uint64_t};
 use super::client::client;
@@ -228,10 +229,12 @@ pub struct window_pane {
     pub control_fg: ::core::ffi::c_int,
     pub scrollbar_style: style,
     pub r: visible_ranges,
-    pub entry: window_pane_entry,
-    pub sentry: window_pane_sentry,
-    pub zentry: window_pane_zentry,
     pub tree_entry: window_pane_tree_entry,
+    /// Owners for the borrowed C string views above. These live in the pane's
+    /// `RefBox` allocation so the public pane pointer is the owned object.
+    pub searchstr_owner: Option<CString>,
+    pub shell_owner: Option<CString>,
+    pub cwd_owner: Option<CString>,
 }
 
 impl window_pane {
@@ -242,6 +245,12 @@ impl window_pane {
             ::core::ptr::addr_of_mut!((*pane).base).write(screen::empty());
             ::core::ptr::addr_of_mut!((*pane).status_screen).write(screen::empty());
             ::core::ptr::addr_of_mut!((*pane).r).write(visible_ranges::default());
+            ::core::ptr::addr_of_mut!((*pane).argv).write(Vec::new());
+            ::core::ptr::addr_of_mut!((*pane).resize_queue).write(window_pane_resizes::default());
+            ::core::ptr::addr_of_mut!((*pane).modes).write(window_pane_modes::default());
+            ::core::ptr::addr_of_mut!((*pane).searchstr_owner).write(None);
+            ::core::ptr::addr_of_mut!((*pane).shell_owner).write(None);
+            ::core::ptr::addr_of_mut!((*pane).cwd_owner).write(None);
             storage.assume_init()
         }
     }
@@ -251,27 +260,6 @@ impl window_pane {
 #[repr(C)]
 pub struct window_pane_tree_entry {
     pub owner: *mut std::collections::BTreeMap<u_int, *mut window_pane>,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_zentry {
-    pub tqe_next: *mut window_pane,
-    pub tqe_prev: *mut *mut window_pane,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_sentry {
-    pub tqe_next: *mut window_pane,
-    pub tqe_prev: *mut *mut window_pane,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_entry {
-    pub tqe_next: *mut window_pane,
-    pub tqe_prev: *mut *mut window_pane,
 }
 
 /// Ordered mode stack owned by a pane. Each entry remains boxed so mode
@@ -297,11 +285,187 @@ impl Default for window_pane_modes {
     }
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
+/// Ordered, non-owning pane handles. The pane owner registry keeps the
+/// allocation alive; this collection only records order.
+#[derive(Default)]
 pub struct window_panes {
-    pub tqh_first: *mut window_pane,
-    pub tqh_last: *mut *mut window_pane,
+    pub storage: Option<Box<Vec<refbox::Weak<window_pane>>>>,
+}
+
+fn checked_window_pane_ptr(weak: &refbox::Weak<window_pane>) -> *mut window_pane {
+    match weak.try_access_mut(|pane| pane as *mut window_pane) {
+        Ok(pointer) => pointer,
+        Err(refbox::BorrowError::Dropped) => {
+            panic!("window pane collection contains an expired owner")
+        }
+        Err(refbox::BorrowError::Borrowed) => {
+            panic!("window pane collection entry is already borrowed")
+        }
+    }
+}
+
+impl window_panes {
+    pub fn is_empty(&self) -> bool {
+        self.storage.as_deref().is_none_or(Vec::is_empty)
+    }
+
+    pub fn len(&self) -> usize {
+        self.storage.as_deref().map_or(0, Vec::len)
+    }
+
+    pub unsafe fn first(&self) -> *mut window_pane {
+        self.storage
+            .as_deref()
+            .and_then(|panes| panes.first())
+            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+    }
+
+    pub unsafe fn next(&self, pane: *mut window_pane) -> *mut window_pane {
+        let Some(storage) = self.storage.as_deref() else {
+            return std::ptr::null_mut();
+        };
+        let Some(position) = storage
+            .iter()
+            .position(|weak| checked_window_pane_ptr(weak) == pane)
+        else {
+            return std::ptr::null_mut();
+        };
+        storage
+            .get(position + 1)
+            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+    }
+
+    pub unsafe fn last(&self) -> *mut window_pane {
+        self.storage
+            .as_deref()
+            .and_then(|panes| panes.last())
+            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+    }
+
+    pub unsafe fn previous(&self, pane: *mut window_pane) -> *mut window_pane {
+        self.position(pane)
+            .and_then(|position| position.checked_sub(1))
+            .and_then(|position| self.storage.as_deref()?.get(position))
+            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+    }
+
+    pub unsafe fn position(&self, pane: *mut window_pane) -> Option<usize> {
+        self.storage.as_deref()?.iter().position(|weak| {
+            checked_window_pane_ptr(weak) == pane
+        })
+    }
+
+    pub fn push_front(&mut self, pane: refbox::Weak<window_pane>) {
+        unsafe { self.remove_ptr(checked_window_pane_ptr(&pane)); }
+        self.storage.get_or_insert_with(|| Box::new(Vec::new())).insert(0, pane);
+    }
+
+    pub fn push_back(&mut self, pane: refbox::Weak<window_pane>) {
+        unsafe { self.remove_ptr(checked_window_pane_ptr(&pane)); }
+        self.storage.get_or_insert_with(|| Box::new(Vec::new())).push(pane);
+    }
+
+    pub unsafe fn insert_before(&mut self, before: *mut window_pane, pane: refbox::Weak<window_pane>) {
+        let pointer = checked_window_pane_ptr(&pane);
+        self.remove_ptr(pointer);
+        let position = self.position(before).expect("insertion point is not in pane collection");
+        self.storage.as_mut().expect("pane collection is present").insert(position, pane);
+    }
+
+    pub unsafe fn insert_after(&mut self, after: *mut window_pane, pane: refbox::Weak<window_pane>) {
+        let pointer = checked_window_pane_ptr(&pane);
+        self.remove_ptr(pointer);
+        let position = self.position(after).expect("insertion point is not in pane collection");
+        self.storage.as_mut().expect("pane collection is present").insert(position + 1, pane);
+    }
+
+    pub unsafe fn remove_ptr(&mut self, pane: *mut window_pane) -> bool {
+        let Some(storage) = self.storage.as_mut() else {
+            return false;
+        };
+        let Some(position) = storage.iter().position(|weak| checked_window_pane_ptr(weak) == pane) else {
+            return false;
+        };
+        storage.remove(position);
+        if storage.is_empty() {
+            self.storage = None;
+        }
+        true
+    }
+
+    pub unsafe fn contains(&self, pane: *mut window_pane) -> bool {
+        self.position(pane).is_some()
+    }
+
+    pub unsafe fn swap_ptrs(&mut self, first: *mut window_pane, second: *mut window_pane) {
+        let first_position = self.position(first).expect("first pane is not in collection");
+        let second_position = self.position(second).expect("second pane is not in collection");
+        self.storage
+            .as_mut()
+            .expect("pane collection is present")
+            .swap(first_position, second_position);
+    }
+
+    pub unsafe fn remove_at(&mut self, pane: *mut window_pane) -> refbox::Weak<window_pane> {
+        let position = self.position(pane).expect("pane is not in collection");
+        self.storage.as_mut().expect("pane collection is present").remove(position)
+    }
+
+    pub unsafe fn insert_at(&mut self, position: usize, pane: refbox::Weak<window_pane>) {
+        self.storage.as_mut().expect("pane collection is present").insert(position, pane);
+    }
+}
+
+/// Most-recently-visited pane handles, with the newest pane at the front.
+#[derive(Default)]
+pub struct window_pane_history {
+    pub storage: Option<Box<VecDeque<refbox::Weak<window_pane>>>>,
+}
+
+impl window_pane_history {
+    pub fn is_empty(&self) -> bool {
+        self.storage.as_deref().is_none_or(VecDeque::is_empty)
+    }
+
+    pub unsafe fn first(&self) -> *mut window_pane {
+        self.storage
+            .as_deref()
+            .and_then(|panes| panes.front())
+            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+    }
+
+    pub unsafe fn next(&self, pane: *mut window_pane) -> *mut window_pane {
+        let Some(storage) = self.storage.as_deref() else {
+            return std::ptr::null_mut();
+        };
+        let Some(position) = storage
+            .iter()
+            .position(|weak| checked_window_pane_ptr(weak) == pane)
+        else {
+            return std::ptr::null_mut();
+        };
+        storage
+            .get(position + 1)
+            .map_or(std::ptr::null_mut(), checked_window_pane_ptr)
+    }
+
+    pub unsafe fn remove_ptr(&mut self, pane: *mut window_pane) -> bool {
+        let Some(storage) = self.storage.as_mut() else {
+            return false;
+        };
+        let old_len = storage.len();
+        storage.retain(|weak| checked_window_pane_ptr(weak) != pane);
+        if storage.is_empty() {
+            self.storage = None;
+        }
+        old_len != self.storage.as_ref().map_or(0, |value| value.len())
+    }
+
+    pub fn push_front(&mut self, pane: refbox::Weak<window_pane>) {
+        let pointer = checked_window_pane_ptr(&pane);
+        unsafe { self.remove_ptr(pointer); }
+        self.storage.get_or_insert_with(|| Box::new(VecDeque::new())).push_front(pane);
+    }
 }
 
 #[repr(C)]
@@ -309,11 +473,4 @@ pub struct window_pane_tree {
     /// The global pane index owns its allocation. Pane records keep only a
     /// compatibility pointer in `tree_entry.owner` for traversal.
     pub storage: Option<Box<std::collections::BTreeMap<u_int, *mut window_pane>>>,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_panes_zindex {
-    pub tqh_first: *mut window_pane,
-    pub tqh_last: *mut *mut window_pane,
 }

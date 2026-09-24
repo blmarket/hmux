@@ -30,10 +30,8 @@ pub use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
-pub use crate::src::shared::pane::window_panes_zindex;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -57,7 +55,8 @@ pub use crate::src::shared::window::{
 };
 use crate::src::window::{
     window_pane_ensure_visible_ranges, window_pane_get_pane_lines, window_pane_is_floating,
-    window_pane_is_visible, window_pane_scrollbar_reserve,
+    window_pane_is_visible, window_pane_scrollbar_reserve, window_pane_z_last,
+    window_pane_z_previous,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -161,7 +160,7 @@ pub unsafe extern "C" fn window_visible_ranges(
                         (*r).used = 1 as u_int;
                     }
                     found_self = 0 as ::core::ffi::c_int;
-                    wp = *(*((*w).z_index.tqh_last as *mut window_panes_zindex)).tqh_last;
+                    wp = window_pane_z_last(w);
                     while !wp.is_null() {
                         if wp == base_wp {
                             found_self = 1 as ::core::ffi::c_int;
@@ -304,7 +303,7 @@ pub unsafe extern "C" fn window_visible_ranges(
                                 }
                             }
                         }
-                        wp = *(*((*wp).zentry.tqe_prev as *mut window_panes_zindex)).tqh_last;
+                        wp = window_pane_z_previous(wp);
                     }
                     return r;
                 }

@@ -48,8 +48,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -84,7 +83,8 @@ use crate::src::status::status_update_cache;
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::{
-    window_update_activity, window_update_focus, window_winlinks_first, window_winlinks_next,
+    window_pane_first, window_pane_next, window_update_activity, window_update_focus,
+    window_winlinks_first, window_winlinks_next,
     winlink_add, winlink_clear_flags, winlink_find_by_index, winlink_find_by_window,
     winlink_find_by_window_id, winlink_next, winlink_previous, winlink_remove, winlink_set_window,
     winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
@@ -1336,10 +1336,10 @@ pub unsafe extern "C" fn session_theme_changed(mut s: *mut session) {
     if !s.is_null() {
         wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
         while !wl.is_null() {
-            wp = (*(*wl).window).panes.tqh_first;
+            wp = window_pane_first((*wl).window);
             while !wp.is_null() {
                 (*wp).flags |= PANE_THEMECHANGED;
-                wp = (*wp).entry.tqe_next;
+                wp = window_pane_next(wp);
             }
             wl = winlinks_next(wl);
         }
@@ -1358,7 +1358,7 @@ pub unsafe extern "C" fn session_update_history(mut s: *mut session) {
     ) as u_int;
     wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        wp = (*(*wl).window).panes.tqh_first;
+        wp = window_pane_first((*wl).window);
         while !wp.is_null() {
             gd = (*wp).base.grid;
             osize = (*gd).hsize;
@@ -1373,7 +1373,7 @@ pub unsafe extern "C" fn session_update_history(mut s: *mut session) {
                     (*gd).hsize,
                 );
             }
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         wl = winlinks_next(wl);
     }

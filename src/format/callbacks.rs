@@ -3,7 +3,7 @@
 // retain their separate C ABI.
 use super::*;
 use crate::src::server_client::server_client_set_user;
-use crate::src::window::{window_winlinks_first, window_winlinks_next};
+use crate::src::window::{window_pane_stack_first, window_winlinks_first, window_winlinks_next};
 use std::ffi::{CStr, CString};
 use std::fmt::Write as _;
 
@@ -2014,7 +2014,7 @@ unsafe fn format_cb_pane_key_mode(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_pane_last(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
-        if (*ft).wp == (*(*(*ft).wp).window).last_panes.tqh_first {
+        if (*ft).wp == window_pane_stack_first((*(*ft).wp).window) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

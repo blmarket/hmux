@@ -57,10 +57,8 @@ pub use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
-pub use crate::src::shared::pane::window_panes_zindex;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -86,7 +84,11 @@ pub use crate::src::shared::window::{
 };
 use crate::src::window::{
     window_count_panes, window_fire_pane_moved, window_lost_pane, window_pane_get_pane_lines,
-    window_pane_is_floating, window_redraw_active_switch, window_set_active_pane,
+    window_pane_is_floating, window_pane_list_insert_after, window_pane_list_insert_before,
+    window_pane_list_remove, window_pane_z_first, window_pane_z_insert_after,
+    window_pane_z_insert_back, window_pane_z_insert_before, window_pane_z_insert_front,
+    window_pane_z_next, window_pane_z_previous, window_pane_z_remove, window_redraw_active_switch,
+    window_set_active_pane,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -309,124 +311,67 @@ unsafe extern "C" fn cmd_join_pane_place(
         b"front\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-        } else {
-            (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-        }
-        *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-        (*wp).zentry.tqe_next = (*w).z_index.tqh_first;
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*w).z_index.tqh_first).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-        } else {
-            (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-        }
-        (*w).z_index.tqh_first = wp;
-        (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
+        window_pane_z_remove(w, wp);
+        window_pane_z_insert_front(w, wp);
     } else if strcmp(
         position,
         b"back\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-        } else {
-            (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-        }
-        *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-        owp = (*w).z_index.tqh_first;
+        window_pane_z_remove(w, wp);
+        owp = window_pane_z_first(w);
         while !owp.is_null() {
             if window_pane_is_floating(owp) == 0 {
                 break;
             }
-            owp = (*owp).zentry.tqe_next;
+            owp = window_pane_z_next(owp);
         }
         if !owp.is_null() {
-            (*wp).zentry.tqe_prev = (*owp).zentry.tqe_prev;
-            (*wp).zentry.tqe_next = owp;
-            *(*owp).zentry.tqe_prev = wp;
-            (*owp).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
+            window_pane_z_insert_before(w, owp, wp);
         } else {
-            (*wp).zentry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-            (*wp).zentry.tqe_prev = (*w).z_index.tqh_last;
-            *(*w).z_index.tqh_last = wp;
-            (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
+            window_pane_z_insert_back(w, wp);
         }
     } else if strcmp(
         position,
         b"forward\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        owp = *(*((*wp).zentry.tqe_prev as *mut window_panes_zindex)).tqh_last;
+        owp = window_pane_z_previous(wp);
         if !owp.is_null() {
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-            } else {
-                (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-            }
-            *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-            (*wp).zentry.tqe_prev = (*owp).zentry.tqe_prev;
-            (*wp).zentry.tqe_next = owp;
-            *(*owp).zentry.tqe_prev = wp;
-            (*owp).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
+            window_pane_z_remove(w, wp);
+            window_pane_z_insert_before(w, owp, wp);
         }
     } else if strcmp(
         position,
         b"backward\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        owp = (*wp).zentry.tqe_next;
+        owp = window_pane_z_next(wp);
         if !owp.is_null() && window_pane_is_floating(owp) != 0 {
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-            } else {
-                (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-            }
-            *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-            (*wp).zentry.tqe_next = (*owp).zentry.tqe_next;
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*wp).zentry.tqe_next).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-            } else {
-                (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-            }
-            (*owp).zentry.tqe_next = wp;
-            (*wp).zentry.tqe_prev = &raw mut (*owp).zentry.tqe_next;
+            window_pane_z_remove(w, wp);
+            window_pane_z_insert_after(w, owp, wp);
         }
     } else if strcmp(
         position,
         b"forward-loop\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        owp = *(*((*wp).zentry.tqe_prev as *mut window_panes_zindex)).tqh_last;
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-        } else {
-            (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-        }
-        *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
+        owp = window_pane_z_previous(wp);
+        window_pane_z_remove(w, wp);
         if !owp.is_null() {
-            (*wp).zentry.tqe_prev = (*owp).zentry.tqe_prev;
-            (*wp).zentry.tqe_next = owp;
-            *(*owp).zentry.tqe_prev = wp;
-            (*owp).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
+            window_pane_z_insert_before(w, owp, wp);
         } else {
-            owp = (*w).z_index.tqh_first;
+            owp = window_pane_z_first(w);
             while !owp.is_null() {
                 if window_pane_is_floating(owp) == 0 {
                     break;
                 }
-                owp = (*owp).zentry.tqe_next;
+                owp = window_pane_z_next(owp);
             }
             if !owp.is_null() {
-                (*wp).zentry.tqe_prev = (*owp).zentry.tqe_prev;
-                (*wp).zentry.tqe_next = owp;
-                *(*owp).zentry.tqe_prev = wp;
-                (*owp).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
+                window_pane_z_insert_before(w, owp, wp);
             } else {
-                (*wp).zentry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-                (*wp).zentry.tqe_prev = (*w).z_index.tqh_last;
-                *(*w).z_index.tqh_last = wp;
-                (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
+                window_pane_z_insert_back(w, wp);
             }
         }
     } else if strcmp(
@@ -434,37 +379,13 @@ unsafe extern "C" fn cmd_join_pane_place(
         b"backward-loop\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        owp = (*wp).zentry.tqe_next;
+        owp = window_pane_z_next(wp);
         if !owp.is_null() && window_pane_is_floating(owp) != 0 {
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-            } else {
-                (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-            }
-            *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-            (*wp).zentry.tqe_next = (*owp).zentry.tqe_next;
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*wp).zentry.tqe_next).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-            } else {
-                (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-            }
-            (*owp).zentry.tqe_next = wp;
-            (*wp).zentry.tqe_prev = &raw mut (*owp).zentry.tqe_next;
+            window_pane_z_remove(w, wp);
+            window_pane_z_insert_after(w, owp, wp);
         } else {
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-            } else {
-                (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-            }
-            *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-            (*wp).zentry.tqe_next = (*w).z_index.tqh_first;
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*w).z_index.tqh_first).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-            } else {
-                (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-            }
-            (*w).z_index.tqh_first = wp;
-            (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
+            window_pane_z_remove(w, wp);
+            window_pane_z_insert_front(w, wp);
         }
     } else {
         cmdq_error(
@@ -699,14 +620,9 @@ unsafe extern "C" fn cmd_join_pane_zindex(
         );
         return CMD_RETURN_ERROR;
     }
-    if !(*wp).zentry.tqe_next.is_null() {
-        (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-    } else {
-        (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-    }
-    *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
+    window_pane_z_remove(w, wp);
     n = 0 as u_int;
-    owp = (*w).z_index.tqh_first;
+    owp = window_pane_z_first(w);
     while !owp.is_null() {
         if window_pane_is_floating(owp) == 0 {
             break;
@@ -715,18 +631,12 @@ unsafe extern "C" fn cmd_join_pane_zindex(
             break;
         }
         n = n.wrapping_add(1);
-        owp = (*owp).zentry.tqe_next;
+        owp = window_pane_z_next(owp);
     }
     if !owp.is_null() {
-        (*wp).zentry.tqe_prev = (*owp).zentry.tqe_prev;
-        (*wp).zentry.tqe_next = owp;
-        *(*owp).zentry.tqe_prev = wp;
-        (*owp).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
+        window_pane_z_insert_before(w, owp, wp);
     } else {
-        (*wp).zentry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-        (*wp).zentry.tqe_prev = (*w).z_index.tqh_last;
-        *(*w).z_index.tqh_last = wp;
-        (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
+        window_pane_z_insert_back(w, wp);
     }
     redraw_invalidate_scene(w);
     events_fire_window(
@@ -770,16 +680,8 @@ unsafe extern "C" fn cmd_join_pane_tile(
         return CMD_RETURN_ERROR;
     }
     (*lc).flags &= !LAYOUT_CELL_FLOATING;
-    if !(*wp).zentry.tqe_next.is_null() {
-        (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-    } else {
-        (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-    }
-    *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-    (*wp).zentry.tqe_next = ::core::ptr::null_mut::<window_pane>();
-    (*wp).zentry.tqe_prev = (*w).z_index.tqh_last;
-    *(*w).z_index.tqh_last = wp;
-    (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
+    window_pane_z_remove(w, wp);
+    window_pane_z_insert_back(w, wp);
     if args_has(args, 'd' as i32 as u_char) == 0 {
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     }
@@ -891,47 +793,17 @@ unsafe extern "C" fn cmd_join_pane_exec(
     layout_close_pane(src_wp);
     server_client_remove_pane(src_wp);
     window_lost_pane(src_w, src_wp);
-    if !(*src_wp).entry.tqe_next.is_null() {
-        (*(*src_wp).entry.tqe_next).entry.tqe_prev = (*src_wp).entry.tqe_prev;
-    } else {
-        (*src_w).panes.tqh_last = (*src_wp).entry.tqe_prev;
-    }
-    *(*src_wp).entry.tqe_prev = (*src_wp).entry.tqe_next;
-    if !(*src_wp).zentry.tqe_next.is_null() {
-        (*(*src_wp).zentry.tqe_next).zentry.tqe_prev = (*src_wp).zentry.tqe_prev;
-    } else {
-        (*src_w).z_index.tqh_last = (*src_wp).zentry.tqe_prev;
-    }
-    *(*src_wp).zentry.tqe_prev = (*src_wp).zentry.tqe_next;
+    window_pane_list_remove(src_w, src_wp);
+    window_pane_z_remove(src_w, src_wp);
     (*src_wp).window = dst_w as *mut window;
     options_set_parent((*src_wp).options, (*dst_w).options);
     (*src_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
     if flags & SPAWN_BEFORE != 0 {
-        (*src_wp).entry.tqe_prev = (*dst_wp).entry.tqe_prev;
-        (*src_wp).entry.tqe_next = dst_wp;
-        *(*dst_wp).entry.tqe_prev = src_wp;
-        (*dst_wp).entry.tqe_prev = &raw mut (*src_wp).entry.tqe_next;
-        (*src_wp).zentry.tqe_prev = (*dst_wp).zentry.tqe_prev;
-        (*src_wp).zentry.tqe_next = dst_wp;
-        *(*dst_wp).zentry.tqe_prev = src_wp;
-        (*dst_wp).zentry.tqe_prev = &raw mut (*src_wp).zentry.tqe_next;
+        window_pane_list_insert_before(dst_w, dst_wp, src_wp);
+        window_pane_z_insert_before(dst_w, dst_wp, src_wp);
     } else {
-        (*src_wp).entry.tqe_next = (*dst_wp).entry.tqe_next;
-        if !(*src_wp).entry.tqe_next.is_null() {
-            (*(*src_wp).entry.tqe_next).entry.tqe_prev = &raw mut (*src_wp).entry.tqe_next;
-        } else {
-            (*dst_w).panes.tqh_last = &raw mut (*src_wp).entry.tqe_next;
-        }
-        (*dst_wp).entry.tqe_next = src_wp;
-        (*src_wp).entry.tqe_prev = &raw mut (*dst_wp).entry.tqe_next;
-        (*src_wp).zentry.tqe_next = (*dst_wp).zentry.tqe_next;
-        if !(*src_wp).zentry.tqe_next.is_null() {
-            (*(*src_wp).zentry.tqe_next).zentry.tqe_prev = &raw mut (*src_wp).zentry.tqe_next;
-        } else {
-            (*dst_w).z_index.tqh_last = &raw mut (*src_wp).zentry.tqe_next;
-        }
-        (*dst_wp).zentry.tqe_next = src_wp;
-        (*src_wp).zentry.tqe_prev = &raw mut (*dst_wp).zentry.tqe_next;
+        window_pane_list_insert_after(dst_w, dst_wp, src_wp);
+        window_pane_z_insert_after(dst_w, dst_wp, src_wp);
     }
     layout_assign_pane(lc, src_wp, 0 as ::core::ffi::c_int);
     colour_palette_from_option(&raw mut (*src_wp).palette, (*src_wp).options);

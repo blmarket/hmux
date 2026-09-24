@@ -58,8 +58,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -119,7 +118,7 @@ use crate::src::utf8_combined::{
 };
 use crate::src::window::{
     window_pane_clear_resizes, window_pane_is_floating, window_pane_scrollbar_overlay_visible,
-    window_pane_scrollbar_redraw, window_pane_send_resize,
+    window_pane_scrollbar_redraw, window_pane_send_resize, window_pane_z_previous,
 };
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
 use crate::src::xmalloc::xvasprintf_cstring;
@@ -304,7 +303,7 @@ unsafe extern "C" fn screen_write_pane_is_obscured(
         return 1 as ::core::ffi::c_int;
     }
     loop {
-        wp = *(*((*wp).zentry.tqe_prev as *mut window_panes)).tqh_last;
+        wp = window_pane_z_previous(wp);
         if wp.is_null() {
             break;
         }

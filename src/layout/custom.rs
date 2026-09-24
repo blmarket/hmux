@@ -12,9 +12,11 @@ use crate::src::layout::{
 };
 use crate::src::resize::recalculate_sizes;
 use crate::src::window::{
-    window_count_panes, window_pane_index, window_pane_is_floating, window_pane_last_index,
-    window_pane_stack_push, window_pane_stack_remove, window_pane_zindex, window_resize,
-    window_set_active_pane,
+    window_count_panes, window_pane_first, window_pane_index, window_pane_is_floating,
+    window_pane_last_index, window_pane_next, window_pane_stack_first, window_pane_stack_push,
+    window_pane_stack_remove,
+    window_pane_z_first, window_pane_z_next, window_pane_z_remove, window_pane_z_insert_front,
+    window_pane_zindex, window_resize, window_set_active_pane,
 };
 use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
@@ -55,8 +57,7 @@ pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cell
 pub use crate::src::shared::menu::{menu_data};
 pub use crate::src::shared::options::{options};
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::process::{tmuxpeer};
 pub use crate::src::shared::prompt::{prompt};
@@ -762,14 +763,14 @@ pub unsafe fn layout_parse(
                         );
                     }
                     if pctx.version == 1 as int64_t {
-                        wp = (*w).panes.tqh_first;
+                        wp = window_pane_first(w);
                         while !wp.is_null() {
                             if !(window_pane_is_floating(wp) == 0) {
                                 lcchild = (*wp).layout_cell as *mut layout_cell;
                                 layout_cells_remove((*lcchild).parent, lcchild);
                                 (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
                             }
-                            wp = (*wp).entry.tqe_next;
+                            wp = window_pane_next(wp);
                         }
                     }
                     layout_free_cell((*w).layout_root, 0 as ::core::ffi::c_int);
@@ -816,10 +817,10 @@ unsafe extern "C" fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut l
                 ) -> ::core::ffi::c_int,
         ),
     );
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     for cctx in &(*pctx).cctxs {
         layout_make_leaf(cctx.lc, wp);
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
 }
 unsafe extern "C" fn layout_assign_fallback_tiled(
@@ -833,13 +834,13 @@ unsafe extern "C" fn layout_assign_fallback_tiled(
     match (*lc).type_0 as ::core::ffi::c_uint {
         2 => {
             while !(*wp).is_null() && !(**wp).layout_cell.is_null() {
-                *wp = (**wp).entry.tqe_next;
+                *wp = window_pane_next(*wp);
             }
             if (*wp).is_null() {
                 return;
             }
             layout_make_leaf(lc, *wp);
-            *wp = (**wp).entry.tqe_next;
+            *wp = window_pane_next(*wp);
             return;
         }
         0 | 1 => {
@@ -854,7 +855,7 @@ unsafe extern "C" fn layout_assign_fallback_tiled(
     };
 }
 unsafe extern "C" fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell) {
-    let mut wp: *mut window_pane = (*w).panes.tqh_first;
+    let mut wp: *mut window_pane = window_pane_first(w);
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     layout_assign_fallback_tiled(&raw mut wp, lcroot);
     if window_count_panes(w, 1 as ::core::ffi::c_int) > 1 as u_int
@@ -863,13 +864,13 @@ unsafe extern "C" fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut
     {
         lcroot = layout_replace_with_node(w, lcroot, LAYOUT_TOPBOTTOM);
     }
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if window_pane_is_floating(wp) != 0 {
             lc = (*wp).layout_cell as *mut layout_cell;
             layout_cells_push_back(lcroot, lc);
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
 }
 unsafe extern "C" fn layout_assign(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
@@ -1497,16 +1498,11 @@ unsafe extern "C" fn layout_construct(
 unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpnext: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wp = (*w).z_index.tqh_first;
+    wp = window_pane_z_first(w);
     while !wp.is_null() {
-        wpnext = (*wp).zentry.tqe_next;
+        wpnext = window_pane_z_next(wp);
         if window_pane_is_floating(wp) != 0 {
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-            } else {
-                (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-            }
-            *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
+            window_pane_z_remove(w, wp);
         }
         wp = wpnext;
     }
@@ -1525,14 +1521,7 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
     for cctx in &(*pctx).cctxs {
         wp = (*cctx.lc).wp;
         if window_pane_is_floating(wp) != 0 {
-            (*wp).zentry.tqe_next = (*w).z_index.tqh_first;
-            if !(*wp).zentry.tqe_next.is_null() {
-                (*(*w).z_index.tqh_first).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-            } else {
-                (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-            }
-            (*w).z_index.tqh_first = wp;
-            (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
+            window_pane_z_insert_front(w, wp);
         }
     }
     for cctx in &(*pctx).cctxs {
@@ -1541,8 +1530,8 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
             break;
         }
     }
-    while !(*w).last_panes.tqh_first.is_null() {
-        wp = (*w).last_panes.tqh_first;
+    while !window_pane_stack_first(w).is_null() {
+        wp = window_pane_stack_first(w);
         window_pane_stack_remove(&raw mut (*w).last_panes, wp);
     }
     qsort(

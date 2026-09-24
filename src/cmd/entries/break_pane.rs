@@ -56,8 +56,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -83,7 +82,8 @@ pub use crate::src::shared::window::{
 use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::{
     window_add_ref, window_count_panes, window_create, window_fire_pane_moved,
-    window_get_pane_lines, window_lost_pane, window_pane_is_floating, window_remove_ref,
+    window_get_pane_lines, window_lost_pane, window_pane_is_floating, window_pane_list_insert_front,
+    window_pane_list_remove, window_pane_z_insert_front, window_pane_z_remove, window_remove_ref,
     window_replace_name, window_set_active_pane, window_set_name, winlink_find_by_index,
     winlink_find_by_window, winlink_shuffle_up,
 };
@@ -163,20 +163,8 @@ unsafe extern "C" fn cmd_break_pane_float(
     layout_remove_tile(w, lc);
     layout_set_size(lc, (*fg).sx, (*fg).sy, (*fg).xoff, (*fg).yoff);
     (*lc).flags |= LAYOUT_CELL_FLOATING;
-    if !(*wp).zentry.tqe_next.is_null() {
-        (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-    } else {
-        (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-    }
-    *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
-    (*wp).zentry.tqe_next = (*w).z_index.tqh_first;
-    if !(*wp).zentry.tqe_next.is_null() {
-        (*(*w).z_index.tqh_first).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-    } else {
-        (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-    }
-    (*w).z_index.tqh_first = wp;
-    (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
+    window_pane_z_remove(w, wp);
+    window_pane_z_insert_front(w, wp);
     if args_has(args, 'd' as i32 as u_char) == 0 {
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     }
@@ -282,18 +270,8 @@ unsafe extern "C" fn cmd_break_pane_exec(
             );
             return CMD_RETURN_ERROR;
         }
-        if !(*wp).entry.tqe_next.is_null() {
-            (*(*wp).entry.tqe_next).entry.tqe_prev = (*wp).entry.tqe_prev;
-        } else {
-            (*w).panes.tqh_last = (*wp).entry.tqe_prev;
-        }
-        *(*wp).entry.tqe_prev = (*wp).entry.tqe_next;
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*wp).zentry.tqe_next).zentry.tqe_prev = (*wp).zentry.tqe_prev;
-        } else {
-            (*w).z_index.tqh_last = (*wp).zentry.tqe_prev;
-        }
-        *(*wp).zentry.tqe_prev = (*wp).zentry.tqe_next;
+        window_pane_list_remove(w, wp);
+        window_pane_z_remove(w, wp);
         server_client_remove_pane(wp);
         window_lost_pane(w, wp);
         layout_close_pane(wp);
@@ -305,22 +283,8 @@ unsafe extern "C" fn cmd_break_pane_exec(
         );
         options_set_parent((*wp).options, (*w).options);
         (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-        (*wp).entry.tqe_next = (*w).panes.tqh_first;
-        if !(*wp).entry.tqe_next.is_null() {
-            (*(*w).panes.tqh_first).entry.tqe_prev = &raw mut (*wp).entry.tqe_next;
-        } else {
-            (*w).panes.tqh_last = &raw mut (*wp).entry.tqe_next;
-        }
-        (*w).panes.tqh_first = wp;
-        (*wp).entry.tqe_prev = &raw mut (*w).panes.tqh_first;
-        (*wp).zentry.tqe_next = (*w).z_index.tqh_first;
-        if !(*wp).zentry.tqe_next.is_null() {
-            (*(*w).z_index.tqh_first).zentry.tqe_prev = &raw mut (*wp).zentry.tqe_next;
-        } else {
-            (*w).z_index.tqh_last = &raw mut (*wp).zentry.tqe_next;
-        }
-        (*w).z_index.tqh_first = wp;
-        (*wp).zentry.tqe_prev = &raw mut (*w).z_index.tqh_first;
+        window_pane_list_insert_front(w, wp);
+        window_pane_z_insert_front(w, wp);
         (*w).active = wp;
         (*w).latest = tc as *mut ::core::ffi::c_void;
         if name.is_null() {

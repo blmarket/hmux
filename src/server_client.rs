@@ -91,6 +91,7 @@ use crate::src::window::{
     window_pane_scrollbar_overlay, window_pane_scrollbar_overlay_visible,
     window_pane_scrollbar_reserve, window_pane_scrollbar_show, window_pane_scrollbar_start_timer,
     window_pane_scrollbar_visible, window_pane_send_resize, window_pane_send_theme_update,
+    window_pane_first, window_pane_next,
     window_pane_set_mode, window_pane_status_get_range, window_pane_tree_minmax,
     window_pane_tree_next, window_redraw_active_switch, window_set_active_pane,
     window_update_focus, window_winlinks_first, window_winlinks_next, windows_minmax, windows_next,
@@ -823,8 +824,7 @@ pub use crate::src::shared::mouse::{
 };
 pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -1751,7 +1751,7 @@ unsafe extern "C" fn server_client_update_scrollbar_hover(
     if type_0 != KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int {
         return;
     }
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if !(window_pane_is_visible(wp) == 0) {
             if server_client_in_scrollbar_area(wp, px, py) != 0 {
@@ -1762,7 +1762,7 @@ unsafe extern "C" fn server_client_update_scrollbar_hover(
                 window_pane_scrollbar_start_timer(wp);
             }
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
 }
 unsafe extern "C" fn server_client_check_mouse_in_pane(
@@ -1885,7 +1885,7 @@ unsafe extern "C" fn server_client_check_mouse_in_pane(
             return KEYC_MOUSE_LOCATION_PANE;
         }
     } else {
-        fwp = (*w).panes.tqh_first;
+        fwp = window_pane_first(w);
         while !fwp.is_null() {
             if !(window_pane_is_visible(fwp) == 0) {
                 if !(window_pane_is_floating(fwp) != 0
@@ -1938,7 +1938,7 @@ unsafe extern "C" fn server_client_check_mouse_in_pane(
                     }
                 }
             }
-            fwp = (*fwp).entry.tqe_next;
+            fwp = window_pane_next(fwp);
         }
         if !fwp.is_null() {
             return KEYC_MOUSE_LOCATION_BORDER;
@@ -3379,12 +3379,12 @@ unsafe fn server_client_handle_key0(
         }
         wp = (*(*(*s).curw).window).active;
         if wp.is_null() || window_pane_has_prompt(wp) == 0 {
-            wp = (*(*(*s).curw).window).panes.tqh_first;
+            wp = window_pane_first((*(*s).curw).window);
             while !wp.is_null() {
                 if window_pane_has_prompt(wp) != 0 && window_pane_is_visible(wp) != 0 {
                     break;
                 }
-                wp = (*wp).entry.tqe_next;
+                wp = window_pane_next(wp);
             }
         }
         if !wp.is_null() && window_pane_has_prompt(wp) != 0 && window_pane_is_visible(wp) != 0 {
@@ -3465,7 +3465,7 @@ pub unsafe extern "C" fn server_client_loop() {
     }
     w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if (*wp).flags & PANE_STYLECHANGED != 0 {
                 wme = (*wp).modes.active;
@@ -3475,7 +3475,7 @@ pub unsafe extern "C" fn server_client_loop() {
                         .expect("non-null function pointer")(wme);
                 }
             }
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         w = windows_next(w);
     }
@@ -3491,24 +3491,24 @@ pub unsafe extern "C" fn server_client_loop() {
     }
     w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if (*wp).fd != -(1 as ::core::ffi::c_int) {
                 server_client_check_pane_resize(wp);
                 server_client_check_pane_buffer(wp);
             }
             (*wp).flags &= !(PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_ACTIVITY);
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         check_window_name(w);
         w = windows_next(w);
     }
     w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             window_pane_send_theme_update(wp);
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         w = windows_next(w);
     }
@@ -3943,12 +3943,12 @@ unsafe extern "C" fn server_client_reset_state(mut c: *mut client) {
     if options_get_number(oo, b"mouse\0" as *const u8 as *const ::core::ffi::c_char) != 0 {
         if (*c).overlay_draw.is_none() && (*w).menu.is_null() {
             mode &= !ALL_MOUSE_MODES;
-            loop_0 = (*w).panes.tqh_first;
+            loop_0 = window_pane_first(w);
             while !loop_0.is_null() {
                 if (*(*loop_0).screen).mode & MODE_MOUSE_ALL != 0 {
                     mode |= MODE_MOUSE_ALL;
                 }
-                loop_0 = (*loop_0).entry.tqe_next;
+                loop_0 = window_pane_next(loop_0);
             }
         }
         if options_get_number(
@@ -4137,13 +4137,13 @@ unsafe extern "C" fn server_client_check_modes(mut c: *mut client) {
     if !(*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
         return;
     }
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         wme = (*wp).modes.active;
         if !wme.is_null() && (*(*wme).mode).update.is_some() {
             (*(*wme).mode).update.expect("non-null function pointer")(wme);
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
 }
 unsafe extern "C" fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_int {
@@ -4153,12 +4153,12 @@ unsafe extern "C" fn server_client_any_pane_redraw(mut c: *mut client) -> ::core
     if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if (*wp).flags & (PANE_REDRAW | PANE_REDRAWSCROLLBAR) != 0 {
             return 1 as ::core::ffi::c_int;
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -4308,7 +4308,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
             log_debug(b"redraw timer started\0" as *const u8 as *const ::core::ffi::c_char);
             event_add(&raw mut ev, &raw mut tv);
         }
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if (*wp).flags & PANE_REDRAW != 0 {
                 (*c).flags |= CLIENT_REDRAWWINDOW as uint64_t;
@@ -4318,7 +4318,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
                     (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_REDRAWSCROLLBARS)
                         as uint64_t;
                 }
-                wp = (*wp).entry.tqe_next;
+                wp = window_pane_next(wp);
             }
         }
         return;
@@ -4332,7 +4332,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
     tflags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
     (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
     if !(*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-        wp = (*w).panes.tqh_first;
+        wp = window_pane_first(w);
         while !wp.is_null() {
             if (*wp).flags & PANE_REDRAW != 0 {
                 log_debug(
@@ -4351,7 +4351,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
                 );
                 redraw_pane_scrollbar(c, wp);
             }
-            wp = (*wp).entry.tqe_next;
+                wp = window_pane_next(wp);
         }
     }
     if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {

@@ -50,8 +50,7 @@ pub use crate::src::shared::monitor::{
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -74,8 +73,8 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::window::{
-    window_find_by_id, window_pane_find_by_id, window_winlinks_first, window_winlinks_next,
-    winlinks_minmax, winlinks_next,
+    window_find_by_id, window_pane_find_by_id, window_pane_first, window_pane_next,
+    window_winlinks_first, window_winlinks_next, winlinks_minmax, winlinks_next,
 };
 use std::ffi::{CStr, CString};
 
@@ -560,7 +559,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     }
     wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
-        wp = (*(*wl).window).panes.tqh_first;
+        wp = window_pane_first((*wl).window);
         while !wp.is_null() {
             ft = monitor_create_formats(c, s, wl, wp);
             me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
@@ -576,7 +575,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
                 me = me1;
             }
             format_free(ft);
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         wl = winlinks_next(wl);
     }

@@ -76,8 +76,7 @@ pub use crate::src::shared::mode_tree::{
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -120,7 +119,8 @@ use crate::src::sort::{
 use crate::src::style::style_apply;
 use crate::src::window::{
     window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_index,
-    window_pane_reset_mode, window_winlinks_append, window_winlinks_remove, winlink_count,
+    window_pane_next, window_pane_first, window_pane_reset_mode, window_winlinks_append,
+    window_winlinks_remove, winlink_count,
     winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
 use std::ffi::{CStr, CString};
@@ -1151,7 +1151,7 @@ unsafe extern "C" fn window_tree_draw_window(
         visible = total;
     }
     current = 0 as u_int;
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if !((*data).hide_preview_this_pane != 0 && wp == (*data).wp) {
             if wp == (*w).active {
@@ -1159,7 +1159,7 @@ unsafe extern "C" fn window_tree_draw_window(
             }
             current = current.wrapping_add(1);
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
     if current < visible {
         start = 0 as u_int;
@@ -1271,7 +1271,7 @@ unsafe extern "C" fn window_tree_draw_window(
     (*data).each = each;
     loop_0 = 0 as u_int;
     i = loop_0;
-    wp = (*w).panes.tqh_first;
+    wp = window_pane_first(w);
     while !wp.is_null() {
         if !((*data).hide_preview_this_pane != 0 && wp == (*data).wp) {
             if loop_0 == end {
@@ -1357,7 +1357,7 @@ unsafe extern "C" fn window_tree_draw_window(
                 i = i.wrapping_add(1);
             }
         }
-        wp = (*wp).entry.tqe_next;
+        wp = window_pane_next(wp);
     }
 }
 unsafe extern "C" fn window_tree_draw_info(
@@ -2306,13 +2306,13 @@ unsafe extern "C" fn window_tree_mouse(
         }
         mode_tree_expand_current((*data).data);
         loop_0 = 0 as u_int;
-        wp = (*(*wl).window).panes.tqh_first;
+        wp = window_pane_first((*wl).window);
         while !wp.is_null() {
             if loop_0 == (*data).start.wrapping_add(x) {
                 break;
             }
             loop_0 = loop_0.wrapping_add(1);
-            wp = (*wp).entry.tqe_next;
+            wp = window_pane_next(wp);
         }
         if !wp.is_null() {
             mode_tree_set_current_identity((*data).data, ModeTreeIdentity::pane((*wp).id));

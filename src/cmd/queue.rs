@@ -31,7 +31,7 @@ pub use crate::src::shared::abi::{__gid_t, __int32_t, __uid_t, uid_t};
 pub use crate::src::shared::account::passwd;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_entry, args_parse, args_parse_cb, args_value,     args_value_entry,
+    args, args_entry, args_parse, args_parse_cb, args_value, args_value_entry,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -75,8 +75,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,

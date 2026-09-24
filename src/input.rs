@@ -110,8 +110,7 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -4554,9 +4553,9 @@ mod sgr_colon_tests {
             b"38:2:999999999999999:2:3\0".as_slice(),
             b"38:2:abc:2:3\0",
             b"38:2:1:2:3:4:5:6\0", // eighth populated token
-            b":::::::\0",          // eighth empty token
-            b"38:2:300:2:3\0",     // parsed RGB outside the colour range
-            b"38:2:1:2\0",         // incomplete RGB
+            b":::::::\0",      // eighth empty token
+            b"38:2:300:2:3\0", // parsed RGB outside the colour range
+            b"38:2:1:2\0",     // incomplete RGB
         ] {
             let cell = parse(source);
             assert_eq!((cell.fg, cell.bg, cell.us), (11, 12, 13), "{source:?}");

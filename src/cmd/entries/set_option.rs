@@ -62,8 +62,7 @@ pub use crate::src::shared::options::{
 };
 pub use crate::src::shared::options::{OPTIONS_TABLE_NONE, OPTIONS_TABLE_WINDOW};
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
+    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -85,6 +84,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
+use crate::src::window::{window_pane_first, window_pane_next};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -558,7 +558,7 @@ unsafe extern "C" fn cmd_set_option_exec(
                         if args_has(args, 'U' as i32 as u_char) != 0
                             && scope == OPTIONS_TABLE_WINDOW
                         {
-                            loop_0 = (*(*target).w).panes.tqh_first;
+                            loop_0 = window_pane_first((*target).w);
                             loop {
                                 if loop_0.is_null() {
                                     current_block = 10095721787123848864;
@@ -578,7 +578,7 @@ unsafe extern "C" fn cmd_set_option_exec(
                                         break;
                                     }
                                 }
-                                loop_0 = (*loop_0).entry.tqe_next;
+                                loop_0 = window_pane_next(loop_0);
                             }
                         } else {
                             current_block = 10095721787123848864;
