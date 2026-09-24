@@ -25,9 +25,8 @@ pub use crate::src::shared::abi::{__int32_t, ssize_t};
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -63,8 +62,7 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_REDRAW,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_REDRAW,
 };
 pub use crate::src::shared::paste::{
     paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
@@ -75,7 +73,7 @@ pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 pub use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
@@ -89,9 +87,8 @@ pub use crate::src::shared::tty::{
 };
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::sort::sort_get_buffers;
 use crate::src::spawn::{spawn_cancel_editor, spawn_editor, spawn_get_editor_pid};

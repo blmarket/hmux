@@ -45,9 +45,7 @@ use crate::src::screen_write::{
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__int32_t, ssize_t};
 use crate::src::shared::arguments::*;
-pub use crate::src::shared::arguments::{
-    args, args_parse_cb, args_value, args_value_entry,
-};
+pub use crate::src::shared::arguments::{args, args_parse_cb, args_value, args_value_entry};
 pub use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -88,8 +86,8 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_UNSEENCHANGES,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_REDRAW, PANE_REDRAWSCROLLBAR,
+    PANE_UNSEENCHANGES,
 };
 pub use crate::src::shared::paste::{
     paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
@@ -104,7 +102,7 @@ pub use crate::src::shared::regex::{
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
@@ -116,9 +114,8 @@ pub use crate::src::shared::tty::{
 };
 pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;

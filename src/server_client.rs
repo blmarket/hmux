@@ -827,11 +827,10 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_ACTIVITY, PANE_CAPTUREALLKEYS, PANE_CLOSEONCANCEL, PANE_CLOSEONCLICK, PANE_EXITED,
-    PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM, PANE_STATUS_OFF,
-    PANE_STATUS_TOP, PANE_STYLECHANGED,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_ACTIVITY,
+    PANE_CAPTUREALLKEYS, PANE_CLOSEONCANCEL, PANE_CLOSEONCLICK, PANE_EXITED, PANE_REDRAW,
+    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
+    PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
 };
 pub use crate::src::shared::posix_io::{
     _PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK,
@@ -845,7 +844,7 @@ pub use crate::src::shared::screen::{
     MODE_MOUSE_STANDARD, MODE_SYNC,
 };
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
@@ -856,9 +855,8 @@ pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_ent
 pub use crate::src::shared::tty::{TTY_BLOCK, TTY_FREEZE, TTY_NOCURSOR, TTY_OPENED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 pub use crate::src::shared::window::{
     WINDOW_RESIZE, WINDOW_SIZE_LATEST, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL,

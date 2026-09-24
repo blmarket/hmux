@@ -27,9 +27,7 @@ pub use crate::src::shared::abi::{
     ssize_t, uint16_t, uint32_t,
 };
 use crate::src::shared::arguments::*;
-pub use crate::src::shared::arguments::{
-    args, args_value, args_value_entry,
-};
+pub use crate::src::shared::arguments::{args, args_value, args_value_entry};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
     client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
@@ -71,9 +69,7 @@ pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
-pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
 pub use crate::src::shared::posix_io::{
     O_CREAT, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG,
 };
@@ -83,7 +79,7 @@ pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, __sigval_t, sigaction, sigaction___sigaction_handler, siginfo_t,
     siginfo_t__sifields, siginfo_t__sifields__kill, siginfo_t__sifields__rt,
@@ -108,9 +104,8 @@ use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::tmux::{
     find_cwd, find_home_cstr, global_environ, global_options, global_s_options, global_w_options,

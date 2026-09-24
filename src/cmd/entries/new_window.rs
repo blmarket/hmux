@@ -54,15 +54,13 @@ pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
-pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::spawn::spawn_context;
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::spawn::{SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL};
@@ -72,9 +70,8 @@ use crate::src::shared::terminal::*;
 pub use crate::src::shared::tree::RB_NEGINF;
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::spawn::spawn_window;
 use crate::src::tmux::{check_name, clean_name_cstring};

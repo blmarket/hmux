@@ -48,18 +48,17 @@ unsafe fn server_clear_messages() {
     message_log.clear();
 }
 
+pub use crate::src::server_client::clients;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{
     __blkcnt_t, __blksize_t, __dev_t, __gid_t, __ino_t, __mode_t, __nlink_t, __off64_t, __off_t,
     __socklen_t, __syscall_slong_t, __uid_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t,
 };
 pub use crate::src::shared::arguments::args;
-pub use crate::src::server_client::clients;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 pub use crate::src::shared::client::{
     CLIENT_DEFAULTSOCKET, CLIENT_EXIT, CLIENT_IDENTIFIED, CLIENT_NOFORK, CLIENT_SUSPENDED,
@@ -93,8 +92,7 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_EXITED, PANE_STATUSREADY,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_EXITED, PANE_STATUSREADY,
 };
 pub use crate::src::shared::posix_io::stat;
 pub use crate::src::shared::posix_io::{
@@ -105,7 +103,7 @@ pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::signal::{
     __sigset_t, sigset_t, SIGCHLD, SIGCONT, SIGINT, SIGTERM, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2,
     SIG_BLOCK, SIG_SETMASK,
@@ -129,9 +127,8 @@ pub use crate::src::shared::tree::RB_NEGINF;
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 
 pub type mode_t = __mode_t;

@@ -42,9 +42,7 @@ pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
-pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
 pub use crate::src::shared::paste::{
     paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
 };
@@ -53,7 +51,7 @@ pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 pub use crate::src::shared::spawn::spawn_editor_state;
@@ -63,13 +61,12 @@ use crate::src::shared::terminal::*;
 pub use crate::src::shared::tree::RB_NEGINF;
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::window::{
-    window_pane_first, window_pane_index, window_pane_next, window_pane_zindex,
-    winlinks_minmax, winlinks_next,
+    window_pane_first, window_pane_index, window_pane_next, window_pane_zindex, winlinks_minmax,
+    winlinks_next,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

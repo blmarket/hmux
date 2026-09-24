@@ -191,7 +191,6 @@ pub struct mode_tree_item {
     pub no_tag: ::core::ffi::c_int,
     pub align: ::core::ffi::c_int,
     pub children: mode_tree_list,
-    pub entry: mode_tree_item_entry,
     pub(crate) identity_name: Option<std::ffi::CString>,
     pub(crate) identity_detail: Option<std::ffi::CString>,
 }
@@ -213,26 +212,60 @@ impl mode_tree_item {
             draw_as_parent: unsafe { ::core::mem::zeroed() },
             no_tag: unsafe { ::core::mem::zeroed() },
             align: unsafe { ::core::mem::zeroed() },
-            children: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            children: Default::default(),
             identity_name: Default::default(),
             identity_detail: Default::default(),
         }
     }
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct mode_tree_item_entry {
-    pub tqe_next: *mut mode_tree_item,
-    pub tqe_prev: *mut *mut mode_tree_item,
+/// Ordered child owners. Boxing keeps row pointers stable across vector growth
+/// and moves between the live and saved trees during a rebuild.
+#[derive(Default)]
+pub struct mode_tree_list {
+    pub(crate) items: Vec<Box<mode_tree_item>>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct mode_tree_list {
-    pub tqh_first: *mut mode_tree_item,
-    pub tqh_last: *mut *mut mode_tree_item,
+impl mode_tree_list {
+    pub(crate) fn pointers(&mut self) -> Vec<*mut mode_tree_item> {
+        self.items
+            .iter_mut()
+            .map(|item| &mut **item as *mut _)
+            .collect()
+    }
+
+    pub(crate) fn first(&mut self) -> *mut mode_tree_item {
+        self.items
+            .first_mut()
+            .map_or(std::ptr::null_mut(), |item| &mut **item)
+    }
+
+    pub(crate) fn last(&mut self) -> *mut mode_tree_item {
+        self.items
+            .last_mut()
+            .map_or(std::ptr::null_mut(), |item| &mut **item)
+    }
+
+    pub(crate) fn position(&self, item: *mut mode_tree_item) -> usize {
+        self.items
+            .iter()
+            .position(|candidate| std::ptr::eq(&**candidate, item))
+            .expect("mode tree item belongs to its parent list")
+    }
+
+    pub(crate) fn next(&mut self, item: *mut mode_tree_item) -> *mut mode_tree_item {
+        let position = self.position(item);
+        self.items
+            .get_mut(position + 1)
+            .map_or(std::ptr::null_mut(), |item| &mut **item)
+    }
+
+    pub(crate) fn previous(&mut self, item: *mut mode_tree_item) -> *mut mode_tree_item {
+        self.position(item)
+            .checked_sub(1)
+            .and_then(|position| self.items.get_mut(position))
+            .map_or(std::ptr::null_mut(), |item| &mut **item)
+    }
 }
 
 pub type mode_tree_help_cb = Option<

@@ -65,13 +65,6 @@ pub struct session_entry {
     pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut session>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct session_gentry {
-    pub tqe_next: *mut session,
-    pub tqe_prev: *mut *mut session,
-}
-
 #[repr(C)]
 pub struct sessions {
     pub storage: Option<Box<std::collections::BTreeMap<Vec<u8>, *mut session>>>,

@@ -65,8 +65,8 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_REDRAW, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_REDRAW, PANE_STATUS_BOTTOM,
+    PANE_STATUS_TOP,
 };
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
@@ -74,7 +74,7 @@ pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles, MODE_CURSOR};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
@@ -85,9 +85,8 @@ pub use crate::src::shared::tty::{
     tty_term, tty_term_entry,
 };
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 pub use crate::src::shared::window::{
     WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK, WINDOW_ZOOMED,
@@ -97,8 +96,8 @@ use crate::src::utf8::utf8_set;
 use crate::src::window::{
     window_find_by_id, window_get_pane_status, window_pane_at_index, window_pane_find_by_id,
     window_pane_first, window_pane_index, window_pane_is_visible, window_pane_next,
-    window_pane_reset_mode, window_pane_z_last, window_pane_z_previous, window_unzoom,
-    window_zoom, winlink_find_by_window,
+    window_pane_reset_mode, window_pane_z_last, window_pane_z_previous, window_unzoom, window_zoom,
+    winlink_find_by_window,
 };
 use crate::src::window_clock::window_clock_table;
 use crate::src::xmalloc::xsnprintf;

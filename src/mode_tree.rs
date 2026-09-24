@@ -68,10 +68,9 @@ pub use crate::src::shared::menu::{menu_choice_cb, menu_data};
 use crate::src::shared::message::*;
 pub use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_each_cb, mode_tree_height_cb,
-    mode_tree_help_cb, mode_tree_item, mode_tree_item_entry, mode_tree_key_cb, mode_tree_line,
-    mode_tree_list, mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb,
-    mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
-    ModeTreeIdentity,
+    mode_tree_help_cb, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
+    mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
+    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeIdentity,
 };
 pub use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
@@ -81,8 +80,7 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_REDRAW,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_REDRAW,
 };
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
@@ -96,7 +94,7 @@ pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles, MODE_CURSOR};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::sort::sort_criteria;
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
@@ -109,9 +107,8 @@ pub use crate::src::shared::tty::{
 };
 pub use crate::src::shared::window::WINDOW_ZOOMED;
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
 use crate::src::status::status_message_set;
@@ -282,10 +279,8 @@ unsafe extern "C" fn mode_tree_find_item(
     mut mtl: *mut mode_tree_list,
     identity: ModeTreeIdentity,
 ) -> *mut mode_tree_item {
-    let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut child: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    mti = (*mtl).tqh_first;
-    while !mti.is_null() {
+    for mti in (*mtl).pointers() {
         if (*mti).identity == identity {
             return mti;
         }
@@ -293,32 +288,25 @@ unsafe extern "C" fn mode_tree_find_item(
         if !child.is_null() {
             return child;
         }
-        mti = (*mti).entry.tqe_next;
     }
     return ::core::ptr::null_mut::<mode_tree_item>();
 }
-unsafe extern "C" fn mode_tree_free_item(mut mti: *mut mode_tree_item) {
-    mode_tree_free_items(&raw mut (*mti).children);
-    drop(Box::from_raw(mode_tree_item::from_item(mti)));
+unsafe extern "C" fn mode_tree_free_items(mtl: *mut mode_tree_list) {
+    (*mtl).items.clear();
 }
-unsafe extern "C" fn mode_tree_free_items(mut mtl: *mut mode_tree_list) {
-    let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut mti1: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    mti = (*mtl).tqh_first;
-    while !mti.is_null() && {
-        mti1 = (*mti).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*mti).entry.tqe_next.is_null() {
-            (*(*mti).entry.tqe_next).entry.tqe_prev = (*mti).entry.tqe_prev;
-        } else {
-            (*mtl).tqh_last = (*mti).entry.tqe_prev;
-        }
-        *(*mti).entry.tqe_prev = (*mti).entry.tqe_next;
-        mode_tree_free_item(mti);
-        mti = mti1;
+
+unsafe fn mode_tree_siblings(
+    mtd: *mut mode_tree_data,
+    mti: *mut mode_tree_item,
+) -> *mut mode_tree_list {
+    let parent = (*mti).parent;
+    if parent.is_null() {
+        &raw mut (*mtd).children
+    } else {
+        &raw mut (*parent).children
     }
 }
+
 unsafe extern "C" fn mode_tree_check_selected(mut mtd: *mut mode_tree_data) {
     if (*mtd).current > (*mtd).height.wrapping_sub(1 as u_int) {
         (*mtd).offset = (*mtd)
@@ -333,6 +321,8 @@ unsafe fn mode_tree_alloc_data() -> *mut mode_tree_data {
     // All remaining fields retain the translated C zero state. Initialize
     // Rust-owned fields before treating the record as a mode_tree_data value.
     mtd.write_bytes(0, 1);
+    ::core::ptr::write(&raw mut (*mtd).children, mode_tree_list::default());
+    ::core::ptr::write(&raw mut (*mtd).saved, mode_tree_list::default());
     ::core::ptr::write(&raw mut (*mtd).lines, Vec::new());
     ::core::ptr::write(&raw mut (*mtd).search, None);
     ::core::ptr::write(&raw mut (*mtd).filter, None);
@@ -355,7 +345,6 @@ unsafe extern "C" fn mode_tree_build_lines(
     mut mtl: *mut mode_tree_list,
     mut depth: u_int,
 ) {
-    let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut line: *mut mode_tree_line = ::core::ptr::null_mut::<mode_tree_line>();
     let mut i: u_int = 0;
     let mut flat: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -363,17 +352,16 @@ unsafe extern "C" fn mode_tree_build_lines(
     if depth > (*mtd).maxdepth {
         (*mtd).maxdepth = depth;
     }
-    mti = (*mtl).tqh_first;
-    while !mti.is_null() {
+    for mti in (*mtl).pointers() {
         (*mtd).lines.push(mode_tree_line {
             item: mti,
             depth,
-            last: (mti == *(*((*mtl).tqh_last as *mut mode_tree_list)).tqh_last)
+            last: (mti == (*mtl).last())
                 as ::core::ffi::c_int,
             flat: 0,
         });
         (*mti).line = mode_tree_line_count(mtd).wrapping_sub(1 as u_int);
-        if !(*mti).children.tqh_first.is_null() {
+        if !(*mti).children.first().is_null() {
             flat = 0 as ::core::ffi::c_int;
         }
         if (*mti).expanded != 0 {
@@ -406,10 +394,8 @@ unsafe extern "C" fn mode_tree_build_lines(
         let keystr = ((*mti).key != KEYC_NONE as ::core::ffi::c_ulong as key_code)
             .then(|| key_string_format((*mti).key, false));
         (*mode_tree_item::from_item(mti)).set_keystr(keystr);
-        mti = (*mti).entry.tqe_next;
     }
-    mti = (*mtl).tqh_first;
-    while !mti.is_null() {
+    for mti in (*mtl).pointers() {
         i = 0 as u_int;
         while i < mode_tree_line_count(mtd) {
             line = (*mtd).lines.as_mut_ptr().offset(i as isize) as *mut mode_tree_line
@@ -419,16 +405,12 @@ unsafe extern "C" fn mode_tree_build_lines(
             }
             i = i.wrapping_add(1);
         }
-        mti = (*mti).entry.tqe_next;
     }
 }
 unsafe extern "C" fn mode_tree_clear_tagged(mut mtl: *mut mode_tree_list) {
-    let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    mti = (*mtl).tqh_first;
-    while !mti.is_null() {
+    for mti in (*mtl).pointers() {
         (*mti).tagged = 0 as ::core::ffi::c_int;
         mode_tree_clear_tagged(&raw mut (*mti).children);
-        mti = (*mti).entry.tqe_next;
     }
 }
 #[no_mangle]
@@ -721,8 +703,6 @@ pub unsafe extern "C" fn mode_tree_start(
     (*mtd).swapcb = swapcb;
     (*mtd).sortcb = sortcb;
     (*mtd).helpcb = helpcb;
-    (*mtd).children.tqh_first = ::core::ptr::null_mut::<mode_tree_item>();
-    (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
     *s = &raw mut (*mtd).screen;
     screen_init(*s, (*(*wp).base.grid).sx, (*(*wp).base.grid).sy, 0 as u_int);
     (**s).mode &= !MODE_CURSOR;
@@ -795,15 +775,7 @@ pub unsafe extern "C" fn mode_tree_build(mut mtd: *mut mode_tree_data) {
         tag = UINT64_MAX as uint64_t;
     }
     (*mtd).has_build_identity = 0;
-    if !(*mtd).children.tqh_first.is_null() {
-        *(*mtd).saved.tqh_last = (*mtd).children.tqh_first;
-        (*(*mtd).children.tqh_first).entry.tqe_prev = (*mtd).saved.tqh_last;
-        (*mtd).saved.tqh_last = (*mtd).children.tqh_last;
-        (*mtd).children.tqh_first = ::core::ptr::null_mut::<mode_tree_item>();
-        (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
-    }
-    (*mtd).children.tqh_first = ::core::ptr::null_mut::<mode_tree_item>();
-    (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
+    (*mtd).saved.items.append(&mut (*mtd).children.items);
     if (*mtd).sortcb.is_some() {
         (*mtd).sortcb.expect("non-null function pointer")(&raw mut (*mtd).sort_crit);
     }
@@ -815,7 +787,7 @@ pub unsafe extern "C" fn mode_tree_build(mut mtd: *mut mode_tree_data) {
             .as_ref()
             .map_or(::core::ptr::null(), |filter| filter.as_ptr()),
     );
-    (*mtd).no_matches = ((*mtd).children.tqh_first
+    (*mtd).no_matches = ((*mtd).children.first()
         == ::core::ptr::null_mut::<::core::ffi::c_void>() as *mut mode_tree_item)
         as ::core::ffi::c_int;
     if (*mtd).no_matches != 0 {
@@ -838,8 +810,6 @@ pub unsafe extern "C" fn mode_tree_build(mut mtd: *mut mode_tree_data) {
     identity.name = name.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr());
     identity.detail = detail.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr());
     mode_tree_free_items(&raw mut (*mtd).saved);
-    (*mtd).saved.tqh_first = ::core::ptr::null_mut::<mode_tree_item>();
-    (*mtd).saved.tqh_last = &raw mut (*mtd).saved.tqh_first;
     mode_tree_clear_lines(mtd);
     (*mtd).maxdepth = 0 as u_int;
     mode_tree_build_lines(mtd, &raw mut (*mtd).children, 0 as u_int);
@@ -979,7 +949,7 @@ pub unsafe fn mode_tree_add_identity(
         .as_ref()
         .map_or(::core::ptr::null(), |s| s.as_ptr());
 
-    mti = Box::into_raw(owner).cast::<mode_tree_item>();
+    mti = &mut *owner;
     (*mti).parent = parent;
     (*mti).itemdata = itemdata;
     saved = mode_tree_find_item(&raw mut (*mtd).saved, identity);
@@ -993,19 +963,7 @@ pub unsafe fn mode_tree_add_identity(
     } else {
         (*mti).expanded = expanded;
     }
-    (*mti).children.tqh_first = ::core::ptr::null_mut::<mode_tree_item>();
-    (*mti).children.tqh_last = &raw mut (*mti).children.tqh_first;
-    if !parent.is_null() {
-        (*mti).entry.tqe_next = ::core::ptr::null_mut::<mode_tree_item>();
-        (*mti).entry.tqe_prev = (*parent).children.tqh_last;
-        *(*parent).children.tqh_last = mti;
-        (*parent).children.tqh_last = &raw mut (*mti).entry.tqe_next;
-    } else {
-        (*mti).entry.tqe_next = ::core::ptr::null_mut::<mode_tree_item>();
-        (*mti).entry.tqe_prev = (*mtd).children.tqh_last;
-        *(*mtd).children.tqh_last = mti;
-        (*mtd).children.tqh_last = &raw mut (*mti).entry.tqe_next;
-    }
+    (*mode_tree_siblings(mtd, mti)).items.push(owner);
     return mti as *mut mode_tree_item;
 }
 #[no_mangle]
@@ -1035,23 +993,9 @@ pub unsafe extern "C" fn mode_tree_remove(
     mut mtd: *mut mode_tree_data,
     mut mti: *mut mode_tree_item,
 ) {
-    let mut parent: *mut mode_tree_item = (*mti).parent;
-    if !parent.is_null() {
-        if !(*mti).entry.tqe_next.is_null() {
-            (*(*mti).entry.tqe_next).entry.tqe_prev = (*mti).entry.tqe_prev;
-        } else {
-            (*parent).children.tqh_last = (*mti).entry.tqe_prev;
-        }
-        *(*mti).entry.tqe_prev = (*mti).entry.tqe_next;
-    } else {
-        if !(*mti).entry.tqe_next.is_null() {
-            (*(*mti).entry.tqe_next).entry.tqe_prev = (*mti).entry.tqe_prev;
-        } else {
-            (*mtd).children.tqh_last = (*mti).entry.tqe_prev;
-        }
-        *(*mti).entry.tqe_prev = (*mti).entry.tqe_next;
-    }
-    mode_tree_free_item(mti);
+    let siblings = &mut *mode_tree_siblings(mtd, mti);
+    let position = siblings.position(mti);
+    siblings.items.remove(position);
 }
 unsafe fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: *const ::core::ffi::c_char) {
     if value.is_null() {
@@ -1309,7 +1253,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     );
                 }
             }
-            if (*mti).children.tqh_first.is_null() {
+            if (*mti).children.first().is_null() {
                 format_add(
                     ft,
                     b"mode_tree_has_children\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1866,19 +1810,19 @@ unsafe extern "C" fn mode_tree_search_backward(
     last = (*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item;
     mti = last;
     loop {
-        prev = *(*((*mti).entry.tqe_prev as *mut mode_tree_list)).tqh_last;
+        prev = (*mode_tree_siblings(mtd, mti)).previous(mti);
         if !prev.is_null() {
-            while !(*prev).children.tqh_first.is_null() {
-                prev = *(*((*prev).children.tqh_last as *mut mode_tree_list)).tqh_last;
+            while !(*prev).children.first().is_null() {
+                prev = (*prev).children.last();
             }
             mti = prev;
         } else {
             mti = (*mti).parent;
         }
         if mti.is_null() {
-            prev = *(*((*mtd).children.tqh_last as *mut mode_tree_list)).tqh_last;
-            while !(*prev).children.tqh_first.is_null() {
-                prev = *(*((*prev).children.tqh_last as *mut mode_tree_list)).tqh_last;
+            prev = (*mtd).children.last();
+            while !(*prev).children.first().is_null() {
+                prev = (*prev).children.last();
             }
             mti = prev;
         }
@@ -1916,10 +1860,10 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
     last = (*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item;
     mti = last;
     loop {
-        if !(*mti).children.tqh_first.is_null() {
-            mti = (*mti).children.tqh_first;
+        if !(*mti).children.first().is_null() {
+            mti = (*mti).children.first();
         } else {
-            next = (*mti).entry.tqe_next;
+            next = (*mode_tree_siblings(mtd, mti)).next(mti);
             if !next.is_null() {
                 mti = next;
             } else {
@@ -1928,7 +1872,7 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
                     if mti.is_null() {
                         break;
                     }
-                    next = (*mti).entry.tqe_next;
+                    next = (*mode_tree_siblings(mtd, mti)).next(mti);
                     if next.is_null() {
                         continue;
                     }
@@ -1938,7 +1882,7 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
             }
         }
         if mti.is_null() {
-            mti = (*mtd).children.tqh_first;
+            mti = (*mtd).children.first();
         }
         if mti == last {
             break;
@@ -2645,18 +2589,14 @@ pub unsafe extern "C" fn mode_tree_key(
             }
         }
         17592186044461 => {
-            mti = (*mtd).children.tqh_first;
-            while !mti.is_null() {
+            for mti in (*mtd).children.pointers() {
                 (*mti).expanded = 0 as ::core::ffi::c_int;
-                mti = (*mti).entry.tqe_next;
             }
             mode_tree_build(mtd);
         }
         17592186044459 => {
-            mti = (*mtd).children.tqh_first;
-            while !mti.is_null() {
+            for mti in (*mtd).children.pointers() {
                 (*mti).expanded = 1 as ::core::ffi::c_int;
-                mti = (*mti).entry.tqe_next;
             }
             mode_tree_build(mtd);
         }
@@ -2794,10 +2734,65 @@ mod identity_tests {
     }
 
     #[test]
+    fn child_owners_preserve_search_order_and_survive_removal() {
+        unsafe {
+            let mtd = mode_tree_alloc_data();
+            let add = move |parent, tag, name: &CStr| {
+                mode_tree_add_identity(
+                    mtd,
+                    parent,
+                    std::ptr::null_mut(),
+                    ModeTreeIdentity::legacy(tag),
+                    name.as_ptr(),
+                    std::ptr::null(),
+                    1,
+                )
+            };
+            let first = add(std::ptr::null_mut(), 1, c"match first");
+            let branch = add(std::ptr::null_mut(), 2, c"branch");
+            let child = add(branch, 3, c"match child");
+            let tail = add(std::ptr::null_mut(), 4, c"match tail");
+            // Force growth while existing row pointers remain live.
+            for tag in 5..100 {
+                add(std::ptr::null_mut(), tag, c"other");
+            }
+            (*branch).expanded = 0;
+            mode_tree_build_lines(mtd, &raw mut (*mtd).children, 0);
+            (*mtd).search = Some(c"match".to_owned());
+            (*mtd).current = (*first).line;
+            assert_eq!(mode_tree_search_forward(mtd), child);
+            assert_eq!(mode_tree_search_backward(mtd), tail);
+            (*mtd).current = (*tail).line;
+            assert_eq!(mode_tree_search_backward(mtd), child);
+            assert_eq!(mode_tree_search_forward(mtd), first);
+            (*mtd).search = Some(c"missing".to_owned());
+            assert!(mode_tree_search_forward(mtd).is_null());
+            assert!(mode_tree_search_backward(mtd).is_null());
+
+            mode_tree_remove(mtd, child);
+            assert!((*branch).children.items.is_empty());
+            add(branch, 100, c"replacement child");
+            mode_tree_remove(mtd, branch);
+            mode_tree_remove(mtd, first);
+            let last = (*mtd).children.last();
+            mode_tree_remove(mtd, last);
+            assert_eq!((*mtd).children.first(), tail);
+            assert!(
+                mode_tree_find_item(&raw mut (*mtd).children, ModeTreeIdentity::legacy(100))
+                    .is_null()
+            );
+            mode_tree_clear_lines(mtd);
+            mode_tree_build_lines(mtd, &raw mut (*mtd).children, 0);
+            assert_eq!((*mtd).lines.len(), 95);
+            assert_eq!((*mtd).lines.last().unwrap().last, 1);
+            mode_tree_remove_ref(mtd);
+        }
+    }
+
+    #[test]
     fn item_key_label_tracks_repeated_line_builds() {
         unsafe {
             let mtd = mode_tree_alloc_data();
-            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
             let mut key = b'x' as key_code;
             (*mtd).keycb = Some(changing_key);
             (*mtd).modedata = (&raw mut key).cast();
@@ -2886,8 +2881,6 @@ mod identity_tests {
     fn nested_lines_survive_growth_and_clear_on_empty_rebuild() {
         unsafe {
             let mtd = mode_tree_alloc_data();
-            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
-            (*mtd).saved.tqh_last = &raw mut (*mtd).saved.tqh_first;
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
             (*mtd).buildcb = Some(nested_build);
             let mut state = NestedBuildState { mtd, empty: false };
@@ -2944,8 +2937,6 @@ mod identity_tests {
     fn named_selection_and_tag_survive_rebuild_after_source_names_drop() {
         unsafe {
             let mtd = mode_tree_alloc_data();
-            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
-            (*mtd).saved.tqh_last = &raw mut (*mtd).saved.tqh_first;
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
             (*mtd).buildcb = Some(named_build);
             (*mtd).modedata = mtd.cast();
@@ -2978,8 +2969,6 @@ mod identity_tests {
     fn named_keys_own_bytes_and_restore_only_exact_rows() {
         unsafe {
             let mtd = mode_tree_alloc_data();
-            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
-            (*mtd).saved.tqh_last = &raw mut (*mtd).saved.tqh_first;
             let name = CString::new(vec![b'@', 0xff, b'x']).unwrap().into_raw();
             let array_key = CString::new("7").unwrap().into_raw();
             let identity = ModeTreeIdentity::named(5, 2, 0, name, array_key);
@@ -3001,11 +2990,7 @@ mod identity_tests {
             drop(CString::from_raw(name));
             drop(CString::from_raw(array_key));
 
-            (*mtd).saved.tqh_first = prior;
-            (*mtd).saved.tqh_last = (*mtd).children.tqh_last;
-            (*prior).entry.tqe_prev = &raw mut (*mtd).saved.tqh_first;
-            (*mtd).children.tqh_first = std::ptr::null_mut();
-            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
+            (*mtd).saved = std::mem::take(&mut (*mtd).children);
             let original_name = CString::new(vec![b'@', 0xff, b'x']).unwrap();
             let original_key = CString::new("7").unwrap();
             let restored = mode_tree_add_identity(
@@ -3060,8 +3045,6 @@ mod identity_tests {
         );
         unsafe {
             let mtd = mode_tree_alloc_data();
-            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
-            (*mtd).saved.tqh_last = &raw mut (*mtd).saved.tqh_first;
             let name = b"item\0".as_ptr().cast();
             let prior = mode_tree_add_identity(
                 mtd,
@@ -3074,11 +3057,7 @@ mod identity_tests {
             );
             (*prior).tagged = 1;
             (*prior).expanded = 0;
-            (*mtd).saved.tqh_first = prior;
-            (*mtd).saved.tqh_last = (*mtd).children.tqh_last;
-            (*prior).entry.tqe_prev = &raw mut (*mtd).saved.tqh_first;
-            (*mtd).children.tqh_first = std::ptr::null_mut();
-            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
+            (*mtd).saved = std::mem::take(&mut (*mtd).children);
 
             let restored = mode_tree_add_identity(
                 mtd,

@@ -1,8 +1,6 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{
-    memcpy, memmove, memset, strchr, strcmp, strlcat, strlen, strncmp,
-};
+use crate::src::ffi::libc::{memcpy, memmove, memset, strchr, strcmp, strlcat, strlen, strncmp};
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
     format_free,
@@ -27,9 +25,8 @@ use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
@@ -61,9 +58,7 @@ pub use crate::src::shared::options::{
 pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
-pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
 pub use crate::src::shared::paste::{
     paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
 };
@@ -81,7 +76,7 @@ pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
@@ -93,15 +88,14 @@ pub use crate::src::shared::tty::{
 };
 use crate::src::shared::utf8::*;
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::tmux::{global_options, global_s_options};
 use crate::src::utf8::{
-    utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set,
-    utf8_strlen, utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
+    utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set, utf8_strlen,
+    utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
 use std::ffi::{CStr, CString};
 use std::mem::MaybeUninit;

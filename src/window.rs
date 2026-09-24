@@ -111,17 +111,16 @@ pub use crate::src::shared::mouse::{
 };
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
-    window_pane, window_pane_history, window_pane_modes, window_pane_prompt, window_pane_tree_entry,
-    window_panes,
+    window_pane, window_pane_history, window_pane_modes, window_pane_prompt,
+    window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_CHANGED, PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED,
-    PANE_INPUTOFF, PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS,
-    PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL, PANE_STATUSREADY,
-    PANE_STATUS_BOTTOM, PANE_STATUS_BOTTOM_FLOATING, PANE_STATUS_OFF, PANE_STATUS_TOP,
-    PANE_STATUS_TOP_FLOATING, PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
-    PANE_VISITED, PANE_ZOOMED,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
+    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
+    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
+    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_BOTTOM_FLOATING,
+    PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STATUS_TOP_FLOATING, PANE_STYLECHANGED,
+    PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_VISITED, PANE_ZOOMED,
 };
 pub use crate::src::shared::posix_io::FNM_CASEFOLD;
 pub use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
@@ -140,7 +139,7 @@ pub use crate::src::shared::screen::{
     screen, screen_sel, screen_titles, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES,
 };
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::signal::SIGCHLD;
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FLOATING, SPAWN_FULLSIZE};
@@ -150,9 +149,8 @@ use crate::src::shared::terminal::*;
 pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, windows, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, windows, winlink,
+    winlink_entry, winlink_stack, winlinks,
 };
 pub use crate::src::shared::window::{
     WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_MODE_HIDE_PANE_STATUS,
@@ -754,10 +752,6 @@ pub unsafe extern "C" fn winlink_find_by_index(
         flags: 0,
         entry: winlink_entry {
             owner: std::ptr::null_mut(),
-        },
-        sentry: winlink_sentry {
-            tqe_next: ::core::ptr::null_mut::<winlink>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut winlink>(),
         },
     };
     if idx < 0 as ::core::ffi::c_int {
@@ -3575,10 +3569,6 @@ pub unsafe extern "C" fn window_pane_resize(
         sy,
         osx: old_sx,
         osy: old_sy,
-        entry: window_pane_resize_entry {
-            tqe_next: ::core::ptr::null_mut::<window_pane_resize>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut window_pane_resize>(),
-        },
     });
     (*wp).sx = sx;
     (*wp).sy = sy;

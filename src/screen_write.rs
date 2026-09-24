@@ -61,8 +61,8 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_DROP, PANE_REDRAW, PANE_REDRAWSCROLLBAR,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_DROP, PANE_REDRAW,
+    PANE_REDRAWSCROLLBAR,
 };
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
@@ -75,7 +75,7 @@ pub use crate::src::shared::screen_write::{
     screen_write_citem, screen_write_cline, screen_write_item_type, screen_write_items, CLEAR, TEXT,
 };
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
@@ -96,9 +96,8 @@ pub use crate::src::shared::utf8::{
 };
 pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::tmux::global_options;

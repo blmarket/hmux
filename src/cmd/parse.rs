@@ -6,8 +6,8 @@ use crate::src::cmd_find::{cmd_find_from_client, cmd_find_valid_state};
 use crate::src::cmd_queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::environ::{environ_find, environ_put};
 use crate::src::ffi::libc::{
-    __ctype_b_loc, getc, getpwnam, getpwuid, getuid, memset, sscanf, strchr, strcmp,
-    strlen, ungetc, wctomb,
+    __ctype_b_loc, getc, getpwnam, getpwuid, getuid, memset, sscanf, strchr, strcmp, strlen,
+    ungetc, wctomb,
 };
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
@@ -17,9 +17,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__gid_t, __off64_t, __off_t, __uid_t};
 pub use crate::src::shared::account::passwd;
 use crate::src::shared::arguments::*;
-pub use crate::src::shared::arguments::{
-    args, args_value, args_value_entry,
-};
+pub use crate::src::shared::arguments::{args, args_value, args_value_entry};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
     client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
@@ -65,15 +63,13 @@ pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
-pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
 pub use crate::src::shared::stdio::EOF;
@@ -86,9 +82,8 @@ pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_ent
 pub use crate::src::shared::utf8::wchar_t;
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::tmux::global_environ;
 use crate::src::xmalloc::xvasprintf_cstring;

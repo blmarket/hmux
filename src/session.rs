@@ -51,15 +51,14 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_THEMECHANGED,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_THEMECHANGED,
 };
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::session::{
     session_group, session_group_entry, session_groups, sessions,
 };
@@ -71,9 +70,8 @@ use crate::src::shared::terminal::*;
 pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 pub use crate::src::shared::window::{
     WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
@@ -84,10 +82,10 @@ use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::{
     window_pane_first, window_pane_next, window_update_activity, window_update_focus,
-    window_winlinks_first, window_winlinks_next,
-    winlink_add, winlink_clear_flags, winlink_find_by_index, winlink_find_by_window,
-    winlink_find_by_window_id, winlink_next, winlink_previous, winlink_remove, winlink_set_window,
-    winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
+    window_winlinks_first, window_winlinks_next, winlink_add, winlink_clear_flags,
+    winlink_find_by_index, winlink_find_by_window, winlink_find_by_window_id, winlink_next,
+    winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push, winlink_stack_remove,
+    winlinks_minmax, winlinks_next,
 };
 use std::ffi::{CStr, CString};
 

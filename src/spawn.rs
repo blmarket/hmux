@@ -100,8 +100,8 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize_entry, window_pane_resizes, PANE_EMPTY, PANE_EXITED,
-    PANE_FLOATOVERZOOM, PANE_STATUSDRAWN, PANE_STATUSREADY,
+    window_pane_offset, window_pane_resizes, PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM,
+    PANE_STATUSDRAWN, PANE_STATUSREADY,
 };
 pub use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
 pub use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
@@ -110,7 +110,7 @@ pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles, MODE_CRLF, MODE_CURSOR};
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::signal::{
     __sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK,
 };
@@ -127,9 +127,8 @@ use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 pub use crate::src::shared::window::{
     WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE,

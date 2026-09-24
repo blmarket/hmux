@@ -92,15 +92,7 @@ pub struct window_pane_resize {
     pub sy: u_int,
     pub osx: u_int,
     pub osy: u_int,
-    pub entry: window_pane_resize_entry,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resize_entry {
-    pub tqe_next: *mut window_pane_resize,
-    pub tqe_prev: *mut *mut window_pane_resize,
-}
-
 pub const PANE_CHANGED: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
 pub const PANE_STYLECHANGED: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
 pub const PANE_THEMECHANGED: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;

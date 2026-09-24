@@ -9,9 +9,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -41,16 +40,15 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize_entry, window_pane_resizes, PANE_MAXIMUM, PANE_MINIMUM,
-    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT, PANE_STATUS_BOTTOM,
-    PANE_STATUS_TOP,
+    window_pane_offset, window_pane_resizes, PANE_MAXIMUM, PANE_MINIMUM, PANE_REDRAWSCROLLBAR,
+    PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
 };
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
 pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::spawn::{
     SPAWN_BEFORE, SPAWN_FLOATOVERZOOM, SPAWN_FULLSIZE, SPAWN_HORIZONTAL, SPAWN_SPLIT, SPAWN_ZOOM,
@@ -60,14 +58,13 @@ use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 pub use crate::src::window::window_pane_resize;
 use crate::src::window::{
-    window_active_pane_is_over_zoom, window_get_pane_status, window_pane_get_pane_lines,
-    window_pane_first, window_pane_get_pane_status, window_pane_is_floating,
+    window_active_pane_is_over_zoom, window_get_pane_status, window_pane_first,
+    window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_is_floating,
     window_pane_next, window_pane_scrollbar_reserve, window_pane_z_first, window_pane_z_next,
     window_push_zoom,
 };

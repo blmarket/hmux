@@ -1,19 +1,8 @@
-use hmux2::src::shared::pane::{
-    window_pane, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+use hmux2::src::shared::pane::{window_pane, window_pane_resize, window_pane_resizes};
 use std::ptr::null_mut;
 
 fn resize(sx: u32, sy: u32, osx: u32, osy: u32) -> window_pane_resize {
-    window_pane_resize {
-        sx,
-        sy,
-        osx,
-        osy,
-        entry: window_pane_resize_entry {
-            tqe_next: null_mut(),
-            tqe_prev: null_mut(),
-        },
-    }
+    window_pane_resize { sx, sy, osx, osy }
 }
 
 #[test]

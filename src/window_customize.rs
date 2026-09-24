@@ -13,8 +13,8 @@ use crate::src::ffi::libc::{
     strlen, strncmp,
 };
 use crate::src::format::{
-    format_add, format_create_from_state, format_expand_cstring, format_free, format_pretty_time_cstring,
-    format_true,
+    format_add, format_create_from_state, format_expand_cstring, format_free,
+    format_pretty_time_cstring, format_true,
 };
 use crate::src::grid::grid_default_cell;
 use crate::src::hooks::{
@@ -52,9 +52,8 @@ pub use crate::src::shared::abi::{__int32_t, ssize_t};
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::colour::{
@@ -62,9 +61,9 @@ pub use crate::src::shared::colour::{
     COLOUR_THEME_DARK_GREY, COLOUR_THEME_GREEN, COLOUR_THEME_LIGHT_GREY, COLOUR_THEME_MAGENTA,
     COLOUR_THEME_RED, COLOUR_THEME_WHITE, COLOUR_THEME_YELLOW,
 };
+pub use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
-pub use crate::src::shared::command::cmd_parse_input;
 pub use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
@@ -107,8 +106,7 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-    PANE_REDRAW,
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_REDRAW,
 };
 pub use crate::src::shared::process::tmuxpeer;
 pub use crate::src::shared::prompt::prompt;
@@ -121,7 +119,7 @@ pub use crate::src::shared::redraw::redraw_scene;
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::session::{session, session_entry};
 pub use crate::src::shared::sort::sort_criteria;
 pub use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 pub use crate::src::shared::status::status_line;
@@ -134,9 +132,8 @@ pub use crate::src::shared::tty::{
 };
 pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
+    winlink_stack, winlinks,
 };
 use crate::src::spawn::{spawn_cancel_editor, spawn_editor, spawn_get_editor_pid};
 use crate::src::status::status_message_set;

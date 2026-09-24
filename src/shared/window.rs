@@ -54,21 +54,6 @@ pub struct winlink {
     pub window: *mut window,
     pub flags: ::core::ffi::c_int,
     pub entry: winlink_entry,
-    pub sentry: winlink_sentry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct winlink_sentry {
-    pub tqe_next: *mut winlink,
-    pub tqe_prev: *mut *mut winlink,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct winlink_wentry {
-    pub tqe_next: *mut winlink,
-    pub tqe_prev: *mut *mut winlink,
 }
 
 #[derive(Copy, Clone)]
@@ -147,13 +132,6 @@ pub struct window_winlinks {
     pub storage: Option<Box<WindowWinlinksStorage>>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_alerts_entry {
-    pub tqe_next: *mut window,
-    pub tqe_prev: *mut *mut window,
-}
-
 #[repr(C)]
 pub struct window_mode_entry {
     pub wp: *mut window_pane,
@@ -163,13 +141,6 @@ pub struct window_mode_entry {
     pub screen: *mut screen,
     pub prefix: u_int,
     pub kill: ::core::ffi::c_int,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_mode_entry_entry {
-    pub tqe_next: *mut window_mode_entry,
-    pub tqe_prev: *mut *mut window_mode_entry,
 }
 
 #[derive(Copy, Clone)]
