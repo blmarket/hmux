@@ -37,9 +37,9 @@ pub struct args {
     pub tree: args_tree,
     pub count: u_int,
     pub values: Vec<args_value>,
-    // args_value is also used in malloc arrays passed by parser producers,
-    // with a libc-free cache contract. Positional caches borrow these strings;
-    // args_free clears those views before running the shared value cleanup.
+    // Positional strings and rendered command-list values remain owned by args;
+    // the C-layout records above borrow pointers into this side storage.
+    pub(crate) positional_strings: Vec<Option<std::ffi::CString>>,
     pub(crate) positional_caches: Vec<Option<std::ffi::CString>>,
 }
 
@@ -49,15 +49,15 @@ impl args {
             tree: unsafe { ::core::mem::zeroed() },
             count: unsafe { ::core::mem::zeroed() },
             values: Vec::new(),
+            positional_strings: Vec::new(),
             positional_caches: Default::default(),
         }
     }
 }
 
 #[repr(C)]
-/// Flag values are Box-owned by their entry's Rust value collection; positional
-/// values live in a separate movable C array and retain their payload-only
-/// cleanup path.
+/// ABI-sized value record. Rust-owned args collections keep any string payload
+/// in adjacent owner storage and expose its pointer through this record.
 pub struct args_value {
     pub type_0: args_type,
     pub c2rust_unnamed: args_value_c2rust_unnamed,
@@ -123,11 +123,11 @@ pub struct args_values {
     pub storage: *mut args_values_storage,
 }
 
-/// Owns stable flag-value allocations for one args_entry. The enclosing C
-/// layout keeps the same two pointer-sized head slots.
+/// Owns stable flag-value records and their Rust string payloads for one args_entry.
 #[derive(Default)]
 pub struct args_values_storage {
     pub(crate) values: Vec<Box<args_value>>,
+    pub(crate) strings: Vec<Option<std::ffi::CString>>,
 }
 
 pub type args_parse_cb = Option<

@@ -81,7 +81,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::utf8::utf8_strvis;
-use crate::src::xmalloc::{xcalloc, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
@@ -356,18 +356,74 @@ unsafe fn args_last_string(args: *mut args, flag: u_char) -> Option<*const ::cor
     }
     Some((*value).c2rust_unnamed.string)
 }
-unsafe extern "C" fn args_copy_value(mut to: *mut args_value, mut from: *mut args_value) {
-    (*to).type_0 = (*from).type_0;
+/// Owns the payload of a temporary args_value while it is being assembled or
+/// transferred into an args collection. The raw record borrows its CString.
+struct OwnedArgsValue {
+    value: Box<args_value>,
+    string: Option<CString>,
+    owns_cmdlist: bool,
+}
+
+impl OwnedArgsValue {
+    fn empty() -> Self {
+        Self {
+            value: Box::new(unsafe { ::core::mem::zeroed() }),
+            string: None,
+            owns_cmdlist: false,
+        }
+    }
+
+    fn string(string: CString) -> Self {
+        let mut result = Self::empty();
+        result.value.type_0 = ARGS_STRING;
+        result.value.c2rust_unnamed.string = string.as_ptr().cast_mut();
+        result.string = Some(string);
+        result
+    }
+
+    fn commands(cmdlist: *mut cmd_list) -> Self {
+        let mut result = Self::empty();
+        result.value.type_0 = ARGS_COMMANDS;
+        result.value.c2rust_unnamed.cmdlist = cmdlist;
+        result.owns_cmdlist = !cmdlist.is_null();
+        result
+    }
+
+    fn as_value(&self) -> &args_value {
+        &self.value
+    }
+
+    fn into_parts(self) -> (Box<args_value>, Option<CString>) {
+        let owner = ::core::mem::ManuallyDrop::new(self);
+        unsafe {
+            (
+                ::core::ptr::read(&owner.value),
+                ::core::ptr::read(&owner.string),
+            )
+        }
+    }
+}
+
+impl Drop for OwnedArgsValue {
+    fn drop(&mut self) {
+        if self.owns_cmdlist {
+            unsafe {
+                cmd_list_free(self.value.c2rust_unnamed.cmdlist);
+            }
+        }
+    }
+}
+
+unsafe fn args_copy_value(from: *mut args_value) -> OwnedArgsValue {
     match (*from).type_0 as ::core::ffi::c_uint {
         2 => {
-            (*to).c2rust_unnamed.cmdlist = (*from).c2rust_unnamed.cmdlist;
-            (*(*to).c2rust_unnamed.cmdlist).references += 1;
+            let cmdlist = (*from).c2rust_unnamed.cmdlist;
+            (*cmdlist).references += 1;
+            OwnedArgsValue::commands(cmdlist)
         }
-        1 => {
-            (*to).c2rust_unnamed.string = xstrdup((*from).c2rust_unnamed.string);
-        }
-        0 | _ => {}
-    };
+        1 => OwnedArgsValue::string(CStr::from_ptr((*from).c2rust_unnamed.string).to_owned()),
+        0 | _ => OwnedArgsValue::empty(),
+    }
 }
 unsafe extern "C" fn args_type_to_string(mut type_0: args_type) -> *const ::core::ffi::c_char {
     match type_0 as ::core::ffi::c_uint {
@@ -388,9 +444,15 @@ unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_create() -> *mut args {
-    let owner = Box::new(args { tree: args_tree {
-                entries: Box::into_raw(Box::new(args_tree_storage::default())),
-            }, count: 0, values: Vec::new(), positional_caches: Vec::new() });
+    let owner = Box::new(args {
+        tree: args_tree {
+            entries: Box::into_raw(Box::new(args_tree_storage::default())),
+        },
+        count: 0,
+        values: Vec::new(),
+        positional_strings: Vec::new(),
+        positional_caches: Vec::new(),
+    });
     Box::into_raw(owner).cast::<args>()
 }
 /// Append a zeroed positional value and return its temporary write pointer.
@@ -400,46 +462,42 @@ pub unsafe fn args_push_positional(args: *mut args) -> *mut args_value {
     owner
         .values
         .push(::core::mem::zeroed::<args_value>());
+    owner.positional_strings.push(None);
     owner.count = owner.values.len() as u_int;
     owner.values.as_mut_ptr().add(owner.values.len() - 1)
 }
-pub(crate) unsafe fn args_new_flag_value() -> *mut args_value {
-    Box::into_raw(Box::new(::core::mem::zeroed::<args_value>()))
+
+unsafe fn args_push_positional_owned(args: *mut args, value: OwnedArgsValue) {
+    let owner = &mut *args;
+    let (value, string) = value.into_parts();
+    owner.values.push(*value);
+    owner.positional_strings.push(string);
+    owner.count = owner.values.len() as u_int;
 }
+
 unsafe fn args_parse_flag_argument(
-    mut values: *mut args_value,
-    mut count: u_int,
-    mut args: *mut args,
-    mut i: *mut u_int,
-    mut string: *const ::core::ffi::c_char,
-    mut flag: ::core::ffi::c_int,
-    mut optional_argument: ::core::ffi::c_int,
+    values: *mut args_value,
+    count: u_int,
+    args: *mut args,
+    i: *mut u_int,
+    string: *const ::core::ffi::c_char,
+    flag: ::core::ffi::c_int,
+    optional_argument: ::core::ffi::c_int,
 ) -> Result<(), CString> {
-    let mut argument: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut new: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut as_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    new = args_new_flag_value();
-    if *string as ::core::ffi::c_int != '\0' as i32 {
-        (*new).type_0 = ARGS_STRING;
-        (*new).c2rust_unnamed.string = xstrdup(string);
+    let new = if *string != 0 {
+        OwnedArgsValue::string(CStr::from_ptr(string).to_owned())
     } else {
-        if *i == count {
-            argument = ::core::ptr::null_mut::<args_value>();
+        let argument = if *i == count {
+            ::core::ptr::null_mut::<args_value>()
         } else {
-            argument = values.offset(*i as isize) as *mut args_value;
-            if (*argument).type_0 as ::core::ffi::c_uint
-                != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                let error = parse_flag_error(b"-", flag as u_char, b" argument must be a string");
-                args_free_value(new);
-                drop(Box::from_raw(new));
-                return Err(error);
-            }
+            values.add(*i as usize)
+        };
+        if !argument.is_null()
+            && (*argument).type_0 as ::core::ffi::c_uint != ARGS_STRING as ::core::ffi::c_int as u32
+        {
+            return Err(parse_flag_error(b"-", flag as u_char, b" argument must be a string"));
         }
         if argument.is_null() {
-            args_free_value(new);
-            drop(Box::from_raw(new));
             if optional_argument != 0 {
                 log_debug(
                     b"%s: -%c (optional)\0" as *const u8 as *const ::core::ffi::c_char,
@@ -456,24 +514,15 @@ unsafe fn args_parse_flag_argument(
             }
             return Err(parse_flag_error(b"-", flag as u_char, b" expects an argument"));
         }
-        if optional_argument != 0
-            && (*argument).type_0 as ::core::ffi::c_uint
-                == ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            as_0 = (*argument).c2rust_unnamed.string;
-            if *as_0.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '-' as i32
-                && (*as_0.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                    == '-' as i32
-                    || *(*__ctype_b_loc())
-                        .offset(*as_0.offset(1 as ::core::ffi::c_int as isize) as u_char
-                            as ::core::ffi::c_int as isize)
+        if optional_argument != 0 {
+            let value = (*argument).c2rust_unnamed.string;
+            if *value == b'-' as ::core::ffi::c_char
+                && (*value.add(1) == b'-' as ::core::ffi::c_char
+                    || *(*__ctype_b_loc()).offset(*value.add(1) as u_char as isize)
                         as ::core::ffi::c_int
-                        & _ISalpha as ::core::ffi::c_int as ::core::ffi::c_ushort
-                            as ::core::ffi::c_int
+                        & _ISalpha as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
                         != 0)
             {
-                args_free_value(new);
-                drop(Box::from_raw(new));
                 log_debug(
                     b"%s: -%c (optional)\0" as *const u8 as *const ::core::ffi::c_char,
                     b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
@@ -488,19 +537,18 @@ unsafe fn args_parse_flag_argument(
                 return Ok(());
             }
         }
-        args_copy_value(new, argument);
         *i = (*i).wrapping_add(1);
-    }
-    let printed = args_value_for_log(&*new);
-    s = printed.as_ptr();
+        args_copy_value(argument)
+    };
+    let printed = args_value_for_log(new.as_value());
     log_debug(
         b"%s: -%c = %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
         flag,
-        s,
+        printed.as_ptr(),
     );
-    args_set(args, flag as u_char, new, 0 as ::core::ffi::c_int);
-    return Ok(());
+    args_set_owned(args, flag as u_char, new, 0);
+    Ok(())
 }
 unsafe fn args_parse_flags(
     mut parse: *const args_parse,
@@ -604,7 +652,6 @@ pub unsafe fn args_parse(
     let mut i: u_int = 0;
     let mut type_0: args_parse_type = ARGS_PARSE_INVALID;
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut new: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut stop: ::core::ffi::c_int = 0;
     if count == 0 as u_int {
@@ -666,8 +713,7 @@ pub unsafe fn args_parse(
             } else {
                 type_0 = ARGS_PARSE_STRING;
             }
-            new = args_push_positional(args);
-            match type_0 as ::core::ffi::c_uint {
+            let copied = match type_0 as ::core::ffi::c_uint {
                 0 => {
                     fatalx(
                         b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char,
@@ -679,31 +725,30 @@ pub unsafe fn args_parse(
                     {
                         let error = parse_number_error(format!(
                             "argument {} must be \"string\"",
-                            (*args).count
+                            (*args).count.wrapping_add(1)
                         ));
                         args_free(args);
                         return Err(ArgsParseError::Message(error));
                     }
-                    args_copy_value(new, value);
+                    args_copy_value(value)
                 }
-                2 => {
-                    args_copy_value(new, value);
-                }
+                2 => args_copy_value(value),
                 3 => {
                     if (*value).type_0 as ::core::ffi::c_uint
                         != ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
                         let error = parse_number_error(format!(
                             "argument {} must be {{ commands }}",
-                            (*args).count
+                            (*args).count.wrapping_add(1)
                         ));
                         args_free(args);
                         return Err(ArgsParseError::Message(error));
                     }
-                    args_copy_value(new, value);
+                    args_copy_value(value)
                 }
-                _ => {}
-            }
+                _ => OwnedArgsValue::empty(),
+            };
+            args_push_positional_owned(args, copied);
             i = i.wrapping_add(1);
         }
     }
@@ -725,35 +770,34 @@ pub unsafe fn args_parse(
     }
     return Ok(args);
 }
-unsafe extern "C" fn args_copy_copy_value(
-    mut to: *mut args_value,
-    mut from: *mut args_value,
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
-) {
-    (*to).type_0 = (*from).type_0;
+unsafe fn args_copy_copy_value(
+    from: *mut args_value,
+    argc: ::core::ffi::c_int,
+    argv: *mut *mut ::core::ffi::c_char,
+) -> OwnedArgsValue {
     match (*from).type_0 as ::core::ffi::c_uint {
         1 => {
-            let source = (*from).c2rust_unnamed.string;
+            let source = CStr::from_ptr((*from).c2rust_unnamed.string);
             if argc <= 0 {
-                (*to).c2rust_unnamed.string = xstrdup(source);
-                return;
+                return OwnedArgsValue::string(source.to_owned());
             }
-            let mut expanded = cmd_template_replace_cstring(source, *argv, 1);
+            let mut expanded = cmd_template_replace_cstring(source.as_ptr(), *argv, 1);
             for i in 1..argc {
-                expanded =
-                    cmd_template_replace_cstring(expanded.as_ptr(), *argv.add(i as usize), i + 1);
+                expanded = cmd_template_replace_cstring(
+                    expanded.as_ptr(),
+                    *argv.add(i as usize),
+                    i + 1,
+                );
             }
-            // args_value still has a C-owned string field and args_free_value
-            // releases it with libc free. Only the final copy crosses that ABI.
-            (*to).c2rust_unnamed.string = xstrdup(expanded.as_ptr());
+            OwnedArgsValue::string(expanded)
         }
-        2 => {
-            (*to).c2rust_unnamed.cmdlist =
-                cmd_list_copy((*from).c2rust_unnamed.cmdlist, argc, argv) as *mut cmd_list;
-        }
-        0 | _ => {}
-    };
+        2 => OwnedArgsValue::commands(cmd_list_copy(
+            (*from).c2rust_unnamed.cmdlist,
+            argc,
+            argv,
+        ) as *mut cmd_list),
+        0 | _ => OwnedArgsValue::empty(),
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_copy(
@@ -764,7 +808,6 @@ pub unsafe extern "C" fn args_copy(
     let mut new_args: *mut args = ::core::ptr::null_mut::<args>();
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut new_value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut i: u_int = 0;
     cmd_log_argv(
         argc,
@@ -789,9 +832,12 @@ pub unsafe extern "C" fn args_copy(
         } else {
             value = args_value_at(entry, 0);
             while !value.is_null() {
-                new_value = args_new_flag_value();
-                args_copy_copy_value(new_value, value, argc, argv);
-                args_set(new_args, (*entry).flag, new_value, 0 as ::core::ffi::c_int);
+                args_set_owned(
+                    new_args,
+                    (*entry).flag,
+                    args_copy_copy_value(value, argc, argv),
+                    0,
+                );
                 value = args_next_value(value);
             }
         }
@@ -802,12 +848,13 @@ pub unsafe extern "C" fn args_copy(
     }
     i = 0 as u_int;
     while i < (*args).count {
-        new_value = args_push_positional(new_args);
-        args_copy_copy_value(
-            new_value,
-            (*args).values.as_mut_ptr().offset(i as isize) as *mut args_value,
-            argc,
-            argv,
+        args_push_positional_owned(
+            new_args,
+            args_copy_copy_value(
+                (*args).values.as_mut_ptr().add(i as usize),
+                argc,
+                argv,
+            ),
         );
         i = i.wrapping_add(1);
     }
@@ -850,7 +897,19 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
             (*value).cached = ::core::ptr::null_mut();
         }
     }
-    args_free_values(((*args).values).as_mut_ptr(), (*args).count);
+    for (index, value) in owner.values.iter_mut().enumerate() {
+        if let Some(string) = owner
+            .positional_strings
+            .get_mut(index)
+            .and_then(Option::take)
+        {
+            if value.type_0 as ::core::ffi::c_uint == ARGS_STRING {
+                debug_assert_eq!(value.c2rust_unnamed.string, string.as_ptr().cast_mut());
+                value.c2rust_unnamed.string = ::core::ptr::null_mut();
+            }
+        }
+        args_free_value(value as *mut args_value);
+    }
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() && {
         entry1 = args_tree_next(&raw mut (*args).tree, entry);
@@ -860,7 +919,17 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         let values_owner = args_values_owner(entry);
         if !values_owner.is_null() {
             let mut values_owner = Box::from_raw(values_owner);
-            for value in values_owner.values.iter_mut() {
+            let args_values_storage { values, strings } = &mut *values_owner;
+            for (index, value) in values.iter_mut().enumerate() {
+                if let Some(string) = strings.get_mut(index).and_then(Option::take) {
+                    if value.type_0 as ::core::ffi::c_uint == ARGS_STRING {
+                        debug_assert_eq!(
+                            value.c2rust_unnamed.string,
+                            string.as_ptr().cast_mut()
+                        );
+                        value.c2rust_unnamed.string = ::core::ptr::null_mut();
+                    }
+                }
                 args_free_value((&mut **value) as *mut args_value);
             }
         }
@@ -896,30 +965,11 @@ pub unsafe fn args_to_vector(args: *mut args) -> OwnedArgv {
     }
     argv
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_from_vector(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
-) -> *mut args_value {
-    let mut values: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut i: ::core::ffi::c_int = 0;
-    values = xcalloc(
-        argc as size_t,
-        ::core::mem::size_of::<args_value>() as size_t,
-    ) as *mut args_value;
-    i = 0 as ::core::ffi::c_int;
-    while i < argc {
-        (*values.offset(i as isize)).type_0 = ARGS_STRING;
-        let ref mut fresh3 = (*values.offset(i as isize)).c2rust_unnamed.string;
-        *fresh3 = xstrdup(*argv.offset(i as isize));
-        i += 1;
-    }
-    return values;
-}
-/// Owns the temporary argument records used while parsing an argv message.
-/// The exported `args_from_vector` keeps its separate C allocation contract.
+/// Owns temporary argument records and their string payloads while a command
+/// message is parsed. The records borrow pointers into `strings`.
 pub(crate) struct OwnedArgumentVector {
     values: Vec<args_value>,
+    strings: Vec<CString>,
 }
 
 impl OwnedArgumentVector {
@@ -927,14 +977,18 @@ impl OwnedArgumentVector {
         argc: ::core::ffi::c_int,
         argv: *mut *mut ::core::ffi::c_char,
     ) -> Self {
-        let mut values = Vec::with_capacity(argc as usize);
-        for i in 0..argc {
+        let capacity = argc.max(0) as usize;
+        let mut values = Vec::with_capacity(capacity);
+        let mut strings = Vec::with_capacity(capacity);
+        for i in 0..capacity {
+            let string = CStr::from_ptr(*argv.add(i)).to_owned();
             let mut value = ::core::mem::zeroed::<args_value>();
             value.type_0 = ARGS_STRING;
-            value.c2rust_unnamed.string = xstrdup(*argv.add(i as usize));
+            value.c2rust_unnamed.string = string.as_ptr().cast_mut();
             values.push(value);
+            strings.push(string);
         }
-        Self { values }
+        Self { values, strings }
     }
 
     pub(crate) fn as_mut_ptr(&mut self) -> *mut args_value {
@@ -942,14 +996,6 @@ impl OwnedArgumentVector {
             ::core::ptr::null_mut()
         } else {
             self.values.as_mut_ptr()
-        }
-    }
-}
-
-impl Drop for OwnedArgumentVector {
-    fn drop(&mut self) {
-        for value in &mut self.values {
-            unsafe { args_free_value(value) };
         }
     }
 }
@@ -1140,47 +1186,78 @@ pub unsafe extern "C" fn args_has(mut args: *mut args, mut flag: u_char) -> ::co
     }
     return (*entry).count as ::core::ffi::c_int;
 }
-#[no_mangle]
-/// `value`, when non-null, transfers a Box-allocated flag record to `args`.
-/// Positional array elements must not be passed here.
-pub unsafe extern "C" fn args_set(
-    mut args: *mut args,
-    mut flag: u_char,
-    mut value: *mut args_value,
-    mut flags: ::core::ffi::c_int,
+unsafe fn args_set_value(
+    args: *mut args,
+    flag: u_char,
+    value: Option<Box<args_value>>,
+    string_owner: Option<CString>,
+    flags: ::core::ffi::c_int,
 ) {
-    let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    entry = args_find(args, flag);
+    let mut entry = args_find(args, flag);
     if entry.is_null() {
         entry = Box::into_raw(Box::new(::core::mem::zeroed::<args_entry>()));
         (*entry).flag = flag;
-        (*entry).count = 1 as u_int;
+        (*entry).count = 1;
         (*entry).flags = flags;
-        (*entry).values.first = ::core::ptr::null_mut::<args_value>();
-        let values_owner = Box::into_raw(Box::new(args_values_storage::default()));
-        (*entry).values.storage = values_owner;
+        (*entry).values.first = ::core::ptr::null_mut();
+        (*entry).values.storage = Box::into_raw(Box::new(args_values_storage::default()));
         args_tree_insert(&raw mut (*args).tree, entry);
     } else {
         (*entry).count = (*entry).count.wrapping_add(1);
     }
-    if !value.is_null()
-        && (*value).type_0 as ::core::ffi::c_uint
+    if let Some(mut boxed_value) = value {
+        if boxed_value.type_0 as ::core::ffi::c_uint
             != ARGS_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        let values_owner = args_values_ensure_owner(entry);
-        let mut boxed_value = Box::from_raw(value);
-        let index = (*values_owner).values.len();
-        boxed_value.entry.owner = values_owner;
-        boxed_value.entry.index = index;
-        if index == 0 {
-            (*entry).values.first = value;
+        {
+            let values_owner = args_values_ensure_owner(entry);
+            let value_ptr = &mut *boxed_value as *mut args_value;
+            let index = (*values_owner).values.len();
+            boxed_value.entry.owner = values_owner;
+            boxed_value.entry.index = index;
+            if index == 0 {
+                (*entry).values.first = value_ptr;
+            }
+            (*values_owner).values.push(boxed_value);
+            (*values_owner).strings.push(string_owner);
         }
-        (*values_owner).values.push(boxed_value);
+    }
+}
+
+/// Transfer a Rust-owned value into an args flag entry.
+unsafe fn args_set_owned(
+    args: *mut args,
+    flag: u_char,
+    value: OwnedArgsValue,
+    flags: ::core::ffi::c_int,
+) {
+    let (boxed_value, string_owner) = value.into_parts();
+    args_set_value(args, flag, Some(boxed_value), string_owner, flags);
+}
+
+pub(crate) unsafe fn args_set_owned_string(
+    args: *mut args,
+    flag: u_char,
+    value: CString,
+    flags: ::core::ffi::c_int,
+) {
+    args_set_owned(args, flag, OwnedArgsValue::string(value), flags);
+}
+
+#[no_mangle]
+/// `value`, when non-null, transfers a Box-allocated flag record to `args`.
+/// String and command-list payloads remain under their existing C free contract.
+pub unsafe extern "C" fn args_set(
+    args: *mut args,
+    flag: u_char,
+    value: *mut args_value,
+    flags: ::core::ffi::c_int,
+) {
+    let boxed_value = if value.is_null() {
+        None
     } else {
-        if !value.is_null() {
-            drop(Box::from_raw(value));
-        }
+        Some(Box::from_raw(value))
     };
+    args_set_value(args, flag, boxed_value, None, flags);
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_get(
@@ -1440,12 +1517,8 @@ pub unsafe extern "C" fn args_make_commands_free(mut state: *mut args_command_st
     }
     drop(Box::from_raw(state));
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_make_commands_get_command(
-    mut state: *mut args_command_state,
-) -> *mut ::core::ffi::c_char {
-    let command = args_make_commands_get_command_cstring(state);
-    xstrdup(command.as_ptr())
+pub unsafe fn args_make_commands_get_command(state: *mut args_command_state) -> CString {
+    args_make_commands_get_command_cstring(state)
 }
 
 pub(crate) unsafe fn args_make_commands_get_command_cstring(

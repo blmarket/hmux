@@ -152,7 +152,7 @@ use crate::src::tmux::global_options;
 use crate::src::window::{
     window_find_by_id, window_has_pane, window_pane_find_by_id, winlink_find_by_window,
 };
-use crate::src::xmalloc::{xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
@@ -327,14 +327,11 @@ pub unsafe extern "C" fn cmd_pack_argv(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_stringify_argv(
+pub unsafe fn cmd_stringify_argv(
     argc: ::core::ffi::c_int,
     argv: *mut *mut ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    // The exported result is C-owned; retained users and callback results free it.
+) -> Option<CString> {
     cmd_stringify_argv_cstring(argc, argv)
-        .map_or(::core::ptr::null_mut(), |text| xstrdup(text.as_ptr()))
 }
 
 pub(crate) unsafe fn cmd_stringify_argv_cstring(
@@ -897,18 +894,12 @@ pub unsafe extern "C" fn cmd_mouse_pane(
     }
     return wp;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_template_replace(
+pub unsafe fn cmd_template_replace(
     template: *const ::core::ffi::c_char,
     s: *const ::core::ffi::c_char,
     idx: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    if strchr(template, '%' as i32).is_null() {
-        return xstrdup(template);
-    }
-    let text = cmd_template_replace_cstring(template, s, idx);
-    // Callers retain the exported malloc/free contract.
-    xstrdup(text.as_ptr())
+) -> CString {
+    cmd_template_replace_cstring(template, s, idx)
 }
 
 pub(crate) unsafe fn cmd_template_replace_cstring(
@@ -1009,10 +1000,8 @@ mod template_replace_tests {
             assert_eq!(actual.as_bytes(), expected);
         }
 
-        // The public ABI still returns an independently freeable C allocation.
-        let raw =
+        let owned =
             unsafe { cmd_template_replace(b"%1\0".as_ptr().cast(), b"x\0".as_ptr().cast(), 1) };
-        assert_eq!(unsafe { CStr::from_ptr(raw) }.to_bytes(), b"x");
-        unsafe { free(raw.cast()) };
+        assert_eq!(owned.as_bytes(), b"x");
     }
 }

@@ -1,5 +1,5 @@
 src/alerts.rs::args 8 8 []
-src/arguments.rs::args 64 8 [0, 8, 16]
+src/arguments.rs::args 88 8 [0, 8, 16]
 src/cfg.rs::args 8 8 []
 src/client.rs::args 8 8 []
 src/cmd.rs::args 8 8 []

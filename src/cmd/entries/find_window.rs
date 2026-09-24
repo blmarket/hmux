@@ -1,4 +1,6 @@
-use crate::src::arguments::{args_create, args_free, args_has, args_set, args_string};
+use crate::src::arguments::{
+    args_create, args_free, args_has, args_set, args_set_owned_string, args_string,
+};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::cmdq_get_target;
 use crate::src::shared::abi::*;
@@ -62,7 +64,6 @@ pub use crate::src::shared::window::{
 };
 use crate::src::window::window_pane_set_mode;
 use crate::src::window_tree::window_tree_mode;
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -109,7 +110,6 @@ unsafe extern "C" fn cmd_find_window_exec(
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut star: *const ::core::ffi::c_char = b"*\0" as *const u8 as *const ::core::ffi::c_char;
     let filter_value: CString;
-    let mut filter: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut C: ::core::ffi::c_int = 0;
     let mut N: ::core::ffi::c_int = 0;
     let mut T: ::core::ffi::c_int = 0;
@@ -139,9 +139,6 @@ unsafe extern "C" fn cmd_find_window_exec(
         N != 0,
         T != 0,
     );
-    filter = crate::src::arguments::args_new_flag_value();
-    (*filter).type_0 = ARGS_STRING;
-    (*filter).c2rust_unnamed.string = xstrdup(filter_value.as_ptr());
     new_args = args_create();
     if args_has(args, 'Z' as i32 as u_char) != 0 {
         args_set(
@@ -151,12 +148,7 @@ unsafe extern "C" fn cmd_find_window_exec(
             0 as ::core::ffi::c_int,
         );
     }
-    args_set(
-        new_args,
-        'f' as i32 as u_char,
-        filter,
-        0 as ::core::ffi::c_int,
-    );
+    args_set_owned_string(new_args, 'f' as i32 as u_char, filter_value, 0);
     window_pane_set_mode(
         wp,
         ::core::ptr::null_mut::<window_pane>(),
