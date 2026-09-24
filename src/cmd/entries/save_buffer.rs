@@ -166,7 +166,7 @@ unsafe extern "C" fn cmd_save_buffer_exec(
     let mut bufsize: size_t = 0;
     let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     if bufname.is_null() {
-        pb = paste_get_top(::core::ptr::null_mut::<*mut ::core::ffi::c_char>());
+        pb = paste_get_top(None);
         if pb.is_null() {
             cmdq_error(
                 item,

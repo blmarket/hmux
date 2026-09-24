@@ -530,7 +530,7 @@ pub unsafe extern "C" fn format_defaults(
     if !wp.is_null() {
         format_defaults_pane(ft, wp);
     }
-    pb = paste_get_top(::core::ptr::null_mut::<*mut ::core::ffi::c_char>());
+    pb = paste_get_top(None);
     if !pb.is_null() {
         format_defaults_paste_buffer(ft, pb);
     }

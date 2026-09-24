@@ -1366,7 +1366,7 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
         ud = copied.as_ptr() as *mut utf8_data;
         n = utf8_strlen(copied.as_ptr());
     } else {
-        pb = paste_get_top(::core::ptr::null_mut::<*mut ::core::ffi::c_char>());
+        pb = paste_get_top(None);
         if pb.is_null() {
             return 0 as ::core::ffi::c_int;
         }

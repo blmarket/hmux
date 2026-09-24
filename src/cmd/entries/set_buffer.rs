@@ -157,7 +157,7 @@ unsafe extern "C" fn cmd_set_buffer_exec(
                 );
                 current_block = 17843714670734105592;
             } else {
-                pb = paste_get_top(::core::ptr::null_mut());
+                pb = paste_get_top(None);
                 if !pb.is_null() {
                     bufname = Some(CStr::from_ptr(paste_buffer_name(pb)).to_owned());
                 }
@@ -190,7 +190,7 @@ unsafe extern "C" fn cmd_set_buffer_exec(
                 );
                 current_block = 17843714670734105592;
             } else {
-                pb = paste_get_top(::core::ptr::null_mut());
+                pb = paste_get_top(None);
                 if !pb.is_null() {
                     bufname = Some(CStr::from_ptr(paste_buffer_name(pb)).to_owned());
                 }

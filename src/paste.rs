@@ -234,10 +234,7 @@ pub unsafe extern "C" fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buf
 pub unsafe extern "C" fn paste_is_empty() -> ::core::ffi::c_int {
     return paste_by_time.entries.is_empty() as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_get_top(
-    mut name: *mut *mut ::core::ffi::c_char,
-) -> *mut paste_buffer {
+pub(crate) unsafe fn paste_get_top(name: Option<&mut Option<CString>>) -> *mut paste_buffer {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
     while !pb.is_null() && (*pb).automatic == 0 {
@@ -246,8 +243,8 @@ pub unsafe extern "C" fn paste_get_top(
     if pb.is_null() {
         return ::core::ptr::null_mut::<paste_buffer>();
     }
-    if !name.is_null() {
-        *name = xstrdup(((*pb).name).as_ptr().cast_mut());
+    if let Some(name) = name {
+        *name = Some((*pb).name.clone());
     }
     return pb;
 }
@@ -506,10 +503,6 @@ pub(crate) unsafe fn paste_replace_owned(pb: *mut paste_buffer, data: Box<[u8]>)
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
         ((*pb).name).as_ptr().cast_mut(),
     );
-}
-#[no_mangle]
-pub unsafe extern "C" fn paste_make_sample(pb: *mut paste_buffer) -> *mut ::core::ffi::c_char {
-    xstrdup(paste_make_sample_cstring(pb).as_ptr())
 }
 pub(crate) unsafe fn paste_make_sample_cstring(pb: *mut paste_buffer) -> CString {
     let flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;

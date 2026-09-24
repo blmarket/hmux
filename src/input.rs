@@ -5844,7 +5844,7 @@ unsafe extern "C" fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::co
         return;
     }
     if state == 1 as ::core::ffi::c_int {
-        pb = paste_get_top(::core::ptr::null_mut::<*mut ::core::ffi::c_char>());
+        pb = paste_get_top(None);
         if pb.is_null() {
             return;
         }

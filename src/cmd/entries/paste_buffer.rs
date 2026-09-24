@@ -138,7 +138,7 @@ unsafe extern "C" fn cmd_paste_buffer_exec(
         bufname = args_get(args, 'b' as i32 as u_char);
     }
     if bufname.is_null() {
-        pb = paste_get_top(::core::ptr::null_mut::<*mut ::core::ffi::c_char>());
+        pb = paste_get_top(None);
     } else {
         pb = paste_get_name(bufname);
         if pb.is_null() {

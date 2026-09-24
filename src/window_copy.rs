@@ -8522,7 +8522,7 @@ unsafe extern "C" fn window_copy_copy_selection(
 unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut buf: Vec<u8>;
-    let mut bufname: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut bufname: Option<CString> = None;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufsize: size_t = 0;
@@ -8558,7 +8558,7 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
             wp,
         );
     }
-    pb = paste_get_top(&raw mut bufname);
+    pb = paste_get_top(Some(&mut bufname));
     if !pb.is_null() {
         bufdata = paste_buffer_data(pb, &raw mut bufsize);
         let mut appended = std::slice::from_raw_parts(bufdata.cast::<u8>(), bufsize).to_vec();
@@ -8567,10 +8567,11 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
     }
     let _ = paste_set_owned(
         buf.into_boxed_slice(),
-        bufname,
+        bufname
+            .as_ref()
+            .map_or(::core::ptr::null(), |name| name.as_ptr()),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
     );
-    free(bufname as *mut ::core::ffi::c_void);
 }
 unsafe fn window_copy_copy_line(
     mut wme: *mut window_mode_entry,
