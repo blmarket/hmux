@@ -515,23 +515,18 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
         .as_ref()
         .map_or(::core::ptr::null(), |cmd| cmd.as_ptr());
     let mut msg: Option<CString> = None;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
     let mut status: ::core::ffi::c_int = 0;
     loop {
-        line = evbuffer_readln(
+        let Some(line) = evbuffer_readln(
             (*event).input,
             ::core::ptr::null_mut::<size_t>(),
             EVBUFFER_EOL_LF,
-        );
-        if !line.is_null() {
-            cmd_run_shell_print(job, line);
-            free(line as *mut ::core::ffi::c_void);
-        }
-        if line.is_null() {
+        ) else {
             break;
-        }
+        };
+        cmd_run_shell_print(job, line.as_ptr().cast());
     }
     size = evbuffer_get_length((*event).input);
     if size != 0 as size_t {

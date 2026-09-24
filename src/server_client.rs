@@ -5475,19 +5475,19 @@ pub unsafe extern "C" fn server_client_print(
             }
             if parse != 0 {
                 loop {
-                    line = evbuffer_readln(evb, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF);
-                    if !line.is_null() {
-                        window_copy_add(
-                            wp,
-                            1 as ::core::ffi::c_int,
-                            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                            line,
-                        );
-                        free(line as *mut ::core::ffi::c_void);
-                    }
-                    if line.is_null() {
+                    let Some(line) = evbuffer_readln(
+                        evb,
+                        ::core::ptr::null_mut::<size_t>(),
+                        EVBUFFER_EOL_LF,
+                    ) else {
                         break;
-                    }
+                    };
+                    window_copy_add(
+                        wp,
+                        1 as ::core::ffi::c_int,
+                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                        line.as_ptr().cast::<::core::ffi::c_char>(),
+                    );
                 }
                 size = evbuffer_get_length(evb);
                 if size != 0 as size_t {

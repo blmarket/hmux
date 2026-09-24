@@ -1009,23 +1009,24 @@ unsafe extern "C" fn control_read_callback(
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
     let mut buffer: *mut evbuffer = (*(*cs).read_event).input;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     let mut status: cmd_parse_status = CMD_PARSE_ERROR;
     loop {
-        line = evbuffer_readln(buffer, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF);
-        if line.is_null() {
+        let Some(line) = evbuffer_readln(
+            buffer,
+            ::core::ptr::null_mut::<size_t>(),
+            EVBUFFER_EOL_LF,
+        ) else {
             break;
-        }
+        };
         log_debug(
             b"%s: %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_read_callback\0" as *const u8 as *const ::core::ffi::c_char,
             ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            line,
+            line.as_ptr().cast::<::core::ffi::c_char>(),
         );
-        if *line as ::core::ffi::c_int == '\0' as i32 {
-            free(line as *mut ::core::ffi::c_void);
+        if line[0] == 0 {
             (*c).flags |= CLIENT_EXIT as uint64_t;
             break;
         } else {
@@ -1035,7 +1036,7 @@ unsafe extern "C" fn control_read_callback(
                 CMDQ_STATE_CONTROL,
             );
             status = cmd_parse_and_append(
-                line,
+                line.as_ptr().cast::<::core::ffi::c_char>(),
                 ::core::ptr::null_mut::<cmd_parse_input>(),
                 c,
                 state,
@@ -1059,7 +1060,6 @@ unsafe extern "C" fn control_read_callback(
                 cmdq_append(c, error_item);
             }
             cmdq_free_state(state);
-            free(line as *mut ::core::ffi::c_void);
         }
     }
 }
@@ -1079,20 +1079,19 @@ pub unsafe extern "C" fn control_wait_exit(mut fd: ::core::ffi::c_int) {
         revents: 0,
     };
     let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut n: ::core::ffi::c_int = 0;
     evb = evbuffer_new();
     if evb.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     loop {
-        line = evbuffer_readln(evb, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF);
-        if !line.is_null() {
-            if *line as ::core::ffi::c_int == '\0' as i32 {
-                free(line as *mut ::core::ffi::c_void);
+        if let Some(line) = evbuffer_readln(
+            evb,
+            ::core::ptr::null_mut::<size_t>(),
+            EVBUFFER_EOL_LF,
+        ) {
+            if line[0] == 0 {
                 break;
-            } else {
-                free(line as *mut ::core::ffi::c_void);
             }
         } else {
             memset(

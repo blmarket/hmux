@@ -83,37 +83,33 @@ pub unsafe fn evbuffer_write(b: *mut ByteBuffer, fd: c_int) -> c_int {
     n as c_int
 }
 
-unsafe fn read_line(b: *mut ByteBuffer, out: *mut size_t, ending: LineEnding) -> *mut c_char {
+unsafe fn read_line(b: *mut ByteBuffer, out: *mut size_t, ending: LineEnding) -> Option<Vec<u8>> {
     if !out.is_null() {
         *out = 0;
     }
-    let Some(line) = (*b).read_line(ending) else {
-        return std::ptr::null_mut();
+    let Some(mut line) = (*b).read_line(ending) else {
+        return None;
     };
-    let result = libc::malloc(line.len() + 1).cast::<u8>();
-    if result.is_null() {
-        std::process::abort();
-    }
-    std::ptr::copy_nonoverlapping(line.as_ptr(), result, line.len());
-    *result.add(line.len()) = 0;
+    let len = line.len();
+    line.push(0);
     if !out.is_null() {
-        *out = line.len() as size_t;
+        *out = len as size_t;
     }
     super::wake_buffer(b);
-    result.cast()
+    Some(line)
 }
-pub unsafe fn evbuffer_readln(b: *mut ByteBuffer, out: *mut size_t, style: u32) -> *mut c_char {
+pub unsafe fn evbuffer_readln(b: *mut ByteBuffer, out: *mut size_t, style: u32) -> Option<Vec<u8>> {
     let ending = match style {
         0 => LineEnding::Any,
         1 => LineEnding::CrLf,
         2 => LineEnding::CrLfStrict,
         3 => LineEnding::Lf,
         4 => LineEnding::Nul,
-        _ => return std::ptr::null_mut(),
+        _ => return None,
     };
     read_line(b, out, ending)
 }
-pub unsafe fn evbuffer_readline(b: *mut ByteBuffer) -> *mut c_char {
+pub unsafe fn evbuffer_readline(b: *mut ByteBuffer) -> Option<Vec<u8>> {
     read_line(b, std::ptr::null_mut(), LineEnding::Legacy)
 }
 pub unsafe extern "C" fn evbuffer_add_printf(
@@ -251,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn c_formats_and_malloc_lines() {
+    fn c_formats_and_owned_lines() {
         unsafe {
             let b = evbuffer_new();
             let long = std::ffi::CString::new("x".repeat(100_000)).unwrap();
@@ -260,12 +256,12 @@ mod tests {
                 100_007
             );
             let mut len = 0;
-            let line = evbuffer_readln(b, &mut len, 3);
+            let line = evbuffer_readln(b, &mut len, 3).unwrap();
             assert_eq!(len, 100_006);
-            assert!(std::ffi::CStr::from_ptr(line)
+            assert!(std::ffi::CStr::from_bytes_with_nul(&line)
+                .unwrap()
                 .to_bytes()
                 .ends_with(b":-7:42"));
-            libc::free(line.cast());
             assert_eq!(evbuffer_get_length(b), 0);
             evbuffer_free(b);
         }

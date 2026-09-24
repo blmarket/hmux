@@ -17,11 +17,13 @@ unsafe fn format_job_set_out(fj: *mut format_job, value: CString) {
     owner.out = Some(value);
 }
 
-// evbuffer_readline returns a libc allocation. Copy its visible C-string
-// bytes into the job owner before releasing the original allocation.
-unsafe fn format_job_set_out_from_malloc(fj: *mut format_job, value: *mut ::core::ffi::c_char) {
-    let owned = CStr::from_ptr(value).to_owned();
-    free(value.cast());
+// Match C-string visibility while keeping the line's Rust allocation local.
+unsafe fn format_job_set_out_from_line(fj: *mut format_job, value: &[u8]) {
+    let visible = value
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(value.len());
+    let owned = CString::new(&value[..visible]).expect("visible job output contains no NUL");
     format_job_set_out(fj, owned);
 }
 
@@ -40,22 +42,19 @@ static mut format_jobs: format_job_tree = format_job_tree {
 pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
     let mut fj: *mut format_job = job_get_data(job) as *mut format_job;
     let mut evb: *mut evbuffer = (*job_get_event(job)).input;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
     loop {
-        next = evbuffer_readline(evb);
-        if next.is_null() {
+        let Some(next) = evbuffer_readline(evb) else {
             break;
-        }
-        free(line as *mut ::core::ffi::c_void);
-        line = next;
+        };
+        line = Some(next);
     }
-    if line.is_null() {
+    let Some(line) = line else {
         return;
-    }
+    };
     (*fj).updated = 1 as ::core::ffi::c_int;
-    format_job_set_out_from_malloc(fj, line);
+    format_job_set_out_from_line(fj, &line);
     log_debug(
         b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"format_job_update\0" as *const u8 as *const ::core::ffi::c_char,
@@ -76,7 +75,13 @@ pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
     let mut evb: *mut evbuffer = (*job_get_event(job)).input;
     (*fj).job = ::core::ptr::null_mut::<job>();
     let line = evbuffer_readline(evb);
-    let output = if line.is_null() {
+    let output = if let Some(line) = line {
+        let visible = line
+            .iter()
+            .position(|&byte| byte == 0)
+            .unwrap_or(line.len());
+        CString::new(&line[..visible]).expect("visible job output contains no NUL")
+    } else {
         let len = evbuffer_get_length(evb);
         let bytes = if len == 0 {
             &[][..]
@@ -90,10 +95,6 @@ pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
         // bytes, so only bytes before the first NUL became visible output.
         let visible = bytes.iter().position(|&byte| byte == 0).unwrap_or(len);
         CString::new(&bytes[..visible]).expect("visible job output contains no NUL")
-    } else {
-        let output = CStr::from_ptr(line).to_owned();
-        free(line.cast());
-        output
     };
     log_debug(
         b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
