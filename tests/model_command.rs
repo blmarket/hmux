@@ -3524,7 +3524,7 @@ fn original_copies_match() {
     record!(
         "src/cmd.rs::cmds",
         hmux2::src::cmd::cmds,
-        [tqh_first, tqh_last]
+        []
     );
     record!(
         "src/cmd_attach_session.rs::cmds",

@@ -118,12 +118,7 @@ pub struct cmdq_item {
     pub entry: cmdq_item_entry,
 }
 
-/// Legacy C layout for the former `cmd_list` TAILQ header.
-#[repr(C)]
-pub struct cmds {
-    pub tqh_first: *mut cmd,
-    pub tqh_last: *mut *mut cmd,
-}
+pub type cmds = Vec<*mut cmd>;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
