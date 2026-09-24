@@ -515,31 +515,11 @@ pub unsafe extern "C" fn menu_key(
     let mut move_0: ::core::ffi::c_int = 0;
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut item: *const menu_item = ::core::ptr::null::<menu_item>();
-    let mut saved_event: key_event = key_event {
-        client: ::core::ptr::null_mut::<client>(),
+    let mut saved_event = key_event {
+        client: ::core::ptr::null_mut(),
         key: 0,
-        m: mouse_event {
-            valid: 0,
-            ignore: 0,
-            key: 0,
-            statusat: 0,
-            statuslines: 0,
-            x: 0,
-            y: 0,
-            b: 0,
-            lx: 0,
-            ly: 0,
-            lb: 0,
-            ox: 0,
-            oy: 0,
-            s: 0,
-            w: 0,
-            wp: 0,
-            sgr_type: 0,
-            sgr_b: 0,
-        },
-        buf: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        len: 0,
+        m: ::core::mem::zeroed(),
+        bytes: None,
     };
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     let mut key: key_code = 0;
@@ -2106,17 +2086,8 @@ pub unsafe extern "C" fn menu_key(
         return 1 as ::core::ffi::c_int;
     }
     if (*md).key != KEYC_NONE as ::core::ffi::c_ulong as key_code {
-        memset(
-            &raw mut saved_event as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            ::core::mem::size_of::<key_event>() as size_t,
-        );
         saved_event.key = (*md).key;
-        memcpy(
-            &raw mut saved_event.m as *mut ::core::ffi::c_void,
-            &raw mut (*md).m as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<mouse_event>() as size_t,
-        );
+        saved_event.m = (*md).m;
         event = &raw mut saved_event;
     } else {
         event = ::core::ptr::null_mut::<key_event>();

@@ -2153,14 +2153,38 @@ pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 
 pub const MODEKEY_VI: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct key_event {
     pub client: *mut client,
     pub key: key_code,
     pub m: mouse_event,
-    pub buf: *mut ::core::ffi::c_char,
-    pub len: size_t,
+    pub bytes: Option<Vec<u8>>,
+}
+
+impl key_event {
+    pub fn new(key: key_code, m: mouse_event, bytes: Option<Vec<u8>>) -> Box<Self> {
+        Box::new(Self {
+            client: ::core::ptr::null_mut(),
+            key,
+            m,
+            bytes,
+        })
+    }
+
+    pub fn metadata_snapshot(&self) -> Self {
+        Self {
+            client: self.client,
+            key: self.key,
+            m: self.m,
+            bytes: None,
+        }
+    }
+
+    pub fn bytes_ptr_len(&self) -> Option<(*mut ::core::ffi::c_char, size_t)> {
+        self.bytes
+            .as_ref()
+            .map(|bytes| (bytes.as_ptr().cast_mut().cast(), bytes.len()))
+    }
 }
 
 #[repr(C)]

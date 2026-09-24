@@ -18,7 +18,6 @@ use crate::src::reactor::{
 };
 use crate::src::server_client::{
     server_client_handle_key, server_client_set_term_type, server_client_update_theme_colours,
-    OwnedKeyEvent,
 };
 use crate::src::session::session_theme_changed;
 pub use crate::src::shared::abi::ssize_t;
@@ -2157,7 +2156,7 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     } else {
                         ::core::slice::from_raw_parts(buf.cast::<u8>(), size).to_vec()
                     };
-                    let event = OwnedKeyEvent::new(key, m, Some(bytes));
+                    let event = key_event::new(key, m, Some(bytes));
                     server_client_handle_key(c, event);
                 }
                 evbuffer_drain((*tty).in_0, size);

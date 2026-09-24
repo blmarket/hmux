@@ -1827,602 +1827,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::key_event",
         hmux2::src::alerts::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/arguments.rs::key_event",
         hmux2::src::arguments::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cfg.rs::key_event",
         hmux2::src::cfg::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/client.rs::key_event",
         hmux2::src::client::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd.rs::key_event",
         hmux2::src::cmd::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_attach_session.rs::key_event",
         hmux2::src::cmd_attach_session::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_bind_key.rs::key_event",
         hmux2::src::cmd_bind_key::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_break_pane.rs::key_event",
         hmux2::src::cmd_break_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_capture_pane.rs::key_event",
         hmux2::src::cmd_capture_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_choose_tree.rs::key_event",
         hmux2::src::cmd_choose_tree::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_command_prompt.rs::key_event",
         hmux2::src::cmd_command_prompt::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_confirm_before.rs::key_event",
         hmux2::src::cmd_confirm_before::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_copy_mode.rs::key_event",
         hmux2::src::cmd_copy_mode::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_detach_client.rs::key_event",
         hmux2::src::cmd_detach_client::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_display_menu.rs::key_event",
         hmux2::src::cmd_display_menu::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_display_message.rs::key_event",
         hmux2::src::cmd_display_message::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_find.rs::key_event",
         hmux2::src::cmd_find::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_find_window.rs::key_event",
         hmux2::src::cmd_find_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_if_shell.rs::key_event",
         hmux2::src::cmd_if_shell::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_join_pane.rs::key_event",
         hmux2::src::cmd_join_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_kill_pane.rs::key_event",
         hmux2::src::cmd_kill_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_kill_session.rs::key_event",
         hmux2::src::cmd_kill_session::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_kill_window.rs::key_event",
         hmux2::src::cmd_kill_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_list_buffers.rs::key_event",
         hmux2::src::cmd_list_buffers::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_list_clients.rs::key_event",
         hmux2::src::cmd_list_clients::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_list_commands.rs::key_event",
         hmux2::src::cmd_list_commands::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_list_keys.rs::key_event",
         hmux2::src::cmd_list_keys::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_list_panes.rs::key_event",
         hmux2::src::cmd_list_panes::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_list_sessions.rs::key_event",
         hmux2::src::cmd_list_sessions::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_list_windows.rs::key_event",
         hmux2::src::cmd_list_windows::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_load_buffer.rs::key_event",
         hmux2::src::cmd_load_buffer::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_lock_server.rs::key_event",
         hmux2::src::cmd_lock_server::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_move_window.rs::key_event",
         hmux2::src::cmd_move_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_new_session.rs::key_event",
         hmux2::src::cmd_new_session::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_new_window.rs::key_event",
         hmux2::src::cmd_new_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_parse.rs::key_event",
         hmux2::src::cmd_parse::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_paste_buffer.rs::key_event",
         hmux2::src::cmd_paste_buffer::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_pipe_pane.rs::key_event",
         hmux2::src::cmd_pipe_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_queue.rs::key_event",
         hmux2::src::cmd_queue::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_refresh_client.rs::key_event",
         hmux2::src::cmd_refresh_client::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_rename_session.rs::key_event",
         hmux2::src::cmd_rename_session::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_rename_window.rs::key_event",
         hmux2::src::cmd_rename_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_resize_pane.rs::key_event",
         hmux2::src::cmd_resize_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_resize_window.rs::key_event",
         hmux2::src::cmd_resize_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_respawn_pane.rs::key_event",
         hmux2::src::cmd_respawn_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_respawn_window.rs::key_event",
         hmux2::src::cmd_respawn_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_rotate_window.rs::key_event",
         hmux2::src::cmd_rotate_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_run_shell.rs::key_event",
         hmux2::src::cmd_run_shell::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_save_buffer.rs::key_event",
         hmux2::src::cmd_save_buffer::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_select_layout.rs::key_event",
         hmux2::src::cmd_select_layout::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_select_pane.rs::key_event",
         hmux2::src::cmd_select_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_select_window.rs::key_event",
         hmux2::src::cmd_select_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_send_keys.rs::key_event",
         hmux2::src::cmd_send_keys::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_server_access.rs::key_event",
         hmux2::src::cmd_server_access::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_set_buffer.rs::key_event",
         hmux2::src::cmd_set_buffer::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_set_environment.rs::key_event",
         hmux2::src::cmd_set_environment::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_set_option.rs::key_event",
         hmux2::src::cmd_set_option::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_show_environment.rs::key_event",
         hmux2::src::cmd_show_environment::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_show_messages.rs::key_event",
         hmux2::src::cmd_show_messages::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_show_options.rs::key_event",
         hmux2::src::cmd_show_options::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_source_file.rs::key_event",
         hmux2::src::cmd_source_file::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_split_window.rs::key_event",
         hmux2::src::cmd_split_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_swap_pane.rs::key_event",
         hmux2::src::cmd_swap_pane::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_swap_window.rs::key_event",
         hmux2::src::cmd_swap_window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_switch_client.rs::key_event",
         hmux2::src::cmd_switch_client::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/cmd_wait_for.rs::key_event",
         hmux2::src::cmd_wait_for::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/colour.rs::key_event",
         hmux2::src::colour::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/control.rs::key_event",
         hmux2::src::control::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/control_notify.rs::key_event",
         hmux2::src::control_notify::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/environ.rs::key_event",
         hmux2::src::environ::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/events.rs::key_event",
         hmux2::src::events::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/events_payload.rs::key_event",
         hmux2::src::events_payload::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/file.rs::key_event",
         hmux2::src::file::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/format.rs::key_event",
         hmux2::src::format::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/format_draw.rs::key_event",
         hmux2::src::format_draw::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/hooks.rs::key_event",
         hmux2::src::hooks::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/input.rs::key_event",
         hmux2::src::input::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/input_keys.rs::key_event",
         hmux2::src::input_keys::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/job.rs::key_event",
         hmux2::src::job::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/key_bindings.rs::key_event",
         hmux2::src::key_bindings::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/layout.rs::key_event",
         hmux2::src::layout::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/layout_custom.rs::key_event",
         hmux2::src::layout_custom::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/layout_set.rs::key_event",
         hmux2::src::layout_set::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/menu.rs::key_event",
         hmux2::src::menu::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/mode_tree.rs::key_event",
         hmux2::src::mode_tree::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/monitor.rs::key_event",
         hmux2::src::monitor::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/names.rs::key_event",
         hmux2::src::names::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/options.rs::key_event",
         hmux2::src::options::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/popup.rs::key_event",
         hmux2::src::popup::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/prompt.rs::key_event",
         hmux2::src::prompt::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/resize.rs::key_event",
         hmux2::src::resize::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/screen.rs::key_event",
         hmux2::src::screen::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/screen_redraw.rs::key_event",
         hmux2::src::screen_redraw::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/screen_write.rs::key_event",
         hmux2::src::screen_write::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/server.rs::key_event",
         hmux2::src::server::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/server_acl.rs::key_event",
         hmux2::src::server_acl::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/server_client.rs::key_event",
         hmux2::src::server_client::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/server_fn.rs::key_event",
         hmux2::src::server_fn::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/session.rs::key_event",
         hmux2::src::session::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/sort.rs::key_event",
         hmux2::src::sort::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/spawn.rs::key_event",
         hmux2::src::spawn::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/status.rs::key_event",
         hmux2::src::status::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/style.rs::key_event",
         hmux2::src::style::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/tty.rs::key_event",
         hmux2::src::tty::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/tty_acs.rs::key_event",
         hmux2::src::tty_acs::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/tty_draw.rs::key_event",
         hmux2::src::tty_draw::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/tty_features.rs::key_event",
         hmux2::src::tty_features::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/tty_keys.rs::key_event",
         hmux2::src::tty_keys::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/tty_term.rs::key_event",
         hmux2::src::tty_term::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window.rs::key_event",
         hmux2::src::window::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_border.rs::key_event",
         hmux2::src::window_border::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_buffer.rs::key_event",
         hmux2::src::window_buffer::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_client.rs::key_event",
         hmux2::src::window_client::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_clock.rs::key_event",
         hmux2::src::window_clock::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_copy.rs::key_event",
         hmux2::src::window_copy::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_customize.rs::key_event",
         hmux2::src::window_customize::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_panes.rs::key_event",
         hmux2::src::window_panes::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_switch.rs::key_event",
         hmux2::src::window_switch::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_tree.rs::key_event",
         hmux2::src::window_tree::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/window_visible.rs::key_event",
         hmux2::src::window_visible::key_event,
-        [client, key, m, buf, len]
+        [client, key, m, bytes]
     );
     record!(
         "src/alerts.rs::key_table",

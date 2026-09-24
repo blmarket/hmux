@@ -276,7 +276,6 @@ pub struct cmd_entry {
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned while its explicit `references` count is nonzero; queue items
 /// and callers hold counted raw pointers released through `cmdq_free_state`.

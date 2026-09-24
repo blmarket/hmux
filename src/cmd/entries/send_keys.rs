@@ -9,9 +9,7 @@ use crate::src::key_bindings::{
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::options::options_get_number;
-use crate::src::server_client::{
-    server_client_handle_key, server_client_handle_key_after, OwnedKeyEvent,
-};
+use crate::src::server_client::{server_client_handle_key, server_client_handle_key_after};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -159,7 +157,7 @@ unsafe extern "C" fn cmd_send_keys_inject_key(
         if tc.is_null() {
             return item;
         }
-        let event = OwnedKeyEvent::new(
+        let event = key_event::new(
             (key as ::core::ffi::c_ulonglong | KEYC_SENT) as key_code,
             ::core::mem::zeroed(),
             None,

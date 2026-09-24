@@ -313,24 +313,23 @@ pub unsafe extern "C" fn cmdq_new_state(
     mut event: *mut key_event,
     mut flags: ::core::ffi::c_int,
 ) -> *mut cmdq_state {
-    let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    state = Box::into_raw(Box::new(::core::mem::zeroed::<cmdq_state>()));
-    (*state).references = 1 as ::core::ffi::c_int;
-    (*state).flags = flags;
-    if !event.is_null() {
-        memcpy(
-            &raw mut (*state).event as *mut ::core::ffi::c_void,
-            event as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<key_event>() as size_t,
-        );
-        // Command state consumers use the key and mouse fields. The byte buffer
-        // belongs to the queued key callback and may be released before this
-        // state, so it must not retain that borrowed pointer.
-        (*state).event.buf = ::core::ptr::null_mut();
-        (*state).event.len = 0;
+    let snapshot = if event.is_null() {
+        key_event {
+            client: ::core::ptr::null_mut(),
+            key: KEYC_NONE as key_code,
+            m: ::core::mem::zeroed(),
+            bytes: None,
+        }
     } else {
-        (*state).event.key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
-    }
+        (*event).metadata_snapshot()
+    };
+    let state = Box::into_raw(Box::new(cmdq_state {
+        references: 1,
+        flags,
+        formats: ::core::ptr::null_mut(),
+        event: snapshot,
+        current: ::core::mem::zeroed(),
+    }));
     if !current.is_null() && cmd_find_valid_state(current) != 0 {
         cmd_find_copy_state(&raw mut (*state).current, current);
     } else {
