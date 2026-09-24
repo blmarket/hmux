@@ -12,8 +12,8 @@ use crate::src::cmd_queue::{
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
-use crate::src::ffi::libc::{free, sscanf, strcmp, tcgetattr};
-use crate::src::format::format_single;
+use crate::src::ffi::libc::{sscanf, strcmp, tcgetattr};
+use crate::src::format::format_single_cstring;
 use crate::src::log::fatal;
 use crate::src::options::{
     options_create, options_get_number, options_get_string, options_set_string,
@@ -198,9 +198,7 @@ unsafe extern "C" fn cmd_new_session_exec(
     let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<std::ffi::CString> = None;
     let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut formatted_cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut ename: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut formatted_cwd: Option<CString> = None;
     let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut sname: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut wname_owned: Option<CString> = None;
@@ -256,7 +254,7 @@ unsafe extern "C" fn cmd_new_session_exec(
     }
     tmp = args_get(args, 'n' as i32 as u_char);
     if !tmp.is_null() {
-        ename = format_single(
+        let ename = format_single_cstring(
             item,
             tmp,
             c,
@@ -264,28 +262,26 @@ unsafe extern "C" fn cmd_new_session_exec(
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
         );
-        if check_name(ename) == 0 {
+        if check_name(ename.as_ptr()) == 0 {
             cmdq_error(
                 item,
                 b"invalid window name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ename,
+                ename.as_ptr(),
             );
-            free(ename as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         wname_owned = Some(
-            clean_name_cstring(CStr::from_ptr(ename), 0)
+            clean_name_cstring(CStr::from_ptr(ename.as_ptr()), 0)
                 .expect("check_name validated the window name"),
         );
         wname = wname_owned
             .as_ref()
             .expect("window name was cleaned")
             .as_ptr();
-        free(ename as *mut ::core::ffi::c_void);
     }
     tmp = args_get(args, 's' as i32 as u_char);
     if !tmp.is_null() {
-        ename = format_single(
+        let ename = format_single_cstring(
             item,
             tmp,
             c,
@@ -293,24 +289,22 @@ unsafe extern "C" fn cmd_new_session_exec(
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
         );
-        if check_name(ename) == 0 {
+        if check_name(ename.as_ptr()) == 0 {
             cmdq_error(
                 item,
                 b"invalid session name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ename,
+                ename.as_ptr(),
             );
-            free(ename as *mut ::core::ffi::c_void);
             current_block = 5193972633326621385;
         } else {
             sname_owned = Some(
-                clean_name_cstring(CStr::from_ptr(ename), 0)
+                clean_name_cstring(CStr::from_ptr(ename.as_ptr()), 0)
                     .expect("check_name validated the session name"),
             );
             sname = sname_owned
                 .as_ref()
                 .expect("session name was cleaned")
                 .as_ptr();
-            free(ename as *mut ::core::ffi::c_void);
             current_block = 10043043949733653460;
         }
     } else {
@@ -392,15 +386,18 @@ unsafe extern "C" fn cmd_new_session_exec(
                         }
                         tmp = args_get(args, 'c' as i32 as u_char);
                         if !tmp.is_null() {
-                            formatted_cwd = format_single(
+                            formatted_cwd = Some(format_single_cstring(
                                 item,
                                 tmp,
                                 c,
                                 ::core::ptr::null_mut::<session>(),
                                 ::core::ptr::null_mut::<winlink>(),
                                 ::core::ptr::null_mut::<window_pane>(),
-                            );
-                            cwd = formatted_cwd;
+                            ));
+                            cwd = formatted_cwd
+                                .as_ref()
+                                .expect("formatted cwd was just set")
+                                .as_ptr();
                         } else {
                             // session_create copies this borrowed cwd into session.
                             cwd = server_client_get_cwd(c, ::core::ptr::null_mut::<session>());
@@ -765,7 +762,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                                     template = NEW_SESSION_TEMPLATE
                                                                         .as_ptr();
                                                                 }
-                                                                cp = format_single(
+                                                                let cp = format_single_cstring(
                                                                     item,
                                                                     template,
                                                                     c,
@@ -779,10 +776,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                                 cmdq_print(
                                                                     item,
                                                                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                                                    cp,
-                                                                );
-                                                                free(
-                                                                    cp as *mut ::core::ffi::c_void,
+                                                                    cp.as_ptr(),
                                                                 );
                                                             }
                                                             if detached == 0 {
@@ -813,10 +807,6 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                             if cfg_finished != 0 {
                                                                 cfg_show_causes(s);
                                                             }
-                                                            free(
-                                                                formatted_cwd
-                                                                    as *mut ::core::ffi::c_void,
-                                                            );
                                                             return CMD_RETURN_NORMAL;
                                                         }
                                                     }
@@ -833,6 +823,5 @@ unsafe extern "C" fn cmd_new_session_exec(
         }
         _ => {}
     }
-    free(formatted_cwd as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }

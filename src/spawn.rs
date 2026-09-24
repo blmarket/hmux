@@ -16,11 +16,11 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{
     __errno_location, _exit, chdir, close, closefrom, execl, execvp, fdopen, fopen, fread,
-    free, fseeko, ftello, fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp,
+    fseeko, ftello, fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp,
     sigfillset, sigprocmask, strerror, strrchr, tcgetattr, tcsetattr, unlink,
 };
 use crate::src::ffi::utempter::utempter_add_record;
-use crate::src::format::format_single;
+use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
 use crate::src::layout::{
     layout_assign_pane, layout_close_pane, layout_floating_pane, layout_free, layout_init,
@@ -553,16 +553,14 @@ pub unsafe fn spawn_pane(
     }
     if !(*sc).cwd.is_null() {
         if !item.is_null() {
-            let raw = format_single(
+            cwd = Some(format_single_cstring(
                 item,
                 (*sc).cwd,
                 c,
                 ts,
                 ::core::ptr::null_mut::<winlink>(),
                 ::core::ptr::null_mut::<window_pane>(),
-            );
-            cwd = Some(CStr::from_ptr(raw).to_owned());
-            free(raw.cast());
+            ));
         } else {
             cwd = Some(CStr::from_ptr((*sc).cwd).to_owned());
         }

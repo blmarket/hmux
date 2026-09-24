@@ -8,8 +8,8 @@ use crate::src::cmd_queue::{
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::environ::{environ_create, environ_free, environ_put};
-use crate::src::ffi::libc::{free, strcmp};
-use crate::src::format::format_single;
+use crate::src::ffi::libc::strcmp;
+use crate::src::format::format_single_cstring;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
@@ -155,8 +155,6 @@ unsafe extern "C" fn cmd_new_window_exec(
     let mut before: ::core::ffi::c_int = 0;
     let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
     let mut cause: Option<std::ffi::CString> = None;
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut wname_owned: Option<CString> = None;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -184,7 +182,7 @@ unsafe extern "C" fn cmd_new_window_exec(
     }
     name = args_get(args, 'n' as i32 as u_char);
     if !name.is_null() {
-        expanded = format_single(
+        let expanded = format_single_cstring(
             item,
             name,
             c,
@@ -192,30 +190,28 @@ unsafe extern "C" fn cmd_new_window_exec(
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
         );
-        if check_name(expanded) == 0 {
+        if check_name(expanded.as_ptr()) == 0 {
             cmdq_error(
                 item,
                 b"invalid window name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                expanded,
+                expanded.as_ptr(),
             );
-            free(expanded as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         wname_owned = Some(
-            clean_name_cstring(CStr::from_ptr(expanded), 0)
+            clean_name_cstring(CStr::from_ptr(expanded.as_ptr()), 0)
                 .expect("check_name validated the window name"),
         );
         wname = wname_owned
             .as_ref()
             .expect("window name was cleaned")
             .as_ptr();
-        free(expanded as *mut ::core::ffi::c_void);
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
         if idx != -(1 as ::core::ffi::c_int) {
             new_wl = winlink_find_by_index(&raw mut (*s).windows, idx);
         } else if !wname.is_null() {
-            expanded = format_single(
+            let expanded = format_single_cstring(
                 item,
                 wname,
                 c,
@@ -225,7 +221,7 @@ unsafe extern "C" fn cmd_new_window_exec(
             );
             wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
             while !wl.is_null() {
-                if !(strcmp((*(*wl).window).name, expanded) != 0 as ::core::ffi::c_int) {
+                if !(strcmp((*(*wl).window).name, expanded.as_ptr()) != 0 as ::core::ffi::c_int) {
                     if new_wl.is_null() {
                         new_wl = wl;
                     } else {
@@ -235,13 +231,11 @@ unsafe extern "C" fn cmd_new_window_exec(
                                 as *const ::core::ffi::c_char,
                             wname,
                         );
-                        free(expanded as *mut ::core::ffi::c_void);
                         return CMD_RETURN_ERROR;
                     }
                 }
                 wl = winlinks_next(wl);
             }
-            free(expanded as *mut ::core::ffi::c_void);
         }
     }
     if !new_wl.is_null() {
@@ -317,9 +311,12 @@ unsafe extern "C" fn cmd_new_window_exec(
             if template.is_null() {
                 template = NEW_WINDOW_TEMPLATE.as_ptr();
             }
-            cp = format_single(item, template, tc, s, new_wl, (*(*new_wl).window).active);
-            cmdq_print(item, b"%s\0" as *const u8 as *const ::core::ffi::c_char, cp);
-            free(cp as *mut ::core::ffi::c_void);
+            let cp = format_single_cstring(item, template, tc, s, new_wl, (*(*new_wl).window).active);
+            cmdq_print(
+                item,
+                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                cp.as_ptr(),
+            );
         }
         cmd_find_from_winlink(&raw mut fs, new_wl, 0 as ::core::ffi::c_int);
         cmdq_insert_hook(
