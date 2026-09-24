@@ -111,6 +111,27 @@ pub const SD_BUS_ERROR_NULL: sd_bus_error = sd_bus_error {
     _need_free: 0 as ::core::ffi::c_int,
 };
 pub const SD_LISTEN_FDS_START: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
+
+struct SystemdBusResources {
+    error: *mut sd_bus_error,
+    message: *mut *mut sd_bus_message,
+    reply: *mut *mut sd_bus_message,
+    slot: *mut *mut sd_bus_slot,
+    bus: *mut *mut sd_bus,
+}
+
+impl Drop for SystemdBusResources {
+    fn drop(&mut self) {
+        unsafe {
+            sd_bus_error_free(self.error);
+            sd_bus_message_unref(*self.message);
+            sd_bus_message_unref(*self.reply);
+            sd_bus_slot_unref(*self.slot);
+            sd_bus_unref(*self.bus);
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn systemd_activated() -> ::core::ffi::c_int {
     return (sd_listen_fds(0 as ::core::ffi::c_int) >= 1 as ::core::ffi::c_int)
@@ -215,6 +236,13 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
     let mut watch: systemd_job_watch = systemd_job_watch {
         path: ::core::ptr::null::<::core::ffi::c_char>(),
         done: 0,
+    };
+    let resources = SystemdBusResources {
+        error: &raw mut error,
+        message: &raw mut m,
+        reply: &raw mut reply,
+        slot: &raw mut slot,
+        bus: &raw mut bus,
     };
     gettimeofday(&raw mut start, NULL);
     r = sd_bus_default_user(&raw mut bus);
@@ -611,10 +639,6 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
             }
         }
     }
-    sd_bus_error_free(&raw mut error);
-    sd_bus_message_unref(m);
-    sd_bus_message_unref(reply);
-    sd_bus_slot_unref(slot);
-    sd_bus_unref(bus);
+    drop(resources);
     (r, cause)
 }
