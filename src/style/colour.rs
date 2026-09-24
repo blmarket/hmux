@@ -3703,7 +3703,8 @@ unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
     }
     return -(1 as ::core::ffi::c_int);
 }
-unsafe fn colour_parseX11_impl(mut p: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
+    let p = input.as_ptr();
     let mut c: ::core::ffi::c_double = 0.;
     let mut m: ::core::ffi::c_double = 0.;
     let mut y: ::core::ffi::c_double = 0.;
@@ -3711,7 +3712,7 @@ unsafe fn colour_parseX11_impl(mut p: *const ::core::ffi::c_char) -> ::core::ffi
     let mut r: u_int = 0;
     let mut g: u_int = 0;
     let mut b: u_int = 0;
-    let mut len: size_t = strlen(p);
+    let mut len: size_t = input.to_bytes().len();
     let mut colour: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     if len == 12 as size_t
         && sscanf(
@@ -3796,18 +3797,16 @@ unsafe fn colour_parseX11_impl(mut p: *const ::core::ffi::c_char) -> ::core::ffi
                 * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
         );
     } else {
-        while len != 0 as size_t && *p as ::core::ffi::c_int == ' ' as i32 {
-            p = p.offset(1);
+        let bytes = input.to_bytes();
+        let mut start = 0;
+        while start < bytes.len() && bytes[start] == b' ' {
+            start += 1;
+        }
+        len = bytes.len() - start;
+        while len != 0 as size_t && bytes[start + len - 1] == b' ' {
             len = len.wrapping_sub(1);
         }
-        while len != 0 as size_t
-            && *p.offset(len.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int == ' ' as i32
-        {
-            len = len.wrapping_sub(1);
-        }
-        // `len` was derived from strlen(p), then reduced while trimming spaces.
-        // The span cannot contain NUL; byname only borrows it for this call.
-        let trimmed = std::slice::from_raw_parts(p.cast::<u8>(), len as usize);
+        let trimmed = &bytes[start..start + len];
         let copy = std::ffi::CString::new(trimmed).expect("trimmed C string contains NUL");
         colour = colour_byname_impl(&copy);
     }
@@ -3993,7 +3992,7 @@ pub fn colour_parse_x11(input: &[u8]) -> Option<i32> {
 /// Bounded C string entry point. Locale-sensitive operations remain in libc.
 pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
     // The kernel only reads input through its terminating NUL; it retains no pointer.
-    let value = unsafe { colour_parseX11_impl(input.as_ptr()) };
+    let value = unsafe { colour_parseX11_impl(input) };
     (value != -1).then_some(value)
 }
 
