@@ -120,7 +120,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
 use crate::src::window::window_zoom;
-use crate::src::xmalloc::{xasprintf, xstrdup};
+use crate::src::xmalloc::xasprintf;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -334,9 +334,11 @@ unsafe fn mode_tree_alloc_data() -> *mut mode_tree_data {
     let mut allocation = Box::<mode_tree_data>::new_uninit();
     let mtd = allocation.as_mut_ptr();
     // All remaining fields retain the translated C zero state. Initialize
-    // the Vec before treating the record as a mode_tree_data value.
+    // Rust-owned fields before treating the record as a mode_tree_data value.
     mtd.write_bytes(0, 1);
     ::core::ptr::write(&raw mut (*mtd).lines, Vec::new());
+    ::core::ptr::write(&raw mut (*mtd).search, None);
+    ::core::ptr::write(&raw mut (*mtd).filter, None);
     let mtd = Box::into_raw(allocation.assume_init());
     (*mtd).references = 1;
     mtd
@@ -708,9 +710,9 @@ pub unsafe extern "C" fn mode_tree_start(
     (*mtd).sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     (*mtd).sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        (*mtd).filter = xstrdup(args_get(args, 'f' as i32 as u_char));
+        (*mtd).filter = Some(CStr::from_ptr(args_get(args, 'f' as i32 as u_char)).to_owned());
     } else {
-        (*mtd).filter = ::core::ptr::null_mut::<::core::ffi::c_char>();
+        (*mtd).filter = None;
     }
     (*mtd).buildcb = buildcb;
     (*mtd).drawcb = drawcb;
@@ -811,7 +813,9 @@ pub unsafe extern "C" fn mode_tree_build(mut mtd: *mut mode_tree_data) {
         (*mtd).modedata,
         &raw mut (*mtd).sort_crit,
         &raw mut tag,
-        (*mtd).filter,
+        (*mtd).filter
+            .as_ref()
+            .map_or(::core::ptr::null(), |filter| filter.as_ptr()),
     );
     (*mtd).no_matches = ((*mtd).children.tqh_first
         == ::core::ptr::null_mut::<::core::ffi::c_void>() as *mut mode_tree_item)
@@ -877,8 +881,8 @@ pub unsafe extern "C" fn mode_tree_free(mut mtd: *mut mode_tree_data) {
     mode_tree_free_items(&raw mut (*mtd).children);
     mode_tree_clear_lines(mtd);
     screen_free(&raw mut (*mtd).screen);
-    free((*mtd).search as *mut ::core::ffi::c_void);
-    free((*mtd).filter as *mut ::core::ffi::c_void);
+    (*mtd).search = None;
+    (*mtd).filter = None;
     (*mtd).dead = 1 as ::core::ffi::c_int;
     mode_tree_remove_ref(mtd);
 }
@@ -1553,7 +1557,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     n = (::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize)
                         .wrapping_sub(1 as usize) as size_t;
                 }
-                if !(*mtd).filter.is_null()
+                if (*mtd).filter.is_some()
                     && w.wrapping_sub(2 as u_int) as size_t
                         >= label_len
                             .wrapping_add(10 as size_t)
@@ -1853,9 +1857,10 @@ unsafe extern "C" fn mode_tree_search_backward(
     let mut last: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut prev: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut icase: ::core::ffi::c_int = (*mtd).search_icase;
-    if (*mtd).search.is_null() {
+    let Some(search) = (*mtd).search.as_ref() else {
         return ::core::ptr::null_mut::<mode_tree_item>();
-    }
+    };
+    let search = search.as_ptr();
     last = (*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item;
     mti = last;
     loop {
@@ -1879,16 +1884,16 @@ unsafe extern "C" fn mode_tree_search_backward(
             break;
         }
         if (*mtd).searchcb.is_none() {
-            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), (*mtd).search).is_null() {
+            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null() {
                 return mti;
             }
-            if icase != 0 && !strcasestr(((*mti).name).as_ptr().cast_mut(), (*mtd).search).is_null() {
+            if icase != 0 && !strcasestr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null() {
                 return mti;
             }
         } else if (*mtd).searchcb.expect("non-null function pointer")(
             (*mtd).modedata,
             (*mti).itemdata,
-            (*mtd).search,
+            search,
             icase,
         ) != 0
         {
@@ -1902,9 +1907,10 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
     let mut last: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut next: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut icase: ::core::ffi::c_int = (*mtd).search_icase;
-    if (*mtd).search.is_null() {
+    let Some(search) = (*mtd).search.as_ref() else {
         return ::core::ptr::null_mut::<mode_tree_item>();
-    }
+    };
+    let search = search.as_ptr();
     last = (*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item;
     mti = last;
     loop {
@@ -1936,16 +1942,16 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
             break;
         }
         if (*mtd).searchcb.is_none() {
-            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), (*mtd).search).is_null() {
+            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null() {
                 return mti;
             }
-            if icase != 0 && !strcasestr(((*mti).name).as_ptr().cast_mut(), (*mtd).search).is_null() {
+            if icase != 0 && !strcasestr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null() {
                 return mti;
             }
         } else if (*mtd).searchcb.expect("non-null function pointer")(
             (*mtd).modedata,
             (*mti).itemdata,
-            (*mtd).search,
+            search,
             icase,
         ) != 0
         {
@@ -1994,14 +2000,13 @@ unsafe extern "C" fn mode_tree_search_callback(
         return PROMPT_CLOSE;
     }
     let replacement = if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-        ::core::ptr::null_mut::<::core::ffi::c_char>()
+        None
     } else {
-        xstrdup(s)
+        Some(CStr::from_ptr(s).to_owned())
     };
-    free((*mtd).search as *mut ::core::ffi::c_void);
     (*mtd).search = replacement;
-    if !replacement.is_null() {
-        (*mtd).search_icase = mode_tree_is_lowercase(replacement);
+    if let Some(search) = (*mtd).search.as_ref() {
+        (*mtd).search_icase = mode_tree_is_lowercase(search.as_ptr());
         mode_tree_search_set(mtd);
     }
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2021,11 +2026,10 @@ unsafe extern "C" fn mode_tree_filter_callback(
         return PROMPT_CLOSE;
     }
     let replacement = if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-        ::core::ptr::null_mut::<::core::ffi::c_char>()
+        None
     } else {
-        xstrdup(s)
+        Some(CStr::from_ptr(s).to_owned())
     };
-    free((*mtd).filter as *mut ::core::ffi::c_void);
     (*mtd).filter = replacement;
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
@@ -2037,8 +2041,7 @@ unsafe extern "C" fn mode_tree_filter_callback(
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
-    free((*mtd).filter as *mut ::core::ffi::c_void);
-    (*mtd).filter = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    (*mtd).filter = None;
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
@@ -2692,7 +2695,12 @@ pub unsafe extern "C" fn mode_tree_key(
                 mtd,
                 c,
                 b"(filter) \0" as *const u8 as *const ::core::ffi::c_char,
-                (*mtd).filter,
+                (*mtd)
+                    .filter
+                    .as_ref()
+                    .map_or(b"\0" as *const u8 as *const ::core::ffi::c_char, |filter| {
+                        filter.as_ptr()
+                    }),
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
                 Some(

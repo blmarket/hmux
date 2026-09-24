@@ -14,7 +14,7 @@ use crate::src::mode_tree::{
 };
 use crate::src::paste::{
     paste_buffer_data, paste_buffer_name, paste_buffer_order, paste_free, paste_get_name,
-    paste_is_empty, paste_replace,
+    paste_is_empty, paste_replace_owned,
 };
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
@@ -938,9 +938,8 @@ unsafe extern "C" fn window_buffer_draw_waiting(mut data: *mut window_buffer_mod
     );
     screen_write_stop(&raw mut ctx);
 }
-unsafe extern "C" fn window_buffer_edit_close_cb(
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
+unsafe fn window_buffer_edit_close_cb(
+    buf: Option<Vec<u8>>,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut ed: *mut window_buffer_editdata = arg as *mut window_buffer_editdata;
@@ -961,7 +960,12 @@ unsafe extern "C" fn window_buffer_edit_close_cb(
             }
         }
     }
-    if buf.is_null() || len == 0 as size_t {
+    let Some(mut buf) = buf else {
+        window_buffer_finish_edit(ed);
+        return;
+    };
+    let mut len = buf.len();
+    if len == 0 {
         window_buffer_finish_edit(ed);
         return;
     }
@@ -974,12 +978,13 @@ unsafe extern "C" fn window_buffer_edit_close_cb(
     if oldlen != 0 as size_t
         && *oldbuf.offset(oldlen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
             != '\n' as i32
-        && *buf.offset(len.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int == '\n' as i32
+        && buf[len - 1] == b'\n'
     {
         len = len.wrapping_sub(1);
     }
     if len != 0 as size_t {
-        paste_replace(pb, buf, len);
+        buf.truncate(len);
+        paste_replace_owned(pb, buf.into_boxed_slice());
     }
     wp = window_pane_find_by_id((*ed).wp_id);
     if !wp.is_null() {
@@ -1023,14 +1028,7 @@ unsafe extern "C" fn window_buffer_start_edit(
         c,
         buf,
         len,
-        Some(
-            window_buffer_edit_close_cb
-                as unsafe extern "C" fn(
-                    *mut ::core::ffi::c_char,
-                    size_t,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
+        Some(window_buffer_edit_close_cb),
         ed as *mut ::core::ffi::c_void,
     );
     if (*ed).editor.is_null() {

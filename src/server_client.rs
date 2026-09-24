@@ -72,7 +72,7 @@ use crate::src::status::{
     status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
     status_timer_start,
 };
-use crate::src::tmux::{checkshell, find_home, global_options, global_s_options, setblocking};
+use crate::src::tmux::{checkshell, find_home_cstr, global_options, global_s_options, setblocking};
 use crate::src::tty::{
     tty_close, tty_cursor, tty_free, tty_init, tty_invalidate, tty_margin_off, tty_open,
     tty_region_off, tty_repeat_requests, tty_reset, tty_resize, tty_send_requests, tty_set_path,
@@ -4821,7 +4821,6 @@ unsafe extern "C" fn server_client_dispatch_identify(
     mut imsg: *mut imsg,
 ) -> ::core::ffi::c_int {
     let mut data: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut datalen: size_t = 0;
     let mut flags: ::core::ffi::c_int = 0;
     let mut feat: ::core::ffi::c_int = 0;
@@ -4932,9 +4931,8 @@ unsafe extern "C" fn server_client_dispatch_identify(
             if access(data, X_OK) == 0 as ::core::ffi::c_int {
                 server_client_set_cwd(c, Some(CStr::from_ptr(data).to_owned()));
             } else {
-                home = find_home();
-                if !home.is_null() {
-                    server_client_set_cwd(c, Some(CStr::from_ptr(home).to_owned()));
+                if let Some(home) = find_home_cstr() {
+                    server_client_set_cwd(c, Some(home.to_owned()));
                 } else {
                     server_client_set_cwd(c, Some(CString::new("/").unwrap()));
                 }
@@ -5081,7 +5079,6 @@ pub unsafe extern "C" fn server_client_get_cwd(
     mut c: *mut client,
     mut s: *mut session,
 ) -> *const ::core::ffi::c_char {
-    let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if cfg_finished == 0 && !cfg_client.is_null() {
         return ((*cfg_client).cwd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
@@ -5104,9 +5101,8 @@ pub unsafe extern "C" fn server_client_get_cwd(
     {
         return ((*s).cwd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
-    home = find_home();
-    if !home.is_null() {
-        return home;
+    if let Some(home) = find_home_cstr() {
+        return home.as_ptr();
     }
     return b"/\0" as *const u8 as *const ::core::ffi::c_char;
 }

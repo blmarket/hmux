@@ -3639,9 +3639,8 @@ unsafe extern "C" fn window_customize_add_environment(
         new_item as *mut ::core::ffi::c_void,
     );
 }
-unsafe extern "C" fn window_customize_edit_close_cb(
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
+unsafe fn window_customize_edit_close_cb(
+    buf: Option<Vec<u8>>,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut current_block: u64;
@@ -3663,17 +3662,18 @@ unsafe extern "C" fn window_customize_edit_close_cb(
             }
         }
     }
-    if buf.is_null() || len == 0 as size_t || data.is_null() || (*data).dead != 0 {
-        free(buf as *mut ::core::ffi::c_void);
+    let Some(mut value) = buf else {
+        window_customize_finish_edit(ed);
+        return;
+    };
+    if value.is_empty() || data.is_null() || (*data).dead != 0 {
         window_customize_finish_edit(ed);
         return;
     }
-    if *buf.offset(len.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int == '\n' as i32 {
-        len = len.wrapping_sub(1);
+    if value.last() == Some(&b'\n') {
+        value.pop();
     }
-    let mut value = ::core::slice::from_raw_parts(buf.cast::<u8>(), len).to_vec();
     value.push(0);
-    free(buf as *mut ::core::ffi::c_void);
     let value_ptr = value.as_ptr().cast::<::core::ffi::c_char>();
     match (*ed).edit_type as ::core::ffi::c_uint {
         0 => {
@@ -3824,14 +3824,7 @@ unsafe extern "C" fn window_customize_start_edit(
         c,
         buf,
         len,
-        Some(
-            window_customize_edit_close_cb
-                as unsafe extern "C" fn(
-                    *mut ::core::ffi::c_char,
-                    size_t,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
+        Some(window_customize_edit_close_cb),
         ed as *mut ::core::ffi::c_void,
     );
     if (*ed).editor.is_null() {

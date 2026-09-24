@@ -80,7 +80,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::tmux::find_home;
+use crate::src::tmux::find_home_cstr;
 use crate::src::xmalloc::xmalloc;
 use std::any::Any;
 use std::ffi::{CStr, CString};
@@ -207,12 +207,7 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(cf: *mut client_file) {
 unsafe fn file_get_path(c: *mut client, file: *const ::core::ffi::c_char) -> CString {
     let file = CStr::from_ptr(file).to_bytes();
     let path = if file.starts_with(b"~/") {
-        let home = find_home();
-        let home = if home.is_null() {
-            &[][..]
-        } else {
-            CStr::from_ptr(home).to_bytes()
-        };
+        let home = find_home_cstr().map_or(&[][..], CStr::to_bytes);
         [home, &file[1..]].concat()
     } else {
         file.to_vec()

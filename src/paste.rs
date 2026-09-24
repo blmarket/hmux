@@ -499,6 +499,14 @@ pub unsafe extern "C" fn paste_replace(
         ((*pb).name).as_ptr().cast_mut(),
     );
 }
+/// Replace a paste buffer with Rust-owned bytes from an internal caller.
+pub(crate) unsafe fn paste_replace_owned(pb: *mut paste_buffer, data: Box<[u8]>) {
+    paste_store_data(pb, Some(data));
+    paste_fire_event(
+        b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        ((*pb).name).as_ptr().cast_mut(),
+    );
+}
 #[no_mangle]
 pub unsafe extern "C" fn paste_make_sample(pb: *mut paste_buffer) -> *mut ::core::ffi::c_char {
     xstrdup(paste_make_sample_cstring(pb).as_ptr())

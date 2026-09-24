@@ -13,7 +13,7 @@ use crate::src::shared::prompt::*;
 pub use crate::src::shared::stdio::{
     _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
 };
-use crate::src::tmux::{find_home, global_options};
+use crate::src::tmux::{find_home_cstr, global_options};
 use std::ffi::{CStr, CString};
 
 // Keep the bytes through the first newline, including embedded NULs. The
@@ -49,11 +49,8 @@ unsafe fn prompt_find_history_file() -> Option<CString> {
     if !history_file.to_bytes().starts_with(b"~/") {
         return None;
     }
-    let home = find_home();
-    if home.is_null() {
-        return None;
-    }
-    let mut path = CStr::from_ptr(home).to_bytes().to_vec();
+    let home = find_home_cstr()?;
+    let mut path = home.to_bytes().to_vec();
     path.extend_from_slice(&history_file.to_bytes()[1..]);
     Some(CString::new(path).expect("C string paths contain no interior NUL"))
 }

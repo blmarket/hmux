@@ -36,8 +36,8 @@ pub use crate::src::shared::socket::{
     SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
 };
 use crate::src::tmux::{getversion, socket_path};
-use crate::src::xmalloc::xstrdup;
 use ::libc;
+use std::ffi::CStr;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
@@ -270,7 +270,7 @@ pub unsafe extern "C" fn proc_start(mut name: *const ::core::ffi::c_char) -> *mu
         NCURSES_VERSION_PATCH,
     );
     tp = Box::into_raw(Box::new(tmuxproc {
-        name: xstrdup(name),
+        name: CStr::from_ptr(name).to_owned(),
         exit: 0,
         signalcb: None,
         ev_sigint: ::core::mem::zeroed(),
@@ -292,7 +292,7 @@ pub unsafe extern "C" fn proc_loop(
 ) {
     log_debug(
         b"%s loop enter\0" as *const u8 as *const ::core::ffi::c_char,
-        (*tp).name,
+        (*tp).name.as_ptr(),
     );
     loop {
         event_loop(EVLOOP_ONCE);
@@ -304,7 +304,7 @@ pub unsafe extern "C" fn proc_loop(
     }
     log_debug(
         b"%s loop exit\0" as *const u8 as *const ::core::ffi::c_char,
-        (*tp).name,
+        (*tp).name.as_ptr(),
     );
 }
 #[no_mangle]
@@ -576,7 +576,7 @@ pub unsafe extern "C" fn proc_flush_peer(mut peer: *mut tmuxpeer) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn proc_toggle_log(mut tp: *mut tmuxproc) {
-    log_toggle((*tp).name);
+    log_toggle((*tp).name.as_ptr());
 }
 #[no_mangle]
 pub unsafe extern "C" fn proc_fork_and_daemon(mut fd: *mut ::core::ffi::c_int) -> pid_t {

@@ -89,7 +89,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::{
-    checkshell, find_home, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
+    checkshell, find_home_cstr, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
 };
 use std::ffi::{CStr, CString};
 
@@ -272,7 +272,8 @@ pub unsafe extern "C" fn job_run(
                                 cwd,
                             );
                         } else {
-                            home = find_home();
+                            home = find_home_cstr()
+                                .map_or(::core::ptr::null(), CStr::as_ptr);
                             if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
                                 environ_set(
                                     env,

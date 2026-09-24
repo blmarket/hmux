@@ -116,13 +116,13 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::{
-    find_cwd, find_home, global_environ, global_options, global_s_options, global_w_options,
+    find_cwd, find_home_cstr, global_environ, global_options, global_s_options, global_w_options,
     ptm_fd, setblocking, shell_argv0_cstring, shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
 use crate::src::xmalloc::xsnprintf;
 use ::libc;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_26;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_25;
@@ -469,11 +469,11 @@ pub unsafe extern "C" fn client_main(
         NULL,
     );
     cwd = find_cwd();
-    if cwd.is_null() && {
-        cwd = find_home();
-        cwd.is_null()
-    } {
-        cwd = b"/\0" as *const u8 as *const ::core::ffi::c_char;
+    if cwd.is_null() {
+        cwd = find_home_cstr().map_or(
+            b"/\0" as *const u8 as *const ::core::ffi::c_char,
+            CStr::as_ptr,
+        );
     }
     ttynam = ttyname(STDIN_FILENO);
     if ttynam.is_null() {

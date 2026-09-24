@@ -19,7 +19,7 @@ pub struct tmuxpeer {
 
 #[repr(C)]
 pub struct tmuxproc {
-    pub name: *const ::core::ffi::c_char,
+    pub name: std::ffi::CString,
     pub exit: ::core::ffi::c_int,
     pub signalcb: Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>,
     pub ev_sigint: event,

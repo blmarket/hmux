@@ -15,7 +15,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{
     __errno_location, _exit, chdir, close, closefrom, execl, execvp, fclose, fdopen, fopen, fread,
-    free, fseeko, ftello, fwrite, getcwd, getpid, kill, malloc, memcpy, memset, mkstemp,
+    free, fseeko, ftello, fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp,
     sigfillset, sigprocmask, strerror, strrchr, tcgetattr, tcsetattr, unlink,
 };
 use crate::src::ffi::utempter::utempter_add_record;
@@ -37,7 +37,7 @@ use crate::src::server_client::{server_client_get_cwd, server_client_remove_pane
 use crate::src::session::{session_group_synchronize_from, session_select};
 pub use crate::src::shared::events::event_payload;
 pub use crate::src::shared::spawn::spawn_context;
-use crate::src::tmux::{checkshell, find_home, global_options, ptm_fd};
+use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
 pub use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_add_pane, window_create, window_destroy_panes, window_pane_index,
@@ -495,7 +495,8 @@ pub unsafe extern "C" fn spawn_pane(
     let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut home: *const ::core::ffi::c_char = find_home();
+    let mut home: *const ::core::ffi::c_char = find_home_cstr()
+        .map_or(::core::ptr::null(), CStr::as_ptr);
     let mut actual_cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut argc: ::core::ffi::c_int = 0;
     let mut idx: u_int = 0;
@@ -1016,7 +1017,7 @@ pub unsafe extern "C" fn spawn_get_editor_pid(mut es: *mut spawn_editor_state) -
 pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
     let mut es: *mut spawn_editor_state = (*wp).editor as *mut spawn_editor_state;
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut result: Option<Vec<u8>> = None;
     let mut len: off_t = 0 as off_t;
     let mut status: ::core::ffi::c_int = 128 as ::core::ffi::c_int + SIGHUP;
     if es.is_null() {
@@ -1039,11 +1040,7 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
         return;
     }
     if status != 0 as ::core::ffi::c_int {
-        (*es).cb.expect("non-null function pointer")(
-            ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            0 as size_t,
-            (*es).arg,
-        );
+        (*es).cb.expect("non-null function pointer")(None, (*es).arg);
         spawn_editor_free(es);
         return;
     }
@@ -1054,20 +1051,24 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
     if !f.is_null() {
         if fseeko(f, 0 as __off_t, SEEK_END) == 0 as ::core::ffi::c_int {
             len = ftello(f) as off_t;
-            if len > 0 as off_t && len as uintmax_t <= SIZE_MAX as uintmax_t {
+            if len >= 0 as off_t && len as uintmax_t <= SIZE_MAX as uintmax_t {
                 if fseeko(f, 0 as __off_t, SEEK_SET) == 0 as ::core::ffi::c_int {
-                    buf = malloc(len as size_t) as *mut ::core::ffi::c_char;
-                    if !buf.is_null()
-                        && fread(
-                            buf as *mut ::core::ffi::c_void,
-                            len as size_t,
-                            1 as size_t,
-                            f,
-                        ) != 1 as ::core::ffi::c_ulong
-                    {
-                        free(buf as *mut ::core::ffi::c_void);
-                        buf = ::core::ptr::null_mut::<::core::ffi::c_char>();
-                        len = 0 as off_t;
+                    if len == 0 as off_t {
+                        result = Some(Vec::new());
+                    } else {
+                        let mut bytes = Vec::new();
+                        if bytes.try_reserve_exact(len as usize).is_ok() {
+                            bytes.resize(len as usize, 0);
+                            if fread(
+                                bytes.as_mut_ptr().cast::<::core::ffi::c_void>(),
+                                len as size_t,
+                                1 as size_t,
+                                f,
+                            ) == 1 as ::core::ffi::c_ulong
+                            {
+                                result = Some(bytes);
+                            }
+                        }
                     }
                 }
             } else {
@@ -1076,7 +1077,7 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
         }
         fclose(f);
     }
-    (*es).cb.expect("non-null function pointer")(buf, len as size_t, (*es).arg);
+    (*es).cb.expect("non-null function pointer")(result, (*es).arg);
     spawn_editor_free(es);
 }
 
@@ -1101,8 +1102,7 @@ unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd, mode: *const ::core::ffi::c_cha
     file
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn spawn_editor(
+pub unsafe fn spawn_editor(
     mut c: *mut client,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -1309,16 +1309,11 @@ mod tests {
         run_isolated(FAILURE_TEST, FAILURE_CASE);
     }
 
-    unsafe extern "C" fn capture_editor_result(
-        buf: *mut ::core::ffi::c_char,
-        len: size_t,
+    unsafe fn capture_editor_result(
+        result: Option<Vec<u8>>,
         arg: *mut ::core::ffi::c_void,
     ) {
-        let result = &mut *(arg as *mut Vec<u8>);
-        if !buf.is_null() {
-            result.extend_from_slice(std::slice::from_raw_parts(buf as *const u8, len));
-            free(buf as *mut ::core::ffi::c_void);
-        }
+        *(arg as *mut Option<Vec<u8>>) = result;
     }
 
     #[test]
@@ -1352,8 +1347,9 @@ mod tests {
                 assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
                 assert_eq!(fs::read(path.to_str().unwrap()).unwrap(), original);
 
-                fs::write(path.to_str().unwrap(), b"edited by child").unwrap();
-                let result = Box::into_raw(Box::new(Vec::<u8>::new()));
+                let edited = b"edited by child\0\xff";
+                fs::write(path.to_str().unwrap(), edited).unwrap();
+                let result = Box::into_raw(Box::new(None::<Vec<u8>>));
                 let state = spawn_editor_state::new(
                     path.to_owned(),
                     Some(capture_editor_result),
@@ -1365,7 +1361,45 @@ mod tests {
                 (*wp).flags = PANE_STATUSREADY;
                 (*wp).status = 0;
                 spawn_editor_finish(wp);
-                assert_eq!(*Box::from_raw(result), b"edited by child");
+                assert_eq!(*Box::from_raw(result), Some(edited.to_vec()));
+                assert!(!std::path::Path::new(path.to_str().unwrap()).exists());
+                drop(Box::from_raw(wp));
+
+                let (fd_owner, path) = create_temp_file();
+                drop(fd_owner);
+                fs::write(path.to_str().unwrap(), []).unwrap();
+                let result = Box::into_raw(Box::new(None::<Vec<u8>>));
+                let state = spawn_editor_state::new(
+                    path.to_owned(),
+                    Some(capture_editor_result),
+                    result as *mut ::core::ffi::c_void,
+                )
+                .into_state_ptr();
+                let wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
+                (*wp).editor = state;
+                (*wp).flags = PANE_STATUSREADY;
+                (*wp).status = 0;
+                spawn_editor_finish(wp);
+                assert_eq!(*Box::from_raw(result), Some(Vec::new()));
+                assert!(!std::path::Path::new(path.to_str().unwrap()).exists());
+                drop(Box::from_raw(wp));
+
+                let (fd_owner, path) = create_temp_file();
+                drop(fd_owner);
+                fs::write(path.to_str().unwrap(), b"ignored after failure").unwrap();
+                let result = Box::into_raw(Box::new(None::<Vec<u8>>));
+                let state = spawn_editor_state::new(
+                    path.to_owned(),
+                    Some(capture_editor_result),
+                    result as *mut ::core::ffi::c_void,
+                )
+                .into_state_ptr();
+                let wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
+                (*wp).editor = state;
+                (*wp).flags = PANE_STATUSREADY;
+                (*wp).status = 1 << 8;
+                spawn_editor_finish(wp);
+                assert_eq!(*Box::from_raw(result), None);
                 assert!(!std::path::Path::new(path.to_str().unwrap()).exists());
                 drop(Box::from_raw(wp));
             }

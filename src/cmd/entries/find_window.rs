@@ -62,7 +62,8 @@ pub use crate::src::shared::window::{
 };
 use crate::src::window::window_pane_set_mode;
 use crate::src::window_tree::window_tree_mode;
-use crate::src::xmalloc::xasprintf;
+use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -107,6 +108,7 @@ unsafe extern "C" fn cmd_find_window_exec(
     let mut s: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut star: *const ::core::ffi::c_char = b"*\0" as *const u8 as *const ::core::ffi::c_char;
+    let filter_value: CString;
     let mut filter: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut C: ::core::ffi::c_int = 0;
     let mut N: ::core::ffi::c_int = 0;
@@ -129,88 +131,17 @@ unsafe extern "C" fn cmd_find_window_exec(
         N = T;
         C = N;
     }
+    filter_value = find_window_filter(
+        CStr::from_ptr(s),
+        CStr::from_ptr(suffix),
+        CStr::from_ptr(star),
+        C != 0,
+        N != 0,
+        T != 0,
+    );
     filter = crate::src::arguments::args_new_flag_value();
     (*filter).type_0 = ARGS_STRING;
-    if C != 0 && N != 0 && T != 0 {
-        xasprintf(
-            &raw mut (*filter).c2rust_unnamed.string,
-            b"#{||:#{C%s:%s},#{||:#{m%s:%s%s%s,#{window_name}},#{m%s:%s%s%s,#{pane_title}}}}\0"
-                as *const u8 as *const ::core::ffi::c_char,
-            suffix,
-            s,
-            suffix,
-            star,
-            s,
-            star,
-            suffix,
-            star,
-            s,
-            star,
-        );
-    } else if C != 0 && N != 0 {
-        xasprintf(
-            &raw mut (*filter).c2rust_unnamed.string,
-            b"#{||:#{C%s:%s},#{m%s:%s%s%s,#{window_name}}}\0" as *const u8
-                as *const ::core::ffi::c_char,
-            suffix,
-            s,
-            suffix,
-            star,
-            s,
-            star,
-        );
-    } else if C != 0 && T != 0 {
-        xasprintf(
-            &raw mut (*filter).c2rust_unnamed.string,
-            b"#{||:#{C%s:%s},#{m%s:%s%s%s,#{pane_title}}}\0" as *const u8
-                as *const ::core::ffi::c_char,
-            suffix,
-            s,
-            suffix,
-            star,
-            s,
-            star,
-        );
-    } else if N != 0 && T != 0 {
-        xasprintf(
-            &raw mut (*filter).c2rust_unnamed.string,
-            b"#{||:#{m%s:%s%s%s,#{window_name}},#{m%s:%s%s%s,#{pane_title}}}\0" as *const u8
-                as *const ::core::ffi::c_char,
-            suffix,
-            star,
-            s,
-            star,
-            suffix,
-            star,
-            s,
-            star,
-        );
-    } else if C != 0 {
-        xasprintf(
-            &raw mut (*filter).c2rust_unnamed.string,
-            b"#{C%s:%s}\0" as *const u8 as *const ::core::ffi::c_char,
-            suffix,
-            s,
-        );
-    } else if N != 0 {
-        xasprintf(
-            &raw mut (*filter).c2rust_unnamed.string,
-            b"#{m%s:%s%s%s,#{window_name}}\0" as *const u8 as *const ::core::ffi::c_char,
-            suffix,
-            star,
-            s,
-            star,
-        );
-    } else {
-        xasprintf(
-            &raw mut (*filter).c2rust_unnamed.string,
-            b"#{m%s:%s%s%s,#{pane_title}}\0" as *const u8 as *const ::core::ffi::c_char,
-            suffix,
-            star,
-            s,
-            star,
-        );
-    }
+    (*filter).c2rust_unnamed.string = xstrdup(filter_value.as_ptr());
     new_args = args_create();
     if args_has(args, 'Z' as i32 as u_char) != 0 {
         args_set(
@@ -236,4 +167,125 @@ unsafe extern "C" fn cmd_find_window_exec(
     );
     args_free(new_args);
     return CMD_RETURN_NORMAL;
+}
+
+fn append_find_window_c_match(out: &mut Vec<u8>, suffix: &[u8], pattern: &[u8]) {
+    out.extend_from_slice(b"#{C");
+    out.extend_from_slice(suffix);
+    out.push(b':');
+    out.extend_from_slice(pattern);
+    out.push(b'}');
+}
+
+fn append_find_window_name_match(
+    out: &mut Vec<u8>,
+    suffix: &[u8],
+    star: &[u8],
+    pattern: &[u8],
+    field: &[u8],
+) {
+    out.extend_from_slice(b"#{m");
+    out.extend_from_slice(suffix);
+    out.push(b':');
+    out.extend_from_slice(star);
+    out.extend_from_slice(pattern);
+    out.extend_from_slice(star);
+    out.extend_from_slice(b",#{");
+    out.extend_from_slice(field);
+    out.extend_from_slice(b"}}");
+}
+
+fn find_window_filter(
+    pattern: &CStr,
+    suffix: &CStr,
+    star: &CStr,
+    compare: bool,
+    name: bool,
+    title: bool,
+) -> CString {
+    let pattern = pattern.to_bytes();
+    let suffix = suffix.to_bytes();
+    let star = star.to_bytes();
+    let mut out = Vec::new();
+    if compare && name && title {
+        out.extend_from_slice(b"#{||:");
+        append_find_window_c_match(&mut out, suffix, pattern);
+        out.extend_from_slice(b",#{||:");
+        append_find_window_name_match(&mut out, suffix, star, pattern, b"window_name");
+        out.push(b',');
+        append_find_window_name_match(&mut out, suffix, star, pattern, b"pane_title");
+        out.extend_from_slice(b"}}");
+    } else if compare && name {
+        out.extend_from_slice(b"#{||:");
+        append_find_window_c_match(&mut out, suffix, pattern);
+        out.push(b',');
+        append_find_window_name_match(&mut out, suffix, star, pattern, b"window_name");
+        out.push(b'}');
+    } else if compare && title {
+        out.extend_from_slice(b"#{||:");
+        append_find_window_c_match(&mut out, suffix, pattern);
+        out.push(b',');
+        append_find_window_name_match(&mut out, suffix, star, pattern, b"pane_title");
+        out.push(b'}');
+    } else if name && title {
+        out.extend_from_slice(b"#{||:");
+        append_find_window_name_match(&mut out, suffix, star, pattern, b"window_name");
+        out.push(b',');
+        append_find_window_name_match(&mut out, suffix, star, pattern, b"pane_title");
+        out.push(b'}');
+    } else if compare {
+        append_find_window_c_match(&mut out, suffix, pattern);
+    } else if name {
+        append_find_window_name_match(&mut out, suffix, star, pattern, b"window_name");
+    } else {
+        append_find_window_name_match(&mut out, suffix, star, pattern, b"pane_title");
+    }
+    CString::new(out).expect("find-window filter fragments contain no NUL bytes")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_window_filter;
+    use std::ffi::CStr;
+
+    #[test]
+    fn find_window_filter_preserves_all_flag_combinations_and_bytes() {
+        let pattern = CStr::from_bytes_with_nul(b"a\xff\0").unwrap();
+        let suffix = c"/ri";
+        let star = c"*";
+        let cases: &[(bool, bool, bool, &[u8])] = &[
+            (
+                true,
+                true,
+                true,
+                b"#{||:#{C/ri:a\xff},#{||:#{m/ri:*a\xff*,#{window_name}},#{m/ri:*a\xff*,#{pane_title}}}}",
+            ),
+            (
+                true,
+                true,
+                false,
+                b"#{||:#{C/ri:a\xff},#{m/ri:*a\xff*,#{window_name}}}",
+            ),
+            (
+                true,
+                false,
+                true,
+                b"#{||:#{C/ri:a\xff},#{m/ri:*a\xff*,#{pane_title}}}",
+            ),
+            (
+                false,
+                true,
+                true,
+                b"#{||:#{m/ri:*a\xff*,#{window_name}},#{m/ri:*a\xff*,#{pane_title}}}",
+            ),
+            (true, false, false, b"#{C/ri:a\xff}"),
+            (false, true, false, b"#{m/ri:*a\xff*,#{window_name}}"),
+            (false, false, true, b"#{m/ri:*a\xff*,#{pane_title}}"),
+        ];
+
+        for &(compare, name, title, expected) in cases {
+            let filter = find_window_filter(pattern, suffix, star, compare, name, title);
+            assert_eq!(filter.as_bytes(), expected);
+        }
+    }
 }

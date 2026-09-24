@@ -41,8 +41,8 @@ impl spawn_editor_state {
     }
 }
 
-pub type spawn_finish_edit_cb =
-    Option<unsafe extern "C" fn(*mut ::core::ffi::c_char, size_t, *mut ::core::ffi::c_void) -> ()>;
+/// Rust-only callback so the editor result can move as owned binary bytes.
+pub type spawn_finish_edit_cb = Option<unsafe fn(Option<Vec<u8>>, *mut ::core::ffi::c_void) -> ()>;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

@@ -56,6 +56,7 @@ use crate::src::tty_features::tty_parse_features;
 use crate::src::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::src::xmalloc::{xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
+use std::sync::OnceLock;
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _NL_NUM: C2RustUnnamed = 786449;
@@ -533,7 +534,7 @@ unsafe extern "C" fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::
 }
 unsafe fn expand_path(
     path: *const ::core::ffi::c_char,
-    home: *const ::core::ffi::c_char,
+    home: Option<&CStr>,
 ) -> Option<CString> {
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
@@ -543,10 +544,7 @@ unsafe fn expand_path(
         2 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        if home.is_null() {
-            return None;
-        }
-        let mut expanded = CStr::from_ptr(home).to_bytes().to_vec();
+        let mut expanded = home?.to_bytes().to_vec();
         expanded.extend_from_slice(CStr::from_ptr(path.add(1)).to_bytes());
         return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
     }
@@ -579,7 +577,7 @@ unsafe fn expand_path(
     Some(CStr::from_ptr(path).to_owned())
 }
 unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<CString> {
-    let mut home: *const ::core::ffi::c_char = find_home();
+    let home = find_home_cstr();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut resolved: [::core::ffi::c_char; 4096] = [0; 4096];
@@ -864,23 +862,32 @@ pub unsafe extern "C" fn find_cwd() -> *const ::core::ffi::c_char {
     }
     return pwd;
 }
-#[no_mangle]
-pub unsafe extern "C" fn find_home() -> *const ::core::ffi::c_char {
+/// Return the cached home directory as a borrowed C string. A missing result
+/// is retried on the next call, matching the old null-sentinel cache behavior.
+pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    static mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if !home.is_null() {
-        return home;
+    static HOME: OnceLock<CString> = OnceLock::new();
+    if let Some(home) = HOME.get() {
+        return Some(home.as_c_str());
     }
-    home = getenv(b"HOME\0" as *const u8 as *const ::core::ffi::c_char);
+    let mut home = getenv(b"HOME\0" as *const u8 as *const ::core::ffi::c_char);
     if home.is_null() || *home as ::core::ffi::c_int == '\0' as i32 {
         pw = getpwuid(getuid());
         if !pw.is_null() {
-            home = xstrdup((*pw).pw_dir);
+            home = (*pw).pw_dir;
         } else {
-            home = ::core::ptr::null::<::core::ffi::c_char>();
+            return None;
         }
     }
-    return home;
+    let owned = CStr::from_ptr(home).to_owned();
+    let _ = HOME.set(owned);
+    HOME.get().map(CString::as_c_str)
+}
+
+/// Compatibility adapter for the original C-facing contract.
+#[no_mangle]
+pub unsafe extern "C" fn find_home() -> *const ::core::ffi::c_char {
+    find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr)
 }
 #[no_mangle]
 pub unsafe extern "C" fn getversion() -> *const ::core::ffi::c_char {
