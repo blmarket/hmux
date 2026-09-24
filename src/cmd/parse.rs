@@ -3517,6 +3517,7 @@ mod parser_collection_tests {
 
     #[test]
     fn parser_collections_preserve_order_scope_and_element_addresses() {
+        let _guard = crate::src::cfg::CFG_TEST_LOCK.lock().unwrap();
         unsafe {
             let mut pi: cmd_parse_input = ::core::mem::zeroed();
             pi.line = 1;
