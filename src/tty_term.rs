@@ -109,7 +109,7 @@ pub const TTYCODE_NONE: tty_code_type = 0;
 #[repr(C)]
 pub struct tty_term_code_entry {
     pub type_0: tty_code_type,
-    pub name: *const ::core::ffi::c_char,
+    pub name: &'static ::std::ffi::CStr,
 }
 pub const OK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 
@@ -120,939 +120,939 @@ pub static mut tty_terms: tty_terms = tty_terms {
 static mut tty_term_codes: [tty_term_code_entry; 234] = [
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"acsc\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"acsc",
     },
     tty_term_code_entry {
         type_0: TTYCODE_FLAG,
-        name: b"am\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"am",
     },
     tty_term_code_entry {
         type_0: TTYCODE_FLAG,
-        name: b"AX\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"AX",
     },
     tty_term_code_entry {
         type_0: TTYCODE_FLAG,
-        name: b"bce\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"bce",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"bel\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"bel",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Bidi\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Bidi",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"blink\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"blink",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"bold\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"bold",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"civis\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"civis",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"clear\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"clear",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Clmg\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Clmg",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Cmg\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Cmg",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cnorm\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cnorm",
     },
     tty_term_code_entry {
         type_0: TTYCODE_NUMBER,
-        name: b"colors\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"colors",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Cr\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Cr",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Cs\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Cs",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"csr\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"csr",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cub\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cub",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cub1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cub1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cud\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cud",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cud1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cud1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cuf\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cuf",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cuf1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cuf1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cup\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cup",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cuu\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cuu",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cuu1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cuu1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"cvvis\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cvvis",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"dch\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dch",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"dch1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dch1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"dim\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dim",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"dl\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dl",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"dl1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dl1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Dsbp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Dsbp",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Dseks\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Dseks",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Dsfcs\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Dsfcs",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Dsmg\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Dsmg",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"E3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"E3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"ech\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ech",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"ed\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ed",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"el\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"el",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"el1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"el1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"enacs\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"enacs",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Enbp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Enbp",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Eneks\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Eneks",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Enfcs\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Enfcs",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Enmg\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Enmg",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"fsl\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"fsl",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Hls\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Hls",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"home\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"home",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"hpa\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"hpa",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"ich\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ich",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"ich1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ich1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"il\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"il",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"il1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"il1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"ind\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ind",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"indn\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"indn",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"invis\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"invis",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kcbt\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kcbt",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kcub1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kcub1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kcud1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kcud1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kcuf1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kcuf1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kcuu1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kcuu1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDC\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDC",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDC3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDC3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDC4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDC4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDC5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDC5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDC6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDC6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDC7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDC7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kdch1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kdch1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDN\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDN",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDN3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDN3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDN4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDN4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDN5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDN5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDN6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDN6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kDN7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kDN7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kend\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kend",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kEND\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kEND",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kEND3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kEND3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kEND4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kEND4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kEND5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kEND5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kEND6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kEND6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kEND7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kEND7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf10\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf10",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf11\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf11",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf12\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf12",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf13\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf13",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf14\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf14",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf15\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf15",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf16\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf16",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf17\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf17",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf18\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf18",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf19\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf19",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf2\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf2",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf20\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf20",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf21\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf21",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf22\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf22",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf23\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf23",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf24\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf24",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf25\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf25",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf26\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf26",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf27\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf27",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf28\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf28",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf29\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf29",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf30\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf30",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf31\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf31",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf32\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf32",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf33\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf33",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf34\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf34",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf35\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf35",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf36\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf36",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf37\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf37",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf38\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf38",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf39\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf39",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf40\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf40",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf41\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf41",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf42\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf42",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf43\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf43",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf44\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf44",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf45\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf45",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf46\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf46",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf47\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf47",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf48\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf48",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf49\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf49",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf50\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf50",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf51\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf51",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf52\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf52",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf53\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf53",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf54\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf54",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf55\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf55",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf56\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf56",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf57\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf57",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf58\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf58",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf59\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf59",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf60\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf60",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf61\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf61",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf62\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf62",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf63\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf63",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf8\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf8",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kf9\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kf9",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kHOM\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kHOM",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kHOM3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kHOM3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kHOM4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kHOM4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kHOM5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kHOM5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kHOM6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kHOM6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kHOM7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kHOM7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"khome\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"khome",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kIC\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kIC",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kIC3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kIC3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kIC4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kIC4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kIC5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kIC5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kIC6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kIC6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kIC7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kIC7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kich1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kich1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kind\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kind",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kLFT\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kLFT",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kLFT3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kLFT3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kLFT4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kLFT4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kLFT5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kLFT5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kLFT6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kLFT6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kLFT7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kLFT7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kmous\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kmous",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"knp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"knp",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kNXT\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kNXT",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kNXT3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kNXT3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kNXT4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kNXT4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kNXT5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kNXT5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kNXT6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kNXT6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kNXT7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kNXT7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kpp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kpp",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kPRV\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kPRV",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kPRV3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kPRV3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kPRV4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kPRV4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kPRV5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kPRV5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kPRV6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kPRV6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kPRV7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kPRV7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kri\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kri",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kRIT\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kRIT",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kRIT3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kRIT3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kRIT4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kRIT4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kRIT5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kRIT5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kRIT6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kRIT6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kRIT7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kRIT7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kUP\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kUP",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kUP3\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kUP3",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kUP4\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kUP4",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kUP5\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kUP5",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kUP6\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kUP6",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"kUP7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kUP7",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Ms\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Ms",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Nobr\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Nobr",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"ol\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ol",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"op\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"op",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Rect\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Rect",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"rev\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"rev",
     },
     tty_term_code_entry {
         type_0: TTYCODE_FLAG,
-        name: b"RGB\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"RGB",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"ri\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ri",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"rin\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"rin",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"rmacs\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"rmacs",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"rmcup\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"rmcup",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"rmkx\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"rmkx",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Se\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Se",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"setab\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"setab",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"setaf\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"setaf",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"setal\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"setal",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"setrgbb\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"setrgbb",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"setrgbf\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"setrgbf",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Setulc\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Setulc",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Setulc1\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Setulc1",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"sgr0\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"sgr0",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"sitm\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"sitm",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"smacs\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"smacs",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"smcup\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"smcup",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"smkx\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"smkx",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Smol\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Smol",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"smso\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"smso",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"smul\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"smul",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Smulx\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Smulx",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"smxx\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"smxx",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Spb\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Spb",
     },
     tty_term_code_entry {
         type_0: TTYCODE_FLAG,
-        name: b"Sxl\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Sxl",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Ss\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Ss",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Swd\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Swd",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"Sync\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Sync",
     },
     tty_term_code_entry {
         type_0: TTYCODE_FLAG,
-        name: b"Tc\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"Tc",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"tsl\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"tsl",
     },
     tty_term_code_entry {
         type_0: TTYCODE_NUMBER,
-        name: b"U8\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"U8",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
-        name: b"vpa\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"vpa",
     },
     tty_term_code_entry {
         type_0: TTYCODE_FLAG,
-        name: b"XT\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"XT",
     },
 ];
 #[no_mangle]
@@ -1211,7 +1211,7 @@ pub unsafe extern "C" fn tty_term_apply(
         while i < tty_term_ncodes() {
             ent = (&raw const tty_term_codes as *const tty_term_code_entry).offset(i as isize)
                 as *const tty_term_code_entry;
-            if !(strcmp(s, (*ent).name) != 0 as ::core::ffi::c_int) {
+            if !(strcmp(s, (*ent).name.as_ptr()) != 0 as ::core::ffi::c_int) {
                 code = (*term).codes.offset(i as isize) as *mut tty_code;
                 if remove != 0 {
                     tty_term_replace_string(term, i as usize, None);
@@ -1421,10 +1421,10 @@ pub unsafe fn tty_term_create(
             while j < tty_term_ncodes() {
                 ent = (&raw const tty_term_codes as *const tty_term_code_entry).offset(j as isize)
                     as *const tty_term_code_entry;
-                if !(strncmp((*ent).name, *caps.offset(i as isize), namelen)
+                if !(strncmp((*ent).name.as_ptr(), *caps.offset(i as isize), namelen)
                     != 0 as ::core::ffi::c_int)
                 {
-                    if !(*(*ent).name.offset(namelen as isize) as ::core::ffi::c_int != '\0' as i32)
+                    if !(*(*ent).name.as_ptr().offset(namelen as isize) as ::core::ffi::c_int != '\0' as i32)
                     {
                         code = (*term).codes.offset(j as isize) as *mut tty_code;
                         tty_term_replace_string(term, j as usize, None);
@@ -1633,7 +1633,7 @@ pub(crate) unsafe fn tty_term_read_list(
                 current_block_23 = 1856101646708284338;
             }
             1 => {
-                s = tigetstr((*ent).name as *mut ::core::ffi::c_char);
+                s = tigetstr((*ent).name.as_ptr().cast_mut());
                 if s.is_null()
                     || s == -(1 as ::core::ffi::c_int) as *mut ::core::ffi::c_char
                         as *const ::core::ffi::c_char
@@ -1644,7 +1644,7 @@ pub(crate) unsafe fn tty_term_read_list(
                 }
             }
             2 => {
-                n = tigetnum((*ent).name as *mut ::core::ffi::c_char);
+                n = tigetnum((*ent).name.as_ptr().cast_mut());
                 if n == -(1 as ::core::ffi::c_int) || n == -(2 as ::core::ffi::c_int) {
                     current_block_23 = 1856101646708284338;
                 } else {
@@ -1659,7 +1659,7 @@ pub(crate) unsafe fn tty_term_read_list(
                 }
             }
             3 => {
-                n = tigetflag((*ent).name as *mut ::core::ffi::c_char);
+                n = tigetflag((*ent).name.as_ptr().cast_mut());
                 if n == -(1 as ::core::ffi::c_int) {
                     current_block_23 = 1856101646708284338;
                 } else {
@@ -1677,7 +1677,7 @@ pub(crate) unsafe fn tty_term_read_list(
         }
         match current_block_23 {
             14763689060501151050 => {
-                let name = CStr::from_ptr((*ent).name).to_bytes();
+                let name = (*ent).name.to_bytes();
                 let value = CStr::from_ptr(s).to_bytes();
                 let mut cap = Vec::with_capacity(name.len() + 1 + value.len());
                 cap.extend_from_slice(name);
@@ -1719,7 +1719,7 @@ pub unsafe extern "C" fn tty_term_has_name(
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < tty_term_ncodes() {
-        if strcmp(tty_term_codes[i as usize].name, name) == 0 as ::core::ffi::c_int {
+        if strcmp(tty_term_codes[i as usize].name.as_ptr(), name) == 0 as ::core::ffi::c_int {
             return tty_term_has(term, i as tty_code_code);
         }
         i = i.wrapping_add(1);
@@ -1756,7 +1756,7 @@ pub unsafe extern "C" fn tty_term_string_i(
     if s.is_null() {
         log_debug(
             b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name,
+            tty_term_codes[code as usize].name.as_ptr(),
         );
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -1775,7 +1775,7 @@ pub unsafe extern "C" fn tty_term_string_ii(
     if s.is_null() {
         log_debug(
             b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name,
+            tty_term_codes[code as usize].name.as_ptr(),
         );
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -1795,7 +1795,7 @@ pub unsafe extern "C" fn tty_term_string_iii(
     if s.is_null() {
         log_debug(
             b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name,
+            tty_term_codes[code as usize].name.as_ptr(),
         );
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -1813,7 +1813,7 @@ pub unsafe extern "C" fn tty_term_string_s(
     if s.is_null() {
         log_debug(
             b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name,
+            tty_term_codes[code as usize].name.as_ptr(),
         );
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -1832,7 +1832,7 @@ pub unsafe extern "C" fn tty_term_string_ss(
     if s.is_null() {
         log_debug(
             b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name,
+            tty_term_codes[code as usize].name.as_ptr(),
         );
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -1888,7 +1888,7 @@ pub unsafe extern "C" fn tty_term_describe(
                 ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
                 b"%4u: %s: [missing]\0" as *const u8 as *const ::core::ffi::c_char,
                 code as ::core::ffi::c_uint,
-                tty_term_codes[code as usize].name,
+                tty_term_codes[code as usize].name.as_ptr(),
             );
         }
         1 => {
@@ -1903,7 +1903,7 @@ pub unsafe extern "C" fn tty_term_describe(
                 ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
                 b"%4u: %s: (string) %s\0" as *const u8 as *const ::core::ffi::c_char,
                 code as ::core::ffi::c_uint,
-                tty_term_codes[code as usize].name,
+                tty_term_codes[code as usize].name.as_ptr(),
                 &raw mut out as *mut ::core::ffi::c_char,
             );
         }
@@ -1913,7 +1913,7 @@ pub unsafe extern "C" fn tty_term_describe(
                 ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
                 b"%4u: %s: (number) %d\0" as *const u8 as *const ::core::ffi::c_char,
                 code as ::core::ffi::c_uint,
-                tty_term_codes[code as usize].name,
+                tty_term_codes[code as usize].name.as_ptr(),
                 (*(*term).codes.offset(code as isize)).value.number,
             );
         }
@@ -1923,7 +1923,7 @@ pub unsafe extern "C" fn tty_term_describe(
                 ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
                 b"%4u: %s: (flag) %s\0" as *const u8 as *const ::core::ffi::c_char,
                 code as ::core::ffi::c_uint,
-                tty_term_codes[code as usize].name,
+                tty_term_codes[code as usize].name.as_ptr(),
                 if (*(*term).codes.offset(code as isize)).value.flag != 0 {
                     b"true\0" as *const u8 as *const ::core::ffi::c_char
                 } else {

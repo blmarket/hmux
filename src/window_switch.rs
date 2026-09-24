@@ -159,7 +159,7 @@ pub const WINDOW_SWITCH_DEFAULT_FORMAT: [::core::ffi::c_char; 350] = unsafe {
 #[no_mangle]
 pub static mut window_switch_mode: window_mode = unsafe {
     window_mode {
-        name: b"switch-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"switch-mode",
         default_format: WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr(),
         flags: 0,
         init: Some(

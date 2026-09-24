@@ -1,4 +1,0 @@
-src/input.rs::input_request_clipboard_data 24 8 [0, 8, 16]
-src/tty_keys.rs::input_request_clipboard_data 24 8 [0, 8, 16]
-src/input.rs::input_request_palette_data 8 4 [0, 4]
-src/tty_keys.rs::input_request_palette_data 8 4 [0, 4]

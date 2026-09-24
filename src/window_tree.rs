@@ -145,7 +145,7 @@ pub struct window_tree_modedata {
     pub preview_is_info: ::core::ffi::c_int,
     pub prompt_flags: ::core::ffi::c_int,
     pub item_list: Vec<Box<window_tree_itemdata>>,
-    pub entered: *const ::core::ffi::c_char,
+    pub entered: Option<::std::ffi::CString>,
     pub fs: cmd_find_state,
     pub type_0: window_tree_type,
     pub offset: ::core::ffi::c_int,
@@ -263,7 +263,7 @@ static mut window_tree_menu_items: [menu_item; 13] = [
 #[no_mangle]
 pub static mut window_tree_mode: window_mode = unsafe {
     window_mode {
-        name: b"tree-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"tree-mode",
         default_format: WINDOW_TREE_DEFAULT_FORMAT.as_ptr(),
         flags: 0,
         init: Some(
@@ -1842,7 +1842,7 @@ unsafe extern "C" fn window_tree_init(
         preview_is_info: 0,
         prompt_flags: 0,
         item_list: Vec::new(),
-        entered: ::core::ptr::null(),
+        entered: None,
         fs: ::core::mem::zeroed(),
         type_0: WINDOW_TREE_NONE,
         offset: 0,
@@ -2035,7 +2035,7 @@ unsafe extern "C" fn window_tree_command_each(
         idx: 0,
     };
     if let Some(name) = window_tree_get_target(item, &raw mut fs) {
-        mode_tree_run_command(c, &raw mut fs, (*data).entered, name.as_ptr());
+        mode_tree_run_command(c, &raw mut fs, (*data).entered.as_ref().map_or(::core::ptr::null(), |entered| entered.as_ptr()), name.as_ptr());
     }
 }
 unsafe extern "C" fn window_tree_command_done(
@@ -2077,7 +2077,7 @@ unsafe extern "C" fn window_tree_command_callback(
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    (*data).entered = s;
+    (*data).entered = Some(CStr::from_ptr(s).to_owned());
     mode_tree_each_tagged(
         (*data).data,
         Some(
@@ -2093,7 +2093,7 @@ unsafe extern "C" fn window_tree_command_callback(
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
     );
-    (*data).entered = ::core::ptr::null::<::core::ffi::c_char>();
+    (*data).entered = None;
     window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
 }

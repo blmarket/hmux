@@ -194,9 +194,6 @@ pub struct client {
     pub source_file_depth: u_int,
     pub clipboard_panes: *mut u_int,
     pub clipboard_npanes: u_int,
-    // style_line_entry remains a Copy rendering record. Each expanded pointer
-    // borrows the corresponding string here until refresh or status_free.
-    pub(crate) status_expanded: [Option<std::ffi::CString>; 5],
     // status.active can borrow either the inline screen or this saved screen.
     // Keep ownership separate from that switching observer.
     pub(crate) saved_status_screen: Option<Box<screen>>,
@@ -279,7 +276,6 @@ impl client {
             source_file_depth: unsafe { ::core::mem::zeroed() },
             clipboard_panes: unsafe { ::core::mem::zeroed() },
             clipboard_npanes: unsafe { ::core::mem::zeroed() },
-            status_expanded: Default::default(),
             saved_status_screen: Default::default(),
         }
     }

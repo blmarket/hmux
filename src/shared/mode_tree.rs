@@ -109,7 +109,7 @@ pub struct mode_tree_data {
     pub modedata: *mut ::core::ffi::c_void,
     pub menu: *const menu_item,
     pub sort_crit: sort_criteria,
-    pub view_name: *const ::core::ffi::c_char,
+    pub view_name: Option<&'static ::std::ffi::CStr>,
     pub buildcb: mode_tree_build_cb,
     pub drawcb: mode_tree_draw_cb,
     pub searchcb: mode_tree_search_cb,

@@ -1,2 +1,0 @@
-src/cmd_show_messages.rs::tty_terms 8 8 [0]
-src/tty_term.rs::tty_terms 8 8 [0]

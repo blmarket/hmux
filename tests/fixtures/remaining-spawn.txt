@@ -1,6 +1,0 @@
-src/cmd_new_session.rs::spawn_context 112 8 [0, 8, 16, 24, 32, 40, 48, 56, 80, 88, 96, 104]
-src/cmd_new_window.rs::spawn_context 112 8 [0, 8, 16, 24, 32, 40, 48, 56, 80, 88, 96, 104]
-src/cmd_respawn_pane.rs::spawn_context 112 8 [0, 8, 16, 24, 32, 40, 48, 56, 80, 88, 96, 104]
-src/cmd_respawn_window.rs::spawn_context 112 8 [0, 8, 16, 24, 32, 40, 48, 56, 80, 88, 96, 104]
-src/cmd_split_window.rs::spawn_context 112 8 [0, 8, 16, 24, 32, 40, 48, 56, 80, 88, 96, 104]
-src/spawn.rs::spawn_context 112 8 [0, 8, 16, 24, 32, 40, 48, 56, 80, 88, 96, 104]

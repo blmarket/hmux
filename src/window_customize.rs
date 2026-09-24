@@ -393,7 +393,7 @@ static mut window_customize_menu_items: [menu_item; 12] = [
 #[no_mangle]
 pub static mut window_customize_mode: window_mode = unsafe {
     window_mode {
-        name: b"options-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"options-mode",
         default_format: WINDOW_CUSTOMIZE_DEFAULT_FORMAT.as_ptr(),
         flags: 0,
         init: Some(

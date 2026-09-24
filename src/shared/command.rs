@@ -312,15 +312,21 @@ pub struct wait_item {
     pub item: *mut cmdq_item,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct cmd_parse_input {
     pub flags: ::core::ffi::c_int,
-    pub file: *const ::core::ffi::c_char,
+    pub file: Option<::std::ffi::CString>,
     pub line: u_int,
     pub item: *mut cmdq_item,
     pub c: *mut client,
     pub fs: cmd_find_state,
+}
+
+impl cmd_parse_input {
+    pub fn file_ptr(&self) -> *const ::core::ffi::c_char {
+        self.file.as_ref().map_or(::core::ptr::null(), |file| file.as_ptr())
+    }
 }
 
 pub struct cmd_parse_result {

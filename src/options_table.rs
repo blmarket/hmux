@@ -226,36 +226,36 @@ static mut options_table_status_format_default: [*const ::core::ffi::c_char; 4] 
 #[no_mangle]
 pub static mut options_other_names: [options_name_map; 8] = [
     options_name_map {
-        from: b"display-panes-color\0" as *const u8 as *const ::core::ffi::c_char,
-        to: b"display-panes-colour\0" as *const u8 as *const ::core::ffi::c_char,
+        from: c"display-panes-color",
+        to: c"display-panes-colour",
     },
     options_name_map {
-        from: b"display-panes-active-color\0" as *const u8 as *const ::core::ffi::c_char,
-        to: b"display-panes-active-colour\0" as *const u8 as *const ::core::ffi::c_char,
+        from: c"display-panes-active-color",
+        to: c"display-panes-active-colour",
     },
     options_name_map {
-        from: b"clock-mode-color\0" as *const u8 as *const ::core::ffi::c_char,
-        to: b"clock-mode-colour\0" as *const u8 as *const ::core::ffi::c_char,
+        from: c"clock-mode-color",
+        to: c"clock-mode-colour",
     },
     options_name_map {
-        from: b"cursor-color\0" as *const u8 as *const ::core::ffi::c_char,
-        to: b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
+        from: c"cursor-color",
+        to: c"cursor-colour",
     },
     options_name_map {
-        from: b"prompt-cursor-color\0" as *const u8 as *const ::core::ffi::c_char,
-        to: b"prompt-cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
+        from: c"prompt-cursor-color",
+        to: c"prompt-cursor-colour",
     },
     options_name_map {
-        from: b"prompt-command-cursor-color\0" as *const u8 as *const ::core::ffi::c_char,
-        to: b"prompt-command-cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
+        from: c"prompt-command-cursor-color",
+        to: c"prompt-command-cursor-colour",
     },
     options_name_map {
-        from: b"pane-colors\0" as *const u8 as *const ::core::ffi::c_char,
-        to: b"pane-colours\0" as *const u8 as *const ::core::ffi::c_char,
+        from: c"pane-colors",
+        to: c"pane-colours",
     },
     options_name_map {
-        from: ::core::ptr::null::<::core::ffi::c_char>(),
-        to: ::core::ptr::null::<::core::ffi::c_char>(),
+        from: c"",
+        to: c"",
     },
 ];
 #[no_mangle]

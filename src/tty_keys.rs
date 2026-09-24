@@ -124,548 +124,548 @@ pub struct tty_default_key_code {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tty_default_key_raw {
-    pub string: *const ::core::ffi::c_char,
+    pub string: &'static ::std::ffi::CStr,
     pub key: key_code,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tty_default_key_xterm {
-    pub template: *const ::core::ffi::c_char,
+    pub template: &'static ::std::ffi::CStr,
     pub key: key_code,
 }
 pub const _POSIX_VDISABLE: ::core::ffi::c_int = '\0' as i32;
 
 static mut tty_default_raw_keys: [tty_default_key_raw; 102] = [
     tty_default_key_raw {
-        string: b"\x1BO[\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BO[",
         key: '\u{1b}' as i32 as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1BOo\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOo",
         key: KEYC_KP_SLASH as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOj\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOj",
         key: KEYC_KP_STAR as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOm\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOm",
         key: KEYC_KP_MINUS as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOw\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOw",
         key: KEYC_KP_SEVEN as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOx\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOx",
         key: KEYC_KP_EIGHT as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOy\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOy",
         key: KEYC_KP_NINE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOk\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOk",
         key: KEYC_KP_PLUS as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOt\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOt",
         key: KEYC_KP_FOUR as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOu\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOu",
         key: KEYC_KP_FIVE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOv\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOv",
         key: KEYC_KP_SIX as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOq\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOq",
         key: KEYC_KP_ONE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOr\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOr",
         key: KEYC_KP_TWO as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOs\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOs",
         key: KEYC_KP_THREE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOM\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOM",
         key: KEYC_KP_ENTER as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOp",
         key: KEYC_KP_ZERO as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOn\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOn",
         key: KEYC_KP_PERIOD as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     tty_default_key_raw {
-        string: b"\x1BOA\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOA",
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
     },
     tty_default_key_raw {
-        string: b"\x1BOB\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOB",
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
     },
     tty_default_key_raw {
-        string: b"\x1BOC\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOC",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
     },
     tty_default_key_raw {
-        string: b"\x1BOD\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOD",
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
     },
     tty_default_key_raw {
-        string: b"\x1B[A\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[A",
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
     },
     tty_default_key_raw {
-        string: b"\x1B[B\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[B",
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
     },
     tty_default_key_raw {
-        string: b"\x1B[C\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[C",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
     },
     tty_default_key_raw {
-        string: b"\x1B[D\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[D",
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1BOA\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1BOA",
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1BOB\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1BOB",
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1BOC\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1BOC",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1BOD\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1BOD",
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1B[A\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1B[A",
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1B[B\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1B[B",
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1B[C\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1B[C",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1B[D\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1B[D",
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_META,
     },
     tty_default_key_raw {
-        string: b"\x1BOH\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOH",
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1BOF\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOF",
         key: KEYC_END as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1BOH\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1BOH",
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code | KEYC_META | KEYC_IMPLIED_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1BOF\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1BOF",
         key: KEYC_END as ::core::ffi::c_ulong as key_code | KEYC_META | KEYC_IMPLIED_META,
     },
     tty_default_key_raw {
-        string: b"\x1B[H\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[H",
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[F\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[F",
         key: KEYC_END as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1B[H\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1B[H",
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code | KEYC_META | KEYC_IMPLIED_META,
     },
     tty_default_key_raw {
-        string: b"\x1B\x1B[F\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B\x1B[F",
         key: KEYC_END as ::core::ffi::c_ulong as key_code | KEYC_META | KEYC_IMPLIED_META,
     },
     tty_default_key_raw {
-        string: b"\x1BOa\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOa",
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1BOb\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOb",
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1BOc\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOc",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1BOd\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1BOd",
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[a\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[a",
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[b\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[b",
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[c\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[c",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[d\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[d",
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[11~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[11~",
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[12~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[12~",
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[13~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[13~",
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[14~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[14~",
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[15~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[15~",
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[17~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[17~",
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[18~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[18~",
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[19~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[19~",
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[20~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[20~",
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[21~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[21~",
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[23~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[23~",
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[24~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[24~",
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[25~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[25~",
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[26~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[26~",
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[28~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[28~",
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[29~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[29~",
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[31~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[31~",
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[32~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[32~",
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[33~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[33~",
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[34~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[34~",
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[23$\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[23$",
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[24$\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[24$",
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[11^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[11^",
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[12^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[12^",
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[13^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[13^",
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[14^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[14^",
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[15^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[15^",
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[17^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[17^",
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[18^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[18^",
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[19^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[19^",
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[20^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[20^",
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[21^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[21^",
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[23^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[23^",
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[24^\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[24^",
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code | KEYC_CTRL,
     },
     tty_default_key_raw {
-        string: b"\x1B[11@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[11@",
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[12@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[12@",
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[13@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[13@",
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[14@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[14@",
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[15@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[15@",
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[17@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[17@",
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[18@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[18@",
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[19@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[19@",
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[20@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[20@",
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[21@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[21@",
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[23@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[23@",
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[24@\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[24@",
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[I\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[I",
         key: KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[O\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[O",
         key: KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code,
     },
     // Keep paste boundaries in the key tree so terminal and user-key entries
     // can override them, with the same prefix/escape-time rules as other keys.
     tty_default_key_raw {
-        string: b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[200~",
         key: KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     tty_default_key_raw {
-        string: b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[201~",
         key: KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     tty_default_key_raw {
-        string: b"\x1B[1;5Z\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[1;5Z",
         key: '\t' as i32 as key_code | KEYC_CTRL | KEYC_SHIFT,
     },
     tty_default_key_raw {
-        string: b"\x1B[?997;1n\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[?997;1n",
         key: KEYC_REPORT_DARK_THEME as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_raw {
-        string: b"\x1B[?997;2n\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"\x1B[?997;2n",
         key: KEYC_REPORT_LIGHT_THEME as ::core::ffi::c_ulong as key_code,
     },
 ];
 static mut tty_default_xterm_keys: [tty_default_key_xterm; 30] = [
     tty_default_key_xterm {
-        template: b"\x1B[1;_P\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_P",
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1BO1;_P\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1BO1;_P",
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1BO_P\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1BO_P",
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_Q\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_Q",
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1BO1;_Q\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1BO1;_Q",
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1BO_Q\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1BO_Q",
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_R\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_R",
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1BO1;_R\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1BO1;_R",
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1BO_R\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1BO_R",
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_S\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_S",
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1BO1;_S\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1BO1;_S",
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1BO_S\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1BO_S",
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[15;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[15;_~",
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[17;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[17;_~",
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[18;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[18;_~",
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[19;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[19;_~",
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[20;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[20;_~",
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[21;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[21;_~",
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[23;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[23;_~",
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[24;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[24;_~",
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_A\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_A",
         key: KEYC_UP as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_B\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_B",
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_C\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_C",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_D\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_D",
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_H\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_H",
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[1;_F\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[1;_F",
         key: KEYC_END as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[5;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[5;_~",
         key: KEYC_PPAGE as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[6;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[6;_~",
         key: KEYC_NPAGE as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[2;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[2;_~",
         key: KEYC_IC as ::core::ffi::c_ulong as key_code,
     },
     tty_default_key_xterm {
-        template: b"\x1B[3;_~\0" as *const u8 as *const ::core::ffi::c_char,
+        template: c"\x1B[3;_~",
         key: KEYC_DC as ::core::ffi::c_ulong as key_code,
     },
 ];
@@ -1386,7 +1386,7 @@ pub unsafe extern "C" fn tty_keys_build(mut tty: *mut tty) {
         {
             strlcpy(
                 &raw mut copy as *mut ::core::ffi::c_char,
-                (*tdkx).template,
+                (*tdkx).template.as_ptr(),
                 ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
             );
             copy[strcspn(
@@ -1406,7 +1406,7 @@ pub unsafe extern "C" fn tty_keys_build(mut tty: *mut tty) {
     {
         tdkr = (&raw const tty_default_raw_keys as *const tty_default_key_raw).offset(i as isize)
             as *const tty_default_key_raw;
-        s = (*tdkr).string;
+        s = (*tdkr).string.as_ptr();
         if *s as ::core::ffi::c_int != '\0' as i32 {
             tty_keys_add(tty, s, (*tdkr).key);
         }

@@ -136,16 +136,14 @@ impl window_buffer_itemdata {
 }
 
 // The mode tree borrows `item` during callbacks. The box keeps its address
-// stable as the list grows, and `name` keeps the C string alive with it.
+// stable as the list grows, and owns the edit name for the callback lifetime.
 
 #[repr(C)]
 pub struct window_buffer_editdata {
     pub wp_id: u_int,
-    pub name: *mut ::core::ffi::c_char,
+    pub name: Option<::std::ffi::CString>,
     pub pb: *mut paste_buffer,
     pub editor: *mut spawn_editor_state,
-    // The callback and mode teardown borrow `name` from this stable owner.
-    name_owner: CString,
 }
 
 #[inline]
@@ -235,7 +233,7 @@ static mut window_buffer_menu_items: [menu_item; 12] = [
 #[no_mangle]
 pub static mut window_buffer_mode: window_mode = unsafe {
     window_mode {
-        name: b"buffer-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"buffer-mode",
         default_format: WINDOW_BUFFER_DEFAULT_FORMAT.as_ptr(),
         flags: 0,
         init: Some(
@@ -969,7 +967,7 @@ unsafe fn window_buffer_edit_close_cb(
         window_buffer_finish_edit(ed);
         return;
     }
-    pb = paste_get_name((*ed).name);
+    pb = paste_get_name((*ed).name.as_ref().map_or(::core::ptr::null_mut(), |name| name.as_ptr().cast_mut()));
     if pb.is_null() || pb != (*ed).pb {
         window_buffer_finish_edit(ed);
         return;
@@ -1016,13 +1014,12 @@ unsafe extern "C" fn window_buffer_start_edit(
         return;
     }
     buf = paste_buffer_data(pb, &raw mut len);
-    let name_owner = CStr::from_ptr(paste_buffer_name(pb)).to_owned();
+    let name = CStr::from_ptr(paste_buffer_name(pb)).to_owned();
     ed = Box::into_raw(Box::new(window_buffer_editdata {
         wp_id: (*(*data).wp).id,
-        name: name_owner.as_ptr() as *mut ::core::ffi::c_char,
+        name: Some(name),
         pb,
         editor: ::core::ptr::null_mut(),
-        name_owner,
     }));
     (*ed).editor = spawn_editor(
         c,

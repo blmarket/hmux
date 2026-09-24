@@ -1,6 +1,0 @@
-src/cmd_parse.rs::ENVIRON_HIDDEN 1 4 4
-src/cmd_set_environment.rs::ENVIRON_HIDDEN 1 4 4
-src/cmd_show_environment.rs::ENVIRON_HIDDEN 1 4 4
-src/environ.rs::ENVIRON_HIDDEN 1 4 4
-src/format.rs::ENVIRON_HIDDEN 1 4 4
-src/window_customize.rs::ENVIRON_HIDDEN 1 4 4

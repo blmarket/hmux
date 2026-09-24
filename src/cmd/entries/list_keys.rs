@@ -147,7 +147,7 @@ unsafe fn cmd_list_keys_get_width(bindings: &[*mut key_binding]) -> u_int {
 unsafe fn cmd_list_keys_get_table_width(bindings: &[*mut key_binding]) -> u_int {
     bindings
         .iter()
-        .map(|&bd| utf8_cstrwidth((*bd).tablename))
+        .map(|&bd| (*bd).tablename.as_ref().map_or(0, |s| utf8_cstrwidth(s.as_ptr())))
         .max()
         .unwrap_or(0)
 }
@@ -222,7 +222,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         ft,
         b"key_table\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*bd).tablename,
+        (*bd).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
     );
     format_add(
         ft,

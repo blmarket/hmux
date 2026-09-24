@@ -85,7 +85,7 @@ pub struct options_array_item {
 #[repr(C)]
 pub struct options_entry {
     pub owner: *mut options,
-    pub name: CString,
+    pub name: ::std::ffi::CString,
     pub tableentry: *const options_table_entry,
     pub value: options_value,
     pub cached: ::core::ffi::c_int,
@@ -196,6 +196,6 @@ pub struct options_array_storage {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options_name_map {
-    pub from: *const ::core::ffi::c_char,
-    pub to: *const ::core::ffi::c_char,
+    pub from: &'static ::std::ffi::CStr,
+    pub to: &'static ::std::ffi::CStr,
 }

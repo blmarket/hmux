@@ -66,7 +66,7 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tty_feature {
-    pub name: *const ::core::ffi::c_char,
+    pub name: &'static ::std::ffi::CStr,
     pub capabilities: *const *const ::core::ffi::c_char,
     pub flags: ::core::ffi::c_int,
 }
@@ -84,7 +84,7 @@ static mut tty_feature_title_capabilities: [*const ::core::ffi::c_char; 3] = [
 ];
 static mut tty_feature_title: tty_feature = unsafe {
     tty_feature {
-        name: b"title\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"title",
         capabilities: &raw const tty_feature_title_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -97,7 +97,7 @@ static mut tty_feature_osc7_capabilities: [*const ::core::ffi::c_char; 3] = [
 ];
 static mut tty_feature_osc7: tty_feature = unsafe {
     tty_feature {
-        name: b"osc7\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"osc7",
         capabilities: &raw const tty_feature_osc7_capabilities as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
     }
@@ -108,7 +108,7 @@ static mut tty_feature_mouse_capabilities: [*const ::core::ffi::c_char; 2] = [
 ];
 static mut tty_feature_mouse: tty_feature = unsafe {
     tty_feature {
-        name: b"mouse\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"mouse",
         capabilities: &raw const tty_feature_mouse_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -120,7 +120,7 @@ static mut tty_feature_clipboard_capabilities: [*const ::core::ffi::c_char; 2] =
 ];
 static mut tty_feature_clipboard: tty_feature = unsafe {
     tty_feature {
-        name: b"clipboard\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"clipboard",
         capabilities: &raw const tty_feature_clipboard_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -132,7 +132,7 @@ static mut tty_feature_hyperlinks_capabilities: [*const ::core::ffi::c_char; 2] 
 ];
 static mut tty_feature_hyperlinks: tty_feature = unsafe {
     tty_feature {
-        name: b"hyperlinks\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"hyperlinks",
         capabilities: &raw const tty_feature_hyperlinks_capabilities
             as *mut *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -150,7 +150,7 @@ static mut tty_feature_rgb_capabilities: [*const ::core::ffi::c_char; 6] = [
 ];
 static mut tty_feature_rgb: tty_feature = unsafe {
     tty_feature {
-        name: b"RGB\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"RGB",
         capabilities: &raw const tty_feature_rgb_capabilities as *const *const ::core::ffi::c_char,
         flags: TERM_256COLOURS | TERM_RGBCOLOURS,
     }
@@ -165,7 +165,7 @@ static mut tty_feature_256_capabilities: [*const ::core::ffi::c_char; 4] = [
 ];
 static mut tty_feature_256: tty_feature = unsafe {
     tty_feature {
-        name: b"256\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"256",
         capabilities: &raw const tty_feature_256_capabilities as *const *const ::core::ffi::c_char,
         flags: TERM_256COLOURS,
     }
@@ -176,7 +176,7 @@ static mut tty_feature_overline_capabilities: [*const ::core::ffi::c_char; 2] = 
 ];
 static mut tty_feature_overline: tty_feature = unsafe {
     tty_feature {
-        name: b"overline\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"overline",
         capabilities: &raw const tty_feature_overline_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -192,7 +192,7 @@ static mut tty_feature_usstyle_capabilities: [*const ::core::ffi::c_char; 5] = [
 ];
 static mut tty_feature_usstyle: tty_feature = unsafe {
     tty_feature {
-        name: b"usstyle\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"usstyle",
         capabilities: &raw const tty_feature_usstyle_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -205,7 +205,7 @@ static mut tty_feature_bpaste_capabilities: [*const ::core::ffi::c_char; 3] = [
 ];
 static mut tty_feature_bpaste: tty_feature = unsafe {
     tty_feature {
-        name: b"bpaste\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"bpaste",
         capabilities: &raw const tty_feature_bpaste_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -218,7 +218,7 @@ static mut tty_feature_focus_capabilities: [*const ::core::ffi::c_char; 3] = [
 ];
 static mut tty_feature_focus: tty_feature = unsafe {
     tty_feature {
-        name: b"focus\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"focus",
         capabilities: &raw const tty_feature_focus_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -231,7 +231,7 @@ static mut tty_feature_cstyle_capabilities: [*const ::core::ffi::c_char; 3] = [
 ];
 static mut tty_feature_cstyle: tty_feature = unsafe {
     tty_feature {
-        name: b"cstyle\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"cstyle",
         capabilities: &raw const tty_feature_cstyle_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -244,7 +244,7 @@ static mut tty_feature_ccolour_capabilities: [*const ::core::ffi::c_char; 3] = [
 ];
 static mut tty_feature_ccolour: tty_feature = unsafe {
     tty_feature {
-        name: b"ccolour\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ccolour",
         capabilities: &raw const tty_feature_ccolour_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -256,7 +256,7 @@ static mut tty_feature_strikethrough_capabilities: [*const ::core::ffi::c_char; 
 ];
 static mut tty_feature_strikethrough: tty_feature = unsafe {
     tty_feature {
-        name: b"strikethrough\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"strikethrough",
         capabilities: &raw const tty_feature_strikethrough_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -268,7 +268,7 @@ static mut tty_feature_sync_capabilities: [*const ::core::ffi::c_char; 2] = [
 ];
 static mut tty_feature_sync: tty_feature = unsafe {
     tty_feature {
-        name: b"sync\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"sync",
         capabilities: &raw const tty_feature_sync_capabilities as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
     }
@@ -280,7 +280,7 @@ static mut tty_feature_extkeys_capabilities: [*const ::core::ffi::c_char; 3] = [
 ];
 static mut tty_feature_extkeys: tty_feature = unsafe {
     tty_feature {
-        name: b"extkeys\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"extkeys",
         capabilities: &raw const tty_feature_extkeys_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -295,7 +295,7 @@ static mut tty_feature_margins_capabilities: [*const ::core::ffi::c_char; 5] = [
 ];
 static mut tty_feature_margins: tty_feature = unsafe {
     tty_feature {
-        name: b"margins\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"margins",
         capabilities: &raw const tty_feature_margins_capabilities
             as *const *const ::core::ffi::c_char,
         flags: TERM_DECSLRM,
@@ -307,7 +307,7 @@ static mut tty_feature_rectfill_capabilities: [*const ::core::ffi::c_char; 2] = 
 ];
 static mut tty_feature_rectfill: tty_feature = unsafe {
     tty_feature {
-        name: b"rectfill\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"rectfill",
         capabilities: &raw const tty_feature_rectfill_capabilities
             as *const *const ::core::ffi::c_char,
         flags: TERM_DECFRA,
@@ -382,7 +382,7 @@ static mut tty_feature_ignorefkeys_capabilities: [*const ::core::ffi::c_char; 65
 ];
 static mut tty_feature_ignorefkeys: tty_feature = unsafe {
     tty_feature {
-        name: b"ignorefkeys\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ignorefkeys",
         capabilities: &raw const tty_feature_ignorefkeys_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
@@ -394,7 +394,7 @@ static mut tty_feature_sixel_capabilities: [*const ::core::ffi::c_char; 2] = [
 ];
 static mut tty_feature_sixel: tty_feature = unsafe {
     tty_feature {
-        name: b"sixel\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"sixel",
         capabilities: &raw const tty_feature_sixel_capabilities
             as *const *const ::core::ffi::c_char,
         flags: TERM_SIXEL,
@@ -406,14 +406,14 @@ static mut tty_feature_progressbar_capabilities: [*const ::core::ffi::c_char; 2]
 ];
 static mut tty_feature_progressbar: tty_feature = unsafe {
     tty_feature {
-        name: b"progressbar\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"progressbar",
         capabilities: &raw const tty_feature_progressbar_capabilities
             as *const *const ::core::ffi::c_char,
         flags: 0 as ::core::ffi::c_int,
     }
 };
 static mut tty_feature_utf8: tty_feature = tty_feature {
-    name: b"utf8\0" as *const u8 as *const ::core::ffi::c_char,
+    name: c"utf8",
     capabilities: ::core::ptr::null::<*const ::core::ffi::c_char>(),
     flags: 0 as ::core::ffi::c_int,
 };
@@ -493,7 +493,7 @@ pub unsafe extern "C" fn tty_parse_features(
                 .wrapping_div(::core::mem::size_of::<*const tty_feature>() as usize)
         {
             tf = tty_features[i as usize];
-            if strcasecmp((*tf).name, next) == 0 as ::core::ffi::c_int {
+            if strcasecmp((*tf).name.as_ptr(), next) == 0 as ::core::ffi::c_int {
                 break;
             }
             i = i.wrapping_add(1);
@@ -510,7 +510,7 @@ pub unsafe extern "C" fn tty_parse_features(
         } else if remove != 0 {
             log_debug(
                 b"removing terminal feature: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*tf).name,
+                (*tf).name.as_ptr(),
             );
             *enabled &= !((1 as ::core::ffi::c_int) << i);
             if !disabled.is_null() {
@@ -523,7 +523,7 @@ pub unsafe extern "C" fn tty_parse_features(
             if !*enabled & (1 as ::core::ffi::c_int) << i != 0 {
                 log_debug(
                     b"adding terminal feature: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*tf).name,
+                    (*tf).name.as_ptr(),
                 );
                 *enabled |= (1 as ::core::ffi::c_int) << i;
             }
@@ -547,7 +547,7 @@ pub unsafe extern "C" fn tty_get_features(
             tf = tty_features[i as usize];
             strlcat(
                 &raw mut s as *mut ::core::ffi::c_char,
-                (*tf).name,
+                (*tf).name.as_ptr(),
                 ::core::mem::size_of::<[::core::ffi::c_char; 512]>() as size_t,
             );
             strlcat(
@@ -584,7 +584,7 @@ pub unsafe extern "C" fn tty_feature_present(
             .wrapping_div(::core::mem::size_of::<*const tty_feature>() as usize)
     {
         tf = tty_features[i as usize];
-        if strcmp((*tf).name, name) == 0 as ::core::ffi::c_int {
+        if strcmp((*tf).name.as_ptr(), name) == 0 as ::core::ffi::c_int {
             if (*term).applied_features & (1 as ::core::ffi::c_int) << i != 0 {
                 return 1 as ::core::ffi::c_int;
             }
@@ -645,7 +645,7 @@ pub unsafe extern "C" fn tty_apply_features(mut term: *mut tty_term) -> ::core::
             tf = tty_features[i as usize];
             log_debug(
                 b"applying terminal feature: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*tf).name,
+                (*tf).name.as_ptr(),
             );
             if !(*tf).capabilities.is_null() {
                 capability = (*tf).capabilities;
@@ -711,55 +711,55 @@ pub unsafe extern "C" fn tty_default_features(
 ) {
     static mut table: [C2RustUnnamed_35; 9] = [
         C2RustUnnamed_35 {
-            name: b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"mintty".as_ptr(),
             version: 0,
             features: b"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,margins,overline,usstyle\0"
                 as *const u8 as *const ::core::ffi::c_char,
         },
         C2RustUnnamed_35 {
-            name: b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tmux".as_ptr(),
             version: 0,
             features: b"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus,overline,usstyle,hyperlinks,progressbar\0"
                 as *const u8 as *const ::core::ffi::c_char,
         },
         C2RustUnnamed_35 {
-            name: b"rxvt-unicode\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"rxvt-unicode".as_ptr(),
             version: 0,
             features: b"256,bpaste,ccolour,cstyle,mouse,title,ignorefkeys\0" as *const u8
                 as *const ::core::ffi::c_char,
         },
         C2RustUnnamed_35 {
-            name: b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"iTerm2".as_ptr(),
             version: 0,
             features: b"256,RGB,bpaste,clipboard,mouse,strikethrough,title,cstyle,extkeys,margins,usstyle,sync,osc7,hyperlinks,progressbar\0"
                 as *const u8 as *const ::core::ffi::c_char,
         },
         C2RustUnnamed_35 {
-            name: b"foot\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"foot".as_ptr(),
             version: 0,
             features: b"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,usstyle,sync,osc7,hyperlinks\0"
                 as *const u8 as *const ::core::ffi::c_char,
         },
         C2RustUnnamed_35 {
-            name: b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"WezTerm".as_ptr(),
             version: 0,
             features: b"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus,hyperlinks,usstyle\0"
                 as *const u8 as *const ::core::ffi::c_char,
         },
         C2RustUnnamed_35 {
-            name: b"ghostty\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"ghostty".as_ptr(),
             version: 0,
             features: b"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus,overline,hyperlinks,osc7,sync,usstyle,progressbar\0"
                 as *const u8 as *const ::core::ffi::c_char,
         },
         C2RustUnnamed_35 {
-            name: b"Rio\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"Rio".as_ptr(),
             version: 0,
             features: b"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,focus,overline,hyperlinks,osc7,sync,usstyle,progressbar\0"
                 as *const u8 as *const ::core::ffi::c_char,
         },
         C2RustUnnamed_35 {
-            name: b"XTerm\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"XTerm".as_ptr(),
             version: 0,
             features: b"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus\0"
                 as *const u8 as *const ::core::ffi::c_char,

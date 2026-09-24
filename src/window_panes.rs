@@ -139,7 +139,7 @@ pub const WINDOW_MODE_FILL_WINDOW: ::core::ffi::c_int = 0x4 as ::core::ffi::c_in
 #[no_mangle]
 pub static mut window_panes_mode: window_mode = unsafe {
     window_mode {
-        name: b"panes-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"panes-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: WINDOW_MODE_HIDE_PANE_STATUS
             | WINDOW_MODE_NO_STACK

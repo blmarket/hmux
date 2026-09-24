@@ -1,8 +1,0 @@
-src/cmd_server_access.rs::group 32 8 gr_name=0 gr_passwd=8 gr_gid=16 gr_mem=24
-src/server_acl.rs::group 32 8 gr_name=0 gr_passwd=8 gr_gid=16 gr_mem=24
-src/cmd_parse.rs::passwd 48 8 pw_name=0 pw_passwd=8 pw_uid=16 pw_gid=20 pw_gecos=24 pw_dir=32 pw_shell=40
-src/cmd_queue.rs::passwd 48 8 pw_name=0 pw_passwd=8 pw_uid=16 pw_gid=20 pw_gecos=24 pw_dir=32 pw_shell=40
-src/cmd_server_access.rs::passwd 48 8 pw_name=0 pw_passwd=8 pw_uid=16 pw_gid=20 pw_gecos=24 pw_dir=32 pw_shell=40
-src/format.rs::passwd 48 8 pw_name=0 pw_passwd=8 pw_uid=16 pw_gid=20 pw_gecos=24 pw_dir=32 pw_shell=40
-src/server_acl.rs::passwd 48 8 pw_name=0 pw_passwd=8 pw_uid=16 pw_gid=20 pw_gecos=24 pw_dir=32 pw_shell=40
-src/tmux.rs::passwd 48 8 pw_name=0 pw_passwd=8 pw_uid=16 pw_gid=20 pw_gecos=24 pw_dir=32 pw_shell=40

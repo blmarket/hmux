@@ -1014,7 +1014,7 @@ pub unsafe extern "C" fn mode_tree_view_name(
     mut mtd: *mut mode_tree_data,
     mut name: *const ::core::ffi::c_char,
 ) {
-    (*mtd).view_name = name;
+    (*mtd).view_name = if name.is_null() { None } else { Some(CStr::from_ptr(name)) };
 }
 #[no_mangle]
 pub unsafe extern "C" fn mode_tree_draw_as_parent(mut mti: *mut mode_tree_item) {
@@ -1532,9 +1532,9 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     label_bytes.extend_from_slice(b", reversed");
                 }
                 label_bytes.push(b')');
-                if !(*mtd).view_name.is_null() {
+                if let Some(view_name) = (*mtd).view_name {
                     label_bytes.extend_from_slice(b" (view: ");
-                    mode_tree_append_printf_string(&mut label_bytes, (*mtd).view_name);
+                    mode_tree_append_printf_string(&mut label_bytes, view_name.as_ptr());
                     label_bytes.push(b')');
                 }
             }

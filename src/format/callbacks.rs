@@ -2053,7 +2053,7 @@ unsafe fn format_cb_pane_mode(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wp.is_null() {
         wme = (*(*ft).wp).modes.active;
         if !wme.is_null() {
-            return Some(CStr::from_ptr((*(*wme).mode).name).to_owned());
+            return Some(CStr::from_ptr((*(*wme).mode).name.as_ptr()).to_owned());
         }
         return None;
     }

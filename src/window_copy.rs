@@ -289,7 +289,7 @@ pub const REG_NOTBOL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 #[no_mangle]
 pub static mut window_copy_mode: window_mode = unsafe {
     window_mode {
-        name: b"copy-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"copy-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
         init: Some(
@@ -337,7 +337,7 @@ pub static mut window_copy_mode: window_mode = unsafe {
 #[no_mangle]
 pub static mut window_view_mode: window_mode = unsafe {
     window_mode {
-        name: b"view-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"view-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
         init: Some(

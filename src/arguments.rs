@@ -1213,7 +1213,7 @@ pub unsafe extern "C" fn args_make_commands_prepare(
     cmd_get_source(self_0, &raw mut file, &raw mut (*state).pi.line);
     if !file.is_null() {
         (*state).file = Some(CStr::from_ptr(file).to_owned());
-        (*state).pi.file = (*state).file.as_ref().unwrap().as_ptr() as *mut _;
+        (*state).pi.file = (*state).file.clone();
     }
     (*state).pi.c = tc;
     if !(*state).pi.c.is_null() {

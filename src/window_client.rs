@@ -250,7 +250,7 @@ static mut window_client_menu_items: [menu_item; 9] = [
 #[no_mangle]
 pub static mut window_client_mode: window_mode = unsafe {
     window_mode {
-        name: b"client-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"client-mode",
         default_format: WINDOW_CLIENT_DEFAULT_FORMAT.as_ptr(),
         flags: 0,
         init: Some(

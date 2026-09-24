@@ -86,7 +86,7 @@ pub struct window_clock_mode_data {
 #[no_mangle]
 pub static mut window_clock_mode: window_mode = unsafe {
     window_mode {
-        name: b"clock-mode\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"clock-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
         init: Some(

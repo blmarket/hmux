@@ -2955,7 +2955,7 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
         },
         last_theme: THEME_UNKNOWN,
         border_status_line: style_line_entry {
-            expanded: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+            expanded: None,
             ranges: style_ranges {
                 ranges: ::core::ptr::null_mut(),
                 _reserved: 0,
@@ -3627,7 +3627,7 @@ pub unsafe extern "C" fn window_pane_set_mode(
 ) -> ::core::ffi::c_int {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut w: *mut window = (*wp).window as *mut window;
-    let mut name: *const ::core::ffi::c_char = (*mode).name;
+    let mut name: *const ::core::ffi::c_char = (*mode).name.as_ptr();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !(*wp).modes.active.is_null() {
         if (*(*wp).modes.active).mode == mode {
@@ -3638,7 +3638,7 @@ pub unsafe extern "C" fn window_pane_set_mode(
         }
     }
     if !(*wp).modes.active.is_null() {
-        oname = (*(*(*wp).modes.active).mode).name;
+        oname = (*(*(*wp).modes.active).mode).name.as_ptr();
     }
     wme = (*wp).modes.active;
     while !wme.is_null() {
@@ -3706,7 +3706,7 @@ pub unsafe extern "C" fn window_pane_reset_mode(mut wp: *mut window_pane) {
         return;
     }
     wme = (*wp).modes.active;
-    p = (*(*wme).mode).name;
+    p = (*(*wme).mode).name.as_ptr();
     kill_0 = (*wme).kill;
     let entry = window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane");
     (*(*wme).mode).free.expect("non-null function pointer")(wme);
@@ -3723,7 +3723,7 @@ pub unsafe extern "C" fn window_pane_reset_mode(mut wp: *mut window_pane) {
         log_debug(
             b"%s: next mode is %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"window_pane_reset_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*next).mode).name,
+            (*(*next).mode).name.as_ptr(),
         );
         (*wp).screen = (*next).screen;
         if (*(*next).mode).resize.is_some() {
@@ -3733,7 +3733,7 @@ pub unsafe extern "C" fn window_pane_reset_mode(mut wp: *mut window_pane) {
     name = if next.is_null() {
         ::core::ptr::null::<::core::ffi::c_char>()
     } else {
-        (*(*next).mode).name
+        (*(*next).mode).name.as_ptr()
     };
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());

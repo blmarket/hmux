@@ -97,10 +97,10 @@ mod systemd_message_tests {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct systemd_job_watch {
-    pub path: *const ::core::ffi::c_char,
+    pub path: Option<::std::ffi::CString>,
     pub done: ::core::ffi::c_int,
 }
 pub const EPFNOSUPPORT: ::core::ffi::c_int = 96 as ::core::ffi::c_int;
@@ -194,9 +194,9 @@ unsafe extern "C" fn job_removed_handler(
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut id: uint32_t = 0;
     let mut r: ::core::ffi::c_int = 0;
-    if (*watch).path.is_null() {
+    let Some(watch_path) = (*watch).path.as_ref() else {
         return 0 as ::core::ffi::c_int;
-    }
+    };
     r = sd_bus_message_read(
         m,
         b"uo\0" as *const u8 as *const ::core::ffi::c_char,
@@ -206,7 +206,7 @@ unsafe extern "C" fn job_removed_handler(
     if r < 0 as ::core::ffi::c_int {
         return r;
     }
-    if strcmp(path, (*watch).path) == 0 as ::core::ffi::c_int {
+    if strcmp(path, watch_path.as_ptr()) == 0 as ::core::ffi::c_int {
         (*watch).done = 1 as ::core::ffi::c_int;
     }
     return 0 as ::core::ffi::c_int;
@@ -220,6 +220,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
     let mut slot: *mut sd_bus_slot = ::core::ptr::null_mut::<sd_bus_slot>();
     let mut cause: Option<CString> = None;
     let mut slice: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut job_path: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut uuid: sd_id128_t = sd_id128 { bytes: [0; 16] };
     let mut r: ::core::ffi::c_int = 0;
     let mut elapsed_usec: uint64_t = 0;
@@ -234,7 +235,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
         tv_usec: 0,
     };
     let mut watch: systemd_job_watch = systemd_job_watch {
-        path: ::core::ptr::null::<::core::ffi::c_char>(),
+        path: None,
         done: 0,
     };
     let resources = SystemdBusResources {
@@ -563,7 +564,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                         r = sd_bus_message_read(
                                                                             reply,
                                                                             b"o\0" as *const u8 as *const ::core::ffi::c_char,
-                                                                            &raw mut watch.path,
+                                                                            &raw mut job_path,
                                                                         );
                                                                         if r < 0
                                                                             as ::core::ffi::c_int
@@ -575,6 +576,9 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                                 strerror(-r),
                                                                             );
                                                                         } else {
+                                                                            if !job_path.is_null() {
+                                                                                watch.path = Some(CStr::from_ptr(job_path).to_owned());
+                                                                            }
                                                                             while watch.done == 0 {
                                                                                 r = sd_bus_process(
                                                                                     bus,

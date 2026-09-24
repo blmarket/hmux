@@ -215,7 +215,7 @@ pub unsafe extern "C" fn key_bindings_get(
         key: 0,
         cmdlist: ::core::ptr::null_mut::<cmd_list>(),
         note: Default::default(),
-        tablename: ::core::ptr::null::<::core::ffi::c_char>(),
+        tablename: None,
         flags: 0,
         entry: key_binding_entry {
             owner: std::ptr::null_mut(),
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn key_bindings_get_default(
         key: 0,
         cmdlist: ::core::ptr::null_mut::<cmd_list>(),
         note: Default::default(),
-        tablename: ::core::ptr::null::<::core::ffi::c_char>(),
+        tablename: None,
         flags: 0,
         entry: key_binding_entry {
             owner: std::ptr::null_mut(),
@@ -282,7 +282,7 @@ pub unsafe extern "C" fn key_bindings_add(
     }
     bd = key_bindings_new();
     (*bd).key = (key as ::core::ffi::c_ulonglong & !KEYC_MASK_FLAGS) as key_code;
-    (*bd).tablename = ((*table).name).as_ptr().cast_mut();
+    (*bd).tablename = Some((*table).name.clone());
     if !note.is_null() {
         key_bindings_set_note(bd, note);
     }

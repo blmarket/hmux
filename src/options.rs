@@ -201,9 +201,9 @@ unsafe extern "C" fn options_map_name(
 ) -> *const ::core::ffi::c_char {
     let mut map: *const options_name_map = ::core::ptr::null::<options_name_map>();
     map = &raw const options_other_names as *const options_name_map;
-    while !(*map).from.is_null() {
-        if strcmp((*map).from, name) == 0 as ::core::ffi::c_int {
-            return (*map).to;
+    while !(*map).from.to_bytes().is_empty() {
+        if strcmp((*map).from.as_ptr(), name) == 0 as ::core::ffi::c_int {
+            return (*map).to.as_ptr();
         }
         map = map.offset(1);
     }
@@ -957,10 +957,10 @@ pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMat
     let mut aliases: [(&[u8], &[u8]); 8] = [(&[], &[]); 8];
     let mut alias_count = 0usize;
     let mut map = &raw const options_other_names as *const options_name_map;
-    while alias_count < aliases.len() && !(*map).from.is_null() {
+    while alias_count < aliases.len() && !(*map).from.to_bytes().is_empty() {
         aliases[alias_count] = (
-            std::ffi::CStr::from_ptr((*map).from).to_bytes(),
-            std::ffi::CStr::from_ptr((*map).to).to_bytes(),
+            (*map).from.to_bytes(),
+            (*map).to.to_bytes(),
         );
         alias_count += 1;
         map = map.offset(1);

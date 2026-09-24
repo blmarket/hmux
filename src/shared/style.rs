@@ -52,10 +52,10 @@ pub const STYLE_ALIGN_CENTRE: style_align = 2;
 pub const STYLE_ALIGN_LEFT: style_align = 1;
 pub const STYLE_ALIGN_DEFAULT: style_align = 0;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct style_line_entry {
-    pub expanded: *mut ::core::ffi::c_char,
+    pub expanded: Option<::std::ffi::CString>,
     pub ranges: style_ranges,
 }
 
@@ -131,9 +131,9 @@ mod tests {
         assert_eq!(offset_of!(style, default_type), 112);
         assert_eq!(offset_of!(style, link), 116);
 
-        assert_eq!(size_of::<style_line_entry>(), 24);
+        assert_eq!(size_of::<style_line_entry>(), 32);
         assert_eq!(align_of::<style_line_entry>(), 8);
-        assert_eq!(offset_of!(style_line_entry, ranges), 8);
+        assert_eq!(offset_of!(style_line_entry, ranges), 16);
         assert_eq!(size_of::<style_ranges>(), 16);
         assert_eq!(align_of::<style_ranges>(), 8);
         assert_eq!(offset_of!(style_ranges, ranges), 0);

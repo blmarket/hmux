@@ -2228,7 +2228,7 @@ pub struct key_binding {
     pub key: key_code,
     pub cmdlist: *mut cmd_list,
     pub note: Option<std::ffi::CString>,
-    pub tablename: *const ::core::ffi::c_char,
+    pub tablename: Option<::std::ffi::CString>,
     pub flags: ::core::ffi::c_int,
     pub entry: key_binding_entry,
 }

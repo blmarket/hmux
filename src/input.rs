@@ -450,7 +450,7 @@ pub const INPUT_ESC_RIS: input_esc_type = 9;
 #[repr(C)]
 pub struct input_table_entry {
     pub ch: ::core::ffi::c_int,
-    pub interm: *const ::core::ffi::c_char,
+    pub interm: &'static ::std::ffi::CStr,
     pub type_0: ::core::ffi::c_int,
 }
 pub const INPUT_CSI_XDA: input_csi_type = 40;
@@ -533,300 +533,300 @@ pub const INPUT_LAST: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 static mut input_esc_table: [input_table_entry; 15] = [
     input_table_entry {
         ch: '0' as i32,
-        interm: b"(\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"(",
         type_0: INPUT_ESC_SCSG0_ON as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: '0' as i32,
-        interm: b")\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c")",
         type_0: INPUT_ESC_SCSG1_ON as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: '7' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_DECSC as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: '8' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_DECRC as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: '8' as i32,
-        interm: b"#\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"#",
         type_0: INPUT_ESC_DECALN as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: '=' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_DECKPAM as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: '>' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_DECKPNM as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'B' as i32,
-        interm: b"(\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"(",
         type_0: INPUT_ESC_SCSG0_OFF as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'B' as i32,
-        interm: b")\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c")",
         type_0: INPUT_ESC_SCSG1_OFF as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'D' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_IND as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'E' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_NEL as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'H' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_HTS as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'M' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_RI as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: '\\' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_ST as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'c' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_ESC_RIS as ::core::ffi::c_int,
     },
 ];
 static mut input_csi_table: [input_table_entry; 43] = [
     input_table_entry {
         ch: '@' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_ICH as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'A' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CUU as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'B' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CUD as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'C' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CUF as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'D' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CUB as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'E' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CNL as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'F' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CPL as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'G' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_HPA as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'H' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CUP as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'J' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_ED as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'K' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_EL as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'L' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_IL as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'M' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_DL as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'P' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_DCH as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'S' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_SU as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'S' as i32,
-        interm: b"?\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"?",
         type_0: INPUT_CSI_SM_GRAPHICS as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'T' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_SD as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'X' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_ECH as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'Z' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CBT as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: '`' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_HPA as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'b' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_REP as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'c' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_DA as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'c' as i32,
-        interm: b">\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c">",
         type_0: INPUT_CSI_DA_TWO as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'd' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_VPA as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'f' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_CUP as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'g' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_TBC as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'h' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_SM as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'h' as i32,
-        interm: b"?\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"?",
         type_0: INPUT_CSI_SM_PRIVATE as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'l' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_RM as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'l' as i32,
-        interm: b"?\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"?",
         type_0: INPUT_CSI_RM_PRIVATE as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'm' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_SGR as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'm' as i32,
-        interm: b">\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c">",
         type_0: INPUT_CSI_MODSET as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'n' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_DSR as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'n' as i32,
-        interm: b">\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c">",
         type_0: INPUT_CSI_MODOFF as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'n' as i32,
-        interm: b"?\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"?",
         type_0: INPUT_CSI_DSR_PRIVATE as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'p' as i32,
-        interm: b"$\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"$",
         type_0: INPUT_CSI_QUERY as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'p' as i32,
-        interm: b"?$\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"?$",
         type_0: INPUT_CSI_QUERY_PRIVATE as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'q' as i32,
-        interm: b" \0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c" ",
         type_0: INPUT_CSI_DECSCUSR as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'q' as i32,
-        interm: b">\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c">",
         type_0: INPUT_CSI_XDA as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'r' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_DECSTBM as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 's' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_SCP as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 't' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_WINOPS as ::core::ffi::c_int,
     },
     input_table_entry {
         ch: 'u' as i32,
-        interm: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        interm: c"",
         type_0: INPUT_CSI_RCP as ::core::ffi::c_int,
     },
 ];
 static mut input_state_ground: input_state = unsafe {
     input_state {
-        name: b"ground\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"ground",
         enter: Some(input_ground as unsafe extern "C" fn(*mut input_ctx) -> ()),
         exit: None,
         transitions: &raw const input_state_ground_table as *const input_transition,
@@ -834,7 +834,7 @@ static mut input_state_ground: input_state = unsafe {
 };
 static mut input_state_esc_enter: input_state = unsafe {
     input_state {
-        name: b"esc_enter\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"esc_enter",
         enter: Some(input_clear as unsafe extern "C" fn(*mut input_ctx) -> ()),
         exit: None,
         transitions: &raw const input_state_esc_enter_table as *const input_transition,
@@ -842,7 +842,7 @@ static mut input_state_esc_enter: input_state = unsafe {
 };
 static mut input_state_esc_intermediate: input_state = unsafe {
     input_state {
-        name: b"esc_intermediate\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"esc_intermediate",
         enter: None,
         exit: None,
         transitions: &raw const input_state_esc_intermediate_table as *const input_transition,
@@ -850,7 +850,7 @@ static mut input_state_esc_intermediate: input_state = unsafe {
 };
 static mut input_state_csi_enter: input_state = unsafe {
     input_state {
-        name: b"csi_enter\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"csi_enter",
         enter: Some(input_clear as unsafe extern "C" fn(*mut input_ctx) -> ()),
         exit: None,
         transitions: &raw const input_state_csi_enter_table as *const input_transition,
@@ -858,7 +858,7 @@ static mut input_state_csi_enter: input_state = unsafe {
 };
 static mut input_state_csi_parameter: input_state = unsafe {
     input_state {
-        name: b"csi_parameter\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"csi_parameter",
         enter: None,
         exit: None,
         transitions: &raw const input_state_csi_parameter_table as *const input_transition,
@@ -866,7 +866,7 @@ static mut input_state_csi_parameter: input_state = unsafe {
 };
 static mut input_state_csi_intermediate: input_state = unsafe {
     input_state {
-        name: b"csi_intermediate\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"csi_intermediate",
         enter: None,
         exit: None,
         transitions: &raw const input_state_csi_intermediate_table as *const input_transition,
@@ -874,7 +874,7 @@ static mut input_state_csi_intermediate: input_state = unsafe {
 };
 static mut input_state_csi_ignore: input_state = unsafe {
     input_state {
-        name: b"csi_ignore\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"csi_ignore",
         enter: None,
         exit: None,
         transitions: &raw const input_state_csi_ignore_table as *const input_transition,
@@ -882,7 +882,7 @@ static mut input_state_csi_ignore: input_state = unsafe {
 };
 static mut input_state_dcs_enter: input_state = unsafe {
     input_state {
-        name: b"dcs_enter\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dcs_enter",
         enter: Some(input_enter_dcs as unsafe extern "C" fn(*mut input_ctx) -> ()),
         exit: None,
         transitions: &raw const input_state_dcs_enter_table as *const input_transition,
@@ -890,7 +890,7 @@ static mut input_state_dcs_enter: input_state = unsafe {
 };
 static mut input_state_dcs_parameter: input_state = unsafe {
     input_state {
-        name: b"dcs_parameter\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dcs_parameter",
         enter: None,
         exit: None,
         transitions: &raw const input_state_dcs_parameter_table as *const input_transition,
@@ -898,7 +898,7 @@ static mut input_state_dcs_parameter: input_state = unsafe {
 };
 static mut input_state_dcs_intermediate: input_state = unsafe {
     input_state {
-        name: b"dcs_intermediate\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dcs_intermediate",
         enter: None,
         exit: None,
         transitions: &raw const input_state_dcs_intermediate_table as *const input_transition,
@@ -906,7 +906,7 @@ static mut input_state_dcs_intermediate: input_state = unsafe {
 };
 static mut input_state_dcs_handler: input_state = unsafe {
     input_state {
-        name: b"dcs_handler\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dcs_handler",
         enter: None,
         exit: None,
         transitions: &raw const input_state_dcs_handler_table as *const input_transition,
@@ -914,7 +914,7 @@ static mut input_state_dcs_handler: input_state = unsafe {
 };
 static mut input_state_dcs_escape: input_state = unsafe {
     input_state {
-        name: b"dcs_escape\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dcs_escape",
         enter: None,
         exit: None,
         transitions: &raw const input_state_dcs_escape_table as *const input_transition,
@@ -922,7 +922,7 @@ static mut input_state_dcs_escape: input_state = unsafe {
 };
 static mut input_state_dcs_ignore: input_state = unsafe {
     input_state {
-        name: b"dcs_ignore\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"dcs_ignore",
         enter: None,
         exit: None,
         transitions: &raw const input_state_dcs_ignore_table as *const input_transition,
@@ -930,7 +930,7 @@ static mut input_state_dcs_ignore: input_state = unsafe {
 };
 static mut input_state_osc_string: input_state = unsafe {
     input_state {
-        name: b"osc_string\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"osc_string",
         enter: Some(input_enter_osc as unsafe extern "C" fn(*mut input_ctx) -> ()),
         exit: Some(input_exit_osc as unsafe extern "C" fn(*mut input_ctx) -> ()),
         transitions: &raw const input_state_osc_string_table as *const input_transition,
@@ -938,7 +938,7 @@ static mut input_state_osc_string: input_state = unsafe {
 };
 static mut input_state_apc_string: input_state = unsafe {
     input_state {
-        name: b"apc_string\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"apc_string",
         enter: Some(input_enter_apc as unsafe extern "C" fn(*mut input_ctx) -> ()),
         exit: Some(input_exit_apc as unsafe extern "C" fn(*mut input_ctx) -> ()),
         transitions: &raw const input_state_apc_string_table as *const input_transition,
@@ -946,7 +946,7 @@ static mut input_state_apc_string: input_state = unsafe {
 };
 static mut input_state_rename_string: input_state = unsafe {
     input_state {
-        name: b"rename_string\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"rename_string",
         enter: Some(input_enter_rename as unsafe extern "C" fn(*mut input_ctx) -> ()),
         exit: Some(input_exit_rename as unsafe extern "C" fn(*mut input_ctx) -> ()),
         transitions: &raw const input_state_rename_string_table as *const input_transition,
@@ -954,7 +954,7 @@ static mut input_state_rename_string: input_state = unsafe {
 };
 static mut input_state_consume_st: input_state = unsafe {
     input_state {
-        name: b"consume_st\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"consume_st",
         enter: Some(input_enter_rename as unsafe extern "C" fn(*mut input_ctx) -> ()),
         exit: None,
         transitions: &raw const input_state_consume_st_table as *const input_transition,
@@ -2318,7 +2318,7 @@ unsafe extern "C" fn input_table_compare(
     }
     return strcmp(
         &raw const (*ictx).interm_buf as *const u_char as *const ::core::ffi::c_char,
-        (*entry).interm,
+        (*entry).interm.as_ptr(),
     );
 }
 unsafe extern "C" fn input_stop_utf8(mut ictx: *mut input_ctx) {

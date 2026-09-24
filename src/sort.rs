@@ -439,13 +439,13 @@ unsafe extern "C" fn sort_key_binding_cmp(
                 as ::core::ffi::c_int;
         }
         4 => {
-            result = (strcasecmp((*a).tablename, (*b).tablename) == 0 as ::core::ffi::c_int)
+            result = (strcasecmp((*a).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()), (*b).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr())) == 0 as ::core::ffi::c_int)
                 as ::core::ffi::c_int;
         }
         0 | 1 | 5 | 6 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = (strcasecmp((*a).tablename, (*b).tablename) == 0 as ::core::ffi::c_int)
+        result = (strcasecmp((*a).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()), (*b).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr())) == 0 as ::core::ffi::c_int)
             as ::core::ffi::c_int;
     }
     if (*sort_crit).reversed != 0 {

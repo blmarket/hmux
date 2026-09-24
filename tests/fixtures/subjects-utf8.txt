@@ -1,9 +1,0 @@
-src/tty.rs::UTF8_SIZE 32 4 4
-src/utf8.rs::UTF8_SIZE 32 4 4
-src/cmd_parse.rs::wchar_t 4 4
-src/compat/utf8proc.rs::wchar_t 4 4
-src/input_keys.rs::wchar_t 4 4
-src/key_string.rs::wchar_t 4 4
-src/tty_keys.rs::wchar_t 4 4
-src/utf8.rs::wchar_t 4 4
-src/utf8_combined.rs::wchar_t 4 4

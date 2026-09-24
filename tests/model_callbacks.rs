@@ -39,8 +39,7 @@ fn callbacks_cross_original_module_paths_without_conversion() {
     let draw_callback: hmux2::src::popup::tty_ctx_set_client_cb = tty_callback;
     let overlay_callback: client::overlay_mode_cb = Some(overlay);
     let server_callback: hmux2::src::server_client::overlay_mode_cb = overlay_callback;
-    // The structure consists only of integer and nullable pointer fields.
-    let mut mode: window::window_mode = unsafe { std::mem::zeroed() };
+    let mut mode = window::window_mode::default();
     assert!(mode.get_screen.is_none());
     mode.get_screen = Some(mode_screen);
     let copy_mode: hmux2::src::window_copy::window_mode = mode;

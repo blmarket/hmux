@@ -1,2 +1,0 @@
-src/client.rs::msg_command 4 4 [0]
-src/server_client.rs::msg_command 4 4 [0]

@@ -192,7 +192,7 @@ pub unsafe extern "C" fn load_cfg(
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut pi: cmd_parse_input = cmd_parse_input {
         flags: 0,
-        file: ::core::ptr::null::<::core::ffi::c_char>(),
+        file: None,
         line: 0,
         item: ::core::ptr::null_mut::<cmdq_item>(),
         c: ::core::ptr::null_mut::<client>(),
@@ -229,13 +229,8 @@ pub unsafe extern "C" fn load_cfg(
         return -(1 as ::core::ffi::c_int);
     }
     let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
-    memset(
-        &raw mut pi as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_input>() as size_t,
-    );
     pi.flags = flags;
-    pi.file = path;
+    pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;
     pi.item = item;
     pi.c = c;
@@ -267,7 +262,7 @@ pub unsafe extern "C" fn load_cfg(
         state,
         b"current_file\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        pi.file,
+        pi.file.as_ref().map_or(::core::ptr::null(), |file| file.as_ptr()),
     );
     new_item0 = cmdq_get_command(pr.cmdlist, state);
     if !item.is_null() {
@@ -295,7 +290,7 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
 ) -> ::core::ffi::c_int {
     let mut pi: cmd_parse_input = cmd_parse_input {
         flags: 0,
-        file: ::core::ptr::null::<::core::ffi::c_char>(),
+        file: None,
         line: 0,
         item: ::core::ptr::null_mut::<cmdq_item>(),
         c: ::core::ptr::null_mut::<client>(),
@@ -319,13 +314,8 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
         b"loading %s\0" as *const u8 as *const ::core::ffi::c_char,
         path,
     );
-    memset(
-        &raw mut pi as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_input>() as size_t,
-    );
     pi.flags = flags;
-    pi.file = path;
+    pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;
     pi.item = item;
     pi.c = c;
@@ -356,7 +346,7 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
         state,
         b"current_file\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        pi.file,
+        pi.file.as_ref().map_or(::core::ptr::null(), |file| file.as_ptr()),
     );
     new_item0 = cmdq_get_command(pr.cmdlist, state);
     if !item.is_null() {

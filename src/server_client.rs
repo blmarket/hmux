@@ -228,13 +228,8 @@ pub(crate) unsafe fn server_client_set_status_expanded(
     index: usize,
     expanded: Option<CString>,
 ) {
-    let owner = c;
-    assert!(index < (*owner).status_expanded.len());
-    (*c).status.entries[index].expanded = ::core::ptr::null_mut();
-    (*owner).status_expanded[index] = expanded;
-    if let Some(expanded) = (*owner).status_expanded[index].as_ref() {
-        (*c).status.entries[index].expanded = expanded.as_ptr().cast_mut();
-    }
+    assert!(index < (*c).status.entries.len());
+    (*c).status.entries[index].expanded = expanded;
 }
 
 unsafe fn server_client_set_ttyname(c: *mut client, ttyname: Option<CString>) {

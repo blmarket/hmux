@@ -175,7 +175,7 @@ pub struct window_mode_entry_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_mode {
-    pub name: *const ::core::ffi::c_char,
+    pub name: &'static ::std::ffi::CStr,
     pub default_format: *const ::core::ffi::c_char,
     pub flags: ::core::ffi::c_int,
     pub init: Option<
@@ -214,6 +214,26 @@ pub struct window_mode {
     >,
     pub formats: Option<unsafe extern "C" fn(*mut window_mode_entry, *mut format_tree) -> ()>,
     pub get_screen: Option<unsafe extern "C" fn(*mut window_mode_entry) -> *mut screen>,
+}
+
+impl Default for window_mode {
+    fn default() -> Self {
+        Self {
+            name: c"",
+            default_format: ::core::ptr::null(),
+            flags: 0,
+            init: None,
+            free: None,
+            resize: None,
+            update: None,
+            style_changed: None,
+            key: None,
+            key_table: None,
+            command: None,
+            formats: None,
+            get_screen: None,
+        }
+    }
 }
 
 #[repr(C)]
