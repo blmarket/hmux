@@ -234,6 +234,26 @@ unsafe fn control_state_owner(cs: *mut control_state) -> *mut ControlStateOwner 
     cs.cast()
 }
 
+#[doc(hidden)]
+/// Allocate the owner backing a control client's state pointer.
+pub fn control_state_new() -> *mut control_state {
+    let owner = Box::into_raw(Box::new(ControlStateOwner::new()));
+    unsafe { &raw mut (*owner).state }
+}
+
+#[doc(hidden)]
+/// Release an allocated state after its external resources and indexes are gone.
+///
+/// # Safety
+/// `cs` must be a live pointer returned by `control_state_new`, and it must not
+/// be used after this call. Callers must first release its events and monitor
+/// set and empty its raw-pointer pane and window indexes.
+pub unsafe fn control_state_free(cs: *mut control_state) {
+    if !cs.is_null() {
+        drop(Box::from_raw(control_state_owner(cs)));
+    }
+}
+
 unsafe fn control_first_block(cs: *mut control_state) -> *mut control_block {
     (*control_state_owner(cs)).block(0)
 }
@@ -1424,8 +1444,7 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
         setblocking((*c).out_fd, 0 as ::core::ffi::c_int);
     }
     setblocking((*c).fd, 0 as ::core::ffi::c_int);
-    let state_owner = Box::into_raw(Box::new(ControlStateOwner::new()));
-    cs = &raw mut (*state_owner).state;
+    cs = control_state_new();
     (*c).control_state = cs;
     (*cs).panes.storage = std::ptr::null_mut();
     (*cs).windows.storage = std::ptr::null_mut();
@@ -1563,7 +1582,7 @@ pub unsafe extern "C" fn control_stop(mut c: *mut client) {
         control_free_block(cs, cb);
     }
     (*c).control_state = ::core::ptr::null_mut::<control_state>();
-    drop(Box::from_raw(control_state_owner(cs)));
+    control_state_free(cs);
 }
 #[no_mangle]
 pub unsafe extern "C" fn control_add_sub(
