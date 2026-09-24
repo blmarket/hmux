@@ -779,16 +779,16 @@ pub(super) unsafe fn format_build_modifiers(
     return list;
 }
 pub(super) unsafe fn format_match_fuzzy(
-    mut pattern: *const ::core::ffi::c_char,
-    mut text: *const ::core::ffi::c_char,
+    pattern: &CStr,
+    text: &CStr,
     mut positions: ::core::ffi::c_int,
 ) -> CString {
     let mut width: u_int = 0;
-    width = format_width(text);
+    width = format_width(text.as_ptr());
     if width == 0 as u_int {
         width = 1 as u_int;
     }
-    let Some(bs) = fuzzy_match_owned(pattern, text, width, ::core::ptr::null_mut::<u_int>()) else {
+    let Some(bs) = fuzzy_match_owned(pattern, text, width, None) else {
         return if positions != 0 {
             CString::default()
         } else {
@@ -829,10 +829,18 @@ pub(super) unsafe fn format_match(
         s = (*fm).arg(0);
     }
     if !strchr(s, 'p' as i32).is_null() {
-        return format_match_fuzzy(pattern, text, 1 as ::core::ffi::c_int);
+        return format_match_fuzzy(
+            CStr::from_ptr(pattern),
+            CStr::from_ptr(text),
+            1 as ::core::ffi::c_int,
+        );
     }
     if !strchr(s, 'z' as i32).is_null() {
-        return format_match_fuzzy(pattern, text, 0 as ::core::ffi::c_int);
+        return format_match_fuzzy(
+            CStr::from_ptr(pattern),
+            CStr::from_ptr(text),
+            0 as ::core::ffi::c_int,
+        );
     }
     if strchr(s, 'r' as i32).is_null() {
         if !strchr(s, 'i' as i32).is_null() {

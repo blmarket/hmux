@@ -327,8 +327,12 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
         if *f as ::core::ffi::c_int == '\0' as i32 {
             m.push(item);
         } else {
-            (*item).match_mask =
-                fuzzy_match_owned(f, (*item).text.as_ptr(), sx, &raw mut (*item).score);
+            (*item).match_mask = fuzzy_match_owned(
+                std::ffi::CStr::from_ptr(f),
+                (*item).text.as_c_str(),
+                sx,
+                Some(&mut (*item).score),
+            );
             if (*item).match_mask.is_some() {
                 m.push(item);
             }

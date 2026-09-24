@@ -729,10 +729,10 @@ unsafe extern "C" fn fuzzy_match_group(
     return any;
 }
 pub(crate) unsafe fn fuzzy_match_owned(
-    mut pattern: *const ::core::ffi::c_char,
-    mut text: *const ::core::ffi::c_char,
+    pattern: &CStr,
+    text: &CStr,
     mut width: u_int,
-    mut score: *mut u_int,
+    mut score: Option<&mut u_int>,
 ) -> Option<Vec<bitstr_t>> {
     let mut cs: Vec<fuzzy_char>;
     let mut matched: Vec<::core::ffi::c_char>;
@@ -760,12 +760,12 @@ pub(crate) unsafe fn fuzzy_match_owned(
     if width == 0 as u_int {
         return None;
     }
-    cp = pattern;
+    cp = pattern.as_ptr();
     while *cp as ::core::ffi::c_int == ' ' as i32 || *cp as ::core::ffi::c_int == '|' as i32 {
         cp = cp.offset(1);
     }
     if *cp as ::core::ffi::c_int == '\0' as i32 {
-        if !score.is_null() {
+        if let Some(score) = score.as_deref_mut() {
             *score = 0 as u_int;
         }
         return Some(vec![
@@ -775,7 +775,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
         ]);
     }
     fold = 1 as ::core::ffi::c_int;
-    cp = pattern;
+    cp = pattern.as_ptr();
     while *cp as ::core::ffi::c_int != '\0' as i32 {
         if *cp as ::core::ffi::c_int >= 'A' as i32 && *cp as ::core::ffi::c_int <= 'Z' as i32 {
             fold = 0 as ::core::ffi::c_int;
@@ -784,7 +784,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
             cp = cp.offset(1);
         }
     }
-    cs = fuzzy_scan(text, &raw mut widths as *mut u_int);
+    cs = fuzzy_scan(text.as_ptr(), &raw mut widths as *mut u_int);
     ncs = cs.len() as u_int;
     matched = vec![0; ncs.max(1) as usize];
     best = vec![0; ncs.max(1) as usize];
@@ -795,9 +795,9 @@ pub(crate) unsafe fn fuzzy_match_owned(
             size: 0,
             width: 0,
         };
-        strlen(pattern).wrapping_add(1 as size_t) as usize
+        pattern.to_bytes_with_nul().len()
     ];
-    cp = pattern;
+    cp = pattern.as_ptr();
     while *cp as ::core::ffi::c_int != '\0' as i32 {
         while *cp as ::core::ffi::c_int == ' ' as i32 || *cp as ::core::ffi::c_int == '|' as i32 {
             cp = cp.offset(1);
@@ -903,7 +903,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
     drop(best);
     drop(matched);
     drop(cs);
-    if !score.is_null() {
+    if let Some(score) = score.as_deref_mut() {
         *score = if bestscore < 0 as ::core::ffi::c_int {
             0 as u_int
         } else {
@@ -922,19 +922,19 @@ mod tests {
         unsafe {
             let pattern = c"R";
             let right = c"L#[align=right]R";
-            let mask = fuzzy_match_owned(pattern.as_ptr(), right.as_ptr(), 8, std::ptr::null_mut());
+            let mask = fuzzy_match_owned(pattern, right, 8, None);
             assert_eq!(mask.unwrap()[0], 1 << 7);
 
             let invalid = c"L#[align=bogus]R";
-            let mask = fuzzy_match_owned(pattern.as_ptr(), invalid.as_ptr(), 8, std::ptr::null_mut());
+            let mask = fuzzy_match_owned(pattern, invalid, 8, None);
             assert_eq!(mask.unwrap()[0], 1 << 1);
 
             let incomplete = c"L#[align=right R";
             let mask = fuzzy_match_owned(
-                pattern.as_ptr(),
-                incomplete.as_ptr(),
+                pattern,
+                incomplete,
                 8,
-                std::ptr::null_mut(),
+                None,
             );
             assert!(mask.is_none());
         }
@@ -944,23 +944,23 @@ mod tests {
     fn fuzzy_match_backtracks_and_resets_between_alternatives() {
         unsafe {
             let mask = fuzzy_match_owned(
-                c"q|abc".as_ptr(),
-                c"aabcbc".as_ptr(),
+                c"q|abc",
+                c"aabcbc",
                 6,
-                std::ptr::null_mut(),
+                None,
             );
             assert_eq!(mask.unwrap()[0], 0b001110);
 
             let mask = fuzzy_match_owned(
-                c"abc|q".as_ptr(),
-                c"aabcbc".as_ptr(),
+                c"abc|q",
+                c"aabcbc",
                 6,
-                std::ptr::null_mut(),
+                None,
             );
             assert_eq!(mask.unwrap()[0], 0b001110);
 
             assert!(
-                fuzzy_match_owned(c"abc".as_ptr(), c"abx".as_ptr(), 3, std::ptr::null_mut()).is_none()
+                fuzzy_match_owned(c"abc", c"abx", 3, None).is_none()
             );
         }
     }
@@ -968,12 +968,13 @@ mod tests {
     #[test]
     fn fuzzy_match_crosses_scan_growth_boundary_and_stops_at_nul() {
         let text = format!("{}zy\0q", "a".repeat(63));
+        let text = CStr::from_bytes_until_nul(text.as_bytes()).unwrap();
         unsafe {
             let mask = fuzzy_match_owned(
-                c"zy".as_ptr(),
-                text.as_ptr().cast(),
+                c"zy",
+                text,
                 65,
-                std::ptr::null_mut(),
+                None,
             );
             let mask = mask.unwrap();
             assert_eq!(
@@ -982,10 +983,10 @@ mod tests {
             );
 
             assert!(fuzzy_match_owned(
-                c"q".as_ptr(),
-                text.as_ptr().cast(),
+                c"q",
+                text,
                 65,
-                std::ptr::null_mut()
+                None
             )
             .is_none());
         }
