@@ -16,11 +16,7 @@ unsafe fn display_message_command() -> *mut cmd {
     let mut value: args_value = std::mem::zeroed();
     value.type_0 = ARGS_STRING;
     value.c2rust_unnamed.string = c"display-message".as_ptr().cast_mut();
-    let mut cause = ptr::null_mut();
-    let command = cmd_parse(&mut value, 1, ptr::null(), 0, 0, &mut cause);
-    assert!(cause.is_null());
-    assert!(!command.is_null());
-    command
+    cmd_parse(&mut value, 1, ptr::null(), 0, 0).expect("command parse reported an error")
 }
 
 #[test]

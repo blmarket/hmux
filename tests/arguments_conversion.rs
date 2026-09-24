@@ -6,7 +6,7 @@ use hmux2::src::arguments::{
     args_copy, args_create, args_escape, args_first_value, args_free, args_free_values, args_get,
     args_has, args_next_value, args_parse as parse_args, args_percentage_result, args_print,
     args_push_positional, args_set, args_string, args_string_percentage_and_expand_result,
-    args_strtonum, args_strtonum_and_expand_result, args_strtonum_result, parse_number,
+    args_strtonum_and_expand_result, args_strtonum_result, parse_number,
     parse_percentage, ArgumentValueError,
 };
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
@@ -289,13 +289,11 @@ fn c_boundary_translates_typed_errors_without_changing_success_values() {
         let value = cstring("42");
         args_set(args, b'n', string_value(value.as_c_str()), 0);
 
-        let mut cause = ptr::null_mut();
-        assert_eq!(args_strtonum(args, b'n', 0, 50, &mut cause), 42);
-        assert!(cause.is_null());
-
-        assert_eq!(args_strtonum(args, b'n', 0, 40, &mut cause), 0);
-        assert_eq!(CStr::from_ptr(cause).to_bytes(), b"too large");
-        free(cause.cast());
+        assert_eq!(args_strtonum_result(args, b'n', 0, 50), Ok(42));
+        assert_eq!(
+            args_strtonum_result(args, b'n', 0, 40),
+            Err(ArgumentValueError::TooLarge)
+        );
         args_free(args);
     }
 }
@@ -363,10 +361,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
             upper: -1,
             cb: Some(command_argument),
         };
-        let mut cause = ptr::null_mut();
-        let args = parse_args(&spec, values, 3, &mut cause);
-        assert!(!args.is_null());
-        assert!(cause.is_null());
+        let args = parse_args(&spec, values, 3).expect("valid command arguments");
         args_free_values(values, 3);
         free(values.cast());
 
@@ -442,13 +437,15 @@ fn rejected_command_argument_keeps_source_value_ownership() {
             upper: -1,
             cb: None,
         };
-        let mut cause = ptr::null_mut();
-        assert!(parse_args(&spec, values, 2, &mut cause).is_null());
+        let error = parse_args(&spec, values, 2).expect_err("command value must be rejected");
+        let error = match error {
+            hmux2::src::arguments::ArgsParseError::Message(error) => error,
+            hmux2::src::arguments::ArgsParseError::Usage => panic!("expected a diagnostic"),
+        };
         assert_eq!(
-            CStr::from_ptr(cause).to_bytes(),
+            error.to_bytes(),
             b"argument 1 must be \"string\""
         );
-        free(cause.cast());
         args_free_values(values, 2);
         free(values.cast());
     }

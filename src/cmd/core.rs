@@ -1,4 +1,5 @@
 pub use crate::src::arguments::args_parse;
+use crate::src::arguments::ArgsParseError;
 use crate::src::arguments::{args_copy, args_escape_cstring, args_free, args_print_cstring};
 use crate::src::cmd_attach_session::cmd_attach_session_entry;
 use crate::src::cmd_bind_key::cmd_bind_key_entry;
@@ -151,9 +152,7 @@ use crate::src::tmux::global_options;
 use crate::src::window::{
     window_find_by_id, window_has_pane, window_pane_find_by_id, winlink_find_by_window,
 };
-use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf_cstring,
-};
+use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf_cstring};
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
@@ -546,11 +545,9 @@ pub unsafe extern "C" fn cmd_get_alias(
     }
     return ::core::ptr::null_mut::<::core::ffi::c_char>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_find(
+pub unsafe fn cmd_find(
     mut name: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *const cmd_entry {
+) -> Result<*const cmd_entry, CString> {
     let mut loop_0: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     let mut found: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
@@ -606,23 +603,18 @@ pub unsafe extern "C" fn cmd_find(
         }
         s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(2 as size_t) as usize] =
             '\0' as i32 as ::core::ffi::c_char;
-        xasprintf(
-            cause,
-            b"ambiguous command: %s, could be: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-            &raw mut s as *mut ::core::ffi::c_char,
-        );
-        return ::core::ptr::null::<cmd_entry>();
+        let mut error = b"ambiguous command: ".to_vec();
+        error.extend_from_slice(CStr::from_ptr(name).to_bytes());
+        error.extend_from_slice(b", could be: ");
+        error.extend_from_slice(CStr::from_ptr(s.as_ptr()).to_bytes());
+        return Err(CString::new(error).expect("command diagnostic contains no NUL"));
     } else {
         if found.is_null() {
-            xasprintf(
-                cause,
-                b"unknown command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-            );
-            return ::core::ptr::null::<cmd_entry>();
+            let mut error = b"unknown command: ".to_vec();
+            error.extend_from_slice(CStr::from_ptr(name).to_bytes());
+            return Err(CString::new(error).expect("command diagnostic contains no NUL"));
         }
-        return found;
+        return Ok(found);
     };
 }
 
@@ -639,64 +631,50 @@ unsafe fn cmd_new_owned(file: *const ::core::ffi::c_char) -> *mut cmd {
     Box::into_raw(owner).cast::<cmd>()
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn cmd_parse(
+pub unsafe fn cmd_parse(
     mut values: *mut args_value,
     mut count: u_int,
     mut file: *const ::core::ffi::c_char,
     mut line: u_int,
     mut parse_flags: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut cmd {
+) -> Result<*mut cmd, CString> {
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut args: *mut args = ::core::ptr::null_mut::<args>();
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if count == 0 as u_int
         || (*values.offset(0 as ::core::ffi::c_int as isize)).type_0 as ::core::ffi::c_uint
             != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        xasprintf(
-            cause,
-            b"no command\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        return ::core::ptr::null_mut::<cmd>();
+        return Err(CString::new("no command").unwrap());
     }
     entry = cmd_find(
         (*values.offset(0 as ::core::ffi::c_int as isize))
             .c2rust_unnamed
             .string,
-        cause,
-    );
-    if entry.is_null() {
-        return ::core::ptr::null_mut::<cmd>();
-    }
-    args = args_parse(&raw const (*entry).args, values, count, &raw mut error);
-    if args.is_null() && error.is_null() {
-        xasprintf(
-            cause,
-            b"usage: %s %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*entry).name,
-            (*entry).usage,
-        );
-        return ::core::ptr::null_mut::<cmd>();
-    }
-    if args.is_null() {
-        xasprintf(
-            cause,
-            b"command %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*entry).name,
-            error,
-        );
-        free(error as *mut ::core::ffi::c_void);
-        return ::core::ptr::null_mut::<cmd>();
-    }
+    )?;
+    args = match args_parse(&raw const (*entry).args, values, count) {
+        Ok(args) => args,
+        Err(ArgsParseError::Usage) => {
+            let mut error = b"usage: ".to_vec();
+            error.extend_from_slice(CStr::from_ptr((*entry).name).to_bytes());
+            error.push(b' ');
+            error.extend_from_slice(CStr::from_ptr((*entry).usage).to_bytes());
+            return Err(CString::new(error).expect("command diagnostic contains no NUL"));
+        }
+        Err(ArgsParseError::Message(message)) => {
+            let mut error = b"command ".to_vec();
+            error.extend_from_slice(CStr::from_ptr((*entry).name).to_bytes());
+            error.extend_from_slice(b": ");
+            error.extend_from_slice(message.as_bytes());
+            return Err(CString::new(error).expect("command diagnostic contains no NUL"));
+        }
+    };
     cmd = cmd_new_owned(file);
     (*cmd).entry = entry;
     (*cmd).args = args;
     (*cmd).parse_flags = parse_flags;
     (*cmd).line = line;
-    return cmd;
+    return Ok(cmd);
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_free(mut cmd: *mut cmd) {

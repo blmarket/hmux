@@ -9,11 +9,7 @@ unsafe fn parse_display_message(file: *const std::ffi::c_char) -> *mut hmux2::sr
     let mut value: args_value = std::mem::zeroed();
     value.type_0 = ARGS_STRING;
     value.c2rust_unnamed.string = command_name.as_ptr().cast_mut();
-    let mut cause = ptr::null_mut();
-    let command = cmd_parse(&mut value, 1, file, 37, 0, &mut cause);
-    assert!(cause.is_null(), "command parse reported an error");
-    assert!(!command.is_null());
-    command
+    cmd_parse(&mut value, 1, file, 37, 0).expect("command parse reported an error")
 }
 
 #[test]

@@ -579,7 +579,6 @@ unsafe extern "C" fn cmd_parse_build_command(
     let mut current_block: u64 = 16207960823932980356;
     let mut arg: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
     let mut add: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut values = Vec::<args_value>::new();
     let mut count: u_int = 0 as u_int;
     let mut idx: u_int = 0;
@@ -632,7 +631,7 @@ unsafe extern "C" fn cmd_parse_build_command(
     }
     match current_block {
         5143058163439228106 => {
-            add = cmd_parse(
+            match cmd_parse(
                 if values.is_empty() {
                     ::core::ptr::null_mut::<args_value>()
                 } else {
@@ -642,16 +641,21 @@ unsafe extern "C" fn cmd_parse_build_command(
                 (*pi).file,
                 (*pi).line,
                 (*pi).flags,
-                &raw mut cause,
-            );
-            if add.is_null() {
-                (*pr).status = CMD_PARSE_ERROR;
-                (*pr).error = cmd_parse_get_error((*pi).file, (*pi).line, cause);
-                free(cause as *mut ::core::ffi::c_void);
-            } else {
-                (*pr).status = CMD_PARSE_SUCCESS;
-                (*pr).cmdlist = cmd_list_new();
-                cmd_list_append((*pr).cmdlist, add);
+            ) {
+                Ok(command) => {
+                    add = command;
+                    (*pr).status = CMD_PARSE_SUCCESS;
+                    (*pr).cmdlist = cmd_list_new();
+                    cmd_list_append((*pr).cmdlist, add);
+                }
+                Err(cause) => {
+                    (*pr).status = CMD_PARSE_ERROR;
+                    (*pr).error = cmd_parse_get_error(
+                        (*pi).file,
+                        (*pi).line,
+                        cause.as_ptr(),
+                    );
+                }
             }
         }
         _ => {}

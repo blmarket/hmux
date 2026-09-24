@@ -5417,7 +5417,6 @@ unsafe extern "C" fn window_copy_command(
     let mut count: u_int = args_count(args);
     let mut keys: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0;
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if count == 0 as u_int {
         return;
     }
@@ -5464,12 +5463,8 @@ unsafe extern "C" fn window_copy_command(
                 .args,
                 args_values(args),
                 count,
-                &raw mut error,
-            );
-            if !error.is_null() {
-                free(error as *mut ::core::ffi::c_void);
-                error = ::core::ptr::null_mut::<::core::ffi::c_char>();
-            }
+            )
+            .unwrap_or(::core::ptr::null_mut::<args>());
             if cs.wargs.is_null() {
                 break;
             }

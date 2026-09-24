@@ -158,7 +158,6 @@ unsafe extern "C" fn cmd_list_commands(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     template = args_get(args, 'F' as i32 as u_char);
     if template.is_null() {
         template = LIST_COMMANDS_TEMPLATE.as_ptr();
@@ -184,18 +183,22 @@ unsafe extern "C" fn cmd_list_commands(
             entryp = entryp.offset(1);
         }
     } else {
-        entry = cmd_find(command, &raw mut cause);
+        match cmd_find(command) {
+            Ok(found) => {
+                entry = found;
+            }
+            Err(cause) => {
+                cmdq_error(
+                    item,
+                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                    cause.as_ptr(),
+                );
+                format_free(ft);
+                return CMD_RETURN_ERROR;
+            }
+        }
         if !entry.is_null() {
             cmd_list_single_command(entry, ft, template, item);
-        } else {
-            cmdq_error(
-                item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-            );
-            free(cause as *mut ::core::ffi::c_void);
-            format_free(ft);
-            return CMD_RETURN_ERROR;
         }
     }
     format_free(ft);

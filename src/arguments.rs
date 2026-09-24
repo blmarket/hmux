@@ -81,7 +81,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::utf8::utf8_strvis;
-use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xcalloc, xstrdup, xvasprintf_cstring};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
@@ -97,6 +97,24 @@ pub enum ArgumentValueError {
     Invalid,
     TooSmall,
     TooLarge,
+}
+
+#[derive(Debug)]
+pub enum ArgsParseError {
+    Usage,
+    Message(CString),
+}
+
+fn parse_flag_error(prefix: &[u8], flag: u_char, suffix: &[u8]) -> CString {
+    let mut bytes = Vec::with_capacity(prefix.len() + 1 + suffix.len());
+    bytes.extend_from_slice(prefix);
+    bytes.push(flag);
+    bytes.extend_from_slice(suffix);
+    CString::new(bytes).expect("argument flag diagnostics contain no NUL")
+}
+
+fn parse_number_error(message: String) -> CString {
+    CString::new(message).expect("argument diagnostics contain no NUL")
 }
 
 impl ArgumentValueError {
@@ -388,16 +406,15 @@ pub unsafe fn args_push_positional(args: *mut args) -> *mut args_value {
 pub(crate) unsafe fn args_new_flag_value() -> *mut args_value {
     Box::into_raw(Box::new(::core::mem::zeroed::<args_value>()))
 }
-unsafe extern "C" fn args_parse_flag_argument(
+unsafe fn args_parse_flag_argument(
     mut values: *mut args_value,
     mut count: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
     mut args: *mut args,
     mut i: *mut u_int,
     mut string: *const ::core::ffi::c_char,
     mut flag: ::core::ffi::c_int,
     mut optional_argument: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+) -> Result<(), CString> {
     let mut argument: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut new: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -414,14 +431,10 @@ unsafe extern "C" fn args_parse_flag_argument(
             if (*argument).type_0 as ::core::ffi::c_uint
                 != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                xasprintf(
-                    cause,
-                    b"-%c argument must be a string\0" as *const u8 as *const ::core::ffi::c_char,
-                    flag,
-                );
+                let error = parse_flag_error(b"-", flag as u_char, b" argument must be a string");
                 args_free_value(new);
                 drop(Box::from_raw(new));
-                return -(1 as ::core::ffi::c_int);
+                return Err(error);
             }
         }
         if argument.is_null() {
@@ -439,14 +452,9 @@ unsafe extern "C" fn args_parse_flag_argument(
                     ::core::ptr::null_mut::<args_value>(),
                     ARGS_ENTRY_OPTIONAL_VALUE,
                 );
-                return 0 as ::core::ffi::c_int;
+                return Ok(());
             }
-            xasprintf(
-                cause,
-                b"-%c expects an argument\0" as *const u8 as *const ::core::ffi::c_char,
-                flag,
-            );
-            return -(1 as ::core::ffi::c_int);
+            return Err(parse_flag_error(b"-", flag as u_char, b" expects an argument"));
         }
         if optional_argument != 0
             && (*argument).type_0 as ::core::ffi::c_uint
@@ -477,7 +485,7 @@ unsafe extern "C" fn args_parse_flag_argument(
                     ::core::ptr::null_mut::<args_value>(),
                     ARGS_ENTRY_OPTIONAL_VALUE,
                 );
-                return 0 as ::core::ffi::c_int;
+                return Ok(());
             }
         }
         args_copy_value(new, argument);
@@ -492,16 +500,15 @@ unsafe extern "C" fn args_parse_flag_argument(
         s,
     );
     args_set(args, flag as u_char, new, 0 as ::core::ffi::c_int);
-    return 0 as ::core::ffi::c_int;
+    return Ok(());
 }
-unsafe extern "C" fn args_parse_flags(
+unsafe fn args_parse_flags(
     mut parse: *const args_parse,
     mut values: *mut args_value,
     mut count: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
     mut args: *mut args,
     mut i: *mut u_int,
-) -> ::core::ffi::c_int {
+) -> Result<::core::ffi::c_int, ArgsParseError> {
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut flag: u_char = 0;
     let mut found: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -511,7 +518,7 @@ unsafe extern "C" fn args_parse_flags(
     if (*value).type_0 as ::core::ffi::c_uint
         != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return 1 as ::core::ffi::c_int;
+        return Ok(1 as ::core::ffi::c_int);
     }
     string = (*value).c2rust_unnamed.string;
     log_debug(
@@ -522,43 +529,41 @@ unsafe extern "C" fn args_parse_flags(
     let fresh1 = string;
     string = string.offset(1);
     if *fresh1 as ::core::ffi::c_int != '-' as i32 || *string as ::core::ffi::c_int == '\0' as i32 {
-        return 1 as ::core::ffi::c_int;
+        return Ok(1 as ::core::ffi::c_int);
     }
     *i = (*i).wrapping_add(1);
     if *string.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '-' as i32
         && *string.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32
     {
-        return 1 as ::core::ffi::c_int;
+        return Ok(1 as ::core::ffi::c_int);
     }
     loop {
         let fresh2 = string;
         string = string.offset(1);
         flag = *fresh2 as u_char;
         if flag as ::core::ffi::c_int == '\0' as i32 {
-            return 0 as ::core::ffi::c_int;
+            return Ok(0 as ::core::ffi::c_int);
         }
         if flag as ::core::ffi::c_int == '?' as i32 {
-            return -(1 as ::core::ffi::c_int);
+            return Err(ArgsParseError::Usage);
         }
         if *(*__ctype_b_loc()).offset(flag as ::core::ffi::c_int as isize) as ::core::ffi::c_int
             & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
             == 0
         {
-            xasprintf(
-                cause,
-                b"invalid flag -%c\0" as *const u8 as *const ::core::ffi::c_char,
-                flag as ::core::ffi::c_int,
-            );
-            return -(1 as ::core::ffi::c_int);
+            return Err(ArgsParseError::Message(parse_flag_error(
+                b"invalid flag -",
+                flag,
+                b"",
+            )));
         }
         found = strchr((*parse).template, flag as ::core::ffi::c_int);
         if found.is_null() {
-            xasprintf(
-                cause,
-                b"unknown flag -%c\0" as *const u8 as *const ::core::ffi::c_char,
-                flag as ::core::ffi::c_int,
-            );
-            return -(1 as ::core::ffi::c_int);
+            return Err(ArgsParseError::Message(parse_flag_error(
+                b"unknown flag -",
+                flag,
+                b"",
+            )));
         }
         if *found.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != ':' as i32 {
             log_debug(
@@ -579,23 +584,22 @@ unsafe extern "C" fn args_parse_flags(
             return args_parse_flag_argument(
                 values,
                 count,
-                cause,
                 args,
                 i,
                 string,
                 flag as ::core::ffi::c_int,
                 optional_argument,
-            );
+            )
+            .map(|()| 0)
+            .map_err(ArgsParseError::Message);
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_parse(
+pub unsafe fn args_parse(
     mut parse: *const args_parse,
     mut values: *mut args_value,
     mut count: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut args {
+) -> Result<*mut args, ArgsParseError> {
     let mut args: *mut args = ::core::ptr::null_mut::<args>();
     let mut i: u_int = 0;
     let mut type_0: args_parse_type = ARGS_PARSE_INVALID;
@@ -604,16 +608,18 @@ pub unsafe extern "C" fn args_parse(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut stop: ::core::ffi::c_int = 0;
     if count == 0 as u_int {
-        return args_create();
+        return Ok(args_create());
     }
     args = args_create();
     i = 1 as u_int;
     while i < count {
-        stop = args_parse_flags(parse, values, count, cause, args, &raw mut i);
-        if stop == -(1 as ::core::ffi::c_int) {
-            args_free(args);
-            return ::core::ptr::null_mut::<args>();
-        }
+        stop = match args_parse_flags(parse, values, count, args, &raw mut i) {
+            Ok(stop) => stop,
+            Err(error) => {
+                args_free(args);
+                return Err(error);
+            }
+        };
         if stop == 1 as ::core::ffi::c_int {
             break;
         }
@@ -637,13 +643,25 @@ pub unsafe extern "C" fn args_parse(
                 args_type_to_string((*value).type_0),
             );
             if (*parse).cb.is_some() {
-                type_0 =
-                    (*parse).cb.expect("non-null function pointer")(args, (*args).count, cause);
+                let mut callback_error = ::core::ptr::null_mut::<::core::ffi::c_char>();
+                type_0 = (*parse).cb.expect("non-null function pointer")(
+                    args,
+                    (*args).count,
+                    &raw mut callback_error,
+                );
                 if type_0 as ::core::ffi::c_uint
                     == ARGS_PARSE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     args_free(args);
-                    return ::core::ptr::null_mut::<args>();
+                    if callback_error.is_null() {
+                        return Err(ArgsParseError::Usage);
+                    }
+                    let error = CStr::from_ptr(callback_error).to_owned();
+                    free(callback_error.cast());
+                    return Err(ArgsParseError::Message(error));
+                }
+                if !callback_error.is_null() {
+                    free(callback_error.cast());
                 }
             } else {
                 type_0 = ARGS_PARSE_STRING;
@@ -659,14 +677,12 @@ pub unsafe extern "C" fn args_parse(
                     if (*value).type_0 as ::core::ffi::c_uint
                         != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        xasprintf(
-                            cause,
-                            b"argument %u must be \"string\"\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            (*args).count,
-                        );
+                        let error = parse_number_error(format!(
+                            "argument {} must be \"string\"",
+                            (*args).count
+                        ));
                         args_free(args);
-                        return ::core::ptr::null_mut::<args>();
+                        return Err(ArgsParseError::Message(error));
                     }
                     args_copy_value(new, value);
                 }
@@ -677,14 +693,12 @@ pub unsafe extern "C" fn args_parse(
                     if (*value).type_0 as ::core::ffi::c_uint
                         != ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        xasprintf(
-                            cause,
-                            b"argument %u must be { commands }\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            (*args).count,
-                        );
+                        let error = parse_number_error(format!(
+                            "argument {} must be {{ commands }}",
+                            (*args).count
+                        ));
                         args_free(args);
-                        return ::core::ptr::null_mut::<args>();
+                        return Err(ArgsParseError::Message(error));
                     }
                     args_copy_value(new, value);
                 }
@@ -694,24 +708,22 @@ pub unsafe extern "C" fn args_parse(
         }
     }
     if (*parse).lower != -(1 as ::core::ffi::c_int) && (*args).count < (*parse).lower as u_int {
-        xasprintf(
-            cause,
-            b"too few arguments (need at least %u)\0" as *const u8 as *const ::core::ffi::c_char,
-            (*parse).lower,
-        );
+        let error = parse_number_error(format!(
+            "too few arguments (need at least {})",
+            (*parse).lower as u_int
+        ));
         args_free(args);
-        return ::core::ptr::null_mut::<args>();
+        return Err(ArgsParseError::Message(error));
     }
     if (*parse).upper != -(1 as ::core::ffi::c_int) && (*args).count > (*parse).upper as u_int {
-        xasprintf(
-            cause,
-            b"too many arguments (need at most %u)\0" as *const u8 as *const ::core::ffi::c_char,
-            (*parse).upper,
-        );
+        let error = parse_number_error(format!(
+            "too many arguments (need at most {})",
+            (*parse).upper as u_int
+        ));
         args_free(args);
-        return ::core::ptr::null_mut::<args>();
+        return Err(ArgsParseError::Message(error));
     }
-    return args;
+    return Ok(args);
 }
 unsafe extern "C" fn args_copy_copy_value(
     mut to: *mut args_value,
@@ -1725,101 +1737,4 @@ pub unsafe fn args_string_percentage_and_expand_result(
         return Err(ArgumentValueError::Missing);
     }
     parse_percentage_and_expand(CStr::from_ptr(value), minval, maxval, curval, item)
-}
-
-unsafe fn args_result_to_c(
-    result: Result<i64, ArgumentValueError>,
-    cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    match result {
-        Ok(value) => {
-            *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
-            value as ::core::ffi::c_longlong
-        }
-        Err(error) => {
-            *cause = xstrdup(error.message().as_ptr());
-            0 as ::core::ffi::c_longlong
-        }
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn args_strtonum(
-    mut args: *mut args,
-    mut flag: u_char,
-    mut minval: ::core::ffi::c_longlong,
-    mut maxval: ::core::ffi::c_longlong,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    args_result_to_c(args_strtonum_result(args, flag, minval, maxval), cause)
-}
-#[no_mangle]
-pub unsafe extern "C" fn args_strtonum_and_expand(
-    mut args: *mut args,
-    mut flag: u_char,
-    mut minval: ::core::ffi::c_longlong,
-    mut maxval: ::core::ffi::c_longlong,
-    mut item: *mut cmdq_item,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    args_result_to_c(
-        args_strtonum_and_expand_result(args, flag, minval, maxval, item),
-        cause,
-    )
-}
-#[no_mangle]
-pub unsafe extern "C" fn args_percentage(
-    mut args: *mut args,
-    mut flag: u_char,
-    mut minval: ::core::ffi::c_longlong,
-    mut maxval: ::core::ffi::c_longlong,
-    mut curval: ::core::ffi::c_longlong,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    args_result_to_c(
-        args_percentage_result(args, flag, minval, maxval, curval),
-        cause,
-    )
-}
-#[no_mangle]
-pub unsafe extern "C" fn args_string_percentage(
-    mut value: *const ::core::ffi::c_char,
-    mut minval: ::core::ffi::c_longlong,
-    mut maxval: ::core::ffi::c_longlong,
-    mut curval: ::core::ffi::c_longlong,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    args_result_to_c(
-        args_string_percentage_result(value, minval, maxval, curval),
-        cause,
-    )
-}
-#[no_mangle]
-pub unsafe extern "C" fn args_percentage_and_expand(
-    mut args: *mut args,
-    mut flag: u_char,
-    mut minval: ::core::ffi::c_longlong,
-    mut maxval: ::core::ffi::c_longlong,
-    mut curval: ::core::ffi::c_longlong,
-    mut item: *mut cmdq_item,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    args_result_to_c(
-        args_percentage_and_expand_result(args, flag, minval, maxval, curval, item),
-        cause,
-    )
-}
-#[no_mangle]
-pub unsafe extern "C" fn args_string_percentage_and_expand(
-    mut value: *const ::core::ffi::c_char,
-    mut minval: ::core::ffi::c_longlong,
-    mut maxval: ::core::ffi::c_longlong,
-    mut curval: ::core::ffi::c_longlong,
-    mut item: *mut cmdq_item,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    args_result_to_c(
-        args_string_percentage_and_expand_result(value, minval, maxval, curval, item),
-        cause,
-    )
 }
