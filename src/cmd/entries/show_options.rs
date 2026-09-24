@@ -3,7 +3,7 @@ use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_print};
 use crate::src::ffi::libc::free;
 use crate::src::format::{
-    format_add, format_add_tv, format_create_from_target, format_expand, format_free,
+    format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
     format_single_from_target,
 };
 use crate::src::hooks::{
@@ -346,7 +346,6 @@ unsafe extern "C" fn cmd_show_options_print(
     let mut name: *const ::core::ffi::c_char = options_name(o);
     let mut template: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
     let value: CString;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tv: timeval = timeval {
         tv_sec: 0 as __time_t,
         tv_usec: 0,
@@ -483,14 +482,13 @@ unsafe extern "C" fn cmd_show_options_print(
             b"0\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    line = format_expand(ft, template);
+    let line = format_expand_cstring(ft, template);
     format_free(ft);
     cmdq_print(
         item,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        line,
+        line.as_ptr(),
     );
-    free(line as *mut ::core::ffi::c_void);
     drop(value);
 }
 unsafe extern "C" fn cmd_show_hooks_print_monitor(
@@ -503,7 +501,6 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
     let mut type_0: monitor_type = MONITOR_SESSION;
     let mut template: *const ::core::ffi::c_char = args_get(args, 'F' as i32 as u_char);
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tv: timeval = timeval {
         tv_sec: 0 as __time_t,
         tv_usec: 0,
@@ -622,14 +619,13 @@ unsafe extern "C" fn cmd_show_hooks_print_monitor(
             &raw mut tv,
         );
     }
-    line = format_expand(ft, template);
+    let line = format_expand_cstring(ft, template);
     format_free(ft);
     cmdq_print(
         item,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        line,
+        line.as_ptr(),
     );
-    free(line as *mut ::core::ffi::c_void);
     drop(target);
 }
 unsafe extern "C" fn cmd_show_options_all(

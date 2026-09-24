@@ -4,8 +4,7 @@ use crate::src::events_payload::{
     event_payload_get_client, event_payload_get_pane, event_payload_get_session,
     event_payload_get_string, event_payload_get_window, event_payload_print_owned,
 };
-use crate::src::ffi::libc::free;
-use crate::src::format::{format_create, format_defaults, format_expand, format_free};
+use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 pub use crate::src::server::clients;
 pub use crate::src::shared::events::{event_payload, events_cb, events_sink};
 use crate::src::window::{window_winlinks_first, winlink_find_by_window_id};
@@ -135,7 +134,6 @@ unsafe extern "C" fn control_window_layout_changed_cb(
         event_payload_get_window(ep, b"window\0" as *const u8 as *const ::core::ffi::c_char);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if w.is_null() {
         return;
     }
@@ -162,10 +160,13 @@ unsafe extern "C" fn control_window_layout_changed_cb(
                     0 as ::core::ffi::c_int,
                 );
                 format_defaults(ft, c, s, wl, ::core::ptr::null_mut::<window_pane>());
-                cp = format_expand(ft, template);
+                let cp = format_expand_cstring(ft, template);
                 format_free(ft);
-                control_notify_write(c, b"%s\0" as *const u8 as *const ::core::ffi::c_char, cp);
-                free(cp as *mut ::core::ffi::c_void);
+                control_notify_write(
+                    c,
+                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                    cp.as_ptr(),
+                );
             }
         }
         c = clients.next(c);

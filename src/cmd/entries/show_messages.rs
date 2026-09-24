@@ -1,9 +1,8 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_get_target_client, cmdq_print};
-use crate::src::ffi::libc::free;
 use crate::src::format::{
-    format_add, format_add_tv, format_create_from_target, format_expand, format_free,
+    format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
 };
 use crate::src::job::job_print_summary;
 use crate::src::server::message_log;
@@ -156,7 +155,6 @@ unsafe extern "C" fn cmd_show_messages_exec(
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -193,9 +191,8 @@ unsafe extern "C" fn cmd_show_messages_exec(
             b"message_time\0" as *const u8 as *const ::core::ffi::c_char,
             &raw mut msg_time,
         );
-        s = format_expand(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
-        cmdq_print(item, b"%s\0" as *const u8 as *const ::core::ffi::c_char, s);
-        free(s as *mut ::core::ffi::c_void);
+        let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
+        cmdq_print(item, b"%s\0" as *const u8 as *const ::core::ffi::c_char, s.as_ptr());
     }
     format_free(ft);
     return CMD_RETURN_NORMAL;
