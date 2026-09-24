@@ -1,6 +1,6 @@
 pub use crate::src::ffi::libc::__ssize_t;
 use crate::src::ffi::libc::{
-    __errno_location, __getdelim, fclose, fopen, fputc, fputs, free, strcmp, strerror, strsep,
+    __errno_location, fclose, fgetc, fopen, fputc, fputs, strcmp, strerror, strsep,
 };
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
@@ -16,13 +16,20 @@ pub use crate::src::shared::stdio::{
 use crate::src::tmux::{find_home, global_options};
 use std::ffi::{CStr, CString};
 
-#[inline]
-unsafe extern "C" fn getline(
-    mut __lineptr: *mut *mut ::core::ffi::c_char,
-    mut __n: *mut size_t,
-    mut __stream: *mut FILE,
-) -> __ssize_t {
-    return __getdelim(__lineptr, __n, '\n' as i32, __stream);
+// Keep the bytes through the first newline, including embedded NULs. The
+// history parser below intentionally sees only the first C-string segment.
+unsafe fn read_history_line(stream: *mut FILE, line: &mut Vec<u8>) -> bool {
+    line.clear();
+    loop {
+        let ch = fgetc(stream);
+        if ch == -1 {
+            return !line.is_empty();
+        }
+        if ch == '\n' as i32 {
+            return true;
+        }
+        line.push(ch as u8);
+    }
 }
 // The C API borrows each string until that entry is pruned or cleared. Moving
 // CString values within the vector does not move their NUL-terminated buffers.
@@ -75,9 +82,7 @@ unsafe extern "C" fn prompt_add_typed_history(mut line: *mut ::core::ffi::c_char
 #[no_mangle]
 pub unsafe extern "C" fn prompt_load_history() {
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut length: size_t = 0 as size_t;
-    let mut got: ssize_t = 0;
+    let mut line = Vec::<u8>::new();
     let history_file = match prompt_find_history_file() {
         Some(path) => path,
         None => return,
@@ -98,21 +103,10 @@ pub unsafe extern "C" fn prompt_load_history() {
         );
         return;
     }
-    loop {
-        got = getline(&raw mut line, &raw mut length, f) as ssize_t;
-        if !(got != -(1 as ::core::ffi::c_int) as ssize_t) {
-            break;
-        }
-        if got > 0 as ssize_t
-            && *line.offset((got - 1 as ssize_t) as isize) as ::core::ffi::c_int == '\n' as i32
-        {
-            *line.offset((got - 1 as ssize_t) as isize) = '\0' as i32 as ::core::ffi::c_char;
-        }
-        if got > 0 as ssize_t {
-            prompt_add_typed_history(line);
-        }
+    while read_history_line(f, &mut line) {
+        line.push(0);
+        prompt_add_typed_history(line.as_mut_ptr().cast());
     }
-    free(line as *mut ::core::ffi::c_void);
     fclose(f);
 }
 #[no_mangle]
