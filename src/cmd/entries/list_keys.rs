@@ -1,8 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_list_print_cstring};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
-use crate::src::ffi::libc::free;
-use crate::src::format::{format_add, format_create, format_defaults, format_expand, format_free};
+use crate::src::format::{format_add, format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat};
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::options::options_get_number;
@@ -254,7 +253,6 @@ unsafe extern "C" fn cmd_list_keys_exec(
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut single: ::core::ffi::c_int = 0;
     let mut notes_only: ::core::ffi::c_int = 0;
     let mut filter_notes: ::core::ffi::c_int = 0;
@@ -374,7 +372,7 @@ unsafe extern "C" fn cmd_list_keys_exec(
     );
     for &bd in &bindings {
         cmd_list_keys_format_add_key_binding(ft, bd, &prefix);
-        line = format_expand(ft, template);
+        let line = format_expand_cstring(ft, template);
         if single != 0 && !tc.is_null() && !(*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
             status_message_set(
                 tc,
@@ -383,16 +381,15 @@ unsafe extern "C" fn cmd_list_keys_exec(
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                line,
+                line.as_ptr(),
             );
-        } else if *line as ::core::ffi::c_int != '\0' as i32 {
+        } else if !line.is_empty() {
             cmdq_print(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                line,
+                line.as_ptr(),
             );
         }
-        free(line as *mut ::core::ffi::c_void);
         if single != 0 {
             break;
         }

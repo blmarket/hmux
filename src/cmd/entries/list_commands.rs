@@ -1,8 +1,7 @@
 use crate::src::arguments::{args_get, args_string};
 use crate::src::cmd::{cmd_find, cmd_get_args, cmd_table};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_print};
-use crate::src::ffi::libc::free;
-use crate::src::format::{format_add, format_create, format_defaults, format_expand, format_free};
+use crate::src::format::{format_add, format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -109,7 +108,6 @@ unsafe extern "C" fn cmd_list_single_command(
     mut item: *mut cmdq_item,
 ) {
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     format_add(
         ft,
         b"command_list_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -138,15 +136,14 @@ unsafe extern "C" fn cmd_list_single_command(
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         s,
     );
-    line = format_expand(ft, template);
-    if *line as ::core::ffi::c_int != '\0' as i32 {
+    let line = format_expand_cstring(ft, template);
+    if !line.is_empty() {
         cmdq_print(
             item,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            line,
+            line.as_ptr(),
         );
     }
-    free(line as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn cmd_list_commands(
     mut self_0: *mut cmd,
