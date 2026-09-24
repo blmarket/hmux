@@ -45,7 +45,7 @@ pub use crate::src::shared::abi::{__uint32_t, uint32_t};
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -186,12 +186,12 @@ pub unsafe extern "C" fn server_status_client(mut c: *mut client) {
 #[no_mangle]
 pub unsafe extern "C" fn server_redraw_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if (*c).session == s {
             server_redraw_client(c);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
@@ -209,12 +209,12 @@ pub unsafe extern "C" fn server_redraw_session_group(mut s: *mut session) {
 #[no_mangle]
 pub unsafe extern "C" fn server_status_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if (*c).session == s {
             server_status_client(c);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
@@ -232,7 +232,7 @@ pub unsafe extern "C" fn server_status_session_group(mut s: *mut session) {
 #[no_mangle]
 pub unsafe extern "C" fn server_redraw_window(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
@@ -240,13 +240,13 @@ pub unsafe extern "C" fn server_redraw_window(mut w: *mut window) {
         {
             server_redraw_client(c);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_redraw_window_menu(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
@@ -254,13 +254,13 @@ pub unsafe extern "C" fn server_redraw_window_menu(mut w: *mut window) {
         {
             (*c).flags |= CLIENT_REDRAWMENU as uint64_t;
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_redraw_window_borders(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
@@ -268,7 +268,7 @@ pub unsafe extern "C" fn server_redraw_window_borders(mut w: *mut window) {
         {
             (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
@@ -285,23 +285,23 @@ pub unsafe extern "C" fn server_status_window(mut w: *mut window) {
 #[no_mangle]
 pub unsafe extern "C" fn server_lock() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null() {
             server_lock_client(c);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_lock_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if (*c).session == s {
             server_lock_client(c);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
@@ -758,7 +758,7 @@ pub unsafe extern "C" fn server_destroy_session(mut s: *mut session) {
             ),
         );
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !((*c).session != s) {
             use_s = s_new;
@@ -774,7 +774,7 @@ pub unsafe extern "C" fn server_destroy_session(mut s: *mut session) {
                 (*c).flags |= CLIENT_EXIT as uint64_t;
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     recalculate_sizes();
 }

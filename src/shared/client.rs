@@ -195,14 +195,6 @@ pub struct client {
     pub source_file_depth: u_int,
     pub clipboard_panes: *mut u_int,
     pub clipboard_npanes: u_int,
-    pub entry: client_entry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct client_entry {
-    pub tqe_next: *mut client,
-    pub tqe_prev: *mut *mut client,
 }
 
 #[repr(C)]
@@ -285,10 +277,3 @@ pub type overlay_check_cb = Option<
         u_int,
     ) -> *mut visible_ranges,
 >;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct clients {
-    pub tqh_first: *mut client,
-    pub tqh_last: *mut *mut client,
-}

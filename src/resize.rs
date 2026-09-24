@@ -27,7 +27,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -205,7 +205,7 @@ unsafe extern "C" fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_in
         return 1 as ::core::ffi::c_int;
     }
     if (*c).flags & CLIENT_IGNORESIZE as uint64_t != 0 {
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             if !(*loop_0).session.is_null() {
                 if !((*loop_0).flags & CLIENT_NOSIZEFLAGS as uint64_t != 0) {
@@ -214,7 +214,7 @@ unsafe extern "C" fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_in
                     }
                 }
             }
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
     }
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -228,7 +228,7 @@ unsafe extern "C" fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_in
 unsafe extern "C" fn clients_with_window(mut w: *mut window) -> u_int {
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0 as u_int;
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         if !(ignore_client_size(loop_0) != 0 || session_has((*loop_0).session, w) == 0) {
             n = n.wrapping_add(1);
@@ -236,7 +236,7 @@ unsafe extern "C" fn clients_with_window(mut w: *mut window) -> u_int {
                 break;
             }
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     return n;
 }
@@ -286,7 +286,7 @@ unsafe extern "C" fn clients_calculate_size(
         n = clients_with_window(w);
     }
     if !(type_0 == WINDOW_SIZE_MANUAL) {
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             if loop_0 != c && ignore_client_size(loop_0) != 0 {
                 log_debug(
@@ -351,7 +351,7 @@ unsafe extern "C" fn clients_calculate_size(
                     *sy,
                 );
             }
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
         if *sx != UINT_MAX && *sy != UINT_MAX {
             log_debug(
@@ -368,7 +368,7 @@ unsafe extern "C" fn clients_calculate_size(
         }
     }
     if !w.is_null() {
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             if !(loop_0 != c && ignore_client_size(loop_0) != 0) {
                 if !(loop_0 != c
@@ -402,7 +402,7 @@ unsafe extern "C" fn clients_calculate_size(
                     }
                 }
             }
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
     }
     if *sx != UINT_MAX && *sy != UINT_MAX {
@@ -675,7 +675,7 @@ pub unsafe extern "C" fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         status_update_cache(s);
         s = sessions_next(s);
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         s = (*c).session;
         if !s.is_null() && (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t == 0 {
@@ -688,7 +688,7 @@ pub unsafe extern "C" fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
                 (*c).flags &= !CLIENT_STATUSOFF as uint64_t;
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {

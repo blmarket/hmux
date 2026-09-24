@@ -13,7 +13,7 @@ pub mod queue;
 // Preserve the established family API without glob exports.
 pub use self::core::{
     __builtin_va_list, __va_list_tag, args, args_parse, args_parse_cb, args_value,
-    args_value_c2rust_unnamed, args_value_entry, client, client_entry, client_file, client_file_cb,
+    args_value_c2rust_unnamed, args_value_entry, client, client_file, client_file_cb,
     client_file_entry, client_files, cmd, cmd_append_argv, cmd_copy, cmd_copy_argv, cmd_entry,
     cmd_entry_flag, cmd_find, cmd_find_state, cmd_free, cmd_free_argv, cmd_get_alias, cmd_get_args,
     cmd_get_entry, cmd_get_group, cmd_get_parse_flags, cmd_get_source, cmd_list, cmd_list_all_have,

@@ -11,7 +11,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -589,14 +589,14 @@ pub unsafe fn sort_get_buffers(sort_crit: *mut sort_criteria) -> Vec<*mut paste_
 }
 pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<*mut client> {
     let mut clients_sorted = Vec::new();
-    let mut c = clients.tqh_first;
+    let mut c = clients.first();
     while !c.is_null() {
         if !((*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !(!(*c).flags & CLIENT_ATTACHED as uint64_t != 0) {
                 clients_sorted.push(c);
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     sort_qsort(
         clients_sorted.as_mut_ptr() as *mut ::core::ffi::c_void,

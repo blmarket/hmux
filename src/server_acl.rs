@@ -9,7 +9,7 @@ pub use crate::src::shared::account::{group, passwd};
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -181,7 +181,7 @@ unsafe extern "C" fn server_acl_check(mut c: *mut client) -> *mut server_acl_ent
 unsafe extern "C" fn server_acl_update() {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         entry = server_acl_check(c);
         if entry.is_null() {
@@ -192,7 +192,7 @@ unsafe extern "C" fn server_acl_update() {
         } else {
             (*c).flags &= !CLIENT_READONLY as uint64_t;
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]

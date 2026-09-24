@@ -58,7 +58,6 @@ use crate::src::screen::screen_mode_to_string;
 use crate::src::screen_redraw::{
     redraw_free_scene, redraw_pane, redraw_pane_scrollbar, redraw_screen,
 };
-pub use crate::src::server::clients;
 use crate::src::server::{current_time, server_add_accept, server_proc, server_update_socket};
 use crate::src::server_fn::{
     server_check_unattached, server_destroy_pane, server_kill_pane, server_redraw_client,
@@ -110,13 +109,13 @@ pub use crate::src::shared::arguments::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
 
-// The public client record keeps its C layout. Only server_client_create
-// allocates clients, and server_client_free drops this containing owner.
+// ClientRegistry owns each ClientOwner until its refcount reaches zero.
+// The public client record stays at offset zero inside that stable Box.
 // message_string borrows the CString until the next replacement or clear.
 // ttyname borrows the CString until a new identify payload or client loss.
 // term_name borrows the CString until identify completion or client loss.
@@ -156,6 +155,124 @@ struct ClientOwner {
 }
 
 const _: () = assert!(std::mem::offset_of!(ClientOwner, node) == 0);
+
+impl ClientOwner {
+    unsafe fn new() -> Box<Self> {
+        Box::new(Self {
+            node: std::mem::zeroed::<client>(),
+            message: None,
+            ttyname: None,
+            term_name: None,
+            term_type: None,
+            cwd: None,
+            title: None,
+            path: None,
+            exit_session: None,
+            user: None,
+            name: None,
+            exit_message: None,
+            status_expanded: std::array::from_fn(|_| None),
+            saved_status_screen: None,
+            term_cap_strings: Vec::new(),
+            term_cap_ptrs: Vec::new(),
+            input_request_handles: Vec::new(),
+            tty_range: visible_range { px: 0, nx: 0 },
+        })
+    }
+}
+
+/// Owns every client record and stores the current active-client order.
+///
+/// A client can leave active iteration before its references reach zero, so
+/// its Box stays in `owners` until `server_client_free`. The central successor
+/// index preserves queue traversal semantics for callers that cached a client
+/// pointer before it was removed, without putting links on `client` itself.
+pub struct ClientRegistry {
+    ordered: Vec<*mut client>,
+    indices: std::collections::BTreeMap<usize, usize>,
+    successors: std::collections::BTreeMap<usize, *mut client>,
+    owners: Vec<Box<ClientOwner>>,
+}
+
+impl ClientRegistry {
+    pub(crate) const fn new() -> Self {
+        Self {
+            ordered: Vec::new(),
+            indices: std::collections::BTreeMap::new(),
+            successors: std::collections::BTreeMap::new(),
+            owners: Vec::new(),
+        }
+    }
+
+    pub(crate) fn first(&self) -> *mut client {
+        self.ordered.first().copied().unwrap_or(::core::ptr::null_mut())
+    }
+
+    pub(crate) fn next(&self, current: *mut client) -> *mut client {
+        self.successors
+            .get(&(current as usize))
+            .copied()
+            .unwrap_or(::core::ptr::null_mut())
+    }
+
+    pub(crate) fn push_back(&mut self, mut owner: Box<ClientOwner>) -> *mut client {
+        let value = &raw mut owner.node;
+        let key = value as usize;
+        assert!(!self.indices.contains_key(&key), "client registered twice");
+
+        if let Some(previous) = self.ordered.last().copied() {
+            self.successors.insert(previous as usize, value);
+        }
+        self.indices.insert(key, self.ordered.len());
+        self.successors.insert(key, ::core::ptr::null_mut());
+        self.ordered.push(value);
+        self.owners.push(owner);
+        value
+    }
+
+    /// Remove a client from active iteration but keep its cached successor.
+    pub(crate) fn remove(&mut self, value: *mut client) -> bool {
+        let key = value as usize;
+        let Some(index) = self.indices.remove(&key) else {
+            return false;
+        };
+        let next = self.ordered.get(index + 1).copied().unwrap_or(::core::ptr::null_mut());
+        if index > 0 {
+            let previous = self.ordered[index - 1];
+            self.successors.insert(previous as usize, next);
+        }
+        self.ordered.remove(index);
+        for (index, active) in self.ordered.iter().copied().enumerate().skip(index) {
+            self.indices.insert(active as usize, index);
+        }
+        true
+    }
+
+    /// Drop a client owner once all external references have been released.
+    pub(crate) fn release(&mut self, value: *mut client) {
+        self.remove(value);
+        self.successors.remove(&(value as usize));
+        let index = self
+            .owners
+            .iter()
+            .position(|owner| std::ptr::eq(&owner.node, value))
+            .expect("client owner missing at final release");
+        self.owners.remove(index);
+    }
+
+    /// Reset active membership while retaining records owned by outstanding
+    /// references.
+    pub(crate) fn clear(&mut self) {
+        self.ordered.clear();
+        self.indices.clear();
+        self.successors.clear();
+    }
+}
+
+pub type clients = ClientRegistry;
+
+#[no_mangle]
+pub static mut clients: ClientRegistry = ClientRegistry::new();
 
 pub(crate) unsafe fn server_client_set_message(c: *mut client, message: Option<CString>) {
     let owner = c as *mut ClientOwner;
@@ -948,12 +1065,12 @@ pub unsafe extern "C" fn server_client_how_many() -> u_int {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0;
     n = 0 as u_int;
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null() && !(*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
             n = n.wrapping_add(1);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     return n;
 }
@@ -1203,28 +1320,9 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
-    let owner = Box::into_raw(Box::new(ClientOwner {
-        node: std::mem::zeroed::<client>(),
-        message: None,
-        ttyname: None,
-        term_name: None,
-        term_type: None,
-        cwd: None,
-        title: None,
-        path: None,
-        exit_session: None,
-        user: None,
-        name: None,
-        exit_message: None,
-        status_expanded: std::array::from_fn(|_| None),
-        saved_status_screen: None,
-        term_cap_strings: Vec::new(),
-        term_cap_ptrs: Vec::new(),
-        input_request_handles: Vec::new(),
-        tty_range: visible_range { px: 0, nx: 0 },
-    }));
-    c = &raw mut (*owner).node;
-    (*c).input_requests.collection = &mut (*owner).input_request_handles as *mut _ as *mut _;
+    let mut owner = ClientOwner::new();
+    c = &raw mut owner.node;
+    (*c).input_requests.collection = &mut owner.input_request_handles as *mut _ as *mut _;
     (*c).references = 1 as ::core::ffi::c_int;
     (*c).peer = proc_add_peer(
         server_proc,
@@ -1306,10 +1404,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         c as *mut ::core::ffi::c_void,
     );
     (*c).click_wp = -(1 as ::core::ffi::c_int);
-    (*c).entry.tqe_next = ::core::ptr::null_mut::<client>();
-    (*c).entry.tqe_prev = clients.tqh_last;
-    *clients.tqh_last = c;
-    clients.tqh_last = &raw mut (*c).entry.tqe_next;
+    clients.push_back(owner);
     log_debug(
         b"new client %p\0" as *const u8 as *const ::core::ffi::c_char,
         c,
@@ -1375,7 +1470,7 @@ unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
     while !w.is_null() {
         if !((*w).latest != c as *mut ::core::ffi::c_void) {
             found = ::core::ptr::null_mut::<client>();
-            loop_0 = clients.tqh_first;
+            loop_0 = clients.first();
             while !loop_0.is_null() {
                 s = (*loop_0).session;
                 if !(loop_0 == c || s.is_null() || (*(*s).curw).window != w) {
@@ -1391,7 +1486,7 @@ unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
                         found = loop_0;
                     }
                 }
-                loop_0 = (*loop_0).entry.tqe_next;
+                loop_0 = clients.next(loop_0);
             }
             if !found.is_null() {
                 server_client_update_latest(found);
@@ -1603,12 +1698,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
         file_fire_done(cf);
         cf = cf1;
     }
-    if !(*c).entry.tqe_next.is_null() {
-        (*(*c).entry.tqe_next).entry.tqe_prev = (*c).entry.tqe_prev;
-    } else {
-        clients.tqh_last = (*c).entry.tqe_prev;
-    }
-    *(*c).entry.tqe_prev = (*c).entry.tqe_next;
+    clients.remove(c);
     log_debug(
         b"lost client %p\0" as *const u8 as *const ::core::ffi::c_char,
         c,
@@ -1725,7 +1815,7 @@ unsafe extern "C" fn server_client_free(
             (*c).files.storage.is_none(),
             "client file index still contains live records at client teardown"
         );
-        drop(Box::from_raw(c as *mut ClientOwner));
+        clients.release(c);
     }
 }
 #[no_mangle]
@@ -3611,7 +3701,7 @@ pub unsafe extern "C" fn server_client_loop() {
         }
         w = windows_next(w);
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         server_client_check_exit(c, 0 as ::core::ffi::c_int);
         if !(*c).session.is_null() && !(*(*c).session).curw.is_null() {
@@ -3619,7 +3709,7 @@ pub unsafe extern "C" fn server_client_loop() {
             server_client_check_redraw(c);
             server_client_reset_state(c);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
@@ -3788,7 +3878,7 @@ unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) && (*wp).pipe_offset.used < minimum {
         minimum = (*wp).pipe_offset.used;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null() {
             attached_clients = attached_clients.wrapping_add(1);
@@ -3821,7 +3911,7 @@ unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                 }
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     if attached_clients == 0 as u_int {
         off = 0 as ::core::ffi::c_int;
@@ -3847,7 +3937,7 @@ unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
             if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
                 (*wp).pipe_offset.used = (*wp).pipe_offset.used.wrapping_sub((*wp).base_offset);
             }
-            c = clients.tqh_first;
+            c = clients.first();
             while !c.is_null() {
                 if !((*c).session.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0) {
                     wpo = control_pane_offset(c, wp, &raw mut flag);
@@ -3855,7 +3945,7 @@ unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                         (*wpo).used = (*wpo).used.wrapping_sub((*wp).base_offset);
                     }
                 }
-                c = (*c).entry.tqe_next;
+                c = clients.next(c);
             }
             (*wp).base_offset = minimum;
         } else {
@@ -5117,7 +5207,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
             & !(CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING)) as uint64_t;
     }
-    if !(*c).flags & CLIENT_EXIT as uint64_t != 0 && cfg_finished == 0 && c == clients.tqh_first {
+    if !(*c).flags & CLIENT_EXIT as uint64_t != 0 && cfg_finished == 0 && c == clients.first() {
         start_cfg();
     }
     return 0 as ::core::ffi::c_int;
@@ -5395,14 +5485,14 @@ pub unsafe extern "C" fn server_client_get_flags(mut c: *mut client) -> *const :
 #[no_mangle]
 pub unsafe extern "C" fn server_client_remove_pane(mut wp: *mut window_pane) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if (*c).tty.mouse_last_pane == (*wp).id as ::core::ffi::c_int {
             (*c).tty.mouse_last_pane = -(1 as ::core::ffi::c_int);
             (*c).tty.mouse_drag_update = None;
             (*c).tty.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
@@ -5544,4 +5634,48 @@ unsafe extern "C" fn server_client_report_theme(mut c: *mut client, mut theme: c
         server_redraw_client(c);
     }
     tty_repeat_requests(&raw mut (*c).tty, 1 as ::core::ffi::c_int);
+}
+
+#[cfg(test)]
+mod client_registry_tests {
+    use super::{ClientOwner, ClientRegistry};
+
+    #[test]
+    fn owns_stable_clients_and_preserves_order_after_removal() {
+        unsafe {
+            let mut registry = ClientRegistry::new();
+            let first = registry.push_back(ClientOwner::new());
+            let middle = registry.push_back(ClientOwner::new());
+            let last = registry.push_back(ClientOwner::new());
+
+            assert_eq!(registry.first(), first);
+            assert_eq!(registry.next(first), middle);
+            assert_eq!(registry.next(middle), last);
+
+            registry.push_back(ClientOwner::new());
+            assert_eq!(registry.next(first), middle);
+            assert!(registry
+                .owners
+                .iter()
+                .any(|owner| std::ptr::eq(&owner.node, first)));
+            assert!(registry.remove(middle));
+            assert_eq!(registry.next(first), last);
+            assert_eq!(registry.next(middle), last);
+            assert_eq!(registry.first(), first);
+            assert!(registry
+                .owners
+                .iter()
+                .any(|owner| std::ptr::eq(&owner.node, middle)));
+
+            registry.release(middle);
+            assert!(registry.next(middle).is_null());
+            assert_eq!(registry.first(), first);
+            assert!(!registry
+                .owners
+                .iter()
+                .any(|owner| std::ptr::eq(&owner.node, middle)));
+            registry.release(first);
+            registry.release(last);
+        }
+    }
 }

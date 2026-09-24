@@ -14,7 +14,7 @@ pub use crate::src::shared::arguments::args;
 pub use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -383,12 +383,12 @@ pub unsafe extern "C" fn key_bindings_remove_table(mut name: *const ::core::ffi:
     table = key_bindings_get_table(name, 0 as ::core::ffi::c_int);
     if !table.is_null() {
         key_tables_remove(&raw mut key_tables, table);
-        c = clients.tqh_first;
+        c = clients.first();
         while !c.is_null() {
             if (*c).keytable == table {
                 server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
             }
-            c = (*c).entry.tqe_next;
+            c = clients.next(c);
         }
         key_bindings_unref_table(table);
     }

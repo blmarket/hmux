@@ -9,7 +9,7 @@ pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -163,7 +163,7 @@ unsafe extern "C" fn cmd_detach_client_exec(
         if s.is_null() {
             return CMD_RETURN_NORMAL;
         }
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             if (*loop_0).session == s {
                 if !cmd.is_null() {
@@ -172,12 +172,12 @@ unsafe extern "C" fn cmd_detach_client_exec(
                     server_client_detach(loop_0, msgtype);
                 }
             }
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
         return CMD_RETURN_STOP;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             if !(*loop_0).session.is_null() && loop_0 != tc {
                 if !cmd.is_null() {
@@ -186,7 +186,7 @@ unsafe extern "C" fn cmd_detach_client_exec(
                     server_client_detach(loop_0, msgtype);
                 }
             }
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
         return CMD_RETURN_NORMAL;
     }

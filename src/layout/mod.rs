@@ -6,7 +6,7 @@ pub mod set;
 
 // Preserve the established family API without glob exports.
 pub use self::core::{
-    args, client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    args, client, client_file, client_file_cb, client_file_entry, client_files,
     cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds, control_state, environ, format_job_tree,
     format_tree, hyperlinks, input_ctx, input_request, input_requests, key_binding,
     key_binding_entry, key_bindings, key_event, key_table, key_table_entry,

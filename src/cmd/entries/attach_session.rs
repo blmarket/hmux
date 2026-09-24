@@ -21,7 +21,7 @@ use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -220,12 +220,12 @@ pub unsafe extern "C" fn cmd_attach_session(
             } else {
                 msgtype = MSG_DETACH;
             }
-            c_loop = clients.tqh_first;
+            c_loop = clients.first();
             while !c_loop.is_null() {
                 if !((*c_loop).session != s || c == c_loop) {
                     server_client_detach(c_loop, msgtype);
                 }
-                c_loop = (*c_loop).entry.tqe_next;
+                c_loop = clients.next(c_loop);
             }
         }
         if Eflag == 0 {
@@ -251,12 +251,12 @@ pub unsafe extern "C" fn cmd_attach_session(
             } else {
                 msgtype = MSG_DETACH;
             }
-            c_loop = clients.tqh_first;
+            c_loop = clients.first();
             while !c_loop.is_null() {
                 if !((*c_loop).session != s || c == c_loop) {
                     server_client_detach(c_loop, msgtype);
                 }
-                c_loop = (*c_loop).entry.tqe_next;
+                c_loop = clients.next(c_loop);
             }
         }
         if Eflag == 0 {

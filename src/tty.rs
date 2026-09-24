@@ -28,7 +28,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -1424,7 +1424,7 @@ unsafe extern "C" fn tty_window_offset1(
 #[no_mangle]
 pub unsafe extern "C" fn tty_update_window_offset(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null()
             && !(*(*c).session).curw.is_null()
@@ -1432,7 +1432,7 @@ pub unsafe extern "C" fn tty_update_window_offset(mut w: *mut window) {
         {
             tty_update_client_offset(c);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]
@@ -2165,7 +2165,7 @@ pub unsafe extern "C" fn tty_write(
     if (*ctx).set_client_cb.is_none() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if tty_client_ready(ctx, c) != 0 {
             state = (*ctx).set_client_cb.expect("non-null function pointer")(ctx, c);
@@ -2176,7 +2176,7 @@ pub unsafe extern "C" fn tty_write(
                 cmdfn.expect("non-null function pointer")(&raw mut (*c).tty, ctx);
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]

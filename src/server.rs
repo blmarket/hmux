@@ -54,10 +54,10 @@ pub use crate::src::shared::abi::{
     __socklen_t, __syscall_slong_t, __uid_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t,
 };
 pub use crate::src::shared::arguments::args;
-pub use crate::src::shared::client::clients;
+pub use crate::src::server_client::clients;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -165,11 +165,6 @@ pub const S_IRWXG: ::core::ffi::c_int = S_IRWXU >> 3 as ::core::ffi::c_int;
 pub const S_IROTH: ::core::ffi::c_int = S_IRGRP >> 3 as ::core::ffi::c_int;
 pub const S_IXOTH: ::core::ffi::c_int = S_IXGRP >> 3 as ::core::ffi::c_int;
 pub const S_IRWXO: ::core::ffi::c_int = S_IRWXG >> 3 as ::core::ffi::c_int;
-#[no_mangle]
-pub static mut clients: clients = clients {
-    tqh_first: ::core::ptr::null::<client>() as *mut client,
-    tqh_last: ::core::ptr::null::<*mut client>() as *mut *mut client,
-};
 #[no_mangle]
 pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
 static mut server_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -504,8 +499,7 @@ unsafe fn server_start_inner(
     utf8_update_width_cache();
     windows.storage = None;
     all_window_panes.storage = None;
-    clients.tqh_first = ::core::ptr::null_mut::<client>();
-    clients.tqh_last = &raw mut clients.tqh_first;
+    clients.clear();
     sessions.storage = None;
     key_bindings_init();
     control_build_events();
@@ -577,12 +571,12 @@ unsafe extern "C" fn server_loop() -> ::core::ffi::c_int {
     current_time = time(::core::ptr::null_mut::<time_t>());
     loop {
         items = cmdq_next(::core::ptr::null_mut::<client>());
-        c = clients.tqh_first;
+        c = clients.first();
         while !c.is_null() {
             if (*c).flags & CLIENT_IDENTIFIED as uint64_t != 0 {
                 items = items.wrapping_add(cmdq_next(c));
             }
-            c = (*c).entry.tqe_next;
+            c = clients.next(c);
         }
         if !(items != 0 as u_int) {
             break;
@@ -606,15 +600,15 @@ unsafe extern "C" fn server_loop() -> ::core::ffi::c_int {
             return 0 as ::core::ffi::c_int;
         }
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null() {
             return 0 as ::core::ffi::c_int;
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     cmd_wait_for_flush();
-    if !clients.tqh_first.is_null() {
+    if !clients.first().is_null() {
         return 0 as ::core::ffi::c_int;
     }
     if job_still_running() != 0 {
@@ -627,9 +621,9 @@ unsafe extern "C" fn server_send_exit() {
     let mut c1: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     cmd_wait_for_flush();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() && {
-        c1 = (*c).entry.tqe_next;
+        c1 = clients.next(c);
         1 as ::core::ffi::c_int != 0
     } {
         if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {

@@ -52,7 +52,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
         return None;
     }
     let mut names = Vec::<u8>::new();
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         if (*loop_0).session == s {
             if !names.is_empty() {
@@ -60,7 +60,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
             }
             names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     if names.is_empty() {
         return None;
@@ -309,7 +309,7 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
         return None;
     }
     w = (*(*ft).wl).window;
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
         if !client_session.is_null() {
@@ -317,7 +317,7 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
                 n = n.wrapping_add(1);
             }
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     value =
         Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"));
@@ -332,7 +332,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
     }
     w = (*(*ft).wl).window;
     let mut names = Vec::<u8>::new();
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
         if !client_session.is_null() {
@@ -343,7 +343,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
                 names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
             }
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     if names.is_empty() {
         return None;
@@ -657,7 +657,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
         return None;
     }
     let mut names = Vec::<u8>::new();
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         client_session = (*loop_0).session;
         if !client_session.is_null() {
@@ -670,7 +670,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
                 }
             }
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     if names.is_empty() {
         return None;

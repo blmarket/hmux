@@ -48,7 +48,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -1905,14 +1905,14 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
             12 as size_t,
         ) == 0 as ::core::ffi::c_int
     {
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             server_client_update_theme_colours(loop_0);
             if (*loop_0).tty.flags & TTY_OPENED != 0 {
                 tty_invalidate(&raw mut (*loop_0).tty);
             }
             server_redraw_client(loop_0);
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
     }
     if strcmp(
@@ -1968,10 +1968,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"key-table\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             server_client_set_key_table(loop_0, ::core::ptr::null::<::core::ffi::c_char>());
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
     }
     if strcmp(
@@ -1979,12 +1979,12 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"user-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             if (*loop_0).tty.flags & TTY_OPENED != 0 {
                 tty_keys_build(&raw mut (*loop_0).tty);
             }
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
     }
     if strcmp(name, b"status\0" as *const u8 as *const ::core::ffi::c_char)
@@ -2158,12 +2158,12 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         s = sessions_next(s);
     }
     recalculate_sizes();
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         if !(*loop_0).session.is_null() {
             server_redraw_client(loop_0);
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
 }
 #[no_mangle]

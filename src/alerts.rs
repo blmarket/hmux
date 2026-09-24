@@ -12,7 +12,7 @@ pub use crate::src::shared::arguments::args;
 pub use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -454,7 +454,7 @@ unsafe extern "C" fn alerts_set_message(
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut visual: ::core::ffi::c_int = 0;
     visual = options_get_number((*(*wl).session).options, option) as ::core::ffi::c_int;
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !((*c).session != (*wl).session || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
             if visual == VISUAL_OFF || visual == VISUAL_BOTH {
@@ -485,7 +485,7 @@ unsafe extern "C" fn alerts_set_message(
                 }
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 

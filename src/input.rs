@@ -72,7 +72,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -6207,7 +6207,7 @@ unsafe extern "C" fn input_add_request(
         return -(1 as ::core::ffi::c_int);
     }
     w = (*wp).window as *mut window;
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !((*loop_0).session.is_null() || session_has((*loop_0).session, w) == 0) {
@@ -6227,7 +6227,7 @@ unsafe extern "C" fn input_add_request(
                 }
             }
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     if c.is_null() {
         return -(1 as ::core::ffi::c_int);

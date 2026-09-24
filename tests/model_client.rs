@@ -1,4 +1,4 @@
-//! Frozen pre-migration sizes, alignments, and every named field offset.
+//! Snapshot of public translated struct sizes and named field offsets.
 use std::mem::{align_of, offset_of, size_of};
 #[test]
 fn original_copies_match() {
@@ -87,8 +87,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -169,8 +168,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -251,8 +249,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -333,8 +330,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -415,8 +411,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -497,8 +492,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -579,8 +573,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -661,8 +654,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -743,8 +735,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -825,8 +816,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -907,8 +897,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -989,8 +978,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1071,8 +1059,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1153,8 +1140,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1235,8 +1221,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1317,8 +1302,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1399,8 +1383,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1481,8 +1464,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1563,8 +1545,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1645,8 +1626,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1727,8 +1707,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1809,8 +1788,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1891,8 +1869,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -1973,8 +1950,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2055,8 +2031,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2137,8 +2112,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2219,8 +2193,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2301,8 +2274,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2383,8 +2355,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2465,8 +2436,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2547,8 +2517,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2629,8 +2598,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2711,8 +2679,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2793,8 +2760,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2875,8 +2841,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -2957,8 +2922,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3039,8 +3003,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3121,8 +3084,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3203,8 +3165,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3285,8 +3246,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3367,8 +3327,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3449,8 +3408,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3531,8 +3489,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3613,8 +3570,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3695,8 +3651,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3777,8 +3732,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3859,8 +3813,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -3941,8 +3894,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4023,8 +3975,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4105,8 +4056,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4187,8 +4137,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4269,8 +4218,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4351,8 +4299,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4433,8 +4380,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4515,8 +4461,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4597,8 +4542,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4679,8 +4623,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4761,8 +4704,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4843,8 +4785,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -4925,8 +4866,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5007,8 +4947,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5089,8 +5028,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5171,8 +5109,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5253,8 +5190,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5335,8 +5271,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5417,8 +5352,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5499,8 +5433,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5581,8 +5514,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5663,8 +5595,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5745,8 +5676,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5827,8 +5757,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5909,8 +5838,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -5991,8 +5919,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6073,8 +6000,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6155,8 +6081,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6237,8 +6162,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6319,8 +6243,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6401,8 +6324,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6483,8 +6405,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6565,8 +6486,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6647,8 +6567,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6729,8 +6648,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6811,8 +6729,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6893,8 +6810,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -6975,8 +6891,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7057,8 +6972,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7139,8 +7053,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7221,8 +7134,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7303,8 +7215,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7385,8 +7296,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7467,8 +7377,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7549,8 +7458,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7631,8 +7539,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7713,8 +7620,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7795,8 +7701,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7877,8 +7782,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -7959,8 +7863,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8041,8 +7944,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8123,8 +8025,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8205,8 +8106,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8287,8 +8187,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8369,8 +8268,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8451,8 +8349,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8533,8 +8430,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8615,8 +8511,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8697,8 +8592,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8779,8 +8673,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8861,8 +8754,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -8943,8 +8835,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9025,8 +8916,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9107,8 +8997,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9189,8 +9078,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9271,8 +9159,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9353,8 +9240,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9435,8 +9321,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9517,8 +9402,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9599,8 +9483,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9681,8 +9564,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9763,8 +9645,7 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
     );
     record!(
@@ -9845,609 +9726,8 @@ fn original_copies_match() {
             files,
             source_file_depth,
             clipboard_panes,
-            clipboard_npanes,
-            entry
+            clipboard_npanes
         ]
-    );
-    record!(
-        "src/alerts.rs::C2RustUnnamed_10",
-        hmux2::src::alerts::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/arguments.rs::C2RustUnnamed_31",
-        hmux2::src::arguments::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cfg.rs::C2RustUnnamed_10",
-        hmux2::src::cfg::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/client.rs::C2RustUnnamed_23",
-        hmux2::src::client::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd.rs::C2RustUnnamed_10",
-        hmux2::src::cmd::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_attach_session.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_attach_session::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_bind_key.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_bind_key::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_break_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_break_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_capture_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_capture_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_choose_tree.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_choose_tree::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_command_prompt.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_command_prompt::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_confirm_before.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_confirm_before::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_copy_mode.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_copy_mode::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_detach_client.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_detach_client::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_display_menu.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_display_menu::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_display_message.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_display_message::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_find.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_find::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_find_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_find_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_if_shell.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_if_shell::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_join_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_join_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_kill_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_kill_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_kill_session.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_kill_session::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_kill_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_kill_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_list_buffers.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_list_buffers::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_list_clients.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_list_clients::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_list_commands.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_list_commands::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_list_keys.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_list_keys::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_list_panes.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_list_panes::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_list_sessions.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_list_sessions::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_list_windows.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_list_windows::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_load_buffer.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_load_buffer::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_lock_server.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_lock_server::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_move_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_move_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_new_session.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_new_session::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_new_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_new_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_parse.rs::C2RustUnnamed_11",
-        hmux2::src::cmd_parse::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_paste_buffer.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_paste_buffer::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_pipe_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_pipe_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_queue.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_queue::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_refresh_client.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_refresh_client::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_rename_session.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_rename_session::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_rename_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_rename_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_resize_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_resize_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_resize_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_resize_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_respawn_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_respawn_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_respawn_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_respawn_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_rotate_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_rotate_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_run_shell.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_run_shell::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_save_buffer.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_save_buffer::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_select_layout.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_select_layout::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_select_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_select_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_select_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_select_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_send_keys.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_send_keys::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_server_access.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_server_access::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_set_buffer.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_set_buffer::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_set_environment.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_set_environment::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_set_option.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_set_option::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_show_environment.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_show_environment::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_show_messages.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_show_messages::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_show_options.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_show_options::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_source_file.rs::C2RustUnnamed_11",
-        hmux2::src::cmd_source_file::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_split_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_split_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_swap_pane.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_swap_pane::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_swap_window.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_swap_window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_switch_client.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_switch_client::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/cmd_wait_for.rs::C2RustUnnamed_10",
-        hmux2::src::cmd_wait_for::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/colour.rs::C2RustUnnamed_11",
-        hmux2::src::colour::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_10",
-        hmux2::src::control::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/control_notify.rs::C2RustUnnamed_10",
-        hmux2::src::control_notify::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/environ.rs::C2RustUnnamed_10",
-        hmux2::src::environ::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/events.rs::C2RustUnnamed_10",
-        hmux2::src::events::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/events_payload.rs::C2RustUnnamed_10",
-        hmux2::src::events_payload::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/file.rs::C2RustUnnamed_11",
-        hmux2::src::file::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/format.rs::C2RustUnnamed_11",
-        hmux2::src::format::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/format_draw.rs::C2RustUnnamed_10",
-        hmux2::src::format_draw::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/hooks.rs::C2RustUnnamed_10",
-        hmux2::src::hooks::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/input.rs::C2RustUnnamed_10",
-        hmux2::src::input::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/input_keys.rs::C2RustUnnamed_10",
-        hmux2::src::input_keys::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/job.rs::C2RustUnnamed_11",
-        hmux2::src::job::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/key_bindings.rs::C2RustUnnamed_10",
-        hmux2::src::key_bindings::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/layout.rs::C2RustUnnamed_10",
-        hmux2::src::layout::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/layout_custom.rs::C2RustUnnamed_11",
-        hmux2::src::layout_custom::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/layout_set.rs::C2RustUnnamed_10",
-        hmux2::src::layout_set::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/menu.rs::C2RustUnnamed_10",
-        hmux2::src::menu::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/mode_tree.rs::C2RustUnnamed_10",
-        hmux2::src::mode_tree::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/monitor.rs::C2RustUnnamed_10",
-        hmux2::src::monitor::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/names.rs::C2RustUnnamed_11",
-        hmux2::src::names::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/options.rs::C2RustUnnamed_11",
-        hmux2::src::options::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/popup.rs::C2RustUnnamed_10",
-        hmux2::src::popup::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/prompt.rs::C2RustUnnamed_10",
-        hmux2::src::prompt::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/resize.rs::C2RustUnnamed_10",
-        hmux2::src::resize::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/screen.rs::C2RustUnnamed_10",
-        hmux2::src::screen::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/screen_redraw.rs::C2RustUnnamed_10",
-        hmux2::src::screen_redraw::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/screen_write.rs::C2RustUnnamed_10",
-        hmux2::src::screen_write::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/server.rs::C2RustUnnamed_11",
-        hmux2::src::server::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/server_acl.rs::C2RustUnnamed_10",
-        hmux2::src::server_acl::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/server_client.rs::C2RustUnnamed_11",
-        hmux2::src::server_client::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/server_fn.rs::C2RustUnnamed_10",
-        hmux2::src::server_fn::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/session.rs::C2RustUnnamed_10",
-        hmux2::src::session::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/sort.rs::C2RustUnnamed_10",
-        hmux2::src::sort::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/spawn.rs::C2RustUnnamed_10",
-        hmux2::src::spawn::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/status.rs::C2RustUnnamed_10",
-        hmux2::src::status::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/style.rs::C2RustUnnamed_10",
-        hmux2::src::style::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/tty.rs::C2RustUnnamed_12",
-        hmux2::src::tty::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/tty_acs.rs::C2RustUnnamed_10",
-        hmux2::src::tty_acs::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/tty_draw.rs::C2RustUnnamed_10",
-        hmux2::src::tty_draw::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/tty_features.rs::C2RustUnnamed_12",
-        hmux2::src::tty_features::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/tty_keys.rs::C2RustUnnamed_11",
-        hmux2::src::tty_keys::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/tty_term.rs::C2RustUnnamed_12",
-        hmux2::src::tty_term::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window.rs::C2RustUnnamed_11",
-        hmux2::src::window::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_border.rs::C2RustUnnamed_10",
-        hmux2::src::window_border::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_buffer.rs::C2RustUnnamed_10",
-        hmux2::src::window_buffer::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_client.rs::C2RustUnnamed_10",
-        hmux2::src::window_client::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_clock.rs::C2RustUnnamed_10",
-        hmux2::src::window_clock::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_copy.rs::C2RustUnnamed_10",
-        hmux2::src::window_copy::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_customize.rs::C2RustUnnamed_10",
-        hmux2::src::window_customize::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_panes.rs::C2RustUnnamed_10",
-        hmux2::src::window_panes::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_switch.rs::C2RustUnnamed_10",
-        hmux2::src::window_switch::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_tree.rs::C2RustUnnamed_10",
-        hmux2::src::window_tree::client_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/window_visible.rs::C2RustUnnamed_10",
-        hmux2::src::window_visible::client_entry,
-        [tqe_next, tqe_prev]
     );
     record!(
         "src/alerts.rs::client_file",

@@ -288,12 +288,12 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
 pub unsafe extern "C" fn format_tidy_jobs() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     format_job_tidy(&raw mut format_jobs, 0 as ::core::ffi::c_int);
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).jobs.is_null() {
             format_job_tidy((*c).jobs, 0 as ::core::ffi::c_int);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]

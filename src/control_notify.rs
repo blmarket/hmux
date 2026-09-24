@@ -14,7 +14,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -85,7 +85,7 @@ unsafe extern "C" fn control_pane_mode_changed_cb(
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     wp = event_payload_get_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char);
     if !wp.is_null() {
-        c = clients.tqh_first;
+        c = clients.first();
         while !c.is_null() {
             if !c.is_null()
                 && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -98,7 +98,7 @@ unsafe extern "C" fn control_pane_mode_changed_cb(
                     (*wp).id,
                 );
             }
-            c = (*c).entry.tqe_next;
+            c = clients.next(c);
         }
         return;
     }
@@ -107,7 +107,7 @@ unsafe extern "C" fn control_pane_mode_changed_cb(
     else {
         return;
     };
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -120,7 +120,7 @@ unsafe extern "C" fn control_pane_mode_changed_cb(
                 value.as_ptr().cast::<::core::ffi::c_char>(),
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_window_layout_changed_cb(
@@ -144,7 +144,7 @@ unsafe extern "C" fn control_window_layout_changed_cb(
     if window_winlinks_first(w).is_null() || (*w).layout_root.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -168,7 +168,7 @@ unsafe extern "C" fn control_window_layout_changed_cb(
                 free(cp as *mut ::core::ffi::c_void);
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_window_pane_changed_cb(
@@ -182,7 +182,7 @@ unsafe extern "C" fn control_window_pane_changed_cb(
     if w.is_null() || (*w).active.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -196,7 +196,7 @@ unsafe extern "C" fn control_window_pane_changed_cb(
                 (*(*w).active).id,
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_window_unlinked_cb(
@@ -211,7 +211,7 @@ unsafe extern "C" fn control_window_unlinked_cb(
     if w.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -234,7 +234,7 @@ unsafe extern "C" fn control_window_unlinked_cb(
                 );
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_window_linked_cb(
@@ -249,7 +249,7 @@ unsafe extern "C" fn control_window_linked_cb(
     if w.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -272,7 +272,7 @@ unsafe extern "C" fn control_window_linked_cb(
                 );
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_window_renamed_cb(
@@ -287,7 +287,7 @@ unsafe extern "C" fn control_window_renamed_cb(
     if w.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -313,7 +313,7 @@ unsafe extern "C" fn control_window_renamed_cb(
                 );
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_client_session_changed_cb(
@@ -329,7 +329,7 @@ unsafe extern "C" fn control_client_session_changed_cb(
         return;
     }
     s = (*cc).session;
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(!(!c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -355,7 +355,7 @@ unsafe extern "C" fn control_client_session_changed_cb(
                 );
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_client_detached_cb(
@@ -369,7 +369,7 @@ unsafe extern "C" fn control_client_detached_cb(
     if cc.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -382,7 +382,7 @@ unsafe extern "C" fn control_client_detached_cb(
                 (*cc).name,
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_session_renamed_cb(
@@ -396,7 +396,7 @@ unsafe extern "C" fn control_session_renamed_cb(
     if s.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -410,7 +410,7 @@ unsafe extern "C" fn control_session_renamed_cb(
                 (*s).name,
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_session_created_cb(
@@ -419,7 +419,7 @@ unsafe extern "C" fn control_session_created_cb(
     mut sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -431,7 +431,7 @@ unsafe extern "C" fn control_session_created_cb(
                 b"%%sessions-changed\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_session_closed_cb(
@@ -440,7 +440,7 @@ unsafe extern "C" fn control_session_closed_cb(
     mut sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -452,7 +452,7 @@ unsafe extern "C" fn control_session_closed_cb(
                 b"%%sessions-changed\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_session_window_changed_cb(
@@ -466,7 +466,7 @@ unsafe extern "C" fn control_session_window_changed_cb(
     if s.is_null() || (*s).curw.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -480,7 +480,7 @@ unsafe extern "C" fn control_session_window_changed_cb(
                 (*(*(*s).curw).window).id,
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_paste_buffer_changed_cb(
@@ -496,7 +496,7 @@ unsafe extern "C" fn control_paste_buffer_changed_cb(
     if pbname.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -509,7 +509,7 @@ unsafe extern "C" fn control_paste_buffer_changed_cb(
                 pbname,
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn control_paste_buffer_deleted_cb(
@@ -525,7 +525,7 @@ unsafe extern "C" fn control_paste_buffer_deleted_cb(
     if pbname.is_null() {
         return;
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !c.is_null()
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
@@ -538,7 +538,7 @@ unsafe extern "C" fn control_paste_buffer_deleted_cb(
                 pbname,
             );
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 #[no_mangle]

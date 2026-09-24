@@ -18,7 +18,7 @@ pub use crate::src::shared::arguments::args;
 pub use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -141,7 +141,7 @@ unsafe extern "C" fn cfg_done(
 pub unsafe extern "C" fn start_cfg() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    c = clients.tqh_first;
+    c = clients.first();
     cfg_client = c;
     if !c.is_null() {
         cfg_item = cmdq_get_callback1(
@@ -417,7 +417,7 @@ pub unsafe extern "C" fn cfg_print_causes(mut item: *mut cmdq_item) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn cfg_show_causes(mut s: *mut session) {
-    let mut c: *mut client = clients.tqh_first;
+    let mut c: *mut client = clients.first();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if CFG_CAUSES.lock().unwrap().is_empty() {

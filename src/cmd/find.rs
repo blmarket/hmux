@@ -27,7 +27,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -241,7 +241,7 @@ pub unsafe extern "C" fn cmd_find_best_client(mut s: *mut session) -> *mut clien
         s = ::core::ptr::null_mut::<session>();
     }
     c = ::core::ptr::null_mut::<client>();
-    c_loop = clients.tqh_first;
+    c_loop = clients.first();
     while !c_loop.is_null() {
         if !(*c_loop).session.is_null() {
             if !(!s.is_null() && (*c_loop).session != s) {
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn cmd_find_best_client(mut s: *mut session) -> *mut clien
                 }
             }
         }
-        c_loop = (*c_loop).entry.tqe_next;
+        c_loop = clients.next(c_loop);
     }
     return c;
 }
@@ -1767,7 +1767,7 @@ pub unsafe extern "C" fn cmd_find_client(
     let trimmed = target_bytes.strip_suffix(b":").unwrap_or(target_bytes);
     let copy = CString::new(trimmed).expect("client target came from a C string");
     let copy_ptr = copy.as_ptr();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null() {
             if strcmp(copy_ptr, (*c).name) == 0 as ::core::ffi::c_int {
@@ -1797,7 +1797,7 @@ pub unsafe extern "C" fn cmd_find_client(
                 }
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     if c.is_null() && quiet == 0 {
         cmdq_error(

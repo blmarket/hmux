@@ -56,7 +56,7 @@ pub use crate::src::shared::arguments::args;
 pub use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -625,12 +625,12 @@ pub unsafe extern "C" fn spawn_pane(
         (*(*sc).wp0).offset.used = 0 as size_t;
         (*(*sc).wp0).base_offset = 0 as size_t;
         (*(*sc).wp0).pipe_offset.used = 0 as size_t;
-        loop_0 = clients.tqh_first;
+        loop_0 = clients.first();
         while !loop_0.is_null() {
             if (*loop_0).flags & CLIENT_CONTROL as uint64_t != 0 {
                 control_reset_pane(loop_0, (*sc).wp0);
             }
-            loop_0 = (*loop_0).entry.tqe_next;
+            loop_0 = clients.next(loop_0);
         }
         new_wp = (*sc).wp0;
         (*new_wp).flags &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);

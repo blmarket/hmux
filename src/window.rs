@@ -73,7 +73,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -1733,7 +1733,7 @@ pub unsafe extern "C" fn window_pane_update_focus(mut wp: *mut window_pane) {
         if wp != (*(*wp).window).active {
             focused = 0 as ::core::ffi::c_int;
         } else {
-            c = clients.tqh_first;
+            c = clients.first();
             while !c.is_null() {
                 if !(*c).session.is_null()
                     && (*(*c).session).attached != 0 as u_int
@@ -1745,7 +1745,7 @@ pub unsafe extern "C" fn window_pane_update_focus(mut wp: *mut window_pane) {
                     focused = 1 as ::core::ffi::c_int;
                     break;
                 } else {
-                    c = (*c).entry.tqe_next;
+                    c = clients.next(c);
                 }
             }
         }
@@ -3586,12 +3586,12 @@ unsafe extern "C" fn window_pane_read_callback(
         (*wp).id,
         size,
     );
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_write_output(c, wp);
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     input_parse_pane(wp);
     bufferevent_disable((*wp).event, EV_READ as ::core::ffi::c_short);
@@ -4978,7 +4978,7 @@ pub unsafe extern "C" fn window_pane_get_bg(mut wp: *mut window_pane) -> ::core:
 pub unsafe extern "C" fn window_get_bg_client(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut w: *mut window = (*wp).window as *mut window;
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !((*loop_0).session.is_null() || session_has((*loop_0).session, w) == 0) {
@@ -4987,7 +4987,7 @@ pub unsafe extern "C" fn window_get_bg_client(mut wp: *mut window_pane) -> ::cor
                 }
             }
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -4999,12 +4999,12 @@ pub unsafe extern "C" fn window_pane_get_bg_control_client(
     if (*wp).control_bg == -(1 as ::core::ffi::c_int) {
         return -(1 as ::core::ffi::c_int);
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             return (*wp).control_bg;
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -5012,7 +5012,7 @@ pub unsafe extern "C" fn window_pane_get_bg_control_client(
 pub unsafe extern "C" fn window_pane_get_fg(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut w: *mut window = (*wp).window as *mut window;
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !((*loop_0).session.is_null() || session_has((*loop_0).session, w) == 0) {
@@ -5021,7 +5021,7 @@ pub unsafe extern "C" fn window_pane_get_fg(mut wp: *mut window_pane) -> ::core:
                 }
             }
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -5033,12 +5033,12 @@ pub unsafe extern "C" fn window_pane_get_fg_control_client(
     if (*wp).control_fg == -(1 as ::core::ffi::c_int) {
         return -(1 as ::core::ffi::c_int);
     }
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             return (*wp).control_fg;
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -5052,7 +5052,7 @@ pub unsafe extern "C" fn window_pane_get_theme(mut wp: *mut window_pane) -> clie
         return THEME_UNKNOWN;
     }
     w = (*wp).window as *mut window;
-    loop_0 = clients.tqh_first;
+    loop_0 = clients.first();
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !((*loop_0).session.is_null() || session_has((*loop_0).session, w) == 0) {
@@ -5067,7 +5067,7 @@ pub unsafe extern "C" fn window_pane_get_theme(mut wp: *mut window_pane) -> clie
                 }
             }
         }
-        loop_0 = (*loop_0).entry.tqe_next;
+        loop_0 = clients.next(loop_0);
     }
     if found_dark != 0 && found_light == 0 {
         return THEME_DARK;

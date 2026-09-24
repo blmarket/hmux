@@ -34,7 +34,7 @@ use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
@@ -151,7 +151,7 @@ pub static mut cmd_last_pane_entry: cmd_entry = unsafe {
 };
 unsafe extern "C" fn cmd_select_pane_redraw(mut w: *mut window) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    c = clients.tqh_first;
+    c = clients.first();
     while !c.is_null() {
         if !((*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
             if (*(*(*c).session).curw).window == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
@@ -165,7 +165,7 @@ unsafe extern "C" fn cmd_select_pane_redraw(mut w: *mut window) {
                 }
             }
         }
-        c = (*c).entry.tqe_next;
+        c = clients.next(c);
     }
 }
 unsafe extern "C" fn cmd_select_pane_marked_pane(
