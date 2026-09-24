@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "hmux-buffer",
+    "hmux-cmdparse",
     "hmux-rt",
 ]
 [package]
@@ -19,6 +20,7 @@ crate-type = ["staticlib", "rlib"]
 path = "src/main.rs"
 name = "hmux2"
 [dependencies]
+hmux-cmdparse = { path = "hmux-cmdparse" }
 hmux-rt = { path = "hmux-rt" }
 hmux-buffer = { path = "hmux-buffer" }
 c2rust-bitfields = "0.22.1"

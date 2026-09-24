@@ -21,9 +21,8 @@ pub use crate::src::shared::arguments::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
@@ -138,90 +137,12 @@ pub struct cmd_parse_state {
     pub input: *mut cmd_parse_input,
     pub escapes: u_int,
     pub error: *mut ::core::ffi::c_char,
-    pub commands: *mut cmd_parse_commands,
-    pub scope: *mut cmd_parse_scope,
-    pub stack: *mut cmd_parse_scope_stack,
 }
-/// Box-owned while active or linked in the parser scope stack.
-pub struct cmd_parse_scope {
-    pub flag: ::core::ffi::c_int,
-}
-/// Owner for scopes that are temporarily suspended while nested conditions parse.
-pub struct cmd_parse_scope_stack {
-    pub items: VecDeque<Box<cmd_parse_scope>>,
-}
-pub type yy_state_t = yytype_int8;
-pub type yytype_int8 = ::core::ffi::c_schar;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union YYSTYPE {
-    pub token: *mut ::core::ffi::c_char,
-    pub arguments: *mut cmd_parse_arguments,
-    pub argument: *mut cmd_parse_argument,
-    pub flag: ::core::ffi::c_int,
-    pub elif: C2RustUnnamed_43,
-    pub commands: *mut cmd_parse_commands,
-    pub command: *mut cmd_parse_command,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_43 {
-    pub flag: ::core::ffi::c_int,
-    pub commands: *mut cmd_parse_commands,
-}
-pub type yysymbol_kind_t = ::core::ffi::c_int;
-pub const YYSYMBOL_argument_statements: yysymbol_kind_t = 37;
-pub const YYSYMBOL_argument: yysymbol_kind_t = 36;
-pub const YYSYMBOL_arguments: yysymbol_kind_t = 35;
-pub const YYSYMBOL_elif1: yysymbol_kind_t = 34;
-pub const YYSYMBOL_condition1: yysymbol_kind_t = 33;
-pub const YYSYMBOL_command: yysymbol_kind_t = 32;
-pub const YYSYMBOL_commands: yysymbol_kind_t = 31;
-pub const YYSYMBOL_elif: yysymbol_kind_t = 30;
-pub const YYSYMBOL_condition: yysymbol_kind_t = 29;
-pub const YYSYMBOL_if_close: yysymbol_kind_t = 28;
-pub const YYSYMBOL_if_elif: yysymbol_kind_t = 27;
-pub const YYSYMBOL_if_else: yysymbol_kind_t = 26;
-pub const YYSYMBOL_if_open: yysymbol_kind_t = 25;
-pub const YYSYMBOL_hidden_assignment: yysymbol_kind_t = 24;
-pub const YYSYMBOL_assignment: yysymbol_kind_t = 23;
-pub const YYSYMBOL_optional_assignment: yysymbol_kind_t = 22;
-pub const YYSYMBOL_expanded: yysymbol_kind_t = 21;
-pub const YYSYMBOL_format: yysymbol_kind_t = 20;
-pub const YYSYMBOL_statement: yysymbol_kind_t = 19;
-pub const YYSYMBOL_statements: yysymbol_kind_t = 18;
-pub const YYSYMBOL_lines: yysymbol_kind_t = 17;
-pub const YYSYMBOL_YYACCEPT: yysymbol_kind_t = 16;
-pub const YYSYMBOL_15_: yysymbol_kind_t = 15;
-pub const YYSYMBOL_14_: yysymbol_kind_t = 14;
-pub const YYSYMBOL_13_: yysymbol_kind_t = 13;
-pub const YYSYMBOL_12_n_: yysymbol_kind_t = 12;
-pub const YYSYMBOL_EQUALS: yysymbol_kind_t = 11;
-pub const YYSYMBOL_TOKEN: yysymbol_kind_t = 10;
-pub const YYSYMBOL_FORMAT: yysymbol_kind_t = 9;
-pub const YYSYMBOL_ENDIF: yysymbol_kind_t = 8;
-pub const YYSYMBOL_ELIF: yysymbol_kind_t = 7;
-pub const YYSYMBOL_ELSE: yysymbol_kind_t = 6;
-pub const YYSYMBOL_IF: yysymbol_kind_t = 5;
-pub const YYSYMBOL_HIDDEN: yysymbol_kind_t = 4;
-pub const YYSYMBOL_ERROR: yysymbol_kind_t = 3;
-pub const YYSYMBOL_YYUNDEF: yysymbol_kind_t = 2;
-pub const YYSYMBOL_YYerror: yysymbol_kind_t = 1;
-pub const YYSYMBOL_YYEOF: yysymbol_kind_t = 0;
-pub const YYSYMBOL_YYEMPTY: yysymbol_kind_t = -2;
-pub type yy_state_fast_t = ::core::ffi::c_int;
 pub type C2RustUnnamed_44 = ::core::ffi::c_uint;
 pub const SINGLE_QUOTES: C2RustUnnamed_44 = 3;
 pub const DOUBLE_QUOTES: C2RustUnnamed_44 = 2;
 pub const NONE: C2RustUnnamed_44 = 1;
 pub const START: C2RustUnnamed_44 = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union yyalloc {
-    pub yyss_alloc: yy_state_t,
-    pub yyvs_alloc: YYSTYPE,
-}
-
 static mut parse_state: cmd_parse_state = cmd_parse_state {
     f: ::core::ptr::null::<FILE>() as *mut FILE,
     buf: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -233,14 +154,7 @@ static mut parse_state: cmd_parse_state = cmd_parse_state {
     input: ::core::ptr::null::<cmd_parse_input>() as *mut cmd_parse_input,
     escapes: 0,
     error: ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char,
-    commands: ::core::ptr::null::<cmd_parse_commands>() as *mut cmd_parse_commands,
-    scope: ::core::ptr::null::<cmd_parse_scope>() as *mut cmd_parse_scope,
-    stack: ::core::ptr::null::<cmd_parse_scope_stack>() as *mut cmd_parse_scope_stack,
 };
-pub const YYEMPTY: ::core::ffi::c_int = -(2 as ::core::ffi::c_int);
-pub const YYEOF: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const YYerror: ::core::ffi::c_int = 256 as ::core::ffi::c_int;
-pub const YYUNDEF: ::core::ffi::c_int = 257 as ::core::ffi::c_int;
 pub const ERROR: ::core::ffi::c_int = 258 as ::core::ffi::c_int;
 pub const HIDDEN: ::core::ffi::c_int = 259 as ::core::ffi::c_int;
 pub const IF: ::core::ffi::c_int = 260 as ::core::ffi::c_int;
@@ -250,8 +164,6 @@ pub const ENDIF: ::core::ffi::c_int = 263 as ::core::ffi::c_int;
 pub const FORMAT: ::core::ffi::c_int = 264 as ::core::ffi::c_int;
 pub const TOKEN: ::core::ffi::c_int = 265 as ::core::ffi::c_int;
 pub const EQUALS: ::core::ffi::c_int = 266 as ::core::ffi::c_int;
-pub const YYSTACK_GAP_MAXIMUM: ::core::ffi::c_long =
-    ::core::mem::size_of::<yyalloc>() as ::core::ffi::c_long - 1 as ::core::ffi::c_long;
 unsafe extern "C" fn cmd_parse_get_error(
     mut file: *const ::core::ffi::c_char,
     mut line: u_int,
@@ -296,8 +208,6 @@ unsafe extern "C" fn cmd_parse_print_commands(
         );
     }
 }
-pub const YYFINAL: ::core::ffi::c_int = 20 as ::core::ffi::c_int;
-pub const YYLAST: ::core::ffi::c_int = 104 as ::core::ffi::c_int;
 unsafe fn cmd_parse_new_argument() -> *mut cmd_parse_argument {
     Box::into_raw(Box::new(cmd_parse_argument {
         type_0: CMD_PARSE_STRING,
@@ -321,287 +231,11 @@ unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
     }
     drop(Box::from_raw(arg));
 }
-pub const YYNTOKENS: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
-pub const YYMAXUTOK: ::core::ffi::c_int = 266 as ::core::ffi::c_int;
-unsafe fn cmd_parse_new_arguments() -> *mut cmd_parse_arguments {
-    Box::into_raw(Box::new(cmd_parse_arguments {
-        items: VecDeque::new(),
-    }))
-}
 unsafe extern "C" fn cmd_parse_free_arguments(mut args: *mut cmd_parse_arguments) {
     while let Some(arg) = (*args).items.pop_front() {
         cmd_parse_free_argument(Box::into_raw(arg));
     }
 }
-static mut yytranslate: [yytype_int8; 267] = [
-    0 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    14 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    15 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    9 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-];
 unsafe fn cmd_parse_new_command(line: u_int) -> *mut cmd_parse_command {
     Box::into_raw(Box::new(cmd_parse_command {
         line,
@@ -644,9 +278,6 @@ unsafe fn cmd_parse_argument_at(
         .get_mut(index)
         .map_or(::core::ptr::null_mut(), |arg| &mut **arg)
 }
-unsafe fn cmd_parse_commands_append(dst: *mut cmd_parse_commands, src: *mut cmd_parse_commands) {
-    (*dst).items.append(&mut (*src).items);
-}
 unsafe fn cmd_parse_arguments_append(dst: *mut cmd_parse_arguments, src: *mut cmd_parse_arguments) {
     (*dst).items.append(&mut (*src).items);
 }
@@ -656,43 +287,133 @@ unsafe fn cmd_parse_commands_push(cmds: *mut cmd_parse_commands, cmd: *mut cmd_p
 unsafe fn cmd_parse_arguments_push(args: *mut cmd_parse_arguments, arg: *mut cmd_parse_argument) {
     (*args).items.push_back(Box::from_raw(arg));
 }
-unsafe fn cmd_parse_arguments_prepend(
-    args: *mut cmd_parse_arguments,
-    arg: *mut cmd_parse_argument,
-) {
-    (*args).items.push_front(Box::from_raw(arg));
+// The lexer remains application-owned: variable and tilde expansion depend on
+// the live environment. Pull one token at a time so assignments affect later words.
+struct ParserContext;
+
+impl hmux_cmdparse::Context for ParserContext {
+    fn line(&self) -> u32 {
+        unsafe { (*parse_state.input).line }
+    }
+
+    fn expand_format(&mut self, token: hmux_cmdparse::TokenText) -> hmux_cmdparse::TokenText {
+        unsafe {
+            let pi = parse_state.input;
+            let mut fs: cmd_find_state = std::mem::zeroed();
+            let fsp = if cmd_find_valid_state(&raw mut (*pi).fs) != 0 {
+                &raw mut (*pi).fs
+            } else {
+                cmd_find_from_client(&raw mut fs, (*pi).c, 0);
+                &raw mut fs
+            };
+            let ft = format_create((*pi).c, (*pi).item, FORMAT_NONE, FORMAT_NOJOBS);
+            format_defaults(ft, (*pi).c, (*fsp).s, (*fsp).wl, (*fsp).wp);
+            let expanded = format_expand(ft, token.as_c_str().as_ptr());
+            format_free(ft);
+            take_parser_token(expanded)
+        }
+    }
+
+    fn put_environ(
+        &mut self,
+        token: hmux_cmdparse::TokenText,
+        hidden: bool,
+        active: bool,
+    ) -> Result<(), hmux_cmdparse::LexError> {
+        unsafe {
+            if token.as_c_str().to_bytes().len() > CMD_PARSE_MAX_ENVIRON_LEN as usize {
+                yyerror(b"environment variable is too long\0".as_ptr().cast());
+                return Err(hmux_cmdparse::LexError);
+            }
+            if (*parse_state.input).flags & CMD_PARSE_PARSEONLY == 0 && active {
+                environ_put(
+                    global_environ,
+                    token.as_c_str().as_ptr(),
+                    if hidden { ENVIRON_HIDDEN } else { 0 },
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn is_true(&self, token: &hmux_cmdparse::TokenText) -> bool {
+        unsafe { format_true(token.as_c_str().as_ptr()) != 0 }
+    }
 }
-unsafe fn cmd_parse_command_take_arguments(
-    cmd: *mut cmd_parse_command,
-    args: *mut cmd_parse_arguments,
-) {
-    cmd_parse_arguments_append(&raw mut (*cmd).arguments, args);
-    drop(Box::from_raw(args));
+
+// Lexer strings use malloc; copy before freeing instead of CString::from_raw.
+unsafe fn take_parser_token(raw: *mut core::ffi::c_char) -> hmux_cmdparse::TokenText {
+    let text = CStr::from_ptr(raw).to_owned();
+    free(raw.cast());
+    hmux_cmdparse::TokenText::from_cstring(text)
 }
-unsafe extern "C" fn cmd_parse_run_parser(
-    mut cause: *mut *mut ::core::ffi::c_char,
+
+fn next_parser_token(
+) -> Option<Result<(usize, hmux_cmdparse::Token, usize), hmux_cmdparse::LexError>> {
+    use hmux_cmdparse::Token;
+    unsafe {
+        let mut lexer_token = core::ptr::null_mut();
+        let token = match yylex(&mut lexer_token) {
+            0 => return None,
+            10 => Token::Newline,
+            59 => Token::Semicolon,
+            123 => Token::OpenBrace,
+            125 => Token::CloseBrace,
+            HIDDEN => Token::Hidden,
+            IF => Token::If,
+            ELSE => Token::Else,
+            ELIF => Token::Elif,
+            ENDIF => Token::Endif,
+            kind @ (FORMAT | TOKEN | EQUALS) => {
+                let text = take_parser_token(lexer_token);
+                match kind {
+                    FORMAT => Token::Format(text),
+                    TOKEN => Token::Word(text),
+                    _ => Token::Equals(text),
+                }
+            }
+            _ => return Some(Err(hmux_cmdparse::LexError)),
+        };
+        Some(Ok((0, token, 0)))
+    }
+}
+
+unsafe fn build_parser_commands(
+    commands: Vec<hmux_cmdparse::ParseCommand>,
 ) -> *mut cmd_parse_commands {
-    let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-    let mut retval: ::core::ffi::c_int = 0;
-    (*ps).commands = ::core::ptr::null_mut::<cmd_parse_commands>();
-    (*ps).stack = Box::into_raw(Box::new(cmd_parse_scope_stack {
-        items: VecDeque::new(),
-    }));
-    retval = yyparse();
-    drop(Box::from_raw((*ps).stack));
-    (*ps).stack = ::core::ptr::null_mut();
-    if !(*ps).scope.is_null() {
-        drop(Box::from_raw((*ps).scope));
-        (*ps).scope = ::core::ptr::null_mut();
+    let output = cmd_parse_new_commands();
+    for command in commands {
+        let cmd = cmd_parse_new_command(command.line);
+        for argument in command.arguments {
+            let arg = cmd_parse_new_argument();
+            match argument {
+                hmux_cmdparse::ParseArgument::String(text) => {
+                    (*arg).type_0 = CMD_PARSE_STRING;
+                    (*arg).string = xstrdup(text.as_c_str().as_ptr());
+                }
+                hmux_cmdparse::ParseArgument::Commands(commands) => {
+                    (*arg).type_0 = CMD_PARSE_COMMANDS;
+                    (*arg).commands = build_parser_commands(commands);
+                }
+            }
+            cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
+        }
+        cmd_parse_commands_push(output, cmd);
     }
-    if retval != 0 as ::core::ffi::c_int {
-        *cause = (*ps).error;
-        return ::core::ptr::null_mut::<cmd_parse_commands>();
+    output
+}
+
+unsafe extern "C" fn cmd_parse_run_parser(
+    cause: *mut *mut core::ffi::c_char,
+) -> *mut cmd_parse_commands {
+    match hmux_cmdparse::parse(&mut ParserContext, std::iter::from_fn(next_parser_token)) {
+        Ok(commands) => build_parser_commands(commands),
+        Err(_) => {
+            yyerror(b"syntax error\0".as_ptr().cast());
+            *cause = parse_state.error;
+            core::ptr::null_mut()
+        }
     }
-    if (*ps).commands.is_null() {
-        return cmd_parse_new_commands();
-    }
-    return (*ps).commands;
 }
 unsafe extern "C" fn cmd_parse_do_file(
     mut f: *mut FILE,
@@ -709,7 +430,6 @@ unsafe extern "C" fn cmd_parse_do_file(
     (*ps).f = f;
     return cmd_parse_run_parser(cause);
 }
-pub const YYPACT_NINF: ::core::ffi::c_int = -(32 as ::core::ffi::c_int);
 unsafe extern "C" fn cmd_parse_do_buffer(
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
@@ -727,83 +447,6 @@ unsafe extern "C" fn cmd_parse_do_buffer(
     (*ps).len = len;
     return cmd_parse_run_parser(cause);
 }
-static mut yypact: [yytype_int8; 75] = [
-    49 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    14 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    49 as ::core::ffi::c_int as yytype_int8,
-    29 as ::core::ffi::c_int as yytype_int8,
-    47 as ::core::ffi::c_int as yytype_int8,
-    60 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    68 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    83 as ::core::ffi::c_int as yytype_int8,
-    81 as ::core::ffi::c_int as yytype_int8,
-    38 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    17 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    81 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    83 as ::core::ffi::c_int as yytype_int8,
-    71 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    14 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    38 as ::core::ffi::c_int as yytype_int8,
-    38 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(1 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    81 as ::core::ffi::c_int as yytype_int8,
-    40 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    76 as ::core::ffi::c_int as yytype_int8,
-    86 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(1 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    58 as ::core::ffi::c_int as yytype_int8,
-    38 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    84 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    81 as ::core::ffi::c_int as yytype_int8,
-    81 as ::core::ffi::c_int as yytype_int8,
-    88 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    79 as ::core::ffi::c_int as yytype_int8,
-    62 as ::core::ffi::c_int as yytype_int8,
-    81 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    79 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-];
 unsafe extern "C" fn cmd_parse_log_commands(
     mut cmds: *mut cmd_parse_commands,
     mut prefix: *const ::core::ffi::c_char,
@@ -856,131 +499,6 @@ unsafe extern "C" fn cmd_parse_log_commands(
         i = i.wrapping_add(1);
     }
 }
-static mut yydefact: [yytype_int8; 75] = [
-    2 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    15 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    9 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    16 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    17 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    43 as ::core::ffi::c_int as yytype_int8,
-    44 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    41 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    20 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    30 as ::core::ffi::c_int as yytype_int8,
-    29 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    45 as ::core::ffi::c_int as yytype_int8,
-    42 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    21 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    39 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    46 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    23 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    40 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    47 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    38 as ::core::ffi::c_int as yytype_int8,
-    22 as ::core::ffi::c_int as yytype_int8,
-    26 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    24 as ::core::ffi::c_int as yytype_int8,
-];
-static mut yypgoto: [yytype_int8; 22] = [
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(23 as ::core::ffi::c_int) as yytype_int8,
-    -(5 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    59 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(8 as ::core::ffi::c_int) as yytype_int8,
-    -(31 as ::core::ffi::c_int) as yytype_int8,
-    -(30 as ::core::ffi::c_int) as yytype_int8,
-    -(9 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(18 as ::core::ffi::c_int) as yytype_int8,
-    -(4 as ::core::ffi::c_int) as yytype_int8,
-    74 as ::core::ffi::c_int as yytype_int8,
-    75 as ::core::ffi::c_int as yytype_int8,
-    50 as ::core::ffi::c_int as yytype_int8,
-    70 as ::core::ffi::c_int as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-    -(32 as ::core::ffi::c_int) as yytype_int8,
-];
-static mut yydefgoto: [yytype_int8; 22] = [
-    0 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    9 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    38 as ::core::ffi::c_int as yytype_int8,
-    39 as ::core::ffi::c_int as yytype_int8,
-    40 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    51 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    14 as ::core::ffi::c_int as yytype_int8,
-    41 as ::core::ffi::c_int as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    46 as ::core::ffi::c_int as yytype_int8,
-];
 unsafe extern "C" fn cmd_parse_expand_alias(
     mut cmd: *mut cmd_parse_command,
     mut pi: *mut cmd_parse_input,
@@ -1042,10 +560,7 @@ unsafe extern "C" fn cmd_parse_expand_alias(
         .pop_front()
         .expect("alias command has a first argument");
     cmd_parse_free_argument(Box::into_raw(first_argument));
-    (*last)
-        .arguments
-        .items
-        .append(&mut (*cmd).arguments.items);
+    (*last).arguments.items.append(&mut (*cmd).arguments.items);
     cmd_parse_log_commands(
         cmds,
         b"cmd_parse_expand_alias\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1056,347 +571,6 @@ unsafe extern "C" fn cmd_parse_expand_alias(
     cmd_parse_free_commands(cmds);
     return 1 as ::core::ffi::c_int;
 }
-static mut yytable: [yytype_int8; 105] = [
-    21 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    48 as ::core::ffi::c_int as yytype_int8,
-    49 as ::core::ffi::c_int as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    26 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-    44 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    55 as ::core::ffi::c_int as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-    15 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    24 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    61 as ::core::ffi::c_int as yytype_int8,
-    26 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    16 as ::core::ffi::c_int as yytype_int8,
-    17 as ::core::ffi::c_int as yytype_int8,
-    50 as ::core::ffi::c_int as yytype_int8,
-    45 as ::core::ffi::c_int as yytype_int8,
-    -(13 as ::core::ffi::c_int) as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    21 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    56 as ::core::ffi::c_int as yytype_int8,
-    20 as ::core::ffi::c_int as yytype_int8,
-    53 as ::core::ffi::c_int as yytype_int8,
-    54 as ::core::ffi::c_int as yytype_int8,
-    67 as ::core::ffi::c_int as yytype_int8,
-    68 as ::core::ffi::c_int as yytype_int8,
-    49 as ::core::ffi::c_int as yytype_int8,
-    57 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-    22 as ::core::ffi::c_int as yytype_int8,
-    62 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    63 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    73 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    72 as ::core::ffi::c_int as yytype_int8,
-    65 as ::core::ffi::c_int as yytype_int8,
-    22 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    58 as ::core::ffi::c_int as yytype_int8,
-    70 as ::core::ffi::c_int as yytype_int8,
-    23 as ::core::ffi::c_int as yytype_int8,
-    71 as ::core::ffi::c_int as yytype_int8,
-    -(13 as ::core::ffi::c_int) as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    -(6 as ::core::ffi::c_int) as yytype_int8,
-    21 as ::core::ffi::c_int as yytype_int8,
-    21 as ::core::ffi::c_int as yytype_int8,
-    74 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    21 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    -(14 as ::core::ffi::c_int) as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    -(13 as ::core::ffi::c_int) as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    -(6 as ::core::ffi::c_int) as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    -(13 as ::core::ffi::c_int) as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-    59 as ::core::ffi::c_int as yytype_int8,
-    -(13 as ::core::ffi::c_int) as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    -(13 as ::core::ffi::c_int) as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    29 as ::core::ffi::c_int as yytype_int8,
-    30 as ::core::ffi::c_int as yytype_int8,
-    52 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    60 as ::core::ffi::c_int as yytype_int8,
-    66 as ::core::ffi::c_int as yytype_int8,
-    69 as ::core::ffi::c_int as yytype_int8,
-    42 as ::core::ffi::c_int as yytype_int8,
-    43 as ::core::ffi::c_int as yytype_int8,
-    47 as ::core::ffi::c_int as yytype_int8,
-    64 as ::core::ffi::c_int as yytype_int8,
-];
-static mut yycheck: [yytype_int8; 105] = [
-    5 as ::core::ffi::c_int as yytype_int8,
-    24 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    41 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    51 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    9 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    38 as ::core::ffi::c_int as yytype_int8,
-    39 as ::core::ffi::c_int as yytype_int8,
-    41 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    38 as ::core::ffi::c_int as yytype_int8,
-    39 as ::core::ffi::c_int as yytype_int8,
-    59 as ::core::ffi::c_int as yytype_int8,
-    60 as ::core::ffi::c_int as yytype_int8,
-    68 as ::core::ffi::c_int as yytype_int8,
-    44 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    51 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    53 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    69 as ::core::ffi::c_int as yytype_int8,
-    55 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    68 as ::core::ffi::c_int as yytype_int8,
-    55 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    15 as ::core::ffi::c_int as yytype_int8,
-    65 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    67 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    67 as ::core::ffi::c_int as yytype_int8,
-    68 as ::core::ffi::c_int as yytype_int8,
-    73 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    73 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    14 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    15 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    54 as ::core::ffi::c_int as yytype_int8,
-];
-static mut yystos: [yytype_int8; 75] = [
-    0 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    17 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    22 as ::core::ffi::c_int as yytype_int8,
-    23 as ::core::ffi::c_int as yytype_int8,
-    24 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    29 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    9 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    20 as ::core::ffi::c_int as yytype_int8,
-    21 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    13 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    10 as ::core::ffi::c_int as yytype_int8,
-    11 as ::core::ffi::c_int as yytype_int8,
-    14 as ::core::ffi::c_int as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    26 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    26 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    30 as ::core::ffi::c_int as yytype_int8,
-    21 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    26 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    15 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    26 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    15 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    12 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    30 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-];
-static mut yyr1: [yytype_int8; 48] = [
-    0 as ::core::ffi::c_int as yytype_int8,
-    16 as ::core::ffi::c_int as yytype_int8,
-    17 as ::core::ffi::c_int as yytype_int8,
-    17 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    18 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    19 as ::core::ffi::c_int as yytype_int8,
-    20 as ::core::ffi::c_int as yytype_int8,
-    20 as ::core::ffi::c_int as yytype_int8,
-    21 as ::core::ffi::c_int as yytype_int8,
-    22 as ::core::ffi::c_int as yytype_int8,
-    22 as ::core::ffi::c_int as yytype_int8,
-    23 as ::core::ffi::c_int as yytype_int8,
-    24 as ::core::ffi::c_int as yytype_int8,
-    25 as ::core::ffi::c_int as yytype_int8,
-    26 as ::core::ffi::c_int as yytype_int8,
-    27 as ::core::ffi::c_int as yytype_int8,
-    28 as ::core::ffi::c_int as yytype_int8,
-    29 as ::core::ffi::c_int as yytype_int8,
-    29 as ::core::ffi::c_int as yytype_int8,
-    29 as ::core::ffi::c_int as yytype_int8,
-    29 as ::core::ffi::c_int as yytype_int8,
-    30 as ::core::ffi::c_int as yytype_int8,
-    30 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    31 as ::core::ffi::c_int as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    32 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    33 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    34 as ::core::ffi::c_int as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    35 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    36 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-    37 as ::core::ffi::c_int as yytype_int8,
-];
 unsafe extern "C" fn cmd_parse_build_command(
     mut cmd: *mut cmd_parse_command,
     mut pi: *mut cmd_parse_input,
@@ -1488,56 +662,6 @@ unsafe extern "C" fn cmd_parse_build_command(
         idx = idx.wrapping_add(1);
     }
 }
-static mut yyr2: [yytype_int8; 48] = [
-    0 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    0 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    7 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    8 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    5 as ::core::ffi::c_int as yytype_int8,
-    4 as ::core::ffi::c_int as yytype_int8,
-    6 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    1 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    2 as ::core::ffi::c_int as yytype_int8,
-    3 as ::core::ffi::c_int as yytype_int8,
-];
 unsafe extern "C" fn cmd_parse_build_commands(
     mut cmds: *mut cmd_parse_commands,
     mut pi: *mut cmd_parse_input,
@@ -1716,7 +840,6 @@ pub unsafe extern "C" fn cmd_parse_and_insert(
     }
     return (*pr).status;
 }
-pub const YYINITDEPTH: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn cmd_parse_and_append(
     mut s: *const ::core::ffi::c_char,
@@ -1744,44 +867,6 @@ pub unsafe extern "C" fn cmd_parse_and_append(
         _ => {}
     }
     return (*pr).status;
-}
-pub const YYMAXDEPTH: ::core::ffi::c_int = 10000 as ::core::ffi::c_int;
-unsafe extern "C" fn yydestruct(
-    mut yymsg: *const ::core::ffi::c_char,
-    mut yykind: yysymbol_kind_t,
-    mut yyvaluep: *mut YYSTYPE,
-) {
-    if yymsg.is_null() {
-        yymsg = b"Deleting\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    match yykind {
-        YYSYMBOL_argument => {
-            let arg = (*yyvaluep).argument;
-            if !arg.is_null() {
-                cmd_parse_free_argument(arg);
-            }
-        }
-        YYSYMBOL_arguments => {
-            let args = (*yyvaluep).arguments;
-            if !args.is_null() {
-                cmd_parse_free_arguments(args);
-                drop(Box::from_raw(args));
-            }
-        }
-        YYSYMBOL_command => {
-            let cmd = (*yyvaluep).command;
-            if !cmd.is_null() {
-                cmd_parse_free_command(cmd);
-            }
-        }
-        YYSYMBOL_commands => {
-            let cmds = (*yyvaluep).commands;
-            if !cmds.is_null() {
-                cmd_parse_free_commands(cmds);
-            }
-        }
-        _ => {}
-    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_parse_from_buffer(
@@ -1839,928 +924,6 @@ pub unsafe extern "C" fn cmd_parse_from_buffer(
     cmd_parse_build_commands(cmds, pi, &raw mut pr);
     cmd_parse_free_commands(cmds);
     return &raw mut pr;
-}
-#[no_mangle]
-pub static mut yychar: ::core::ffi::c_int = 0;
-#[no_mangle]
-pub static mut yylval: YYSTYPE = YYSTYPE {
-    token: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-};
-#[no_mangle]
-pub static mut yynerrs: ::core::ffi::c_int = 0;
-unsafe extern "C" fn yyparse() -> ::core::ffi::c_int {
-    let mut current_block: u64;
-    let mut yystate: yy_state_fast_t = 0 as yy_state_fast_t;
-    let mut yyerrstatus: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut yystacksize: ::core::ffi::c_long = YYINITDEPTH as ::core::ffi::c_long;
-    let mut yyssa: [yy_state_t; 200] = [0; 200];
-    let mut yyss: *mut yy_state_t = &raw mut yyssa as *mut yy_state_t;
-    let mut yyssp: *mut yy_state_t = yyss;
-    let mut yyvsa: [YYSTYPE; 200] = [YYSTYPE {
-        token: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-    }; 200];
-    let mut yyvs: *mut YYSTYPE = &raw mut yyvsa as *mut YYSTYPE;
-    let mut yyvsp: *mut YYSTYPE = yyvs;
-    let mut yyn: ::core::ffi::c_int = 0;
-    let mut yyresult: ::core::ffi::c_int = 0;
-    let mut yytoken: yysymbol_kind_t = YYSYMBOL_YYEMPTY;
-    let mut yyval: YYSTYPE = YYSTYPE {
-        token: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-    };
-    let mut yylen: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    yychar = YYEMPTY;
-    's_46: loop {
-        (0 as ::core::ffi::c_int != 0
-            && (0 as ::core::ffi::c_int <= yystate && yystate < 75 as ::core::ffi::c_int))
-            as ::core::ffi::c_int;
-        *yyssp = yystate as yy_state_t;
-        if yyss
-            .offset(yystacksize as isize)
-            .offset(-(1 as ::core::ffi::c_int as isize))
-            <= yyssp
-        {
-            let mut yysize: ::core::ffi::c_long =
-                yyssp.offset_from(yyss) as ::core::ffi::c_long + 1 as ::core::ffi::c_long;
-            if YYMAXDEPTH as ::core::ffi::c_long <= yystacksize {
-                current_block = 18325888159776088768;
-                break;
-            }
-            yystacksize *= 2 as ::core::ffi::c_long;
-            if (YYMAXDEPTH as ::core::ffi::c_long) < yystacksize {
-                yystacksize = YYMAXDEPTH as ::core::ffi::c_long;
-            }
-            let mut yyss1: *mut yy_state_t = yyss;
-            let mut yyptr: *mut yyalloc = malloc(
-                (yystacksize
-                    * (::core::mem::size_of::<yy_state_t>() as ::core::ffi::c_long
-                        + ::core::mem::size_of::<YYSTYPE>() as ::core::ffi::c_long)
-                    + (::core::mem::size_of::<yyalloc>() as ::core::ffi::c_long
-                        - 1 as ::core::ffi::c_long)) as size_t,
-            ) as *mut yyalloc;
-            if yyptr.is_null() {
-                current_block = 18325888159776088768;
-                break;
-            }
-            let mut yynewbytes: ::core::ffi::c_long = 0;
-            ::libc::memcpy(
-                &raw mut (*yyptr).yyss_alloc as *mut ::core::ffi::c_void,
-                yyss as *const ::core::ffi::c_void,
-                (yysize as usize).wrapping_mul(::core::mem::size_of::<yy_state_t>() as usize)
-                    as ::libc::size_t,
-            );
-            yyss = &raw mut (*yyptr).yyss_alloc;
-            yynewbytes = yystacksize * ::core::mem::size_of::<yy_state_t>() as ::core::ffi::c_long
-                + YYSTACK_GAP_MAXIMUM;
-            yyptr = yyptr.offset(
-                (yynewbytes / ::core::mem::size_of::<yyalloc>() as ::core::ffi::c_long) as isize,
-            );
-            let mut yynewbytes_0: ::core::ffi::c_long = 0;
-            ::libc::memcpy(
-                &raw mut (*yyptr).yyvs_alloc as *mut ::core::ffi::c_void,
-                yyvs as *const ::core::ffi::c_void,
-                (yysize as usize).wrapping_mul(::core::mem::size_of::<YYSTYPE>() as usize)
-                    as ::libc::size_t,
-            );
-            yyvs = &raw mut (*yyptr).yyvs_alloc;
-            yynewbytes_0 = yystacksize * ::core::mem::size_of::<YYSTYPE>() as ::core::ffi::c_long
-                + YYSTACK_GAP_MAXIMUM;
-            yyptr = yyptr.offset(
-                (yynewbytes_0 / ::core::mem::size_of::<yyalloc>() as ::core::ffi::c_long) as isize,
-            );
-            if yyss1 != &raw mut yyssa as *mut yy_state_t {
-                free(yyss1 as *mut ::core::ffi::c_void);
-            }
-            yyssp = yyss
-                .offset(yysize as isize)
-                .offset(-(1 as ::core::ffi::c_int as isize));
-            yyvsp = yyvs
-                .offset(yysize as isize)
-                .offset(-(1 as ::core::ffi::c_int as isize));
-            if yyss
-                .offset(yystacksize as isize)
-                .offset(-(1 as ::core::ffi::c_int as isize))
-                <= yyssp
-            {
-                current_block = 7016822936316948504;
-                break;
-            }
-        }
-        if yystate == YYFINAL {
-            yyresult = 0 as ::core::ffi::c_int;
-            current_block = 12167128357836294174;
-            break;
-        } else {
-            yyn = yypact[yystate as usize] as ::core::ffi::c_int;
-            if yyn == YYPACT_NINF {
-                current_block = 9471547057618582048;
-            } else {
-                if yychar == YYEMPTY {
-                    yychar = yylex();
-                }
-                if yychar <= YYEOF {
-                    yychar = YYEOF;
-                    yytoken = YYSYMBOL_YYEOF;
-                    current_block = 6174974146017752131;
-                } else if yychar == YYerror {
-                    yychar = YYUNDEF;
-                    yytoken = YYSYMBOL_YYerror;
-                    current_block = 3337289579594398066;
-                } else {
-                    yytoken = (if 0 as ::core::ffi::c_int <= yychar && yychar <= YYMAXUTOK {
-                        yytranslate[yychar as usize] as yysymbol_kind_t as ::core::ffi::c_int
-                    } else {
-                        YYSYMBOL_YYUNDEF as ::core::ffi::c_int
-                    }) as yysymbol_kind_t;
-                    current_block = 6174974146017752131;
-                }
-                match current_block {
-                    3337289579594398066 => {}
-                    _ => {
-                        yyn += yytoken as ::core::ffi::c_int;
-                        if yyn < 0 as ::core::ffi::c_int
-                            || YYLAST < yyn
-                            || yycheck[yyn as usize] as ::core::ffi::c_int
-                                != yytoken as ::core::ffi::c_int
-                        {
-                            current_block = 9471547057618582048;
-                        } else {
-                            yyn = yytable[yyn as usize] as ::core::ffi::c_int;
-                            if yyn <= 0 as ::core::ffi::c_int {
-                                yyn = -yyn;
-                                current_block = 9044536117179848658;
-                            } else {
-                                if yyerrstatus != 0 {
-                                    yyerrstatus -= 1;
-                                }
-                                yystate = yyn as yy_state_fast_t;
-                                yyvsp = yyvsp.offset(1);
-                                *yyvsp = yylval;
-                                yychar = YYEMPTY;
-                                current_block = 12804197543227953123;
-                            }
-                        }
-                    }
-                }
-            }
-            match current_block {
-                9471547057618582048 => {
-                    yyn = yydefact[yystate as usize] as ::core::ffi::c_int;
-                    if yyn == 0 as ::core::ffi::c_int {
-                        yytoken = (if yychar == YYEMPTY {
-                            YYSYMBOL_YYEMPTY as ::core::ffi::c_int
-                        } else if 0 as ::core::ffi::c_int <= yychar && yychar <= YYMAXUTOK {
-                            yytranslate[yychar as usize] as yysymbol_kind_t as ::core::ffi::c_int
-                        } else {
-                            YYSYMBOL_YYUNDEF as ::core::ffi::c_int
-                        }) as yysymbol_kind_t;
-                        if yyerrstatus == 0 {
-                            yynerrs += 1;
-                            yyerror(b"syntax error\0" as *const u8 as *const ::core::ffi::c_char);
-                        }
-                        if yyerrstatus == 3 as ::core::ffi::c_int {
-                            if yychar <= YYEOF {
-                                if yychar == YYEOF {
-                                    current_block = 7016822936316948504;
-                                    break;
-                                }
-                            } else {
-                                yydestruct(
-                                    b"Error: discarding\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                    yytoken,
-                                    &raw mut yylval,
-                                );
-                                yychar = YYEMPTY;
-                            }
-                        }
-                        current_block = 3337289579594398066;
-                    } else {
-                        current_block = 9044536117179848658;
-                    }
-                }
-                _ => {}
-            }
-            match current_block {
-                3337289579594398066 => {
-                    yyerrstatus = 3 as ::core::ffi::c_int;
-                    loop {
-                        yyn = yypact[yystate as usize] as ::core::ffi::c_int;
-                        if !(yyn == YYPACT_NINF) {
-                            yyn += YYSYMBOL_YYerror as ::core::ffi::c_int;
-                            if 0 as ::core::ffi::c_int <= yyn
-                                && yyn <= YYLAST
-                                && yycheck[yyn as usize] as ::core::ffi::c_int
-                                    == YYSYMBOL_YYerror as ::core::ffi::c_int
-                            {
-                                yyn = yytable[yyn as usize] as ::core::ffi::c_int;
-                                if (0 as ::core::ffi::c_int) < yyn {
-                                    break;
-                                }
-                            }
-                        }
-                        if yyssp == yyss {
-                            current_block = 7016822936316948504;
-                            break 's_46;
-                        }
-                        yydestruct(
-                            b"Error: popping\0" as *const u8 as *const ::core::ffi::c_char,
-                            yystos[yystate as usize] as yysymbol_kind_t,
-                            yyvsp,
-                        );
-                        yyvsp = yyvsp.offset(-(1 as ::core::ffi::c_int as isize));
-                        yyssp = yyssp.offset(-(1 as ::core::ffi::c_int as isize));
-                        yystate = *yyssp as yy_state_fast_t;
-                    }
-                    yyvsp = yyvsp.offset(1);
-                    *yyvsp = yylval;
-                    yystate = yyn as yy_state_fast_t;
-                }
-                9044536117179848658 => {
-                    yylen = yyr2[yyn as usize] as ::core::ffi::c_int;
-                    yyval = *yyvsp.offset((1 as ::core::ffi::c_int - yylen) as isize);
-                    match yyn {
-                        3 => {
-                            let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-                            (*ps).commands =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands;
-                        }
-                        4 => {
-                            yyval.commands =
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                        }
-                        5 => {
-                            yyval.commands =
-                                (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                            let rhs = (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                            cmd_parse_commands_append(yyval.commands, rhs);
-                            drop(Box::from_raw(rhs));
-                        }
-                        6 => {
-                            yyval.commands = cmd_parse_new_commands();
-                        }
-                        7 => {
-                            yyval.commands = cmd_parse_new_commands();
-                        }
-                        8 => {
-                            let mut ps_0: *mut cmd_parse_state = &raw mut parse_state;
-                            if (*ps_0).scope.is_null() || (*(*ps_0).scope).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands;
-                            } else {
-                                yyval.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands,
-                                );
-                            }
-                        }
-                        9 => {
-                            let mut ps_1: *mut cmd_parse_state = &raw mut parse_state;
-                            if (*ps_1).scope.is_null() || (*(*ps_1).scope).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands;
-                            } else {
-                                yyval.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands,
-                                );
-                            }
-                        }
-                        10 => {
-                            yyval.token = (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
-                        }
-                        11 => {
-                            yyval.token = (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
-                        }
-                        12 => {
-                            let mut ps_2: *mut cmd_parse_state = &raw mut parse_state;
-                            let mut pi: *mut cmd_parse_input = (*ps_2).input;
-                            let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-                            let mut c: *mut client = (*pi).c;
-                            let mut fsp: *mut cmd_find_state =
-                                ::core::ptr::null_mut::<cmd_find_state>();
-                            let mut fs: cmd_find_state = cmd_find_state {
-                                flags: 0,
-                                current: ::core::ptr::null_mut::<cmd_find_state>(),
-                                s: ::core::ptr::null_mut::<session>(),
-                                wl: ::core::ptr::null_mut::<winlink>(),
-                                w: ::core::ptr::null_mut::<window>(),
-                                wp: ::core::ptr::null_mut::<window_pane>(),
-                                idx: 0,
-                            };
-                            let mut flags: ::core::ffi::c_int = FORMAT_NOJOBS;
-                            if cmd_find_valid_state(&raw mut (*pi).fs) != 0 {
-                                fsp = &raw mut (*pi).fs;
-                            } else {
-                                cmd_find_from_client(&raw mut fs, c, 0 as ::core::ffi::c_int);
-                                fsp = &raw mut fs;
-                            }
-                            ft = format_create(c, (*pi).item, FORMAT_NONE, flags);
-                            format_defaults(ft, c, (*fsp).s, (*fsp).wl, (*fsp).wp);
-                            yyval.token = format_expand(
-                                ft,
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
-                            );
-                            format_free(ft);
-                            free(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token
-                                    as *mut ::core::ffi::c_void,
-                            );
-                        }
-                        15 => {
-                            let mut ps_3: *mut cmd_parse_state = &raw mut parse_state;
-                            let mut flags_0: ::core::ffi::c_int = (*(*ps_3).input).flags;
-                            let mut flag: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-                            if !(*ps_3).scope.is_null() {
-                                flag = (*(*ps_3).scope).flag;
-                                let scopes = &(*(*ps_3).stack).items;
-                                for scope in scopes {
-                                    flag = (flag != 0 && scope.flag != 0) as ::core::ffi::c_int;
-                                }
-                            }
-                            if strlen((*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token)
-                                > CMD_PARSE_MAX_ENVIRON_LEN as size_t
-                            {
-                                yyerror(
-                                    b"environment variable is too long\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                );
-                                current_block = 7016822936316948504;
-                                break;
-                            } else {
-                                if !flags_0 & CMD_PARSE_PARSEONLY != 0 && flag != 0 {
-                                    environ_put(
-                                        global_environ,
-                                        (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
-                                        0 as ::core::ffi::c_int,
-                                    );
-                                }
-                                free(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token
-                                        as *mut ::core::ffi::c_void,
-                                );
-                            }
-                        }
-                        16 => {
-                            let mut ps_4: *mut cmd_parse_state = &raw mut parse_state;
-                            let mut flags_1: ::core::ffi::c_int = (*(*ps_4).input).flags;
-                            let mut flag_0: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-                            if !(*ps_4).scope.is_null() {
-                                flag_0 = (*(*ps_4).scope).flag;
-                                let scopes = &(*(*ps_4).stack).items;
-                                for scope in scopes {
-                                    flag_0 =
-                                        (flag_0 != 0 && scope.flag != 0) as ::core::ffi::c_int;
-                                }
-                            }
-                            if strlen((*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token)
-                                > CMD_PARSE_MAX_ENVIRON_LEN as size_t
-                            {
-                                yyerror(
-                                    b"environment variable is too long\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                );
-                                current_block = 7016822936316948504;
-                                break;
-                            } else {
-                                if !flags_1 & CMD_PARSE_PARSEONLY != 0 && flag_0 != 0 {
-                                    environ_put(
-                                        global_environ,
-                                        (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
-                                        ENVIRON_HIDDEN,
-                                    );
-                                }
-                                free(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token
-                                        as *mut ::core::ffi::c_void,
-                                );
-                            }
-                        }
-                        17 => {
-                            let ps_5: *mut cmd_parse_state = &raw mut parse_state;
-                            let scope_1 = Box::into_raw(Box::new(cmd_parse_scope { flag: 0 }));
-                            (*scope_1).flag = format_true(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
-                            );
-                            yyval.flag = (*scope_1).flag;
-                            free(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token
-                                    as *mut ::core::ffi::c_void,
-                            );
-                            if !(*ps_5).scope.is_null() {
-                                (*(*ps_5).stack)
-                                    .items
-                                    .push_front(Box::from_raw((*ps_5).scope));
-                            }
-                            (*ps_5).scope = scope_1;
-                        }
-                        18 => {
-                            let ps_6: *mut cmd_parse_state = &raw mut parse_state;
-                            let scope_2 = Box::into_raw(Box::new(cmd_parse_scope {
-                                flag: ((*(*ps_6).scope).flag == 0) as ::core::ffi::c_int,
-                            }));
-                            drop(Box::from_raw((*ps_6).scope));
-                            (*ps_6).scope = scope_2;
-                        }
-                        19 => {
-                            let ps_7: *mut cmd_parse_state = &raw mut parse_state;
-                            let scope_3 = Box::into_raw(Box::new(cmd_parse_scope {
-                                flag: format_true(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token,
-                                ),
-                            }));
-                            yyval.flag = (*scope_3).flag;
-                            free(
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token
-                                    as *mut ::core::ffi::c_void,
-                            );
-                            drop(Box::from_raw((*ps_7).scope));
-                            (*ps_7).scope = scope_3;
-                        }
-                        20 => {
-                            let ps_8: *mut cmd_parse_state = &raw mut parse_state;
-                            drop(Box::from_raw((*ps_8).scope));
-                            (*ps_8).scope = if (*(*ps_8).stack).items.is_empty() {
-                                ::core::ptr::null_mut()
-                            } else {
-                                Box::into_raw(
-                                    (*(*ps_8).stack)
-                                        .items
-                                        .pop_front()
-                                        .expect("nonempty scope stack"),
-                                )
-                            };
-                        }
-                        21 => {
-                            if (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                            } else {
-                                yyval.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            }
-                        }
-                        22 => {
-                            if (*yyvsp.offset(-(6 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            }
-                        }
-                        23 => {
-                            if (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            } else if (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize))
-                                .elif
-                                .flag
-                                != 0
-                            {
-                                yyval.commands = (*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .elif
-                                .commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else {
-                                yyval.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            }
-                        }
-                        24 => {
-                            if (*yyvsp.offset(-(7 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(5 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize))
-                                        .elif
-                                        .commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else if (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize))
-                                .elif
-                                .flag
-                                != 0
-                            {
-                                yyval.commands = (*yyvsp
-                                    .offset(-(4 as ::core::ffi::c_int) as isize))
-                                .elif
-                                .commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(5 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(5 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            }
-                        }
-                        25 => {
-                            if (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.elif.flag = 1 as ::core::ffi::c_int;
-                                yyval.elif.commands =
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands;
-                            } else {
-                                yyval.elif.flag = 0 as ::core::ffi::c_int;
-                                yyval.elif.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands,
-                                );
-                            }
-                        }
-                        26 => {
-                            if (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.elif.flag = 1 as ::core::ffi::c_int;
-                                yyval.elif.commands =
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            } else if (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).elif.flag
-                                != 0
-                            {
-                                yyval.elif.flag = 1 as ::core::ffi::c_int;
-                                yyval.elif.commands = (*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .elif
-                                .commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else {
-                                yyval.elif.flag = 0 as ::core::ffi::c_int;
-                                yyval.elif.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            }
-                        }
-                        27 => {
-                            let ps_9: *mut cmd_parse_state = &raw mut parse_state;
-                            let parsed_command =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command;
-                            yyval.commands = cmd_parse_new_commands();
-                            if !(*parsed_command).arguments.items.is_empty()
-                                && ((*ps_9).scope.is_null() || (*(*ps_9).scope).flag != 0)
-                            {
-                                cmd_parse_commands_push(yyval.commands, parsed_command);
-                            } else {
-                                cmd_parse_free_command(parsed_command);
-                            }
-                        }
-                        28 => {
-                            yyval.commands =
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                        }
-                        29 => {
-                            yyval.commands =
-                                (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                            let rhs = (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands;
-                            cmd_parse_commands_append(yyval.commands, rhs);
-                            drop(Box::from_raw(rhs));
-                        }
-                        30 => {
-                            let ps_10: *mut cmd_parse_state = &raw mut parse_state;
-                            let parsed_command =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).command;
-                            if !(*parsed_command).arguments.items.is_empty()
-                                && ((*ps_10).scope.is_null() || (*(*ps_10).scope).flag != 0)
-                            {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_commands_push(yyval.commands, parsed_command);
-                            } else {
-                                yyval.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_command(parsed_command);
-                            }
-                        }
-                        31 => {
-                            yyval.commands =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands;
-                        }
-                        32 => {
-                            let mut ps_11: *mut cmd_parse_state = &raw mut parse_state;
-                            yyval.command = cmd_parse_new_command((*(*ps_11).input).line);
-                        }
-                        33 => {
-                            let ps_12: *mut cmd_parse_state = &raw mut parse_state;
-                            yyval.command = cmd_parse_new_command((*(*ps_12).input).line);
-                            let arg = cmd_parse_new_argument();
-                            (*arg).type_0 = CMD_PARSE_STRING;
-                            (*arg).string =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
-                            cmd_parse_arguments_prepend(&raw mut (*yyval.command).arguments, arg);
-                        }
-                        34 => {
-                            let ps_13: *mut cmd_parse_state = &raw mut parse_state;
-                            yyval.command = cmd_parse_new_command((*(*ps_13).input).line);
-                            let parsed_arguments =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments;
-                            cmd_parse_command_take_arguments(yyval.command, parsed_arguments);
-                            let arg = cmd_parse_new_argument();
-                            (*arg).type_0 = CMD_PARSE_STRING;
-                            (*arg).string =
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).token;
-                            cmd_parse_arguments_prepend(&raw mut (*yyval.command).arguments, arg);
-                        }
-                        35 => {
-                            if (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                            } else {
-                                yyval.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            }
-                        }
-                        36 => {
-                            if (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            }
-                        }
-                        37 => {
-                            if (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            } else if (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize))
-                                .elif
-                                .flag
-                                != 0
-                            {
-                                yyval.commands = (*yyvsp
-                                    .offset(-(1 as ::core::ffi::c_int) as isize))
-                                .elif
-                                .commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else {
-                                yyval.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            }
-                        }
-                        38 => {
-                            if (*yyvsp.offset(-(5 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize))
-                                        .elif
-                                        .commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else if (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize))
-                                .elif
-                                .flag
-                                != 0
-                            {
-                                yyval.commands = (*yyvsp
-                                    .offset(-(3 as ::core::ffi::c_int) as isize))
-                                .elif
-                                .commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else {
-                                yyval.commands =
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(4 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(3 as ::core::ffi::c_int) as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            }
-                        }
-                        39 => {
-                            if (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.elif.flag = 1 as ::core::ffi::c_int;
-                                yyval.elif.commands =
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands;
-                            } else {
-                                yyval.elif.flag = 0 as ::core::ffi::c_int;
-                                yyval.elif.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands,
-                                );
-                            }
-                        }
-                        40 => {
-                            if (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).flag != 0 {
-                                yyval.elif.flag = 1 as ::core::ffi::c_int;
-                                yyval.elif.commands =
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            } else if (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).elif.flag
-                                != 0
-                            {
-                                yyval.elif.flag = 1 as ::core::ffi::c_int;
-                                yyval.elif.commands = (*yyvsp
-                                    .offset(0 as ::core::ffi::c_int as isize))
-                                .elif
-                                .commands;
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                            } else {
-                                yyval.elif.flag = 0 as ::core::ffi::c_int;
-                                yyval.elif.commands = cmd_parse_new_commands();
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands,
-                                );
-                                cmd_parse_free_commands(
-                                    (*yyvsp.offset(0 as ::core::ffi::c_int as isize))
-                                        .elif
-                                        .commands,
-                                );
-                            }
-                        }
-                        41 => {
-                            yyval.arguments = cmd_parse_new_arguments();
-                            cmd_parse_arguments_push(
-                                yyval.arguments,
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).argument,
-                            );
-                        }
-                        42 => {
-                            let args = (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).arguments;
-                            cmd_parse_arguments_prepend(
-                                args,
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).argument,
-                            );
-                            yyval.arguments = args;
-                        }
-                        43 => {
-                            yyval.argument = cmd_parse_new_argument();
-                            (*yyval.argument).type_0 = CMD_PARSE_STRING;
-                            (*yyval.argument).string =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
-                        }
-                        44 => {
-                            yyval.argument = cmd_parse_new_argument();
-                            (*yyval.argument).type_0 = CMD_PARSE_STRING;
-                            (*yyval.argument).string =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).token;
-                        }
-                        45 => {
-                            yyval.argument = cmd_parse_new_argument();
-                            (*yyval.argument).type_0 = CMD_PARSE_COMMANDS;
-                            (*yyval.argument).commands =
-                                (*yyvsp.offset(0 as ::core::ffi::c_int as isize)).commands
-                                    as *mut cmd_parse_commands;
-                        }
-                        46 => {
-                            yyval.commands =
-                                (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                        }
-                        47 => {
-                            yyval.commands =
-                                (*yyvsp.offset(-(2 as ::core::ffi::c_int) as isize)).commands;
-                            let rhs = (*yyvsp.offset(-(1 as ::core::ffi::c_int) as isize)).commands;
-                            cmd_parse_commands_append(yyval.commands, rhs);
-                            drop(Box::from_raw(rhs));
-                        }
-                        _ => {}
-                    }
-                    yyvsp = yyvsp.offset(-(yylen as isize));
-                    yyssp = yyssp.offset(-(yylen as isize));
-                    yylen = 0 as ::core::ffi::c_int;
-                    yyvsp = yyvsp.offset(1);
-                    *yyvsp = yyval;
-                    let yylhs: ::core::ffi::c_int =
-                        yyr1[yyn as usize] as ::core::ffi::c_int - YYNTOKENS;
-                    let yyi: ::core::ffi::c_int = yypgoto[yylhs as usize] as ::core::ffi::c_int
-                        + *yyssp as ::core::ffi::c_int;
-                    yystate = (if 0 as ::core::ffi::c_int <= yyi
-                        && yyi <= YYLAST
-                        && yycheck[yyi as usize] as ::core::ffi::c_int
-                            == *yyssp as ::core::ffi::c_int
-                    {
-                        yytable[yyi as usize] as ::core::ffi::c_int
-                    } else {
-                        yydefgoto[yylhs as usize] as ::core::ffi::c_int
-                    }) as yy_state_fast_t;
-                }
-                _ => {}
-            }
-            yyssp = yyssp.offset(1);
-        }
-    }
-    match current_block {
-        18325888159776088768 => {
-            yyerror(b"memory exhausted\0" as *const u8 as *const ::core::ffi::c_char);
-            yyresult = 2 as ::core::ffi::c_int;
-        }
-        7016822936316948504 => {
-            yyresult = 1 as ::core::ffi::c_int;
-        }
-        _ => {}
-    }
-    if yychar != YYEMPTY {
-        yytoken = (if 0 as ::core::ffi::c_int <= yychar && yychar <= YYMAXUTOK {
-            yytranslate[yychar as usize] as yysymbol_kind_t as ::core::ffi::c_int
-        } else {
-            YYSYMBOL_YYUNDEF as ::core::ffi::c_int
-        }) as yysymbol_kind_t;
-        yydestruct(
-            b"Cleanup: discarding lookahead\0" as *const u8 as *const ::core::ffi::c_char,
-            yytoken,
-            &raw mut yylval,
-        );
-    }
-    yyvsp = yyvsp.offset(-(yylen as isize));
-    yyssp = yyssp.offset(-(yylen as isize));
-    while yyssp != yyss {
-        yydestruct(
-            b"Cleanup: popping\0" as *const u8 as *const ::core::ffi::c_char,
-            yystos[*yyssp as ::core::ffi::c_int as usize] as yysymbol_kind_t,
-            yyvsp,
-        );
-        yyvsp = yyvsp.offset(-(1 as ::core::ffi::c_int as isize));
-        yyssp = yyssp.offset(-(1 as ::core::ffi::c_int as isize));
-    }
-    if yyss != &raw mut yyssa as *mut yy_state_t {
-        free(yyss as *mut ::core::ffi::c_void);
-    }
-    return yyresult;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_parse_from_arguments(
@@ -3010,7 +1173,7 @@ unsafe extern "C" fn yylex_get_word(mut ch: ::core::ffi::c_int) -> *mut ::core::
     );
     return buf;
 }
-unsafe extern "C" fn yylex() -> ::core::ffi::c_int {
+unsafe fn yylex(lexed: &mut *mut core::ffi::c_char) -> ::core::ffi::c_int {
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
     let mut token: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -3052,8 +1215,8 @@ unsafe extern "C" fn yylex() -> ::core::ffi::c_int {
             if ch == '#' as i32 {
                 next = yylex_getc();
                 if condition != 0 && next == '{' as i32 {
-                    yylval.token = yylex_format();
-                    if yylval.token.is_null() {
+                    *lexed = yylex_format();
+                    if lexed.is_null() {
                         return 258 as ::core::ffi::c_int;
                     }
                     return 264 as ::core::ffi::c_int;
@@ -3067,8 +1230,8 @@ unsafe extern "C" fn yylex() -> ::core::ffi::c_int {
                 }
             } else {
                 if ch == '%' as i32 {
-                    yylval.token = yylex_get_word('%' as i32);
-                    cp = yylval.token;
+                    *lexed = yylex_get_word('%' as i32);
+                    cp = *lexed;
                     while *cp as ::core::ffi::c_int != '\0' as i32 {
                         if *cp as ::core::ffi::c_int != '%' as i32
                             && *(*__ctype_b_loc())
@@ -3087,53 +1250,51 @@ unsafe extern "C" fn yylex() -> ::core::ffi::c_int {
                     }
                     (*ps).condition = 1 as ::core::ffi::c_int;
                     if strcmp(
-                        yylval.token,
+                        *lexed,
                         b"%hidden\0" as *const u8 as *const ::core::ffi::c_char,
                     ) == 0 as ::core::ffi::c_int
                     {
-                        free(yylval.token as *mut ::core::ffi::c_void);
+                        free(*lexed as *mut ::core::ffi::c_void);
                         return 259 as ::core::ffi::c_int;
                     }
-                    if strcmp(
-                        yylval.token,
-                        b"%if\0" as *const u8 as *const ::core::ffi::c_char,
-                    ) == 0 as ::core::ffi::c_int
+                    if strcmp(*lexed, b"%if\0" as *const u8 as *const ::core::ffi::c_char)
+                        == 0 as ::core::ffi::c_int
                     {
-                        free(yylval.token as *mut ::core::ffi::c_void);
+                        free(*lexed as *mut ::core::ffi::c_void);
                         return 260 as ::core::ffi::c_int;
                     }
                     if strcmp(
-                        yylval.token,
+                        *lexed,
                         b"%else\0" as *const u8 as *const ::core::ffi::c_char,
                     ) == 0 as ::core::ffi::c_int
                     {
-                        free(yylval.token as *mut ::core::ffi::c_void);
+                        free(*lexed as *mut ::core::ffi::c_void);
                         return 261 as ::core::ffi::c_int;
                     }
                     if strcmp(
-                        yylval.token,
+                        *lexed,
                         b"%elif\0" as *const u8 as *const ::core::ffi::c_char,
                     ) == 0 as ::core::ffi::c_int
                     {
-                        free(yylval.token as *mut ::core::ffi::c_void);
+                        free(*lexed as *mut ::core::ffi::c_void);
                         return 262 as ::core::ffi::c_int;
                     }
                     if strcmp(
-                        yylval.token,
+                        *lexed,
                         b"%endif\0" as *const u8 as *const ::core::ffi::c_char,
                     ) == 0 as ::core::ffi::c_int
                     {
-                        free(yylval.token as *mut ::core::ffi::c_void);
+                        free(*lexed as *mut ::core::ffi::c_void);
                         return 263 as ::core::ffi::c_int;
                     }
-                    free(yylval.token as *mut ::core::ffi::c_void);
+                    free(*lexed as *mut ::core::ffi::c_void);
                     return 258 as ::core::ffi::c_int;
                 }
                 token = yylex_token(ch);
                 if token.is_null() {
                     return 258 as ::core::ffi::c_int;
                 }
-                yylval.token = token;
+                *lexed = token;
                 if !strchr(token, '=' as i32).is_null()
                     && yylex_is_var(*token, 1 as ::core::ffi::c_int) != 0
                 {
@@ -3458,9 +1619,16 @@ unsafe fn yylex_token_tilde(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
         );
         if !envent.is_null()
             && !(*envent).value.is_none()
-            && *(*envent).value.as_ref().expect("environment value is present").as_ptr() as ::core::ffi::c_int != '\0' as i32
+            && *(*envent)
+                .value
+                .as_ref()
+                .expect("environment value is present")
+                .as_ptr() as ::core::ffi::c_int
+                != '\0' as i32
         {
-            home = ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+            home = ((*envent).value)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         } else {
             pw = getpwuid(getuid());
             if !pw.is_null() {
@@ -3495,7 +1663,9 @@ mod parser_collection_tests {
         pi.line = 1;
         let mut cause = ::core::ptr::null_mut();
         let cmds = cmd_parse_do_buffer(input.as_ptr().cast(), input.len(), &mut pi, &mut cause);
-        assert!(!cmds.is_null(), "parser failed: {:?}",
+        assert!(
+            !cmds.is_null(),
+            "parser failed: {:?}",
             if cause.is_null() {
                 None
             } else {
@@ -3539,20 +1709,20 @@ mod parser_collection_tests {
             assert_eq!(
                 parse_commands(b"display-message alpha beta; display-message gamma\n"),
                 vec![
-                    vec![b"display-message".to_vec(), b"alpha".to_vec(), b"beta".to_vec()],
+                    vec![
+                        b"display-message".to_vec(),
+                        b"alpha".to_vec(),
+                        b"beta".to_vec()
+                    ],
                     vec![b"display-message".to_vec(), b"gamma".to_vec()],
                 ],
             );
             assert_eq!(
-                parse_commands(
-                    b"%if 1\ndisplay-message yes\n%else\ndisplay-message no\n%endif\n"
-                ),
+                parse_commands(b"%if 1\ndisplay-message yes\n%else\ndisplay-message no\n%endif\n"),
                 vec![vec![b"display-message".to_vec(), b"yes".to_vec()]],
             );
             assert_eq!(
-                parse_commands(
-                    b"%if 0\ndisplay-message yes\n%else\ndisplay-message no\n%endif\n"
-                ),
+                parse_commands(b"%if 0\ndisplay-message yes\n%else\ndisplay-message no\n%endif\n"),
                 vec![vec![b"display-message".to_vec(), b"no".to_vec()]],
             );
             assert_eq!(

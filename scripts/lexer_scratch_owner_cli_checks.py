@@ -48,12 +48,14 @@ def check(binary, directory):
             b"set -g @zero \"A\\000B\"\n"
             b"set -g @unicode \"\\u03bb\"\n"
             b"set -g @home ~/lexer\n"
+            b"LEXER_ASSIGNED=from-assignment\n"
+            b'set -g @assigned "$LEXER_ASSIGNED"\n'
             b"%else\nset -g @long wrong\n%endif\n",
         )
         assert success == (0, b"", b""), success
 
         outputs = []
-        for name in ("@long", "@variable", "@zero", "@unicode", "@home"):
+        for name in ("@long", "@variable", "@zero", "@unicode", "@home", "@assigned"):
             result = run("show-options", "-gv", name)
             assert result.returncode == 0, (name, result)
             outputs.append(result.stdout)
@@ -63,6 +65,7 @@ def check(binary, directory):
             b"A\n",
             "λ\n".encode(),
             os.fsencode(os.path.expanduser("~/lexer")) + b"\n",
+            b"from-assignment\n",
         ], outputs
 
         nested = source(
