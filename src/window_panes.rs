@@ -7,8 +7,8 @@ use crate::src::cmd_queue::{
     cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error, cmdq_get_source,
     cmdq_get_target,
 };
-use crate::src::ffi::libc::{free, memcpy};
-use crate::src::format::{format_create_defaults, format_free, format_single};
+use crate::src::ffi::libc::memcpy;
+use crate::src::format::{format_create_defaults, format_free, format_single_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
 use crate::src::layout::layout_add_horizontal_border;
@@ -1151,7 +1151,6 @@ unsafe extern "C" fn window_panes_draw_format(
     let mut s: *mut session = (*data).session;
     let mut wl: *mut winlink = (*s).curw;
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if sx == 0 as u_int {
         return;
     }
@@ -1171,7 +1170,7 @@ unsafe extern "C" fn window_panes_draw_format(
     if s.is_null() {
         return;
     }
-    expanded = format_single(
+    let expanded = format_single_cstring(
         ::core::ptr::null_mut::<cmdq_item>(),
         format,
         ::core::ptr::null_mut::<client>(),
@@ -1179,7 +1178,7 @@ unsafe extern "C" fn window_panes_draw_format(
         wl,
         wp,
     );
-    if *expanded as ::core::ffi::c_int != '\0' as i32 {
+    if !expanded.is_empty() {
         screen_write_cursormove(
             ctx,
             x as ::core::ffi::c_int,
@@ -1190,12 +1189,11 @@ unsafe extern "C" fn window_panes_draw_format(
             ctx,
             gc,
             sx,
-            expanded,
+            expanded.as_ptr(),
             ::core::ptr::null_mut::<style_ranges>(),
             0 as ::core::ffi::c_int,
         );
     }
-    free(expanded as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_panes_draw_number(
     mut data: *mut window_panes_modedata,
