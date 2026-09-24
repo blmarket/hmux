@@ -3061,10 +3061,7 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
                 progress: 0,
             },
         },
-        modes: window_pane_modes {
-            tqh_first: ::core::ptr::null_mut::<window_mode_entry>(),
-            tqh_last: ::core::ptr::null_mut::<*mut window_mode_entry>(),
-        },
+        modes: window_pane_modes::default(),
         searchstr: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         searchregex: 0,
         prompt: ::core::ptr::null_mut::<prompt>(),
@@ -3168,6 +3165,149 @@ struct WindowPaneOwned {
 
 const _: () = assert!(::core::mem::offset_of!(WindowPaneOwned, pane) == 0);
 
+/// Return the next mode in a pane's stack. Entries are boxed individually,
+/// so this derives ordering from the owning collection without putting queue
+/// links into each callback-visible mode entry.
+pub(crate) unsafe fn window_pane_mode_next(
+    wme: *mut window_mode_entry,
+) -> *mut window_mode_entry {
+    if wme.is_null() || (*wme).wp.is_null() {
+        return ::core::ptr::null_mut();
+    }
+    let Some(storage) = (*(*wme).wp).modes.storage.as_ref() else {
+        return ::core::ptr::null_mut();
+    };
+    let Some(index) = storage
+        .entries
+        .iter()
+        .position(|entry| {
+            (&**entry as *const window_mode_entry) == (wme as *const window_mode_entry)
+        })
+    else {
+        return ::core::ptr::null_mut();
+    };
+    storage
+        .entries
+        .get(index + 1)
+        .map_or(::core::ptr::null_mut(), |entry| {
+            (&**entry) as *const window_mode_entry as *mut window_mode_entry
+        })
+}
+
+unsafe fn window_pane_mode_insert_front(
+    wp: *mut window_pane,
+    entry: Box<window_mode_entry>,
+) -> *mut window_mode_entry {
+    let modes = &mut (*wp).modes;
+    let storage = modes.storage.get_or_insert_with(Default::default);
+    let wme = (&*entry) as *const window_mode_entry as *mut window_mode_entry;
+    storage.entries.insert(0, entry);
+    modes.active = wme;
+    wme
+}
+
+unsafe fn window_pane_mode_remove(
+    wp: *mut window_pane,
+    wme: *mut window_mode_entry,
+) -> Option<Box<window_mode_entry>> {
+    let modes = &mut (*wp).modes;
+    let (removed, empty) = {
+        let storage = modes.storage.as_mut()?;
+        let index = storage
+            .entries
+            .iter()
+            .position(|entry| {
+                (&**entry as *const window_mode_entry) == (wme as *const window_mode_entry)
+            })?;
+        let removed = storage.entries.remove(index);
+        (removed, storage.entries.is_empty())
+    };
+    if empty {
+        modes.storage = None;
+        modes.active = ::core::ptr::null_mut();
+    } else {
+        modes.active = modes
+            .storage
+            .as_ref()
+            .and_then(|storage| storage.entries.first())
+            .map_or(::core::ptr::null_mut(), |entry| {
+                (&**entry) as *const window_mode_entry as *mut window_mode_entry
+            });
+    }
+    Some(removed)
+}
+
+unsafe fn window_pane_mode_promote(wp: *mut window_pane, wme: *mut window_mode_entry) {
+    if (*wp).modes.active == wme {
+        return;
+    }
+    let Some(entry) = window_pane_mode_remove(wp, wme) else {
+        return;
+    };
+    window_pane_mode_insert_front(wp, entry);
+}
+
+#[cfg(test)]
+mod window_mode_collection_tests {
+    use super::*;
+
+    unsafe fn boxed_mode(wp: *mut window_pane) -> Box<window_mode_entry> {
+        Box::new(window_mode_entry {
+            wp,
+            swp: ::core::ptr::null_mut(),
+            mode: ::core::ptr::null(),
+            data: ::core::ptr::null_mut(),
+            screen: ::core::ptr::null_mut(),
+            prefix: 1,
+            kill: 0,
+        })
+    }
+
+    #[test]
+    fn pane_mode_stack_reorders_and_removes_stable_entries() {
+        unsafe {
+            // The production pane owner is zero-initialized before its fields
+            // are populated; modes itself is initialized explicitly here.
+            let wp = Box::into_raw(Box::new(::core::mem::zeroed::<window_pane>()));
+            (*wp).modes = window_pane_modes::default();
+
+            let a = window_pane_mode_insert_front(wp, boxed_mode(wp));
+            let b = window_pane_mode_insert_front(wp, boxed_mode(wp));
+            let c = window_pane_mode_insert_front(wp, boxed_mode(wp));
+            assert_eq!((*wp).modes.active, c);
+            assert_eq!(window_pane_mode_next(c), b);
+            assert_eq!(window_pane_mode_next(b), a);
+            assert!(window_pane_mode_next(a).is_null());
+
+            window_pane_mode_promote(wp, a);
+            assert_eq!((*wp).modes.active, a);
+            assert_eq!(window_pane_mode_next(a), c);
+            assert_eq!(window_pane_mode_next(c), b);
+
+            let removed = window_pane_mode_remove(wp, c).expect("mode was present");
+            assert_eq!((&*removed) as *const window_mode_entry as *mut _, c);
+            assert_eq!((*wp).modes.active, a);
+            assert_eq!(window_pane_mode_next(a), b);
+            drop(removed);
+
+            // Force Vec growth after callbacks already hold `a` and `b`.
+            for _ in 0..64 {
+                window_pane_mode_insert_front(wp, boxed_mode(wp));
+            }
+            assert_eq!(window_pane_mode_next(a), b);
+            assert!(window_pane_mode_next(b).is_null());
+
+            while !(*wp).modes.active.is_null() {
+                let top = (*wp).modes.active;
+                drop(window_pane_mode_remove(wp, top).expect("mode was present"));
+            }
+            assert!((*wp).modes.storage.is_none());
+
+            drop(Box::from_raw(wp));
+        }
+    }
+}
+
 /// `pane.searchstr` is a borrowed view, invalidated on replacement or clear.
 pub(crate) unsafe fn window_pane_set_searchstr(wp: *mut window_pane, searchstr: Option<CString>) {
     let owner = wp.cast::<WindowPaneOwned>();
@@ -3240,8 +3380,7 @@ unsafe extern "C" fn window_pane_create(
     (*wp).id = fresh2;
     window_pane_tree_insert(&raw mut all_window_panes, wp);
     (*wp).fd = -(1 as ::core::ffi::c_int);
-    (*wp).modes.tqh_first = ::core::ptr::null_mut::<window_mode_entry>();
-    (*wp).modes.tqh_last = &raw mut (*wp).modes.tqh_first;
+    (*wp).modes = window_pane_modes::default();
     (*wp).resize_queue = window_pane_resizes::default();
     (*wp).sx = sx;
     (*wp).sy = sy;
@@ -3316,16 +3455,11 @@ pub unsafe extern "C" fn window_pane_wait_finish(mut wp: *mut window_pane) {
 }
 unsafe extern "C" fn window_pane_free_modes(mut wp: *mut window_pane) {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    while !(*wp).modes.tqh_first.is_null() {
-        wme = (*wp).modes.tqh_first;
-        if !(*wme).entry.tqe_next.is_null() {
-            (*(*wme).entry.tqe_next).entry.tqe_prev = (*wme).entry.tqe_prev;
-        } else {
-            (*wp).modes.tqh_last = (*wme).entry.tqe_prev;
-        }
-        *(*wme).entry.tqe_prev = (*wme).entry.tqe_next;
+    while !(*wp).modes.active.is_null() {
+        wme = (*wp).modes.active;
+        let entry = window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane");
         (*(*wme).mode).free.expect("non-null function pointer")(wme);
-        drop(Box::from_raw(wme));
+        drop(entry);
     }
     (*wp).screen = &raw mut (*wp).base;
 }
@@ -3563,7 +3697,7 @@ pub unsafe extern "C" fn window_pane_resize(
         sy,
         ((*wp).base.saved_grid == NULL as *mut grid) as ::core::ffi::c_int,
     );
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if !wme.is_null() && (*(*wme).mode).resize.is_some() {
         (*(*wme).mode).resize.expect("non-null function pointer")(wme, sx, sy);
     }
@@ -3614,42 +3748,29 @@ pub unsafe extern "C" fn window_pane_set_mode(
     let mut w: *mut window = (*wp).window as *mut window;
     let mut name: *const ::core::ffi::c_char = (*mode).name;
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if !(*wp).modes.tqh_first.is_null() {
-        if (*(*wp).modes.tqh_first).mode == mode {
+    if !(*wp).modes.active.is_null() {
+        if (*(*wp).modes.active).mode == mode {
             return 1 as ::core::ffi::c_int;
         }
-        if (*(*(*wp).modes.tqh_first).mode).flags & WINDOW_MODE_NO_STACK != 0 {
+        if (*(*(*wp).modes.active).mode).flags & WINDOW_MODE_NO_STACK != 0 {
             window_pane_reset_mode(wp);
         }
     }
-    if !(*wp).modes.tqh_first.is_null() {
-        oname = (*(*(*wp).modes.tqh_first).mode).name;
+    if !(*wp).modes.active.is_null() {
+        oname = (*(*(*wp).modes.active).mode).name;
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     while !wme.is_null() {
         if (*wme).mode == mode {
             break;
         }
-        wme = (*wme).entry.tqe_next;
+        wme = window_pane_mode_next(wme);
     }
     if !wme.is_null() {
-        if !(*wme).entry.tqe_next.is_null() {
-            (*(*wme).entry.tqe_next).entry.tqe_prev = (*wme).entry.tqe_prev;
-        } else {
-            (*wp).modes.tqh_last = (*wme).entry.tqe_prev;
-        }
-        *(*wme).entry.tqe_prev = (*wme).entry.tqe_next;
-        (*wme).entry.tqe_next = (*wp).modes.tqh_first;
-        if !(*wme).entry.tqe_next.is_null() {
-            (*(*wp).modes.tqh_first).entry.tqe_prev = &raw mut (*wme).entry.tqe_next;
-        } else {
-            (*wp).modes.tqh_last = &raw mut (*wme).entry.tqe_next;
-        }
-        (*wp).modes.tqh_first = wme;
-        (*wme).entry.tqe_prev = &raw mut (*wp).modes.tqh_first;
+        window_pane_mode_promote(wp, wme);
     } else {
-        // List links and mode callbacks retain this stable address.
-        wme = Box::into_raw(Box::new(window_mode_entry {
+        // The pane owns a stable Box address for as long as callbacks retain it.
+        let entry = Box::new(window_mode_entry {
             wp,
             swp,
             mode,
@@ -3657,29 +3778,12 @@ pub unsafe extern "C" fn window_pane_set_mode(
             screen: ::core::ptr::null_mut(),
             prefix: 1,
             kill: 0,
-            entry: window_mode_entry_entry {
-                tqe_next: ::core::ptr::null_mut(),
-                tqe_prev: ::core::ptr::null_mut(),
-            },
-        }));
-        (*wme).entry.tqe_next = (*wp).modes.tqh_first;
-        if !(*wme).entry.tqe_next.is_null() {
-            (*(*wp).modes.tqh_first).entry.tqe_prev = &raw mut (*wme).entry.tqe_next;
-        } else {
-            (*wp).modes.tqh_last = &raw mut (*wme).entry.tqe_next;
-        }
-        (*wp).modes.tqh_first = wme;
-        (*wme).entry.tqe_prev = &raw mut (*wp).modes.tqh_first;
+        });
+        wme = window_pane_mode_insert_front(wp, entry);
         (*wme).screen =
             (*(*wme).mode).init.expect("non-null function pointer")(wme, item, fs, args);
         if (*wme).screen.is_null() {
-            if !(*wme).entry.tqe_next.is_null() {
-                (*(*wme).entry.tqe_next).entry.tqe_prev = (*wme).entry.tqe_prev;
-            } else {
-                (*wp).modes.tqh_last = (*wme).entry.tqe_prev;
-            }
-            *(*wme).entry.tqe_prev = (*wme).entry.tqe_next;
-            drop(Box::from_raw(wme));
+            drop(window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane"));
             return 1 as ::core::ffi::c_int;
         }
     }
@@ -3717,21 +3821,16 @@ pub unsafe extern "C" fn window_pane_reset_mode(mut wp: *mut window_pane) {
     let mut kill_0: ::core::ffi::c_int = 0;
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut p: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if (*wp).modes.tqh_first.is_null() {
+    if (*wp).modes.active.is_null() {
         return;
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     p = (*(*wme).mode).name;
     kill_0 = (*wme).kill;
-    if !(*wme).entry.tqe_next.is_null() {
-        (*(*wme).entry.tqe_next).entry.tqe_prev = (*wme).entry.tqe_prev;
-    } else {
-        (*wp).modes.tqh_last = (*wme).entry.tqe_prev;
-    }
-    *(*wme).entry.tqe_prev = (*wme).entry.tqe_next;
+    let entry = window_pane_mode_remove(wp, wme).expect("mode entry is owned by pane");
     (*(*wme).mode).free.expect("non-null function pointer")(wme);
-    drop(Box::from_raw(wme));
-    next = (*wp).modes.tqh_first;
+    drop(entry);
+    next = (*wp).modes.active;
     if next.is_null() {
         (*wp).flags &= !PANE_UNSEENCHANGES;
         log_debug(
@@ -3779,7 +3878,7 @@ pub unsafe extern "C" fn window_pane_reset_mode(mut wp: *mut window_pane) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_reset_mode_all(mut wp: *mut window_pane) {
-    while !(*wp).modes.tqh_first.is_null() {
+    while !(*wp).modes.active.is_null() {
         window_pane_reset_mode(wp);
     }
 }
@@ -4032,7 +4131,7 @@ unsafe extern "C" fn window_pane_copy_paste(
     loop_0 = (*(*wp).window).panes.tqh_first;
     while !loop_0.is_null() {
         if loop_0 != wp
-            && (*loop_0).modes.tqh_first.is_null()
+            && (*loop_0).modes.active.is_null()
             && (*loop_0).fd != -(1 as ::core::ffi::c_int)
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && window_pane_is_visible(loop_0) != 0
@@ -4057,7 +4156,7 @@ unsafe extern "C" fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key
     loop_0 = (*(*wp).window).panes.tqh_first;
     while !loop_0.is_null() {
         if loop_0 != wp
-            && (*loop_0).modes.tqh_first.is_null()
+            && (*loop_0).modes.active.is_null()
             && (*loop_0).fd != -(1 as ::core::ffi::c_int)
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && window_pane_is_visible(loop_0) != 0
@@ -4078,7 +4177,7 @@ pub unsafe extern "C" fn window_pane_paste(
     mut buf: *mut ::core::ffi::c_char,
     mut len: size_t,
 ) {
-    if !(*wp).modes.tqh_first.is_null() {
+    if !(*wp).modes.active.is_null() {
         return;
     }
     if (*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_INPUTOFF != 0 {
@@ -4132,7 +4231,7 @@ pub unsafe extern "C" fn window_pane_key(
     {
         return -(1 as ::core::ffi::c_int);
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if !wme.is_null() {
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
             == (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
@@ -4728,11 +4827,11 @@ pub unsafe extern "C" fn window_pane_default_cursor(mut wp: *mut window_pane) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_mode(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    if !(*wp).modes.tqh_first.is_null() {
-        if (*(*wp).modes.tqh_first).mode == &raw const window_copy_mode {
+    if !(*wp).modes.active.is_null() {
+        if (*(*wp).modes.active).mode == &raw const window_copy_mode {
             return 1 as ::core::ffi::c_int;
         }
-        if (*(*wp).modes.tqh_first).mode == &raw const window_view_mode {
+        if (*(*wp).modes.active).mode == &raw const window_view_mode {
             return 2 as ::core::ffi::c_int;
         }
     }
@@ -4748,7 +4847,7 @@ pub unsafe extern "C" fn window_pane_show_scrollbar(
         return 0 as ::core::ffi::c_int;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 && !(*w).active.is_null() {
-        wme = (*(*w).active).modes.tqh_first;
+        wme = (*(*w).active).modes.active;
         if !wme.is_null() && (*(*wme).mode).flags & WINDOW_MODE_HIDE_SCROLLBARS != 0 {
             return 0 as ::core::ffi::c_int;
         }
@@ -5100,7 +5199,7 @@ pub unsafe extern "C" fn window_pane_get_pane_status(
 ) -> ::core::ffi::c_int {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut status: ::core::ffi::c_int = 0;
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if !wme.is_null()
         && (*(*wme).mode).flags & WINDOW_MODE_HIDE_PANE_STATUS != 0
         && (*wp).flags & PANE_ZOOMED != 0

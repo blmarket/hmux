@@ -175,7 +175,7 @@ unsafe extern "C" fn cmd_send_keys_inject_key(
         }
         return item;
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if wme.is_null() || (*(*wme).mode).key_table.is_none() {
         if window_pane_key(wp, tc, s, wl, key, ::core::ptr::null_mut::<mouse_event>())
             != 0 as ::core::ffi::c_int
@@ -272,7 +272,7 @@ unsafe extern "C" fn cmd_send_keys_exec(
     let mut wp: *mut window_pane = (*target).wp;
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut m: *mut mouse_event = &raw mut (*event).m;
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut after: *mut cmdq_item = item;
     let mut key: key_code = 0;
     let mut i: u_int = 0;

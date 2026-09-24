@@ -199,7 +199,7 @@ unsafe extern "C" fn cmd_run_shell_print(mut job: *mut job, mut msg: *const ::co
             return;
         }
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if wme.is_null() || (*wme).mode != &raw const window_view_mode {
         window_pane_set_mode(
             wp,

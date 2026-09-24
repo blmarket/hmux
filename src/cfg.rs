@@ -443,7 +443,7 @@ pub unsafe extern "C" fn cfg_show_causes(mut s: *mut session) {
             return;
         }
         wp = (*(*(*s).curw).window).active;
-        wme = (*wp).modes.tqh_first;
+        wme = (*wp).modes.active;
         if wme.is_null() || (*wme).mode != &raw const window_view_mode {
             window_pane_set_mode(
                 wp,

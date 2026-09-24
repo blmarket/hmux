@@ -3009,7 +3009,7 @@ unsafe extern "C" fn server_client_key_callback(
                                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                         as ::core::ffi::c_ulonglong)
                                         << 32 as ::core::ffi::c_int)
-                        && (*wp).modes.tqh_first.is_null()
+                        && (*wp).modes.active.is_null()
                     {
                         current_block = 15469183920764600035;
                     } else if key == KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code
@@ -3021,7 +3021,7 @@ unsafe extern "C" fn server_client_key_callback(
                             != 0
                             && !wp.is_null()
                             && {
-                                wme = (*wp).modes.tqh_first;
+                                wme = (*wp).modes.active;
                                 !wme.is_null()
                             }
                             && (*(*wme).mode).key_table.is_some()
@@ -3484,7 +3484,7 @@ unsafe fn server_client_handle_key0(
         }
         if !wp.is_null()
             && (*wp).flags & PANE_CAPTUREALLKEYS != 0
-            && (*wp).modes.tqh_first.is_null()
+            && (*wp).modes.active.is_null()
             && !((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                 == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                 || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -3600,7 +3600,7 @@ pub unsafe extern "C" fn server_client_loop() {
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
             if (*wp).flags & PANE_STYLECHANGED != 0 {
-                wme = (*wp).modes.tqh_first;
+                wme = (*wp).modes.active;
                 if !wme.is_null() && (*(*wme).mode).style_changed.is_some() {
                     (*(*wme).mode)
                         .style_changed
@@ -4256,7 +4256,7 @@ unsafe extern "C" fn server_client_check_modes(mut c: *mut client) {
     }
     wp = (*w).panes.tqh_first;
     while !wp.is_null() {
-        wme = (*wp).modes.tqh_first;
+        wme = (*wp).modes.active;
         if !wme.is_null() && (*(*wme).mode).update.is_some() {
             (*(*wme).mode).update.expect("non-null function pointer")(wme);
         }
@@ -5471,7 +5471,7 @@ pub unsafe extern "C" fn server_client_print(
             }
         } else {
             wp = (*(*(*(*c).session).curw).window).active;
-            wme = (*wp).modes.tqh_first;
+            wme = (*wp).modes.active;
             if wme.is_null() || (*wme).mode != &raw const window_view_mode {
                 window_pane_set_mode(
                     wp,

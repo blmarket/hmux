@@ -1658,7 +1658,7 @@ unsafe extern "C" fn redraw_draw_scrollbar_span(
         slider_h = (sb_h as ::core::ffi::c_double * pct_view) as u_int;
         slider_y = sb_h.wrapping_sub(slider_h);
     } else {
-        if (*wp).modes.tqh_first.is_null() {
+        if (*wp).modes.active.is_null() {
             return;
         }
         if window_copy_get_current_offset(

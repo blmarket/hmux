@@ -401,7 +401,7 @@ unsafe extern "C" fn window_copy_scroll_timer(
         tv_usec: WINDOW_COPY_DRAG_REPEAT_TIME as __suseconds_t,
     };
     event_del(&raw mut (*data).dragtimer);
-    if (*wp).modes.tqh_first != wme {
+    if (*wp).modes.active != wme {
         return;
     }
     if (*data).cy == 0 as u_int {
@@ -759,7 +759,7 @@ pub unsafe extern "C" fn window_copy_vadd(
     mut fmt: *const ::core::ffi::c_char,
     mut ap: ::core::ffi::VaList,
 ) {
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut backing: *mut screen = (*data).backing;
     let mut backing_ctx: screen_write_ctx = screen_write_ctx {
@@ -851,7 +851,7 @@ pub unsafe extern "C" fn window_copy_scroll(
     mut tty_oy: u_int,
     mut scroll_exit: ::core::ffi::c_int,
 ) {
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     if !wme.is_null() {
         window_set_active_pane((*wp).window as *mut window, wp, 0 as ::core::ffi::c_int);
         window_copy_scroll1(wme, wp, sl_mpos, my, tty_oy, scroll_exit);
@@ -896,7 +896,7 @@ unsafe extern "C" fn window_copy_scroll1(
             .wrapping_sub((*wp).yoff as u_int)
             .wrapping_sub(sl_mpos as u_int) as ::core::ffi::c_int;
     }
-    if (*wp).modes.tqh_first.is_null()
+    if (*wp).modes.active.is_null()
         || window_copy_get_current_offset(wp, &raw mut offset, &raw mut size)
             == 0 as ::core::ffi::c_int
     {
@@ -973,7 +973,7 @@ pub unsafe extern "C" fn window_copy_pageup(
     mut wp: *mut window_pane,
     mut half_page: ::core::ffi::c_int,
 ) {
-    window_copy_pageup1((*wp).modes.tqh_first, half_page);
+    window_copy_pageup1((*wp).modes.active, half_page);
 }
 unsafe extern "C" fn window_copy_pageup1(
     mut wme: *mut window_mode_entry,
@@ -1042,7 +1042,7 @@ pub unsafe extern "C" fn window_copy_pagedown(
     mut half_page: ::core::ffi::c_int,
     mut scroll_exit: ::core::ffi::c_int,
 ) {
-    if window_copy_pagedown1((*wp).modes.tqh_first, half_page, scroll_exit) != 0 {
+    if window_copy_pagedown1((*wp).modes.active, half_page, scroll_exit) != 0 {
         window_pane_reset_mode(wp);
         return;
     }
@@ -1165,7 +1165,7 @@ pub(crate) unsafe fn window_copy_get_word_cstring(
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*(*data).backing).grid;
     return crate::src::format::format_grid_word_cstring(
@@ -1186,7 +1186,7 @@ pub(crate) unsafe fn window_copy_get_line_cstring(
     mut wp: *mut window_pane,
     mut y: u_int,
 ) -> Option<CString> {
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*(*data).backing).grid;
     return crate::src::format::format_grid_line_cstring(
@@ -1208,7 +1208,7 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid;
     return crate::src::format::format_grid_hyperlink_cstring(
@@ -1220,7 +1220,7 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
 }
 unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = format_get_pane(ft);
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).screen.grid;
     return format_grid_hyperlink_cstring(
@@ -1232,19 +1232,19 @@ unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CS
 }
 unsafe fn window_copy_cursor_word_cb(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = format_get_pane(ft);
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_get_word_cstring(wp, (*data).cx, (*data).cy);
 }
 unsafe fn window_copy_cursor_line_cb(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = format_get_pane(ft);
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_get_line_cstring(wp, (*data).cy);
 }
 unsafe fn window_copy_search_match_cb(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = format_get_pane(ft);
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_match_at_cursor_cstring(data);
 }
@@ -3551,7 +3551,7 @@ unsafe extern "C" fn window_copy_refresh_timer(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut follow: ::core::ffi::c_int = 0;
-    if (*wp).modes.tqh_first != wme || (*data).refresh_active == 0 {
+    if (*wp).modes.active != wme || (*data).refresh_active == 0 {
         return;
     }
     if (*wp).flags & PANE_UNSEENCHANGES != 0
@@ -7492,7 +7492,7 @@ pub unsafe extern "C" fn window_copy_set_line_numbers(
     mut wp: *mut window_pane,
     mut enabled: ::core::ffi::c_int,
 ) {
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     if wme.is_null() || (*wme).mode != &raw const window_copy_mode {
         return;
     }
@@ -7535,7 +7535,7 @@ pub unsafe extern "C" fn window_copy_get_current_offset(
     mut offset: *mut u_int,
     mut size: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let mut wme: *mut window_mode_entry = (*wp).modes.tqh_first;
+    let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut hsize: u_int = 0;
     if data.is_null() {
@@ -9833,7 +9833,7 @@ unsafe extern "C" fn window_copy_move_mouse(mut m: *mut mouse_event) {
     if wp.is_null() {
         return;
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if wme.is_null() {
         return;
     }
@@ -9871,7 +9871,7 @@ pub unsafe extern "C" fn window_copy_start_drag(mut c: *mut client, mut m: *mut 
     if wp.is_null() {
         return;
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if wme.is_null() {
         return;
     }
@@ -9967,7 +9967,7 @@ unsafe extern "C" fn window_copy_drag_update(mut c: *mut client, mut m: *mut mou
     if wp.is_null() {
         return;
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if wme.is_null() {
         return;
     }
@@ -10013,7 +10013,7 @@ unsafe extern "C" fn window_copy_drag_release(mut c: *mut client, mut m: *mut mo
     if wp.is_null() {
         return;
     }
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if wme.is_null() {
         return;
     }

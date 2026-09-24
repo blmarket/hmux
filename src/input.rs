@@ -2502,7 +2502,7 @@ pub unsafe extern "C" fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core
     let mut wp: *mut window_pane = (*ictx).wp;
     input_reset_cell(ictx);
     if clear != 0 && !wp.is_null() {
-        if (*wp).modes.tqh_first.is_null() {
+        if (*wp).modes.active.is_null() {
             screen_write_start_pane(sctx, wp, &raw mut (*wp).base);
         } else {
             screen_write_start(sctx, &raw mut (*wp).base);
@@ -2615,10 +2615,10 @@ pub unsafe extern "C" fn input_parse_buffer(
         );
     }
     (*wp).flags |= PANE_CHANGED;
-    if !(*wp).modes.tqh_first.is_null() {
+    if !(*wp).modes.active.is_null() {
         (*wp).flags |= PANE_UNSEENCHANGES;
     }
-    if (*wp).modes.tqh_first.is_null() {
+    if (*wp).modes.active.is_null() {
         screen_write_start_pane(sctx, wp, &raw mut (*wp).base);
     } else {
         screen_write_start(sctx, &raw mut (*wp).base);

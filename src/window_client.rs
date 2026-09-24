@@ -644,7 +644,7 @@ unsafe extern "C" fn window_client_menu(
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
     let mut wp: *mut window_pane = (*data).wp;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if wme.is_null() || (*wme).data != modedata {
         return;
     }

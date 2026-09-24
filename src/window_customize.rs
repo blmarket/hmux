@@ -2873,7 +2873,7 @@ unsafe extern "C" fn window_customize_menu(
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
     let mut wp: *mut window_pane = (*data).wp;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wme = (*wp).modes.tqh_first;
+    wme = (*wp).modes.active;
     if wme.is_null() || (*wme).data != modedata {
         return;
     }
@@ -3540,7 +3540,7 @@ unsafe extern "C" fn window_customize_edit_close_cb(
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     wp = window_pane_find_by_id((*ed).wp_id);
     if !wp.is_null() {
-        wme = (*wp).modes.tqh_first;
+        wme = (*wp).modes.active;
         if !wme.is_null() && (*wme).mode == &raw const window_customize_mode {
             data = (*wme).data as *mut window_customize_modedata;
             if (*data).editor == (*ed).editor {

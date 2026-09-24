@@ -10332,602 +10332,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::C2RustUnnamed_27",
         hmux2::src::alerts::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/arguments.rs::C2RustUnnamed_18",
         hmux2::src::arguments::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cfg.rs::C2RustUnnamed_27",
         hmux2::src::cfg::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/client.rs::C2RustUnnamed_40",
         hmux2::src::client::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd.rs::C2RustUnnamed_27",
         hmux2::src::cmd::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_attach_session.rs::C2RustUnnamed_27",
         hmux2::src::cmd_attach_session::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_bind_key.rs::C2RustUnnamed_27",
         hmux2::src::cmd_bind_key::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_break_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_break_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_capture_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_capture_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_choose_tree.rs::C2RustUnnamed_27",
         hmux2::src::cmd_choose_tree::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_command_prompt.rs::C2RustUnnamed_27",
         hmux2::src::cmd_command_prompt::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_confirm_before.rs::C2RustUnnamed_27",
         hmux2::src::cmd_confirm_before::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_copy_mode.rs::C2RustUnnamed_27",
         hmux2::src::cmd_copy_mode::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_detach_client.rs::C2RustUnnamed_27",
         hmux2::src::cmd_detach_client::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_display_menu.rs::C2RustUnnamed_27",
         hmux2::src::cmd_display_menu::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_display_message.rs::C2RustUnnamed_27",
         hmux2::src::cmd_display_message::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_find.rs::C2RustUnnamed_27",
         hmux2::src::cmd_find::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_find_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_find_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_if_shell.rs::C2RustUnnamed_27",
         hmux2::src::cmd_if_shell::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_join_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_join_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_kill_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_kill_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_kill_session.rs::C2RustUnnamed_27",
         hmux2::src::cmd_kill_session::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_kill_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_kill_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_list_buffers.rs::C2RustUnnamed_27",
         hmux2::src::cmd_list_buffers::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_list_clients.rs::C2RustUnnamed_27",
         hmux2::src::cmd_list_clients::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_list_commands.rs::C2RustUnnamed_27",
         hmux2::src::cmd_list_commands::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_list_keys.rs::C2RustUnnamed_27",
         hmux2::src::cmd_list_keys::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_list_panes.rs::C2RustUnnamed_27",
         hmux2::src::cmd_list_panes::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_list_sessions.rs::C2RustUnnamed_27",
         hmux2::src::cmd_list_sessions::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_list_windows.rs::C2RustUnnamed_27",
         hmux2::src::cmd_list_windows::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_load_buffer.rs::C2RustUnnamed_27",
         hmux2::src::cmd_load_buffer::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_lock_server.rs::C2RustUnnamed_27",
         hmux2::src::cmd_lock_server::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_move_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_move_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_new_session.rs::C2RustUnnamed_27",
         hmux2::src::cmd_new_session::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_new_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_new_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_parse.rs::C2RustUnnamed_28",
         hmux2::src::cmd_parse::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_paste_buffer.rs::C2RustUnnamed_27",
         hmux2::src::cmd_paste_buffer::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_pipe_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_pipe_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_queue.rs::C2RustUnnamed_27",
         hmux2::src::cmd_queue::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_refresh_client.rs::C2RustUnnamed_27",
         hmux2::src::cmd_refresh_client::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_rename_session.rs::C2RustUnnamed_27",
         hmux2::src::cmd_rename_session::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_rename_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_rename_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_resize_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_resize_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_resize_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_resize_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_respawn_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_respawn_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_respawn_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_respawn_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_rotate_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_rotate_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_run_shell.rs::C2RustUnnamed_27",
         hmux2::src::cmd_run_shell::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_save_buffer.rs::C2RustUnnamed_27",
         hmux2::src::cmd_save_buffer::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_select_layout.rs::C2RustUnnamed_27",
         hmux2::src::cmd_select_layout::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_select_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_select_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_select_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_select_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_send_keys.rs::C2RustUnnamed_27",
         hmux2::src::cmd_send_keys::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_server_access.rs::C2RustUnnamed_27",
         hmux2::src::cmd_server_access::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_set_buffer.rs::C2RustUnnamed_27",
         hmux2::src::cmd_set_buffer::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_set_environment.rs::C2RustUnnamed_27",
         hmux2::src::cmd_set_environment::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_set_option.rs::C2RustUnnamed_27",
         hmux2::src::cmd_set_option::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_show_environment.rs::C2RustUnnamed_27",
         hmux2::src::cmd_show_environment::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_show_messages.rs::C2RustUnnamed_27",
         hmux2::src::cmd_show_messages::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_show_options.rs::C2RustUnnamed_27",
         hmux2::src::cmd_show_options::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_source_file.rs::C2RustUnnamed_28",
         hmux2::src::cmd_source_file::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_split_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_split_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_swap_pane.rs::C2RustUnnamed_27",
         hmux2::src::cmd_swap_pane::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_swap_window.rs::C2RustUnnamed_27",
         hmux2::src::cmd_swap_window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_switch_client.rs::C2RustUnnamed_27",
         hmux2::src::cmd_switch_client::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/cmd_wait_for.rs::C2RustUnnamed_27",
         hmux2::src::cmd_wait_for::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/colour.rs::C2RustUnnamed_28",
         hmux2::src::colour::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/control.rs::C2RustUnnamed_27",
         hmux2::src::control::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/control_notify.rs::C2RustUnnamed_27",
         hmux2::src::control_notify::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/environ.rs::C2RustUnnamed_28",
         hmux2::src::environ::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/events.rs::C2RustUnnamed_27",
         hmux2::src::events::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/events_payload.rs::C2RustUnnamed_27",
         hmux2::src::events_payload::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/file.rs::C2RustUnnamed_28",
         hmux2::src::file::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/format.rs::C2RustUnnamed_28",
         hmux2::src::format::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/format_draw.rs::C2RustUnnamed_27",
         hmux2::src::format_draw::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/hooks.rs::C2RustUnnamed_27",
         hmux2::src::hooks::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/input.rs::C2RustUnnamed_27",
         hmux2::src::input::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/input_keys.rs::C2RustUnnamed_27",
         hmux2::src::input_keys::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/job.rs::C2RustUnnamed_28",
         hmux2::src::job::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/key_bindings.rs::C2RustUnnamed_27",
         hmux2::src::key_bindings::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/layout.rs::C2RustUnnamed_27",
         hmux2::src::layout::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/layout_custom.rs::C2RustUnnamed_28",
         hmux2::src::layout_custom::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/layout_set.rs::C2RustUnnamed_27",
         hmux2::src::layout_set::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/menu.rs::C2RustUnnamed_26",
         hmux2::src::menu::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/mode_tree.rs::C2RustUnnamed_27",
         hmux2::src::mode_tree::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/monitor.rs::C2RustUnnamed_27",
         hmux2::src::monitor::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/names.rs::C2RustUnnamed_28",
         hmux2::src::names::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/options.rs::C2RustUnnamed_30",
         hmux2::src::options::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/popup.rs::C2RustUnnamed_27",
         hmux2::src::popup::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/prompt.rs::C2RustUnnamed_27",
         hmux2::src::prompt::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/resize.rs::C2RustUnnamed_27",
         hmux2::src::resize::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/screen.rs::C2RustUnnamed_28",
         hmux2::src::screen::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/screen_redraw.rs::C2RustUnnamed_27",
         hmux2::src::screen_redraw::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/screen_write.rs::C2RustUnnamed_30",
         hmux2::src::screen_write::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/server.rs::C2RustUnnamed_28",
         hmux2::src::server::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/server_acl.rs::C2RustUnnamed_27",
         hmux2::src::server_acl::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/server_client.rs::C2RustUnnamed_28",
         hmux2::src::server_client::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/server_fn.rs::C2RustUnnamed_27",
         hmux2::src::server_fn::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/session.rs::C2RustUnnamed_27",
         hmux2::src::session::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/sort.rs::C2RustUnnamed_27",
         hmux2::src::sort::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/spawn.rs::C2RustUnnamed_27",
         hmux2::src::spawn::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/status.rs::C2RustUnnamed_27",
         hmux2::src::status::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/style.rs::C2RustUnnamed_27",
         hmux2::src::style::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/tty.rs::C2RustUnnamed_27",
         hmux2::src::tty::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/tty_acs.rs::C2RustUnnamed_27",
         hmux2::src::tty_acs::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/tty_draw.rs::C2RustUnnamed_27",
         hmux2::src::tty_draw::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/tty_features.rs::C2RustUnnamed_27",
         hmux2::src::tty_features::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/tty_keys.rs::C2RustUnnamed_28",
         hmux2::src::tty_keys::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/tty_term.rs::C2RustUnnamed_27",
         hmux2::src::tty_term::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window.rs::C2RustUnnamed_28",
         hmux2::src::window::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_border.rs::C2RustUnnamed_27",
         hmux2::src::window_border::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_buffer.rs::C2RustUnnamed_27",
         hmux2::src::window_buffer::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_client.rs::C2RustUnnamed_27",
         hmux2::src::window_client::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_clock.rs::C2RustUnnamed_27",
         hmux2::src::window_clock::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_copy.rs::C2RustUnnamed_27",
         hmux2::src::window_copy::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_customize.rs::C2RustUnnamed_27",
         hmux2::src::window_customize::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_panes.rs::C2RustUnnamed_27",
         hmux2::src::window_panes::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_switch.rs::C2RustUnnamed_27",
         hmux2::src::window_switch::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_tree.rs::C2RustUnnamed_27",
         hmux2::src::window_tree::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/window_visible.rs::C2RustUnnamed_27",
         hmux2::src::window_visible::window_pane_modes,
-        [tqh_first, tqh_last]
+        [active, storage]
     );
     record!(
         "src/alerts.rs::window_pane_prompt",

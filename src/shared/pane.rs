@@ -213,7 +213,7 @@ pub struct window_pane {
     pub screen: *mut screen,
     pub base: screen,
     pub status_screen: screen,
-    /// Intrusive list of stable Box-owned mode entries, drained before pane free.
+    /// Pane-owned non-intrusive mode stack, drained before pane free.
     pub modes: window_pane_modes,
     pub searchstr: *mut ::core::ffi::c_char,
     pub searchregex: ::core::ffi::c_int,
@@ -262,11 +262,27 @@ pub struct window_pane_entry {
     pub tqe_prev: *mut *mut window_pane,
 }
 
-#[derive(Copy, Clone)]
+/// Ordered mode stack owned by a pane. Each entry remains boxed so mode
+/// callbacks and pending events can keep stable pointers while the stack moves.
+#[derive(Default)]
+pub struct WindowPaneModesStorage {
+    pub(crate) entries: Vec<Box<window_mode_entry>>,
+}
+
 #[repr(C)]
 pub struct window_pane_modes {
-    pub tqh_first: *mut window_mode_entry,
-    pub tqh_last: *mut *mut window_mode_entry,
+    /// Compatibility view of the top mode; the storage owns every entry.
+    pub active: *mut window_mode_entry,
+    pub storage: Option<Box<WindowPaneModesStorage>>,
+}
+
+impl Default for window_pane_modes {
+    fn default() -> Self {
+        Self {
+            active: std::ptr::null_mut(),
+            storage: None,
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

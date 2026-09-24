@@ -9732,602 +9732,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::window_mode_entry",
         hmux2::src::alerts::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/arguments.rs::window_mode_entry",
         hmux2::src::arguments::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cfg.rs::window_mode_entry",
         hmux2::src::cfg::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/client.rs::window_mode_entry",
         hmux2::src::client::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd.rs::window_mode_entry",
         hmux2::src::cmd::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_attach_session.rs::window_mode_entry",
         hmux2::src::cmd_attach_session::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_bind_key.rs::window_mode_entry",
         hmux2::src::cmd_bind_key::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_break_pane.rs::window_mode_entry",
         hmux2::src::cmd_break_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_capture_pane.rs::window_mode_entry",
         hmux2::src::cmd_capture_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_choose_tree.rs::window_mode_entry",
         hmux2::src::cmd_choose_tree::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_command_prompt.rs::window_mode_entry",
         hmux2::src::cmd_command_prompt::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_confirm_before.rs::window_mode_entry",
         hmux2::src::cmd_confirm_before::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_copy_mode.rs::window_mode_entry",
         hmux2::src::cmd_copy_mode::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_detach_client.rs::window_mode_entry",
         hmux2::src::cmd_detach_client::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_display_menu.rs::window_mode_entry",
         hmux2::src::cmd_display_menu::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_display_message.rs::window_mode_entry",
         hmux2::src::cmd_display_message::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_find.rs::window_mode_entry",
         hmux2::src::cmd_find::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_find_window.rs::window_mode_entry",
         hmux2::src::cmd_find_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_if_shell.rs::window_mode_entry",
         hmux2::src::cmd_if_shell::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_join_pane.rs::window_mode_entry",
         hmux2::src::cmd_join_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_kill_pane.rs::window_mode_entry",
         hmux2::src::cmd_kill_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_kill_session.rs::window_mode_entry",
         hmux2::src::cmd_kill_session::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_kill_window.rs::window_mode_entry",
         hmux2::src::cmd_kill_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_list_buffers.rs::window_mode_entry",
         hmux2::src::cmd_list_buffers::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_list_clients.rs::window_mode_entry",
         hmux2::src::cmd_list_clients::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_list_commands.rs::window_mode_entry",
         hmux2::src::cmd_list_commands::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_list_keys.rs::window_mode_entry",
         hmux2::src::cmd_list_keys::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_list_panes.rs::window_mode_entry",
         hmux2::src::cmd_list_panes::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_list_sessions.rs::window_mode_entry",
         hmux2::src::cmd_list_sessions::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_list_windows.rs::window_mode_entry",
         hmux2::src::cmd_list_windows::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_load_buffer.rs::window_mode_entry",
         hmux2::src::cmd_load_buffer::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_lock_server.rs::window_mode_entry",
         hmux2::src::cmd_lock_server::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_move_window.rs::window_mode_entry",
         hmux2::src::cmd_move_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_new_session.rs::window_mode_entry",
         hmux2::src::cmd_new_session::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_new_window.rs::window_mode_entry",
         hmux2::src::cmd_new_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_parse.rs::window_mode_entry",
         hmux2::src::cmd_parse::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_paste_buffer.rs::window_mode_entry",
         hmux2::src::cmd_paste_buffer::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_pipe_pane.rs::window_mode_entry",
         hmux2::src::cmd_pipe_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_queue.rs::window_mode_entry",
         hmux2::src::cmd_queue::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_refresh_client.rs::window_mode_entry",
         hmux2::src::cmd_refresh_client::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_rename_session.rs::window_mode_entry",
         hmux2::src::cmd_rename_session::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_rename_window.rs::window_mode_entry",
         hmux2::src::cmd_rename_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_resize_pane.rs::window_mode_entry",
         hmux2::src::cmd_resize_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_resize_window.rs::window_mode_entry",
         hmux2::src::cmd_resize_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_respawn_pane.rs::window_mode_entry",
         hmux2::src::cmd_respawn_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_respawn_window.rs::window_mode_entry",
         hmux2::src::cmd_respawn_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_rotate_window.rs::window_mode_entry",
         hmux2::src::cmd_rotate_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_run_shell.rs::window_mode_entry",
         hmux2::src::cmd_run_shell::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_save_buffer.rs::window_mode_entry",
         hmux2::src::cmd_save_buffer::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_select_layout.rs::window_mode_entry",
         hmux2::src::cmd_select_layout::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_select_pane.rs::window_mode_entry",
         hmux2::src::cmd_select_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_select_window.rs::window_mode_entry",
         hmux2::src::cmd_select_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_send_keys.rs::window_mode_entry",
         hmux2::src::cmd_send_keys::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_server_access.rs::window_mode_entry",
         hmux2::src::cmd_server_access::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_set_buffer.rs::window_mode_entry",
         hmux2::src::cmd_set_buffer::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_set_environment.rs::window_mode_entry",
         hmux2::src::cmd_set_environment::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_set_option.rs::window_mode_entry",
         hmux2::src::cmd_set_option::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_show_environment.rs::window_mode_entry",
         hmux2::src::cmd_show_environment::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_show_messages.rs::window_mode_entry",
         hmux2::src::cmd_show_messages::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_show_options.rs::window_mode_entry",
         hmux2::src::cmd_show_options::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_source_file.rs::window_mode_entry",
         hmux2::src::cmd_source_file::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_split_window.rs::window_mode_entry",
         hmux2::src::cmd_split_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_swap_pane.rs::window_mode_entry",
         hmux2::src::cmd_swap_pane::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_swap_window.rs::window_mode_entry",
         hmux2::src::cmd_swap_window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_switch_client.rs::window_mode_entry",
         hmux2::src::cmd_switch_client::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/cmd_wait_for.rs::window_mode_entry",
         hmux2::src::cmd_wait_for::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/colour.rs::window_mode_entry",
         hmux2::src::colour::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/control.rs::window_mode_entry",
         hmux2::src::control::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/control_notify.rs::window_mode_entry",
         hmux2::src::control_notify::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/environ.rs::window_mode_entry",
         hmux2::src::environ::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/events.rs::window_mode_entry",
         hmux2::src::events::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/events_payload.rs::window_mode_entry",
         hmux2::src::events_payload::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/file.rs::window_mode_entry",
         hmux2::src::file::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/format.rs::window_mode_entry",
         hmux2::src::format::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/format_draw.rs::window_mode_entry",
         hmux2::src::format_draw::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/hooks.rs::window_mode_entry",
         hmux2::src::hooks::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/input.rs::window_mode_entry",
         hmux2::src::input::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/input_keys.rs::window_mode_entry",
         hmux2::src::input_keys::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/job.rs::window_mode_entry",
         hmux2::src::job::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/key_bindings.rs::window_mode_entry",
         hmux2::src::key_bindings::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/layout.rs::window_mode_entry",
         hmux2::src::layout::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/layout_custom.rs::window_mode_entry",
         hmux2::src::layout_custom::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/layout_set.rs::window_mode_entry",
         hmux2::src::layout_set::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/menu.rs::window_mode_entry",
         hmux2::src::menu::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/mode_tree.rs::window_mode_entry",
         hmux2::src::mode_tree::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/monitor.rs::window_mode_entry",
         hmux2::src::monitor::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/names.rs::window_mode_entry",
         hmux2::src::names::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/options.rs::window_mode_entry",
         hmux2::src::options::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/popup.rs::window_mode_entry",
         hmux2::src::popup::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/prompt.rs::window_mode_entry",
         hmux2::src::prompt::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/resize.rs::window_mode_entry",
         hmux2::src::resize::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/screen.rs::window_mode_entry",
         hmux2::src::screen::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/screen_redraw.rs::window_mode_entry",
         hmux2::src::screen_redraw::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/screen_write.rs::window_mode_entry",
         hmux2::src::screen_write::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/server.rs::window_mode_entry",
         hmux2::src::server::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/server_acl.rs::window_mode_entry",
         hmux2::src::server_acl::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/server_client.rs::window_mode_entry",
         hmux2::src::server_client::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/server_fn.rs::window_mode_entry",
         hmux2::src::server_fn::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/session.rs::window_mode_entry",
         hmux2::src::session::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/sort.rs::window_mode_entry",
         hmux2::src::sort::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/spawn.rs::window_mode_entry",
         hmux2::src::spawn::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/status.rs::window_mode_entry",
         hmux2::src::status::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/style.rs::window_mode_entry",
         hmux2::src::style::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/tty.rs::window_mode_entry",
         hmux2::src::tty::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/tty_acs.rs::window_mode_entry",
         hmux2::src::tty_acs::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/tty_draw.rs::window_mode_entry",
         hmux2::src::tty_draw::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/tty_features.rs::window_mode_entry",
         hmux2::src::tty_features::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/tty_keys.rs::window_mode_entry",
         hmux2::src::tty_keys::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/tty_term.rs::window_mode_entry",
         hmux2::src::tty_term::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window.rs::window_mode_entry",
         hmux2::src::window::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_border.rs::window_mode_entry",
         hmux2::src::window_border::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_buffer.rs::window_mode_entry",
         hmux2::src::window_buffer::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_client.rs::window_mode_entry",
         hmux2::src::window_client::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_clock.rs::window_mode_entry",
         hmux2::src::window_clock::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_copy.rs::window_mode_entry",
         hmux2::src::window_copy::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_customize.rs::window_mode_entry",
         hmux2::src::window_customize::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_panes.rs::window_mode_entry",
         hmux2::src::window_panes::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_switch.rs::window_mode_entry",
         hmux2::src::window_switch::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_tree.rs::window_mode_entry",
         hmux2::src::window_tree::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/window_visible.rs::window_mode_entry",
         hmux2::src::window_visible::window_mode_entry,
-        [wp, swp, mode, data, screen, prefix, kill, entry]
+        [wp, swp, mode, data, screen, prefix, kill]
     );
     record!(
         "src/alerts.rs::C2RustUnnamed_28",

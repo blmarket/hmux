@@ -458,7 +458,7 @@ unsafe fn cmd_capture_pane_history(
         }
         s = &raw mut (*wp).base;
     } else if args_has(args, 'M' as i32 as u_char) != 0 {
-        wme = (*wp).modes.tqh_first;
+        wme = (*wp).modes.active;
         if !wme.is_null() && (*(*wme).mode).get_screen.is_some() {
             s = (*(*wme).mode)
                 .get_screen

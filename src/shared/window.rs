@@ -163,7 +163,6 @@ pub struct window_mode_entry {
     pub screen: *mut screen,
     pub prefix: u_int,
     pub kill: ::core::ffi::c_int,
-    pub entry: window_mode_entry_entry,
 }
 
 #[derive(Copy, Clone)]
