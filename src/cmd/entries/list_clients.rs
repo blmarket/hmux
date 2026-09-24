@@ -1,9 +1,8 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
-use crate::src::ffi::libc::free;
 use crate::src::format::{
-    format_add, format_create, format_defaults, format_expand, format_free, format_true,
+    format_add, format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
@@ -119,8 +118,6 @@ unsafe extern "C" fn cmd_list_clients_exec(
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut i: u_int = 0;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_int = 0;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
@@ -174,20 +171,18 @@ unsafe extern "C" fn cmd_list_clients_exec(
                 ::core::ptr::null_mut::<window_pane>(),
             );
             if !filter.is_null() {
-                expanded = format_expand(ft, filter);
-                flag = format_true(expanded);
-                free(expanded as *mut ::core::ffi::c_void);
+                let expanded = format_expand_cstring(ft, filter);
+                flag = format_true(expanded.as_ptr());
             } else {
                 flag = 1 as ::core::ffi::c_int;
             }
             if flag != 0 {
-                line = format_expand(ft, template);
+                let line = format_expand_cstring(ft, template);
                 cmdq_print(
                     item,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    line,
+                    line.as_ptr(),
                 );
-                free(line as *mut ::core::ffi::c_void);
             }
             format_free(ft);
         }
