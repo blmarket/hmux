@@ -489,7 +489,6 @@ pub unsafe extern "C" fn spawn_pane(
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut argvp: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut argv0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cwd: Option<CString> = None;
     let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -907,49 +906,27 @@ pub unsafe extern "C" fn spawn_pane(
                 _exit(1 as ::core::ffi::c_int);
             }
             cp = strrchr((*new_wp).shell, '/' as i32);
+            let shell_name = if !cp.is_null() && *cp.add(1) != 0 {
+                cp.add(1)
+            } else {
+                (*new_wp).shell
+            };
             if (*new_wp).argc == 1 as ::core::ffi::c_int {
                 tmp = *(*new_wp).argv.offset(0 as ::core::ffi::c_int as isize);
-                if !cp.is_null()
-                    && *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                        != '\0' as i32
-                {
-                    xasprintf(
-                        &raw mut argv0,
-                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        cp.offset(1 as ::core::ffi::c_int as isize),
-                    );
-                } else {
-                    xasprintf(
-                        &raw mut argv0,
-                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*new_wp).shell,
-                    );
-                }
+                let argv0 = CStr::from_ptr(shell_name).to_owned();
                 execl(
                     (*new_wp).shell,
-                    argv0,
+                    argv0.as_ptr(),
                     b"-c\0" as *const u8 as *const ::core::ffi::c_char,
                     tmp,
                     NULL as *mut ::core::ffi::c_char,
                 );
                 _exit(1 as ::core::ffi::c_int);
             }
-            if !cp.is_null()
-                && *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\0' as i32
-            {
-                xasprintf(
-                    &raw mut argv0,
-                    b"-%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cp.offset(1 as ::core::ffi::c_int as isize),
-                );
-            } else {
-                xasprintf(
-                    &raw mut argv0,
-                    b"-%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*new_wp).shell,
-                );
-            }
-            execl((*new_wp).shell, argv0, NULL as *mut ::core::ffi::c_char);
+            let mut login_name = vec![b'-'];
+            login_name.extend_from_slice(CStr::from_ptr(shell_name).to_bytes());
+            let argv0 = CString::new(login_name).expect("shell name contains no NUL");
+            execl((*new_wp).shell, argv0.as_ptr(), NULL as *mut ::core::ffi::c_char);
             _exit(1 as ::core::ffi::c_int);
         }
     }
