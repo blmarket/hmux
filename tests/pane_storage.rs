@@ -3,6 +3,28 @@ use hmux2::src::shared::pane::{window_pane, window_pane_history, window_panes};
 use refbox::{BorrowError, RefBox};
 
 #[test]
+fn removing_from_another_history_preserves_membership_and_cleanup() {
+    let owner = RefBox::new(window_pane::empty());
+    let pane = owner.as_ptr() as *mut window_pane;
+    let mut source = window_pane_history::default();
+    let mut destination = window_pane_history::default();
+    source.push_front(owner.downgrade());
+    unsafe {
+        (*pane).flags |= hmux2::src::shared::pane::PANE_VISITED;
+        window_pane_stack_remove(&mut destination, pane);
+        assert_ne!((*pane).flags & hmux2::src::shared::pane::PANE_VISITED, 0);
+        window_pane_stack_remove(&mut source, pane);
+        assert!(source.is_empty());
+        assert_eq!((*pane).flags & hmux2::src::shared::pane::PANE_VISITED, 0);
+
+        // Cleanup must also make progress if an entry has lost its flag.
+        source.push_front(owner.downgrade());
+        window_pane_stack_remove(&mut source, pane);
+        assert!(source.is_empty());
+    }
+}
+
+#[test]
 fn pane_order_and_visit_history_preserve_stable_weak_entries() {
     let owners: Vec<RefBox<window_pane>> = (0..4)
         .map(|_| RefBox::new(window_pane::empty()))

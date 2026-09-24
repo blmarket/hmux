@@ -4548,8 +4548,10 @@ pub unsafe extern "C" fn window_pane_stack_remove(
     mut stack: *mut window_pane_history,
     mut wp: *mut window_pane,
 ) {
-    if !wp.is_null() && (*wp).flags & PANE_VISITED != 0 {
-        (*stack).remove_ptr(wp);
+    // Cross-window swaps may look for a pane in the destination history while
+    // it is still recorded in the source history. Only clear the flag when
+    // this history actually contained the pane; membership is authoritative.
+    if !wp.is_null() && (*stack).remove_ptr(wp) {
         (*wp).flags &= !PANE_VISITED;
     }
 }

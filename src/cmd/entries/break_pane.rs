@@ -270,10 +270,11 @@ unsafe extern "C" fn cmd_break_pane_exec(
             );
             return CMD_RETURN_ERROR;
         }
+        server_client_remove_pane(wp);
+        // Select a replacement while the departing pane still has neighbors.
+        window_lost_pane(w, wp);
         window_pane_list_remove(w, wp);
         window_pane_z_remove(w, wp);
-        server_client_remove_pane(wp);
-        window_lost_pane(w, wp);
         layout_close_pane(wp);
         (*wp).window = window_create((*w).sx, (*w).sy, (*w).xpixel, (*w).ypixel) as *mut window;
         w = (*wp).window as *mut window;
