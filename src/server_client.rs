@@ -1,9 +1,8 @@
 use crate::src::alerts::alerts_check_session;
-use crate::src::arguments::OwnedArgumentVector;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
 use crate::src::cmd_find::{cmd_find_from_client, cmd_find_from_mouse};
-use crate::src::cmd_parse::cmd_parse_from_arguments;
+use crate::src::cmd_parse::cmd_parse_from_argv;
 use crate::src::cmd_queue::{
     cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback1, cmdq_get_client,
     cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_set_cancel_data,
@@ -4780,13 +4779,7 @@ unsafe extern "C" fn server_client_dispatch_command(
             current_block = 13472856163611868459;
         } else {
             cmd_log_argv(&argv, c"cmd_unpack_argv");
-            let mut values = OwnedArgumentVector::from_argv(&argv);
-            let pr = cmd_parse_from_arguments(
-                values.as_mut_ptr(),
-                argc as u_int,
-                ::core::ptr::null_mut::<cmd_parse_input>(),
-            );
-            drop(values);
+            let pr = cmd_parse_from_argv(&argv, ::core::ptr::null_mut::<cmd_parse_input>());
             match pr.status as ::core::ffi::c_uint {
                 0 => {
                     cause = pr.error;

@@ -892,6 +892,32 @@ pub unsafe fn cmd_parse_from_buffer(
     cmd_parse_free_commands(cmds);
     return pr;
 }
+/// Parse argv while borrowing its strings for the duration of the parser call.
+pub unsafe fn cmd_parse_from_argv(
+    argv: &[CString],
+    pi: *mut cmd_parse_input,
+) -> cmd_parse_result {
+    let mut values: Vec<args_value> = argv
+        .iter()
+        .map(|string| args_value {
+            type_0: ARGS_STRING,
+            c2rust_unnamed: args_value_c2rust_unnamed {
+                string: string.as_ptr().cast_mut(),
+            },
+            cached: ::core::ptr::null_mut(),
+            entry: args_value_entry {
+                owner: ::core::ptr::null_mut(),
+                index: 0,
+            },
+        })
+        .collect();
+    cmd_parse_from_arguments(
+        values.as_mut_ptr(),
+        u_int::try_from(values.len()).expect("argv length exceeds u_int"),
+        pi,
+    )
+}
+
 pub unsafe fn cmd_parse_from_arguments(
     mut values: *mut args_value,
     mut count: u_int,

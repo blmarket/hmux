@@ -1,6 +1,5 @@
-use crate::src::arguments::OwnedArgumentVector;
 use crate::src::cmd::{cmd_list_any_have, cmd_list_free, cmd_pack_argv};
-use crate::src::cmd_parse::cmd_parse_from_arguments;
+use crate::src::cmd_parse::cmd_parse_from_argv;
 use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
 use crate::src::environ::environ_free;
@@ -403,13 +402,7 @@ pub unsafe fn client_main(
         flags |= CLIENT_STARTSERVER as uint64_t;
     } else {
         msg = MSG_COMMAND;
-        let mut values = OwnedArgumentVector::from_argv(argv);
-        pr = cmd_parse_from_arguments(
-            values.as_mut_ptr(),
-            argv.len() as u_int,
-            ::core::ptr::null_mut::<cmd_parse_input>(),
-        );
-        drop(values);
+        pr = cmd_parse_from_argv(argv, ::core::ptr::null_mut::<cmd_parse_input>());
         if pr.status as ::core::ffi::c_uint
             == CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {

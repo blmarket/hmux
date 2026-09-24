@@ -890,37 +890,6 @@ pub unsafe fn args_to_vector(args: *mut args) -> Vec<CString> {
     }
     argv
 }
-/// Owns temporary argument records and their string payloads while a command
-/// message is parsed. The records borrow pointers into `strings`.
-pub(crate) struct OwnedArgumentVector {
-    values: Vec<args_value>,
-    strings: Vec<CString>,
-}
-
-impl OwnedArgumentVector {
-    pub(crate) fn from_argv(argv: &Vec<CString>) -> Self {
-        let capacity = argv.len();
-        let mut values = Vec::with_capacity(capacity);
-        let mut strings = Vec::with_capacity(capacity);
-        for i in 0..capacity {
-            let string = argv[i].clone();
-            let mut value = unsafe { ::core::mem::zeroed::<args_value>() };
-            value.type_0 = ARGS_STRING;
-            value.c2rust_unnamed.string = string.as_ptr().cast_mut();
-            values.push(value);
-            strings.push(string);
-        }
-        Self { values, strings }
-    }
-
-    pub(crate) fn as_mut_ptr(&mut self) -> *mut args_value {
-        if self.values.is_empty() {
-            ::core::ptr::null_mut()
-        } else {
-            self.values.as_mut_ptr()
-        }
-    }
-}
 unsafe extern "C" fn args_print_add(
     buf: &mut Vec<u8>,
     mut fmt: *const ::core::ffi::c_char,
