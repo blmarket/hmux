@@ -18,9 +18,9 @@ use crate::src::events_payload::{
     event_payload_set_session, event_payload_set_string, event_payload_set_target,
     event_payload_set_window,
 };
-use crate::src::ffi::libc::{free, memset};
+use crate::src::ffi::libc::memset;
 use crate::src::format::{
-    format_add, format_create, format_create_defaults, format_expand, format_free,
+    format_add, format_create, format_create_defaults, format_expand_cstring, format_free,
     format_log_debug, format_merge,
 };
 use crate::src::log::{log_debug, log_get_level};
@@ -195,7 +195,6 @@ unsafe fn hooks_parse(
     value: *const ::core::ffi::c_char,
 ) -> cmd_parse_result {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*hd).expand == 0 {
         return cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
     }
@@ -209,10 +208,9 @@ unsafe fn hooks_parse(
     if !(*hd).formats.is_null() {
         format_merge(ft, (*hd).formats);
     }
-    expanded = format_expand(ft, value);
+    let expanded = format_expand_cstring(ft, value);
     format_free(ft);
-    let pr = cmd_parse_from_string(expanded, ::core::ptr::null_mut::<cmd_parse_input>());
-    free(expanded as *mut ::core::ffi::c_void);
+    let pr = cmd_parse_from_string(expanded.as_ptr(), ::core::ptr::null_mut::<cmd_parse_input>());
     return pr;
 }
 unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {

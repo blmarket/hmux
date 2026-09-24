@@ -6,8 +6,8 @@ use crate::src::events_payload::{
     event_payload_add_formats, event_payload_first, event_payload_item_name,
     event_payload_item_print_owned, event_payload_next,
 };
-use crate::src::ffi::libc::{free, strcmp};
-use crate::src::format::{format_create, format_expand, format_free, format_true};
+use crate::src::ffi::libc::strcmp;
+use crate::src::format::{format_create, format_expand_cstring, format_free, format_true};
 use crate::src::hooks::hooks_valid_event_name;
 use crate::src::log::log_debug;
 use crate::src::shared::abi::*;
@@ -385,7 +385,6 @@ unsafe extern "C" fn cmd_wait_for_event_cb(
 ) {
     let mut wei: *mut wait_event_item = item_data as *mut wait_event_item;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_int = 0;
     if (*wei).verbose != 0 {
         cmd_wait_for_event_print(wei, ep);
@@ -398,14 +397,13 @@ unsafe extern "C" fn cmd_wait_for_event_cb(
             FORMAT_NOJOBS,
         );
         event_payload_add_formats(ep, ft, ::core::ptr::null::<::core::ffi::c_char>());
-        expanded = format_expand(
+        let expanded = format_expand_cstring(
             ft,
             ((*wei).filter)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
-        flag = format_true(expanded);
-        free(expanded as *mut ::core::ffi::c_void);
+        flag = format_true(expanded.as_ptr());
         format_free(ft);
         if flag == 0 {
             return;

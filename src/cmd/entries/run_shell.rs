@@ -9,8 +9,10 @@ use crate::src::cmd_queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
-use crate::src::ffi::libc::{__ctype_toupper_loc, free, strtod};
-use crate::src::format::{format_add, format_create_from_target, format_expand, format_free};
+use crate::src::ffi::libc::{__ctype_toupper_loc, strtod};
+use crate::src::format::{
+    format_add, format_create_from_target, format_expand_cstring, format_free,
+};
 use crate::src::job::{job_get_data, job_get_event, job_get_status, job_run};
 use crate::src::reactor::{
     evbuffer_get_length, evbuffer_pullup, evbuffer_readln, event_active, event_add, event_del,
@@ -308,11 +310,7 @@ unsafe extern "C" fn cmd_run_shell_exec(
                 );
                 i = i.wrapping_add(1);
             }
-            let expanded = format_expand(ft, cmd);
-            if !expanded.is_null() {
-                (*cdata).cmd = Some(CStr::from_ptr(expanded).to_owned());
-                free(expanded.cast());
-            }
+            (*cdata).cmd = Some(format_expand_cstring(ft, cmd));
             format_free(ft);
         }
     } else {

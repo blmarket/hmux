@@ -6,10 +6,12 @@ use crate::src::cmd_find::{cmd_find_from_client, cmd_find_valid_state};
 use crate::src::cmd_queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::environ::{environ_find, environ_put};
 use crate::src::ffi::libc::{
-    __ctype_b_loc, free, getc, getpwnam, getpwuid, getuid, malloc, memset, sscanf, strchr, strcmp,
+    __ctype_b_loc, getc, getpwnam, getpwuid, getuid, memset, sscanf, strchr, strcmp,
     strlen, ungetc, wctomb,
 };
-use crate::src::format::{format_create, format_defaults, format_expand, format_free, format_true};
+use crate::src::format::{
+    format_create, format_defaults, format_expand_cstring, format_free, format_true,
+};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__gid_t, __off64_t, __off_t, __uid_t};
@@ -310,9 +312,9 @@ impl hmux_cmdparse::Context for ParserContext {
             };
             let ft = format_create((*pi).c, (*pi).item, FORMAT_NONE, FORMAT_NOJOBS);
             format_defaults(ft, (*pi).c, (*fsp).s, (*fsp).wl, (*fsp).wp);
-            let expanded = format_expand(ft, token.as_c_str().as_ptr());
+            let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             format_free(ft);
-            take_parser_token_from_malloc(expanded)
+            take_parser_token(expanded)
         }
     }
 
@@ -345,14 +347,6 @@ impl hmux_cmdparse::Context for ParserContext {
 
 fn take_parser_token(text: CString) -> hmux_cmdparse::TokenText {
     hmux_cmdparse::TokenText::from_cstring(text)
-}
-
-// Format expansion is still a C allocation at this boundary; never transfer
-// it to CString::from_raw because its allocator contract belongs to xmalloc.
-unsafe fn take_parser_token_from_malloc(raw: *mut core::ffi::c_char) -> hmux_cmdparse::TokenText {
-    let text = CStr::from_ptr(raw).to_owned();
-    free(raw.cast());
-    take_parser_token(text)
 }
 
 fn next_parser_token(
