@@ -16,7 +16,7 @@ use crate::src::window::{
     window_pane_stack_push, window_pane_stack_remove, window_pane_zindex, window_resize,
     window_set_active_pane,
 };
-use crate::src::xmalloc::{xasprintf, xmalloc, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 macro_rules! layout_format_cause {
@@ -288,17 +288,6 @@ unsafe extern "C" fn layout_checksum(mut layout: *const ::core::ffi::c_char) -> 
     }
     return csum;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_dump(
-    w: *mut window,
-    lcroot: *mut layout_cell,
-    flags: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    // Format callbacks free this exported result with libc free.
-    layout_dump_owned(w, lcroot, flags)
-        .map_or(::core::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
-}
-
 pub(crate) unsafe fn layout_dump_owned(
     _w: *mut window,
     lcroot: *mut layout_cell,
