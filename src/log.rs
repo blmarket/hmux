@@ -1,6 +1,7 @@
 use crate::src::compat::vis::strvis;
+use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{
-    __errno_location, exit, fclose, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf,
+    __errno_location, exit, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf,
     snprintf, strerror,
 };
 pub use crate::src::reactor::event_log_cb;
@@ -17,8 +18,15 @@ use std::ffi::{CStr, CString};
 
 pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
-static mut log_file: *mut FILE = ::core::ptr::null::<FILE>() as *mut FILE;
+static mut log_file: Option<CFile> = None;
 static mut log_level: ::core::ffi::c_int = 0;
+
+unsafe fn log_file_ptr() -> *mut FILE {
+    (*(&raw const log_file))
+        .as_ref()
+        .map_or(::core::ptr::null_mut::<FILE>(), CFile::as_ptr)
+}
+
 unsafe extern "C" fn log_event_cb(
     mut severity: ::core::ffi::c_int,
     mut msg: *const ::core::ffi::c_char,
@@ -46,15 +54,16 @@ pub unsafe extern "C" fn log_open(mut name: *const ::core::ffi::c_char) {
     path.extend_from_slice(pid.as_bytes());
     path.extend_from_slice(b".log");
     let path = CString::new(path).expect("log filename components contain no interior NUL");
-    log_file = fopen(
+    let file = fopen(
         path.as_ptr(),
         b"a\0" as *const u8 as *const ::core::ffi::c_char,
     ) as *mut FILE;
-    if log_file.is_null() {
+    let Some(file) = CFile::from_raw(file) else {
         return;
-    }
+    };
+    log_file = Some(file);
     setvbuf(
-        log_file,
+        log_file_ptr(),
         ::core::ptr::null_mut::<::core::ffi::c_char>(),
         _IOLBF,
         0 as size_t,
@@ -77,10 +86,7 @@ pub unsafe extern "C" fn log_toggle(mut name: *const ::core::ffi::c_char) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn log_close() {
-    if !log_file.is_null() {
-        fclose(log_file);
-    }
-    log_file = ::core::ptr::null_mut::<FILE>();
+    log_file = None;
     event_set_log_callback(None);
 }
 unsafe extern "C" fn log_vwrite(
@@ -92,7 +98,8 @@ unsafe extern "C" fn log_vwrite(
         tv_sec: 0,
         tv_usec: 0,
     };
-    if log_file.is_null() {
+    let file = log_file_ptr();
+    if file.is_null() {
         return;
     }
     let Some(s) = try_vasprintf_cstring(msg, ap) else {
@@ -120,7 +127,7 @@ unsafe extern "C" fn log_vwrite(
     drop(s);
     gettimeofday(&raw mut tv, NULL);
     if fprintf(
-        log_file,
+        file,
         b"%lld.%06d %s%s\n\0" as *const u8 as *const ::core::ffi::c_char,
         tv.tv_sec as ::core::ffi::c_longlong,
         tv.tv_usec as ::core::ffi::c_int,
@@ -128,13 +135,13 @@ unsafe extern "C" fn log_vwrite(
         out.as_ptr().cast::<::core::ffi::c_char>(),
     ) != -(1 as ::core::ffi::c_int)
     {
-        fflush(log_file);
+        fflush(file);
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn log_debug(mut msg: *const ::core::ffi::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaList;
-    if log_file.is_null() {
+    if log_file_ptr().is_null() {
         return;
     }
     ap = args.clone();
