@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_tolower_loc, calloc, free, memcmp, memset, strchr, strlen};
+use crate::src::ffi::libc::{__ctype_tolower_loc, memcmp, memset, strchr, strlen};
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 pub use crate::src::shared::abi::__int32_t;
@@ -913,24 +913,6 @@ pub(crate) unsafe fn fuzzy_match_owned(
     Some(mask)
 }
 
-/// Return a libc-owned mask for callers of the exported C interface.
-#[no_mangle]
-pub unsafe extern "C" fn fuzzy_match(
-    pattern: *const ::core::ffi::c_char,
-    text: *const ::core::ffi::c_char,
-    width: u_int,
-    score: *mut u_int,
-) -> *mut bitstr_t {
-    let Some(mask) = fuzzy_match_owned(pattern, text, width, score) else {
-        return ::core::ptr::null_mut();
-    };
-    let result = calloc(mask.len(), ::core::mem::size_of::<bitstr_t>()) as *mut bitstr_t;
-    if !result.is_null() {
-        ::core::ptr::copy_nonoverlapping(mask.as_ptr(), result, mask.len());
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -940,53 +922,45 @@ mod tests {
         unsafe {
             let pattern = c"R";
             let right = c"L#[align=right]R";
-            let mask = fuzzy_match(pattern.as_ptr(), right.as_ptr(), 8, std::ptr::null_mut());
-            assert!(!mask.is_null());
-            assert_eq!(*mask, 1 << 7);
-            free(mask.cast());
+            let mask = fuzzy_match_owned(pattern.as_ptr(), right.as_ptr(), 8, std::ptr::null_mut());
+            assert_eq!(mask.unwrap()[0], 1 << 7);
 
             let invalid = c"L#[align=bogus]R";
-            let mask = fuzzy_match(pattern.as_ptr(), invalid.as_ptr(), 8, std::ptr::null_mut());
-            assert!(!mask.is_null());
-            assert_eq!(*mask, 1 << 1);
-            free(mask.cast());
+            let mask = fuzzy_match_owned(pattern.as_ptr(), invalid.as_ptr(), 8, std::ptr::null_mut());
+            assert_eq!(mask.unwrap()[0], 1 << 1);
 
             let incomplete = c"L#[align=right R";
-            let mask = fuzzy_match(
+            let mask = fuzzy_match_owned(
                 pattern.as_ptr(),
                 incomplete.as_ptr(),
                 8,
                 std::ptr::null_mut(),
             );
-            assert!(mask.is_null());
+            assert!(mask.is_none());
         }
     }
 
     #[test]
     fn fuzzy_match_backtracks_and_resets_between_alternatives() {
         unsafe {
-            let mask = fuzzy_match(
+            let mask = fuzzy_match_owned(
                 c"q|abc".as_ptr(),
                 c"aabcbc".as_ptr(),
                 6,
                 std::ptr::null_mut(),
             );
-            assert!(!mask.is_null());
-            assert_eq!(*mask, 0b001110);
-            free(mask.cast());
+            assert_eq!(mask.unwrap()[0], 0b001110);
 
-            let mask = fuzzy_match(
+            let mask = fuzzy_match_owned(
                 c"abc|q".as_ptr(),
                 c"aabcbc".as_ptr(),
                 6,
                 std::ptr::null_mut(),
             );
-            assert!(!mask.is_null());
-            assert_eq!(*mask, 0b001110);
-            free(mask.cast());
+            assert_eq!(mask.unwrap()[0], 0b001110);
 
             assert!(
-                fuzzy_match(c"abc".as_ptr(), c"abx".as_ptr(), 3, std::ptr::null_mut()).is_null()
+                fuzzy_match_owned(c"abc".as_ptr(), c"abx".as_ptr(), 3, std::ptr::null_mut()).is_none()
             );
         }
     }
@@ -995,26 +969,25 @@ mod tests {
     fn fuzzy_match_crosses_scan_growth_boundary_and_stops_at_nul() {
         let text = format!("{}zy\0q", "a".repeat(63));
         unsafe {
-            let mask = fuzzy_match(
+            let mask = fuzzy_match_owned(
                 c"zy".as_ptr(),
                 text.as_ptr().cast(),
                 65,
                 std::ptr::null_mut(),
             );
-            assert!(!mask.is_null());
+            let mask = mask.unwrap();
             assert_eq!(
-                std::slice::from_raw_parts(mask.cast::<u8>(), 9),
+                mask.as_slice(),
                 &[0, 0, 0, 0, 0, 0, 0, 0x80, 1]
             );
-            free(mask.cast());
 
-            assert!(fuzzy_match(
+            assert!(fuzzy_match_owned(
                 c"q".as_ptr(),
                 text.as_ptr().cast(),
                 65,
                 std::ptr::null_mut()
             )
-            .is_null());
+            .is_none());
         }
     }
 }
