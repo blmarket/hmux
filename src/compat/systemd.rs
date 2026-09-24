@@ -26,8 +26,51 @@ pub use crate::src::shared::socket::{
     SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
 };
 use crate::src::tmux::socket_path;
-use crate::src::xmalloc::{xasprintf, xstrdup};
+use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
+
+struct ForeignCString(*mut ::core::ffi::c_char);
+
+impl ForeignCString {
+    fn as_ptr(&self) -> *const ::core::ffi::c_char {
+        self.0
+    }
+}
+
+impl Drop for ForeignCString {
+    fn drop(&mut self) {
+        unsafe { free(self.0 as *mut ::core::ffi::c_void) }
+    }
+}
+
+fn systemd_message(
+    format: *const ::core::ffi::c_char,
+    reason: Option<*const ::core::ffi::c_char>,
+) -> CString {
+    let template = unsafe { CStr::from_ptr(format) }.to_bytes();
+    let mut message = Vec::with_capacity(template.len());
+    if let Some(reason) = reason {
+        let marker = template
+            .windows(2)
+            .position(|part| part == b"%s")
+            .expect("systemd diagnostic must have a %s marker");
+        message.extend_from_slice(&template[..marker]);
+        message.extend_from_slice(unsafe { CStr::from_ptr(reason) }.to_bytes());
+        message.extend_from_slice(&template[marker + 2..]);
+    } else {
+        message.extend_from_slice(template);
+    }
+    CString::new(message).expect("systemd diagnostics contain no NUL")
+}
+
+macro_rules! set_systemd_error {
+    ($destination:ident, $format:expr, $reason:expr $(,)?) => {
+        $destination = Some(systemd_message($format, Some($reason)))
+    };
+    ($destination:ident, $format:expr $(,)?) => {
+        $destination = Some(systemd_message($format, None))
+    };
+}
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -119,18 +162,15 @@ unsafe extern "C" fn job_removed_handler(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn systemd_move_to_new_cgroup(
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+unsafe fn systemd_move_to_new_cgroup_owned() -> (::core::ffi::c_int, Option<CString>) {
     let mut current_block: u64;
     let mut error: sd_bus_error = SD_BUS_ERROR_NULL;
     let mut m: *mut sd_bus_message = ::core::ptr::null_mut::<sd_bus_message>();
     let mut reply: *mut sd_bus_message = ::core::ptr::null_mut::<sd_bus_message>();
     let mut bus: *mut sd_bus = ::core::ptr::null_mut::<sd_bus>();
     let mut slot: *mut sd_bus_slot = ::core::ptr::null_mut::<sd_bus_slot>();
+    let mut cause: Option<CString> = None;
     let mut slice: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut unit: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut uuid: sd_id128_t = sd_id128 { bytes: [0; 16] };
     let mut r: ::core::ffi::c_int = 0;
     let mut elapsed_usec: uint64_t = 0;
@@ -151,7 +191,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
     gettimeofday(&raw mut start, NULL);
     r = sd_bus_default_user(&raw mut bus);
     if r < 0 as ::core::ffi::c_int {
-        xasprintf(
+        set_systemd_error!(
             cause,
             b"failed to connect to session bus: %s\0" as *const u8 as *const ::core::ffi::c_char,
             strerror(-r),
@@ -175,7 +215,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
             &raw mut watch as *mut ::core::ffi::c_void,
         );
         if r < 0 as ::core::ffi::c_int {
-            xasprintf(
+            set_systemd_error!(
                 cause,
                 b"failed to create match signal: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 strerror(-r),
@@ -190,7 +230,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                 b"StartTransientUnit\0" as *const u8 as *const ::core::ffi::c_char,
             );
             if r < 0 as ::core::ffi::c_int {
-                xasprintf(
+                set_systemd_error!(
                     cause,
                     b"failed to create bus message: %s\0" as *const u8
                         as *const ::core::ffi::c_char,
@@ -199,7 +239,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
             } else {
                 r = sd_id128_randomize(&raw mut uuid);
                 if r < 0 as ::core::ffi::c_int {
-                    xasprintf(
+                    set_systemd_error!(
                         cause,
                         b"failed to generate uuid: %s\0" as *const u8 as *const ::core::ffi::c_char,
                         strerror(-r),
@@ -223,7 +263,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                         name.as_ptr(),
                     );
                     if r < 0 as ::core::ffi::c_int {
-                        xasprintf(
+                        set_systemd_error!(
                             cause,
                             b"failed to append to bus message: %s\0" as *const u8
                                 as *const ::core::ffi::c_char,
@@ -236,7 +276,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                             b"fail\0" as *const u8 as *const ::core::ffi::c_char,
                         );
                         if r < 0 as ::core::ffi::c_int {
-                            xasprintf(
+                            set_systemd_error!(
                                 cause,
                                 b"failed to append to bus message: %s\0" as *const u8
                                     as *const ::core::ffi::c_char,
@@ -249,7 +289,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                 b"(sv)\0" as *const u8 as *const ::core::ffi::c_char,
                             );
                             if r < 0 as ::core::ffi::c_int {
-                                xasprintf(
+                                set_systemd_error!(
                                     cause,
                                     b"failed to start properties array: %s\0" as *const u8
                                         as *const ::core::ffi::c_char,
@@ -271,7 +311,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                     desc.as_ptr(),
                                 );
                                 if r < 0 as ::core::ffi::c_int {
-                                    xasprintf(
+                                    set_systemd_error!(
                                         cause,
                                         b"failed to append to properties: %s\0" as *const u8
                                             as *const ::core::ffi::c_char,
@@ -286,7 +326,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                         1 as ::core::ffi::c_int,
                                     );
                                     if r < 0 as ::core::ffi::c_int {
-                                        xasprintf(
+                                        set_systemd_error!(
                                             cause,
                                             b"failed to append to properties: %s\0" as *const u8
                                                 as *const ::core::ffi::c_char,
@@ -294,22 +334,26 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                         );
                                     } else {
                                         r = sd_pid_get_user_slice(parent_pid, &raw mut slice);
-                                        if r < 0 as ::core::ffi::c_int {
-                                            slice = xstrdup(
-                                                b"app-tmux.slice\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
-                                            );
-                                        }
+                                        let slice_owner = ForeignCString(slice);
+                                        let fallback_slice = if r < 0 as ::core::ffi::c_int {
+                                            Some(CString::new("app-tmux.slice").unwrap())
+                                        } else {
+                                            None
+                                        };
+                                        let slice_ptr = fallback_slice
+                                            .as_ref()
+                                            .map_or(slice_owner.as_ptr(), |value| value.as_ptr());
                                         r = sd_bus_message_append(
                                             m,
                                             b"(sv)\0" as *const u8 as *const ::core::ffi::c_char,
                                             b"Slice\0" as *const u8 as *const ::core::ffi::c_char,
                                             b"s\0" as *const u8 as *const ::core::ffi::c_char,
-                                            slice,
+                                            slice_ptr,
                                         );
-                                        free(slice as *mut ::core::ffi::c_void);
+                                        drop(slice_owner);
+                                        drop(fallback_slice);
                                         if r < 0 as ::core::ffi::c_int {
-                                            xasprintf(
+                                            set_systemd_error!(
                                                 cause,
                                                 b"failed to append to properties: %s\0" as *const u8
                                                     as *const ::core::ffi::c_char,
@@ -327,7 +371,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                 pid,
                                             );
                                             if r < 0 as ::core::ffi::c_int {
-                                                xasprintf(
+                                                set_systemd_error!(
                                                     cause,
                                                     b"failed to append to properties: %s\0"
                                                         as *const u8
@@ -347,7 +391,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                         as *const ::core::ffi::c_char,
                                                 );
                                                 if r < 0 as ::core::ffi::c_int {
-                                                    xasprintf(
+                                                    set_systemd_error!(
                                                         cause,
                                                         b"failed to append to properties: %s\0"
                                                             as *const u8
@@ -355,15 +399,22 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                         strerror(-r),
                                                     );
                                                 } else {
-                                                    if sd_pid_get_user_unit(
+                                                    let mut unit =
+                                                        ::core::ptr::null_mut::<::core::ffi::c_char>();
+                                                    let mut have_unit = sd_pid_get_user_unit(
                                                         parent_pid,
                                                         &raw mut unit,
-                                                    ) == 0 as ::core::ffi::c_int
-                                                        || sd_pid_get_unit(
+                                                    ) == 0 as ::core::ffi::c_int;
+                                                    if !have_unit {
+                                                        free(unit as *mut ::core::ffi::c_void);
+                                                        unit = ::core::ptr::null_mut();
+                                                        have_unit = sd_pid_get_unit(
                                                             parent_pid,
                                                             &raw mut unit,
-                                                        ) == 0 as ::core::ffi::c_int
-                                                    {
+                                                        ) == 0 as ::core::ffi::c_int;
+                                                    }
+                                                    let unit_owner = ForeignCString(unit);
+                                                    if have_unit {
                                                         r = sd_bus_message_append(
                                                             m,
                                                             b"(sv)\0" as *const u8
@@ -373,7 +424,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                             b"as\0" as *const u8
                                                                 as *const ::core::ffi::c_char,
                                                             1 as ::core::ffi::c_int,
-                                                            unit,
+                                                            unit_owner.as_ptr(),
                                                         );
                                                         if r >= 0 as ::core::ffi::c_int {
                                                             r = sd_bus_message_append(
@@ -385,12 +436,12 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                                 b"as\0" as *const u8
                                                                     as *const ::core::ffi::c_char,
                                                                 1 as ::core::ffi::c_int,
-                                                                unit,
+                                                                unit_owner.as_ptr(),
                                                             );
                                                         }
-                                                        free(unit as *mut ::core::ffi::c_void);
+                                                        drop(unit_owner);
                                                         if r < 0 as ::core::ffi::c_int {
-                                                            xasprintf(
+                                                            set_systemd_error!(
                                                                 cause,
                                                                 b"failed to append to properties: %s\0" as *const u8
                                                                     as *const ::core::ffi::c_char,
@@ -408,7 +459,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                         _ => {
                                                             r = sd_bus_message_close_container(m);
                                                             if r < 0 as ::core::ffi::c_int {
-                                                                xasprintf(
+                                                                set_systemd_error!(
                                                                     cause,
                                                                     b"failed to end properties array: %s\0" as *const u8
                                                                         as *const ::core::ffi::c_char,
@@ -421,7 +472,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                                     0 as ::core::ffi::c_int,
                                                                 );
                                                                 if r < 0 as ::core::ffi::c_int {
-                                                                    xasprintf(
+                                                                    set_systemd_error!(
                                                                         cause,
                                                                         b"failed to append to bus message: %s\0" as *const u8
                                                                             as *const ::core::ffi::c_char,
@@ -438,14 +489,14 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                                     if r < 0 as ::core::ffi::c_int {
                                                                         if !error.message.is_null()
                                                                         {
-                                                                            xasprintf(
+                                                                            set_systemd_error!(
                                                                                 cause,
                                                                                 b"StartTransientUnit call failed: %s\0" as *const u8
                                                                                     as *const ::core::ffi::c_char,
                                                                                 error.message,
                                                                             );
                                                                         } else {
-                                                                            xasprintf(
+                                                                            set_systemd_error!(
                                                                                 cause,
                                                                                 b"StartTransientUnit call failed: %s\0" as *const u8
                                                                                     as *const ::core::ffi::c_char,
@@ -461,7 +512,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                                         if r < 0
                                                                             as ::core::ffi::c_int
                                                                         {
-                                                                            xasprintf(
+                                                                            set_systemd_error!(
                                                                                 cause,
                                                                                 b"failed to parse method reply: %s\0" as *const u8
                                                                                     as *const ::core::ffi::c_char,
@@ -474,7 +525,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                                                     ::core::ptr::null_mut::<*mut sd_bus_message>(),
                                                                                 );
                                                                                 if r < 0 as ::core::ffi::c_int {
-                                                                                    xasprintf(
+                                                                                    set_systemd_error!(
                                                                                         cause,
                                                                                         b"failed waiting for cgroup allocation: %s\0" as *const u8
                                                                                             as *const ::core::ffi::c_char,
@@ -490,7 +541,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                                                         - start.tv_sec as __suseconds_t) * 1000000 as __suseconds_t
                                                                                         + now.tv_usec - start.tv_usec) as uint64_t;
                                                                                     if elapsed_usec >= 1000000 as uint64_t {
-                                                                                        xasprintf(
+                                                                                        set_systemd_error!(
                                                                                             cause,
                                                                                             b"timeout waiting for cgroup allocation\0" as *const u8
                                                                                                 as *const ::core::ffi::c_char,
@@ -504,7 +555,7 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
                                                                                         if !(r < 0 as ::core::ffi::c_int) {
                                                                                             continue;
                                                                                         }
-                                                                                        xasprintf(
+                                                                                        set_systemd_error!(
                                                                                             cause,
                                                                                             b"failed waiting for cgroup allocation: %s\0" as *const u8
                                                                                                 as *const ::core::ffi::c_char,
@@ -537,5 +588,16 @@ pub unsafe extern "C" fn systemd_move_to_new_cgroup(
     sd_bus_message_unref(reply);
     sd_bus_slot_unref(slot);
     sd_bus_unref(bus);
-    return r;
+    (r, cause)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn systemd_move_to_new_cgroup(
+    cause: *mut *mut ::core::ffi::c_char,
+) -> ::core::ffi::c_int {
+    let (status, error) = systemd_move_to_new_cgroup_owned();
+    if let Some(error) = error {
+        *cause = xstrdup(error.as_ptr());
+    }
+    status
 }
