@@ -528,7 +528,7 @@ pub unsafe extern "C" fn environ_update(
             envent1 = environ_next(envent);
             1 as ::core::ffi::c_int != 0
         } {
-            if fnmatch((*ov).string, ((*envent).name).as_ptr().cast_mut(), 0 as ::core::ffi::c_int)
+            if fnmatch((*ov).string_ptr(), ((*envent).name).as_ptr().cast_mut(), 0 as ::core::ffi::c_int)
                 == 0 as ::core::ffi::c_int
             {
                 environ_set(
@@ -543,7 +543,7 @@ pub unsafe extern "C" fn environ_update(
             envent = envent1;
         }
         if found == 0 {
-            environ_clear(dst, (*ov).string);
+            environ_clear(dst, (*ov).string_ptr());
         }
         a = options_array_next(a);
     }

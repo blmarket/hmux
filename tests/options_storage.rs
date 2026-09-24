@@ -33,7 +33,7 @@ fn ordered_names_survive_updates_and_removal() {
         for name in &names {
             assert!(!entry.is_null());
             assert_eq!(CStr::from_ptr(options_name(entry)).to_bytes(), name);
-            assert_eq!(CStr::from_ptr((*entry).value.string), c"updated");
+            assert_eq!(CStr::from_ptr((*entry).value.string_ptr()), c"updated");
             let next = options_next(entry);
             assert_eq!(options_remove_or_default(entry, null(), null_mut()), 0);
             entry = next;
@@ -94,26 +94,26 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
         let oo = options_create(null_mut());
         let entry = options_set_string(oo, c"@bytes".as_ptr(), 0, c"%s".as_ptr(), c"\xff".as_ptr());
         let name = options_name(entry);
-        let previous = (*entry).value.string;
+        let previous = (*entry).value.string_ptr();
         assert_eq!(
             options_set_string(oo, name, 1, c"%s".as_ptr(), previous),
             entry
         );
         assert_eq!(
-            CStr::from_ptr((*entry).value.string).to_bytes(),
+            CStr::from_ptr((*entry).value.string_ptr()).to_bytes(),
             b"\xff\xff"
         );
-        let previous = (*entry).value.string;
+        let previous = (*entry).value.string_ptr();
         assert_eq!(
             options_set_string(oo, name, 0, c"%s".as_ptr(), previous),
             entry
         );
         assert_eq!(
-            CStr::from_ptr((*entry).value.string).to_bytes(),
+            CStr::from_ptr((*entry).value.string_ptr()).to_bytes(),
             b"\xff\xff"
         );
         options_set_string(oo, name, 0, c"".as_ptr());
-        assert_eq!(CStr::from_ptr((*entry).value.string), c"");
+        assert_eq!(CStr::from_ptr((*entry).value.string_ptr()), c"");
 
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
@@ -122,7 +122,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .unwrap();
         let default = options_default(oo, definition);
         assert_eq!(
-            CStr::from_ptr((*default).value.string),
+            CStr::from_ptr((*default).value.string_ptr()),
             CStr::from_ptr(definition.default_str)
         );
         assert_eq!(options_get_only(oo, definition.name), default);
@@ -132,7 +132,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"status-right")
             .unwrap();
         let empty = options_empty(oo, empty_definition);
-        assert!((*empty).value.string.is_null());
+        assert!((*empty).value.string_ptr().is_null());
         options_set_string(
             oo,
             empty_definition.name,
@@ -140,7 +140,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             c"%s".as_ptr(),
             c"tail".as_ptr(),
         );
-        assert_eq!(CStr::from_ptr((*empty).value.string), c"(null)tail");
+        assert_eq!(CStr::from_ptr((*empty).value.string_ptr()), c"(null)tail");
         options_free(oo);
     }
 }
@@ -198,7 +198,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         );
         assert!(options_array_getv(array, c"%s".as_ptr(), c"".as_ptr()).is_null());
         assert_eq!(
-            CStr::from_ptr((*options_array_item_value(two)).string),
+            CStr::from_ptr((*options_array_item_value(two)).string_ptr()),
             c"updated"
         );
         for (key, expected) in [
@@ -287,7 +287,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             let key = CString::new(index.to_string()).unwrap();
             let value = options_array_get(strings, key.as_ptr());
             assert!(!value.is_null());
-            assert_eq!(CStr::from_ptr((*value).string).to_bytes(), *expected);
+            assert_eq!(CStr::from_ptr((*value).string_ptr()).to_bytes(), *expected);
         }
         assert!(options_array_get(strings, c"3".as_ptr()).is_null());
 

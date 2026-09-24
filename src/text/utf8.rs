@@ -1219,7 +1219,7 @@ pub unsafe extern "C" fn utf8_update_width_cache() {
     );
     a = options_array_first(o);
     while !a.is_null() {
-        utf8_add_to_width_cache((*options_array_item_value(a)).string);
+        utf8_add_to_width_cache((*options_array_item_value(a)).string_ptr());
         a = options_array_next(a);
     }
 }

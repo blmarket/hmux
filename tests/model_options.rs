@@ -1074,62 +1074,62 @@ fn original_copies_match() {
     record!(
         "src/cmd.rs::options_value",
         hmux2::src::cmd::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/cmd_set_option.rs::options_value",
         hmux2::src::cmd_set_option::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/colour.rs::options_value",
         hmux2::src::colour::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/environ.rs::options_value",
         hmux2::src::environ::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/hooks.rs::options_value",
         hmux2::src::hooks::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/options.rs::options_value",
         hmux2::src::options::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/prompt.rs::options_value",
         hmux2::src::prompt::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/status.rs::options_value",
         hmux2::src::status::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/tty_keys.rs::options_value",
         hmux2::src::tty_keys::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/tty_term.rs::options_value",
         hmux2::src::tty_term::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/utf8.rs::options_value",
         hmux2::src::utf8::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     record!(
         "src/window_customize.rs::options_value",
         hmux2::src::window_customize::options_value,
-        [string, number, style, array, cmdlist]
+        []
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-options.txt"));

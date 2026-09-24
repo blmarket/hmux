@@ -466,7 +466,7 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
             } else {
                 sle = (&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)
                     as *mut style_line_entry;
-                let expanded = format_expand_time_cstring(ft, (*ov).string);
+                let expanded = format_expand_time_cstring(ft, (*ov).string_ptr());
                 if force != 0 || (*c).status_expanded[i as usize].as_ref() != Some(&expanded) {
                     changed = 1 as ::core::ffi::c_int;
                     n = 0 as u_int;

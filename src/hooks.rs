@@ -301,7 +301,7 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
         a = options_array_first(o);
         while !a.is_null() {
             if (*hd).expand != 0 {
-                value = (*options_array_item_value(a)).string;
+                value = (*options_array_item_value(a)).string_ptr();
                 pr = hooks_parse(hd, &raw mut fs, value);
                 match pr.status as ::core::ffi::c_uint {
                     0 => {
@@ -319,7 +319,7 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
                     _ => {}
                 }
             } else {
-                cmdlist = (*options_array_item_value(a)).cmdlist;
+                cmdlist = (*options_array_item_value(a)).cmdlist();
                 item = hooks_insert_one(item, hd, cmdlist, state);
             }
             a = options_array_next(a);

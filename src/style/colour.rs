@@ -3935,7 +3935,7 @@ pub unsafe extern "C" fn colour_palette_from_option(
     while i < 256 as u_int {
         ov = options_array_getv(o, b"%u\0" as *const u8 as *const ::core::ffi::c_char, i);
         if !ov.is_null() {
-            c = (*ov).number as ::core::ffi::c_int;
+            c = (*ov).number() as ::core::ffi::c_int;
             *(*p).default_palette.offset(i as isize) = c;
         }
         i = i.wrapping_add(1);

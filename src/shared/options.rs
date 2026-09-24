@@ -1,6 +1,7 @@
 //! Authoritative option-table value domains.
 
 use std::collections::BTreeMap;
+use std::ffi::CString;
 
 use super::abi::{time_t, u_int};
 use super::command::cmd_list;
@@ -72,11 +73,11 @@ pub struct options {
     pub parent: *mut options,
 }
 
-/// Stored in a private owner by options_array_new; key and caller pointers
-/// expire when the item is removed.
+/// Box-owned by options_array_new; returned key and value pointers expire when
+/// the item is removed.
 #[repr(C)]
 pub struct options_array_item {
-    pub key: *mut ::core::ffi::c_char,
+    pub key: CString,
     pub value: options_value,
     pub owner: *mut options_entry,
 }
@@ -84,7 +85,7 @@ pub struct options_array_item {
 #[repr(C)]
 pub struct options_entry {
     pub owner: *mut options,
-    pub name: *const ::core::ffi::c_char,
+    pub name: CString,
     pub tableentry: *const options_table_entry,
     pub value: options_value,
     pub cached: ::core::ffi::c_int,
@@ -100,14 +101,57 @@ pub struct options_array {
     pub storage: *mut options_array_storage,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union options_value {
-    pub string: *mut ::core::ffi::c_char,
-    pub number: ::core::ffi::c_longlong,
-    pub style: style,
-    pub array: options_array,
-    pub cmdlist: *mut cmd_list,
+pub struct OptionCommand(pub *mut cmd_list);
+
+impl Drop for OptionCommand {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { crate::src::cmd::cmd_list_free(self.0) };
+        }
+    }
+}
+
+/// The stored value owns its payload. Accessors expose borrowed pointers to
+/// callers only while the containing option record remains alive.
+pub enum options_value {
+    Empty,
+    String(CString),
+    Number(::core::ffi::c_longlong),
+    Style(style),
+    Array(Box<options_array_storage>),
+    Command(OptionCommand),
+}
+
+impl options_value {
+    pub fn string_ptr(&self) -> *mut ::core::ffi::c_char {
+        match self {
+            Self::String(value) => value.as_ptr().cast_mut(),
+            Self::Empty => ::core::ptr::null_mut(),
+            _ => panic!("option value is not a string"),
+        }
+    }
+
+    pub fn number(&self) -> ::core::ffi::c_longlong {
+        match self {
+            Self::Number(value) => *value,
+            _ => panic!("option value is not a number"),
+        }
+    }
+
+    pub fn cmdlist(&self) -> *mut cmd_list {
+        match self {
+            Self::Command(value) => value.0,
+            Self::Empty => ::core::ptr::null_mut(),
+            _ => panic!("option value is not a command"),
+        }
+    }
+
+    pub fn array_storage(&mut self) -> *mut options_array_storage {
+        match self {
+            Self::Array(value) => &mut **value,
+            _ => panic!("option value is not an array"),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

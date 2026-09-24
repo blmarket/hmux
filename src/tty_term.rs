@@ -1268,7 +1268,7 @@ pub unsafe extern "C" fn tty_term_apply_overrides(mut term: *mut tty_term) {
     a = options_array_first(o);
     while !a.is_null() {
         ov = options_array_item_value(a);
-        s = (*ov).string;
+        s = (*ov).string_ptr();
         offset = 0 as size_t;
         first = tty_term_override_next(s, &raw mut offset);
         if !first.is_null()
@@ -1477,7 +1477,7 @@ pub unsafe fn tty_term_create(
     a = options_array_first(o);
     while !a.is_null() {
         ov = options_array_item_value(a);
-        s = (*ov).string;
+        s = (*ov).string_ptr();
         offset = 0 as size_t;
         first = tty_term_override_next(s, &raw mut offset);
         if !first.is_null()

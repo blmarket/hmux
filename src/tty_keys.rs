@@ -1437,7 +1437,7 @@ pub unsafe extern "C" fn tty_keys_build(mut tty: *mut tty) {
             if !ov.is_null() {
                 tty_keys_add(
                     tty,
-                    (*ov).string,
+                    (*ov).string_ptr(),
                     (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(i as ::core::ffi::c_ulong)
                         as key_code,
                 );

@@ -377,10 +377,10 @@ pub unsafe fn cmd_get_alias(name: *const ::core::ffi::c_char) -> Option<CString>
     a = options_array_first(o);
     while !a.is_null() {
         ov = options_array_item_value(a);
-        equals = strchr((*ov).string, '=' as i32);
+        equals = strchr((*ov).string_ptr(), '=' as i32);
         if !equals.is_null() {
-            n = equals.offset_from((*ov).string) as ::core::ffi::c_long as size_t;
-            if n == wanted && strncmp(name, (*ov).string, n) == 0 as ::core::ffi::c_int {
+            n = equals.offset_from((*ov).string_ptr()) as ::core::ffi::c_long as size_t;
+            if n == wanted && strncmp(name, (*ov).string_ptr(), n) == 0 as ::core::ffi::c_int {
                 return Some(
                     CStr::from_ptr(equals.offset(1 as ::core::ffi::c_int as isize)).to_owned(),
                 );

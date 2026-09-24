@@ -10600,7 +10600,7 @@ unsafe fn prompt_complete_commands(s: *const ::core::ffi::c_char) -> Vec<CString
     if !o.is_null() {
         a = options_array_first(o);
         while !a.is_null() {
-            value = (*options_array_item_value(a)).string;
+            value = (*options_array_item_value(a)).string_ptr();
             cp = strchr(value, '=' as i32);
             if !cp.is_null() {
                 valuelen = cp.offset_from(value) as ::core::ffi::c_long as size_t;

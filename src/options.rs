@@ -128,7 +128,7 @@ pub use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
 pub use crate::src::shared::options::{
     options, options_array, options_array_item, options_array_storage, options_entry,
-    options_storage, options_table_entry, options_value, OptionsArrayKey,
+    options_storage, options_table_entry, options_value, OptionCommand, OptionsArrayKey,
 };
 pub use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_NONE,
@@ -165,46 +165,14 @@ pub use crate::src::shared::window::{
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
-// The first field keeps pointers returned by the options API ABI-compatible.
-// Its name and scalar string pointers borrow the adjacent owners until removal
-// or replacement, respectively.
-#[repr(C)]
-struct OwnedOptionEntry {
-    record: options_entry,
-    name: CString,
-    string: Option<CString>,
-}
-
-const _: () = assert!(std::mem::offset_of!(OwnedOptionEntry, record) == 0);
-
-// The public item key and optional string value borrow these CStrings until
-// removal or value replacement.
-#[repr(C)]
-struct OwnedOptionArrayItem {
-    record: options_array_item,
-    key: CString,
-    string: Option<CString>,
-}
-
-const _: () = assert!(std::mem::offset_of!(OwnedOptionArrayItem, record) == 0);
-
-unsafe fn owned_option(o: *mut options_entry) -> *mut OwnedOptionEntry {
-    o.cast()
-}
-
 unsafe fn set_scalar_string(o: *mut options_entry, value: CString) {
-    let owned = &mut *owned_option(o);
     // Formatting has completed, so callers may have supplied the old value
     // as a %s argument. Replace its owner before publishing the new pointer.
-    owned.string = Some(value);
-    owned.record.value.string = owned.string.as_ref().unwrap().as_ptr().cast_mut();
+    (*o).value = options_value::String(value);
 }
 
 unsafe fn set_array_string(a: *mut options_array_item, value: CString) {
-    let owned = &mut *a.cast::<OwnedOptionArrayItem>();
-    owned.record.value.string = ::core::ptr::null_mut();
-    owned.string = Some(value);
-    owned.record.value.string = owned.string.as_ref().unwrap().as_ptr().cast_mut();
+    (*a).value = options_value::String(value);
 }
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
@@ -261,14 +229,8 @@ unsafe extern "C" fn options_parent_table_entry(
     }
     return (*o).tableentry;
 }
-unsafe extern "C" fn options_value_free(mut o: *mut options_entry, mut ov: *mut options_value) {
-    if !(*o).tableentry.is_null()
-        && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
-            == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
-        && !(*ov).cmdlist.is_null()
-    {
-        cmd_list_free((*ov).cmdlist);
-    }
+unsafe extern "C" fn options_value_free(_o: *mut options_entry, ov: *mut options_value) {
+    *ov = options_value::Empty;
 }
 unsafe fn options_value_to_cstring(
     o: *mut options_entry,
@@ -279,7 +241,7 @@ unsafe fn options_value_to_cstring(
         && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return cmd_list_print_cstring((*ov).cmdlist, 0);
+        return cmd_list_print_cstring((*ov).cmdlist(), 0);
     }
     if !(*o).tableentry.is_null()
         && ((*(*o).tableentry).type_0 as ::core::ffi::c_uint
@@ -294,14 +256,14 @@ unsafe fn options_value_to_cstring(
                 == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint)
     {
         return match (*(*o).tableentry).type_0 as ::core::ffi::c_uint {
-            1 => CString::new((*ov).number.to_string()).expect("decimal number has no NUL"),
-            2 => key_string_format((*ov).number as key_code, false),
-            3 => colour_format((*ov).number as ::core::ffi::c_int),
+            1 => CString::new((*ov).number().to_string()).expect("decimal number has no NUL"),
+            2 => key_string_format((*ov).number() as key_code, false),
+            3 => colour_format((*ov).number() as ::core::ffi::c_int),
             4 => {
                 if numeric != 0 {
-                    CString::new((*ov).number.to_string()).expect("decimal number has no NUL")
+                    CString::new((*ov).number().to_string()).expect("decimal number has no NUL")
                 } else {
-                    CStr::from_ptr(if (*ov).number != 0 {
+                    CStr::from_ptr(if (*ov).number() != 0 {
                         b"on\0" as *const u8 as *const ::core::ffi::c_char
                     } else {
                         b"off\0" as *const u8 as *const ::core::ffi::c_char
@@ -310,7 +272,7 @@ unsafe fn options_value_to_cstring(
                 }
             }
             5 => {
-                CStr::from_ptr(*(*(*o).tableentry).choices.offset((*ov).number as isize)).to_owned()
+                CStr::from_ptr(*(*(*o).tableentry).choices.offset((*ov).number() as isize)).to_owned()
             }
             _ => {
                 fatalx(b"not a number option type\0" as *const u8 as *const ::core::ffi::c_char);
@@ -321,7 +283,7 @@ unsafe fn options_value_to_cstring(
         || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return CStr::from_ptr((*ov).string).to_owned();
+        return CStr::from_ptr((*ov).string_ptr()).to_owned();
     }
     c"".to_owned()
 }
@@ -368,7 +330,7 @@ pub unsafe extern "C" fn options_first(mut oo: *mut options) -> *mut options_ent
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_next(mut o: *mut options_entry) -> *mut options_entry {
-    let key = CStr::from_ptr((*o).name).to_bytes();
+    let key = (*o).name.as_bytes();
     (*(*(*o).owner).tree)
         .entries
         .range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
@@ -413,7 +375,7 @@ pub unsafe extern "C" fn options_empty(
     o = options_add(oo, (*oe).name);
     (*o).tableentry = oe;
     if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        (*o).value.array.storage = Box::into_raw(Box::new(options_array_storage::default()));
+        (*o).value = options_value::Array(Box::new(options_array_storage::default()));
     }
     return o;
 }
@@ -469,13 +431,13 @@ pub unsafe extern "C" fn options_default(
             match pr.status as ::core::ffi::c_uint {
                 0 => {}
                 1 => {
-                    (*ov).cmdlist = pr.cmdlist;
+                    (*ov) = options_value::Command(OptionCommand(pr.cmdlist));
                 }
                 _ => {}
             }
         }
         _ => {
-            (*ov).number = (*oe).default_num;
+            (*ov) = options_value::Number((*oe).default_num);
         }
     }
     return o;
@@ -512,48 +474,42 @@ unsafe extern "C" fn options_add(
     if !o.is_null() {
         options_remove(o);
     }
-    let mut owned = Box::new(OwnedOptionEntry {
-        record: ::core::mem::zeroed(),
+    let owned = Box::new(options_entry {
+        owner: oo,
         name,
-        string: None,
+        tableentry: ::core::ptr::null(),
+        value: options_value::Empty,
+        cached: 0,
+        style: ::core::mem::zeroed(),
+        monitor_data: ::core::ptr::null_mut(),
+        fire_count: 0,
+        fire_time: 0,
     });
-    owned.record.owner = oo;
-    owned.record.name = owned.name.as_ptr();
-    o = &raw mut owned.record;
-    let _ = Box::into_raw(owned);
+    o = Box::into_raw(owned);
     (*(*oo).tree)
         .entries
-        .insert(CStr::from_ptr((*o).name).to_bytes().to_vec(), o);
+        .insert((*o).name.as_bytes().to_vec(), o);
     return o;
 }
 unsafe extern "C" fn options_remove(mut o: *mut options_entry) {
     let mut oo: *mut options = (*o).owner;
     if !(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         options_array_clear(o);
-        drop(Box::from_raw((*o).value.array.storage));
-    } else if (*o).tableentry.is_null()
-        || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
-            == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        // Match the old string-before-monitor cleanup order.
-        drop((*owned_option(o)).string.take());
-    } else if !(*o).tableentry.is_null()
-        && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
-            == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        options_value_free(o, &raw mut (*o).value);
     }
+    // Release the value before the monitor, including array storage after its
+    // items have been cleared.
+    options_value_free(o, &raw mut (*o).value);
     if !(*o).monitor_data.is_null() {
         hooks_monitor_free((*o).monitor_data);
     }
     (*(*oo).tree)
         .entries
-        .remove(CStr::from_ptr((*o).name).to_bytes());
-    drop(Box::from_raw(owned_option(o)));
+        .remove((*o).name.as_bytes());
+    drop(Box::from_raw(o));
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_name(mut o: *mut options_entry) -> *const ::core::ffi::c_char {
-    return (*o).name;
+    return (*o).name.as_ptr();
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_owner(mut o: *mut options_entry) -> *mut options {
@@ -595,7 +551,7 @@ unsafe extern "C" fn options_array_item(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
-    (*(*o).value.array.storage)
+    (*(*o).value.array_storage())
         .entries
         .get(&options_array_index(key))
         .copied()
@@ -605,25 +561,23 @@ unsafe extern "C" fn options_array_new(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
-    let mut owner = Box::new(OwnedOptionArrayItem {
-        record: ::core::mem::zeroed(),
+    let owner = Box::new(options_array_item {
         key: CStr::from_ptr(key).to_owned(),
-        string: None,
+        value: options_value::Empty,
+        owner: o,
     });
-    owner.record.key = owner.key.as_ptr().cast_mut();
-    owner.record.owner = o;
-    let a = Box::into_raw(owner).cast::<options_array_item>();
-    (*(*o).value.array.storage)
+    let a = Box::into_raw(owner);
+    (*(*o).value.array_storage())
         .entries
         .insert(options_array_index(key), a);
     return a;
 }
 unsafe extern "C" fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
     options_value_free(o, &raw mut (*a).value);
-    (*(*o).value.array.storage)
+    (*(*o).value.array_storage())
         .entries
-        .remove(&options_array_index((*a).key));
-    drop(Box::from_raw(a.cast::<OwnedOptionArrayItem>()));
+        .remove(&options_array_index((*a).key.as_ptr()));
+    drop(Box::from_raw(a));
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_array_clear(mut o: *mut options_entry) {
@@ -722,7 +676,7 @@ pub unsafe fn options_array_set(
         } else {
             options_value_free(o, &raw mut (*a).value);
         }
-        (*a).value.cmdlist = pr.cmdlist;
+        (*a).value = options_value::Command(OptionCommand(pr.cmdlist));
         return 0 as ::core::ffi::c_int;
     }
     if (*o).tableentry.is_null()
@@ -731,7 +685,7 @@ pub unsafe fn options_array_set(
     {
         a = options_array_item(o, new_key.as_ptr());
         let owned_value = if !a.is_null() && append != 0 {
-            let previous = CStr::from_ptr((*a).value.string).to_bytes();
+            let previous = CStr::from_ptr((*a).value.string_ptr()).to_bytes();
             let suffix = CStr::from_ptr(value).to_bytes();
             let mut bytes = Vec::with_capacity(previous.len() + suffix.len());
             bytes.extend_from_slice(previous);
@@ -764,7 +718,7 @@ pub unsafe fn options_array_set(
         } else {
             options_value_free(o, &raw mut (*a).value);
         }
-        (*a).value.number = number;
+        (*a).value = options_value::Number(number);
         return 0 as ::core::ffi::c_int;
     }
     if !cause.is_null() {
@@ -861,7 +815,7 @@ pub unsafe extern "C" fn options_array_first(mut o: *mut options_entry) -> *mut 
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return ::core::ptr::null_mut::<options_array_item>();
     }
-    (*(*o).value.array.storage)
+    (*(*o).value.array_storage())
         .entries
         .first_key_value()
         .map_or(::core::ptr::null_mut(), |(_, &item)| item)
@@ -870,8 +824,8 @@ pub unsafe extern "C" fn options_array_first(mut o: *mut options_entry) -> *mut 
 pub unsafe extern "C" fn options_array_next(
     mut a: *mut options_array_item,
 ) -> *mut options_array_item {
-    let key = options_array_index((*a).key);
-    (*(*(*a).owner).value.array.storage)
+    let key = options_array_index((*a).key.as_ptr());
+    (*(*(*a).owner).value.array_storage())
         .entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
@@ -881,7 +835,7 @@ pub unsafe extern "C" fn options_array_next(
 pub unsafe extern "C" fn options_array_item_key(
     mut a: *mut options_array_item,
 ) -> *const ::core::ffi::c_char {
-    return (*a).key;
+    return (*a).key.as_ptr();
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_array_item_value(
@@ -1050,7 +1004,7 @@ pub unsafe extern "C" fn options_get_string(
             name,
         );
     }
-    return (*o).value.string;
+    return (*o).value.string_ptr();
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_get_number(
@@ -1082,7 +1036,7 @@ pub unsafe extern "C" fn options_get_number(
             name,
         );
     }
-    return (*o).value.number;
+    return (*o).value.number();
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_get_command(
@@ -1106,7 +1060,7 @@ pub unsafe extern "C" fn options_get_command(
             name,
         );
     }
-    return (*o).value.cmdlist;
+    return (*o).value.cmdlist();
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_set_string(
@@ -1137,10 +1091,10 @@ pub unsafe extern "C" fn options_set_string(
         }
         // glibc printf renders a null %s argument as "(null)". An entry
         // created by options_empty can reach this append path with no value.
-        let previous = if (*o).value.string.is_null() {
+        let previous = if (*o).value.string_ptr().is_null() {
             b"(null)".as_slice()
         } else {
-            CStr::from_ptr((*o).value.string).to_bytes()
+            CStr::from_ptr((*o).value.string_ptr()).to_bytes()
         };
         let separator = CStr::from_ptr(separator).to_bytes();
         let mut bytes =
@@ -1210,7 +1164,7 @@ pub unsafe extern "C" fn options_set_number(
             name,
         );
     }
-    (*o).value.number = value;
+    (*o).value = options_value::Number(value);
     return o;
 }
 #[no_mangle]
@@ -1242,10 +1196,7 @@ pub unsafe extern "C" fn options_set_command(
             name,
         );
     }
-    if !(*o).value.cmdlist.is_null() {
-        cmd_list_free((*o).value.cmdlist);
-    }
-    (*o).value.cmdlist = value;
+    (*o).value = options_value::Command(OptionCommand(value));
     return o;
 }
 pub unsafe fn options_scope_from_name(
@@ -1450,7 +1401,7 @@ pub unsafe extern "C" fn options_string_to_style(
     if (*o).cached != 0 {
         return &raw mut (*o).style;
     }
-    s = (*o).value.string;
+    s = (*o).value.string_ptr();
     oe = (*o).tableentry;
     log_debug(
         b"%s: %s is '%s'\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2121,19 +2072,19 @@ mod array_string_owner_tests {
                 0
             );
 
-            let old = (*options_array_get(o, key.as_ptr())).string;
+            let old = (*options_array_get(o, key.as_ptr())).string_ptr();
             assert_eq!(
                 options_array_set(o, key.as_ptr(), old, 1, ::core::ptr::null_mut()),
                 0
             );
-            let doubled = (*options_array_get(o, key.as_ptr())).string;
+            let doubled = (*options_array_get(o, key.as_ptr())).string_ptr();
             assert_eq!(CStr::from_ptr(doubled).to_bytes(), b"a\xffa\xff");
             assert_eq!(
                 options_array_set(o, key.as_ptr(), doubled, 0, ::core::ptr::null_mut()),
                 0
             );
             assert_eq!(
-                CStr::from_ptr((*options_array_get(o, key.as_ptr())).string).to_bytes(),
+                CStr::from_ptr((*options_array_get(o, key.as_ptr())).string_ptr()).to_bytes(),
                 b"a\xffa\xff"
             );
 
