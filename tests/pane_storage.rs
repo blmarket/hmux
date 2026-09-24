@@ -6,14 +6,14 @@ fn pane_ids_duplicates_neighbors_and_removal() {
         let mut head = window_pane_tree { storage: None };
         assert!(window_pane_tree_minmax(&mut head, -1).is_null());
         let ids = [u32::MAX, 0, 42, 0x8000_0000];
-        let mut nodes: Vec<window_pane> = ids.iter().map(|_| std::mem::zeroed()).collect();
+        let mut nodes: Vec<window_pane> = ids.iter().map(|_| window_pane::empty()).collect();
         for (node, id) in nodes.iter_mut().zip(ids) {
             node.id = id;
             assert!(window_pane_tree_insert(&mut head, node).is_null());
         }
         // Entry-only traversal must survive a moved tree head.
         let mut head = Box::new(head);
-        let mut probe: window_pane = std::mem::zeroed();
+        let mut probe = window_pane::empty();
         probe.id = 42;
         let existing = &mut nodes[2] as *mut window_pane;
         assert_eq!(window_pane_tree_insert(&mut *head, &mut probe), existing);
@@ -56,7 +56,7 @@ fn global_lookup_preserves_pane_identity() {
     unsafe {
         let head = &raw mut all_window_panes;
         assert!((*head).storage.is_none());
-        let mut pane: window_pane = std::mem::zeroed();
+        let mut pane = window_pane::empty();
         pane.id = 123;
         assert!(window_pane_tree_insert(head, &mut pane).is_null());
         assert_eq!(window_pane_find_by_id(123), &mut pane as *mut _);

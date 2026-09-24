@@ -7,7 +7,7 @@ use std::ffi::CStr;
 fn screen_print_reuses_its_static_result_across_filtered_lines() {
     unsafe {
         let grid = grid_create(4, 2, 0);
-        let mut screen = std::mem::zeroed::<screen>();
+        let mut screen = screen::empty();
         screen.grid = grid;
         let mut cell = grid_default_cell;
         for (column, byte) in [(0, b'A'), (1, b'B')] {
