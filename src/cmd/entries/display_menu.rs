@@ -7,7 +7,7 @@ use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_ge
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::ffi::libc::{free, strcmp, strtol};
 use crate::src::format::{
-    format_add, format_create_from_target, format_expand, format_free, format_single_from_target,
+    format_add, format_create_from_target, format_expand_cstring, format_free, format_single_from_target,
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::log::log_debug;
@@ -214,7 +214,6 @@ unsafe extern "C" fn cmd_display_menu_get_popup_pos(
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut p: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut top: ::core::ffi::c_int = 0;
     let mut line: u_int = 0;
     let mut ox: u_int = 0;
@@ -528,9 +527,9 @@ unsafe extern "C" fn cmd_display_menu_get_popup_pos(
     {
         xp = b"#{popup_window_status_line_x}\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    p = format_expand(ft, xp);
+    let p = format_expand_cstring(ft, xp);
     n = strtol(
-        p,
+        p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
         10 as ::core::ffi::c_int,
     );
@@ -544,11 +543,10 @@ unsafe extern "C" fn cmd_display_menu_get_popup_pos(
         b"%s: -x: %s = %s = %u (-w %u)\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_display_menu_get_popup_pos\0" as *const u8 as *const ::core::ffi::c_char,
         xp,
-        p,
+        p.as_ptr(),
         *px,
         w,
     );
-    free(p as *mut ::core::ffi::c_void);
     yp = args_get(args, 'y' as i32 as u_char);
     if yp.is_null()
         || strcmp(yp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
@@ -575,9 +573,9 @@ unsafe extern "C" fn cmd_display_menu_get_popup_pos(
     {
         yp = b"#{popup_window_status_line_y}\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    p = format_expand(ft, yp);
+    let p = format_expand_cstring(ft, yp);
     n = strtol(
-        p,
+        p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
         10 as ::core::ffi::c_int,
     );
@@ -596,11 +594,10 @@ unsafe extern "C" fn cmd_display_menu_get_popup_pos(
         b"%s: -y: %s = %s = %u (-h %u)\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_display_menu_get_popup_pos\0" as *const u8 as *const ::core::ffi::c_char,
         yp,
-        p,
+        p.as_ptr(),
         *py,
         h,
     );
-    free(p as *mut ::core::ffi::c_void);
     format_free(ft);
     return 1 as ::core::ffi::c_int;
 }
@@ -623,7 +620,6 @@ unsafe extern "C" fn cmd_display_menu_get_menu_pos(
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut p: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: u_int = 0;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -949,9 +945,9 @@ unsafe extern "C" fn cmd_display_menu_get_menu_pos(
     {
         xp = b"#{popup_window_status_line_x}\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    p = format_expand(ft, xp);
+    let p = format_expand_cstring(ft, xp);
     n = strtol(
-        p,
+        p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
         10 as ::core::ffi::c_int,
     );
@@ -966,11 +962,10 @@ unsafe extern "C" fn cmd_display_menu_get_menu_pos(
         b"%s: -x: %s = %s = %u (-w %u)\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_display_menu_get_menu_pos\0" as *const u8 as *const ::core::ffi::c_char,
         xp,
-        p,
+        p.as_ptr(),
         *px,
         w,
     );
-    free(p as *mut ::core::ffi::c_void);
     yp = args_get(args, 'y' as i32 as u_char);
     if yp.is_null()
         || strcmp(yp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
@@ -997,9 +992,9 @@ unsafe extern "C" fn cmd_display_menu_get_menu_pos(
     {
         yp = b"#{popup_window_status_line_y}\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    p = format_expand(ft, yp);
+    let p = format_expand_cstring(ft, yp);
     n = strtol(
-        p,
+        p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
         10 as ::core::ffi::c_int,
     );
@@ -1019,11 +1014,10 @@ unsafe extern "C" fn cmd_display_menu_get_menu_pos(
         b"%s: -y: %s = %s = %u (-h %u)\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_display_menu_get_menu_pos\0" as *const u8 as *const ::core::ffi::c_char,
         yp,
-        p,
+        p.as_ptr(),
         *py,
         h,
     );
-    free(p as *mut ::core::ffi::c_void);
     format_free(ft);
     return 1 as ::core::ffi::c_int;
 }
