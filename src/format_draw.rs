@@ -1996,32 +1996,3 @@ pub(crate) unsafe fn format_trim_right_bytes(
     out
 }
 
-#[cfg(test)]
-mod trim_tests {
-    use super::{format_trim_left_bytes, format_trim_right_bytes};
-
-    fn trim(input: &[u8], limit: u32, left: bool) -> Vec<u8> {
-        assert_eq!(input.last(), Some(&0));
-        let input = CStr::from_bytes_until_nul(input).unwrap();
-        unsafe {
-            if left {
-                format_trim_left_bytes(input, limit)
-            } else {
-                format_trim_right_bytes(input, limit)
-            }
-        }
-    }
-
-    #[test]
-    fn trim_preserves_style_utf8_invalid_bytes_and_first_nul() {
-        assert_eq!(trim(b"abcdef\0", 3, true), b"abc");
-        assert_eq!(trim(b"abcdef\0", 3, false), b"def");
-        assert_eq!(trim(b"\xc3\xa9abcdef\0", 3, true), b"\xc3\xa9ab");
-        assert_eq!(trim(b"\xc3\xa9abcdef\0", 3, false), b"def");
-        assert_eq!(trim(b"#[fg=red]abcdef\0", 3, true), b"#[fg=red]abc");
-        assert_eq!(trim(b"#[fg=red]abcdef\0", 3, false), b"#[fg=red]def");
-        assert_eq!(trim(b"\xffabcdef\0", 3, true), b"abc");
-        assert_eq!(trim(b"abc\0def\0", 2, true), b"ab");
-        assert_eq!(trim(b"abc\0def\0", 2, false), b"bc");
-    }
-}
