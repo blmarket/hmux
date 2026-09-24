@@ -16,7 +16,6 @@ pub use crate::src::shared::json::{
     json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::xmalloc::xmalloc;
 use std::ffi::CStr;
 use std::ffi::CString;
 
