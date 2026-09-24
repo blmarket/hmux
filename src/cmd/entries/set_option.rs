@@ -311,7 +311,7 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut scope: ::core::ffi::c_int = 0;
@@ -357,9 +357,8 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ref().unwrap().as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
         } else {
             cmd_find_copy_state(&raw mut fs, target);
             if args_has(args, 'u' as i32 as u_char) != 0 {
@@ -433,7 +432,7 @@ unsafe extern "C" fn cmd_set_option_exec(
     let mut po: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut argument: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -515,9 +514,8 @@ unsafe extern "C" fn cmd_set_option_exec(
                 cmdq_error(
                     item,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
+                    cause.as_ref().unwrap().as_ptr(),
                 );
-                free(cause as *mut ::core::ffi::c_void);
                 current_block = 8517774764635037400;
             }
         } else {
@@ -583,9 +581,8 @@ unsafe extern "C" fn cmd_set_option_exec(
                                         cmdq_error(
                                             item,
                                             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                            cause,
+                                            cause.as_ref().unwrap().as_ptr(),
                                         );
-                                        free(cause as *mut ::core::ffi::c_void);
                                         current_block = 8517774764635037400;
                                         break;
                                     }
@@ -612,9 +609,8 @@ unsafe extern "C" fn cmd_set_option_exec(
                                         cmdq_error(
                                             item,
                                             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                            cause,
+                                            cause.as_ref().unwrap().as_ptr(),
                                         );
-                                        free(cause as *mut ::core::ffi::c_void);
                                         current_block = 8517774764635037400;
                                     } else {
                                         current_block = 16231175055492490595;
@@ -653,9 +649,8 @@ unsafe extern "C" fn cmd_set_option_exec(
                                         cmdq_error(
                                             item,
                                             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                            cause,
+                                            cause.as_ref().unwrap().as_ptr(),
                                         );
-                                        free(cause as *mut ::core::ffi::c_void);
                                         current_block = 8517774764635037400;
                                     } else {
                                         current_block = 16231175055492490595;
@@ -680,9 +675,8 @@ unsafe extern "C" fn cmd_set_option_exec(
                                             cmdq_error(
                                                 item,
                                                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                                cause,
+                                                cause.as_ref().unwrap().as_ptr(),
                                             );
-                                            free(cause as *mut ::core::ffi::c_void);
                                             current_block = 8517774764635037400;
                                         } else {
                                             current_block = 16231175055492490595;
@@ -698,9 +692,8 @@ unsafe extern "C" fn cmd_set_option_exec(
                                         cmdq_error(
                                             item,
                                             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                            cause,
+                                            cause.as_ref().unwrap().as_ptr(),
                                         );
-                                        free(cause as *mut ::core::ffi::c_void);
                                         current_block = 8517774764635037400;
                                     } else {
                                         current_block = 16231175055492490595;

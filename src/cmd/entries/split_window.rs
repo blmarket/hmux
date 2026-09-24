@@ -224,6 +224,7 @@ unsafe extern "C" fn cmd_split_window_exec(
     let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut choice_cause: Option<std::ffi::CString> = None;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
@@ -321,14 +322,13 @@ unsafe extern "C" fn cmd_split_window_exec(
         lines = window_get_pane_lines(w);
     } else {
         oe = options_search(b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char);
-        lines = options_find_choice(oe, value, &raw mut cause) as pane_lines;
-        if !cause.is_null() {
+        lines = options_find_choice(oe, value, &raw mut choice_cause) as pane_lines;
+        if let Some(cause) = choice_cause.as_ref() {
             cmdq_error(
                 item,
                 b"pane-border-lines %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
     }

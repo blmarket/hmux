@@ -3924,7 +3924,7 @@ mod owned_callback_tests {
     fn callback_strings_and_timestamps_outlive_the_buffer_and_tree() {
         use crate::src::paste::{paste_free, paste_get_name, paste_set_owned};
         unsafe {
-            let mut cause = std::ptr::null_mut();
+            let mut cause: Option<std::ffi::CString> = None;
             let name = c"callback-owned-results";
             assert_eq!(
                 paste_set_owned(

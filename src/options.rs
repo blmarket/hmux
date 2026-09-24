@@ -44,6 +44,38 @@ use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
+macro_rules! store_options_cause {
+    ($cause:expr, $message:expr) => {{
+        let cause = $cause;
+        if !cause.is_null() {
+            *cause = Some($message);
+        }
+    }};
+}
+
+macro_rules! format_options_cause {
+    ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let cause = $cause;
+        if !cause.is_null() {
+            let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            xasprintf(&raw mut raw, $fmt $(, $arg)*);
+            let message = CStr::from_ptr(raw).to_owned();
+            free(raw.cast());
+            *cause = Some(message);
+        }
+    }};
+}
+
+unsafe fn options_take_parse_error(error: *mut ::core::ffi::c_char) -> Option<CString> {
+    let message = if error.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(error).to_owned())
+    };
+    free(error.cast());
+    message
+}
+
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
@@ -388,7 +420,7 @@ pub unsafe extern "C" fn options_default(
             options_array_assign(
                 o,
                 (*oe).default_str,
-                ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+                ::core::ptr::null_mut::<Option<CString>>(),
             );
             return o;
         }
@@ -405,7 +437,7 @@ pub unsafe extern "C" fn options_default(
                 &raw mut key as *mut ::core::ffi::c_char,
                 *(*oe).default_arr.offset(i as isize),
                 0 as ::core::ffi::c_int,
-                ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+                ::core::ptr::null_mut::<Option<CString>>(),
             );
             i = i.wrapping_add(1);
         }
@@ -626,27 +658,25 @@ pub unsafe extern "C" fn options_array_getv(
     let key = xvasprintf_cstring(fmt, ap);
     options_array_get(o, key.as_ptr())
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_array_set(
+pub unsafe fn options_array_set(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
     mut value: *const ::core::ffi::c_char,
     mut append: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
     let mut number: ::core::ffi::c_longlong = 0;
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         if !cause.is_null() {
-            *cause = xstrdup(b"not an array\0" as *const u8 as *const ::core::ffi::c_char);
+            store_options_cause!(cause, CString::new(b"not an array".to_vec()).unwrap());
         }
         return -(1 as ::core::ffi::c_int);
     }
     let Some(new_key) = options_array_correct_key(key) else {
         if !cause.is_null() {
-            xasprintf(
-                cause,
+            format_options_cause!(cause,
                 b"bad array key: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
             );
@@ -667,10 +697,9 @@ pub unsafe extern "C" fn options_array_set(
         pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
         match (*pr).status as ::core::ffi::c_uint {
             0 => {
+                let error = options_take_parse_error((*pr).error);
                 if !cause.is_null() {
-                    *cause = (*pr).error;
-                } else {
-                    free((*pr).error as *mut ::core::ffi::c_void);
+                    *cause = error;
                 }
                 return -(1 as ::core::ffi::c_int);
             }
@@ -712,8 +741,7 @@ pub unsafe extern "C" fn options_array_set(
         number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1)
             as ::core::ffi::c_longlong;
         if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
-            xasprintf(
-                cause,
+            format_options_cause!(cause,
                 b"bad colour: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 value,
             );
@@ -729,15 +757,14 @@ pub unsafe extern "C" fn options_array_set(
         return 0 as ::core::ffi::c_int;
     }
     if !cause.is_null() {
-        *cause = xstrdup(b"wrong array type\0" as *const u8 as *const ::core::ffi::c_char);
+        store_options_cause!(cause, CString::new(b"wrong array type".to_vec()).unwrap());
     }
     return -(1 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_array_assign(
+pub unsafe fn options_array_assign(
     mut o: *mut options_entry,
     mut s: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -871,7 +898,7 @@ pub(crate) unsafe fn options_to_string(
     options_to_cstring(o, key, numeric)
 }
 
-pub(crate) unsafe fn options_to_cstring(
+pub unsafe fn options_to_cstring(
     o: *mut options_entry,
     key: *const ::core::ffi::c_char,
     numeric: ::core::ffi::c_int,
@@ -1210,14 +1237,13 @@ pub unsafe extern "C" fn options_set_command(
     (*o).value.cmdlist = value;
     return o;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_scope_from_name(
+pub unsafe fn options_scope_from_name(
     mut args: *mut args,
     mut window: ::core::ffi::c_int,
     mut name: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
     mut oo: *mut *mut options,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut s: *mut session = (*fs).s;
     let mut wl: *mut winlink = (*fs).wl;
@@ -1236,8 +1262,7 @@ pub unsafe extern "C" fn options_scope_from_name(
         oe = oe.offset(1);
     }
     if (*oe).name.is_null() {
-        xasprintf(
-            cause,
+        format_options_cause!(cause,
             b"unknown option: %s\0" as *const u8 as *const ::core::ffi::c_char,
             name,
         );
@@ -1255,14 +1280,12 @@ pub unsafe extern "C" fn options_scope_from_name(
                 *oo = global_s_options;
                 scope = OPTIONS_TABLE_SESSION;
             } else if s.is_null() && !target.is_null() {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no such session: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else if s.is_null() {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
@@ -1274,14 +1297,12 @@ pub unsafe extern "C" fn options_scope_from_name(
         12 => {
             if args_has(args, 'p' as i32 as u_char) != 0 {
                 if wp.is_null() && !target.is_null() {
-                    xasprintf(
-                        cause,
+                    format_options_cause!(cause,
                         b"no such pane: %s\0" as *const u8 as *const ::core::ffi::c_char,
                         target,
                     );
                 } else if wp.is_null() {
-                    xasprintf(
-                        cause,
+                    format_options_cause!(cause,
                         b"no current pane\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                 } else {
@@ -1306,14 +1327,12 @@ pub unsafe extern "C" fn options_scope_from_name(
                 *oo = global_w_options;
                 scope = OPTIONS_TABLE_WINDOW;
             } else if wl.is_null() && !target.is_null() {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no such window: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else if wl.is_null() {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no current window\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
@@ -1325,13 +1344,12 @@ pub unsafe extern "C" fn options_scope_from_name(
     }
     return scope;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_scope_from_flags(
+pub unsafe fn options_scope_from_flags(
     mut args: *mut args,
     mut window: ::core::ffi::c_int,
     mut fs: *mut cmd_find_state,
     mut oo: *mut *mut options,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut s: *mut session = (*fs).s;
     let mut wl: *mut winlink = (*fs).wl;
@@ -1344,14 +1362,12 @@ pub unsafe extern "C" fn options_scope_from_flags(
     if args_has(args, 'p' as i32 as u_char) != 0 {
         if wp.is_null() {
             if !target.is_null() {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no such pane: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no current pane\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
@@ -1366,14 +1382,12 @@ pub unsafe extern "C" fn options_scope_from_flags(
         }
         if wl.is_null() {
             if !target.is_null() {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no such window: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no current window\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
@@ -1388,14 +1402,12 @@ pub unsafe extern "C" fn options_scope_from_flags(
         }
         if s.is_null() {
             if !target.is_null() {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no such session: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
@@ -1462,10 +1474,10 @@ pub unsafe extern "C" fn options_string_to_style(
     }
     return &raw mut (*o).style;
 }
-unsafe extern "C" fn options_from_string_check(
+unsafe fn options_from_string_check(
     mut oe: *const options_table_entry,
     mut value: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut sy: style = style {
         gc: grid_cell {
@@ -1505,8 +1517,7 @@ unsafe extern "C" fn options_from_string_check(
     ) == 0 as ::core::ffi::c_int
         && checkshell(value) == 0
     {
-        xasprintf(
-            cause,
+        format_options_cause!(cause,
             b"not a suitable shell: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1515,8 +1526,7 @@ unsafe extern "C" fn options_from_string_check(
     if !(*oe).pattern.is_null()
         && fnmatch((*oe).pattern, value, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int
     {
-        xasprintf(
-            cause,
+        format_options_cause!(cause,
             b"value is invalid: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1526,8 +1536,7 @@ unsafe extern "C" fn options_from_string_check(
         && strstr(value, b"#{\0" as *const u8 as *const ::core::ffi::c_char).is_null()
         && style_parse(&raw mut sy, &raw const grid_default_cell, value) != 0 as ::core::ffi::c_int
     {
-        xasprintf(
-            cause,
+        format_options_cause!(cause,
             b"invalid style: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1538,8 +1547,7 @@ unsafe extern "C" fn options_from_string_check(
         && style_parse_colour(&raw mut sy, &raw const grid_default_cell, value)
             != 0 as ::core::ffi::c_int
     {
-        xasprintf(
-            cause,
+        format_options_cause!(cause,
             b"invalid colour: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1547,11 +1555,11 @@ unsafe extern "C" fn options_from_string_check(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn options_from_string_flag(
+unsafe fn options_from_string_flag(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
     mut value: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = 0;
     if value.is_null() || *value as ::core::ffi::c_int == '\0' as i32 {
@@ -1573,8 +1581,7 @@ unsafe extern "C" fn options_from_string_flag(
     {
         flag = 0 as ::core::ffi::c_int;
     } else {
-        xasprintf(
-            cause,
+        format_options_cause!(cause,
             b"bad value: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1583,11 +1590,10 @@ unsafe extern "C" fn options_from_string_flag(
     options_set_number(oo, name, flag as ::core::ffi::c_longlong);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_find_choice(
+pub unsafe fn options_find_choice(
     mut oe: *const options_table_entry,
     mut value: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut cp: *mut *const ::core::ffi::c_char =
         ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
@@ -1602,8 +1608,7 @@ pub unsafe extern "C" fn options_find_choice(
         cp = cp.offset(1);
     }
     if choice == -(1 as ::core::ffi::c_int) {
-        xasprintf(
-            cause,
+        format_options_cause!(cause,
             b"unknown value: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1611,12 +1616,12 @@ pub unsafe extern "C" fn options_find_choice(
     }
     return choice;
 }
-unsafe extern "C" fn options_from_string_choice(
+unsafe fn options_from_string_choice(
     mut oe: *const options_table_entry,
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
     mut value: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut choice: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     if value.is_null() {
@@ -1633,14 +1638,13 @@ unsafe extern "C" fn options_from_string_choice(
     options_set_number(oo, name, choice as ::core::ffi::c_longlong);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_from_string(
+pub unsafe fn options_from_string(
     mut oo: *mut options,
     mut oe: *const options_table_entry,
     mut name: *const ::core::ffi::c_char,
     mut value: *const ::core::ffi::c_char,
     mut append: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut type_0: options_table_type = OPTIONS_TABLE_STRING;
     let mut number: ::core::ffi::c_longlong = 0;
@@ -1655,8 +1659,7 @@ pub unsafe extern "C" fn options_from_string(
             && (*oe).type_0 as ::core::ffi::c_uint
                 != OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            xasprintf(
-                cause,
+            format_options_cause!(cause,
                 b"empty value\0" as *const u8 as *const ::core::ffi::c_char,
             );
             return -(1 as ::core::ffi::c_int);
@@ -1664,8 +1667,7 @@ pub unsafe extern "C" fn options_from_string(
         type_0 = (*oe).type_0;
     } else {
         if *name as ::core::ffi::c_int != '@' as i32 {
-            xasprintf(
-                cause,
+            format_options_cause!(cause,
                 b"bad option name\0" as *const u8 as *const ::core::ffi::c_char,
             );
             return -(1 as ::core::ffi::c_int);
@@ -1704,8 +1706,7 @@ pub unsafe extern "C" fn options_from_string(
                 &raw mut errstr,
             );
             if !errstr.is_null() {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"value is %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     errstr,
                     value,
@@ -1718,8 +1719,7 @@ pub unsafe extern "C" fn options_from_string(
         2 => {
             key = key_string_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(KEYC_UNKNOWN);
             if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"bad key: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     value,
                 );
@@ -1732,8 +1732,7 @@ pub unsafe extern "C" fn options_from_string(
             number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1)
                 as ::core::ffi::c_longlong;
             if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
-                xasprintf(
-                    cause,
+                format_options_cause!(cause,
                     b"bad colour: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     value,
                 );
@@ -1748,7 +1747,10 @@ pub unsafe extern "C" fn options_from_string(
             pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
             match (*pr).status as ::core::ffi::c_uint {
                 0 => {
-                    *cause = (*pr).error;
+                    let error = options_take_parse_error((*pr).error);
+                    if !cause.is_null() {
+                        *cause = error;
+                    }
                     return -(1 as ::core::ffi::c_int);
                 }
                 1 => {
@@ -2047,11 +2049,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         loop_0 = clients.next(loop_0);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_remove_or_default(
+pub unsafe fn options_remove_or_default(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut oo: *mut options = (*o).owner;
     if key.is_null() {

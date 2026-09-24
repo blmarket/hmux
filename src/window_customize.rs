@@ -146,6 +146,16 @@ use crate::src::tmux::{global_environ, global_options, global_s_options, global_
 use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
 use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring};
 
+fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
+    if let Some(message) = cause.take() {
+        let mut bytes = message.into_bytes();
+        if let Some(first) = bytes.first_mut() {
+            first.make_ascii_uppercase();
+        }
+        *cause = Some(CString::new(bytes).expect("error message has no interior NUL"));
+    }
+}
+
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
@@ -847,10 +857,10 @@ unsafe extern "C" fn window_customize_draw_waiting(mut data: *mut window_customi
     );
     screen_write_stop(&raw mut ctx);
 }
-unsafe extern "C" fn window_customize_set_option_value(
+unsafe fn window_customize_set_option_value(
     mut item: *mut window_customize_itemdata,
     mut s: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
@@ -944,10 +954,10 @@ unsafe extern "C" fn window_customize_option_editable(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_customize_set_command_value(
+unsafe fn window_customize_set_command_value(
     mut item: *mut window_customize_itemdata,
     mut s: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
@@ -957,7 +967,13 @@ unsafe extern "C" fn window_customize_set_command_value(
     pr = cmd_parse_from_string(s, ::core::ptr::null_mut::<cmd_parse_input>());
     match (*pr).status as ::core::ffi::c_uint {
         0 => {
-            *cause = (*pr).error;
+            let error = (*pr).error;
+            *cause = if error.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(error).to_owned())
+            };
+            free(error.cast());
             return -(1 as ::core::ffi::c_int);
         }
         1 | _ => {}
@@ -3164,7 +3180,7 @@ unsafe extern "C" fn window_customize_set_option_callback(
     let mut array_key: *const ::core::ffi::c_char = ((*item).array_key)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut idx: u_int = 0;
     let mut keybuf: [::core::ffi::c_char; 32] = [0; 32];
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
@@ -3215,28 +3231,7 @@ unsafe extern "C" fn window_customize_set_option_callback(
     }
     match current_block {
         1995505731522653903 => {
-            *cause = ({
-                let mut __res: ::core::ffi::c_int = 0;
-                if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                    if 0 != 0 {
-                        let mut __c: ::core::ffi::c_int = *cause as u_char as ::core::ffi::c_int;
-                        __res = (if __c < -(128 as ::core::ffi::c_int)
-                            || __c > 255 as ::core::ffi::c_int
-                        {
-                            __c as __int32_t
-                        } else {
-                            *(*__ctype_toupper_loc()).offset(__c as isize)
-                        }) as ::core::ffi::c_int;
-                    } else {
-                        __res = toupper(*cause as u_char as ::core::ffi::c_int);
-                    }
-                } else {
-                    __res = *(*__ctype_toupper_loc())
-                        .offset(*cause as u_char as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int;
-                }
-                __res
-            }) as ::core::ffi::c_char;
+            window_customize_uppercase_cause(&mut cause);
             status_message_set(
                 c,
                 -(1 as ::core::ffi::c_int),
@@ -3244,9 +3239,8 @@ unsafe extern "C" fn window_customize_set_option_callback(
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ref().unwrap().as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
             return PROMPT_CLOSE;
         }
         _ => {
@@ -3653,7 +3647,7 @@ unsafe fn window_customize_edit_close_cb(
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     wp = window_pane_find_by_id((*ed).wp_id);
     if !wp.is_null() {
         wme = (*wp).modes.active;
@@ -3684,7 +3678,6 @@ unsafe fn window_customize_edit_close_cb(
                 && window_customize_set_option_value(item, value_ptr, &raw mut cause)
                     != 0 as ::core::ffi::c_int
             {
-                free(cause as *mut ::core::ffi::c_void);
                 current_block = 8846462416050848735;
             } else {
                 current_block = 1608152415753874203;
@@ -3694,7 +3687,6 @@ unsafe fn window_customize_edit_close_cb(
             if window_customize_set_command_value(item, value_ptr, &raw mut cause)
                 != 0 as ::core::ffi::c_int
             {
-                free(cause as *mut ::core::ffi::c_void);
                 current_block = 8846462416050848735;
             } else {
                 current_block = 1608152415753874203;
@@ -4029,7 +4021,7 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     if item.is_null() {
         return PROMPT_CLOSE;
     }
@@ -4065,27 +4057,7 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
     ) != 0 as ::core::ffi::c_int
     {
         drop(value);
-        *cause = ({
-            let mut __res: ::core::ffi::c_int = 0;
-            if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                if 0 != 0 {
-                    let mut __c: ::core::ffi::c_int = *cause as u_char as ::core::ffi::c_int;
-                    __res =
-                        (if __c < -(128 as ::core::ffi::c_int) || __c > 255 as ::core::ffi::c_int {
-                            __c as __int32_t
-                        } else {
-                            *(*__ctype_toupper_loc()).offset(__c as isize)
-                        }) as ::core::ffi::c_int;
-                } else {
-                    __res = toupper(*cause as u_char as ::core::ffi::c_int);
-                }
-            } else {
-                __res = *(*__ctype_toupper_loc())
-                    .offset(*cause as u_char as ::core::ffi::c_int as isize)
-                    as ::core::ffi::c_int;
-            }
-            __res
-        }) as ::core::ffi::c_char;
+        window_customize_uppercase_cause(&mut cause);
         status_message_set(
             c,
             -(1 as ::core::ffi::c_int),
@@ -4093,9 +4065,8 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause,
+            cause.as_ref().unwrap().as_ptr(),
         );
-        free(cause as *mut ::core::ffi::c_void);
         return PROMPT_CLOSE;
     } else {
         drop(value);
@@ -4104,7 +4075,7 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
             array_key,
             ::core::ptr::null::<::core::ffi::c_char>(),
             0 as ::core::ffi::c_int,
-            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+            ::core::ptr::null_mut::<Option<CString>>(),
         );
         options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         mode_tree_build((*data).data);
@@ -4245,7 +4216,7 @@ unsafe extern "C" fn window_customize_unset_option(
     options_remove_or_default(
         o,
         ((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+        ::core::ptr::null_mut::<Option<CString>>(),
     );
 }
 unsafe extern "C" fn window_customize_reset_option(
@@ -4269,7 +4240,7 @@ unsafe extern "C" fn window_customize_reset_option(
             options_remove_or_default(
                 o,
                 ::core::ptr::null::<::core::ffi::c_char>(),
-                ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+                ::core::ptr::null_mut::<Option<CString>>(),
             );
         }
         oo = options_get_parent(oo);

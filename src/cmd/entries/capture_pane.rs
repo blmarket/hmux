@@ -664,7 +664,7 @@ unsafe extern "C" fn cmd_capture_pane_exec(
     let mut c: *mut client = cmdq_get_client(item);
     let mut wp: *mut window_pane = (*cmdq_get_target(item)).wp;
     let mut buf: Vec<u8>;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if cmd_get_entry(self_0) == &raw const cmd_clear_history_entry {
         window_pane_reset_mode_all(wp);
@@ -724,9 +724,8 @@ unsafe extern "C" fn cmd_capture_pane_exec(
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ref().unwrap().as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
     }

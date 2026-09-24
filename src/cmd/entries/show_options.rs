@@ -198,7 +198,7 @@ unsafe extern "C" fn cmd_show_options_exec(
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut argument: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut window: ::core::ffi::c_int = 0;
     let mut ambiguous: ::core::ffi::c_int = 0;
@@ -217,9 +217,8 @@ unsafe extern "C" fn cmd_show_options_exec(
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ref().unwrap().as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         if cmd_get_entry(self_0) == &raw const cmd_show_hooks_entry
@@ -272,9 +271,8 @@ unsafe extern "C" fn cmd_show_options_exec(
                 cmdq_error(
                     item,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
+                    cause.as_ref().unwrap().as_ptr(),
                 );
-                free(cause as *mut ::core::ffi::c_void);
                 current_block = 18040240512796061664;
             }
         } else {

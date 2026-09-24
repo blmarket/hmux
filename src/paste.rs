@@ -15,6 +15,28 @@ use crate::src::utf8::utf8_strvis;
 use crate::src::xmalloc::{xasprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
+macro_rules! set_paste_cause {
+    ($cause:expr, $value:expr) => {{
+        let cause = $cause;
+        if !cause.is_null() {
+            *cause = Some($value);
+        }
+    }};
+}
+
+macro_rules! format_paste_cause {
+    ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let cause = $cause;
+        if !cause.is_null() {
+            let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            xasprintf(&raw mut raw, $fmt $(, $arg)*);
+            let message = CStr::from_ptr(raw).to_owned();
+            free(raw.cast());
+            *cause = Some(message);
+        }
+    }};
+}
+
 #[derive(Default)]
 pub struct paste_time_tree {
     entries: std::collections::BTreeMap<std::cmp::Reverse<u_int>, *mut paste_buffer>,
@@ -336,32 +358,31 @@ pub(crate) unsafe fn paste_add_owned(mut prefix: *const ::core::ffi::c_char, dat
         ((*pb).name).as_ptr().cast_mut(),
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_rename(
+pub unsafe fn paste_rename(
     mut oldname: *const ::core::ffi::c_char,
     mut newname: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut pb_new: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if !cause.is_null() {
-        *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
+        *cause = None;
     }
     if oldname.is_null() || *oldname as ::core::ffi::c_int == '\0' as i32 {
         if !cause.is_null() {
-            *cause = xstrdup(b"no buffer\0" as *const u8 as *const ::core::ffi::c_char);
+            set_paste_cause!(cause, CString::new(b"no buffer".to_vec()).unwrap());
         }
         return -(1 as ::core::ffi::c_int);
     }
     if newname.is_null() || *newname as ::core::ffi::c_int == '\0' as i32 {
         if !cause.is_null() {
-            *cause = xstrdup(b"new name is empty\0" as *const u8 as *const ::core::ffi::c_char);
+            set_paste_cause!(cause, CString::new(b"new name is empty".to_vec()).unwrap());
         }
         return -(1 as ::core::ffi::c_int);
     }
     let Some(name) = clean_name_cstring(CStr::from_ptr(newname), 0) else {
         if !cause.is_null() {
-            xasprintf(
+            format_paste_cause!(
                 cause,
                 b"invalid buffer name: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 newname,
@@ -372,7 +393,7 @@ pub unsafe extern "C" fn paste_rename(
     pb = paste_get_name(oldname);
     if pb.is_null() {
         if !cause.is_null() {
-            xasprintf(
+            format_paste_cause!(
                 cause,
                 b"no buffer %s\0" as *const u8 as *const ::core::ffi::c_char,
                 oldname,
@@ -404,12 +425,11 @@ pub unsafe extern "C" fn paste_rename(
     );
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn paste_set(
+pub unsafe fn paste_set(
     data: *mut ::core::ffi::c_char,
     size: size_t,
     name: *const ::core::ffi::c_char,
-    cause: *mut *mut ::core::ffi::c_char,
+    cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let owned = if size == 0 {
         Box::<[u8]>::default()
@@ -422,7 +442,7 @@ pub unsafe extern "C" fn paste_set(
 pub(crate) unsafe fn paste_set_owned(
     data: Box<[u8]>,
     name: *const ::core::ffi::c_char,
-    cause: *mut *mut ::core::ffi::c_char,
+    cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     paste_set_inner(data, name, cause, ::core::ptr::null_mut())
 }
@@ -430,14 +450,14 @@ pub(crate) unsafe fn paste_set_owned(
 unsafe fn paste_set_inner(
     data: Box<[u8]>,
     name: *const ::core::ffi::c_char,
-    cause: *mut *mut ::core::ffi::c_char,
+    cause: *mut Option<CString>,
     // Null for Rust callers; on a name error the C caller still owns this.
     c_producer: *mut ::core::ffi::c_void,
 ) -> ::core::ffi::c_int {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut old: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if !cause.is_null() {
-        *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
+        *cause = None;
     }
     if data.is_empty() {
         free(c_producer);
@@ -450,13 +470,13 @@ unsafe fn paste_set_inner(
     }
     if *name as ::core::ffi::c_int == '\0' as i32 {
         if !cause.is_null() {
-            *cause = xstrdup(b"empty buffer name\0" as *const u8 as *const ::core::ffi::c_char);
+            set_paste_cause!(cause, CString::new(b"empty buffer name".to_vec()).unwrap());
         }
         return -(1 as ::core::ffi::c_int);
     }
     let Some(newname) = clean_name_cstring(CStr::from_ptr(name), 0) else {
         if !cause.is_null() {
-            xasprintf(
+            format_paste_cause!(
                 cause,
                 b"invalid buffer name: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 name,
@@ -543,7 +563,7 @@ mod tests {
     #[test]
     fn owned_data_preserves_binary_bytes_across_replacement() {
         unsafe {
-            let mut cause = ::core::ptr::null_mut();
+            let mut cause: Option<CString> = None;
             let name = c"owner-binary-data";
             let first = b"A\0B\xff";
             assert_eq!(
@@ -555,7 +575,7 @@ mod tests {
                 ),
                 0
             );
-            assert!(cause.is_null());
+            assert!(cause.is_none());
             let pb = paste_get_name(name.as_ptr());
             let mut len = 0;
             let data = paste_buffer_data(pb, &raw mut len);
@@ -572,7 +592,7 @@ mod tests {
     #[test]
     fn rename_accepts_borrowed_current_name() {
         unsafe {
-            let mut cause = ::core::ptr::null_mut();
+            let mut cause: Option<CString> = None;
             assert_eq!(
                 paste_set(
                     xstrdup(c"payload".as_ptr()),
@@ -582,14 +602,14 @@ mod tests {
                 ),
                 0
             );
-            assert!(cause.is_null());
+            assert!(cause.is_none());
             let pb = paste_get_name(c"owner-rename-alias".as_ptr());
             assert!(!pb.is_null());
             assert_eq!(
                 paste_rename(((*pb).name).as_ptr().cast_mut(), c"owner-renamed".as_ptr(), &raw mut cause),
                 0
             );
-            assert!(cause.is_null());
+            assert!(cause.is_none());
             assert!(paste_get_name(c"owner-rename-alias".as_ptr()).is_null());
             assert_eq!(paste_get_name(c"owner-renamed".as_ptr()), pb);
             assert_eq!(
@@ -597,6 +617,39 @@ mod tests {
                 c"owner-renamed"
             );
             paste_free(pb);
+        }
+    }
+
+    #[test]
+    fn invalid_names_return_owned_diagnostics() {
+        unsafe {
+            let mut cause: Option<CString> = None;
+            assert_eq!(
+                paste_set_owned(
+                    b"payload".to_vec().into_boxed_slice(),
+                    c"".as_ptr(),
+                    &mut cause,
+                ),
+                -1
+            );
+            assert_eq!(
+                CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
+                c"empty buffer name"
+            );
+
+            cause = None;
+            assert_eq!(
+                paste_rename(
+                    ::core::ptr::null(),
+                    c"renamed".as_ptr(),
+                    &mut cause,
+                ),
+                -1
+            );
+            assert_eq!(
+                CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
+                c"no buffer"
+            );
         }
     }
 

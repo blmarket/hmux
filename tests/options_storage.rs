@@ -1,5 +1,4 @@
 //! Behavior of the Rust-owned option-name index through the existing API.
-use hmux2::src::ffi::libc::free;
 use hmux2::src::options::*;
 use std::ffi::{CStr, CString};
 use std::ptr::{null, null_mut};
@@ -207,9 +206,8 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             (non_utf8.as_ptr(), b"value".as_slice()),
             (c"4294967296".as_ptr(), b"".as_slice()),
         ] {
-            let output = options_to_string(array, key, 0);
-            assert_eq!(CStr::from_ptr(output).to_bytes(), expected);
-            free(output.cast());
+            let output = options_to_cstring(array, key, 0);
+            assert_eq!(output.as_bytes(), expected);
         }
         for invalid in [c"", c"4294967296"] {
             assert_eq!(
@@ -298,15 +296,17 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"pane-colours")
             .unwrap();
         let colours = options_empty(oo, colour_definition);
-        let mut cause = null_mut();
+        let mut cause: Option<CString> = None;
         assert_eq!(
             options_array_assign(colours, c"red,,invalid-colour".as_ptr(), &mut cause),
             -1
         );
         assert!(!options_array_get(colours, c"0".as_ptr()).is_null());
         assert!(options_array_get(colours, c"1".as_ptr()).is_null());
-        assert_eq!(CStr::from_ptr(cause), c"bad colour: invalid-colour");
-        free(cause.cast());
+        assert_eq!(
+            CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
+            c"bad colour: invalid-colour"
+        );
         options_free(oo);
     }
 }

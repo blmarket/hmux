@@ -5092,7 +5092,7 @@ unsafe extern "C" fn input_exit_rename(mut ictx: *mut input_ctx) {
             options_remove_or_default(
                 o,
                 ::core::ptr::null::<::core::ffi::c_char>(),
-                ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+                ::core::ptr::null_mut::<Option<std::ffi::CString>>(),
             );
         }
         if options_get_number(

@@ -1,7 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::ffi::libc::free;
 use crate::src::paste::{
     paste_buffer_data, paste_buffer_name, paste_free, paste_get_name, paste_get_top, paste_rename,
     paste_set_owned,
@@ -142,7 +141,7 @@ unsafe extern "C" fn cmd_set_buffer_exec(
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufname: Option<CString> = None;
     let mut bufdata = Vec::new();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     if !args_get(args, 'b' as i32 as u_char).is_null() {
         bufname = Some(CStr::from_ptr(args_get(args, 'b' as i32 as u_char)).to_owned());
         pb = paste_get_name(bufname.as_ref().unwrap().as_ptr());
@@ -216,7 +215,7 @@ unsafe extern "C" fn cmd_set_buffer_exec(
                     cmdq_error(
                         item,
                         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause,
+                        cause.as_ref().unwrap().as_ptr(),
                     );
                 } else {
                     return CMD_RETURN_NORMAL;
@@ -256,7 +255,7 @@ unsafe extern "C" fn cmd_set_buffer_exec(
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ref().unwrap().as_ptr(),
             );
         } else {
             if let Some(selection_data) = selection_data.as_ref() {
@@ -270,6 +269,5 @@ unsafe extern "C" fn cmd_set_buffer_exec(
             return CMD_RETURN_NORMAL;
         }
     }
-    free(cause as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }

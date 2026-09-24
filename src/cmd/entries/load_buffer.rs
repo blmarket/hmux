@@ -142,7 +142,7 @@ unsafe extern "C" fn cmd_load_buffer_done(
     let mut bdata: *mut ::core::ffi::c_void =
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
     let mut bsize: size_t = evbuffer_get_length(buffer);
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(
             item,
@@ -164,9 +164,8 @@ unsafe extern "C" fn cmd_load_buffer_done(
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ref().unwrap().as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
         } else if !tc.is_null()
             && !(*tc).session.is_null()
             && !(*tc).flags & CLIENT_DEAD as uint64_t != 0

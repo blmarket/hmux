@@ -8570,7 +8570,7 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
         bufname
             .as_ref()
             .map_or(::core::ptr::null(), |name| name.as_ptr()),
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+        ::core::ptr::null_mut::<Option<std::ffi::CString>>(),
     );
 }
 unsafe fn window_copy_copy_line(

@@ -1051,7 +1051,7 @@ unsafe extern "C" fn cmd_display_menu_exec(
     let mut lines: box_lines = BOX_LINES_DEFAULT;
     let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_title: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<std::ffi::CString> = None;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut starting_choice: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut px: u_int = 0;
@@ -1171,10 +1171,10 @@ unsafe extern "C" fn cmd_display_menu_exec(
                                 ) as box_lines;
                                 if lines as ::core::ffi::c_int == -(1 as ::core::ffi::c_int) {
                                     cmdq_error(
-                                        item,
-                                        b"menu-border-lines %s\0" as *const u8
-                                            as *const ::core::ffi::c_char,
-                                        cause,
+                                    item,
+                                    b"menu-border-lines %s\0" as *const u8
+                                        as *const ::core::ffi::c_char,
+                                    cause.as_ref().unwrap().as_ptr(),
                                     );
                                     current_block = 17658167438033882251;
                                 } else {
@@ -1231,7 +1231,6 @@ unsafe extern "C" fn cmd_display_menu_exec(
         }
         _ => {}
     }
-    free(cause as *mut ::core::ffi::c_void);
     menu_free(menu);
     return CMD_RETURN_ERROR;
 }
@@ -1253,7 +1252,7 @@ unsafe extern "C" fn cmd_display_popup_exec(
     let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
     let mut default_cwd: Option<std::ffi::CString> = None;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<std::ffi::CString> = None;
     let mut argv: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
@@ -1428,11 +1427,11 @@ unsafe extern "C" fn cmd_display_popup_exec(
                 );
                 lines = options_find_choice(options_table_entry(oe), value, &raw mut cause)
                     as box_lines;
-                if !cause.is_null() {
+                if let Some(cause) = cause.as_ref() {
                     cmdq_error(
                         item,
                         b"popup-border-lines %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause,
+                        cause.as_ptr(),
                     );
                     current_block = 1988999557336856620;
                 } else {
@@ -1509,7 +1508,6 @@ unsafe extern "C" fn cmd_display_popup_exec(
     }
     match current_block {
         1988999557336856620 => {
-            free(cause as *mut ::core::ffi::c_void);
             cmd_free_argv(argc, argv);
             environ_free(env);
             free(formatted_cwd as *mut ::core::ffi::c_void);
