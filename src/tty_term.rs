@@ -81,7 +81,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
-use crate::src::xmalloc::{xasprintf, xsnprintf};
+use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 unsafe fn tty_term_replace_string(term: *mut tty_term, index: usize, value: Option<CString>) {
@@ -1362,14 +1362,12 @@ unsafe extern "C" fn tty_term_validate(mut term: *mut tty_term) {
     tty_term_replace_string(term, TTYC_MS as usize, None);
     (*code).type_0 = TTYCODE_NONE;
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_term_create(
+pub unsafe fn tty_term_create(
     mut tty: *mut tty,
     mut name: *mut ::core::ffi::c_char,
     mut caps: *mut *mut ::core::ffi::c_char,
     mut ncaps: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut tty_term {
+) -> Result<*mut tty_term, CString> {
     let mut c: *mut client = (*tty).client;
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
     let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
@@ -1532,16 +1530,10 @@ pub unsafe extern "C" fn tty_term_create(
         }
     }
     tty_term_apply_overrides(term);
-    if tty_term_has(term, TTYC_CLEAR) == 0 {
-        xasprintf(
-            cause,
-            b"terminal does not support clear\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+    let error = if tty_term_has(term, TTYC_CLEAR) == 0 {
+        Some(c"terminal does not support clear".to_owned())
     } else if tty_term_has(term, TTYC_CUP) == 0 {
-        xasprintf(
-            cause,
-            b"terminal does not support cup\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        Some(c"terminal does not support cup".to_owned())
     } else {
         s = tty_term_string(term, TTYC_CLEAR);
         if tty_term_flag(term, TTYC_XT) != 0
@@ -1579,10 +1571,10 @@ pub unsafe extern "C" fn tty_term_create(
             );
             i = i.wrapping_add(1);
         }
-        return term;
-    }
+        return Ok(term);
+    };
     tty_term_free(term);
-    return ::core::ptr::null_mut::<tty_term>();
+    Err(error.expect("unsupported terminal has an error message"))
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {

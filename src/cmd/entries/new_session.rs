@@ -435,16 +435,13 @@ unsafe extern "C" fn cmd_new_session_exec(
                             5193972633326621385 => {}
                             _ => {
                                 if detached == 0 && already_attached == 0 {
-                                    if server_client_open(c, &raw mut cause)
-                                        != 0 as ::core::ffi::c_int
-                                    {
+                                    if let Err(open_error) = server_client_open(c) {
                                         cmdq_error(
                                             item,
                                             b"open terminal failed: %s\0" as *const u8
                                                 as *const ::core::ffi::c_char,
-                                            cause,
+                                            open_error.as_ptr(),
                                         );
-                                        free(cause as *mut ::core::ffi::c_void);
                                         current_block = 5193972633326621385;
                                     } else {
                                         current_block = 5181772461570869434;

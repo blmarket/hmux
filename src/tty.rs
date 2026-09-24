@@ -434,11 +434,9 @@ unsafe extern "C" fn tty_write_callback(
         event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn tty_open(
+pub unsafe fn tty_open(
     mut tty: *mut tty,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Result<(), std::ffi::CString> {
     let mut c: *mut client = (*tty).client;
     // The synchronous terminfo constructor borrows these string pointers.
     let mut caps: Vec<_> = (*c)
@@ -446,19 +444,20 @@ pub unsafe extern "C" fn tty_open(
         .iter()
         .map(|cap| cap.as_ptr().cast_mut())
         .collect();
-    (*tty).term = tty_term_create(
+    (*tty).term = match tty_term_create(
         tty,
         ((*c).term_name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         caps.as_mut_ptr(),
         caps.len() as u_int,
-        cause,
-    );
-    if (*tty).term.is_null() {
-        tty_close(tty);
-        return -(1 as ::core::ffi::c_int);
-    }
+    ) {
+        Ok(term) => term,
+        Err(error) => {
+            tty_close(tty);
+            return Err(error);
+        }
+    };
     (*tty).flags |= TTY_OPENED;
     (*tty).flags &= !(TTY_NOCURSOR | TTY_FREEZE | TTY_BLOCK | TTY_TIMER);
     event_set(
@@ -541,7 +540,7 @@ pub unsafe extern "C" fn tty_open(
     );
     tty_start_tty(tty);
     tty_keys_build(tty);
-    return 0 as ::core::ffi::c_int;
+    Ok(())
 }
 unsafe extern "C" fn tty_start_timer_callback(
     mut fd: ::core::ffi::c_int,

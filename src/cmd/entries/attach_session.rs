@@ -142,7 +142,6 @@ pub unsafe extern "C" fn cmd_attach_session(
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut msgtype: msgtype = 0 as msgtype;
     let mut uid: uid_t = 0;
     if sessions.storage.is_none() {
@@ -236,13 +235,12 @@ pub unsafe extern "C" fn cmd_attach_session(
             server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
         }
     } else {
-        if server_client_open(c, &raw mut cause) != 0 as ::core::ffi::c_int {
+        if let Err(cause) = server_client_open(c) {
             cmdq_error(
                 item,
                 b"open terminal failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         if dflag != 0 || xflag != 0 {

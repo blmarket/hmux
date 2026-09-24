@@ -98,7 +98,7 @@ use crate::src::window::{
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xcalloc, xmalloc, xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -1230,14 +1230,12 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     );
     return c;
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_open(
+pub unsafe fn server_client_open(
     mut c: *mut client,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Result<(), CString> {
     let mut ttynam: *const ::core::ffi::c_char = _PATH_TTY.as_ptr();
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-        return 0 as ::core::ffi::c_int;
+        return Ok(());
     }
     if strcmp(
         ((*c).ttyname)
@@ -1279,24 +1277,18 @@ pub unsafe extern "C" fn server_client_open(
                     ttynam,
                 ) == 0 as ::core::ffi::c_int)
     {
-        xasprintf(
-            cause,
-            b"can't use %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).ttyname)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        let mut message = b"can't use ".to_vec();
+        message.extend_from_slice(
+            (*c).ttyname.as_ref().map_or(b"(null)".as_slice(), |name| name.to_bytes()),
         );
-        return -(1 as ::core::ffi::c_int);
+        return Err(CString::new(message).expect("terminal name contains no NUL"));
     }
     if (*c).flags & CLIENT_TERMINAL as uint64_t == 0 {
-        *cause = xstrdup(b"not a terminal\0" as *const u8 as *const ::core::ffi::c_char);
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"not a terminal".to_owned());
     }
-    if tty_open(&raw mut (*c).tty, cause) != 0 as ::core::ffi::c_int {
-        return -(1 as ::core::ffi::c_int);
-    }
+    tty_open(&raw mut (*c).tty)?;
     server_client_update_theme_colours(c);
-    return 0 as ::core::ffi::c_int;
+    Ok(())
 }
 unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
