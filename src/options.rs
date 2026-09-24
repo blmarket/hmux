@@ -41,7 +41,7 @@ use crate::src::window::{
     window_pane_tree_minmax, window_pane_tree_next, windows_minmax, windows_next,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xasprintf, xsnprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xsnprintf, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 macro_rules! store_options_cause {
@@ -57,13 +57,37 @@ macro_rules! format_options_cause {
     ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
         let cause = $cause;
         if !cause.is_null() {
-            let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
-            xasprintf(&raw mut raw, $fmt $(, $arg)*);
-            let message = CStr::from_ptr(raw).to_owned();
-            free(raw.cast());
-            *cause = Some(message);
+            *cause = Some(options_string_cause($fmt, &[$($arg),*]));
         }
     }};
+}
+
+/// The option diagnostics use only literal text and `%s` substitutions.
+unsafe fn options_string_cause(
+    fmt: *const ::core::ffi::c_char,
+    args: &[*const ::core::ffi::c_char],
+) -> CString {
+    let fmt = CStr::from_ptr(fmt).to_bytes();
+    let mut message = Vec::with_capacity(fmt.len());
+    let mut at = 0;
+    let mut arg = 0;
+    while at < fmt.len() {
+        if fmt[at..].starts_with(b"%s") {
+            let ptr = args[arg];
+            if ptr.is_null() {
+                message.extend_from_slice(b"(null)");
+            } else {
+                message.extend_from_slice(CStr::from_ptr(ptr).to_bytes());
+            }
+            at += 2;
+            arg += 1;
+        } else {
+            message.push(fmt[at]);
+            at += 1;
+        }
+    }
+    debug_assert_eq!(arg, args.len());
+    CString::new(message).expect("option diagnostic contains no NUL")
 }
 
 unsafe fn options_take_parse_error(error: *mut ::core::ffi::c_char) -> Option<CString> {
@@ -2079,6 +2103,17 @@ pub unsafe fn options_remove_or_default(
 #[cfg(test)]
 mod array_string_owner_tests {
     use super::*;
+
+    #[test]
+    fn formatted_diagnostic_preserves_non_utf8_arguments() {
+        unsafe {
+            let message = options_string_cause(
+                c"value is %s: %s".as_ptr(),
+                &[c"invalid".as_ptr(), c"\xff".as_ptr()],
+            );
+            assert_eq!(message.to_bytes(), b"value is invalid: \xff");
+        }
+    }
 
     #[test]
     fn append_and_replace_accept_the_previous_items_string_pointer() {
