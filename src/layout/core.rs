@@ -260,7 +260,7 @@ pub unsafe extern "C" fn layout_set_size(
 #[no_mangle]
 pub unsafe extern "C" fn layout_make_leaf(mut lc: *mut layout_cell, mut wp: *mut window_pane) {
     (*lc).type_0 = LAYOUT_WINDOWPANE;
-    layout_cells_clear(lc);
+    layout_cells_require_empty(lc);
     (*wp).layout_cell = lc as *mut layout_cell;
     (*lc).wp = wp;
 }
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn layout_make_node(mut lc: *mut layout_cell, mut type_0: 
         fatalx(b"bad layout type\0" as *const u8 as *const ::core::ffi::c_char);
     }
     (*lc).type_0 = type_0;
-    layout_cells_clear(lc);
+    layout_cells_require_empty(lc);
     if !(*lc).wp.is_null() {
         (*(*lc).wp).layout_cell = ::core::ptr::null_mut::<layout_cell>();
     }

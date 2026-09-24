@@ -251,11 +251,18 @@ pub unsafe fn layout_cells_replace(
     (*new).sibling_index = index;
 }
 
+/// Confirm that a cell has no owned children before changing its role.
+///
+/// The children collection owns its boxes. Callers must first remove and free
+/// or move every child; silently draining the collection would leak them.
+///
+/// # Safety
+/// `parent` must point to a valid `layout_cell` whose children have already
+/// been detached or freed.
 #[inline]
-pub unsafe fn layout_cells_clear(parent: *mut layout_cell) {
-    for child in (*parent).cells.children.drain(..) {
-        let child = Box::into_raw(child);
-        (*child).parent = std::ptr::null_mut();
-        (*child).sibling_index = 0;
-    }
+pub unsafe fn layout_cells_require_empty(parent: *mut layout_cell) {
+    assert!(
+        (*parent).cells.children.is_empty(),
+        "layout cell children must be detached before clearing"
+    );
 }
