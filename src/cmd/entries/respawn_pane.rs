@@ -1,7 +1,7 @@
 use crate::src::arguments::{
     args_first_value, args_get, args_has, args_next_value, args_to_vector,
 };
-use crate::src::cmd::{cmd_get_args, OwnedArgv};
+use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
@@ -12,9 +12,8 @@ pub use crate::src::shared::arguments::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
@@ -116,14 +115,13 @@ unsafe extern "C" fn cmd_respawn_pane_exec(
         wp0: ::core::ptr::null_mut::<window_pane>(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
-        argv: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        argc: 0,
+        argv: Vec::new(),
         environ: ::core::ptr::null_mut::<environ>(),
         idx: 0,
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
     };
-    let mut argv_owner = OwnedArgv::default();
+    let mut argv_owner = Vec::new();
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
     let mut wp: *mut window_pane = (*target).wp;
@@ -134,8 +132,7 @@ unsafe extern "C" fn cmd_respawn_pane_exec(
     sc.wl = wl;
     sc.wp0 = wp;
     argv_owner = args_to_vector(args);
-    sc.argc = argv_owner.argc();
-    sc.argv = argv_owner.as_mut_ptr();
+    sc.argv = argv_owner;
     sc.environ = environ_create();
     av = args_first_value(args, 'e' as i32 as u_char);
     while !av.is_null() {
@@ -159,7 +156,9 @@ unsafe extern "C" fn cmd_respawn_pane_exec(
         cmdq_error(
             item,
             b"respawn pane failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause.as_ref().map_or(::core::ptr::null(), |value| value.as_ptr()),
+            cause
+                .as_ref()
+                .map_or(::core::ptr::null(), |value| value.as_ptr()),
         );
         environ_free(sc.environ);
         return CMD_RETURN_ERROR;

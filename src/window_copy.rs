@@ -4,8 +4,8 @@ use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, memmove, memset, regcomp, regexec,
-    strcasecmp, strchr, strcmp, strcspn, strlen, strncmp,
+    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, memmove, memset, regcomp, regexec, strcasecmp,
+    strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring, format_free,
@@ -1647,17 +1647,32 @@ unsafe extern "C" fn window_copy_do_copy_end_of_line(
     if pipe != 0 {
         if count == 2 as u_int {
             prefix = Some(format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp,
+                ::core::ptr::null_mut::<cmdq_item>(),
+                arg1,
+                c,
+                s,
+                wl,
+                wp,
             ));
         }
         if !s.is_null() && count > 0 as u_int && *arg0 as ::core::ffi::c_int != '\0' as i32 {
             command = Some(format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+                ::core::ptr::null_mut::<cmdq_item>(),
+                arg0,
+                c,
+                s,
+                wl,
+                wp,
             ));
         }
     } else if count == 1 as u_int {
         prefix = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+            ::core::ptr::null_mut::<cmdq_item>(),
+            arg0,
+            c,
+            s,
+            wl,
+            wp,
         ));
     }
     ocx = (*data).cx;
@@ -1750,17 +1765,32 @@ unsafe extern "C" fn window_copy_do_copy_line(
     if pipe != 0 {
         if count == 2 as u_int {
             prefix = Some(format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp,
+                ::core::ptr::null_mut::<cmdq_item>(),
+                arg1,
+                c,
+                s,
+                wl,
+                wp,
             ));
         }
         if !s.is_null() && count > 0 as u_int && *arg0 as ::core::ffi::c_int != '\0' as i32 {
             command = Some(format_single_cstring(
-                ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+                ::core::ptr::null_mut::<cmdq_item>(),
+                arg0,
+                c,
+                s,
+                wl,
+                wp,
             ));
         }
     } else if count == 1 as u_int {
         prefix = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+            ::core::ptr::null_mut::<cmdq_item>(),
+            arg0,
+            c,
+            s,
+            wl,
+            wp,
         ));
     }
     ocx = (*data).cx;
@@ -1844,7 +1874,12 @@ unsafe extern "C" fn window_copy_cmd_copy_selection_no_clear(
         (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if !arg0.is_null() {
         prefix = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+            ::core::ptr::null_mut::<cmdq_item>(),
+            arg0,
+            c,
+            s,
+            wl,
+            wp,
         ));
     }
     if !s.is_null() {
@@ -3128,12 +3163,22 @@ unsafe extern "C" fn window_copy_cmd_copy_pipe_no_clear(
         (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if !arg1.is_null() {
         prefix = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp,
+            ::core::ptr::null_mut::<cmdq_item>(),
+            arg1,
+            c,
+            s,
+            wl,
+            wp,
         ));
     }
     if !s.is_null() && !arg0.is_null() && *arg0 as ::core::ffi::c_int != '\0' as i32 {
         command = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+            ::core::ptr::null_mut::<cmdq_item>(),
+            arg0,
+            c,
+            s,
+            wl,
+            wp,
         ));
     }
     window_copy_copy_pipe(
@@ -3178,7 +3223,12 @@ unsafe extern "C" fn window_copy_cmd_pipe_no_clear(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if !s.is_null() && !arg0.is_null() && *arg0 as ::core::ffi::c_int != '\0' as i32 {
         command = Some(format_single_cstring(
-            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+            ::core::ptr::null_mut::<cmdq_item>(),
+            arg0,
+            c,
+            s,
+            wl,
+            wp,
         ));
     }
     window_copy_pipe(
@@ -8513,8 +8563,7 @@ unsafe fn window_copy_pipe_run(
     if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
         job = job_run(
             cmd,
-            0 as ::core::ffi::c_int,
-            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+            &Vec::new(),
             ::core::ptr::null_mut::<environ>(),
             s,
             ::core::ptr::null::<::core::ffi::c_char>(),

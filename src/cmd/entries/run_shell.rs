@@ -27,9 +27,8 @@ use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::CMD_FIND_CANFAIL;
@@ -405,8 +404,7 @@ unsafe extern "C" fn cmd_run_shell_timer(
         }
         if job_run(
             cmd,
-            0 as ::core::ffi::c_int,
-            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+            &Vec::new(),
             ::core::ptr::null_mut::<environ>(),
             (*cdata).s,
             (*cdata).cwd.as_ptr(),
@@ -442,16 +440,14 @@ unsafe extern "C" fn cmd_run_shell_timer(
         }
         return;
     }
-    match args_make_commands(
-        (*cdata).state,
-        0 as ::core::ffi::c_int,
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-    ) {
+    match args_make_commands((*cdata).state, &Vec::new()) {
         Err(mut error) => {
             if (*cdata).item.is_null() {
                 cmd_parse_error_uppercase_first(&mut error);
             }
-            let error_ptr = error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr());
+            let error_ptr = error
+                .as_ref()
+                .map_or(::core::ptr::null(), |cause| cause.as_ptr());
             if (*cdata).item.is_null() {
                 status_message_set(
                     c,

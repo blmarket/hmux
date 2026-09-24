@@ -1,8 +1,8 @@
-use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring, OwnedArgv};
+use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::cmd_find::cmd_find_from_winlink_pane;
 use crate::src::cmd_queue::{cmdq_get_client, cmdq_get_target};
-use crate::src::compat::stdio::CFile;
 use crate::src::compat::fdforkpty::fdforkpty;
+use crate::src::compat::stdio::CFile;
 use crate::src::compat::systemd::systemd_move_to_new_cgroup;
 use crate::src::control::control_reset_pane;
 use crate::src::environ::{
@@ -15,9 +15,9 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, close, closefrom, execl, execvp, fdopen, fopen, fread,
-    fseeko, ftello, fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp,
-    sigfillset, sigprocmask, strerror, strrchr, tcgetattr, tcsetattr, unlink,
+    __errno_location, _exit, chdir, close, closefrom, execl, execvp, fdopen, fopen, fread, fseeko,
+    ftello, fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp, sigfillset, sigprocmask,
+    strerror, strrchr, tcgetattr, tcsetattr, unlink,
 };
 use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::format_single_cstring;
@@ -42,8 +42,7 @@ use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
 pub use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_add_pane, window_create, window_destroy_panes, window_pane_index,
-    window_pane_reset_mode_all, window_pane_set_argv, window_pane_set_cwd, window_pane_set_event,
-    window_pane_set_shell,
+    window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
     window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_remove_pane,
     window_replace_name, window_set_active_pane, winlink_add, winlink_find_by_index,
     winlink_remove, winlink_set_window, winlink_stack_remove,
@@ -254,8 +253,8 @@ unsafe extern "C" fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp:
         (*(*sc).wl).idx,
     );
     event_payload_set_pane(ep, b"pane\0" as *const u8 as *const ::core::ffi::c_char, wp);
-    let cmd = if (*wp).argc != 0 {
-        cmd_stringify_argv_cstring((*wp).argc, (*wp).argv)
+    let cmd = if !(*wp).argv.is_empty() {
+        cmd_stringify_argv_cstring(&(*wp).argv)
     } else {
         None
     };
@@ -379,10 +378,7 @@ pub unsafe fn spawn_window(
     if !(*sc).flags & SPAWN_RESPAWN != 0 && idx != -(1 as ::core::ffi::c_int) {
         wl = winlink_find_by_index(&raw mut (*s).windows, idx);
         if !wl.is_null() && !(*sc).flags & SPAWN_KILL != 0 {
-            set_spawn_cause(
-                cause,
-                &[b"index ", idx.to_string().as_bytes(), b" in use"],
-            );
+            set_spawn_cause(cause, &[b"index ", idx.to_string().as_bytes(), b" in use"]);
             return ::core::ptr::null_mut::<winlink>();
         }
         if !wl.is_null() {
@@ -496,8 +492,6 @@ pub unsafe fn spawn_pane(
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut child: *mut environ = ::core::ptr::null_mut::<environ>();
     let mut ee: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut argv: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut argvp: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -505,10 +499,9 @@ pub unsafe fn spawn_pane(
     let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut home: *const ::core::ffi::c_char = find_home_cstr()
-        .map_or(::core::ptr::null(), CStr::as_ptr);
+    let mut home: *const ::core::ffi::c_char =
+        find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
     let mut actual_cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut argc: ::core::ffi::c_int = 0;
     let mut idx: u_int = 0;
     let mut now: termios = termios {
         c_iflag: 0,
@@ -658,27 +651,23 @@ pub unsafe fn spawn_pane(
             (*new_wp).saved_layout_cell = (*new_wp).layout_cell as *mut layout_cell;
         }
     }
-    if (*sc).argc == 0 as ::core::ffi::c_int && !(*sc).flags & SPAWN_RESPAWN != 0 {
-        cmd = options_get_string(
-            (*s).options,
-            b"default-command\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
-            argc = 1 as ::core::ffi::c_int;
-            argv = &raw mut cmd as *mut *mut ::core::ffi::c_char;
-        } else {
-            argc = 0 as ::core::ffi::c_int;
-            argv = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
+    if (*sc).argv.is_empty() {
+        if (*sc).flags & SPAWN_RESPAWN == 0 {
+            cmd = options_get_string(
+                (*s).options,
+                b"default-command\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
+                (*new_wp).argv = vec![CStr::from_ptr(cmd).to_owned()];
+            } else {
+                (*new_wp).argv.clear();
+            }
         }
     } else {
-        argc = (*sc).argc;
-        argv = (*sc).argv;
+        (*new_wp).argv = (*sc).argv.clone();
     }
     if let Some(cwd) = cwd.take() {
         window_pane_set_cwd(new_wp, Some(cwd));
-    }
-    if argc > 0 as ::core::ffi::c_int {
-        window_pane_set_argv(new_wp, OwnedArgv::copy_from_raw(argc, argv));
     }
     // `child_owner` owns the C tree for the whole synchronous spawn
     // operation. Its raw pointer is borrowed by the translated C calls below;
@@ -754,8 +743,8 @@ pub unsafe fn spawn_pane(
         b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*new_wp).shell,
     );
-    if (*new_wp).argc != 0 as ::core::ffi::c_int {
-        let command = cmd_stringify_argv_cstring((*new_wp).argc, (*new_wp).argv);
+    if !(*new_wp).argv.is_empty() {
+        let command = cmd_stringify_argv_cstring(&(*new_wp).argv);
         log_debug(
             b"%s: cmd=%s\0" as *const u8 as *const ::core::ffi::c_char,
             b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -769,12 +758,7 @@ pub unsafe fn spawn_pane(
         b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*new_wp).cwd,
     );
-    cmd_log_argv(
-        (*new_wp).argc,
-        (*new_wp).argv,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    cmd_log_argv(&(*new_wp).argv, c"spawn_pane");
     environ_log(
         child,
         b"%s: environment \0" as *const u8 as *const ::core::ffi::c_char,
@@ -907,11 +891,10 @@ pub unsafe fn spawn_pane(
             // publishing the process environment; the parent retains its own
             // owner and drops it when this function returns.
             drop(child_owner.take());
-            if (*new_wp).argc != 0 as ::core::ffi::c_int
-                && (*new_wp).argc != 1 as ::core::ffi::c_int
-            {
-                let mut exec_argv = OwnedArgv::copy_from_raw((*new_wp).argc, (*new_wp).argv);
-                argvp = exec_argv.as_mut_ptr();
+            if (*new_wp).argv.len() > 1 {
+                let mut exec_argv: Vec<_> = (*new_wp).argv.iter().map(|arg| arg.as_ptr()).collect();
+                exec_argv.push(::core::ptr::null());
+                argvp = exec_argv.as_mut_ptr().cast();
                 execvp(
                     *argvp.offset(0 as ::core::ffi::c_int as isize),
                     argvp as *const *mut ::core::ffi::c_char,
@@ -924,8 +907,8 @@ pub unsafe fn spawn_pane(
             } else {
                 (*new_wp).shell
             };
-            if (*new_wp).argc == 1 as ::core::ffi::c_int {
-                tmp = *(*new_wp).argv.offset(0 as ::core::ffi::c_int as isize);
+            if (*new_wp).argv.len() == 1 {
+                tmp = (&(*new_wp).argv)[0].as_ptr();
                 let argv0 = CStr::from_ptr(shell_name).to_owned();
                 execl(
                     (*new_wp).shell,
@@ -939,7 +922,11 @@ pub unsafe fn spawn_pane(
             let mut login_name = vec![b'-'];
             login_name.extend_from_slice(CStr::from_ptr(shell_name).to_bytes());
             let argv0 = CString::new(login_name).expect("shell name contains no NUL");
-            execl((*new_wp).shell, argv0.as_ptr(), NULL as *mut ::core::ffi::c_char);
+            execl(
+                (*new_wp).shell,
+                argv0.as_ptr(),
+                NULL as *mut ::core::ffi::c_char,
+            );
             _exit(1 as ::core::ffi::c_int);
         }
     }
@@ -1111,8 +1098,7 @@ pub unsafe fn spawn_editor(
         wp0: ::core::ptr::null_mut::<window_pane>(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
-        argv: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        argc: 0,
+        argv: Vec::new(),
         environ: ::core::ptr::null_mut::<environ>(),
         idx: 0,
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -1194,9 +1180,6 @@ pub unsafe fn spawn_editor(
         .concat(),
     )
     .expect("editor command components contain no NUL");
-    // spawn_pane copies sc.argv into the pane before forking. This pointer is
-    // only borrowed for that synchronous call.
-    let mut cmd_ptr = cmd.as_ptr() as *mut ::core::ffi::c_char;
     // `env_owner` remains outside the C `spawn_context` and releases this
     // temporary tree on every return path after the synchronous spawn call.
     let env_owner = EnvironOwner::new();
@@ -1206,14 +1189,12 @@ pub unsafe fn spawn_editor(
     sc.tc = c;
     sc.wp0 = (*w).active;
     sc.lc = lc;
-    sc.argc = 1 as ::core::ffi::c_int;
-    sc.argv = &raw mut cmd_ptr;
+    sc.argv = vec![cmd];
     sc.environ = env;
     sc.idx = -(1 as ::core::ffi::c_int);
     sc.cwd = _PATH_TMP.as_ptr();
     sc.flags = SPAWN_FLOATING | SPAWN_MODAL | SPAWN_FLOATOVERZOOM;
     wp = spawn_pane(&raw mut sc, &raw mut cause);
-    drop(cmd);
     if wp.is_null() {
         window_pop_zoom(w);
         spawn_editor_free(es);
@@ -1309,10 +1290,7 @@ mod tests {
         run_isolated(FAILURE_TEST, FAILURE_CASE);
     }
 
-    unsafe fn capture_editor_result(
-        result: Option<Vec<u8>>,
-        arg: *mut ::core::ffi::c_void,
-    ) {
+    unsafe fn capture_editor_result(result: Option<Vec<u8>>, arg: *mut ::core::ffi::c_void) {
         *(arg as *mut Option<Vec<u8>>) = result;
     }
 

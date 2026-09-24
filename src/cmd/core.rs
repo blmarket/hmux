@@ -91,9 +91,8 @@ pub use crate::src::shared::arguments::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
@@ -152,7 +151,6 @@ use crate::src::tmux::global_options;
 use crate::src::window::{
     window_find_by_id, window_has_pane, window_pane_find_by_id, winlink_find_by_window,
 };
-use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
@@ -271,86 +269,56 @@ pub static mut cmd_table: [*const cmd_entry; 93] = unsafe {
     ]
 };
 static mut cmd_list_next_group: u_int = 1 as u_int;
-#[no_mangle]
-pub unsafe extern "C" fn cmd_log_argv(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) {
-    let mut ap: ::core::ffi::VaList;
-    let mut i: ::core::ffi::c_int = 0;
-    ap = args.clone();
-    let prefix = xvasprintf_cstring(fmt, ap);
-    i = 0 as ::core::ffi::c_int;
-    while i < argc {
+pub unsafe fn cmd_log_argv(argv: &Vec<CString>, prefix: &CStr) {
+    for (i, arg) in argv.iter().enumerate() {
         log_debug(
             b"%s: argv[%d]=%s\0" as *const u8 as *const ::core::ffi::c_char,
             prefix.as_ptr(),
-            i,
-            *argv.offset(i as isize),
+            i as ::core::ffi::c_int,
+            arg.as_ptr(),
         );
-        i += 1;
     }
 }
-pub(crate) unsafe fn cmd_append_argv(argv: &mut OwnedArgv, arg: *const ::core::ffi::c_char) {
-    argv.push_cstr(CStr::from_ptr(arg));
+pub(crate) unsafe fn cmd_append_argv(argv: &mut Vec<CString>, arg: *const ::core::ffi::c_char) {
+    argv.push(CStr::from_ptr(arg).to_owned());
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_pack_argv(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
+pub unsafe fn cmd_pack_argv(
+    argv: &Vec<CString>,
     mut buf: *mut ::core::ffi::c_char,
     mut len: size_t,
 ) -> ::core::ffi::c_int {
     let mut arglen: size_t = 0;
     let mut i: ::core::ffi::c_int = 0;
-    if argc == 0 as ::core::ffi::c_int {
+    if argv.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
-    cmd_log_argv(
-        argc,
-        argv,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_pack_argv\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    cmd_log_argv(argv, c"cmd_pack_argv");
     *buf = '\0' as i32 as ::core::ffi::c_char;
     i = 0 as ::core::ffi::c_int;
-    while i < argc {
-        if strlcpy(buf, *argv.offset(i as isize), len) as size_t >= len {
+    while (i as usize) < argv.len() {
+        if strlcpy(buf, argv[i as usize].as_ptr(), len) as size_t >= len {
             return -(1 as ::core::ffi::c_int);
         }
-        arglen = strlen(*argv.offset(i as isize)).wrapping_add(1 as size_t);
+        arglen = argv[i as usize].as_bytes_with_nul().len() as size_t;
         buf = buf.offset(arglen as isize);
         len = len.wrapping_sub(arglen);
         i += 1;
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn cmd_stringify_argv(
-    argc: ::core::ffi::c_int,
-    argv: *mut *mut ::core::ffi::c_char,
-) -> Option<CString> {
-    cmd_stringify_argv_cstring(argc, argv)
+pub unsafe fn cmd_stringify_argv(argv: &Vec<CString>) -> Option<CString> {
+    cmd_stringify_argv_cstring(argv)
 }
 
-pub(crate) unsafe fn cmd_stringify_argv_cstring(
-    argc: ::core::ffi::c_int,
-    argv: *mut *mut ::core::ffi::c_char,
-) -> Option<CString> {
-    // The original C function returned NULL for a negative count.
-    if argc < 0 {
-        return None;
-    }
+pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &Vec<CString>) -> Option<CString> {
     let mut bytes = Vec::new();
-    for i in 0..argc {
-        let argument = *argv.offset(i as isize);
-        let escaped = args_escape_cstring(CStr::from_ptr(argument));
+    for (i, argument) in argv.iter().enumerate() {
+        let escaped = args_escape_cstring(argument);
         log_debug(
             b"%s: %u %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmd_stringify_argv\0" as *const u8 as *const ::core::ffi::c_char,
             i,
-            argument,
+            argument.as_ptr(),
             escaped.as_ptr(),
         );
         if i != 0 {
@@ -379,7 +347,9 @@ pub unsafe extern "C" fn cmd_get_source(
     mut line: *mut u_int,
 ) {
     if !file.is_null() {
-        *file = ((*cmd).file).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+        *file = ((*cmd).file)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
     if !line.is_null() {
         *line = (*cmd).line;
@@ -420,9 +390,7 @@ pub unsafe fn cmd_get_alias(name: *const ::core::ffi::c_char) -> Option<CString>
     }
     None
 }
-pub unsafe fn cmd_find(
-    mut name: *const ::core::ffi::c_char,
-) -> Result<*const cmd_entry, CString> {
+pub unsafe fn cmd_find(mut name: *const ::core::ffi::c_char) -> Result<*const cmd_entry, CString> {
     let mut loop_0: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     let mut found: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
@@ -556,12 +524,7 @@ pub unsafe extern "C" fn cmd_free(mut cmd: *mut cmd) {
     args_free((*cmd).args);
     drop(Box::from_raw(cmd));
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_copy(
-    mut cmd: *mut cmd,
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
-) -> *mut cmd {
+pub unsafe fn cmd_copy(mut cmd: *mut cmd, argv: &Vec<CString>) -> *mut cmd {
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     new_cmd = cmd_new_owned(
         ((*cmd).file)
@@ -569,7 +532,7 @@ pub unsafe extern "C" fn cmd_copy(
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     (*new_cmd).entry = (*cmd).entry;
-    (*new_cmd).args = args_copy((*cmd).args, argc, argv);
+    (*new_cmd).args = args_copy((*cmd).args, argv);
     (*new_cmd).line = (*cmd).line;
     return new_cmd;
 }
@@ -673,11 +636,9 @@ pub unsafe extern "C" fn cmd_list_free(mut cmdlist: *mut cmd_list) {
     drop(Box::from_raw((*cmdlist).list));
     drop(Box::from_raw(cmdlist));
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_copy(
+pub unsafe fn cmd_list_copy(
     mut cmdlist: *const cmd_list,
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
+    argv: &Vec<CString>,
 ) -> *mut cmd_list {
     let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
@@ -696,7 +657,7 @@ pub unsafe extern "C" fn cmd_list_copy(
             (*new_cmdlist).group = fresh7;
             group = (*cmd).group;
         }
-        new_cmd = cmd_copy(cmd, argc, argv);
+        new_cmd = cmd_copy(cmd, argv);
         cmd_list_append(new_cmdlist, new_cmd);
     }
     let s = cmd_list_print_cstring(new_cmdlist, 0);
@@ -729,10 +690,7 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: *const cmd_list, flags: i32
     CString::new(buf).expect("command list contains no interior NUL")
 }
 
-pub unsafe fn cmd_list_print(
-    cmdlist: *const cmd_list,
-    flags: ::core::ffi::c_int,
-) -> CString {
+pub unsafe fn cmd_list_print(cmdlist: *const cmd_list, flags: ::core::ffi::c_int) -> CString {
     cmd_list_print_cstring(cmdlist, flags)
 }
 #[no_mangle]

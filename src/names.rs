@@ -3,8 +3,7 @@ use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, gettimeofday, memcpy, strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::format::{
-    format_create, format_defaults_pane, format_defaults_window, format_expand_cstring,
-    format_free,
+    format_create, format_defaults_pane, format_defaults_window, format_expand_cstring, format_free,
 };
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
@@ -14,9 +13,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -217,7 +215,7 @@ pub(crate) unsafe fn default_window_name_cstring(w: *mut window) -> CString {
     if (*w).active.is_null() {
         return c"".to_owned();
     }
-    let cmd = cmd_stringify_argv_cstring((*(*w).active).argc, (*(*w).active).argv);
+    let cmd = cmd_stringify_argv_cstring(&(*(*w).active).argv);
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         parse_window_name_cstring(cmd)
     } else {

@@ -2,7 +2,7 @@ use crate::src::arguments::{
     args_count, args_first_value, args_get, args_has, args_next_value, args_to_vector,
 };
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry, OwnedArgv};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_attach_session::cmd_attach_session;
 use crate::src::cmd_find::cmd_find_from_session;
 use crate::src::cmd_queue::{
@@ -34,9 +34,8 @@ pub use crate::src::shared::arguments::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 pub use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL};
 use crate::src::shared::colour::*;
@@ -220,14 +219,13 @@ unsafe extern "C" fn cmd_new_session_exec(
         wp0: ::core::ptr::null_mut::<window_pane>(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: ::core::ptr::null::<::core::ffi::c_char>(),
-        argv: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        argc: 0,
+        argv: Vec::new(),
         environ: ::core::ptr::null_mut::<environ>(),
         idx: 0,
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
     };
-    let mut argv_owner = OwnedArgv::default();
+    let mut argv_owner = Vec::new();
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -351,7 +349,9 @@ unsafe extern "C" fn cmd_new_session_exec(
                         prefix = Some(CStr::from_ptr(((*sg).name).as_ptr().cast_mut()).to_owned());
                         current_block = 6717214610478484138;
                     } else if !groupwith.is_null() {
-                        prefix = Some(CStr::from_ptr(((*groupwith).name).as_ptr().cast_mut()).to_owned());
+                        prefix = Some(
+                            CStr::from_ptr(((*groupwith).name).as_ptr().cast_mut()).to_owned(),
+                        );
                         current_block = 6717214610478484138;
                     } else if check_name(group) == 0 {
                         cmdq_error(
@@ -648,8 +648,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                         }
                                                         sc.name = wname;
                                                         argv_owner = args_to_vector(args);
-                                                        sc.argc = argv_owner.argc();
-                                                        sc.argv = argv_owner.as_mut_ptr();
+                                                        sc.argv = argv_owner;
                                                         sc.idx = -(1 as ::core::ffi::c_int);
                                                         sc.cwd =
                                                             args_get(args, 'c' as i32 as u_char);
@@ -679,7 +678,9 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                                 if sg.is_null() {
                                                                     if !groupwith.is_null() {
                                                                         sg = session_group_new(
-                                                                            ((*groupwith).name).as_ptr().cast_mut(),
+                                                                            ((*groupwith).name)
+                                                                                .as_ptr()
+                                                                                .cast_mut(),
                                                                         );
                                                                         session_group_add(
                                                                             sg, groupwith,

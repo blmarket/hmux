@@ -532,10 +532,7 @@ unsafe extern "C" fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn expand_path(
-    path: *const ::core::ffi::c_char,
-    home: Option<&CStr>,
-) -> Option<CString> {
+unsafe fn expand_path(path: *const ::core::ffi::c_char, home: Option<&CStr>) -> Option<CString> {
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     if strncmp(
@@ -569,7 +566,13 @@ unsafe fn expand_path(
         let mut expanded = if (*value).value.is_none() {
             b"(null)".to_vec()
         } else {
-            CStr::from_ptr(((*value).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes().to_vec()
+            CStr::from_ptr(
+                ((*value).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )
+            .to_bytes()
+            .to_vec()
         };
         expanded.extend_from_slice(CStr::from_ptr(end).to_bytes());
         return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
@@ -875,10 +878,11 @@ pub unsafe extern "C" fn find_home() -> *const ::core::ffi::c_char {
 pub unsafe extern "C" fn getversion() -> *const ::core::ffi::c_char {
     return b"next-3.9\0" as *const u8 as *const ::core::ffi::c_char;
 }
-unsafe fn main_0(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
+    let mut argc = ::core::ffi::c_int::try_from(args.len()).expect("argv length exceeds c_int");
+    let mut argv_view: Vec<_> = args.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
+    argv_view.push(::core::ptr::null_mut());
+    let mut argv = argv_view.as_mut_ptr();
     let mut path: Option<CString> = None;
     // BSDoptarg points into argv, which main keeps alive through main_0.
     let mut label: Option<&CStr> = None;
@@ -925,7 +929,7 @@ unsafe fn main_0(
     }
     setlocale(LC_TIME, b"\0" as *const u8 as *const ::core::ffi::c_char);
     tzset();
-    if **argv as ::core::ffi::c_int == '-' as i32 {
+    if args.first().and_then(|arg| arg.as_bytes().first()) == Some(&b'-') {
         flags = CLIENT_LOGIN as uint64_t;
     }
     global_environ = environ_create();
@@ -1155,7 +1159,10 @@ unsafe fn main_0(
     // The global pointer borrows this owner through client_main, including
     // the server fork. Systemd activation may replace the global separately.
     socket_path = path.as_ref().expect("socket path was selected").as_ptr();
-    exit(client_main(osdep_event_init(), argc, argv, flags, feat));
+    let command_argv: Vec<CString> = (0..argc)
+        .map(|i| CStr::from_ptr(*argv.add(i as usize)).to_owned())
+        .collect();
+    exit(client_main(osdep_event_init(), &command_argv, flags, feat));
 }
 pub const TMUX_VERSION: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"next-3.9\0") };
@@ -1165,22 +1172,11 @@ pub const TMUX_CONF: [::core::ffi::c_char; 85] = unsafe {
     )
 };
 pub fn main() {
-    let mut args_strings: Vec<Vec<u8>> = ::std::env::args_os()
+    let args_strings: Vec<CString> = ::std::env::args_os()
         .map(|arg| {
-            ::std::ffi::CString::new(::std::os::unix::ffi::OsStrExt::as_bytes(arg.as_os_str()))
+            CString::new(::std::os::unix::ffi::OsStrExt::as_bytes(arg.as_os_str()))
                 .expect("Failed to convert argument into CString.")
-                .into_bytes_with_nul()
         })
         .collect();
-    let mut args_ptrs: Vec<*mut ::core::ffi::c_char> = args_strings
-        .iter_mut()
-        .map(|arg| arg.as_mut_ptr() as *mut ::core::ffi::c_char)
-        .chain(::core::iter::once(::core::ptr::null_mut()))
-        .collect();
-    unsafe {
-        ::std::process::exit(main_0(
-            (args_ptrs.len() - 1) as ::core::ffi::c_int,
-            args_ptrs.as_mut_ptr() as *mut *mut ::core::ffi::c_char,
-        ) as i32)
-    }
+    unsafe { ::std::process::exit(main_0(&args_strings) as i32) }
 }

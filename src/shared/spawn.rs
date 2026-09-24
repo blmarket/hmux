@@ -44,7 +44,6 @@ impl spawn_editor_state {
 /// Rust-only callback so the editor result can move as owned binary bytes.
 pub type spawn_finish_edit_cb = Option<unsafe fn(Option<Vec<u8>>, *mut ::core::ffi::c_void) -> ()>;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct spawn_context {
     pub item: *mut cmdq_item,
@@ -54,8 +53,7 @@ pub struct spawn_context {
     pub wp0: *mut window_pane,
     pub lc: *mut layout_cell,
     pub name: *const ::core::ffi::c_char,
-    pub argv: *mut *mut ::core::ffi::c_char,
-    pub argc: ::core::ffi::c_int,
+    pub argv: Vec<std::ffi::CString>,
     pub environ: *mut environ,
     pub idx: ::core::ffi::c_int,
     pub cwd: *const ::core::ffi::c_char,

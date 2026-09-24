@@ -5,9 +5,9 @@ use hmux2::src::arguments::{
     args_create, args_free, args_print, args_push_positional_commands, args_to_vector,
 };
 use hmux2::src::cmd::{
-    cmd, cmd_free, cmd_list_append, cmd_list_append_all, cmd_list_copy,
-    cmd_list_first, cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print,
-    cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
+    cmd, cmd_free, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_first,
+    cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print, cmd_parse,
+    cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::shared::arguments::{args_value, ARGS_STRING};
 
@@ -81,11 +81,10 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             b"{ display-message ; display-message ;; display-message }"
         );
 
-        let mut argv = args_to_vector(args);
-        assert_eq!(argv.argc(), 1);
-        let argv_ptr = argv.as_mut_ptr();
+        let argv = args_to_vector(args);
+        assert_eq!(argv.len(), 1);
         assert_eq!(
-            CStr::from_ptr(*argv_ptr).to_bytes(),
+            argv[0].as_bytes(),
             b"display-message ; display-message ;; display-message"
         );
         args_free(args);
@@ -115,7 +114,7 @@ fn list_splice_copy_and_refcount_keep_command_pointers_stable() {
         assert_eq!(cmd_list_next(second), third);
         assert!(cmd_list_next(third).is_null());
 
-        let copied = cmd_list_copy(destination, 0, ptr::null_mut());
+        let copied = cmd_list_copy(destination, &Vec::new());
         let copied_first = cmd_list_first(copied);
         let copied_second = cmd_list_next(copied_first);
         let copied_third = cmd_list_next(copied_second);

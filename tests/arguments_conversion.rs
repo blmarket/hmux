@@ -375,7 +375,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
         let second = args_string(args, 1);
         assert_ne!(first, second);
 
-        let copied = args_copy(args, 0, ptr::null_mut());
+        let copied = args_copy(args, &Vec::new());
         let copied_first = args_string(copied, 0);
         let copied_second = args_string(copied, 1);
         assert_ne!(copied_first, first);
@@ -396,8 +396,8 @@ fn copied_argument_templates_own_intermediate_and_final_strings() {
         args_set_owned_string(source, b'q', c"%%".to_owned(), 0);
         args_push_positional_string(source, c"%2:%1".to_owned());
 
-        let mut argv = [c"A'B".as_ptr().cast_mut(), c"X Y".as_ptr().cast_mut()];
-        let copied = args_copy(source, argv.len() as i32, argv.as_mut_ptr());
+        let argv = vec![c"A'B".to_owned(), c"X Y".to_owned()];
+        let copied = args_copy(source, &argv);
         let source_named = args_first_value(source, b'n');
         let copied_named = args_first_value(copied, b'n');
         assert_ne!(
@@ -444,10 +444,7 @@ fn rejected_command_argument_keeps_source_value_ownership() {
             hmux2::src::arguments::ArgsParseError::Message(error) => error,
             hmux2::src::arguments::ArgsParseError::Usage => panic!("expected a diagnostic"),
         };
-        assert_eq!(
-            error.to_bytes(),
-            b"argument 1 must be \"string\""
-        );
+        assert_eq!(error.to_bytes(), b"argument 1 must be \"string\"");
         cmd_list_free(command_list);
     }
 }

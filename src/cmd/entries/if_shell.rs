@@ -3,11 +3,11 @@ use crate::src::arguments::{
     args_make_commands_prepare, args_string,
 };
 use crate::src::cmd::{cmd_get_args, cmd_list_free};
+use crate::src::cmd_parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::cmd_parse::cmd_parse_error_uppercase_first;
 use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::{job_get_data, job_get_status, job_run};
@@ -19,9 +19,8 @@ use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::CMD_FIND_CANFAIL;
@@ -210,8 +209,7 @@ unsafe extern "C" fn cmd_if_shell_exec(
     let cdata = Box::into_raw(cdata);
     if job_run(
         shellcmd.as_ptr(),
-        0 as ::core::ffi::c_int,
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+        &Vec::new(),
         ::core::ptr::null_mut::<environ>(),
         s,
         server_client_get_cwd(cmdq_get_client(item), s),
@@ -255,32 +253,30 @@ unsafe extern "C" fn cmd_if_shell_callback(mut job: *mut job) {
         state = (*cdata).cmd_if;
     }
     if !state.is_null() {
-        match args_make_commands(
-            state,
-            0 as ::core::ffi::c_int,
-            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        ) {
+        match args_make_commands(state, &Vec::new()) {
             Err(mut error) => {
                 if (*cdata).item.is_null() {
                     cmd_parse_error_uppercase_first(&mut error);
                 }
-                let error_ptr = error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr());
+                let error_ptr = error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr());
                 if (*cdata).item.is_null() {
-                status_message_set(
-                    c,
-                    -(1 as ::core::ffi::c_int),
-                    1 as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                    status_message_set(
+                        c,
+                        -(1 as ::core::ffi::c_int),
+                        1 as ::core::ffi::c_int,
+                        0 as ::core::ffi::c_int,
+                        0 as ::core::ffi::c_int,
+                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                         error_ptr,
-                );
+                    );
                 } else {
-                cmdq_error(
-                    (*cdata).item,
-                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                    cmdq_error(
+                        (*cdata).item,
+                        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                         error_ptr,
-                );
+                    );
                 }
             }
             Ok(commands) if item.is_null() => {

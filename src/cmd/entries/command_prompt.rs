@@ -2,7 +2,7 @@ use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_free,
     args_make_commands_get_command_cstring, args_make_commands_prepare,
 };
-use crate::src::cmd::{cmd_append_argv, cmd_get_args, cmd_list_free, OwnedArgv};
+use crate::src::cmd::{cmd_append_argv, cmd_get_args, cmd_list_free};
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
@@ -14,9 +14,8 @@ use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::CMD_CLIENT_TFLAG;
@@ -90,7 +89,7 @@ pub struct cmd_command_prompt_cdata {
     pub wp: *mut window_pane,
     pub prompts: Vec<cmd_command_prompt_prompt>,
     pub current: u_int,
-    pub argv: OwnedArgv,
+    pub argv: Vec<CString>,
 }
 pub struct cmd_command_prompt_prompt {
     pub input: Option<CString>,
@@ -216,7 +215,7 @@ unsafe extern "C" fn cmd_command_prompt_exec(
         wp: ::core::ptr::null_mut(),
         prompts: Vec::new(),
         current: 0,
-        argv: OwnedArgv::default(),
+        argv: Vec::new(),
     }));
     if wait != 0 {
         (*cdata).item = item;
@@ -344,9 +343,6 @@ unsafe extern "C" fn cmd_command_prompt_callback(
     let mut cdata: *mut cmd_command_prompt_cdata = data as *mut cmd_command_prompt_cdata;
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut argv: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     if !(s.is_null()
         || key as ::core::ffi::c_uint
             == PROMPT_KEY_MOVE as ::core::ffi::c_int as ::core::ffi::c_uint)
@@ -377,24 +373,23 @@ unsafe extern "C" fn cmd_command_prompt_callback(
         match current_block {
             11745758271394821990 => {}
             _ => {
-                let mut argv_owner = (*cdata).argv.copy();
+                let mut argv_owner = (*cdata).argv.clone();
                 if key as ::core::ffi::c_uint
                     != PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     cmd_append_argv(&mut argv_owner, s);
                 } else {
-                    (*cdata).argv = argv_owner.copy();
+                    (*cdata).argv = argv_owner.clone();
                 }
-                argc = argv_owner.argc();
-                argv = argv_owner.as_mut_ptr();
-                match args_make_commands((*cdata).state, argc, argv) {
+                match args_make_commands((*cdata).state, &argv_owner) {
                     Err(error) => {
                         cmdq_append(
                             c,
-                            cmdq_get_error(error.as_ref().map_or(
-                                ::core::ptr::null(),
-                                |cause| cause.as_ptr(),
-                            )),
+                            cmdq_get_error(
+                                error
+                                    .as_ref()
+                                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                            ),
                         );
                     }
                     Ok(cmdlist) if item.is_null() => {

@@ -2,7 +2,7 @@ use crate::src::arguments::{
     args_count, args_first_value, args_get, args_has, args_next_value, args_percentage_result,
     args_string, args_strtonum_result, args_to_vector,
 };
-use crate::src::cmd::{cmd_append_argv, cmd_get_args, OwnedArgv};
+use crate::src::cmd::{cmd_append_argv, cmd_get_args};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::ffi::libc::{free, strcmp, strtol};
@@ -27,9 +27,8 @@ pub use crate::src::shared::arguments::{
 pub use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
@@ -1166,10 +1165,10 @@ unsafe extern "C" fn cmd_display_menu_exec(
                                 ) as box_lines;
                                 if lines as ::core::ffi::c_int == -(1 as ::core::ffi::c_int) {
                                     cmdq_error(
-                                    item,
-                                    b"menu-border-lines %s\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                    cause.as_ref().unwrap().as_ptr(),
+                                        item,
+                                        b"menu-border-lines %s\0" as *const u8
+                                            as *const ::core::ffi::c_char,
+                                        cause.as_ref().unwrap().as_ptr(),
                                     );
                                     current_block = 17658167438033882251;
                                 } else {
@@ -1248,14 +1247,11 @@ unsafe extern "C" fn cmd_display_popup_exec(
     let mut formatted_cwd: Option<std::ffi::CString> = None;
     let mut default_cwd: Option<std::ffi::CString> = None;
     let mut cause: Option<std::ffi::CString> = None;
-    let mut argv: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut argv_owner = OwnedArgv::default();
+    let mut argv_owner = Vec::new();
     let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_title: Option<std::ffi::CString> = None;
     let mut modify: ::core::ffi::c_int = popup_present(tc);
     let mut flags: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut lines: box_lines = BOX_LINES_DEFAULT;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -1393,8 +1389,6 @@ unsafe extern "C" fn cmd_display_popup_exec(
                             } else {
                                 argv_owner = args_to_vector(args);
                             }
-                            argc = argv_owner.argc();
-                            argv = argv_owner.as_mut_ptr();
                             if args_has(args, 'e' as i32 as u_char) >= 1 as ::core::ffi::c_int {
                                 env = environ_create();
                                 av = args_first_value(args, 'e' as i32 as u_char);
@@ -1489,8 +1483,7 @@ unsafe extern "C" fn cmd_display_popup_exec(
                         h,
                         env,
                         shellcmd,
-                        argc,
-                        argv,
+                        &argv_owner,
                         cwd,
                         title,
                         tc,

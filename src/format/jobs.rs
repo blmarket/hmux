@@ -60,7 +60,9 @@ pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
         b"format_job_update\0" as *const u8 as *const ::core::ffi::c_char,
         fj,
         ((*fj).cmd).as_ptr().cast_mut(),
-        ((*fj).out).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*fj).out)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     t = time(::core::ptr::null_mut::<time_t>());
     if (*fj).status != 0 && (*fj).last != t {
@@ -159,7 +161,12 @@ pub(super) unsafe fn format_job_get(
     next.flags &= !FORMAT_EXPAND_TIME;
     let expanded = format_expand1_cstring(&raw mut next, cmd);
     if (*fj).expanded.is_none()
-        || strcmp(expanded.as_ptr(), ((*fj).expanded).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())) != 0 as ::core::ffi::c_int
+        || strcmp(
+            expanded.as_ptr(),
+            ((*fj).expanded)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) != 0 as ::core::ffi::c_int
     {
         format_job_set_expanded(fj, expanded.clone());
         force = 1 as ::core::ffi::c_int;
@@ -173,8 +180,7 @@ pub(super) unsafe fn format_job_get(
     if force != 0 || (*fj).job.is_null() && (*fj).last != t {
         (*fj).job = job_run(
             expanded.as_ptr(),
-            0 as ::core::ffi::c_int,
-            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+            &Vec::new(),
             ::core::ptr::null_mut::<environ>(),
             ::core::ptr::null_mut::<session>(),
             server_client_get_cwd((*ft).client, ::core::ptr::null_mut::<session>()),
@@ -228,7 +234,12 @@ unsafe fn format_job_find_or_insert(
             job: std::ptr::null_mut(),
             status: 0,
         };
-        Box::into_raw(Box::new(format_job { cmd: command, expanded: None, out: None, ..node }))
+        Box::into_raw(Box::new(format_job {
+            cmd: command,
+            expanded: None,
+            out: None,
+            ..node
+        }))
         .cast::<format_job>()
     })
 }
@@ -335,7 +346,12 @@ mod tests {
             for pair in jobs.windows(2) {
                 let (a, b) = (pair[0], pair[1]);
                 assert!(
-                    (*a).tag < (*b).tag || ((*a).tag == (*b).tag && strcmp(((*a).cmd).as_ptr().cast_mut(), ((*b).cmd).as_ptr().cast_mut()) < 0)
+                    (*a).tag < (*b).tag
+                        || ((*a).tag == (*b).tag
+                            && strcmp(
+                                ((*a).cmd).as_ptr().cast_mut(),
+                                ((*b).cmd).as_ptr().cast_mut()
+                            ) < 0)
                 );
             }
             format_job_tidy_at(&mut cache, 1, 0);
@@ -384,7 +400,12 @@ mod tests {
             for (cmd, fj) in survivors {
                 assert_eq!(cache.entries.get(&(0, cmd.as_bytes().to_vec())), Some(&fj));
                 assert_eq!(
-                    std::ffi::CStr::from_ptr(((*fj).out).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
+                    std::ffi::CStr::from_ptr(
+                        ((*fj).out)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                    )
+                    .to_bytes(),
                     cmd.as_bytes()
                 );
             }
@@ -413,7 +434,12 @@ mod tests {
             format_job_set_expanded(fj, CString::new(b"expanded\xff".to_vec()).unwrap());
             format_job_set_out(fj, format_job_message(fj, b"' not ready>"));
             assert_eq!(
-                CStr::from_ptr(((*fj).out).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
+                CStr::from_ptr(
+                    ((*fj).out)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
                 b"<'printf '\xff'' not ready>"
             );
             assert_eq!(

@@ -1,6 +1,6 @@
 use crate::src::alerts::alerts_queue;
 use crate::src::arguments::args_has;
-use crate::src::cmd::{cmd_mouse_at, OwnedArgv};
+use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd_find::{cmd_find_from_pane, cmd_find_from_window};
 use crate::src::cmd_queue::{cmdq_continue, cmdq_get_client};
 use crate::src::colour::{
@@ -2811,8 +2811,7 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
                 tv_usec: 0,
             },
         },
-        argc: 0,
-        argv: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+        argv: Vec::new(),
         shell: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         cwd: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         pid: 0,
@@ -3064,7 +3063,6 @@ struct WindowPaneOwned {
     searchstr_owner: Option<CString>,
     shell_owner: Option<CString>,
     cwd_owner: Option<CString>,
-    argv_owner: OwnedArgv,
 }
 
 const _: () = assert!(::core::mem::offset_of!(WindowPaneOwned, pane) == 0);
@@ -3140,14 +3138,6 @@ unsafe fn window_pane_mode_promote(wp: *mut window_pane, wme: *mut window_mode_e
         return;
     };
     window_pane_mode_insert_front(wp, entry);
-}
-
-/// Store pane argv in its Rust owner and refresh the translated C pointer view.
-pub(crate) unsafe fn window_pane_set_argv(wp: *mut window_pane, argv: OwnedArgv) {
-    let owner = wp.cast::<WindowPaneOwned>();
-    (*owner).argv_owner = argv;
-    (*wp).argc = (*owner).argv_owner.argc();
-    (*wp).argv = (*owner).argv_owner.as_mut_ptr();
 }
 
 #[cfg(test)]
@@ -3261,7 +3251,6 @@ unsafe extern "C" fn window_pane_create(
         searchstr_owner: None,
         shell_owner: None,
         cwd_owner: None,
-        argv_owner: OwnedArgv::default(),
     })) as *mut window_pane;
     (*wp).references = 1 as ::core::ffi::c_int;
     (*wp).window = w as *mut window;

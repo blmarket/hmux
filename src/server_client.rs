@@ -1,7 +1,7 @@
 use crate::src::alerts::alerts_check_session;
 use crate::src::arguments::OwnedArgumentVector;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
-use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv, OwnedArgv};
+use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
 use crate::src::cmd_find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd_parse::cmd_parse_from_arguments;
 use crate::src::cmd_queue::{
@@ -64,6 +64,7 @@ use crate::src::server_fn::{
     server_redraw_window_borders, server_status_client, server_status_window,
 };
 use crate::src::session::{session_find_by_id, session_theme_changed, session_update_activity};
+use crate::src::shared::command::unpack_argv;
 pub use crate::src::shared::events::event_payload;
 pub use crate::src::shared::message::msg_command;
 pub use crate::src::shared::pane::window_pane_tree;
@@ -1230,9 +1231,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     );
     return c;
 }
-pub unsafe fn server_client_open(
-    mut c: *mut client,
-) -> Result<(), CString> {
+pub unsafe fn server_client_open(mut c: *mut client) -> Result<(), CString> {
     let mut ttynam: *const ::core::ffi::c_char = _PATH_TTY.as_ptr();
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         return Ok(());
@@ -1279,7 +1278,9 @@ pub unsafe fn server_client_open(
     {
         let mut message = b"can't use ".to_vec();
         message.extend_from_slice(
-            (*c).ttyname.as_ref().map_or(b"(null)".as_slice(), |name| name.to_bytes()),
+            (*c).ttyname
+                .as_ref()
+                .map_or(b"(null)".as_slice(), |name| name.to_bytes()),
         );
         return Err(CString::new(message).expect("terminal name contains no NUL"));
     }
@@ -4726,7 +4727,7 @@ unsafe extern "C" fn server_client_dispatch_command(
     let mut data: msg_command = msg_command { argc: 0 };
     let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut len: size_t = 0;
-    let mut argv = OwnedArgv::default();
+    let mut argv = Vec::new();
     let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut cause: Option<CString> = None;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -4754,16 +4755,16 @@ unsafe extern "C" fn server_client_dispatch_command(
         return -(1 as ::core::ffi::c_int);
     }
     let unpacked = if len == 0 {
-        OwnedArgv::unpack(&mut [], data.argc)
+        unpack_argv(&mut [], data.argc)
     } else {
-        OwnedArgv::unpack(
+        unpack_argv(
             std::slice::from_raw_parts_mut(buf.cast::<u8>(), len as usize),
             data.argc,
         )
     };
     if let Ok(decoded) = unpacked {
         argv = decoded;
-        argc = argv.argc();
+        argc = ::core::ffi::c_int::try_from(argv.len()).expect("argv length exceeds c_int");
         if argc == 0 as ::core::ffi::c_int {
             new_item = cmdq_get_callback1(
                 b"server_client_default_command\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4778,13 +4779,8 @@ unsafe extern "C" fn server_client_dispatch_command(
             );
             current_block = 13472856163611868459;
         } else {
-            cmd_log_argv(
-                argc,
-                argv.as_mut_ptr(),
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                b"cmd_unpack_argv\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            let mut values = OwnedArgumentVector::from_argv(argc, argv.as_mut_ptr());
+            cmd_log_argv(&argv, c"cmd_unpack_argv");
+            let mut values = OwnedArgumentVector::from_argv(&argv);
             let pr = cmd_parse_from_arguments(
                 values.as_mut_ptr(),
                 argc as u_int,
@@ -4813,7 +4809,8 @@ unsafe extern "C" fn server_client_dispatch_command(
                             ::core::ptr::null_mut::<::core::ffi::c_void>(),
                         );
                     } else {
-                        new_item = cmdq_get_command(pr.cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+                        new_item =
+                            cmdq_get_command(pr.cmdlist, ::core::ptr::null_mut::<cmdq_state>());
                     }
                     cmd_list_free(pr.cmdlist);
                     current_block = 13472856163611868459;
@@ -4847,7 +4844,11 @@ unsafe extern "C" fn server_client_dispatch_command(
     }
     cmdq_append(
         c,
-        cmdq_get_error(cause.as_ref().map_or(::core::ptr::null(), |error| error.as_ptr())),
+        cmdq_get_error(
+            cause
+                .as_ref()
+                .map_or(::core::ptr::null(), |error| error.as_ptr()),
+        ),
     );
     (*c).flags |= CLIENT_EXIT as uint64_t;
     return 0 as ::core::ffi::c_int;
@@ -5476,11 +5477,9 @@ pub unsafe extern "C" fn server_client_print(
             }
             if parse != 0 {
                 loop {
-                    let Some(line) = evbuffer_readln(
-                        evb,
-                        ::core::ptr::null_mut::<size_t>(),
-                        EVBUFFER_EOL_LF,
-                    ) else {
+                    let Some(line) =
+                        evbuffer_readln(evb, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF)
+                    else {
                         break;
                     };
                     window_copy_add(

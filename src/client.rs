@@ -33,9 +33,8 @@ pub use crate::src::shared::arguments::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 pub use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
@@ -360,11 +359,9 @@ unsafe extern "C" fn client_exit() {
         proc_exit(client_proc);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn client_main(
+pub unsafe fn client_main(
     mut base: *mut event_base,
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
+    argv: &Vec<CString>,
     mut flags: uint64_t,
     mut feat: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -401,15 +398,15 @@ pub unsafe extern "C" fn client_main(
     if !shell_command.is_null() {
         msg = MSG_SHELL;
         flags |= CLIENT_STARTSERVER as uint64_t;
-    } else if argc == 0 as ::core::ffi::c_int {
+    } else if argv.is_empty() {
         msg = MSG_COMMAND;
         flags |= CLIENT_STARTSERVER as uint64_t;
     } else {
         msg = MSG_COMMAND;
-        let mut values = OwnedArgumentVector::from_argv(argc, argv);
+        let mut values = OwnedArgumentVector::from_argv(argv);
         pr = cmd_parse_from_arguments(
             values.as_mut_ptr(),
-            argc as u_int,
+            argv.len() as u_int,
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
         drop(values);
@@ -528,8 +525,8 @@ pub unsafe extern "C" fn client_main(
     if msg as ::core::ffi::c_uint == MSG_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint {
         size = 0 as size_t;
         i = 0 as ::core::ffi::c_int;
-        while i < argc {
-            size = size.wrapping_add(strlen(*argv.offset(i as isize)).wrapping_add(1 as size_t));
+        while (i as usize) < argv.len() {
+            size = size.wrapping_add(argv[i as usize].as_bytes_with_nul().len() as size_t);
             i += 1;
         }
         if size
@@ -546,9 +543,9 @@ pub unsafe extern "C" fn client_main(
         );
         let header_size = ::core::mem::size_of::<msg_command>();
         let mut data = vec![0u8; header_size + size];
+        let argc = ::core::ffi::c_int::try_from(argv.len()).expect("argv length exceeds c_int");
         data[..header_size].copy_from_slice(&argc.to_ne_bytes());
         if cmd_pack_argv(
-            argc,
             argv,
             data[header_size..].as_mut_ptr() as *mut ::core::ffi::c_char,
             size,

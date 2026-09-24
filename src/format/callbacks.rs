@@ -409,22 +409,19 @@ unsafe fn format_cb_start_command(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    return cmd_stringify_argv_cstring((*wp).argc, (*wp).argv);
+    return cmd_stringify_argv_cstring(&(*wp).argv);
 }
 unsafe fn format_cb_start_command_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut wp: *mut window_pane = (*ft).wp;
     if wp.is_null() {
         return None;
     }
-    if (*wp).argc < 0 {
-        return None;
-    }
-    if (*wp).argc == 0 as ::core::ffi::c_int {
+    if (*wp).argv.is_empty() {
         return Some(c"".to_owned());
     }
     let mut command = Vec::<u8>::new();
-    for i in 0..(*wp).argc {
-        let quoted = format_quote_shell_single(*(*wp).argv.offset(i as isize));
+    for (i, arg) in (*wp).argv.iter().enumerate() {
+        let quoted = format_quote_shell_single(arg.as_ptr());
         if i != 0 {
             command.push(b' ');
         }
@@ -453,7 +450,7 @@ unsafe fn format_cb_current_command(mut ft: *mut format_tree) -> Option<CString>
         let value = parse_window_name_cstring(cmd.as_c_str());
         return Some(value);
     }
-    let argv = cmd_stringify_argv_cstring((*wp).argc, (*wp).argv);
+    let argv = cmd_stringify_argv_cstring(&(*wp).argv);
     let source = argv
         .as_ref()
         .filter(|text| !text.as_bytes().is_empty())

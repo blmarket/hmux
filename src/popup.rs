@@ -981,8 +981,7 @@ pub unsafe extern "C" fn popup_modify(
     server_redraw_client(c);
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn popup_display(
+pub unsafe fn popup_display(
     mut flags: ::core::ffi::c_int,
     mut lines: box_lines,
     mut item: *mut cmdq_item,
@@ -992,8 +991,7 @@ pub unsafe extern "C" fn popup_display(
     mut sy: u_int,
     mut env: *mut environ,
     mut shellcmd: *const ::core::ffi::c_char,
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
+    argv: &Vec<CString>,
     mut cwd: *const ::core::ffi::c_char,
     mut title: *const ::core::ffi::c_char,
     mut c: *mut client,
@@ -1144,7 +1142,6 @@ pub unsafe extern "C" fn popup_display(
     (*pd).psy = sy;
     (*pd).job = job_run(
         shellcmd,
-        argc,
         argv,
         env,
         s,
