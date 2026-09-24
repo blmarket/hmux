@@ -28,7 +28,7 @@ use crate::src::key_bindings::{
 };
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::mode_tree::{
-    mode_tree_add_identity, mode_tree_build, mode_tree_count_tagged, mode_tree_draw,
+    mode_tree_add, mode_tree_build, mode_tree_count_tagged, mode_tree_draw,
     mode_tree_draw_as_parent, mode_tree_each_tagged, mode_tree_free, mode_tree_get_current,
     mode_tree_get_current_name, mode_tree_key, mode_tree_no_tag, mode_tree_remove,
     mode_tree_resize, mode_tree_set_prompt, mode_tree_start, mode_tree_up, mode_tree_zoom,
@@ -91,7 +91,6 @@ use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_each_cb, mode_tree_height_cb,
     mode_tree_help_cb, mode_tree_item, mode_tree_key_cb, mode_tree_menu_cb,
     mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_sort_cb, mode_tree_swap_cb,
-    ModeTreeIdentity,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
@@ -425,11 +424,6 @@ pub static mut window_customize_mode: window_mode = unsafe {
         get_screen: None,
     }
 };
-const CUSTOMIZE_TOP: u_int = 4;
-const CUSTOMIZE_OPTION: u_int = 5;
-const CUSTOMIZE_KEY_TABLE: u_int = 6;
-const CUSTOMIZE_KEY_BINDING: u_int = 7;
-const CUSTOMIZE_ENVIRONMENT: u_int = 8;
 const CUSTOMIZE_SERVER_OPTIONS: u_int = 1;
 const CUSTOMIZE_SESSION_OPTIONS: u_int = 2;
 const CUSTOMIZE_WINDOW_OPTIONS: u_int = 3;
@@ -438,28 +432,37 @@ const CUSTOMIZE_WINDOW_HOOKS: u_int = 5;
 const CUSTOMIZE_GLOBAL_ENVIRONMENT: u_int = 6;
 const CUSTOMIZE_SESSION_ENVIRONMENT: u_int = 7;
 
-// The group is the visible section, so an inherited option keeps its row
-// identity if its owning options tree changes during a rebuild.
-unsafe fn window_customize_option_identity(
-    group: u_int,
-    name: *const ::core::ffi::c_char,
-    array_key: *const ::core::ffi::c_char,
-) -> ModeTreeIdentity {
-    ModeTreeIdentity::named(CUSTOMIZE_OPTION, group, 0, name, array_key)
+unsafe fn window_customize_get_tag(
+    o: *mut options_entry,
+    a: *mut options_array_item,
+    oe: *const options_table_entry,
+) -> uint64_t {
+    if !a.is_null() {
+        return a as uint64_t;
+    }
+    if oe.is_null() {
+        return o as uint64_t;
+    }
+    let offset = oe.offset_from((&raw const crate::src::options_table::options_table).cast()) as u64;
+    (2_u64 << 62) | (offset << 32) | 1
 }
 
-unsafe fn window_customize_key_identity(
-    table: *const ::core::ffi::c_char,
-    key: key_code,
-    field: u_int,
-) -> ModeTreeIdentity {
-    ModeTreeIdentity::named(
-        CUSTOMIZE_KEY_BINDING,
-        field,
-        key,
-        table,
-        ::core::ptr::null(),
-    )
+fn window_customize_top_tag(group: u_int) -> uint64_t {
+    let (kind, table, scope) = match group {
+        CUSTOMIZE_SERVER_OPTIONS => (0, OPTIONS_TABLE_SERVER, 1),
+        CUSTOMIZE_SESSION_OPTIONS => (0, OPTIONS_TABLE_SESSION, 1),
+        CUSTOMIZE_WINDOW_OPTIONS => (0, OPTIONS_TABLE_WINDOW, 1),
+        CUSTOMIZE_SESSION_HOOKS => (1, OPTIONS_TABLE_SESSION, 1),
+        CUSTOMIZE_WINDOW_HOOKS => (1, OPTIONS_TABLE_WINDOW, 1),
+        CUSTOMIZE_GLOBAL_ENVIRONMENT => (2, 0, 1),
+        CUSTOMIZE_SESSION_ENVIRONMENT => (2, 0, 3),
+        _ => unreachable!("unknown customize section"),
+    };
+    (3_u64 << 62) | ((kind as u64) << 8) | ((table as u64) << 1) | scope
+}
+
+fn window_customize_key_tag(ptr: *const ::core::ffi::c_void, field: u_int) -> uint64_t {
+    ptr as uint64_t | field as uint64_t
 }
 unsafe extern "C" fn window_customize_get_tree(
     mut scope: window_customize_scope,
@@ -1102,7 +1105,6 @@ unsafe extern "C" fn window_customize_build_array(
     mut data: *mut window_customize_modedata,
     mut top: *mut mode_tree_item,
     mut scope: window_customize_scope,
-    group: u_int,
     mut o: *mut options_entry,
     mut ft: *mut format_tree,
 ) -> u_int {
@@ -1147,11 +1149,11 @@ unsafe extern "C" fn window_customize_build_array(
             window_customize_set_name(item, options_name(o));
             window_customize_set_item_array_key(item, array_key);
             let text = format_expand_cstring(ft, (*data).format.as_ptr());
-            mode_tree_add_identity(
+            mode_tree_add(
                 (*data).data,
                 top,
                 item as *mut ::core::ffi::c_void,
-                window_customize_option_identity(group, options_name(o), array_key),
+                window_customize_get_tag(o, ai, oe),
                 name.as_ptr(),
                 text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
@@ -1167,7 +1169,6 @@ unsafe extern "C" fn window_customize_build_option(
     mut data: *mut window_customize_modedata,
     mut top: *mut mode_tree_item,
     mut scope: window_customize_scope,
-    group: u_int,
     mut o: *mut options_entry,
     mut ft: *mut format_tree,
     mut filter: *const ::core::ffi::c_char,
@@ -1331,11 +1332,11 @@ unsafe extern "C" fn window_customize_build_option(
     (*item).scope = scope;
     window_customize_set_name(item, name);
     let text = (array == 0).then(|| format_expand_cstring(ft, (*data).format.as_ptr()));
-    top = mode_tree_add_identity(
+    top = mode_tree_add(
         (*data).data,
         top,
         item as *mut ::core::ffi::c_void,
-        window_customize_option_identity(group, name, ::core::ptr::null()),
+        window_customize_get_tag(o, ::core::ptr::null_mut(), oe),
         name,
         text.as_ref()
             .map_or(::core::ptr::null(), |text| text.as_ptr()),
@@ -1344,7 +1345,7 @@ unsafe extern "C" fn window_customize_build_option(
     if array == 0 {
         return 1 as u_int;
     }
-    return (1 as u_int).wrapping_add(window_customize_build_array(data, top, scope, group, o, ft));
+    return (1 as u_int).wrapping_add(window_customize_build_array(data, top, scope, o, ft));
 }
 unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CString>) {
     let mut o = options_first(oo);
@@ -1379,17 +1380,11 @@ unsafe extern "C" fn window_customize_build_options(
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut count: u_int = 0 as u_int;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
-    top = mode_tree_add_identity(
+    top = mode_tree_add(
         (*data).data,
         ::core::ptr::null_mut::<mode_tree_item>(),
         NULL,
-        ModeTreeIdentity::named(
-            CUSTOMIZE_TOP,
-            group,
-            0,
-            ::core::ptr::null(),
-            ::core::ptr::null(),
-        ),
+        window_customize_top_tag(group),
         title,
         ::core::ptr::null::<::core::ffi::c_char>(),
         0 as ::core::ffi::c_int,
@@ -1421,7 +1416,7 @@ unsafe extern "C" fn window_customize_build_options(
             scope = scope0;
         }
         count = count.wrapping_add(window_customize_build_option(
-            data, top, scope, group, o, ft, filter, fs, type_0,
+            data, top, scope, o, ft, filter, fs, type_0,
         ));
     }
     drop(list);
@@ -1446,7 +1441,7 @@ unsafe extern "C" fn window_customize_build_options(
                 scope = scope0;
             }
             count = count.wrapping_add(window_customize_build_option(
-                data, top, scope, group, o, ft, filter, fs, type_0,
+                data, top, scope, o, ft, filter, fs, type_0,
             ));
             loop_0 = options_next(loop_0);
         }
@@ -1478,11 +1473,11 @@ unsafe extern "C" fn window_customize_build_keys(
     let mut title_bytes = b"Key Table - ".to_vec();
     title_bytes.extend_from_slice(CStr::from_ptr(((*kt).name).as_ptr().cast_mut()).to_bytes());
     let title = CString::new(title_bytes).expect("key table name contains no NUL");
-    top = mode_tree_add_identity(
+    top = mode_tree_add(
         (*data).data,
         ::core::ptr::null_mut::<mode_tree_item>(),
         NULL,
-        ModeTreeIdentity::named(CUSTOMIZE_KEY_TABLE, 0, 0, ((*kt).name).as_ptr().cast_mut(), ::core::ptr::null()),
+        window_customize_key_tag(kt.cast(), 0),
         title.as_ptr(),
         ::core::ptr::null::<::core::ffi::c_char>(),
         0 as ::core::ffi::c_int,
@@ -1544,22 +1539,22 @@ unsafe extern "C" fn window_customize_build_keys(
             let key_string = key_string_format((*item).key, false);
             window_customize_set_name(item, key_string.as_ptr());
             let expanded = format_expand_cstring(ft, (*data).format.as_ptr());
-            child = mode_tree_add_identity(
+            child = mode_tree_add(
                 (*data).data,
                 top,
                 item as *mut ::core::ffi::c_void,
-                window_customize_key_identity(((*kt).name).as_ptr().cast_mut(), (*bd).key, 0),
+                window_customize_key_tag(bd.cast(), 0),
                 expanded.as_ptr(),
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 0 as ::core::ffi::c_int,
             ) as *mut mode_tree_item;
             let tmp = cmd_list_print_cstring((*bd).cmdlist, 0);
             let text = window_customize_key_detail(tmp.as_bytes());
-            mti = mode_tree_add_identity(
+            mti = mode_tree_add(
                 (*data).data,
                 child,
                 item as *mut ::core::ffi::c_void,
-                window_customize_key_identity(((*kt).name).as_ptr().cast_mut(), (*bd).key, 1),
+                window_customize_key_tag(bd.cast(), 1),
                 b"Command\0" as *const u8 as *const ::core::ffi::c_char,
                 text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
@@ -1572,11 +1567,11 @@ unsafe extern "C" fn window_customize_build_keys(
             } else {
                 CString::new(Vec::new()).expect("empty key note")
             };
-            mti = mode_tree_add_identity(
+            mti = mode_tree_add(
                 (*data).data,
                 child,
                 item as *mut ::core::ffi::c_void,
-                window_customize_key_identity(((*kt).name).as_ptr().cast_mut(), (*bd).key, 2),
+                window_customize_key_tag(bd.cast(), 2),
                 b"Note\0" as *const u8 as *const ::core::ffi::c_char,
                 text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
@@ -1590,11 +1585,11 @@ unsafe extern "C" fn window_customize_build_keys(
                 b"off".as_slice()
             };
             let text = window_customize_key_detail(flag);
-            mti = mode_tree_add_identity(
+            mti = mode_tree_add(
                 (*data).data,
                 child,
                 item as *mut ::core::ffi::c_void,
-                window_customize_key_identity(((*kt).name).as_ptr().cast_mut(), (*bd).key, 3),
+                window_customize_key_tag(bd.cast(), 3),
                 b"Repeat\0" as *const u8 as *const ::core::ffi::c_char,
                 text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
@@ -1629,17 +1624,11 @@ unsafe extern "C" fn window_customize_build_environment(
     if (*data).hide_default != 0 {
         return;
     }
-    top = mode_tree_add_identity(
+    top = mode_tree_add(
         (*data).data,
         ::core::ptr::null_mut::<mode_tree_item>(),
         NULL,
-        ModeTreeIdentity::named(
-            CUSTOMIZE_TOP,
-            group,
-            0,
-            ::core::ptr::null(),
-            ::core::ptr::null(),
-        ),
+        window_customize_top_tag(group),
         title,
         ::core::ptr::null::<::core::ffi::c_char>(),
         0 as ::core::ffi::c_int,
@@ -1733,17 +1722,11 @@ unsafe extern "C" fn window_customize_build_environment(
             text = Some(format_expand_cstring(ft, (*data).format.as_ptr()));
             Cow::Borrowed(CStr::from_ptr(((*envent).name).as_ptr().cast_mut()))
         };
-        mode_tree_add_identity(
+        mode_tree_add(
             (*data).data,
             top,
             item as *mut ::core::ffi::c_void,
-            ModeTreeIdentity::named(
-                CUSTOMIZE_ENVIRONMENT,
-                group,
-                0,
-                ((*envent).name).as_ptr().cast_mut(),
-                ::core::ptr::null(),
-            ),
+            (2_u64 << 62) | envent as uint64_t,
             name.as_ptr(),
             text.as_ref()
                 .map_or(::core::ptr::null(), |text| text.as_ptr()),
@@ -5176,50 +5159,19 @@ unsafe extern "C" fn window_customize_key(
 }
 
 #[cfg(test)]
-mod identity_tests {
+mod tag_tests {
     use super::*;
 
     #[test]
-    fn customize_row_keys_separate_sections_arrays_and_key_fields() {
-        unsafe {
-            let option = b"@\xffname\0".as_ptr().cast();
-            let same_name = b"@\xffname\0".as_ptr().cast();
-            let first = b"0\0".as_ptr().cast();
-            let second = b"1\0".as_ptr().cast();
-            assert_eq!(
-                window_customize_option_identity(2, option, first),
-                window_customize_option_identity(2, same_name, first)
-            );
-            assert_ne!(
-                window_customize_option_identity(2, option, first),
-                window_customize_option_identity(2, option, second)
-            );
-            assert_ne!(
-                window_customize_option_identity(2, option, first),
-                window_customize_option_identity(4, option, first)
-            );
-            assert_ne!(
-                window_customize_option_identity(2, option, ::core::ptr::null()),
-                window_customize_option_identity(2, option, first)
-            );
-            assert_eq!(
-                window_customize_option_identity(2, b"@row\0ignored".as_ptr().cast(), first),
-                window_customize_option_identity(2, b"@row\0different".as_ptr().cast(), first)
-            );
-            let table = b"custom\0".as_ptr().cast();
-            assert_ne!(
-                window_customize_key_identity(table, 0x1234, 0),
-                window_customize_key_identity(table, 0x1234, 1)
-            );
-            assert_ne!(
-                window_customize_key_identity(table, 0x1234, 0),
-                window_customize_key_identity(table, 0x1235, 0)
-            );
-            assert_ne!(
-                window_customize_key_identity(table, 0x1234, 0),
-                window_customize_key_identity(b"other\0".as_ptr().cast(), 0x1234, 0)
-            );
-        }
+    fn section_tags_match_tmux_encoding() {
+        assert_eq!(
+            window_customize_top_tag(CUSTOMIZE_SERVER_OPTIONS),
+            (3_u64 << 62) | ((OPTIONS_TABLE_SERVER as u64) << 1) | 1
+        );
+        assert_eq!(
+            window_customize_top_tag(CUSTOMIZE_SESSION_ENVIRONMENT),
+            (3_u64 << 62) | (2_u64 << 8) | 3
+        );
     }
 }
 

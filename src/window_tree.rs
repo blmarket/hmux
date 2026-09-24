@@ -10,10 +10,10 @@ use crate::src::format_draw::{format_draw, format_trim_left_bytes, format_width}
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::mode_tree::{
-    mode_tree_add_identity, mode_tree_align, mode_tree_build, mode_tree_count_tagged,
-    mode_tree_draw, mode_tree_each_tagged, mode_tree_expand_current, mode_tree_expand_identity,
+    mode_tree_add, mode_tree_align, mode_tree_build, mode_tree_count_tagged,
+    mode_tree_draw, mode_tree_each_tagged, mode_tree_expand_current, mode_tree_expand,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_remove, mode_tree_resize,
-    mode_tree_run_command, mode_tree_set_build_identity, mode_tree_set_current_identity,
+    mode_tree_run_command, mode_tree_set_current,
     mode_tree_set_prompt, mode_tree_start, mode_tree_view_name, mode_tree_zoom,
 };
 use crate::src::options::options_get_string;
@@ -70,7 +70,6 @@ use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_each_cb, mode_tree_height_cb,
     mode_tree_help_cb, mode_tree_item, mode_tree_key_cb, mode_tree_menu_cb,
     mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_sort_cb, mode_tree_swap_cb,
-    ModeTreeIdentity,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
@@ -442,13 +441,11 @@ unsafe extern "C" fn window_tree_build_pane(
     let text = format_expand_cstring(ft, (*data).format.as_ptr());
     let name = CString::new(idx.to_string()).expect("pane index contains NUL");
     format_free(ft);
-    mti = mode_tree_add_identity(
+    mti = mode_tree_add(
         (*data).data,
         parent,
         item as *mut ::core::ffi::c_void,
-        // A pane may appear under linked windows. Its global pane ID keeps
-        // the same shared selection/tag behavior as the former pane pointer.
-        ModeTreeIdentity::pane((*wp).id),
+        wp as uint64_t,
         name.as_ptr(),
         text.as_ptr(),
         -(1 as ::core::ffi::c_int),
@@ -525,11 +522,11 @@ unsafe extern "C" fn window_tree_build_window(
     } else {
         expanded = 1 as ::core::ffi::c_int;
     }
-    mti = mode_tree_add_identity(
+    mti = mode_tree_add(
         (*data).data,
         parent,
         item as *mut ::core::ffi::c_void,
-        ModeTreeIdentity::winlink((*s).id, (*wl).idx),
+        wl as uint64_t,
         name.as_ptr(),
         text.as_ptr(),
         expanded,
@@ -599,11 +596,11 @@ unsafe extern "C" fn window_tree_build_session(
     } else {
         expanded = 1 as ::core::ffi::c_int;
     }
-    mti = mode_tree_add_identity(
+    mti = mode_tree_add(
         (*data).data,
         ::core::ptr::null_mut::<mode_tree_item>(),
         item as *mut ::core::ffi::c_void,
-        ModeTreeIdentity::session((*s).id),
+        s as uint64_t,
         ((*s).name).as_ptr().cast_mut(),
         text.as_ptr(),
         expanded,
@@ -625,7 +622,7 @@ unsafe extern "C" fn window_tree_build_session(
 unsafe extern "C" fn window_tree_build(
     mut modedata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
-    _tag: *mut uint64_t,
+    tag: *mut uint64_t,
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
@@ -674,31 +671,19 @@ unsafe extern "C" fn window_tree_build(
     match (*data).type_0 as ::core::ffi::c_uint {
         1 => {
             if !(*data).fs.s.is_null() {
-                mode_tree_set_build_identity(
-                    (*data).data,
-                    ModeTreeIdentity::session((*(*data).fs.s).id),
-                );
+                *tag = (*data).fs.s as uint64_t;
             }
         }
         2 => {
             if !(*data).fs.s.is_null() && !(*data).fs.wl.is_null() {
-                mode_tree_set_build_identity(
-                    (*data).data,
-                    ModeTreeIdentity::winlink((*(*data).fs.s).id, (*(*data).fs.wl).idx),
-                );
+                *tag = (*data).fs.wl as uint64_t;
             }
         }
         3 => {
             if window_count_panes((*(*data).fs.wl).window, 1 as ::core::ffi::c_int) == 1 as u_int {
-                mode_tree_set_build_identity(
-                    (*data).data,
-                    ModeTreeIdentity::winlink((*(*data).fs.s).id, (*(*data).fs.wl).idx),
-                );
+                *tag = (*data).fs.wl as uint64_t;
             } else {
-                mode_tree_set_build_identity(
-                    (*data).data,
-                    ModeTreeIdentity::pane((*(*data).fs.wp).id),
-                );
+                *tag = (*data).fs.wp as uint64_t;
             }
         }
         0 | _ => {}
@@ -2287,10 +2272,7 @@ unsafe extern "C" fn window_tree_mouse(
             wl = winlinks_next(wl);
         }
         if !wl.is_null() {
-            mode_tree_set_current_identity(
-                (*data).data,
-                ModeTreeIdentity::winlink((*s).id, (*wl).idx),
-            );
+            mode_tree_set_current((*data).data, wl as uint64_t);
         }
         return '\r' as i32 as key_code;
     }
@@ -2311,7 +2293,7 @@ unsafe extern "C" fn window_tree_mouse(
             wp = window_pane_next(wp);
         }
         if !wp.is_null() {
-            mode_tree_set_current_identity((*data).data, ModeTreeIdentity::pane((*wp).id));
+            mode_tree_set_current((*data).data, wp as uint64_t);
         }
         return '\r' as i32 as key_code;
     }
@@ -2377,18 +2359,11 @@ unsafe extern "C" fn window_tree_key(
             (*data).offset += 1;
         }
         72 => {
-            mode_tree_expand_identity((*data).data, ModeTreeIdentity::session((*(*fsp).s).id));
-            mode_tree_expand_identity(
-                (*data).data,
-                ModeTreeIdentity::winlink((*(*fsp).s).id, (*(*fsp).wl).idx),
-            );
-            if mode_tree_set_current_identity((*data).data, ModeTreeIdentity::pane((*(*wme).wp).id))
-                == 0
+            mode_tree_expand((*data).data, (*fsp).s as uint64_t);
+            mode_tree_expand((*data).data, (*fsp).wl as uint64_t);
+            if mode_tree_set_current((*data).data, (*wme).wp as uint64_t) == 0
             {
-                mode_tree_set_current_identity(
-                    (*data).data,
-                    ModeTreeIdentity::winlink((*(*fsp).s).id, (*(*fsp).wl).idx),
-                );
+                mode_tree_set_current((*data).data, (*fsp).wl as uint64_t);
             }
         }
         109 => {

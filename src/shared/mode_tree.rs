@@ -10,96 +10,6 @@ use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
 
-/// Identity retained by a mode tree across rebuilds. Legacy numeric tags are
-/// kept for modes which have not yet migrated to semantic identities.
-#[derive(Copy, Clone, Debug)]
-#[repr(C)]
-pub struct ModeTreeIdentity {
-    pub(crate) kind: u_int,
-    pub(crate) first: u_int,
-    pub(crate) second: u64,
-    pub(crate) name: *const ::core::ffi::c_char,
-    pub(crate) detail: *const ::core::ffi::c_char,
-}
-
-impl PartialEq for ModeTreeIdentity {
-    fn eq(&self, other: &Self) -> bool {
-        unsafe fn same_name(a: *const ::core::ffi::c_char, b: *const ::core::ffi::c_char) -> bool {
-            match (a.is_null(), b.is_null()) {
-                (true, true) => true,
-                (false, false) => std::ffi::CStr::from_ptr(a) == std::ffi::CStr::from_ptr(b),
-                _ => false,
-            }
-        }
-        self.kind == other.kind
-            && self.first == other.first
-            && self.second == other.second
-            && unsafe { same_name(self.name, other.name) && same_name(self.detail, other.detail) }
-    }
-}
-
-impl Eq for ModeTreeIdentity {}
-
-impl ModeTreeIdentity {
-    pub const fn legacy(tag: u64) -> Self {
-        Self {
-            kind: 0,
-            first: 0,
-            second: tag,
-            name: ::core::ptr::null(),
-            detail: ::core::ptr::null(),
-        }
-    }
-
-    pub const fn session(id: u_int) -> Self {
-        Self {
-            kind: 1,
-            first: id,
-            second: 0,
-            name: ::core::ptr::null(),
-            detail: ::core::ptr::null(),
-        }
-    }
-
-    pub const fn winlink(session_id: u_int, index: ::core::ffi::c_int) -> Self {
-        Self {
-            kind: 2,
-            first: session_id,
-            second: index as u32 as u64,
-            name: ::core::ptr::null(),
-            detail: ::core::ptr::null(),
-        }
-    }
-
-    pub const fn pane(id: u_int) -> Self {
-        Self {
-            kind: 3,
-            first: id,
-            second: 0,
-            name: ::core::ptr::null(),
-            detail: ::core::ptr::null(),
-        }
-    }
-
-    /// The caller lends C strings until a mode-tree item copies them. Both
-    /// pointers must remain valid whenever this identity is compared.
-    pub const unsafe fn named(
-        kind: u_int,
-        first: u_int,
-        second: u64,
-        name: *const ::core::ffi::c_char,
-        detail: *const ::core::ffi::c_char,
-    ) -> Self {
-        Self {
-            kind,
-            first,
-            second,
-            name,
-            detail,
-        }
-    }
-}
-
 #[repr(C)]
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
@@ -140,8 +50,6 @@ pub struct mode_tree_data {
     pub search_dir: mode_tree_search_dir,
     pub search_icase: ::core::ffi::c_int,
     pub help: ::core::ffi::c_int,
-    pub build_identity: ModeTreeIdentity,
-    pub has_build_identity: ::core::ffi::c_int,
 }
 
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
@@ -182,7 +90,7 @@ pub struct mode_tree_item {
     pub key: key_code,
     pub keystr: Option<std::ffi::CString>,
     pub keylen: size_t,
-    pub identity: ModeTreeIdentity,
+    pub tag: uint64_t,
     pub name: std::ffi::CString,
     pub text: Option<std::ffi::CString>,
     pub expanded: ::core::ffi::c_int,
@@ -191,8 +99,6 @@ pub struct mode_tree_item {
     pub no_tag: ::core::ffi::c_int,
     pub align: ::core::ffi::c_int,
     pub children: mode_tree_list,
-    pub(crate) identity_name: Option<std::ffi::CString>,
-    pub(crate) identity_detail: Option<std::ffi::CString>,
 }
 
 impl mode_tree_item {
@@ -204,7 +110,7 @@ impl mode_tree_item {
             key: unsafe { ::core::mem::zeroed() },
             keystr: Default::default(),
             keylen: unsafe { ::core::mem::zeroed() },
-            identity: unsafe { ::core::mem::zeroed() },
+            tag: 0,
             name: Default::default(),
             text: Default::default(),
             expanded: unsafe { ::core::mem::zeroed() },
@@ -213,8 +119,6 @@ impl mode_tree_item {
             no_tag: unsafe { ::core::mem::zeroed() },
             align: unsafe { ::core::mem::zeroed() },
             children: Default::default(),
-            identity_name: Default::default(),
-            identity_detail: Default::default(),
         }
     }
 }
