@@ -218,7 +218,7 @@ pub unsafe extern "C" fn menu_add_item(
         max_width = max_width.wrapping_sub(1);
         suffix = b">\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    let mut name = format_trim_right_bytes(s.as_ptr(), max_width);
+    let mut name = format_trim_right_bytes(s.as_c_str(), max_width);
     name.extend_from_slice(CStr::from_ptr(suffix).to_bytes());
     if !key.is_null() {
         name.extend_from_slice(b"#[default] #[align=right](");

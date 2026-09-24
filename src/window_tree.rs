@@ -708,7 +708,10 @@ unsafe extern "C" fn window_tree_draw_label(
     width = format_width(label);
     let trimmed_label = if width > sx.wrapping_sub(4 as u_int) {
         Some(
-            CString::new(format_trim_left_bytes(label, sx.wrapping_sub(4 as u_int)))
+            CString::new(format_trim_left_bytes(
+                CStr::from_ptr(label),
+                sx.wrapping_sub(4 as u_int),
+            ))
                 .expect("trimmed preview label contains no NUL"),
         )
     } else {

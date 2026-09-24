@@ -976,8 +976,8 @@ pub(crate) unsafe fn args_escape_cstring(s: &CStr) -> CString {
     CString::new(result).expect("utf8_strvis output has no interior NUL")
 }
 
-pub unsafe fn args_escape(s: *const ::core::ffi::c_char) -> CString {
-    args_escape_cstring(CStr::from_ptr(s))
+pub fn args_escape(s: &CStr) -> CString {
+    unsafe { args_escape_cstring(s) }
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_has(mut args: *mut args, mut flag: u_char) -> ::core::ffi::c_int {
@@ -1340,8 +1340,8 @@ pub unsafe extern "C" fn args_next_value(mut value: *mut args_value) -> *mut arg
         .unwrap_or(::core::ptr::null_mut::<args_value>());
 }
 
-fn strtonum_error(errstr: *const ::core::ffi::c_char) -> ArgumentValueError {
-    match unsafe { CStr::from_ptr(errstr).to_bytes() } {
+fn strtonum_error(errstr: &CStr) -> ArgumentValueError {
+    match errstr.to_bytes() {
         b"invalid" => ArgumentValueError::Invalid,
         b"too small" => ArgumentValueError::TooSmall,
         b"too large" => ArgumentValueError::TooLarge,
@@ -1362,7 +1362,7 @@ pub fn parse_number(value: &CStr, minval: i64, maxval: i64) -> Result<i64, Argum
     if errstr.is_null() {
         Ok(number as i64)
     } else {
-        Err(strtonum_error(errstr))
+        Err(strtonum_error(unsafe { CStr::from_ptr(errstr) }))
     }
 }
 

@@ -421,7 +421,7 @@ unsafe fn format_cb_start_command_list(mut ft: *mut format_tree) -> Option<CStri
     }
     let mut command = Vec::<u8>::new();
     for (i, arg) in (*wp).argv.iter().enumerate() {
-        let quoted = format_quote_shell_single(arg.as_ptr());
+        let quoted = format_quote_shell_single(arg.as_c_str());
         if i != 0 {
             command.push(b' ');
         }

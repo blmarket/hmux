@@ -755,7 +755,10 @@ unsafe extern "C" fn client_exec(
         shell,
         shellcmd,
     );
-    let argv0 = shell_argv0_cstring(shell, client_flags & CLIENT_LOGIN as uint64_t != 0);
+    let argv0 = shell_argv0_cstring(
+        std::ffi::CStr::from_ptr(shell),
+        client_flags & CLIENT_LOGIN as uint64_t != 0,
+    );
     setenv(
         b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
         shell,

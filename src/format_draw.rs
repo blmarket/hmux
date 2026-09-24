@@ -1810,11 +1810,11 @@ pub unsafe extern "C" fn format_width(mut expanded: *const ::core::ffi::c_char) 
     return width;
 }
 pub(crate) unsafe fn format_trim_left_bytes(
-    mut expanded: *const ::core::ffi::c_char,
+    expanded: &CStr,
     mut limit: u_int,
 ) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
-    let mut cp: *const ::core::ffi::c_char = expanded;
+    let mut cp: *const ::core::ffi::c_char = expanded.as_ptr();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: u_int = 0;
     let mut width: u_int = 0 as u_int;
@@ -1898,11 +1898,11 @@ pub(crate) unsafe fn format_trim_left_bytes(
     out
 }
 pub(crate) unsafe fn format_trim_right_bytes(
-    mut expanded: *const ::core::ffi::c_char,
+    expanded: &CStr,
     mut limit: u_int,
 ) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
-    let mut cp: *const ::core::ffi::c_char = expanded;
+    let mut cp: *const ::core::ffi::c_char = expanded.as_ptr();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut width: u_int = 0 as u_int;
     let mut total_width: u_int = 0;
@@ -1917,9 +1917,9 @@ pub(crate) unsafe fn format_trim_right_bytes(
         width: 0,
     };
     let mut more: utf8_state = UTF8_MORE;
-    total_width = format_width(expanded);
+    total_width = format_width(expanded.as_ptr());
     if total_width <= limit {
-        return CStr::from_ptr(expanded).to_bytes().to_vec();
+        return expanded.to_bytes().to_vec();
     }
     skip = total_width.wrapping_sub(limit);
     while *cp as ::core::ffi::c_int != '\0' as i32 {
@@ -2002,11 +2002,12 @@ mod trim_tests {
 
     fn trim(input: &[u8], limit: u32, left: bool) -> Vec<u8> {
         assert_eq!(input.last(), Some(&0));
+        let input = CStr::from_bytes_until_nul(input).unwrap();
         unsafe {
             if left {
-                format_trim_left_bytes(input.as_ptr().cast(), limit)
+                format_trim_left_bytes(input, limit)
             } else {
-                format_trim_right_bytes(input.as_ptr().cast(), limit)
+                format_trim_right_bytes(input, limit)
             }
         }
     }

@@ -14,8 +14,8 @@ pub(super) unsafe extern "C" fn format_strftime(
 ) -> size_t {
     return strftime(s, max, fmt, tm);
 }
-pub(super) unsafe fn format_quote_shell(s: *const ::core::ffi::c_char) -> CString {
-    let input = CStr::from_ptr(s).to_bytes();
+pub(super) fn format_quote_shell(s: &CStr) -> CString {
+    let input = s.to_bytes();
     let mut quoted = Vec::with_capacity(input.len().saturating_mul(2));
     const SHELL_SPECIAL: &[u8] = b"|&;<>(){}$`\\\"'*?[# =%\n\t";
     for &byte in input {
@@ -26,8 +26,8 @@ pub(super) unsafe fn format_quote_shell(s: *const ::core::ffi::c_char) -> CStrin
     }
     CString::new(quoted).expect("shell-quoted C string contains no NUL")
 }
-pub(super) unsafe fn format_quote_shell_single(s: *const ::core::ffi::c_char) -> CString {
-    let input = CStr::from_ptr(s).to_bytes();
+pub(super) fn format_quote_shell_single(s: &CStr) -> CString {
+    let input = s.to_bytes();
     let mut quoted = Vec::with_capacity(input.len().saturating_mul(4).saturating_add(2));
     quoted.push(b'\'');
     for &byte in input {
@@ -40,8 +40,8 @@ pub(super) unsafe fn format_quote_shell_single(s: *const ::core::ffi::c_char) ->
     quoted.push(b'\'');
     CString::new(quoted).expect("shell-quoted C string contains no NUL")
 }
-pub(super) unsafe fn format_quote_style(s: *const ::core::ffi::c_char) -> CString {
-    let input = CStr::from_ptr(s).to_bytes();
+pub(super) fn format_quote_style(s: &CStr) -> CString {
+    let input = s.to_bytes();
     let mut quoted = Vec::with_capacity(input.len().saturating_mul(2));
     for &byte in input {
         if byte == b'#' {
@@ -392,13 +392,13 @@ pub(super) unsafe fn format_find(
         found = CStr::from_ptr(dirname(scratch.as_mut_ptr().cast())).to_owned();
     }
     if modifiers & FORMAT_QUOTE_SHELL as uint64_t != 0 {
-        found = format_quote_shell(found.as_ptr());
+        found = format_quote_shell(found.as_c_str());
     }
     if modifiers & FORMAT_QUOTE_SHELL_SQ as uint64_t != 0 {
-        found = format_quote_shell_single(found.as_ptr());
+        found = format_quote_shell_single(found.as_c_str());
     }
     if modifiers & FORMAT_QUOTE_STYLE as uint64_t != 0 {
-        found = format_quote_style(found.as_ptr());
+        found = format_quote_style(found.as_c_str());
     }
     if modifiers & FORMAT_QUOTE_ARGUMENTS as uint64_t != 0 {
         found = args_escape_cstring(found.as_c_str());
@@ -3192,9 +3192,9 @@ pub(super) unsafe fn format_replace(
     }
     if limit != 0 {
         let mut trimmed = if limit > 0 {
-            format_trim_left_bytes(value.as_ptr(), limit as u_int)
+            format_trim_left_bytes(value.as_c_str(), limit as u_int)
         } else {
-            format_trim_right_bytes(value.as_ptr(), -limit as u_int)
+            format_trim_right_bytes(value.as_c_str(), -limit as u_int)
         };
         if !marker.is_null() && trimmed != value.as_bytes() {
             let marker = CStr::from_ptr(marker).to_bytes();

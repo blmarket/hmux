@@ -178,7 +178,7 @@ pub unsafe fn job_run(
             shell = _PATH_BSHELL.as_ptr();
         }
     }
-    let argv0 = shell_argv0_cstring(shell, false);
+    let argv0 = shell_argv0_cstring(CStr::from_ptr(shell), false);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     if flags & JOB_PTY != 0 {

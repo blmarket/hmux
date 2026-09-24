@@ -532,34 +532,22 @@ unsafe extern "C" fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn expand_path(path: *const ::core::ffi::c_char, home: Option<&CStr>) -> Option<CString> {
-    let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
     let mut value: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    if strncmp(
-        path,
-        b"~/\0" as *const u8 as *const ::core::ffi::c_char,
-        2 as size_t,
-    ) == 0 as ::core::ffi::c_int
-    {
+    let path_bytes = path.to_bytes();
+    if path_bytes.starts_with(b"~/") {
         let mut expanded = home?.to_bytes().to_vec();
-        expanded.extend_from_slice(CStr::from_ptr(path.add(1)).to_bytes());
+        expanded.extend_from_slice(&path_bytes[1..]);
         return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
     }
-    if *path as ::core::ffi::c_int == '$' as i32 {
-        end = strchr(path, '/' as i32);
-        let name = if end.is_null() {
-            CStr::from_ptr(path.add(1)).to_owned()
-        } else {
-            let length = end.offset_from(path) as usize - 1;
-            let bytes = std::slice::from_raw_parts(path.add(1).cast::<u8>(), length);
-            CString::new(bytes).expect("variable name comes from a C string")
-        };
+    if path_bytes.first() == Some(&b'$') {
+        let slash = path_bytes.iter().position(|byte| *byte == b'/');
+        let name_end = slash.unwrap_or(path_bytes.len());
+        let name = CString::new(&path_bytes[1..name_end])
+            .expect("variable name comes from a C string");
         value = environ_find(global_environ, name.as_ptr());
         if value.is_null() {
             return None;
-        }
-        if end.is_null() {
-            end = b"\0" as *const u8 as *const ::core::ffi::c_char;
         }
         // On glibc, the previous `%s` rendered a cleared environment value
         // as `(null)`. Keep that behavior if this entry has no value.
@@ -574,12 +562,14 @@ unsafe fn expand_path(path: *const ::core::ffi::c_char, home: Option<&CStr>) -> 
             .to_bytes()
             .to_vec()
         };
-        expanded.extend_from_slice(CStr::from_ptr(end).to_bytes());
+        if let Some(slash) = slash {
+            expanded.extend_from_slice(&path_bytes[slash..]);
+        }
         return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
     }
-    Some(CStr::from_ptr(path).to_owned())
+    Some(path.to_owned())
 }
-unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<CString> {
+unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
     let home = find_home_cstr();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -587,7 +577,7 @@ unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<
     let mut paths = Vec::new();
     // strsep rewrites separators in place; keep its borrowed token pointers
     // backed by one stable, NUL-terminated allocation for the entire loop.
-    let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
+    let mut copy = s.to_bytes_with_nul().to_vec();
     tmp = copy.as_mut_ptr().cast();
     loop {
         next = strsep(
@@ -597,7 +587,7 @@ unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<
         if next.is_null() {
             break;
         }
-        if let Some(expanded) = expand_path(next, home) {
+        if let Some(expanded) = expand_path(CStr::from_ptr(next), home) {
             let path = if no_realpath {
                 Some(expanded)
             } else {
@@ -650,7 +640,7 @@ fn make_label_cause(parts: &[&[u8]]) -> CString {
     CString::new(bytes).expect("socket label cause contains no NUL")
 }
 
-unsafe fn make_label(mut label: *const ::core::ffi::c_char) -> Result<CString, CString> {
+unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
     let mut sb: stat = stat {
         st_dev: 0,
         st_ino: 0,
@@ -678,14 +668,8 @@ unsafe fn make_label(mut label: *const ::core::ffi::c_char) -> Result<CString, C
         __glibc_reserved: [0; 3],
     };
     let mut uid: uid_t = 0;
-    if label.is_null() {
-        label = b"default\0" as *const u8 as *const ::core::ffi::c_char;
-    }
     uid = getuid() as uid_t;
-    let paths = expand_paths(
-        b"$TMUX_TMPDIR:/tmp/\0" as *const u8 as *const ::core::ffi::c_char,
-        false,
-    );
+    let paths = expand_paths(c"$TMUX_TMPDIR:/tmp/", false);
     if paths.is_empty() {
         return Err(c"no suitable socket path".to_owned());
     }
@@ -724,15 +708,15 @@ unsafe fn make_label(mut label: *const ::core::ffi::c_char) -> Result<CString, C
     } else {
         let mut path = base.into_bytes();
         path.push(b'/');
-        path.extend_from_slice(CStr::from_ptr(label).to_bytes());
+        path.extend_from_slice(label.unwrap_or(c"default").to_bytes());
         return Ok(CString::new(path).expect("socket label path contains no NUL"));
     }
 }
 pub(crate) unsafe fn shell_argv0_cstring(
-    shell: *const ::core::ffi::c_char,
+    shell: &CStr,
     is_login: bool,
 ) -> CString {
-    let shell = CStr::from_ptr(shell).to_bytes();
+    let shell = shell.to_bytes();
     let name = match shell.iter().rposition(|&byte| byte == b'/') {
         Some(slash) if slash + 1 < shell.len() => &shell[slash + 1..],
         _ => shell,
@@ -948,7 +932,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
             cwd,
         );
     }
-    let mut config_paths = expand_paths(TMUX_CONF.as_ptr(), true);
+    let mut config_paths = expand_paths(CStr::from_ptr(TMUX_CONF.as_ptr()), true);
     loop {
         opt = BSDgetopt(
             argc,
@@ -1141,7 +1125,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
     }
     if path.is_none() {
         path = Some(
-            match make_label(label.map_or(::core::ptr::null(), |label| label.as_ptr())) {
+            match make_label(label.as_deref()) {
                 Ok(path) => path,
                 Err(cause) => {
                     fprintf(
