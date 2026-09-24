@@ -335,7 +335,16 @@ unsafe extern "C" fn cmd_split_window_exec(
     if flags & SPAWN_FLOATING != 0 {
         lc = layout_get_floating_cell(item, args, lines, w, wp, flags, &raw mut cause);
     } else {
-        lc = layout_get_tiled_cell(item, args, w, wp, flags, &raw mut cause);
+        lc = match layout_get_tiled_cell(item, args, w, wp, flags) {
+            Ok(cell) => cell,
+            Err(error) => {
+                cmdq_error(item, c"%s".as_ptr(), error.as_ptr());
+                if restore_zoom != 0 {
+                    window_pop_zoom(w);
+                }
+                return CMD_RETURN_ERROR;
+            }
+        };
     }
     if !cause.is_null() {
         cmdq_error(

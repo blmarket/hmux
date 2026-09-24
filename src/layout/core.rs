@@ -1909,23 +1909,19 @@ pub unsafe extern "C" fn layout_spread_out(mut wp: *mut window_pane) {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_get_tiled_cell(
+pub unsafe fn layout_get_tiled_cell(
     mut item: *mut cmdq_item,
     mut args: *mut args,
     mut w: *mut window,
     mut wp: *mut window_pane,
     mut flags: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut layout_cell {
+) -> Result<*mut layout_cell, std::ffi::CString> {
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut type_0: layout_type = LAYOUT_TOPBOTTOM;
     let mut curval: u_int = 0;
     let mut size: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     if window_pane_is_floating(wp) != 0 {
-        *cause =
-            xstrdup(b"can't split a floating pane\0" as *const u8 as *const ::core::ffi::c_char);
-        return ::core::ptr::null_mut::<layout_cell>();
+        return Err(c"can't split a floating pane".to_owned());
     }
     if flags & SPAWN_HORIZONTAL != 0 {
         type_0 = LAYOUT_LEFTRIGHT;
@@ -1958,12 +1954,9 @@ pub unsafe extern "C" fn layout_get_tiled_cell(
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                xasprintf(
-                    cause,
-                    b"invalid tiled geometry %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
-                return ::core::ptr::null_mut::<layout_cell>();
+                let mut message = b"invalid tiled geometry ".to_vec();
+                message.extend_from_slice(error.message().to_bytes());
+                return Err(std::ffi::CString::new(message).expect("diagnostic contains no NUL"));
             }
         };
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
@@ -1978,12 +1971,9 @@ pub unsafe extern "C" fn layout_get_tiled_cell(
                 .wrapping_mul(value as u_int)
                 .wrapping_div(100 as u_int) as ::core::ffi::c_int,
             Err(error) => {
-                xasprintf(
-                    cause,
-                    b"invalid tiled geometry %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
-                return ::core::ptr::null_mut::<layout_cell>();
+                let mut message = b"invalid tiled geometry ".to_vec();
+                message.extend_from_slice(error.message().to_bytes());
+                return Err(std::ffi::CString::new(message).expect("diagnostic contains no NUL"));
             }
         };
     }
@@ -1994,9 +1984,9 @@ pub unsafe extern "C" fn layout_get_tiled_cell(
     }
     lc = layout_split_pane(wp, type_0, size, flags);
     if lc.is_null() {
-        *cause = xstrdup(b"no space for a new pane\0" as *const u8 as *const ::core::ffi::c_char);
+        return Err(c"no space for a new pane".to_owned());
     }
-    return lc;
+    Ok(lc)
 }
 #[no_mangle]
 pub unsafe extern "C" fn layout_get_floating_cell(

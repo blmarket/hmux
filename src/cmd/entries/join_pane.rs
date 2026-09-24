@@ -809,7 +809,6 @@ unsafe extern "C" fn cmd_join_pane_exec(
     let mut src_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut dst_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut dst_idx: ::core::ffi::c_int = 0;
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -882,16 +881,13 @@ unsafe extern "C" fn cmd_join_pane_exec(
     if args_has(args, 'f' as i32 as u_char) != 0 {
         flags |= SPAWN_FULLSIZE;
     }
-    lc = layout_get_tiled_cell(item, args, dst_w, dst_wp, flags, &raw mut cause);
-    if !cause.is_null() {
-        cmdq_error(
-            item,
-            b"size or position %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause,
-        );
-        free(cause as *mut ::core::ffi::c_void);
-        return CMD_RETURN_ERROR;
-    }
+    lc = match layout_get_tiled_cell(item, args, dst_w, dst_wp, flags) {
+        Ok(cell) => cell,
+        Err(cause) => {
+            cmdq_error(item, c"size or position %s".as_ptr(), cause.as_ptr());
+            return CMD_RETURN_ERROR;
+        }
+    };
     layout_close_pane(src_wp);
     server_client_remove_pane(src_wp);
     window_lost_pane(src_w, src_wp);
