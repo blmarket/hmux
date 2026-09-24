@@ -73,19 +73,19 @@ pub unsafe extern "C" fn utf8_is_hangul_filler(mut ud: *const utf8_data) -> ::co
         3 as size_t,
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn utf8_regional_count(mut ud: *const utf8_data) -> u_int {
+fn utf8_regional_count(ud: &utf8_data) -> u_int {
     let mut count: u_int = 0 as u_int;
     let mut i: u_int = 0;
     i = 0 as u_int;
-    while i.wrapping_add(4 as u_int) <= (*ud).size as u_int {
-        if (*ud).data[i as usize] as ::core::ffi::c_int == 0xf0 as ::core::ffi::c_int
-            && (*ud).data[i.wrapping_add(1 as u_int) as usize] as ::core::ffi::c_int
+    while i.wrapping_add(4 as u_int) <= ud.size as u_int {
+        if ud.data[i as usize] as ::core::ffi::c_int == 0xf0 as ::core::ffi::c_int
+            && ud.data[i.wrapping_add(1 as u_int) as usize] as ::core::ffi::c_int
                 == 0x9f as ::core::ffi::c_int
-            && (*ud).data[i.wrapping_add(2 as u_int) as usize] as ::core::ffi::c_int
+            && ud.data[i.wrapping_add(2 as u_int) as usize] as ::core::ffi::c_int
                 == 0x87 as ::core::ffi::c_int
-            && (*ud).data[i.wrapping_add(3 as u_int) as usize] as ::core::ffi::c_int
+            && ud.data[i.wrapping_add(3 as u_int) as usize] as ::core::ffi::c_int
                 >= 0xa6 as ::core::ffi::c_int
-            && (*ud).data[i.wrapping_add(3 as u_int) as usize] as ::core::ffi::c_int
+            && ud.data[i.wrapping_add(3 as u_int) as usize] as ::core::ffi::c_int
                 <= 0xbf as ::core::ffi::c_int
         {
             count = count.wrapping_add(1);
@@ -115,10 +115,10 @@ pub unsafe extern "C" fn utf8_should_combine(
         && a <= 0x1f1ff as wchar_t
         && (w >= 0x1f1e6 as wchar_t && w <= 0x1f1ff as wchar_t)
     {
-        if utf8_regional_count(with) != 1 as u_int {
+        if utf8_regional_count(&*with) != 1 as u_int {
             return 0 as ::core::ffi::c_int;
         }
-        if utf8_regional_count(add) != 1 as u_int {
+        if utf8_regional_count(&*add) != 1 as u_int {
             return 0 as ::core::ffi::c_int;
         }
         return 1 as ::core::ffi::c_int;
