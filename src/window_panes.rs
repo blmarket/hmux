@@ -406,12 +406,12 @@ unsafe extern "C" fn window_panes_map_y(
 }
 unsafe extern "C" fn window_panes_next_tiled_cell(mut lc: *mut layout_cell) -> *mut layout_cell {
     let mut next: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    next = (*lc).entry.tqe_next;
+    next = layout_cell_next(lc);
     while !next.is_null() {
         if !(*next).flags & LAYOUT_CELL_FLOATING != 0 {
             return next;
         }
-        next = (*next).entry.tqe_next;
+        next = layout_cell_next(next);
     }
     return ::core::ptr::null_mut::<layout_cell>();
 }
@@ -517,7 +517,7 @@ unsafe extern "C" fn window_panes_mark_borders_cell(
     {
         return;
     }
-    lcchild = (*lc).cells.tqh_first;
+    lcchild = layout_cells_first(lc);
     while !lcchild.is_null() {
         window_panes_mark_borders_cell(map, lcchild, osx, osy, dsx, dsy);
         if !((*lcchild).flags & LAYOUT_CELL_FLOATING != 0) {
@@ -554,7 +554,7 @@ unsafe extern "C" fn window_panes_mark_borders_cell(
                 }
             }
         }
-        lcchild = (*lcchild).entry.tqe_next;
+        lcchild = layout_cell_next(lcchild);
     }
 }
 unsafe extern "C" fn window_panes_mark_pane_status_borders(
@@ -742,7 +742,7 @@ unsafe extern "C" fn window_panes_mark_border_joins_cell(
     {
         return;
     }
-    lcchild = (*lc).cells.tqh_first;
+    lcchild = layout_cells_first(lc);
     while !lcchild.is_null() {
         window_panes_mark_border_joins_cell(map, lcchild, osx, osy, dsx, dsy);
         if !((*lcchild).flags & LAYOUT_CELL_FLOATING != 0) {
@@ -886,7 +886,7 @@ unsafe extern "C" fn window_panes_mark_border_joins_cell(
                 }
             }
         }
-        lcchild = (*lcchild).entry.tqe_next;
+        lcchild = layout_cell_next(lcchild);
     }
 }
 unsafe extern "C" fn window_panes_draw_borders(

@@ -222,11 +222,7 @@ unsafe extern "C" fn layout_set_link_floating(mut w: *mut window, mut lcroot: *m
     while !wp.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
         if layout_cell_is_tiled(lc) == 0 {
-            (*lc).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-            (*lc).entry.tqe_prev = (*lcroot).cells.tqh_last;
-            *(*lcroot).cells.tqh_last = lc;
-            (*lcroot).cells.tqh_last = &raw mut (*lc).entry.tqe_next;
-            (*lc).parent = lcroot;
+            layout_cells_push_back(lcroot, lc);
         }
         wp = (*wp).entry.tqe_next;
     }
@@ -280,10 +276,7 @@ unsafe extern "C" fn layout_set_even(mut w: *mut window, mut type_0: layout_type
     wp = (*w).panes.tqh_first;
     while !wp.is_null() {
         lcchild = (*wp).layout_cell as *mut layout_cell;
-        (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-        (*lcchild).entry.tqe_prev = (*lcroot).cells.tqh_last;
-        *(*lcroot).cells.tqh_last = lcchild;
-        (*lcroot).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
+        layout_cells_push_back(lcroot, lcchild);
         (*lcchild).parent = lcroot;
         if layout_cell_is_tiled(lcchild) != 0 {
             (*lcchild).g.sx = (*w).sx;
@@ -409,19 +402,13 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    (*lcmain).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-    (*lcmain).entry.tqe_prev = (*lcroot).cells.tqh_last;
-    *(*lcroot).cells.tqh_last = lcmain;
-    (*lcroot).cells.tqh_last = &raw mut (*lcmain).entry.tqe_next;
+    layout_cells_push_back(lcroot, lcmain);
     if n == 1 as u_int {
         wp = (*wpmain).entry.tqe_next;
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
             wp = (*wp).entry.tqe_next;
         }
-        (*(*wp).layout_cell).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-        (*(*wp).layout_cell).entry.tqe_prev = (*lcroot).cells.tqh_last;
-        *(*lcroot).cells.tqh_last = (*wp).layout_cell as *mut layout_cell;
-        (*lcroot).cells.tqh_last = &raw mut (*(*wp).layout_cell).entry.tqe_next;
+        layout_cells_push_back(lcroot, (*wp).layout_cell as *mut layout_cell);
         (*(*wp).layout_cell).parent = lcroot;
         layout_set_size(
             (*wp).layout_cell as *mut layout_cell,
@@ -441,18 +428,12 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
             0 as ::core::ffi::c_int,
         );
         layout_make_node(lcother, LAYOUT_LEFTRIGHT);
-        (*lcother).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-        (*lcother).entry.tqe_prev = (*lcroot).cells.tqh_last;
-        *(*lcroot).cells.tqh_last = lcother;
-        (*lcroot).cells.tqh_last = &raw mut (*lcother).entry.tqe_next;
+        layout_cells_push_back(lcroot, lcother);
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
-                (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-                (*lcchild).entry.tqe_prev = (*lcother).cells.tqh_last;
-                *(*lcother).cells.tqh_last = lcchild;
-                (*lcother).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
+                layout_cells_push_back(lcother, lcchild);
                 (*lcchild).parent = lcother;
                 if layout_cell_is_tiled(lcchild) != 0 {
                     layout_set_size(
@@ -579,24 +560,13 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    (*lcmain).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-    (*lcmain).entry.tqe_prev = (*lcroot).cells.tqh_last;
-    *(*lcroot).cells.tqh_last = lcmain;
-    (*lcroot).cells.tqh_last = &raw mut (*lcmain).entry.tqe_next;
+    layout_cells_push_back(lcroot, lcmain);
     if n == 1 as u_int {
         wp = (*wpmain).entry.tqe_next;
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
             wp = (*wp).entry.tqe_next;
         }
-        (*(*wp).layout_cell).entry.tqe_next = (*lcroot).cells.tqh_first;
-        if !(*(*wp).layout_cell).entry.tqe_next.is_null() {
-            (*(*lcroot).cells.tqh_first).entry.tqe_prev =
-                &raw mut (*(*wp).layout_cell).entry.tqe_next;
-        } else {
-            (*lcroot).cells.tqh_last = &raw mut (*(*wp).layout_cell).entry.tqe_next;
-        }
-        (*lcroot).cells.tqh_first = (*wp).layout_cell as *mut layout_cell;
-        (*(*wp).layout_cell).entry.tqe_prev = &raw mut (*lcroot).cells.tqh_first;
+        layout_cells_push_front(lcroot, (*wp).layout_cell as *mut layout_cell);
         (*(*wp).layout_cell).parent = lcroot;
         layout_set_size(
             (*wp).layout_cell as *mut layout_cell,
@@ -616,22 +586,12 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
             0 as ::core::ffi::c_int,
         );
         layout_make_node(lcother, LAYOUT_LEFTRIGHT);
-        (*lcother).entry.tqe_next = (*lcroot).cells.tqh_first;
-        if !(*lcother).entry.tqe_next.is_null() {
-            (*(*lcroot).cells.tqh_first).entry.tqe_prev = &raw mut (*lcother).entry.tqe_next;
-        } else {
-            (*lcroot).cells.tqh_last = &raw mut (*lcother).entry.tqe_next;
-        }
-        (*lcroot).cells.tqh_first = lcother;
-        (*lcother).entry.tqe_prev = &raw mut (*lcroot).cells.tqh_first;
+        layout_cells_push_front(lcroot, lcother);
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
-                (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-                (*lcchild).entry.tqe_prev = (*lcother).cells.tqh_last;
-                *(*lcother).cells.tqh_last = lcchild;
-                (*lcother).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
+                layout_cells_push_back(lcother, lcchild);
                 (*lcchild).parent = lcother;
                 if layout_cell_is_tiled(lcchild) != 0 {
                     layout_set_size(
@@ -758,19 +718,13 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    (*lcmain).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-    (*lcmain).entry.tqe_prev = (*lcroot).cells.tqh_last;
-    *(*lcroot).cells.tqh_last = lcmain;
-    (*lcroot).cells.tqh_last = &raw mut (*lcmain).entry.tqe_next;
+    layout_cells_push_back(lcroot, lcmain);
     if n == 1 as u_int {
         wp = (*wpmain).entry.tqe_next;
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
             wp = (*wp).entry.tqe_next;
         }
-        (*(*wp).layout_cell).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-        (*(*wp).layout_cell).entry.tqe_prev = (*lcroot).cells.tqh_last;
-        *(*lcroot).cells.tqh_last = (*wp).layout_cell as *mut layout_cell;
-        (*lcroot).cells.tqh_last = &raw mut (*(*wp).layout_cell).entry.tqe_next;
+        layout_cells_push_back(lcroot, (*wp).layout_cell as *mut layout_cell);
         (*(*wp).layout_cell).parent = lcroot;
         layout_set_size(
             (*wp).layout_cell as *mut layout_cell,
@@ -790,18 +744,12 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        (*lcother).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-        (*lcother).entry.tqe_prev = (*lcroot).cells.tqh_last;
-        *(*lcroot).cells.tqh_last = lcother;
-        (*lcroot).cells.tqh_last = &raw mut (*lcother).entry.tqe_next;
+        layout_cells_push_back(lcroot, lcother);
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
-                (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-                (*lcchild).entry.tqe_prev = (*lcother).cells.tqh_last;
-                *(*lcother).cells.tqh_last = lcchild;
-                (*lcother).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
+                layout_cells_push_back(lcother, lcchild);
                 (*lcchild).parent = lcother;
                 if layout_cell_is_tiled(lcchild) != 0 {
                     layout_set_size(
@@ -928,24 +876,13 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    (*lcmain).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-    (*lcmain).entry.tqe_prev = (*lcroot).cells.tqh_last;
-    *(*lcroot).cells.tqh_last = lcmain;
-    (*lcroot).cells.tqh_last = &raw mut (*lcmain).entry.tqe_next;
+    layout_cells_push_back(lcroot, lcmain);
     if n == 1 as u_int {
         wp = (*wpmain).entry.tqe_next;
         while !wp.is_null() && layout_cell_is_tiled((*wp).layout_cell as *mut layout_cell) == 0 {
             wp = (*wp).entry.tqe_next;
         }
-        (*(*wp).layout_cell).entry.tqe_next = (*lcroot).cells.tqh_first;
-        if !(*(*wp).layout_cell).entry.tqe_next.is_null() {
-            (*(*lcroot).cells.tqh_first).entry.tqe_prev =
-                &raw mut (*(*wp).layout_cell).entry.tqe_next;
-        } else {
-            (*lcroot).cells.tqh_last = &raw mut (*(*wp).layout_cell).entry.tqe_next;
-        }
-        (*lcroot).cells.tqh_first = (*wp).layout_cell as *mut layout_cell;
-        (*(*wp).layout_cell).entry.tqe_prev = &raw mut (*lcroot).cells.tqh_first;
+        layout_cells_push_front(lcroot, (*wp).layout_cell as *mut layout_cell);
         (*(*wp).layout_cell).parent = lcroot;
         layout_set_size(
             (*wp).layout_cell as *mut layout_cell,
@@ -965,22 +902,12 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        (*lcother).entry.tqe_next = (*lcroot).cells.tqh_first;
-        if !(*lcother).entry.tqe_next.is_null() {
-            (*(*lcroot).cells.tqh_first).entry.tqe_prev = &raw mut (*lcother).entry.tqe_next;
-        } else {
-            (*lcroot).cells.tqh_last = &raw mut (*lcother).entry.tqe_next;
-        }
-        (*lcroot).cells.tqh_first = lcother;
-        (*lcother).entry.tqe_prev = &raw mut (*lcroot).cells.tqh_first;
+        layout_cells_push_front(lcroot, lcother);
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
             if !(wp == wpmain) {
                 lcchild = (*wp).layout_cell as *mut layout_cell;
-                (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-                (*lcchild).entry.tqe_prev = (*lcother).cells.tqh_last;
-                *(*lcother).cells.tqh_last = lcchild;
-                (*lcother).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
+                layout_cells_push_back(lcother, lcchild);
                 (*lcchild).parent = lcother;
                 if layout_cell_is_tiled(lcchild) != 0 {
                     layout_set_size(
@@ -1105,10 +1032,7 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
         lcchild = (*wp).layout_cell as *mut layout_cell;
         if n.wrapping_sub(j.wrapping_mul(columns)) == 1 as u_int || columns == 1 as u_int {
             (*lcchild).parent = lcroot;
-            (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-            (*lcchild).entry.tqe_prev = (*lcroot).cells.tqh_last;
-            *(*lcroot).cells.tqh_last = lcchild;
-            (*lcroot).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
+            layout_cells_push_back(lcroot, lcchild);
             layout_set_size(
                 lcchild,
                 (*w).sx,
@@ -1127,17 +1051,11 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            (*lcrow).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-            (*lcrow).entry.tqe_prev = (*lcroot).cells.tqh_last;
-            *(*lcroot).cells.tqh_last = lcrow;
-            (*lcroot).cells.tqh_last = &raw mut (*lcrow).entry.tqe_next;
+            layout_cells_push_back(lcroot, lcrow);
             i = 0 as u_int;
             while i < columns {
                 (*lcchild).parent = lcrow;
-                (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-                (*lcchild).entry.tqe_prev = (*lcrow).cells.tqh_last;
-                *(*lcrow).cells.tqh_last = lcchild;
-                (*lcrow).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
+                layout_cells_push_back(lcrow, lcchild);
                 layout_set_size(
                     lcchild,
                     width,
@@ -1165,7 +1083,7 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
                 .wrapping_mul(width.wrapping_add(1 as u_int))
                 .wrapping_sub(1 as u_int);
             if !((*w).sx <= used) {
-                lcchild = *(*((*lcrow).cells.tqh_last as *mut layout_cells)).tqh_last;
+                lcchild = layout_cells_last(lcrow);
                 layout_resize_adjust(
                     w,
                     lcchild,
@@ -1181,7 +1099,7 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
         .wrapping_add(rows)
         .wrapping_sub(1 as u_int);
     if (*w).sy > used {
-        lcrow = *(*((*lcroot).cells.tqh_last as *mut layout_cells)).tqh_last;
+        lcrow = layout_cells_last(lcroot);
         layout_resize_adjust(
             w,
             lcrow,

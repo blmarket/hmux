@@ -35,3 +35,9 @@ pub use self::core::{
     PANE_STATUS_TOP, SPAWN_BEFORE, SPAWN_FLOATOVERZOOM, SPAWN_FULLSIZE, SPAWN_HORIZONTAL,
     SPAWN_SPLIT, SPAWN_ZOOM, UINT_MAX,
 };
+
+pub use crate::src::shared::layout::{
+    layout_cell_next, layout_cell_prev, layout_cells_first, layout_cells_insert_after,
+    layout_cells_insert_before, layout_cells_last, layout_cells_push_back, layout_cells_push_front,
+    layout_cells_remove, layout_cells_replace,
+};
