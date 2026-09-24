@@ -154,7 +154,7 @@ unsafe extern "C" fn cmd_display_message_exec(
     let mut wl: *mut winlink = (*target).wl;
     let mut wp: *mut window_pane = (*target).wp;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut flags: ::core::ffi::c_int = 0;
     let mut Nflag: ::core::ffi::c_int = args_has(args, 'N' as i32 as u_char);
@@ -258,9 +258,8 @@ unsafe extern "C" fn cmd_display_message_exec(
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ref().map_or(::core::ptr::null(), |message| message.as_ptr()),
             );
-            free(cause as *mut ::core::ffi::c_void);
             drop(msg);
             format_free(ft);
             return CMD_RETURN_ERROR;

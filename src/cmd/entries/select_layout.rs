@@ -2,7 +2,6 @@ use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::free;
 use crate::src::layout::layout_spread_out;
 use crate::src::layout_custom::{layout_dump_owned, layout_parse};
 use crate::src::layout_set::{
@@ -63,6 +62,7 @@ pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::status_line;
 use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
+use std::ffi::CString;
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
 pub use crate::src::shared::window::{
     window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
@@ -171,7 +171,7 @@ unsafe extern "C" fn cmd_select_layout_exec(
     let mut w: *mut window = (*wl).window;
     let mut wp: *mut window_pane = (*target).wp;
     let mut layoutname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;
     let mut layout: ::core::ffi::c_int = 0;
@@ -236,10 +236,9 @@ unsafe extern "C" fn cmd_select_layout_exec(
                         cmdq_error(
                             item,
                             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                            cause,
+                            cause.as_ref().map_or(::core::ptr::null(), |message| message.as_ptr()),
                             layoutname,
                         );
-                        free(cause as *mut ::core::ffi::c_void);
                         drop(window_replace_old_layout(w, oldlayout.take()));
                         return CMD_RETURN_ERROR;
                     }

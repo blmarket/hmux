@@ -1,18 +1,17 @@
 use hmux2::src::json::{
-    NODE_ARRAY, NODE_OBJECT, json_array_first, json_array_next, json_destroy_node, json_find,
-    json_get_number, json_parse, json_to_string,
+    json_array_first, json_array_next, json_destroy_node, json_find, json_get_number, json_parse,
+    json_to_string, NODE_ARRAY, NODE_OBJECT,
 };
 use std::ffi::{CStr, CString};
-use std::ptr;
 
 #[test]
 fn array_owned_members_preserve_order_and_iteration() {
     unsafe {
         let input = CString::new(r#"{"items":[{"x":1},{"y":2},{"z":3}]}"#).unwrap();
-        let mut cause = ptr::null_mut();
+        let mut cause: Option<CString> = None;
         let root = json_parse(input.as_ptr(), &mut cause);
-        assert!(!root.is_null(), "parse error: {:?}", CStr::from_ptr(cause));
-        assert!(cause.is_null());
+        assert!(!root.is_null(), "parse error: {:?}", cause);
+        assert!(cause.is_none());
         let key = CString::new("items").unwrap();
         let array = json_find(root, key.as_ptr());
         assert_eq!((*array).type_0, NODE_ARRAY);
@@ -49,10 +48,10 @@ fn array_owned_members_preserve_order_and_iteration() {
 fn empty_array_has_no_members() {
     unsafe {
         let input = CString::new(r#"{"items":[]}"#).unwrap();
-        let mut cause = ptr::null_mut();
+        let mut cause: Option<CString> = None;
         let root = json_parse(input.as_ptr(), &mut cause);
-        assert!(!root.is_null(), "parse error: {:?}", CStr::from_ptr(cause));
-        assert!(cause.is_null());
+        assert!(!root.is_null(), "parse error: {:?}", cause);
+        assert!(cause.is_none());
         let key = CString::new("items").unwrap();
         assert!(json_array_first(json_find(root, key.as_ptr())).is_null());
         json_destroy_node(root);
@@ -63,10 +62,9 @@ fn empty_array_has_no_members() {
 fn malformed_array_destroys_already_parsed_members() {
     unsafe {
         let input = CString::new(r#"{"items":[{"x":1},{"y":2},]}"#).unwrap();
-        let mut cause = ptr::null_mut();
+        let mut cause: Option<CString> = None;
         let root = json_parse(input.as_ptr(), &mut cause);
         assert!(root.is_null());
-        assert!(!cause.is_null());
-        libc::free(cause.cast());
+        assert!(cause.is_some());
     }
 }

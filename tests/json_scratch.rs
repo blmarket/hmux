@@ -1,6 +1,5 @@
-use hmux2::src::json::{json_destroy_node, json_find, json_parse};
+use hmux2::src::json::{json_destroy_node, json_find, json_find_string, json_parse};
 use std::ffi::{CStr, CString};
-use std::ptr;
 
 #[test]
 fn object_keys_survive_scratch_and_input_destruction() {
@@ -9,16 +8,23 @@ fn object_keys_survive_scratch_and_input_destruction() {
             b"{\"\xff\":2,\"a\\u0000b\":3,\"nested\":{\"child\":true},\"array\":[]}".as_slice(),
         )
         .unwrap();
-        let mut cause = ptr::null_mut();
+        let mut cause: Option<CString> = None;
         let object = json_parse(input.as_ptr(), &mut cause);
-        assert!(!object.is_null(), "{:?}", CStr::from_ptr(cause));
-        assert!(cause.is_null());
+        assert!(!object.is_null(), "parse error: {:?}", cause);
+        assert!(cause.is_none());
         drop(input);
         for key in [b"\xff".as_slice(), b"a\\u0000b", b"nested", b"array"] {
             let key = CString::new(key).unwrap();
             let node = json_find(object, key.as_ptr());
             assert!(!node.is_null(), "missing {key:?}");
-            assert_eq!(CStr::from_ptr(((*node).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())), key.as_c_str());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*node).key)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                ),
+                key.as_c_str()
+            );
         }
         json_destroy_node(object);
     }
@@ -38,19 +44,53 @@ fn object_key_errors_destroy_partial_objects() {
     ] {
         unsafe {
             let input = CString::new(input).unwrap();
-            let mut cause = ptr::null_mut();
+            let mut cause: Option<CString> = None;
             let object = json_parse(input.as_ptr(), &mut cause);
             assert!(object.is_null(), "accepted {input:?}");
-            assert!(!cause.is_null());
-            let message = CStr::from_ptr(cause).to_bytes();
+            assert!(cause.is_some());
+            let message = cause.as_ref().unwrap().as_bytes();
             assert!(
                 message
                     .windows(diagnostic.len())
                     .any(|w| w == diagnostic.as_bytes()),
                 "{input:?}: {message:?}"
             );
-            libc::free(cause.cast());
         }
+    }
+}
+
+#[test]
+fn typed_lookup_returns_owned_diagnostics() {
+    unsafe {
+        let input = CString::new(r#"{"number":1}"#).unwrap();
+        let mut parse_cause: Option<CString> = None;
+        let object = json_parse(input.as_ptr(), &mut parse_cause);
+        assert!(!object.is_null(), "parse error: {parse_cause:?}");
+        assert!(parse_cause.is_none());
+
+        let mut output = std::ptr::null();
+        let missing = CString::new("missing").unwrap();
+        let mut cause: Option<CString> = None;
+        assert_eq!(
+            json_find_string(object, missing.as_ptr(), &mut output, &mut cause),
+            -1
+        );
+        assert_eq!(
+            cause.as_ref().unwrap().as_bytes(),
+            b"key \"missing\" not found"
+        );
+
+        let number = CString::new("number").unwrap();
+        cause = None;
+        assert_eq!(
+            json_find_string(object, number.as_ptr(), &mut output, &mut cause),
+            -1
+        );
+        assert_eq!(
+            cause.as_ref().unwrap().as_bytes(),
+            b"key \"number\" expected a string"
+        );
+        json_destroy_node(object);
     }
 }
 
@@ -66,11 +106,11 @@ fn token_growth_keeps_late_keys_and_cleans_up_on_error() {
     ] {
         unsafe {
             let input = CString::new(input).unwrap();
-            let mut cause = ptr::null_mut();
+            let mut cause: Option<CString> = None;
             let object = json_parse(input.as_ptr(), &mut cause);
             if valid {
                 assert!(!object.is_null());
-                assert!(cause.is_null());
+                assert!(cause.is_none());
                 drop(input);
                 for key in ["key0", "key255", "key349"] {
                     let key = CString::new(key).unwrap();
@@ -82,11 +122,12 @@ fn token_growth_keeps_late_keys_and_cleans_up_on_error() {
                 json_destroy_node(object);
             } else {
                 assert!(object.is_null());
-                assert!(!cause.is_null());
-                assert!(CStr::from_ptr(cause)
+                assert!(cause.is_some());
+                assert!(cause
+                    .as_ref()
+                    .unwrap()
                     .to_bytes()
                     .starts_with(b"unexpected value"));
-                libc::free(cause.cast());
             }
         }
     }

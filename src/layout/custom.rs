@@ -18,6 +18,28 @@ use crate::src::window::{
 };
 use crate::src::xmalloc::{xasprintf, xmalloc, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
+
+macro_rules! layout_format_cause {
+    ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let cause = $cause;
+        if !cause.is_null() {
+            let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            xasprintf(&raw mut raw, $fmt $(, $arg)*);
+            let message = CStr::from_ptr(raw).to_owned();
+            free(raw.cast());
+            *cause = Some(message);
+        }
+    }};
+}
+
+unsafe fn layout_set_static_cause(
+    cause: *mut Option<CString>,
+    message: *const ::core::ffi::c_char,
+) {
+    if !cause.is_null() {
+        *cause = Some(CStr::from_ptr(message).to_owned());
+    }
+}
 pub use crate::src::shared::json::{json_node};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -119,7 +141,7 @@ pub struct layout_parse_ctx {
     pub version: int64_t,
     pub num_active: ::core::ffi::c_int,
     pub root: *mut layout_cell,
-    pub cause: *mut *mut ::core::ffi::c_char,
+    pub cause: *mut Option<CString>,
     pub cctxs: Vec<layout_parse_cell_ctx>,
 }
 #[derive(Copy, Clone)]
@@ -206,7 +228,7 @@ mod layout_string_tests {
 }
 unsafe extern "C" fn layout_parse_init_ctx(
     mut pctx: *mut layout_parse_ctx,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) {
     (*pctx).version = -(1 as ::core::ffi::c_int) as int64_t;
     (*pctx).num_active = 0 as ::core::ffi::c_int;
@@ -620,11 +642,10 @@ unsafe extern "C" fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_in
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_parse(
+pub unsafe fn layout_parse(
     mut w: *mut window,
     mut input: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -634,7 +655,7 @@ pub unsafe extern "C" fn layout_parse(
         version: 0,
         num_active: 0,
         root: ::core::ptr::null_mut::<layout_cell>(),
-        cause: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+        cause: ::core::ptr::null_mut::<Option<CString>>(),
         cctxs: Vec::new(),
     };
     let mut npanes: u_int = 0;
@@ -650,7 +671,7 @@ pub unsafe extern "C" fn layout_parse(
     with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
     npanes = window_count_panes(w, with_floating);
     if npanes == 0 as u_int {
-        xasprintf(
+        layout_format_cause!(
             cause,
             b"window @%u has no panes\0" as *const u8 as *const ::core::ffi::c_char,
             (*w).id,
@@ -659,7 +680,7 @@ pub unsafe extern "C" fn layout_parse(
         loop {
             ncells = layout_count_cells(pctx.root, with_floating);
             if npanes > ncells {
-                xasprintf(
+                layout_format_cause!(
                     cause,
                     b"have %u panes but need %u\0" as *const u8 as *const ::core::ffi::c_char,
                     npanes,
@@ -676,7 +697,8 @@ pub unsafe extern "C" fn layout_parse(
                 if pctx.version > 1 as int64_t
                     && layout_parse_remove_cctx(&raw mut pctx, lcchild) != 0 as ::core::ffi::c_int
                 {
-                    *cause = xstrdup(
+                    layout_set_static_cause(
+                        cause,
                         b"empty/missing layout parse context\0" as *const u8
                             as *const ::core::ffi::c_char,
                     );
@@ -738,7 +760,8 @@ pub unsafe extern "C" fn layout_parse(
                     (*lc).g.sy = sy.wrapping_sub(1 as u_int);
                 }
                 if layout_check(lc) == 0 {
-                    *cause = xstrdup(
+                    layout_set_static_cause(
+                        cause,
                         b"size mismatch after applying layout\0" as *const u8
                             as *const ::core::ffi::c_char,
                     );
@@ -1038,9 +1061,12 @@ unsafe extern "C" fn layout_parse_json(
     let mut jn: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut object: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut num: int64_t = 0;
-    let mut cause: *mut *mut ::core::ffi::c_char = (*pctx).cause;
+    let mut cause: *mut Option<CString> = (*pctx).cause;
     if json_get_object(jnroot, &raw mut jn) != 0 as ::core::ffi::c_int {
-        *cause = xstrdup(b"invalid layout json\0" as *const u8 as *const ::core::ffi::c_char);
+        layout_set_static_cause(
+            cause,
+            b"invalid layout json\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     } else if !(json_find_number(
         jn,
         b"V\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1083,7 +1109,7 @@ unsafe extern "C" fn layout_parse_json_layout(
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut str: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut num: int64_t = 0;
-    let mut cause: *mut *mut ::core::ffi::c_char = (*pctx).cause;
+    let mut cause: *mut Option<CString> = (*pctx).cause;
     let mut boolean: ::core::ffi::c_int = 0;
     let mut index: ::core::ffi::c_int = 0;
     let mut zindex: ::core::ffi::c_int = 0;
@@ -1111,7 +1137,7 @@ unsafe extern "C" fn layout_parse_json_layout(
             (*lc).type_0 = LAYOUT_LEFTRIGHT;
             current_block = 1394248824506584008;
         } else {
-            xasprintf(
+            layout_format_cause!(
                 cause,
                 b"unknown cell type \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
                 str,
@@ -1129,7 +1155,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                 ) != 0 as ::core::ffi::c_int)
                 {
                     if num < PANE_MINIMUM as int64_t || num > PANE_MAXIMUM as int64_t {
-                        xasprintf(
+                        layout_format_cause!(
                             cause,
                             b"invalid width %lld\0" as *const u8 as *const ::core::ffi::c_char,
                             num as ::core::ffi::c_longlong,
@@ -1144,7 +1170,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                         ) != 0 as ::core::ffi::c_int)
                         {
                             if num < PANE_MINIMUM as int64_t || num > PANE_MAXIMUM as int64_t {
-                                xasprintf(
+                                layout_format_cause!(
                                     cause,
                                     b"invalid height %lld\0" as *const u8
                                         as *const ::core::ffi::c_char,
@@ -1162,7 +1188,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                     if num < -WINDOW_MAXIMUM as int64_t
                                         || num > WINDOW_MAXIMUM as int64_t
                                     {
-                                        xasprintf(
+                                        layout_format_cause!(
                                             cause,
                                             b"invalid x-offset %lld\0" as *const u8
                                                 as *const ::core::ffi::c_char,
@@ -1180,7 +1206,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                             if num < -WINDOW_MAXIMUM as int64_t
                                                 || num > WINDOW_MAXIMUM as int64_t
                                             {
-                                                xasprintf(
+                                                layout_format_cause!(
                                                     cause,
                                                     b"invalid y-offset %lld\0" as *const u8
                                                         as *const ::core::ffi::c_char,
@@ -1199,7 +1225,8 @@ unsafe extern "C" fn layout_parse_json_layout(
                                                     )
                                                     .is_null()
                                                     {
-                                                        *cause = xstrdup(
+                                                        layout_set_static_cause(
+                                                            cause,
                                                             b"panes cannot have children\0"
                                                                 as *const u8
                                                                 as *const ::core::ffi::c_char,
@@ -1217,7 +1244,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                                     } else if num < 0 as int64_t
                                                         || num > INT_MAX as int64_t
                                                     {
-                                                        xasprintf(
+                                                        layout_format_cause!(
                                                             cause,
                                                             b"invalid index %lld\0" as *const u8
                                                                 as *const ::core::ffi::c_char,
@@ -1270,7 +1297,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                                             } else if num < 0 as int64_t
                                                                 || num > INT_MAX as int64_t
                                                             {
-                                                                xasprintf(
+                                                                layout_format_cause!(
                                                                     cause,
                                                                     b"invalid last %lld\0" as *const u8
                                                                         as *const ::core::ffi::c_char,
@@ -1305,7 +1332,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                                                     } else if num < 0 as int64_t
                                                                         || num > (INT_MAX - 1 as ::core::ffi::c_int) as int64_t
                                                                     {
-                                                                        xasprintf(
+                                                                        layout_format_cause!(
                                                                             cause,
                                                                             b"invalid floating zindex %lld\0" as *const u8
                                                                                 as *const ::core::ffi::c_char,
@@ -1349,7 +1376,8 @@ unsafe extern "C" fn layout_parse_json_layout(
                                                     if member.is_null()
                                                         || json_array_next(member).is_null()
                                                     {
-                                                        *cause = xstrdup(
+                                                        layout_set_static_cause(
+                                                            cause,
                                                             b"nodes must have more than one child\0"
                                                                 as *const u8
                                                                 as *const ::core::ffi::c_char,
@@ -1416,14 +1444,18 @@ unsafe extern "C" fn layout_construct(
         ) != 1 as ::core::ffi::c_int
             || n != 5 as ::core::ffi::c_int
         {
-            *(*pctx).cause =
-                xstrdup(b"malformed layout header\0" as *const u8 as *const ::core::ffi::c_char);
+            layout_set_static_cause(
+                (*pctx).cause,
+                b"malformed layout header\0" as *const u8 as *const ::core::ffi::c_char,
+            );
             return -(1 as ::core::ffi::c_int);
         }
         input = input.offset(n as isize);
         if csum as ::core::ffi::c_int != layout_checksum(input) as ::core::ffi::c_int {
-            *(*pctx).cause =
-                xstrdup(b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char);
+            layout_set_static_cause(
+                (*pctx).cause,
+                b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char,
+            );
             return -(1 as ::core::ffi::c_int);
         }
         (*pctx).root = layout_construct_v1(
@@ -1432,12 +1464,17 @@ unsafe extern "C" fn layout_construct(
             0 as u_int,
         );
         if (*pctx).root.is_null() {
-            *(*pctx).cause =
-                xstrdup(b"invalid layout\0" as *const u8 as *const ::core::ffi::c_char);
+            layout_set_static_cause(
+                (*pctx).cause,
+                b"invalid layout\0" as *const u8 as *const ::core::ffi::c_char,
+            );
             return -(1 as ::core::ffi::c_int);
         }
         if *input as ::core::ffi::c_int != '\0' as i32 {
-            *(*pctx).cause = xstrdup(b"trailing data\0" as *const u8 as *const ::core::ffi::c_char);
+            layout_set_static_cause(
+                (*pctx).cause,
+                b"trailing data\0" as *const u8 as *const ::core::ffi::c_char,
+            );
             return -(1 as ::core::ffi::c_int);
         }
         (*pctx).version = 1 as int64_t;
@@ -1450,17 +1487,24 @@ unsafe extern "C" fn layout_construct(
             return -(1 as ::core::ffi::c_int);
         }
         if (*pctx).version != 2 as int64_t {
-            *(*pctx).cause =
-                xstrdup(b"version mismatch\0" as *const u8 as *const ::core::ffi::c_char);
+            layout_set_static_cause(
+                (*pctx).cause,
+                b"version mismatch\0" as *const u8 as *const ::core::ffi::c_char,
+            );
             return -(1 as ::core::ffi::c_int);
         }
         if (*pctx).num_active > 1 as ::core::ffi::c_int {
-            *(*pctx).cause =
-                xstrdup(b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char);
+            layout_set_static_cause(
+                (*pctx).cause,
+                b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char,
+            );
             return -(1 as ::core::ffi::c_int);
         }
         if (*pctx).cctxs.is_empty() {
-            *(*pctx).cause = xstrdup(b"no panes\0" as *const u8 as *const ::core::ffi::c_char);
+            layout_set_static_cause(
+                (*pctx).cause,
+                b"no panes\0" as *const u8 as *const ::core::ffi::c_char,
+            );
             return -(1 as ::core::ffi::c_int);
         }
         if layout_parse_ctx_check_indexes(pctx) == 0 {
@@ -1559,8 +1603,10 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
         .windows(2)
         .any(|pair| pair[0].index == pair[1].index)
     {
-        *(*pctx).cause =
-            xstrdup(b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char);
+        layout_set_static_cause(
+            (*pctx).cause,
+            b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char,
+        );
         return 0 as ::core::ffi::c_int;
     }
     qsort(
@@ -1584,8 +1630,10 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
         .windows(2)
         .any(|pair| pair[0].zindex == pair[1].zindex)
     {
-        *(*pctx).cause =
-            xstrdup(b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char);
+        layout_set_static_cause(
+            (*pctx).cause,
+            b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char,
+        );
         return 0 as ::core::ffi::c_int;
     }
     qsort(
@@ -1609,8 +1657,10 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
         .windows(2)
         .any(|pair| pair[0].last == pair[1].last)
     {
-        *(*pctx).cause =
-            xstrdup(b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char);
+        layout_set_static_cause(
+            (*pctx).cause,
+            b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char,
+        );
         return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;

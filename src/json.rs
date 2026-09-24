@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, strlen, strncmp, strtoll};
+use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, free, strlen, strncmp, strtoll};
 use crate::src::log::fatalx;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
@@ -20,6 +20,19 @@ use crate::src::xmalloc::{xasprintf, xmalloc, xmemdup};
 use std::ffi::CStr;
 use std::ffi::CString;
 
+macro_rules! json_format_cause {
+    ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let cause = $cause;
+        if !cause.is_null() {
+            let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            xasprintf(&raw mut raw, $fmt $(, $arg)*);
+            let message = CStr::from_ptr(raw).to_owned();
+            free(raw.cast());
+            *cause = Some(message);
+        }
+    }};
+}
+
 pub const NODE_ARRAY: json_node_type = 4;
 pub const NODE_OBJECT: json_node_type = 3;
 pub const NODE_BOOLEAN: json_node_type = 2;
@@ -29,7 +42,7 @@ pub const NODE_STRING: json_node_type = 0;
 #[repr(C)]
 pub struct json_parse_ctx {
     pub input: *const ::core::ffi::c_char,
-    pub cause: *mut *mut ::core::ffi::c_char,
+    pub cause: *mut Option<CString>,
     pub depth: ::core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
@@ -182,14 +195,13 @@ unsafe fn json_members_push(head: *mut json_members, elm: *mut json_node) {
     storage.indices.insert(elm, index);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn json_parse(
+pub unsafe fn json_parse(
     mut input: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> *mut json_node {
     let mut pctx: json_parse_ctx = json_parse_ctx {
         input: ::core::ptr::null::<::core::ffi::c_char>(),
-        cause: ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
+        cause: ::core::ptr::null_mut::<Option<CString>>(),
         depth: 0,
     };
     if *input as ::core::ffi::c_int == '\0' as i32 {
@@ -306,18 +318,17 @@ pub unsafe extern "C" fn json_get_array(
     *a = jn;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_find_string(
+pub unsafe fn json_find_string(
     mut jn: *mut json_node,
     mut key: *const ::core::ffi::c_char,
     mut out: *mut *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -329,7 +340,7 @@ pub unsafe extern "C" fn json_find_string(
         != NODE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" expected a string\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -340,18 +351,17 @@ pub unsafe extern "C" fn json_find_string(
     *out = (*field).c2rust_unnamed.str_0;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_find_number(
+pub unsafe fn json_find_number(
     mut jn: *mut json_node,
     mut key: *const ::core::ffi::c_char,
     mut out: *mut int64_t,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -363,7 +373,7 @@ pub unsafe extern "C" fn json_find_number(
         != NODE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" expected a number\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -374,18 +384,17 @@ pub unsafe extern "C" fn json_find_number(
     *out = (*field).c2rust_unnamed.num;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_find_boolean(
+pub unsafe fn json_find_boolean(
     mut jn: *mut json_node,
     mut key: *const ::core::ffi::c_char,
     mut out: *mut ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -397,7 +406,7 @@ pub unsafe extern "C" fn json_find_boolean(
         != NODE_BOOLEAN as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" expected a boolean\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -408,18 +417,17 @@ pub unsafe extern "C" fn json_find_boolean(
     *out = (*field).c2rust_unnamed.boolean;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_find_object(
+pub unsafe fn json_find_object(
     mut jn: *mut json_node,
     mut key: *const ::core::ffi::c_char,
     mut out: *mut *mut json_node,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -431,7 +439,7 @@ pub unsafe extern "C" fn json_find_object(
         != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" expected an object\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -442,18 +450,17 @@ pub unsafe extern "C" fn json_find_object(
     *out = field;
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn json_find_array(
+pub unsafe fn json_find_array(
     mut jn: *mut json_node,
     mut key: *const ::core::ffi::c_char,
     mut out: *mut *mut json_node,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     field = json_find(jn, key);
     if field.is_null() {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" not found\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -465,7 +472,7 @@ pub unsafe extern "C" fn json_find_array(
         != NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if !cause.is_null() {
-            xasprintf(
+            json_format_cause!(
                 cause,
                 b"key \"%s\" expected an array\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
@@ -476,8 +483,8 @@ pub unsafe extern "C" fn json_find_array(
     *out = field;
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn json_error(
-    mut cause: *mut *mut ::core::ffi::c_char,
+unsafe fn json_error(
+    mut cause: *mut Option<CString>,
     mut reason: *const ::core::ffi::c_char,
     mut loc: *const ::core::ffi::c_char,
 ) {
@@ -488,7 +495,7 @@ unsafe extern "C" fn json_error(
         return;
     }
     if loc.is_null() || *loc as ::core::ffi::c_int == '\0' as i32 {
-        xasprintf(
+        json_format_cause!(
             cause,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
             reason,
@@ -504,7 +511,7 @@ unsafe extern "C" fn json_error(
             i += 1;
         }
     }
-    xasprintf(
+    json_format_cause!(
         cause,
         b"%s: %.*s%s\0" as *const u8 as *const ::core::ffi::c_char,
         reason,
@@ -515,7 +522,7 @@ unsafe extern "C" fn json_error(
 }
 unsafe fn json_tokenize_input(
     mut input: *const ::core::ffi::c_char,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    mut cause: *mut Option<CString>,
 ) -> Option<Vec<json_token>> {
     let mut current_block: u64;
     let mut tokens = Vec::with_capacity(1024);
