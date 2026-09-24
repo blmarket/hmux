@@ -87,6 +87,7 @@ pub mod compat {
     pub mod ntohll;
     pub mod recallocarray;
     pub mod setproctitle;
+    pub mod stdio;
     pub mod strtonum;
     pub mod systemd;
     pub mod unvis;

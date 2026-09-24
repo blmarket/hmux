@@ -1,6 +1,7 @@
 use std::ffi::CString;
 
-use crate::src::ffi::libc::{fclose, fgetc, fopen, ioctl, readlink, setenv, tcgetpgrp, unsetenv};
+use crate::src::compat::stdio::CFile;
+use crate::src::ffi::libc::{fgetc, fopen, ioctl, readlink, setenv, tcgetpgrp, unsetenv};
 use crate::src::reactor::event_init;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
@@ -30,15 +31,16 @@ pub(crate) unsafe fn osdep_get_name_cstring(
     if f.is_null() {
         return None;
     }
+    let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
     let mut buf = Vec::new();
     loop {
-        let ch = fgetc(f);
+        let ch = fgetc(stream.as_ptr());
         if ch == EOF || ch == 0 {
             break;
         }
         buf.push(ch as u8);
     }
-    fclose(f);
+    drop(stream);
     if buf.is_empty() {
         None
     } else {

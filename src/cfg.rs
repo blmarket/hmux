@@ -6,7 +6,8 @@ use crate::src::cmd_queue::{
     cmdq_new_state, cmdq_print,
 };
 use crate::src::control::control_notify_write;
-use crate::src::ffi::libc::{__errno_location, fclose, fopen, free, memset, strerror};
+use crate::src::compat::stdio::CFile;
+use crate::src::ffi::libc::{__errno_location, fopen, free, memset, strerror};
 use crate::src::log::log_debug;
 use crate::src::prompt_history::prompt_load_history;
 pub use crate::src::server::clients;
@@ -227,6 +228,7 @@ pub unsafe extern "C" fn load_cfg(
         );
         return -(1 as ::core::ffi::c_int);
     }
+    let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
     memset(
         &raw mut pi as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -237,8 +239,8 @@ pub unsafe extern "C" fn load_cfg(
     pi.line = 1 as u_int;
     pi.item = item;
     pi.c = c;
-    pr = cmd_parse_from_file(f, &raw mut pi);
-    fclose(f);
+    pr = cmd_parse_from_file(stream.as_ptr(), &raw mut pi);
+    drop(stream);
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {

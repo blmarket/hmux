@@ -1,7 +1,8 @@
 pub use crate::src::ffi::libc::__ssize_t;
 use crate::src::ffi::libc::{
-    __errno_location, fclose, fgetc, fopen, fputc, fputs, strcmp, strerror, strsep,
+    __errno_location, fgetc, fopen, fputc, fputs, strcmp, strerror, strsep,
 };
+use crate::src::compat::stdio::CFile;
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::{prompt_type, prompt_type_string};
@@ -100,11 +101,12 @@ pub unsafe extern "C" fn prompt_load_history() {
         );
         return;
     }
-    while read_history_line(f, &mut line) {
+    let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
+    while read_history_line(stream.as_ptr(), &mut line) {
         line.push(0);
         prompt_add_typed_history(line.as_mut_ptr().cast());
     }
-    fclose(f);
+    drop(stream);
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_save_history() {
@@ -131,20 +133,21 @@ pub unsafe extern "C" fn prompt_save_history() {
         );
         return;
     }
+    let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
     type_0 = 0 as u_int;
     while type_0 < PROMPT_NTYPES as u_int {
         i = 0 as u_int;
         let history = &*(&raw const prompt_hlist[type_0 as usize]);
         while i < history.len() as u_int {
-            fputs(prompt_type_string(type_0 as prompt_type), f);
-            fputc(':' as i32, f);
-            fputs(history[i as usize].as_ptr(), f);
-            fputc('\n' as i32, f);
+            fputs(prompt_type_string(type_0 as prompt_type), stream.as_ptr());
+            fputc(':' as i32, stream.as_ptr());
+            fputs(history[i as usize].as_ptr(), stream.as_ptr());
+            fputc('\n' as i32, stream.as_ptr());
             i = i.wrapping_add(1);
         }
         type_0 = type_0.wrapping_add(1);
     }
-    fclose(f);
+    drop(stream);
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_up_history(
