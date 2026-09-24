@@ -133,7 +133,6 @@ unsafe extern "C" fn cmd_resize_pane_exec(
         'L' as i32 as ::core::ffi::c_char,
         'R' as i32 as ::core::ffi::c_char,
     ];
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_char = 0;
     let mut adjust: ::core::ffi::c_int = 0;
     let mut x: ::core::ffi::c_int = 0;
@@ -191,15 +190,12 @@ unsafe extern "C" fn cmd_resize_pane_exec(
             }
         };
         if window_pane_is_floating(wp) != 0 {
-            if layout_resize_floating_pane_to(wp, LAYOUT_LEFTRIGHT, x as u_int, &raw mut cause)
-                != 0 as ::core::ffi::c_int
-            {
+            if let Err(cause) = layout_resize_floating_pane_to(wp, LAYOUT_LEFTRIGHT, x as u_int) {
                 cmdq_error(
                     item,
                     b"size %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
+                    cause.as_ptr(),
                 );
-                free(cause as *mut ::core::ffi::c_void);
                 return CMD_RETURN_ERROR;
             }
         } else {
@@ -242,15 +238,12 @@ unsafe extern "C" fn cmd_resize_pane_exec(
             _ => {}
         }
         if window_pane_is_floating(wp) != 0 {
-            if layout_resize_floating_pane_to(wp, LAYOUT_TOPBOTTOM, y as u_int, &raw mut cause)
-                != 0 as ::core::ffi::c_int
-            {
+            if let Err(cause) = layout_resize_floating_pane_to(wp, LAYOUT_TOPBOTTOM, y as u_int) {
                 cmdq_error(
                     item,
                     b"size %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
+                    cause.as_ptr(),
                 );
-                free(cause as *mut ::core::ffi::c_void);
                 return CMD_RETURN_ERROR;
             }
         } else {
@@ -297,15 +290,12 @@ unsafe extern "C" fn cmd_resize_pane_exec(
                 {
                     opposite = 1 as ::core::ffi::c_int;
                 }
-                if layout_resize_floating_pane(wp, type_0, adjust, opposite, &raw mut cause)
-                    != 0 as ::core::ffi::c_int
-                {
+                if let Err(cause) = layout_resize_floating_pane(wp, type_0, adjust, opposite) {
                     cmdq_error(
                         item,
                         b"adjustment %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause,
+                        cause.as_ptr(),
                     );
-                    free(cause as *mut ::core::ffi::c_void);
                     return CMD_RETURN_ERROR;
                 }
             } else {

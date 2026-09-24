@@ -1032,17 +1032,14 @@ mod layout_cell_collection_tests {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_resize_floating_pane_to(
+pub unsafe fn layout_resize_floating_pane_to(
     mut wp: *mut window_pane,
     mut type_0: layout_type,
     mut size: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+)-> Result<(), std::ffi::CString> {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     if !(*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-        *cause = xstrdup(b"pane is not floating\0" as *const u8 as *const ::core::ffi::c_char);
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"pane is not floating".to_owned());
     }
     if window_pane_get_pane_lines(wp) as ::core::ffi::c_uint
         != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1051,52 +1048,44 @@ pub unsafe extern "C" fn layout_resize_floating_pane_to(
         size = size.wrapping_sub(2 as u_int);
     }
     if size < PANE_MINIMUM as u_int || size > PANE_MAXIMUM as u_int {
-        *cause =
-            xstrdup(b"size is too big or too small\0" as *const u8 as *const ::core::ffi::c_char);
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"size is too big or too small".to_owned());
     }
     if type_0 as ::core::ffi::c_uint
         == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if (*lc).g.sy == size {
-            return 0 as ::core::ffi::c_int;
+            return Ok(());
         }
         (*lc).g.sy = size;
     } else {
         if (*lc).g.sx == size {
-            return 0 as ::core::ffi::c_int;
+            return Ok(());
         }
         (*lc).g.sx = size;
     }
     redraw_invalidate_scene((*wp).window as *mut window);
-    return 0 as ::core::ffi::c_int;
+    Ok(())
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_resize_floating_pane(
+pub unsafe fn layout_resize_floating_pane(
     mut wp: *mut window_pane,
     mut type_0: layout_type,
     mut change: ::core::ffi::c_int,
     mut opposite: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+)-> Result<(), std::ffi::CString> {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut size: u_int = 0;
     if !(*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-        *cause = xstrdup(b"pane is not floating\0" as *const u8 as *const ::core::ffi::c_char);
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"pane is not floating".to_owned());
     }
     if change == 0 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
+        return Ok(());
     }
     if type_0 as ::core::ffi::c_uint
         == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         size = (*lc).g.sy.wrapping_add(change as u_int);
         if size < PANE_MINIMUM as u_int || size > PANE_MAXIMUM as u_int {
-            *cause = xstrdup(
-                b"change is too big or too small\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            return -(1 as ::core::ffi::c_int);
+            return Err(c"change is too big or too small".to_owned());
         }
         (*lc).g.sy = size;
         if opposite != 0 {
@@ -1105,10 +1094,7 @@ pub unsafe extern "C" fn layout_resize_floating_pane(
     } else {
         size = (*lc).g.sx.wrapping_add(change as u_int);
         if size < PANE_MINIMUM as u_int || size > PANE_MAXIMUM as u_int {
-            *cause = xstrdup(
-                b"change is too big or too small\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            return -(1 as ::core::ffi::c_int);
+            return Err(c"change is too big or too small".to_owned());
         }
         (*lc).g.sx = size;
         if opposite != 0 {
@@ -1116,7 +1102,7 @@ pub unsafe extern "C" fn layout_resize_floating_pane(
         }
     }
     redraw_invalidate_scene((*wp).window as *mut window);
-    return 0 as ::core::ffi::c_int;
+    Ok(())
 }
 #[no_mangle]
 pub unsafe extern "C" fn layout_resize_layout(
