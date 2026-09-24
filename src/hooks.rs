@@ -189,12 +189,11 @@ unsafe extern "C" fn hooks_insert_one(
     }
     return cmdq_append(::core::ptr::null_mut::<client>(), new_item);
 }
-unsafe extern "C" fn hooks_parse(
-    mut hd: *mut hooks_data,
-    mut fs: *mut cmd_find_state,
-    mut value: *const ::core::ffi::c_char,
-) -> *mut cmd_parse_result {
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+unsafe fn hooks_parse(
+    hd: *mut hooks_data,
+    fs: *mut cmd_find_state,
+    value: *const ::core::ffi::c_char,
+) -> cmd_parse_result {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*hd).expand == 0 {
@@ -212,7 +211,7 @@ unsafe extern "C" fn hooks_parse(
     }
     expanded = format_expand(ft, value);
     format_free(ft);
-    pr = cmd_parse_from_string(expanded, ::core::ptr::null_mut::<cmd_parse_input>());
+    let pr = cmd_parse_from_string(expanded, ::core::ptr::null_mut::<cmd_parse_input>());
     free(expanded as *mut ::core::ffi::c_void);
     return pr;
 }
@@ -232,7 +231,7 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     log_debug(
         b"%s: inserting hook %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"hooks_insert\0" as *const u8 as *const ::core::ffi::c_char,
@@ -286,18 +285,17 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
     if *(*hd).name as ::core::ffi::c_int == '@' as i32 {
         value = options_get_string(oo, (*hd).name);
         pr = hooks_parse(hd, &raw mut fs, value);
-        match (*pr).status as ::core::ffi::c_uint {
+        match pr.status as ::core::ffi::c_uint {
             0 => {
                 log_debug(
                     b"%s: can't parse hook %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     b"hooks_insert\0" as *const u8 as *const ::core::ffi::c_char,
                     (*hd).name,
-                    (*pr).error,
+                    pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
                 );
-                free((*pr).error as *mut ::core::ffi::c_void);
             }
             1 => {
-                hooks_insert_one(item, hd, (*pr).cmdlist, state);
+                hooks_insert_one(item, hd, pr.cmdlist, state);
             }
             _ => {}
         }
@@ -307,18 +305,18 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
             if (*hd).expand != 0 {
                 value = (*options_array_item_value(a)).string;
                 pr = hooks_parse(hd, &raw mut fs, value);
-                match (*pr).status as ::core::ffi::c_uint {
+                match pr.status as ::core::ffi::c_uint {
                     0 => {
-                        if !(*pr).error.is_null() {
+                        if let Some(error) = pr.error.as_ref() {
                             cmdq_error(
                                 item,
                                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                (*pr).error,
+                                error.as_ptr(),
                             );
                         }
                     }
                     1 => {
-                        item = hooks_insert_one(item, hd, (*pr).cmdlist, state);
+                        item = hooks_insert_one(item, hd, pr.cmdlist, state);
                     }
                     _ => {}
                 }

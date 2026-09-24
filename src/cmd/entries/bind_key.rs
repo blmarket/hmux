@@ -125,7 +125,7 @@ unsafe extern "C" fn cmd_bind_key_exec(
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut note: *const ::core::ffi::c_char = args_get(args, 'N' as i32 as u_char);
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut count: u_int = args_count(args);
@@ -186,18 +186,17 @@ unsafe extern "C" fn cmd_bind_key_exec(
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
     }
-    match (*pr).status as ::core::ffi::c_uint {
+    match pr.status as ::core::ffi::c_uint {
         0 => {
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*pr).error,
+                pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
             );
-            free((*pr).error as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         1 | _ => {}
     }
-    key_bindings_add(tablename, key, note, repeat, (*pr).cmdlist);
+    key_bindings_add(tablename, key, note, repeat, pr.cmdlist);
     return CMD_RETURN_NORMAL;
 }

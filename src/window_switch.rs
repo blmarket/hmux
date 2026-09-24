@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_from_session, cmd_find_from_winlink};
-use crate::src::cmd_parse::cmd_parse_and_append;
+use crate::src::cmd_parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd_queue::{cmdq_free_state, cmdq_new_state};
 use crate::src::ffi::libc::{__ctype_toupper_loc, free, memset, qsort};
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
@@ -723,8 +723,6 @@ unsafe extern "C" fn window_switch_run_command(
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut target: Option<CString> = None;
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut status: cmd_parse_status = CMD_PARSE_ERROR;
     if (*data).matches.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
@@ -774,40 +772,14 @@ unsafe extern "C" fn window_switch_run_command(
             ::core::ptr::null_mut::<key_event>(),
             0 as ::core::ffi::c_int,
         );
-        status = cmd_parse_and_append(
+        if let Err(mut error) = cmd_parse_and_append(
             command.as_ptr(),
             ::core::ptr::null_mut::<cmd_parse_input>(),
             c,
             state,
-            &raw mut error,
-        );
-        if status as ::core::ffi::c_uint
-            == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
+        ) {
             if !c.is_null() {
-                *error = ({
-                    let mut __res: ::core::ffi::c_int = 0;
-                    if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                        if 0 != 0 {
-                            let mut __c: ::core::ffi::c_int =
-                                *error as u_char as ::core::ffi::c_int;
-                            __res = (if __c < -(128 as ::core::ffi::c_int)
-                                || __c > 255 as ::core::ffi::c_int
-                            {
-                                __c as __int32_t
-                            } else {
-                                *(*__ctype_toupper_loc()).offset(__c as isize)
-                            }) as ::core::ffi::c_int;
-                        } else {
-                            __res = toupper(*error as u_char as ::core::ffi::c_int);
-                        }
-                    } else {
-                        __res = *(*__ctype_toupper_loc())
-                            .offset(*error as u_char as ::core::ffi::c_int as isize)
-                            as ::core::ffi::c_int;
-                    }
-                    __res
-                }) as ::core::ffi::c_char;
+                cmd_parse_error_uppercase_first(&mut error);
                 status_message_set(
                     c,
                     -(1 as ::core::ffi::c_int),
@@ -815,10 +787,9 @@ unsafe extern "C" fn window_switch_run_command(
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error,
+                    error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
                 );
             }
-            free(error as *mut ::core::ffi::c_void);
         }
         cmdq_free_state(state);
     }

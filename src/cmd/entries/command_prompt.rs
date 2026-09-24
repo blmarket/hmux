@@ -345,10 +345,8 @@ unsafe extern "C" fn cmd_command_prompt_callback(
 ) -> prompt_result {
     let mut current_block: u64;
     let mut cdata: *mut cmd_command_prompt_cdata = data as *mut cmd_command_prompt_cdata;
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut argv: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -393,18 +391,26 @@ unsafe extern "C" fn cmd_command_prompt_callback(
                     (*cdata).argc = argc;
                     (*cdata).argv = cmd_copy_argv(argc, argv);
                 }
-                cmdlist = args_make_commands((*cdata).state, argc, argv, &raw mut error);
-                if cmdlist.is_null() {
-                    cmdq_append(c, cmdq_get_error(error));
-                    free(error as *mut ::core::ffi::c_void);
-                } else if item.is_null() {
+                match args_make_commands((*cdata).state, argc, argv) {
+                    Err(error) => {
+                        cmdq_append(
+                            c,
+                            cmdq_get_error(error.as_ref().map_or(
+                                ::core::ptr::null(),
+                                |cause| cause.as_ptr(),
+                            )),
+                        );
+                    }
+                    Ok(cmdlist) if item.is_null() => {
                     new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
                     cmdq_append(c, new_item);
                     cmd_list_free(cmdlist);
-                } else {
+                    }
+                    Ok(cmdlist) => {
                     new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
                     cmdq_insert_after(item, new_item);
                     cmd_list_free(cmdlist);
+                    }
                 }
                 cmd_free_argv(argc, argv);
                 if (*cdata).flags & PROMPT_INCREMENTAL != 0 {

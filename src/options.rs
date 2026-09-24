@@ -90,16 +90,6 @@ unsafe fn options_string_cause(
     CString::new(message).expect("option diagnostic contains no NUL")
 }
 
-unsafe fn options_take_parse_error(error: *mut ::core::ffi::c_char) -> Option<CString> {
-    let message = if error.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(error).to_owned())
-    };
-    free(error.cast());
-    message
-}
-
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
@@ -436,7 +426,7 @@ pub unsafe extern "C" fn options_default(
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut key: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     o = options_empty(oo, oe);
     ov = &raw mut (*o).value;
     if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
@@ -476,12 +466,10 @@ pub unsafe extern "C" fn options_default(
                 (*oe).default_str,
                 ::core::ptr::null_mut::<cmd_parse_input>(),
             );
-            match (*pr).status as ::core::ffi::c_uint {
-                0 => {
-                    free((*pr).error as *mut ::core::ffi::c_void);
-                }
+            match pr.status as ::core::ffi::c_uint {
+                0 => {}
                 1 => {
-                    (*ov).cmdlist = (*pr).cmdlist;
+                    (*ov).cmdlist = pr.cmdlist;
                 }
                 _ => {}
             }
@@ -690,7 +678,7 @@ pub unsafe fn options_array_set(
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut number: ::core::ffi::c_longlong = 0;
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         if !cause.is_null() {
@@ -719,11 +707,10 @@ pub unsafe fn options_array_set(
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
-        match (*pr).status as ::core::ffi::c_uint {
+        match pr.status as ::core::ffi::c_uint {
             0 => {
-                let error = options_take_parse_error((*pr).error);
                 if !cause.is_null() {
-                    *cause = error;
+                    *cause = pr.error;
                 }
                 return -(1 as ::core::ffi::c_int);
             }
@@ -735,7 +722,7 @@ pub unsafe fn options_array_set(
         } else {
             options_value_free(o, &raw mut (*a).value);
         }
-        (*a).value.cmdlist = (*pr).cmdlist;
+        (*a).value.cmdlist = pr.cmdlist;
         return 0 as ::core::ffi::c_int;
     }
     if (*o).tableentry.is_null()
@@ -1675,7 +1662,7 @@ pub unsafe fn options_from_string(
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut new: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut key: key_code = 0;
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     if !oe.is_null() {
         if value.is_null()
             && (*oe).type_0 as ::core::ffi::c_uint
@@ -1769,16 +1756,15 @@ pub unsafe fn options_from_string(
         5 => return options_from_string_choice(oe, oo, name, value, cause),
         6 => {
             pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
-            match (*pr).status as ::core::ffi::c_uint {
+            match pr.status as ::core::ffi::c_uint {
                 0 => {
-                    let error = options_take_parse_error((*pr).error);
                     if !cause.is_null() {
-                        *cause = error;
+                        *cause = pr.error;
                     }
                     return -(1 as ::core::ffi::c_int);
                 }
                 1 => {
-                    options_set_command(oo, name, (*pr).cmdlist);
+                    options_set_command(oo, name, pr.cmdlist);
                     return 0 as ::core::ffi::c_int;
                 }
                 _ => {}

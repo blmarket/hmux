@@ -553,8 +553,6 @@ pub unsafe extern "C" fn menu_key(
         len: 0,
     };
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    let mut status: cmd_parse_status = CMD_PARSE_ERROR;
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: key_code = 0;
     if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -2135,17 +2133,16 @@ pub unsafe extern "C" fn menu_key(
         event = ::core::ptr::null_mut::<key_event>();
     }
     state = cmdq_new_state(&raw mut (*md).fs, event, 0 as ::core::ffi::c_int);
-    status = cmd_parse_and_append(
+    if let Err(error) = cmd_parse_and_append(
         (*item).command,
         ::core::ptr::null_mut::<cmd_parse_input>(),
         c,
         state,
-        &raw mut error,
-    );
-    if status as ::core::ffi::c_uint == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        cmdq_append(c, cmdq_get_error(error));
-        free(error as *mut ::core::ffi::c_void);
+    ) {
+        cmdq_append(
+            c,
+            cmdq_get_error(error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr())),
+        );
     }
     cmdq_free_state(state);
     return 1 as ::core::ffi::c_int;

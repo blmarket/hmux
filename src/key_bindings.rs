@@ -1062,7 +1062,7 @@ pub unsafe extern "C" fn key_bindings_init() {
             as *const ::core::ffi::c_char,
     ];
     let mut i: u_int = 0;
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     i = 0 as u_int;
     while (i as usize)
         < (::core::mem::size_of::<[*const ::core::ffi::c_char; 308]>() as usize)
@@ -1072,12 +1072,12 @@ pub unsafe extern "C" fn key_bindings_init() {
             defaults[i as usize],
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
-        if (*pr).status as ::core::ffi::c_uint
+        if pr.status as ::core::ffi::c_uint
             != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             log_debug(
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*pr).error,
+                pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
             );
             fatalx(
                 b"bad default key: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1086,9 +1086,9 @@ pub unsafe extern "C" fn key_bindings_init() {
         }
         cmdq_append(
             ::core::ptr::null_mut::<client>(),
-            cmdq_get_command((*pr).cmdlist, ::core::ptr::null_mut::<cmdq_state>()),
+            cmdq_get_command(pr.cmdlist, ::core::ptr::null_mut::<cmdq_state>()),
         );
-        cmd_list_free((*pr).cmdlist);
+        cmd_list_free(pr.cmdlist);
         i = i.wrapping_add(1);
     }
     cmdq_append(

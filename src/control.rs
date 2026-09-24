@@ -971,7 +971,7 @@ unsafe extern "C" fn control_error(
     mut data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
-    let mut error: *mut ::core::ffi::c_char = data as *mut ::core::ffi::c_char;
+    let error = Box::from_raw(data as *mut Option<CString>);
     cmdq_guard(
         item,
         b"begin\0" as *const u8 as *const ::core::ffi::c_char,
@@ -980,19 +980,22 @@ unsafe extern "C" fn control_error(
     control_write(
         c,
         b"parse error: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        error,
+        error
+            .as_ref()
+            .as_ref()
+            .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
     );
     cmdq_guard(
         item,
         b"error\0" as *const u8 as *const ::core::ffi::c_char,
         1 as ::core::ffi::c_int,
     );
-    free(error as *mut ::core::ffi::c_void);
+    drop(error);
     return CMD_RETURN_NORMAL;
 }
 
 unsafe fn control_cancel_error(data: *mut ::core::ffi::c_void) {
-    free(data);
+    drop(Box::from_raw(data as *mut Option<CString>));
 }
 unsafe extern "C" fn control_error_callback(
     mut bufev: *mut bufferevent,
@@ -1009,9 +1012,7 @@ unsafe extern "C" fn control_read_callback(
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
     let mut buffer: *mut evbuffer = (*(*cs).read_event).input;
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    let mut status: cmd_parse_status = CMD_PARSE_ERROR;
     loop {
         let Some(line) = evbuffer_readln(
             buffer,
@@ -1035,29 +1036,28 @@ unsafe extern "C" fn control_read_callback(
                 ::core::ptr::null_mut::<key_event>(),
                 CMDQ_STATE_CONTROL,
             );
-            status = cmd_parse_and_append(
+            match cmd_parse_and_append(
                 line.as_ptr().cast::<::core::ffi::c_char>(),
                 ::core::ptr::null_mut::<cmd_parse_input>(),
                 c,
                 state,
-                &raw mut error,
-            );
-            if status as ::core::ffi::c_uint
-                == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                let error_item = cmdq_get_callback1(
-                    b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
-                    Some(
-                        control_error
-                            as unsafe extern "C" fn(
-                                *mut cmdq_item,
-                                *mut ::core::ffi::c_void,
-                            ) -> cmd_retval,
-                    ),
-                    error as *mut ::core::ffi::c_void,
-                );
-                cmdq_set_cancel_data(error_item, control_cancel_error);
-                cmdq_append(c, error_item);
+            ) {
+                Err(error) => {
+                    let error_item = cmdq_get_callback1(
+                        b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
+                        Some(
+                            control_error
+                                as unsafe extern "C" fn(
+                                    *mut cmdq_item,
+                                    *mut ::core::ffi::c_void,
+                                ) -> cmd_retval,
+                        ),
+                        Box::into_raw(Box::new(error)) as *mut ::core::ffi::c_void,
+                    );
+                    cmdq_set_cancel_data(error_item, control_cancel_error);
+                    cmdq_append(c, error_item);
+                }
+                Ok(_) => {}
             }
             cmdq_free_state(state);
         }

@@ -368,7 +368,7 @@ pub unsafe extern "C" fn client_main(
     mut flags: uint64_t,
     mut feat: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut fd: ::core::ffi::c_int = 0;
     let mut i: ::core::ffi::c_int = 0;
     let mut ttynam: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -413,15 +413,13 @@ pub unsafe extern "C" fn client_main(
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
         drop(values);
-        if (*pr).status as ::core::ffi::c_uint
+        if pr.status as ::core::ffi::c_uint
             == CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            if cmd_list_any_have((*pr).cmdlist, CMD_STARTSERVER) != 0 {
+            if cmd_list_any_have(pr.cmdlist, CMD_STARTSERVER) != 0 {
                 flags |= CLIENT_STARTSERVER as uint64_t;
             }
-            cmd_list_free((*pr).cmdlist);
-        } else {
-            free((*pr).error as *mut ::core::ffi::c_void);
+            cmd_list_free(pr.cmdlist);
         }
     }
     client_proc = proc_start(b"client\0" as *const u8 as *const ::core::ffi::c_char);

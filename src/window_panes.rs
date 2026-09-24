@@ -1752,22 +1752,28 @@ unsafe extern "C" fn window_panes_run_command(
 ) {
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let expanded = CString::new(format!("%{}", (*wp).id)).expect("pane ID contains NUL");
     let mut expanded_ptr = expanded.as_ptr().cast_mut();
-    cmdlist = args_make_commands(
+    match args_make_commands(
         (*data).state,
         1 as ::core::ffi::c_int,
         &raw mut expanded_ptr,
-        &raw mut error,
-    );
-    if cmdlist.is_null() {
-        cmdq_append(c, cmdq_get_error(error));
-        free(error as *mut ::core::ffi::c_void);
-    } else {
-        new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
-        cmdq_append(c, new_item);
-        cmd_list_free(cmdlist);
+    ) {
+        Err(error) => {
+            cmdq_append(
+                c,
+                cmdq_get_error(error.as_ref().map_or(
+                    ::core::ptr::null(),
+                    |cause| cause.as_ptr(),
+                )),
+            );
+        }
+        Ok(commands) => {
+            cmdlist = commands;
+            new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+            cmdq_append(c, new_item);
+            cmd_list_free(cmdlist);
+        }
     }
 }
 unsafe extern "C" fn window_panes_find_pane(

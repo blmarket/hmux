@@ -4,7 +4,7 @@ use std::ffi::{c_char, CStr, CString};
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::cmd_find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
-use crate::src::cmd_parse::cmd_parse_from_string;
+use crate::src::cmd_parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::environ::{
     environ_clear, environ_find, environ_first, environ_next, environ_set, environ_unset,
 };
@@ -64,7 +64,7 @@ pub use crate::src::shared::colour::{
 };
 use crate::src::shared::command::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
-pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
+pub use crate::src::shared::command::cmd_parse_input;
 pub use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
@@ -951,31 +951,23 @@ unsafe extern "C" fn window_customize_option_editable(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_customize_set_command_value(
-    mut item: *mut window_customize_itemdata,
-    mut s: *const ::core::ffi::c_char,
-    mut cause: *mut Option<CString>,
+    item: *mut window_customize_itemdata,
+    s: *const ::core::ffi::c_char,
+    cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
     if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    pr = cmd_parse_from_string(s, ::core::ptr::null_mut::<cmd_parse_input>());
-    match (*pr).status as ::core::ffi::c_uint {
-        0 => {
-            let error = (*pr).error;
-            *cause = if error.is_null() {
-                None
-            } else {
-                Some(CStr::from_ptr(error).to_owned())
-            };
-            free(error.cast());
-            return -(1 as ::core::ffi::c_int);
+    let pr = cmd_parse_from_string(s, ::core::ptr::null_mut::<cmd_parse_input>());
+    if pr.status == CMD_PARSE_ERROR {
+        if !cause.is_null() {
+            *cause = pr.error;
         }
-        1 | _ => {}
+        return -(1 as ::core::ffi::c_int);
     }
     cmd_list_free((*bd).cmdlist);
-    (*bd).cmdlist = (*pr).cmdlist;
+    (*bd).cmdlist = pr.cmdlist;
     return 0 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn window_customize_set_note_value(
@@ -4251,8 +4243,6 @@ unsafe extern "C" fn window_customize_set_command_callback(
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
@@ -4262,32 +4252,10 @@ unsafe extern "C" fn window_customize_set_command_callback(
     {
         return PROMPT_CLOSE;
     }
-    pr = cmd_parse_from_string(s, ::core::ptr::null_mut::<cmd_parse_input>());
-    match (*pr).status as ::core::ffi::c_uint {
+    let mut pr = cmd_parse_from_string(s, ::core::ptr::null_mut::<cmd_parse_input>());
+    match pr.status as ::core::ffi::c_uint {
         0 => {
-            error = (*pr).error;
-            *error = ({
-                let mut __res: ::core::ffi::c_int = 0;
-                if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                    if 0 != 0 {
-                        let mut __c: ::core::ffi::c_int = *error as u_char as ::core::ffi::c_int;
-                        __res = (if __c < -(128 as ::core::ffi::c_int)
-                            || __c > 255 as ::core::ffi::c_int
-                        {
-                            __c as __int32_t
-                        } else {
-                            *(*__ctype_toupper_loc()).offset(__c as isize)
-                        }) as ::core::ffi::c_int;
-                    } else {
-                        __res = toupper(*error as u_char as ::core::ffi::c_int);
-                    }
-                } else {
-                    __res = *(*__ctype_toupper_loc())
-                        .offset(*error as u_char as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int;
-                }
-                __res
-            }) as ::core::ffi::c_char;
+            cmd_parse_error_uppercase_first(&mut pr.error);
             status_message_set(
                 c,
                 -(1 as ::core::ffi::c_int),
@@ -4295,14 +4263,13 @@ unsafe extern "C" fn window_customize_set_command_callback(
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                error,
+                pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
             );
-            free(error as *mut ::core::ffi::c_void);
             return PROMPT_CLOSE;
         }
         1 | _ => {
             cmd_list_free((*bd).cmdlist);
-            (*bd).cmdlist = (*pr).cmdlist;
+            (*bd).cmdlist = pr.cmdlist;
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
             (*(*data).wp).flags |= PANE_REDRAW;
@@ -4446,9 +4413,7 @@ unsafe extern "C" fn window_customize_add_key_callback(
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     let mut key: key_code = 0;
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut keylen: size_t = 0;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
@@ -4501,32 +4466,10 @@ unsafe extern "C" fn window_customize_add_key_callback(
         return PROMPT_CLOSE;
     }
     drop(keystr);
-    pr = cmd_parse_from_string(command, ::core::ptr::null_mut::<cmd_parse_input>());
-    match (*pr).status as ::core::ffi::c_uint {
+    let mut pr = cmd_parse_from_string(command, ::core::ptr::null_mut::<cmd_parse_input>());
+    match pr.status as ::core::ffi::c_uint {
         0 => {
-            error = (*pr).error;
-            *error = ({
-                let mut __res: ::core::ffi::c_int = 0;
-                if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                    if 0 != 0 {
-                        let mut __c: ::core::ffi::c_int = *error as u_char as ::core::ffi::c_int;
-                        __res = (if __c < -(128 as ::core::ffi::c_int)
-                            || __c > 255 as ::core::ffi::c_int
-                        {
-                            __c as __int32_t
-                        } else {
-                            *(*__ctype_toupper_loc()).offset(__c as isize)
-                        }) as ::core::ffi::c_int;
-                    } else {
-                        __res = toupper(*error as u_char as ::core::ffi::c_int);
-                    }
-                } else {
-                    __res = *(*__ctype_toupper_loc())
-                        .offset(*error as u_char as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int;
-                }
-                __res
-            }) as ::core::ffi::c_char;
+            cmd_parse_error_uppercase_first(&mut pr.error);
             status_message_set(
                 c,
                 -(1 as ::core::ffi::c_int),
@@ -4534,9 +4477,8 @@ unsafe extern "C" fn window_customize_add_key_callback(
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                error,
+                pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
             );
-            free(error as *mut ::core::ffi::c_void);
             return PROMPT_CLOSE;
         }
         1 | _ => {
@@ -4545,7 +4487,7 @@ unsafe extern "C" fn window_customize_add_key_callback(
                 key,
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 0 as ::core::ffi::c_int,
-                (*pr).cmdlist,
+                pr.cmdlist,
             );
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);

@@ -4,6 +4,7 @@ use crate::src::arguments::{
 };
 use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::cmd_find::cmd_find_from_nothing;
+use crate::src::cmd_parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
@@ -396,8 +397,6 @@ unsafe extern "C" fn cmd_run_shell_timer(
         .map_or(::core::ptr::null(), |cmd| cmd.as_ptr());
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*cdata).state.is_null() {
         if cmd.is_null() {
             if !(*cdata).item.is_null() {
@@ -445,61 +444,44 @@ unsafe extern "C" fn cmd_run_shell_timer(
         }
         return;
     }
-    cmdlist = args_make_commands(
+    match args_make_commands(
         (*cdata).state,
         0 as ::core::ffi::c_int,
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        &raw mut error,
-    );
-    if cmdlist.is_null() {
-        if (*cdata).item.is_null() {
-            *error = ({
-                let mut __res: ::core::ffi::c_int = 0;
-                if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                    if 0 != 0 {
-                        let mut __c: ::core::ffi::c_int = *error as u_char as ::core::ffi::c_int;
-                        __res = (if __c < -(128 as ::core::ffi::c_int)
-                            || __c > 255 as ::core::ffi::c_int
-                        {
-                            __c as __int32_t
-                        } else {
-                            *(*__ctype_toupper_loc()).offset(__c as isize)
-                        }) as ::core::ffi::c_int;
-                    } else {
-                        __res = toupper(*error as u_char as ::core::ffi::c_int);
-                    }
-                } else {
-                    __res = *(*__ctype_toupper_loc())
-                        .offset(*error as u_char as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int;
-                }
-                __res
-            }) as ::core::ffi::c_char;
-            status_message_set(
-                c,
-                -(1 as ::core::ffi::c_int),
-                1 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                error,
-            );
-        } else {
-            cmdq_error(
-                (*cdata).item,
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                error,
-            );
+    ) {
+        Err(mut error) => {
+            if (*cdata).item.is_null() {
+                cmd_parse_error_uppercase_first(&mut error);
+            }
+            let error_ptr = error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr());
+            if (*cdata).item.is_null() {
+                status_message_set(
+                    c,
+                    -(1 as ::core::ffi::c_int),
+                    1 as ::core::ffi::c_int,
+                    0 as ::core::ffi::c_int,
+                    0 as ::core::ffi::c_int,
+                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error_ptr,
+                );
+            } else {
+                cmdq_error(
+                    (*cdata).item,
+                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error_ptr,
+                );
+            }
         }
-        free(error as *mut ::core::ffi::c_void);
-    } else if item.is_null() {
-        new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
-        cmdq_append(c, new_item);
-        cmd_list_free(cmdlist);
-    } else {
-        new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
-        cmdq_insert_after(item, new_item);
-        cmd_list_free(cmdlist);
+        Ok(commands) if item.is_null() => {
+            new_item = cmdq_get_command(commands, ::core::ptr::null_mut::<cmdq_state>());
+            cmdq_append(c, new_item);
+            cmd_list_free(commands);
+        }
+        Ok(commands) => {
+            new_item = cmdq_get_command(commands, cmdq_get_state(item));
+            cmdq_insert_after(item, new_item);
+            cmd_list_free(commands);
+        }
     }
     if !(*cdata).item.is_null() {
         cmdq_continue((*cdata).item);

@@ -91,7 +91,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::global_environ;
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup, xvasprintf_cstring};
 use libc;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
@@ -124,8 +124,6 @@ pub type cmd_parse_argument_type = ::core::ffi::c_uint;
 pub const CMD_PARSE_PARSED_COMMANDS: cmd_parse_argument_type = 2;
 pub const CMD_PARSE_COMMANDS: cmd_parse_argument_type = 1;
 pub const CMD_PARSE_STRING: cmd_parse_argument_type = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_parse_state {
     pub f: *mut FILE,
     pub buf: *const ::core::ffi::c_char,
@@ -136,7 +134,7 @@ pub struct cmd_parse_state {
     pub eof: ::core::ffi::c_int,
     pub input: *mut cmd_parse_input,
     pub escapes: u_int,
-    pub error: *mut ::core::ffi::c_char,
+    pub error: Option<CString>,
 }
 pub type C2RustUnnamed_44 = ::core::ffi::c_uint;
 pub const SINGLE_QUOTES: C2RustUnnamed_44 = 3;
@@ -153,7 +151,7 @@ static mut parse_state: cmd_parse_state = cmd_parse_state {
     eof: 0,
     input: ::core::ptr::null::<cmd_parse_input>() as *mut cmd_parse_input,
     escapes: 0,
-    error: ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char,
+    error: None,
 };
 pub const ERROR: ::core::ffi::c_int = 258 as ::core::ffi::c_int;
 pub const HIDDEN: ::core::ffi::c_int = 259 as ::core::ffi::c_int;
@@ -164,24 +162,31 @@ pub const ENDIF: ::core::ffi::c_int = 263 as ::core::ffi::c_int;
 pub const FORMAT: ::core::ffi::c_int = 264 as ::core::ffi::c_int;
 pub const TOKEN: ::core::ffi::c_int = 265 as ::core::ffi::c_int;
 pub const EQUALS: ::core::ffi::c_int = 266 as ::core::ffi::c_int;
-unsafe extern "C" fn cmd_parse_get_error(
-    mut file: *const ::core::ffi::c_char,
-    mut line: u_int,
-    mut error: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn cmd_parse_get_error(
+    file: *const ::core::ffi::c_char,
+    line: u_int,
+    error: &CStr,
+) -> CString {
     if file.is_null() {
-        s = xstrdup(error);
-    } else {
-        xasprintf(
-            &raw mut s,
-            b"%s:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            file,
-            line,
-            error,
-        );
+        return error.to_owned();
     }
-    return s;
+    let mut bytes = CStr::from_ptr(file).to_bytes().to_vec();
+    bytes.push(b':');
+    bytes.extend_from_slice(line.to_string().as_bytes());
+    bytes.extend_from_slice(b": ");
+    bytes.extend_from_slice(error.to_bytes());
+    CString::new(bytes).expect("parser diagnostic contains no NUL")
+}
+
+pub fn cmd_parse_error_uppercase_first(error: &mut Option<CString>) {
+    let Some(cause) = error.as_mut() else {
+        return;
+    };
+    let mut bytes = cause.as_bytes_with_nul().to_vec();
+    if let Some(first) = bytes.first_mut() {
+        *first = unsafe { libc::toupper(*first as u8 as libc::c_int) as u8 };
+    }
+    *cause = CString::from_vec_with_nul(bytes).expect("cause remains NUL terminated");
 }
 unsafe extern "C" fn cmd_parse_print_commands(
     mut pi: *mut cmd_parse_input,
@@ -403,49 +408,51 @@ unsafe fn build_parser_commands(
     output
 }
 
-unsafe extern "C" fn cmd_parse_run_parser(
-    cause: *mut *mut core::ffi::c_char,
-) -> *mut cmd_parse_commands {
+unsafe fn cmd_parse_run_parser() -> Result<*mut cmd_parse_commands, CString> {
     match hmux_cmdparse::parse(&mut ParserContext, std::iter::from_fn(next_parser_token)) {
-        Ok(commands) => build_parser_commands(commands),
+        Ok(commands) => Ok(build_parser_commands(commands)),
         Err(_) => {
             yyerror(b"syntax error\0".as_ptr().cast());
-            *cause = parse_state.error;
-            core::ptr::null_mut()
+            Err(parse_state.error.take().expect("yyerror must retain parser error"))
         }
     }
 }
-unsafe extern "C" fn cmd_parse_do_file(
-    mut f: *mut FILE,
-    mut pi: *mut cmd_parse_input,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut cmd_parse_commands {
-    let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-    memset(
-        ps as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_state>() as size_t,
-    );
-    (*ps).input = pi;
-    (*ps).f = f;
-    return cmd_parse_run_parser(cause);
+unsafe fn cmd_parse_do_file(
+    f: *mut FILE,
+    pi: *mut cmd_parse_input,
+) -> Result<*mut cmd_parse_commands, CString> {
+    parse_state = cmd_parse_state {
+        f,
+        buf: ::core::ptr::null(),
+        len: 0,
+        off: 0,
+        condition: 0,
+        eol: 0,
+        eof: 0,
+        input: pi,
+        escapes: 0,
+        error: None,
+    };
+    cmd_parse_run_parser()
 }
-unsafe extern "C" fn cmd_parse_do_buffer(
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-    mut pi: *mut cmd_parse_input,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut cmd_parse_commands {
-    let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-    memset(
-        ps as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_state>() as size_t,
-    );
-    (*ps).input = pi;
-    (*ps).buf = buf;
-    (*ps).len = len;
-    return cmd_parse_run_parser(cause);
+unsafe fn cmd_parse_do_buffer(
+    buf: *const ::core::ffi::c_char,
+    len: size_t,
+    pi: *mut cmd_parse_input,
+) -> Result<*mut cmd_parse_commands, CString> {
+    parse_state = cmd_parse_state {
+        f: ::core::ptr::null_mut(),
+        buf,
+        len,
+        off: 0,
+        condition: 0,
+        eol: 0,
+        eof: 0,
+        input: pi,
+        escapes: 0,
+        error: None,
+    };
+    cmd_parse_run_parser()
 }
 unsafe extern "C" fn cmd_parse_log_commands(
     mut cmds: *mut cmd_parse_commands,
@@ -507,17 +514,11 @@ unsafe extern "C" fn cmd_parse_expand_alias(
     let mut first: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
     let mut cmds: *mut cmd_parse_commands = ::core::ptr::null_mut::<cmd_parse_commands>();
     let mut last: *mut cmd_parse_command = ::core::ptr::null_mut::<cmd_parse_command>();
-    let mut alias: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*pi).flags & CMD_PARSE_NOALIAS != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    memset(
-        pr as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_result>() as size_t,
-    );
+    *pr = cmd_parse_result::empty();
     first = cmd_parse_arguments_first(&raw mut (*cmd).arguments);
     if first.is_null()
         || (*first).type_0 as ::core::ffi::c_uint
@@ -528,24 +529,25 @@ unsafe extern "C" fn cmd_parse_expand_alias(
         return 1 as ::core::ffi::c_int;
     }
     name = (*first).string;
-    alias = cmd_get_alias(name);
-    if alias.is_null() {
+    let Some(alias) = cmd_get_alias(name) else {
         return 0 as ::core::ffi::c_int;
-    }
+    };
     log_debug(
         b"%s: %u alias %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_parse_expand_alias\0" as *const u8 as *const ::core::ffi::c_char,
         (*pi).line,
         name,
-        alias,
+        alias.as_ptr(),
     );
-    cmds = cmd_parse_do_buffer(alias, strlen(alias), pi, &raw mut cause);
-    free(alias as *mut ::core::ffi::c_void);
-    if cmds.is_null() {
-        (*pr).status = CMD_PARSE_ERROR;
-        (*pr).error = cause;
-        return 1 as ::core::ffi::c_int;
-    }
+    let parsed = cmd_parse_do_buffer(alias.as_ptr(), alias.as_bytes().len(), pi);
+    cmds = match parsed {
+        Ok(cmds) => cmds,
+        Err(cause) => {
+            (*pr).status = CMD_PARSE_ERROR;
+            (*pr).error = Some(cause);
+            return 1 as ::core::ffi::c_int;
+        }
+    };
     let command_count = (*cmds).items.len();
     if command_count == 0 {
         (*pr).status = CMD_PARSE_SUCCESS;
@@ -584,11 +586,7 @@ unsafe extern "C" fn cmd_parse_build_command(
     let mut idx: u_int = 0;
     let mut argument_index: usize = 0;
     let argument_count = (*cmd).arguments.items.len();
-    memset(
-        pr as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_result>() as size_t,
-    );
+    *pr = cmd_parse_result::empty();
     if cmd_parse_expand_alias(cmd, pi, pr) != 0 {
         return;
     }
@@ -650,11 +648,11 @@ unsafe extern "C" fn cmd_parse_build_command(
                 }
                 Err(cause) => {
                     (*pr).status = CMD_PARSE_ERROR;
-                    (*pr).error = cmd_parse_get_error(
+                    (*pr).error = Some(cmd_parse_get_error(
                         (*pi).file,
                         (*pi).line,
-                        cause.as_ptr(),
-                    );
+                        cause.as_c_str(),
+                    ));
                 }
             }
         }
@@ -675,11 +673,7 @@ unsafe extern "C" fn cmd_parse_build_commands(
     let mut line: u_int = UINT_MAX;
     let mut current: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut result: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    memset(
-        pr as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_result>() as size_t,
-    );
+    *pr = cmd_parse_result::empty();
     let command_count = (*cmds).items.len();
     if command_count == 0 {
         (*pr).status = CMD_PARSE_SUCCESS;
@@ -733,16 +727,10 @@ unsafe extern "C" fn cmd_parse_build_commands(
     (*pr).status = CMD_PARSE_SUCCESS;
     (*pr).cmdlist = result;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_parse_from_file(
+pub unsafe fn cmd_parse_from_file(
     mut f: *mut FILE,
     mut pi: *mut cmd_parse_input,
-) -> *mut cmd_parse_result {
-    static mut pr: cmd_parse_result = cmd_parse_result {
-        status: CMD_PARSE_ERROR,
-        cmdlist: ::core::ptr::null::<cmd_list>() as *mut cmd_list,
-        error: ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char,
-    };
+) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -759,8 +747,7 @@ pub unsafe extern "C" fn cmd_parse_from_file(
             idx: 0,
         },
     };
-    let mut cmds: *mut cmd_parse_commands = ::core::ptr::null_mut::<cmd_parse_commands>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut pr = cmd_parse_result::empty();
     if pi.is_null() {
         memset(
             &raw mut input as *mut ::core::ffi::c_void,
@@ -769,26 +756,22 @@ pub unsafe extern "C" fn cmd_parse_from_file(
         );
         pi = &raw mut input;
     }
-    memset(
-        &raw mut pr as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_result>() as size_t,
-    );
-    cmds = cmd_parse_do_file(f, pi, &raw mut cause);
-    if cmds.is_null() {
-        pr.status = CMD_PARSE_ERROR;
-        pr.error = cause;
-        return &raw mut pr;
-    }
+    let cmds = match cmd_parse_do_file(f, pi) {
+        Ok(cmds) => cmds,
+        Err(cause) => {
+            pr.status = CMD_PARSE_ERROR;
+            pr.error = Some(cause);
+            return pr;
+        }
+    };
     cmd_parse_build_commands(cmds, pi, &raw mut pr);
     cmd_parse_free_commands(cmds);
-    return &raw mut pr;
+    return pr;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_parse_from_string(
+pub unsafe fn cmd_parse_from_string(
     mut s: *const ::core::ffi::c_char,
     mut pi: *mut cmd_parse_input,
-) -> *mut cmd_parse_result {
+) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -816,73 +799,45 @@ pub unsafe extern "C" fn cmd_parse_from_string(
     (*pi).flags |= CMD_PARSE_ONEGROUP;
     return cmd_parse_from_buffer(s as *const ::core::ffi::c_void, strlen(s), pi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_parse_and_insert(
+pub unsafe fn cmd_parse_and_insert(
     mut s: *const ::core::ffi::c_char,
     mut pi: *mut cmd_parse_input,
     mut after: *mut cmdq_item,
     mut state: *mut cmdq_state,
-    mut error: *mut *mut ::core::ffi::c_char,
-) -> cmd_parse_status {
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+)
+    -> Result<cmd_parse_status, Option<CString>> {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    pr = cmd_parse_from_string(s, pi);
-    match (*pr).status as ::core::ffi::c_uint {
-        0 => {
-            if !error.is_null() {
-                *error = (*pr).error;
-            } else {
-                free((*pr).error as *mut ::core::ffi::c_void);
-            }
-        }
-        1 => {
-            item = cmdq_get_command((*pr).cmdlist, state);
-            cmdq_insert_after(after, item);
-            cmd_list_free((*pr).cmdlist);
-        }
-        _ => {}
+    let mut pr = cmd_parse_from_string(s, pi);
+    if pr.status == CMD_PARSE_ERROR {
+        return Err(pr.error.take());
     }
-    return (*pr).status;
+    item = cmdq_get_command(pr.cmdlist, state);
+    cmdq_insert_after(after, item);
+    cmd_list_free(pr.cmdlist);
+    Ok(pr.status)
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_parse_and_append(
+pub unsafe fn cmd_parse_and_append(
     mut s: *const ::core::ffi::c_char,
     mut pi: *mut cmd_parse_input,
     mut c: *mut client,
     mut state: *mut cmdq_state,
-    mut error: *mut *mut ::core::ffi::c_char,
-) -> cmd_parse_status {
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+)
+    -> Result<cmd_parse_status, Option<CString>> {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    pr = cmd_parse_from_string(s, pi);
-    match (*pr).status as ::core::ffi::c_uint {
-        0 => {
-            if !error.is_null() {
-                *error = (*pr).error;
-            } else {
-                free((*pr).error as *mut ::core::ffi::c_void);
-            }
-        }
-        1 => {
-            item = cmdq_get_command((*pr).cmdlist, state);
-            cmdq_append(c, item);
-            cmd_list_free((*pr).cmdlist);
-        }
-        _ => {}
+    let mut pr = cmd_parse_from_string(s, pi);
+    if pr.status == CMD_PARSE_ERROR {
+        return Err(pr.error.take());
     }
-    return (*pr).status;
+    item = cmdq_get_command(pr.cmdlist, state);
+    cmdq_append(c, item);
+    cmd_list_free(pr.cmdlist);
+    Ok(pr.status)
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_parse_from_buffer(
+pub unsafe fn cmd_parse_from_buffer(
     mut buf: *const ::core::ffi::c_void,
     mut len: size_t,
     mut pi: *mut cmd_parse_input,
-) -> *mut cmd_parse_result {
-    static mut pr: cmd_parse_result = cmd_parse_result {
-        status: CMD_PARSE_ERROR,
-        cmdlist: ::core::ptr::null::<cmd_list>() as *mut cmd_list,
-        error: ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char,
-    };
+) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -899,8 +854,7 @@ pub unsafe extern "C" fn cmd_parse_from_buffer(
             idx: 0,
         },
     };
-    let mut cmds: *mut cmd_parse_commands = ::core::ptr::null_mut::<cmd_parse_commands>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut pr = cmd_parse_result::empty();
     if pi.is_null() {
         memset(
             &raw mut input as *mut ::core::ffi::c_void,
@@ -909,37 +863,28 @@ pub unsafe extern "C" fn cmd_parse_from_buffer(
         );
         pi = &raw mut input;
     }
-    memset(
-        &raw mut pr as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_result>() as size_t,
-    );
     if len == 0 as size_t {
         pr.status = CMD_PARSE_SUCCESS;
         pr.cmdlist = cmd_list_new();
-        return &raw mut pr;
+        return pr;
     }
-    cmds = cmd_parse_do_buffer(buf as *const ::core::ffi::c_char, len, pi, &raw mut cause);
-    if cmds.is_null() {
-        pr.status = CMD_PARSE_ERROR;
-        pr.error = cause;
-        return &raw mut pr;
-    }
+    let cmds = match cmd_parse_do_buffer(buf as *const ::core::ffi::c_char, len, pi) {
+        Ok(cmds) => cmds,
+        Err(cause) => {
+            pr.status = CMD_PARSE_ERROR;
+            pr.error = Some(cause);
+            return pr;
+        }
+    };
     cmd_parse_build_commands(cmds, pi, &raw mut pr);
     cmd_parse_free_commands(cmds);
-    return &raw mut pr;
+    return pr;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_parse_from_arguments(
+pub unsafe fn cmd_parse_from_arguments(
     mut values: *mut args_value,
     mut count: u_int,
     mut pi: *mut cmd_parse_input,
-) -> *mut cmd_parse_result {
-    static mut pr: cmd_parse_result = cmd_parse_result {
-        status: CMD_PARSE_ERROR,
-        cmdlist: ::core::ptr::null::<cmd_list>() as *mut cmd_list,
-        error: ::core::ptr::null::<::core::ffi::c_char>() as *mut ::core::ffi::c_char,
-    };
+) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -963,6 +908,7 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
     let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut size: size_t = 0;
     let mut end: ::core::ffi::c_int = 0;
+    let mut pr = cmd_parse_result::empty();
     if pi.is_null() {
         memset(
             &raw mut input as *mut ::core::ffi::c_void,
@@ -971,11 +917,6 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
         );
         pi = &raw mut input;
     }
-    memset(
-        &raw mut pr as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<cmd_parse_result>() as size_t,
-    );
     cmds = cmd_parse_new_commands();
     cmd = cmd_parse_new_command((*pi).line);
     i = 0 as u_int;
@@ -1034,18 +975,22 @@ pub unsafe extern "C" fn cmd_parse_from_arguments(
     }
     cmd_parse_build_commands(cmds, pi, &raw mut pr);
     cmd_parse_free_commands(cmds);
-    return &raw mut pr;
+    return pr;
 }
 unsafe extern "C" fn yyerror(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
     let mut pi: *mut cmd_parse_input = (*ps).input;
     let mut ap: ::core::ffi::VaList;
-    if !(*ps).error.is_null() {
+    if (*ps).error.is_some() {
         return;
     }
     ap = args.clone();
     let error = xvasprintf_cstring(fmt, ap);
-    (*ps).error = cmd_parse_get_error((*pi).file, (*pi).line, error.as_ptr());
+    (*ps).error = Some(cmd_parse_get_error(
+        (*pi).file,
+        (*pi).line,
+        error.as_c_str(),
+    ));
 }
 unsafe extern "C" fn yylex_is_var(
     mut ch: ::core::ffi::c_char,
@@ -1665,16 +1610,11 @@ mod parser_collection_tests {
     unsafe fn parse_commands(input: &[u8]) -> Vec<Vec<Vec<u8>>> {
         let mut pi: cmd_parse_input = ::core::mem::zeroed();
         pi.line = 1;
-        let mut cause = ::core::ptr::null_mut();
-        let cmds = cmd_parse_do_buffer(input.as_ptr().cast(), input.len(), &mut pi, &mut cause);
+        let cmds = cmd_parse_do_buffer(input.as_ptr().cast(), input.len(), &mut pi)
+            .expect("valid parser test input");
         assert!(
             !cmds.is_null(),
-            "parser failed: {:?}",
-            if cause.is_null() {
-                None
-            } else {
-                Some(CStr::from_ptr(cause).to_string_lossy().into_owned())
-            }
+            "parser returned a null command list for valid input"
         );
         let result = (*cmds)
             .items
@@ -1698,17 +1638,8 @@ mod parser_collection_tests {
             let mut pi: cmd_parse_input = ::core::mem::zeroed();
             pi.line = 1;
             let malformed = b"%if 1\ndisplay-message unfinished\n";
-            let mut cause = ::core::ptr::null_mut();
-            let failed = cmd_parse_do_buffer(
-                malformed.as_ptr().cast(),
-                malformed.len(),
-                &mut pi,
-                &mut cause,
-            );
-            assert!(failed.is_null());
-            if !cause.is_null() {
-                free(cause.cast());
-            }
+            let failed = cmd_parse_do_buffer(malformed.as_ptr().cast(), malformed.len(), &mut pi);
+            assert!(failed.is_err());
 
             assert_eq!(
                 parse_commands(b"display-message alpha beta; display-message gamma\n"),

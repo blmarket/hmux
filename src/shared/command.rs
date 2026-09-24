@@ -10,6 +10,7 @@ use super::key::key_event;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::{window, winlink};
+use std::ffi::CString;
 pub type cmd_retval = ::core::ffi::c_int;
 pub const CMD_RETURN_STOP: cmd_retval = 2;
 pub const CMD_RETURN_WAIT: cmd_retval = 1;
@@ -270,10 +271,18 @@ pub struct cmd_parse_input {
     pub fs: cmd_find_state,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_parse_result {
     pub status: cmd_parse_status,
     pub cmdlist: *mut cmd_list,
-    pub error: *mut ::core::ffi::c_char,
+    pub error: Option<CString>,
+}
+
+impl cmd_parse_result {
+    pub fn empty() -> Self {
+        Self {
+            status: CMD_PARSE_ERROR,
+            cmdlist: ::core::ptr::null_mut(),
+            error: None,
+        }
+    }
 }

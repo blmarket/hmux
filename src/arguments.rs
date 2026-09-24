@@ -1283,7 +1283,6 @@ pub unsafe extern "C" fn args_make_commands_now(
     mut expand: ::core::ffi::c_int,
 ) -> *mut cmd_list {
     let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     state = args_make_commands_prepare(
         self_0,
@@ -1293,19 +1292,17 @@ pub unsafe extern "C" fn args_make_commands_now(
         0 as ::core::ffi::c_int,
         expand,
     );
-    cmdlist = args_make_commands(
+    match args_make_commands(
         state,
         0 as ::core::ffi::c_int,
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        &raw mut error,
-    );
-    if cmdlist.is_null() {
-        cmdq_error(
+    ) {
+        Ok(commands) => cmdlist = commands,
+        Err(error) => cmdq_error(
             item,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            error,
-        );
-        free(error as *mut ::core::ffi::c_void);
+            error.as_ref().map_or(::core::ptr::null(), |value| value.as_ptr()),
+        ),
     }
     args_make_commands_free(state);
     return cmdlist;
@@ -1385,21 +1382,18 @@ pub unsafe extern "C" fn args_make_commands_prepare(
     cmd_find_copy_state(&raw mut (*state).pi.fs, target);
     return state;
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_make_commands(
+pub unsafe fn args_make_commands(
     mut state: *mut args_command_state,
     mut argc: ::core::ffi::c_int,
     mut argv: *mut *mut ::core::ffi::c_char,
-    mut error: *mut *mut ::core::ffi::c_char,
-) -> *mut cmd_list {
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+) -> Result<*mut cmd_list, Option<CString>> {
     let mut i: ::core::ffi::c_int = 0;
     if !(*state).cmdlist.is_null() {
         if argc == 0 as ::core::ffi::c_int {
             (*(*state).cmdlist).references += 1;
-            return (*state).cmdlist;
+            return Ok((*state).cmdlist);
         }
-        return cmd_list_copy((*state).cmdlist, argc, argv);
+        return Ok(cmd_list_copy((*state).cmdlist, argc, argv));
     }
     let mut cmd = CStr::from_ptr(
         ((*state).cmd)
@@ -1439,17 +1433,15 @@ pub unsafe extern "C" fn args_make_commands(
         b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
         cmd.as_ptr(),
     );
-    pr = cmd_parse_from_string(cmd.as_ptr(), &raw mut (*state).pi);
+    let pr = cmd_parse_from_string(cmd.as_ptr(), &raw mut (*state).pi);
     drop(cmd);
-    match (*pr).status as ::core::ffi::c_uint {
-        0 => {
-            *error = (*pr).error;
-            return ::core::ptr::null_mut::<cmd_list>();
+    match pr.status as ::core::ffi::c_uint {
+        0 => Err(pr.error),
+        1 => Ok(pr.cmdlist),
+        _ => {
+            fatalx(b"invalid parse return state\0" as *const u8 as *const ::core::ffi::c_char)
         }
-        1 => return (*pr).cmdlist,
-        _ => {}
     }
-    fatalx(b"invalid parse return state\0" as *const u8 as *const ::core::ffi::c_char);
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_make_commands_free(mut state: *mut args_command_state) {

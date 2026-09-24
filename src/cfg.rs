@@ -205,7 +205,7 @@ pub unsafe extern "C" fn load_cfg(
             idx: 0,
         },
     };
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut new_item0: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     if !new_item.is_null() {
@@ -239,18 +239,17 @@ pub unsafe extern "C" fn load_cfg(
     pi.c = c;
     pr = cmd_parse_from_file(f, &raw mut pi);
     fclose(f);
-    if (*pr).status as ::core::ffi::c_uint
+    if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         cfg_add_cause(
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*pr).error,
+            pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
         );
-        free((*pr).error as *mut ::core::ffi::c_void);
         return -(1 as ::core::ffi::c_int);
     }
     if flags & CMD_PARSE_PARSEONLY != 0 {
-        cmd_list_free((*pr).cmdlist);
+        cmd_list_free(pr.cmdlist);
         return 0 as ::core::ffi::c_int;
     }
     if !item.is_null() {
@@ -268,13 +267,13 @@ pub unsafe extern "C" fn load_cfg(
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         pi.file,
     );
-    new_item0 = cmdq_get_command((*pr).cmdlist, state);
+    new_item0 = cmdq_get_command(pr.cmdlist, state);
     if !item.is_null() {
         new_item0 = cmdq_insert_after(item, new_item0);
     } else {
         new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
     }
-    cmd_list_free((*pr).cmdlist);
+    cmd_list_free(pr.cmdlist);
     cmdq_free_state(state);
     if !new_item.is_null() {
         *new_item = new_item0;
@@ -308,7 +307,7 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
             idx: 0,
         },
     };
-    let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut new_item0: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     if !new_item.is_null() {
@@ -329,18 +328,17 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
     pi.item = item;
     pi.c = c;
     pr = cmd_parse_from_buffer(buf, len, &raw mut pi);
-    if (*pr).status as ::core::ffi::c_uint
+    if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         cfg_add_cause(
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*pr).error,
+            pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
         );
-        free((*pr).error as *mut ::core::ffi::c_void);
         return -(1 as ::core::ffi::c_int);
     }
     if flags & CMD_PARSE_PARSEONLY != 0 {
-        cmd_list_free((*pr).cmdlist);
+        cmd_list_free(pr.cmdlist);
         return 0 as ::core::ffi::c_int;
     }
     if !item.is_null() {
@@ -358,13 +356,13 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         pi.file,
     );
-    new_item0 = cmdq_get_command((*pr).cmdlist, state);
+    new_item0 = cmdq_get_command(pr.cmdlist, state);
     if !item.is_null() {
         new_item0 = cmdq_insert_after(item, new_item0);
     } else {
         new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
     }
-    cmd_list_free((*pr).cmdlist);
+    cmd_list_free(pr.cmdlist);
     cmdq_free_state(state);
     if !new_item.is_null() {
         *new_item = new_item0;
