@@ -1,7 +1,7 @@
 use crate::src::ffi::libc::{free, memcpy};
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand,
-    format_expand_time, format_free,
+    format_expand_time_cstring, format_free,
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{grid_compare, grid_default_cell};
@@ -368,9 +368,7 @@ pub unsafe extern "C" fn window_make_pane_status(
         (*wp).options,
         b"pane-border-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    let expanded_raw = format_expand_time(ft, fmt);
-    let expanded = CStr::from_ptr(expanded_raw).to_owned();
-    free(expanded_raw.cast());
+    let expanded = format_expand_time_cstring(ft, fmt);
     old = std::ptr::replace(&raw mut (*wp).status_screen, screen::empty());
     screen_init(&raw mut (*wp).status_screen, width, 1 as u_int, 0 as u_int);
     (*wp).status_screen.mode = 0 as ::core::ffi::c_int;

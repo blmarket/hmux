@@ -4,9 +4,8 @@ use crate::src::cmd_find::cmd_find_best_client;
 use crate::src::cmd_queue::{
     cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client, cmdq_print,
 };
-use crate::src::ffi::libc::free;
 use crate::src::format::{
-    format_create, format_defaults, format_each, format_expand_time, format_free,
+    format_create, format_defaults, format_each, format_expand_time_cstring, format_free,
 };
 use crate::src::json::{json_destroy_node, json_parse, json_to_string};
 use crate::src::log::fatalx;
@@ -135,13 +134,6 @@ unsafe extern "C" fn cmd_display_message_each(
     );
 }
 
-// format_expand_time and json_to_string return libc-owned C strings. Copy
-// their visible C-string bytes before releasing the foreign allocation.
-unsafe fn cmd_display_message_take_string(raw: *mut ::core::ffi::c_char) -> CString {
-    let owned = CStr::from_ptr(raw).to_owned();
-    free(raw as *mut ::core::ffi::c_void);
-    owned
-}
 unsafe extern "C" fn cmd_display_message_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
@@ -250,7 +242,7 @@ unsafe extern "C" fn cmd_display_message_exec(
     let mut msg = if args_has(args, 'l' as i32 as u_char) != 0 {
         CStr::from_ptr(template).to_owned()
     } else {
-        cmd_display_message_take_string(format_expand_time(ft, template))
+        format_expand_time_cstring(ft, template)
     };
     if args_has(args, 'j' as i32 as u_char) != 0 {
         jn = json_parse(msg.as_ptr(), &raw mut cause);
