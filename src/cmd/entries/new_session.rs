@@ -196,7 +196,7 @@ unsafe extern "C" fn cmd_new_session_exec(
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut group: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<std::ffi::CString> = None;
     let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -672,9 +672,11 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                                 b"create window failed: %s\0"
                                                                     as *const u8
                                                                     as *const ::core::ffi::c_char,
-                                                                cause,
+                                                                cause.as_ref().map_or(
+                                                                    ::core::ptr::null(),
+                                                                    |value| value.as_ptr(),
+                                                                ),
                                                             );
-                                                            free(cause as *mut ::core::ffi::c_void);
                                                         } else {
                                                             if !group.is_null() {
                                                                 if sg.is_null() {

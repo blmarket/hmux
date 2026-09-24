@@ -4,7 +4,6 @@ use crate::src::arguments::{
 use crate::src::cmd::{cmd_get_args, OwnedArgv};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::environ::{environ_create, environ_free, environ_put};
-use crate::src::ffi::libc::free;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
@@ -127,7 +126,7 @@ unsafe extern "C" fn cmd_respawn_window_exec(
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<std::ffi::CString> = None;
     let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     sc.item = item;
     sc.s = s;
@@ -159,9 +158,8 @@ unsafe extern "C" fn cmd_respawn_window_exec(
         cmdq_error(
             item,
             b"respawn window failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause,
+            cause.as_ref().map_or(::core::ptr::null(), |value| value.as_ptr()),
         );
-        free(cause as *mut ::core::ffi::c_void);
         environ_free(sc.environ);
         return CMD_RETURN_ERROR;
     }

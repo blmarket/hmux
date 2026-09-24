@@ -49,8 +49,19 @@ use crate::src::window::{
     winlink_remove, winlink_set_window, winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xasprintf, xsnprintf};
+use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
+
+unsafe fn set_spawn_cause(cause: *mut Option<CString>, parts: &[&[u8]]) {
+    if cause.is_null() {
+        return;
+    }
+    let mut bytes = Vec::with_capacity(parts.iter().map(|part| part.len()).sum());
+    for part in parts {
+        bytes.extend_from_slice(part);
+    }
+    *cause = Some(CString::new(bytes).expect("spawn diagnostic contains no NUL"));
+}
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__off64_t, __off_t};
@@ -302,10 +313,9 @@ unsafe extern "C" fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp:
         ep,
     );
 }
-#[no_mangle]
-pub unsafe extern "C" fn spawn_window(
+pub unsafe fn spawn_window(
     mut sc: *mut spawn_context,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    cause: *mut Option<CString>,
 ) -> *mut winlink {
     let mut s: *mut session = (*sc).s;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -331,11 +341,15 @@ pub unsafe extern "C" fn spawn_window(
                 wp = (*wp).entry.tqe_next;
             }
             if !wp.is_null() {
-                xasprintf(
+                set_spawn_cause(
                     cause,
-                    b"window %s:%d still active\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*s).name).as_ptr().cast_mut(),
-                    (*(*sc).wl).idx,
+                    &[
+                        b"window ",
+                        (*s).name.as_bytes(),
+                        b":",
+                        (*(*sc).wl).idx.to_string().as_bytes(),
+                        b" still active",
+                    ],
                 );
                 return ::core::ptr::null_mut::<winlink>();
             }
@@ -365,10 +379,9 @@ pub unsafe extern "C" fn spawn_window(
     if !(*sc).flags & SPAWN_RESPAWN != 0 && idx != -(1 as ::core::ffi::c_int) {
         wl = winlink_find_by_index(&raw mut (*s).windows, idx);
         if !wl.is_null() && !(*sc).flags & SPAWN_KILL != 0 {
-            xasprintf(
+            set_spawn_cause(
                 cause,
-                b"index %d in use\0" as *const u8 as *const ::core::ffi::c_char,
-                idx,
+                &[b"index ", idx.to_string().as_bytes(), b" in use"],
             );
             return ::core::ptr::null_mut::<winlink>();
         }
@@ -396,10 +409,9 @@ pub unsafe extern "C" fn spawn_window(
         }
         (*sc).wl = winlink_add(&raw mut (*s).windows, idx);
         if (*sc).wl.is_null() {
-            xasprintf(
+            set_spawn_cause(
                 cause,
-                b"couldn't add window %d\0" as *const u8 as *const ::core::ffi::c_char,
-                idx,
+                &[b"couldn't add window ", idx.to_string().as_bytes()],
             );
             return ::core::ptr::null_mut::<winlink>();
         }
@@ -416,10 +428,9 @@ pub unsafe extern "C" fn spawn_window(
         w = window_create(sx, sy, xpixel, ypixel);
         if w.is_null() {
             winlink_remove(&raw mut (*s).windows, (*sc).wl);
-            xasprintf(
+            set_spawn_cause(
                 cause,
-                b"couldn't create window %d\0" as *const u8 as *const ::core::ffi::c_char,
-                idx,
+                &[b"couldn't create window ", idx.to_string().as_bytes()],
             );
             return ::core::ptr::null_mut::<winlink>();
         }
@@ -472,10 +483,9 @@ pub unsafe extern "C" fn spawn_window(
     session_group_synchronize_from(s);
     return (*sc).wl;
 }
-#[no_mangle]
-pub unsafe extern "C" fn spawn_pane(
+pub unsafe fn spawn_pane(
     mut sc: *mut spawn_context,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    cause: *mut Option<CString>,
 ) -> *mut window_pane {
     let mut item: *mut cmdq_item = (*sc).item;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -533,17 +543,11 @@ pub unsafe extern "C" fn spawn_pane(
     );
     if (*sc).flags & SPAWN_MODAL != 0 {
         if !(*sc).flags & SPAWN_FLOATING != 0 {
-            xasprintf(
-                cause,
-                b"modal pane must be floating\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            set_spawn_cause(cause, &[b"modal pane must be floating"]);
             return ::core::ptr::null_mut::<window_pane>();
         }
         if !(*w).modal.is_null() {
-            xasprintf(
-                cause,
-                b"window already has a modal pane\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            set_spawn_cause(cause, &[b"window already has a modal pane"]);
             return ::core::ptr::null_mut::<window_pane>();
         }
     }
@@ -589,12 +593,17 @@ pub unsafe extern "C" fn spawn_pane(
     if (*sc).flags & SPAWN_RESPAWN != 0 {
         if (*(*sc).wp0).fd != -(1 as ::core::ffi::c_int) && !(*sc).flags & SPAWN_KILL != 0 {
             window_pane_index((*sc).wp0, &raw mut idx);
-            xasprintf(
+            set_spawn_cause(
                 cause,
-                b"pane %s:%d.%u still active\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*s).name).as_ptr().cast_mut(),
-                (*(*sc).wl).idx,
-                idx,
+                &[
+                    b"pane ",
+                    (*s).name.as_bytes(),
+                    b":",
+                    (*(*sc).wl).idx.to_string().as_bytes(),
+                    b".",
+                    idx.to_string().as_bytes(),
+                    b" still active",
+                ],
             );
             return ::core::ptr::null_mut::<window_pane>();
         }
@@ -814,10 +823,12 @@ pub unsafe extern "C" fn spawn_pane(
             &raw mut ws,
         );
         if (*new_wp).pid == -(1 as ::core::ffi::c_int) {
-            xasprintf(
+            set_spawn_cause(
                 cause,
-                b"fork failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                strerror(*__errno_location()),
+                &[
+                    b"fork failed: ",
+                    CStr::from_ptr(strerror(*__errno_location())).to_bytes(),
+                ],
             );
             (*new_wp).fd = -(1 as ::core::ffi::c_int);
             if !(*sc).flags & SPAWN_RESPAWN != 0 {
@@ -1122,7 +1133,7 @@ pub unsafe fn spawn_editor(
     };
     let mut env: *mut environ = ::core::ptr::null_mut::<environ>();
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut path: [::core::ffi::c_char; 19] =
         ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"/tmp/tmux.XXXXXXXX\0");
     let mut editor: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1206,7 +1217,6 @@ pub unsafe fn spawn_editor(
     wp = spawn_pane(&raw mut sc, &raw mut cause);
     drop(cmd);
     if wp.is_null() {
-        free(cause as *mut ::core::ffi::c_void);
         window_pop_zoom(w);
         spawn_editor_free(es);
         return ::core::ptr::null_mut::<spawn_editor_state>();

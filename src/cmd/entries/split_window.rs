@@ -224,7 +224,7 @@ unsafe extern "C" fn cmd_split_window_exec(
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<std::ffi::CString> = None;
     let mut choice_cause: Option<std::ffi::CString> = None;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
@@ -381,9 +381,8 @@ unsafe extern "C" fn cmd_split_window_exec(
         cmdq_error(
             item,
             b"create pane failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause,
+            cause.as_ref().map_or(::core::ptr::null(), |value| value.as_ptr()),
         );
-        free(cause as *mut ::core::ffi::c_void);
     } else {
         if args_has(args, 'K' as i32 as u_char) != 0 && args_has(args, 'O' as i32 as u_char) != 0 {
             (*new_wp).flags |= PANE_CAPTUREALLKEYS;

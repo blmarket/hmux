@@ -154,7 +154,7 @@ unsafe extern "C" fn cmd_new_window_exec(
     let mut idx: ::core::ffi::c_int = (*target).idx;
     let mut before: ::core::ffi::c_int = 0;
     let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<std::ffi::CString> = None;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
@@ -301,9 +301,8 @@ unsafe extern "C" fn cmd_new_window_exec(
         cmdq_error(
             item,
             b"create window failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause,
+            cause.as_ref().map_or(::core::ptr::null(), |value| value.as_ptr()),
         );
-        free(cause as *mut ::core::ffi::c_void);
         environ_free(sc.environ);
         return CMD_RETURN_ERROR;
     } else {
