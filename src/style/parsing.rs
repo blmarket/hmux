@@ -2,9 +2,9 @@ use crate::src::attributes::{attributes_format, attributes_parse_cstr};
 use crate::src::colour::{colour_format, colour_parse_cstr};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{
-    free, memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strlcpy, strncasecmp, strspn,
+    memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strlcpy, strncasecmp, strspn,
 };
-use crate::src::format::{format_create, format_free, format_single};
+use crate::src::format::{format_create, format_free, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_debug};
@@ -1177,8 +1177,6 @@ pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut style: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     style_set(sb_style, &raw const grid_default_cell);
     o = options_get(
         oo,
@@ -1188,7 +1186,7 @@ pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
         fatalx(b"missing pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char);
     }
     oe = options_table_entry(o);
-    style = format_single(
+    let style = format_single_cstring(
         ::core::ptr::null_mut::<cmdq_item>(),
         (*oe).default_str,
         ::core::ptr::null_mut::<client>(),
@@ -1196,7 +1194,9 @@ pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
     );
-    if style_parse(sb_style, &raw const grid_default_cell, style) != 0 as ::core::ffi::c_int {
+    if style_parse(sb_style, &raw const grid_default_cell, style.as_ptr())
+        != 0 as ::core::ffi::c_int
+    {
         fatalx(b"bad pane-scrollbars-style default\0" as *const u8 as *const ::core::ffi::c_char);
     }
     s = options_get_string(
@@ -1204,7 +1204,7 @@ pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
         b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if !s.is_null() {
-        expanded = format_single(
+        let expanded = format_single_cstring(
             ::core::ptr::null_mut::<cmdq_item>(),
             s,
             ::core::ptr::null_mut::<client>(),
@@ -1212,13 +1212,12 @@ pub unsafe extern "C" fn style_set_scrollbar_style_from_option(
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
         );
-        if style_parse(sb_style, &raw const grid_default_cell, expanded) != 0 as ::core::ffi::c_int
+        if style_parse(sb_style, &raw const grid_default_cell, expanded.as_ptr())
+            != 0 as ::core::ffi::c_int
         {
-            style_parse(sb_style, &raw const grid_default_cell, style);
+            style_parse(sb_style, &raw const grid_default_cell, style.as_ptr());
         }
-        free(expanded as *mut ::core::ffi::c_void);
     }
-    free(style as *mut ::core::ffi::c_void);
     if (*sb_style).width < 1 as ::core::ffi::c_int {
         (*sb_style).width = PANE_SCROLLBARS_DEFAULT_WIDTH;
     }
