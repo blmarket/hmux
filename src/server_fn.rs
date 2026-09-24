@@ -4,9 +4,9 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::{close, free, getpid, gettimeofday, kill, memcpy, strlen};
+use crate::src::ffi::libc::{close, getpid, gettimeofday, kill, memcpy, strlen};
 use crate::src::ffi::utempter::utempter_remove_record;
-use crate::src::format::format_single;
+use crate::src::format::format_single_cstring;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
 use crate::src::layout::layout_close_pane;
@@ -517,7 +517,6 @@ pub unsafe extern "C" fn server_destroy_pane(
     };
     let mut remain_on_exit: ::core::ffi::c_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut sx: u_int = (*(*wp).base.grid).sx;
     let mut sy: u_int = (*(*wp).base.grid).sy;
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
@@ -593,7 +592,7 @@ pub unsafe extern "C" fn server_destroy_pane(
                     &raw const grid_default_cell as *const ::core::ffi::c_void,
                     ::core::mem::size_of::<grid_cell>() as size_t,
                 );
-                expanded = format_single(
+                let expanded = format_single_cstring(
                     ::core::ptr::null_mut::<cmdq_item>(),
                     s,
                     ::core::ptr::null_mut::<client>(),
@@ -605,11 +604,10 @@ pub unsafe extern "C" fn server_destroy_pane(
                     &raw mut ctx,
                     &raw mut gc,
                     sx,
-                    expanded,
+                    expanded.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
                     0 as ::core::ffi::c_int,
                 );
-                free(expanded as *mut ::core::ffi::c_void);
                 screen_write_stop(&raw mut ctx);
             }
             (*wp).base.mode &= !MODE_CURSOR;
