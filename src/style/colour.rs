@@ -817,7 +817,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     {
         return 97 as ::core::ffi::c_int;
     }
-    return colour_byname_impl(s);
+    return colour_byname_impl(input);
 }
 #[no_mangle]
 pub unsafe extern "C" fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
@@ -1343,7 +1343,8 @@ pub unsafe extern "C" fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ff
     ];
     return ANSI_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int;
 }
-unsafe fn colour_byname_impl(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
+    let name = name.as_ptr();
     const colours: [C2RustUnnamed_37; 578] = [
         C2RustUnnamed_37 {
             name: b"AliceBlue\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3808,7 +3809,7 @@ unsafe fn colour_parseX11_impl(mut p: *const ::core::ffi::c_char) -> ::core::ffi
         // The span cannot contain NUL; byname only borrows it for this call.
         let trimmed = std::slice::from_raw_parts(p.cast::<u8>(), len as usize);
         let copy = std::ffi::CString::new(trimmed).expect("trimmed C string contains NUL");
-        colour = colour_byname_impl(copy.as_ptr());
+        colour = colour_byname_impl(&copy);
     }
     return colour;
 }
@@ -3970,7 +3971,7 @@ pub fn colour_parse_name(input: &[u8]) -> Option<i32> {
 /// Bounded C string entry point. Locale-sensitive operations remain in libc.
 pub fn colour_parse_name_cstr(input: &std::ffi::CStr) -> Option<i32> {
     // The kernel only reads input through its terminating NUL; it retains no pointer.
-    let value = unsafe { colour_byname_impl(input.as_ptr()) };
+    let value = unsafe { colour_byname_impl(input) };
     (value != -1).then_some(value)
 }
 
