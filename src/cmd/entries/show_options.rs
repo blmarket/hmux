@@ -1,10 +1,9 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_print};
-use crate::src::ffi::libc::free;
 use crate::src::format::{
     format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
-    format_single_from_target,
+    format_single_from_target_cstring,
 };
 use crate::src::hooks::{
     hooks_is_event, hooks_monitor_get, hooks_monitor_get_fire_count, hooks_monitor_get_fire_time,
@@ -196,7 +195,7 @@ unsafe extern "C" fn cmd_show_options_exec(
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut argument: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let argument;
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut cause: Option<CString> = None;
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
@@ -233,8 +232,8 @@ unsafe extern "C" fn cmd_show_options_exec(
         }
         return cmd_show_options_all(self_0, item, scope, oo);
     }
-    argument = format_single_from_target(item, args_string(args, 0 as u_int));
-    let matched = options_match_owned(CStr::from_ptr(argument));
+    argument = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    let matched = options_match_owned(CStr::from_ptr(argument.as_ptr()));
     if let Ok(parsed) = &matched {
         name = parsed.name.as_ptr();
         array_key = parsed
@@ -251,13 +250,13 @@ unsafe extern "C" fn cmd_show_options_exec(
                 cmdq_error(
                     item,
                     b"ambiguous option: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    argument,
+                    argument.as_ptr(),
                 );
             } else {
                 cmdq_error(
                     item,
                     b"invalid option: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    argument,
+                    argument.as_ptr(),
                 );
             }
             current_block = 18040240512796061664;
@@ -306,7 +305,7 @@ unsafe extern "C" fn cmd_show_options_exec(
                     cmdq_error(
                         item,
                         b"invalid option: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        argument,
+                        argument.as_ptr(),
                     );
                     current_block = 18040240512796061664;
                 }
@@ -316,14 +315,8 @@ unsafe extern "C" fn cmd_show_options_exec(
         }
     }
     match current_block {
-        18040240512796061664 => {
-            free(argument as *mut ::core::ffi::c_void);
-            return CMD_RETURN_ERROR;
-        }
-        _ => {
-            free(argument as *mut ::core::ffi::c_void);
-            return CMD_RETURN_NORMAL;
-        }
+        18040240512796061664 => return CMD_RETURN_ERROR,
+        _ => return CMD_RETURN_NORMAL,
     };
 }
 unsafe fn cmd_show_options_value(

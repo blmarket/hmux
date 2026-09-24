@@ -7,8 +7,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_client, event_payload_set_int, event_payload_set_pane,
     event_payload_set_session, event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::free;
-use crate::src::format::format_single_from_target;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
 use crate::src::monitor::monitor_parse_owned;
 pub use crate::src::options::options_table_entry;
@@ -221,7 +220,6 @@ unsafe extern "C" fn cmd_set_hook_event_exec(
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut argument: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if args_count(args) == 0 as u_int {
         cmdq_error(
             item,
@@ -236,13 +234,12 @@ unsafe extern "C" fn cmd_set_hook_event_exec(
         );
         return CMD_RETURN_ERROR;
     }
-    argument = format_single_from_target(item, args_string(args, 0 as u_int));
-    if *argument as ::core::ffi::c_int != '@' as i32 {
+    let argument = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    if *argument.as_ptr() as ::core::ffi::c_int != '@' as i32 {
         cmdq_error(
             item,
             b"event name must start with @\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        free(argument as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
     ep = event_payload_create();
@@ -289,8 +286,7 @@ unsafe extern "C" fn cmd_set_hook_event_exec(
             (*target).wp,
         );
     }
-    events_fire(argument, ep);
-    free(argument as *mut ::core::ffi::c_void);
+    events_fire(argument.as_ptr(), ep);
     return CMD_RETURN_NORMAL;
 }
 unsafe extern "C" fn cmd_set_hook_monitor_exec(
@@ -312,7 +308,7 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut cause: Option<CString> = None;
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut expanded: Option<CString> = None;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut scope: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -367,8 +363,8 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
                 if args_count(args) != 0 as u_int {
                     value = args_string(args, 0 as u_int);
                     if args_has(args, 'F' as i32 as u_char) != 0 {
-                        expanded = format_single_from_target(item, value);
-                        value = expanded;
+                        expanded = Some(format_single_from_target_cstring(item, value));
+                        value = expanded.as_ref().expect("expanded value was set").as_ptr();
                     }
                     o = options_get_only(oo, name);
                     if args_has(args, 'o' as i32 as u_char) == 0 || o.is_null() {
@@ -410,11 +406,9 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
                 }
                 hooks_monitor_add(item, oo, name, type_0, id, format, flags, &raw mut fs, s);
             }
-            free(expanded as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     }
-    free(expanded as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }
 unsafe extern "C" fn cmd_set_option_exec(
@@ -431,9 +425,8 @@ unsafe extern "C" fn cmd_set_option_exec(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut po: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut argument: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut expanded: Option<CString> = None;
     let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut window: ::core::ffi::c_int = 0;
@@ -460,15 +453,14 @@ unsafe extern "C" fn cmd_set_option_exec(
         );
         return CMD_RETURN_ERROR;
     }
-    argument = format_single_from_target(item, args_string(args, 0 as u_int));
+    let argument = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
     if cmd_get_entry(self_0) == &raw const cmd_set_hook_entry
         && args_has(args, 'R' as i32 as u_char) != 0
     {
-        hooks_run(item, argument);
-        free(argument as *mut ::core::ffi::c_void);
+        hooks_run(item, argument.as_ptr());
         return CMD_RETURN_NORMAL;
     }
-    let matched = options_match_owned(CStr::from_ptr(argument));
+    let matched = options_match_owned(CStr::from_ptr(argument.as_ptr()));
     if let Ok(parsed) = &matched {
         name = parsed.name.as_ptr();
         array_key = parsed
@@ -485,13 +477,13 @@ unsafe extern "C" fn cmd_set_option_exec(
                 cmdq_error(
                     item,
                     b"ambiguous option: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    argument,
+                    argument.as_ptr(),
                 );
             } else {
                 cmdq_error(
                     item,
                     b"invalid option: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    argument,
+                    argument.as_ptr(),
                 );
             }
             current_block = 8517774764635037400;
@@ -503,8 +495,8 @@ unsafe extern "C" fn cmd_set_option_exec(
             value = args_string(args, 1 as u_int);
         }
         if !value.is_null() && args_has(args, 'F' as i32 as u_char) != 0 {
-            expanded = format_single_from_target(item, value);
-            value = expanded;
+            expanded = Some(format_single_from_target_cstring(item, value));
+            value = expanded.as_ref().expect("expanded value was set").as_ptr();
         }
         scope = options_scope_from_name(args, window, name, target, &raw mut oo, &raw mut cause);
         if scope == OPTIONS_TABLE_NONE {
@@ -527,7 +519,7 @@ unsafe extern "C" fn cmd_set_option_exec(
                 cmdq_error(
                     item,
                     b"not an array: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    argument,
+                    argument.as_ptr(),
                 );
                 current_block = 8517774764635037400;
             } else {
@@ -550,7 +542,7 @@ unsafe extern "C" fn cmd_set_option_exec(
                             cmdq_error(
                                 item,
                                 b"already set: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                                argument,
+                                argument.as_ptr(),
                             );
                             current_block = 8517774764635037400;
                         }
@@ -716,13 +708,9 @@ unsafe extern "C" fn cmd_set_option_exec(
     }
     match current_block {
         8517774764635037400 => {
-            free(argument as *mut ::core::ffi::c_void);
-            free(expanded as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         _ => {
-            free(argument as *mut ::core::ffi::c_void);
-            free(expanded as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     };
