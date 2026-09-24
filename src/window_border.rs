@@ -1,6 +1,6 @@
 use crate::src::ffi::libc::{free, memcpy};
 use crate::src::format::{
-    format_add, format_create, format_create_defaults, format_defaults, format_expand,
+    format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
     format_expand_time_cstring, format_free,
 };
 use crate::src::format_draw::format_draw;
@@ -116,7 +116,6 @@ unsafe extern "C" fn window_set_fill_cell(
         link: 0,
     };
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     memcpy(
         gc as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,
@@ -156,7 +155,7 @@ unsafe extern "C" fn window_set_fill_cell(
         (*w).options,
         b"fill-character\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    expanded = format_expand(ft, value);
+    let expanded = format_expand_cstring(ft, value);
     format_free(ft);
     screen_init(&raw mut s, 1 as u_int, 1 as u_int, 0 as u_int);
     screen_write_start(&raw mut ctx, &raw mut s);
@@ -164,12 +163,11 @@ unsafe extern "C" fn window_set_fill_cell(
         &raw mut ctx,
         &raw const grid_default_cell,
         1 as u_int,
-        expanded,
+        expanded.as_ptr(),
         ::core::ptr::null_mut::<style_ranges>(),
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&raw mut ctx);
-    free(expanded as *mut ::core::ffi::c_void);
     grid_view_get_cell(s.grid, 0 as u_int, 0 as u_int, &raw mut new_gc);
     if new_gc.data.width as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
         memcpy(

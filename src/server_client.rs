@@ -32,7 +32,7 @@ use crate::src::file::{
     file_read_done, file_write_done, file_write_ready,
 };
 use crate::src::format::{
-    format_create, format_defaults, format_expand, format_expand_time_cstring, format_free,
+    format_create, format_defaults, format_expand_cstring, format_expand_time_cstring, format_free,
     format_lost_client,
 };
 use crate::src::input::input_cancel_requests;
@@ -2561,7 +2561,6 @@ pub unsafe extern "C" fn server_client_update_theme_colours(mut c: *mut client) 
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut theme: client_theme = THEME_UNKNOWN;
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut colour: ::core::ffi::c_int = 0;
     let mut option: ::core::ffi::c_int = 0;
@@ -2608,9 +2607,8 @@ pub unsafe extern "C" fn server_client_update_theme_colours(mut c: *mut client) 
         name = colour_theme_option(i, theme);
         if !name.is_null() {
             value = options_get_string(global_options, name);
-            expanded = format_expand(ft, value);
-            colour = colour_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(-1);
-            free(expanded as *mut ::core::ffi::c_void);
+            let expanded = format_expand_cstring(ft, value);
+            colour = colour_parse_cstr(expanded.as_c_str()).unwrap_or(-1);
             if !(colour == -(1 as ::core::ffi::c_int) || colour & COLOUR_FLAG_THEME != 0) {
                 (*c).theme_colours[i as usize] = colour;
             }

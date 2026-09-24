@@ -5,7 +5,7 @@ use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{fnmatch, free, strcasecmp, strcmp, strncmp, strsep, strstr};
-use crate::src::format::format_expand;
+use crate::src::format::format_expand_cstring;
 use crate::src::grid::grid_default_cell;
 use crate::src::hooks::hooks_monitor_free;
 use crate::src::input::input_set_buffer_size;
@@ -1438,7 +1438,6 @@ pub unsafe extern "C" fn options_string_to_style(
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut dgc: *const grid_cell = &raw const grid_default_cell;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut failed: ::core::ffi::c_int = 0;
     o = options_get(oo, name);
     if o.is_null()
@@ -1463,13 +1462,12 @@ pub unsafe extern "C" fn options_string_to_style(
     (*o).cached = (strstr(s, b"#{\0" as *const u8 as *const ::core::ffi::c_char)
         == NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
     if !ft.is_null() && (*o).cached == 0 {
-        expanded = format_expand(ft, s);
+        let expanded = format_expand_cstring(ft, s);
         if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_COLOUR != 0 {
-            failed = style_parse_colour(&raw mut (*o).style, dgc, expanded);
+            failed = style_parse_colour(&raw mut (*o).style, dgc, expanded.as_ptr());
         } else {
-            failed = style_parse(&raw mut (*o).style, dgc, expanded);
+            failed = style_parse(&raw mut (*o).style, dgc, expanded.as_ptr());
         }
-        free(expanded as *mut ::core::ffi::c_void);
         if failed != 0 as ::core::ffi::c_int {
             return ::core::ptr::null_mut::<style>();
         }
