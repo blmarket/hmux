@@ -375,6 +375,39 @@ mod input_request_ownership_tests {
     }
 
     #[test]
+    fn matched_request_can_be_freed_before_later_queued_reply() {
+        unsafe {
+            let ictx = InputCtxOwner::new();
+            let mut client_requests: Vec<*mut input_request> = Vec::new();
+            let mut c: client = ::core::mem::zeroed();
+            c.input_requests.collection = &mut client_requests as *mut _ as *mut _;
+
+            let mut pending_owner = InputRequestOwner::new();
+            let pending = &mut pending_owner.request as *mut input_request;
+            (*pending).ictx = ictx;
+            (*pending).c = &mut c;
+            (*pending).type_0 = INPUT_REQUEST_PALETTE;
+            (*pending).idx = 7;
+            input_ctx_requests(ictx).push_back(pending_owner);
+            input_client_requests(&mut c).push(pending);
+            (*ictx).request_count = 1;
+
+            input_reply(ictx, 1, b"queued\0".as_ptr().cast());
+            let mut reply = input_request_palette_data { idx: 7, c: -1 };
+            input_request_reply(
+                &mut c,
+                INPUT_REQUEST_PALETTE,
+                (&raw mut reply).cast(),
+            );
+
+            assert!(input_ctx_requests(ictx).is_empty());
+            assert!(input_client_requests(&mut c).is_empty());
+            assert_eq!((*ictx).request_count, 0);
+            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+        }
+    }
+
+    #[test]
     fn reply_without_pending_request_does_not_queue() {
         unsafe {
             let ictx = InputCtxOwner::new();
@@ -6341,8 +6374,11 @@ pub unsafe extern "C" fn input_request_reply(
     if found.is_null() {
         return;
     }
-    for ir in input_ctx_request_handles((*found).ictx) {
-        if !input_ctx_requests((*found).ictx)
+    // `found` is freed when its reply is handled. Keep the context separately
+    // for later queued replies so the loop never reads through that freed box.
+    let ictx = (*found).ictx;
+    for ir in input_ctx_request_handles(ictx) {
+        if !input_ctx_requests(ictx)
             .iter()
             .any(|owner| std::ptr::eq(&owner.request, ir))
         {
