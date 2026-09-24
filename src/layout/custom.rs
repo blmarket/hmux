@@ -1,5 +1,5 @@
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::{__ctype_b_loc, free, memcpy, qsort, sscanf, strcmp};
+use crate::src::ffi::libc::{__ctype_b_loc, memcpy, qsort, sscanf, strcmp};
 use crate::src::json::{
     json_array_first, json_array_next, json_destroy_node, json_find, json_find_array,
     json_find_boolean, json_find_number, json_find_object, json_find_string, json_get_object,
@@ -16,18 +16,15 @@ use crate::src::window::{
     window_pane_stack_push, window_pane_stack_remove, window_pane_zindex, window_resize,
     window_set_active_pane,
 };
-use crate::src::xmalloc::{xasprintf, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 macro_rules! layout_format_cause {
-    ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+    ($cause:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {{
         let cause = $cause;
         if !cause.is_null() {
-            let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
-            xasprintf(&raw mut raw, $fmt $(, $arg)*);
-            let message = CStr::from_ptr(raw).to_owned();
-            free(raw.cast());
-            *cause = Some(message);
+            *cause = Some(CString::new(format!($fmt $(, $arg)*))
+                .expect("layout diagnostic contains no NUL"));
         }
     }};
 }
@@ -662,7 +659,7 @@ pub unsafe fn layout_parse(
     if npanes == 0 as u_int {
         layout_format_cause!(
             cause,
-            b"window @%u has no panes\0" as *const u8 as *const ::core::ffi::c_char,
+            "window @{} has no panes",
             (*w).id,
         );
     } else {
@@ -671,7 +668,7 @@ pub unsafe fn layout_parse(
             if npanes > ncells {
                 layout_format_cause!(
                     cause,
-                    b"have %u panes but need %u\0" as *const u8 as *const ::core::ffi::c_char,
+                    "have {} panes but need {}",
                     npanes,
                     ncells,
                 );
@@ -1126,11 +1123,12 @@ unsafe extern "C" fn layout_parse_json_layout(
             (*lc).type_0 = LAYOUT_LEFTRIGHT;
             current_block = 1394248824506584008;
         } else {
-            layout_format_cause!(
-                cause,
-                b"unknown cell type \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-                str,
-            );
+            if !cause.is_null() {
+                let mut message = b"unknown cell type \"".to_vec();
+                message.extend_from_slice(CStr::from_ptr(str).to_bytes());
+                message.push(b'"');
+                *cause = Some(CString::new(message).expect("cell type contains no NUL"));
+            }
             current_block = 14858222377052930936;
         }
         match current_block {
@@ -1146,7 +1144,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                     if num < PANE_MINIMUM as int64_t || num > PANE_MAXIMUM as int64_t {
                         layout_format_cause!(
                             cause,
-                            b"invalid width %lld\0" as *const u8 as *const ::core::ffi::c_char,
+                            "invalid width {}",
                             num as ::core::ffi::c_longlong,
                         );
                     } else {
@@ -1161,8 +1159,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                             if num < PANE_MINIMUM as int64_t || num > PANE_MAXIMUM as int64_t {
                                 layout_format_cause!(
                                     cause,
-                                    b"invalid height %lld\0" as *const u8
-                                        as *const ::core::ffi::c_char,
+                                    "invalid height {}",
                                     num as ::core::ffi::c_longlong,
                                 );
                             } else {
@@ -1179,8 +1176,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                     {
                                         layout_format_cause!(
                                             cause,
-                                            b"invalid x-offset %lld\0" as *const u8
-                                                as *const ::core::ffi::c_char,
+                                            "invalid x-offset {}",
                                             num as ::core::ffi::c_longlong,
                                         );
                                     } else {
@@ -1197,8 +1193,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                             {
                                                 layout_format_cause!(
                                                     cause,
-                                                    b"invalid y-offset %lld\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
+                                                    "invalid y-offset {}",
                                                     num as ::core::ffi::c_longlong,
                                                 );
                                             } else {
@@ -1235,8 +1230,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                                     {
                                                         layout_format_cause!(
                                                             cause,
-                                                            b"invalid index %lld\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
+                                                            "invalid index {}",
                                                             num as ::core::ffi::c_longlong,
                                                         );
                                                         current_block = 14858222377052930936;
@@ -1288,8 +1282,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                                             {
                                                                 layout_format_cause!(
                                                                     cause,
-                                                                    b"invalid last %lld\0" as *const u8
-                                                                        as *const ::core::ffi::c_char,
+                                                                    "invalid last {}",
                                                                     num as ::core::ffi::c_longlong,
                                                                 );
                                                                 current_block =
@@ -1323,8 +1316,7 @@ unsafe extern "C" fn layout_parse_json_layout(
                                                                     {
                                                                         layout_format_cause!(
                                                                             cause,
-                                                                            b"invalid floating zindex %lld\0" as *const u8
-                                                                                as *const ::core::ffi::c_char,
+                                                                            "invalid floating zindex {}",
                                                                             num as ::core::ffi::c_longlong,
                                                                         );
                                                                         current_block = 14858222377052930936;
