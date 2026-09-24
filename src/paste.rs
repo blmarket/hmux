@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use crate::src::events::events_fire;
 use crate::src::events_payload::{event_payload_create, event_payload_set_string};
 use crate::src::ffi::libc::{free, time};
@@ -45,15 +46,17 @@ pub struct paste_name_tree {
     entries: std::collections::BTreeMap<Vec<u8>, *mut paste_buffer>,
 }
 
-static mut paste_next_index: u_int = 0;
-static mut paste_next_order: u_int = 0;
-static mut paste_num_automatic: u_int = 0;
-static mut paste_by_name: paste_name_tree = paste_name_tree {
-    entries: std::collections::BTreeMap::new(),
-};
-static mut paste_by_time: paste_time_tree = paste_time_tree {
-    entries: std::collections::BTreeMap::new(),
-};
+thread_local! {
+    static paste_next_index: RefCell<u_int> = RefCell::new(0);
+    static paste_next_order: RefCell<u_int> = RefCell::new(0);
+    static paste_num_automatic: RefCell<u_int> = RefCell::new(0);
+    static paste_by_name: RefCell<paste_name_tree> = RefCell::new(paste_name_tree {
+        entries: std::collections::BTreeMap::new(),
+    });
+    static paste_by_time: RefCell<paste_time_tree> = RefCell::new(paste_time_tree {
+        entries: std::collections::BTreeMap::new(),
+    });
+}
 
 unsafe fn paste_new_owned(name: CString) -> *mut paste_buffer {
     let mut owner = Box::new(paste_buffer {
@@ -202,6 +205,103 @@ unsafe fn paste_time_tree_remove(
         .remove(&paste_time_key(elm))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
+
+unsafe fn paste_name_tree_find_local(name: *const ::core::ffi::c_char) -> *mut paste_buffer {
+    paste_by_name.with(|head| {
+        let mut head = head.borrow_mut();
+        paste_name_tree_find(&mut *head, name)
+    })
+}
+
+unsafe fn paste_name_tree_insert_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+    paste_by_name.with(|head| {
+        let mut head = head.borrow_mut();
+        paste_name_tree_insert(&mut *head, elm)
+    })
+}
+
+unsafe fn paste_name_tree_remove_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+    paste_by_name.with(|head| {
+        let mut head = head.borrow_mut();
+        paste_name_tree_remove(&mut *head, elm)
+    })
+}
+
+unsafe fn paste_time_tree_insert_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+    paste_by_time.with(|head| {
+        let mut head = head.borrow_mut();
+        paste_time_tree_insert(&mut *head, elm)
+    })
+}
+
+unsafe fn paste_time_tree_minmax_local(val: ::core::ffi::c_int) -> *mut paste_buffer {
+    paste_by_time.with(|head| {
+        let mut head = head.borrow_mut();
+        paste_time_tree_minmax(&mut *head, val)
+    })
+}
+
+unsafe fn paste_time_tree_next_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+    paste_by_time.with(|head| {
+        let mut head = head.borrow_mut();
+        paste_time_tree_next(&mut *head, elm)
+    })
+}
+
+unsafe fn paste_time_tree_prev_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+    paste_by_time.with(|head| {
+        let mut head = head.borrow_mut();
+        paste_time_tree_prev(&mut *head, elm)
+    })
+}
+
+unsafe fn paste_time_tree_remove_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+    paste_by_time.with(|head| {
+        let mut head = head.borrow_mut();
+        paste_time_tree_remove(&mut *head, elm)
+    })
+}
+
+fn paste_time_tree_is_empty_local() -> bool {
+    paste_by_time.with(|head| head.borrow().entries.is_empty())
+}
+
+fn paste_automatic_count() -> u_int {
+    paste_num_automatic.with(|count| *count.borrow())
+}
+
+fn paste_automatic_count_increment() {
+    paste_num_automatic.with(|count| {
+        let mut count = count.borrow_mut();
+        *count = (*count).wrapping_add(1);
+    });
+}
+
+fn paste_automatic_count_decrement() {
+    paste_num_automatic.with(|count| {
+        let mut count = count.borrow_mut();
+        *count = (*count).wrapping_sub(1);
+    });
+}
+
+fn paste_next_index_take() -> u_int {
+    paste_next_index.with(|index| {
+        let mut index = index.borrow_mut();
+        let current = *index;
+        *index = (*index).wrapping_add(1);
+        current
+    })
+}
+
+fn paste_next_order_take() -> u_int {
+    paste_next_order.with(|order| {
+        let mut order = order.borrow_mut();
+        let current = *order;
+        *order = (*order).wrapping_add(1);
+        current
+    })
+}
+
 unsafe extern "C" fn paste_fire_event(
     mut name: *const ::core::ffi::c_char,
     mut pbname: *const ::core::ffi::c_char,
@@ -247,19 +347,19 @@ pub unsafe extern "C" fn paste_buffer_data(
 #[no_mangle]
 pub unsafe extern "C" fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buffer {
     if pb.is_null() {
-        return paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
+        return paste_time_tree_minmax_local(RB_NEGINF);
     }
-    return paste_time_tree_next(&raw mut paste_by_time, pb);
+    return paste_time_tree_next_local(pb);
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_is_empty() -> ::core::ffi::c_int {
-    return paste_by_time.entries.is_empty() as ::core::ffi::c_int;
+    return paste_time_tree_is_empty_local() as ::core::ffi::c_int;
 }
 pub(crate) unsafe fn paste_get_top(name: Option<&mut Option<CString>>) -> *mut paste_buffer {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
+    pb = paste_time_tree_minmax_local(RB_NEGINF);
     while !pb.is_null() && (*pb).automatic == 0 {
-        pb = paste_time_tree_next(&raw mut paste_by_time, pb);
+        pb = paste_time_tree_next_local(pb);
     }
     if pb.is_null() {
         return ::core::ptr::null_mut::<paste_buffer>();
@@ -274,7 +374,7 @@ pub unsafe extern "C" fn paste_get_name(mut name: *const ::core::ffi::c_char) ->
     if name.is_null() || *name as ::core::ffi::c_int == '\0' as i32 {
         return ::core::ptr::null_mut::<paste_buffer>();
     }
-    return paste_name_tree_find(&raw mut paste_by_name, name);
+    return paste_name_tree_find_local(name);
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
@@ -282,10 +382,10 @@ pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
         b"paste-buffer-deleted\0" as *const u8 as *const ::core::ffi::c_char,
         ((*pb).name).as_ptr().cast_mut(),
     );
-    paste_name_tree_remove(&raw mut paste_by_name, pb);
-    paste_time_tree_remove(&raw mut paste_by_time, pb);
+    paste_name_tree_remove_local(pb);
+    paste_time_tree_remove_local(pb);
     if (*pb).automatic != 0 {
-        paste_num_automatic = paste_num_automatic.wrapping_sub(1);
+        paste_automatic_count_decrement();
     }
     drop(Box::from_raw(pb));
 }
@@ -323,12 +423,12 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
         global_options,
         b"buffer-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_INF);
+    pb = paste_time_tree_minmax_local(RB_INF);
     while !pb.is_null() && {
-        pb1 = paste_time_tree_prev(&raw mut paste_by_time, pb);
+        pb1 = paste_time_tree_prev_local(pb);
         1 as ::core::ffi::c_int != 0
     } {
-        if paste_num_automatic < limit {
+        if paste_automatic_count() < limit {
             break;
         }
         if (*pb).automatic != 0 {
@@ -339,9 +439,9 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     loop {
         let mut bytes = Vec::with_capacity(prefix_bytes.len() + 10);
         bytes.extend_from_slice(&prefix_bytes);
-        bytes.extend_from_slice(paste_next_index.to_string().as_bytes());
+        let index = paste_next_index_take();
+        bytes.extend_from_slice(index.to_string().as_bytes());
         let name = CString::new(bytes).expect("generated buffer name has no NUL");
-        paste_next_index = paste_next_index.wrapping_add(1);
         if paste_get_name(name.as_ptr()).is_null() {
             pb = paste_new_owned(name);
             break;
@@ -349,13 +449,12 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     }
     paste_store_data(pb, Some(data));
     (*pb).automatic = 1 as ::core::ffi::c_int;
-    paste_num_automatic = paste_num_automatic.wrapping_add(1);
+    paste_automatic_count_increment();
     (*pb).created = time(::core::ptr::null_mut::<time_t>());
-    let fresh0 = paste_next_order;
-    paste_next_order = paste_next_order.wrapping_add(1);
+    let fresh0 = paste_next_order_take();
     (*pb).order = fresh0;
-    paste_name_tree_insert(&raw mut paste_by_name, pb);
-    paste_time_tree_insert(&raw mut paste_by_time, pb);
+    paste_name_tree_insert_local(pb);
+    paste_time_tree_insert_local(pb);
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
         ((*pb).name).as_ptr().cast_mut(),
@@ -403,13 +502,13 @@ pub unsafe fn paste_rename(
     if !pb_new.is_null() {
         paste_free(pb_new);
     }
-    paste_name_tree_remove(&raw mut paste_by_name, pb);
+    paste_name_tree_remove_local(pb);
     let previous = paste_replace_name(pb, name);
     if (*pb).automatic != 0 {
-        paste_num_automatic = paste_num_automatic.wrapping_sub(1);
+        paste_automatic_count_decrement();
     }
     (*pb).automatic = 0 as ::core::ffi::c_int;
-    paste_name_tree_insert(&raw mut paste_by_name, pb);
+    paste_name_tree_insert_local(pb);
     paste_fire_event(
         b"paste-buffer-deleted\0" as *const u8 as *const ::core::ffi::c_char,
         previous.as_ptr(),
@@ -480,16 +579,15 @@ unsafe fn paste_set_inner(
     paste_store_data(pb, Some(data));
     free(c_producer);
     (*pb).automatic = 0 as ::core::ffi::c_int;
-    let fresh1 = paste_next_order;
-    paste_next_order = paste_next_order.wrapping_add(1);
+    let fresh1 = paste_next_order_take();
     (*pb).order = fresh1;
     (*pb).created = time(::core::ptr::null_mut::<time_t>());
     old = paste_get_name(((*pb).name).as_ptr().cast_mut());
     if !old.is_null() {
         paste_free(old);
     }
-    paste_name_tree_insert(&raw mut paste_by_name, pb);
-    paste_time_tree_insert(&raw mut paste_by_time, pb);
+    paste_name_tree_insert_local(pb);
+    paste_time_tree_insert_local(pb);
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
         ((*pb).name).as_ptr().cast_mut(),
@@ -729,7 +827,7 @@ mod tests {
 
             options_set_number(global_options, c"buffer-limit".as_ptr(), 1);
             while paste_is_empty() == 0 {
-                let pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
+                let pb = paste_time_tree_minmax_local(RB_NEGINF);
                 assert!(!pb.is_null());
                 paste_free(pb);
             }
@@ -745,7 +843,7 @@ mod tests {
             assert!(new_name.starts_with(old_name.as_bytes()));
 
             while paste_is_empty() == 0 {
-                let pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
+                let pb = paste_time_tree_minmax_local(RB_NEGINF);
                 assert!(!pb.is_null());
                 paste_free(pb);
             }
