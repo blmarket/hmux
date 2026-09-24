@@ -5,8 +5,8 @@ use crate::src::cmd_find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cm
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags};
 use crate::src::environ::environ_update;
 use crate::src::events::events_fire_client;
-use crate::src::ffi::libc::{free, getuid, strcspn};
-use crate::src::format::format_single;
+use crate::src::ffi::libc::{getuid, strcspn};
+use crate::src::format::format_single_cstring;
 use crate::src::proc::{proc_get_peer_uid, proc_send};
 pub use crate::src::server::clients;
 use crate::src::server_client::{
@@ -14,7 +14,7 @@ use crate::src::server_client::{
     server_client_set_key_table, server_client_set_session,
 };
 pub use crate::src::session::sessions;
-use crate::src::session::{session_set_current, session_set_cwd_from_c_owned};
+use crate::src::session::{session_set_current, session_set_cwd};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::arguments::*;
@@ -141,7 +141,6 @@ pub unsafe extern "C" fn cmd_attach_session(
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut msgtype: msgtype = 0 as msgtype;
     let mut uid: uid_t = 0;
     if sessions.storage.is_none() {
@@ -192,8 +191,7 @@ pub unsafe extern "C" fn cmd_attach_session(
         }
     }
     if !cflag.is_null() {
-        cwd = format_single(item, cflag, c, s, wl, wp);
-        session_set_cwd_from_c_owned(s, cwd);
+        session_set_cwd(s, Some(format_single_cstring(item, cflag, c, s, wl, wp)));
     }
     if !fflag.is_null() {
         server_client_set_flags(c, fflag);

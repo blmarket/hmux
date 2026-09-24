@@ -4,12 +4,12 @@ use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, abs, free, llabs, memcmp, memcpy, memmove, memset, regcomp, regexec,
+    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, memmove, memset, regcomp, regexec,
     strcasecmp, strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring, format_free,
-    format_get_pane, format_grid_hyperlink_cstring, format_single,
+    format_get_pane, format_grid_hyperlink_cstring, format_single_cstring,
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{
@@ -1522,12 +1522,11 @@ unsafe extern "C" fn window_copy_expand_search_string(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut ss: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if ss.is_null() || *ss as ::core::ffi::c_int == '\0' as i32 {
         return 0 as ::core::ffi::c_int;
     }
     if args_has((*cs).args, 'F' as i32 as u_char) != 0 {
-        expanded = format_single(
+        let expanded = format_single_cstring(
             ::core::ptr::null_mut::<cmdq_item>(),
             ss,
             ::core::ptr::null_mut::<client>(),
@@ -1535,12 +1534,10 @@ unsafe extern "C" fn window_copy_expand_search_string(
             ::core::ptr::null_mut::<winlink>(),
             (*wme).wp,
         );
-        if *expanded as ::core::ffi::c_int == '\0' as i32 {
-            free(expanded as *mut ::core::ffi::c_void);
+        if expanded.as_bytes().is_empty() {
             return 0 as ::core::ffi::c_int;
         }
-        (*data).searchstr = Some(CStr::from_ptr(expanded).to_owned());
-        free(expanded.cast());
+        (*data).searchstr = Some(expanded);
     } else {
         (*data).searchstr = Some(CStr::from_ptr(ss).to_owned());
     }
@@ -1639,8 +1636,8 @@ unsafe extern "C" fn window_copy_do_copy_end_of_line(
     let mut ocy: u_int = 0;
     let mut ooy: u_int = 0;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut command: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut prefix: Option<CString> = None;
+    let mut command: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     let mut arg1: *const ::core::ffi::c_char = args_string((*cs).wargs, 1 as u_int);
     let mut set_paste: ::core::ffi::c_int =
@@ -1649,13 +1646,19 @@ unsafe extern "C" fn window_copy_do_copy_end_of_line(
         (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if pipe != 0 {
         if count == 2 as u_int {
-            prefix = format_single(::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp);
+            prefix = Some(format_single_cstring(
+                ::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp,
+            ));
         }
         if !s.is_null() && count > 0 as u_int && *arg0 as ::core::ffi::c_int != '\0' as i32 {
-            command = format_single(::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp);
+            command = Some(format_single_cstring(
+                ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+            ));
         }
     } else if count == 1 as u_int {
-        prefix = format_single(::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp);
+        prefix = Some(format_single_cstring(
+            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+        ));
     }
     ocx = (*data).cx;
     ocy = (*data).cy;
@@ -1668,13 +1671,29 @@ unsafe extern "C" fn window_copy_do_copy_end_of_line(
     window_copy_cursor_end_of_line(wme);
     if !s.is_null() {
         if pipe != 0 {
-            window_copy_copy_pipe(wme, s, prefix, command, set_paste, set_clip);
+            window_copy_copy_pipe(
+                wme,
+                s,
+                prefix
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                command
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                set_paste,
+                set_clip,
+            );
         } else {
-            window_copy_copy_selection(wme, prefix, set_paste, set_clip);
+            window_copy_copy_selection(
+                wme,
+                prefix
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                set_paste,
+                set_clip,
+            );
         }
         if cancel != 0 {
-            free(prefix as *mut ::core::ffi::c_void);
-            free(command as *mut ::core::ffi::c_void);
             return WINDOW_COPY_CMD_CANCEL;
         }
     }
@@ -1682,8 +1701,6 @@ unsafe extern "C" fn window_copy_do_copy_end_of_line(
     (*data).cx = ocx;
     (*data).cy = ocy;
     (*data).oy = ooy;
-    free(prefix as *mut ::core::ffi::c_void);
-    free(command as *mut ::core::ffi::c_void);
     return WINDOW_COPY_CMD_REDRAW;
 }
 unsafe extern "C" fn window_copy_cmd_copy_end_of_line(
@@ -1722,8 +1739,8 @@ unsafe extern "C" fn window_copy_do_copy_line(
     let mut ocx: u_int = 0;
     let mut ocy: u_int = 0;
     let mut ooy: u_int = 0;
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut command: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut prefix: Option<CString> = None;
+    let mut command: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     let mut arg1: *const ::core::ffi::c_char = args_string((*cs).wargs, 1 as u_int);
     let mut set_paste: ::core::ffi::c_int =
@@ -1732,13 +1749,19 @@ unsafe extern "C" fn window_copy_do_copy_line(
         (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if pipe != 0 {
         if count == 2 as u_int {
-            prefix = format_single(::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp);
+            prefix = Some(format_single_cstring(
+                ::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp,
+            ));
         }
         if !s.is_null() && count > 0 as u_int && *arg0 as ::core::ffi::c_int != '\0' as i32 {
-            command = format_single(::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp);
+            command = Some(format_single_cstring(
+                ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+            ));
         }
     } else if count == 1 as u_int {
-        prefix = format_single(::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp);
+        prefix = Some(format_single_cstring(
+            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+        ));
     }
     ocx = (*data).cx;
     ocy = (*data).cy;
@@ -1753,13 +1776,29 @@ unsafe extern "C" fn window_copy_do_copy_line(
     window_copy_cursor_end_of_line(wme);
     if !s.is_null() {
         if pipe != 0 {
-            window_copy_copy_pipe(wme, s, prefix, command, set_paste, set_clip);
+            window_copy_copy_pipe(
+                wme,
+                s,
+                prefix
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                command
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                set_paste,
+                set_clip,
+            );
         } else {
-            window_copy_copy_selection(wme, prefix, set_paste, set_clip);
+            window_copy_copy_selection(
+                wme,
+                prefix
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                set_paste,
+                set_clip,
+            );
         }
         if cancel != 0 {
-            free(prefix as *mut ::core::ffi::c_void);
-            free(command as *mut ::core::ffi::c_void);
             return WINDOW_COPY_CMD_CANCEL;
         }
     }
@@ -1767,8 +1806,6 @@ unsafe extern "C" fn window_copy_do_copy_line(
     (*data).cx = ocx;
     (*data).cy = ocy;
     (*data).oy = ooy;
-    free(prefix as *mut ::core::ffi::c_void);
-    free(command as *mut ::core::ffi::c_void);
     return WINDOW_COPY_CMD_REDRAW;
 }
 unsafe extern "C" fn window_copy_cmd_copy_line(
@@ -1799,19 +1836,27 @@ unsafe extern "C" fn window_copy_cmd_copy_selection_no_clear(
     let mut s: *mut session = (*cs).s;
     let mut wl: *mut winlink = (*cs).wl;
     let mut wp: *mut window_pane = (*wme).wp;
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut prefix: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     let mut set_paste: ::core::ffi::c_int =
         (args_has((*cs).wargs, 'P' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let mut set_clip: ::core::ffi::c_int =
         (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if !arg0.is_null() {
-        prefix = format_single(::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp);
+        prefix = Some(format_single_cstring(
+            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+        ));
     }
     if !s.is_null() {
-        window_copy_copy_selection(wme, prefix, set_paste, set_clip);
+        window_copy_copy_selection(
+            wme,
+            prefix
+                .as_ref()
+                .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            set_paste,
+            set_clip,
+        );
     }
-    free(prefix as *mut ::core::ffi::c_void);
     return WINDOW_COPY_CMD_NOTHING;
 }
 unsafe extern "C" fn window_copy_cmd_copy_selection(
@@ -3073,8 +3118,8 @@ unsafe extern "C" fn window_copy_cmd_copy_pipe_no_clear(
     let mut s: *mut session = (*cs).s;
     let mut wl: *mut winlink = (*cs).wl;
     let mut wp: *mut window_pane = (*wme).wp;
-    let mut command: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut command: Option<CString> = None;
+    let mut prefix: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     let mut arg1: *const ::core::ffi::c_char = args_string((*cs).wargs, 1 as u_int);
     let mut set_paste: ::core::ffi::c_int =
@@ -3082,14 +3127,27 @@ unsafe extern "C" fn window_copy_cmd_copy_pipe_no_clear(
     let mut set_clip: ::core::ffi::c_int =
         (args_has((*cs).wargs, 'C' as i32 as u_char) == 0) as ::core::ffi::c_int;
     if !arg1.is_null() {
-        prefix = format_single(::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp);
+        prefix = Some(format_single_cstring(
+            ::core::ptr::null_mut::<cmdq_item>(), arg1, c, s, wl, wp,
+        ));
     }
     if !s.is_null() && !arg0.is_null() && *arg0 as ::core::ffi::c_int != '\0' as i32 {
-        command = format_single(::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp);
+        command = Some(format_single_cstring(
+            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+        ));
     }
-    window_copy_copy_pipe(wme, s, prefix, command, set_paste, set_clip);
-    free(command as *mut ::core::ffi::c_void);
-    free(prefix as *mut ::core::ffi::c_void);
+    window_copy_copy_pipe(
+        wme,
+        s,
+        prefix
+            .as_ref()
+            .map_or(::core::ptr::null(), |value| value.as_ptr()),
+        command
+            .as_ref()
+            .map_or(::core::ptr::null(), |value| value.as_ptr()),
+        set_paste,
+        set_clip,
+    );
     return WINDOW_COPY_CMD_NOTHING;
 }
 unsafe extern "C" fn window_copy_cmd_copy_pipe(
@@ -3116,13 +3174,20 @@ unsafe extern "C" fn window_copy_cmd_pipe_no_clear(
     let mut s: *mut session = (*cs).s;
     let mut wl: *mut winlink = (*cs).wl;
     let mut wp: *mut window_pane = (*wme).wp;
-    let mut command: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut command: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if !s.is_null() && !arg0.is_null() && *arg0 as ::core::ffi::c_int != '\0' as i32 {
-        command = format_single(::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp);
+        command = Some(format_single_cstring(
+            ::core::ptr::null_mut::<cmdq_item>(), arg0, c, s, wl, wp,
+        ));
     }
-    window_copy_pipe(wme, s, command);
-    free(command as *mut ::core::ffi::c_void);
+    window_copy_pipe(
+        wme,
+        s,
+        command
+            .as_ref()
+            .map_or(::core::ptr::null(), |value| value.as_ptr()),
+    );
     return WINDOW_COPY_CMD_MOVE;
 }
 unsafe extern "C" fn window_copy_cmd_pipe(

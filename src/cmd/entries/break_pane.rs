@@ -7,8 +7,7 @@ use crate::src::cmd_queue::{
 };
 use crate::src::colour::colour_palette_from_option;
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::free;
-use crate::src::format::format_single;
+use crate::src::format::format_single_cstring;
 use crate::src::layout::{
     layout_close_pane, layout_fix_offsets, layout_fix_panes, layout_floating_args_parse,
     layout_init, layout_remove_tile, layout_set_size,
@@ -206,7 +205,6 @@ unsafe extern "C" fn cmd_break_pane_exec(
     let mut w: *mut window = (*wl).window;
     let mut old_w: *mut window = w;
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = (*target).idx;
     let mut before: ::core::ffi::c_int = 0;
     let mut old_idx: ::core::ffi::c_int = (*wl).idx;
@@ -382,9 +380,12 @@ unsafe extern "C" fn cmd_break_pane_exec(
         if template.is_null() {
             template = BREAK_PANE_TEMPLATE.as_ptr();
         }
-        cp = format_single(item, template, tc, dst_s, wl, wp);
-        cmdq_print(item, b"%s\0" as *const u8 as *const ::core::ffi::c_char, cp);
-        free(cp as *mut ::core::ffi::c_void);
+        let cp = format_single_cstring(item, template, tc, dst_s, wl, wp);
+        cmdq_print(
+            item,
+            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+            cp.as_ptr(),
+        );
     }
     return CMD_RETURN_NORMAL;
 }

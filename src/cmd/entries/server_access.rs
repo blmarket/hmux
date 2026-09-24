@@ -1,8 +1,8 @@
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::ffi::libc::{free, getgrnam, getpwnam, getuid};
-use crate::src::format::format_single;
+use crate::src::ffi::libc::{getgrnam, getpwnam, getuid};
+use crate::src::format::format_single_cstring;
 use crate::src::server_acl::{
     server_acl_allow, server_acl_allow_write, server_acl_deny, server_acl_deny_write,
     server_acl_display, server_acl_find,
@@ -126,7 +126,6 @@ unsafe extern "C" fn cmd_server_access_exec(
 ) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut c: *mut client = cmdq_get_target_client(item);
-    let mut arg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
@@ -144,7 +143,7 @@ unsafe extern "C" fn cmd_server_access_exec(
         );
         return CMD_RETURN_ERROR;
     }
-    arg = format_single(
+    let arg = format_single_cstring(
         item,
         args_string(args, 0 as u_int),
         c,
@@ -154,7 +153,7 @@ unsafe extern "C" fn cmd_server_access_exec(
     );
     if args_has(args, 'g' as i32 as u_char) != 0 {
         type_0 = b"group\0" as *const u8 as *const ::core::ffi::c_char;
-        gr = getgrnam(arg);
+        gr = getgrnam(arg.as_ptr());
         if !gr.is_null() {
             id = (*gr).gr_gid as id_t;
             name = (*gr).gr_name;
@@ -162,7 +161,7 @@ unsafe extern "C" fn cmd_server_access_exec(
         }
     } else {
         type_0 = b"user\0" as *const u8 as *const ::core::ffi::c_char;
-        pw = getpwnam(arg);
+        pw = getpwnam(arg.as_ptr());
         if !pw.is_null() {
             id = (*pw).pw_uid as id_t;
             name = (*pw).pw_name;
@@ -173,12 +172,10 @@ unsafe extern "C" fn cmd_server_access_exec(
             item,
             b"unknown %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             type_0,
-            arg,
+            arg.as_ptr(),
         );
-        free(arg as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
-    free(arg as *mut ::core::ffi::c_void);
     if !flags & SERVER_ACL_IS_GROUP != 0 && (id == 0 as id_t || id == getuid()) {
         cmdq_error(
             item,
