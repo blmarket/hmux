@@ -1,8 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
-use crate::src::ffi::libc::free;
-use crate::src::format::{format_create, format_defaults, format_expand, format_free, format_true};
+use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free, format_true};
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
 use crate::src::session::session_is_linked;
@@ -217,7 +216,6 @@ unsafe extern "C" fn cmd_kill_window_filter(
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
@@ -235,9 +233,8 @@ unsafe extern "C" fn cmd_kill_window_filter(
         wl,
         ::core::ptr::null_mut::<window_pane>(),
     );
-    expanded = format_expand(ft, filter);
-    flag = format_true(expanded);
-    free(expanded as *mut ::core::ffi::c_void);
+    let expanded = format_expand_cstring(ft, filter);
+    flag = format_true(expanded.as_ptr());
     format_free(ft);
     return flag;
 }
