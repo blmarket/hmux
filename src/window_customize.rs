@@ -13,7 +13,7 @@ use crate::src::ffi::libc::{
     strlen, strncmp,
 };
 use crate::src::format::{
-    format_add, format_create_from_state, format_expand_cstring, format_free, format_pretty_time,
+    format_add, format_create_from_state, format_expand_cstring, format_free, format_pretty_time_cstring,
     format_true,
 };
 use crate::src::grid::grid_default_cell;
@@ -577,8 +577,6 @@ unsafe extern "C" fn window_customize_write_hook_fire(
     mut sy: u_int,
     mut o: *mut options_entry,
 ) -> ::core::ffi::c_int {
-    let mut fire_time_string: *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut fire_count: u_int = 0;
     let mut fire_time: time_t = 0;
     if !options_get_monitor_data(o).is_null() {
@@ -589,7 +587,7 @@ unsafe extern "C" fn window_customize_write_hook_fire(
         fire_time = options_get_fire_time(o);
     }
     if fire_time != 0 as time_t {
-        fire_time_string = format_pretty_time(fire_time, 0 as ::core::ffi::c_int);
+        let fire_time_string = format_pretty_time_cstring(fire_time, 0);
         if screen_write_text(
             ctx,
             cx,
@@ -600,13 +598,11 @@ unsafe extern "C" fn window_customize_write_hook_fire(
             b"This hook has been fired %u times, last %s.\0" as *const u8
                 as *const ::core::ffi::c_char,
             fire_count,
-            fire_time_string,
+            fire_time_string.as_ptr(),
         ) == 0
         {
-            free(fire_time_string as *mut ::core::ffi::c_void);
             return 0 as ::core::ffi::c_int;
         }
-        free(fire_time_string as *mut ::core::ffi::c_void);
         return 1 as ::core::ffi::c_int;
     }
     return screen_write_text(

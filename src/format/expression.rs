@@ -51,13 +51,6 @@ pub(super) unsafe fn format_quote_style(s: *const ::core::ffi::c_char) -> CStrin
     }
     CString::new(quoted).expect("style-quoted C string contains no NUL")
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_pretty_time(
-    t: time_t,
-    seconds: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    xstrdup(format_pretty_time_cstring(t, seconds).as_ptr())
-}
 pub(crate) unsafe fn format_pretty_time_cstring(
     mut t: time_t,
     mut seconds: ::core::ffi::c_int,
