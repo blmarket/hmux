@@ -53,19 +53,13 @@ fn error_message(error: ArgumentValueError) -> &'static [u8] {
 }
 
 unsafe fn borrowed_string_value(value: &CStr) -> args_value {
-    let mut result = std::mem::zeroed::<args_value>();
-    result.type_0 = ARGS_STRING;
-    result.c2rust_unnamed.string = value.as_ptr().cast_mut();
-    result
+    args_value::borrowed_string(value.as_ptr())
 }
 
 unsafe fn borrowed_commands_value(
     cmdlist: *mut hmux2::src::shared::command::cmd_list,
 ) -> args_value {
-    let mut result = std::mem::zeroed::<args_value>();
-    result.type_0 = ARGS_COMMANDS;
-    result.c2rust_unnamed.cmdlist = cmdlist;
-    result
+    args_value::borrowed_commands(cmdlist)
 }
 
 #[test]
@@ -233,11 +227,11 @@ fn repeated_flags_keep_order_and_numeric_helpers_use_the_last_value() {
         let first = args_first_value(args, b'v');
         let second = args_next_value(first);
         assert_eq!(
-            CStr::from_ptr((*first).c2rust_unnamed.string).to_bytes(),
+            CStr::from_ptr((*first).string_ptr()).to_bytes(),
             b"12"
         );
         assert_eq!(
-            CStr::from_ptr((*second).c2rust_unnamed.string).to_bytes(),
+            CStr::from_ptr((*second).string_ptr()).to_bytes(),
             b"34"
         );
         assert_eq!(args_strtonum_result(args, b'v', 0, 100), Ok(34));
@@ -261,7 +255,7 @@ fn flag_value_collection_keeps_addresses_stable_and_returns_the_last_value() {
 
         assert_eq!(args_first_value(args, b'n'), first);
         assert_eq!(
-            CStr::from_ptr((*first).c2rust_unnamed.string).to_bytes(),
+            CStr::from_ptr((*first).string_ptr()).to_bytes(),
             b"first"
         );
 
@@ -321,7 +315,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
             Err(ArgumentValueError::Missing)
         );
 
-        let rendered = cmd_list_print((*value).c2rust_unnamed.cmdlist, 0);
+        let rendered = cmd_list_print((*value).cmdlist(), 0);
         assert_eq!(rendered.as_bytes(), b"");
         args_free(args);
 
@@ -332,6 +326,40 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         assert_eq!(first, second);
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
         args_free(args);
+    }
+}
+
+#[test]
+fn borrowed_parser_command_retains_only_while_stored() {
+    unsafe extern "C" fn commands(
+        _: *mut args,
+        _: core::ffi::c_uint,
+        _: *mut *mut core::ffi::c_char,
+    ) -> core::ffi::c_uint {
+        ARGS_PARSE_COMMANDS
+    }
+
+    unsafe {
+        let cmdlist = cmd_list_new();
+        let mut values = [
+            args_value::borrowed_string(c"command".as_ptr()),
+            args_value::borrowed_commands(cmdlist),
+        ];
+        let mut spec = args_parse {
+            template: c"".as_ptr(),
+            lower: 1,
+            upper: -1,
+            cb: Some(commands),
+        };
+        let stored = parse_args(&spec, values.as_mut_ptr(), 2).expect("valid command argument");
+        assert_eq!((*cmdlist).references, 2);
+        args_free(stored);
+        assert_eq!((*cmdlist).references, 1);
+
+        spec.lower = 2;
+        assert!(parse_args(&spec, values.as_mut_ptr(), 2).is_err());
+        assert_eq!((*cmdlist).references, 1);
+        cmd_list_free(cmdlist);
     }
 }
 
@@ -368,7 +396,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
             cmd_list_free(cmdlist);
         }
 
-        let first = (&(*args).values)[0].cached as *const core::ffi::c_char;
+        let first = (&(*args).values)[0].cached.as_ref().unwrap().as_ptr();
         assert!(!first.is_null());
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
         assert_eq!(args_string(args, 0), first);
@@ -401,22 +429,22 @@ fn copied_argument_templates_own_intermediate_and_final_strings() {
         let source_named = args_first_value(source, b'n');
         let copied_named = args_first_value(copied, b'n');
         assert_ne!(
-            (*source_named).c2rust_unnamed.string,
-            (*copied_named).c2rust_unnamed.string
+            (*source_named).string_ptr(),
+            (*copied_named).string_ptr()
         );
         args_free(source);
 
         assert_eq!(
-            CStr::from_ptr((*copied_named).c2rust_unnamed.string).to_bytes(),
+            CStr::from_ptr((*copied_named).string_ptr()).to_bytes(),
             b"left-A'B-right-X Y"
         );
         let quoted = args_first_value(copied, b'q');
         assert_eq!(
-            CStr::from_ptr((*quoted).c2rust_unnamed.string).to_bytes(),
+            CStr::from_ptr((*quoted).string_ptr()).to_bytes(),
             b"A'\\''B"
         );
         assert_eq!(
-            CStr::from_ptr((&(*copied).values)[0].c2rust_unnamed.string).to_bytes(),
+            CStr::from_ptr((&(*copied).values)[0].string_ptr()).to_bytes(),
             b"X Y:A'B"
         );
         args_free(copied);

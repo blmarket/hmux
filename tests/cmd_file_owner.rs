@@ -2,13 +2,11 @@ use std::ffi::CStr;
 use std::ptr;
 
 use hmux2::src::cmd::{cmd_copy, cmd_free, cmd_parse};
-use hmux2::src::shared::arguments::{args_value, ARGS_STRING};
+use hmux2::src::shared::arguments::args_value;
 
 unsafe fn parse_display_message(file: *const std::ffi::c_char) -> *mut hmux2::src::cmd::cmd {
     let command_name = c"display-message";
-    let mut value: args_value = std::mem::zeroed();
-    value.type_0 = ARGS_STRING;
-    value.c2rust_unnamed.string = command_name.as_ptr().cast_mut();
+    let mut value = args_value::borrowed_string(command_name.as_ptr());
     cmd_parse(&mut value, 1, file, 37, 0).expect("command parse reported an error")
 }
 

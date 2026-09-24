@@ -31,8 +31,7 @@ pub use crate::src::shared::abi::{__gid_t, __int32_t, __uid_t, uid_t};
 pub use crate::src::shared::account::passwd;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_entry, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed,
-    args_value_entry,
+    args, args_entry, args_parse, args_parse_cb, args_value,     args_value_entry,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -588,7 +587,7 @@ pub unsafe extern "C" fn cmdq_insert_hook(
                 ep,
                 &raw mut tmp as *mut ::core::ffi::c_char,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*av).c2rust_unnamed.string,
+                (*av).string_ptr(),
             );
             i = i.wrapping_add(1);
             av = args_next_value(av);

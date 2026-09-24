@@ -9,7 +9,7 @@ use crate::src::key_string::key_string_parse_cstr;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_parse, args_parse_cb, args_value_c2rust_unnamed, args_value_entry,
+    args, args_parse, args_parse_cb, args_value_entry,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -161,7 +161,7 @@ unsafe extern "C" fn cmd_bind_key_exec(
     }
     value = args_value(args, 1 as u_int);
     if count == 2 as u_int
-        && (*value).type_0 as ::core::ffi::c_uint
+        && (*value).type_0() as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         key_bindings_add(
@@ -169,9 +169,9 @@ unsafe extern "C" fn cmd_bind_key_exec(
             key,
             note,
             repeat,
-            (*value).c2rust_unnamed.cmdlist as *mut cmd_list,
+            (*value).cmdlist(),
         );
-        (*(*value).c2rust_unnamed.cmdlist).references += 1;
+        (*(*value).cmdlist()).references += 1;
         return CMD_RETURN_NORMAL;
     }
     if count == 2 as u_int {

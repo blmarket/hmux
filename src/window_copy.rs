@@ -46,7 +46,7 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__int32_t, ssize_t};
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
+    args, args_parse_cb, args_value, args_value_entry,
 };
 pub use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::client::*;

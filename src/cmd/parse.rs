@@ -18,7 +18,7 @@ pub use crate::src::shared::abi::{__gid_t, __off64_t, __off_t, __uid_t};
 pub use crate::src::shared::account::passwd;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_value, args_value_c2rust_unnamed, args_value_entry,
+    args, args_value, args_value_entry,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -597,17 +597,16 @@ unsafe extern "C" fn cmd_parse_build_command(
     }
     while argument_index < argument_count {
         arg = cmd_parse_argument_at(&raw mut (*cmd).arguments, argument_index);
-        values.push(::core::mem::zeroed::<args_value>());
+        values.push(args_value::empty());
         let value = values.as_mut_ptr().add(count as usize);
         match (*arg).type_0 as ::core::ffi::c_uint {
             0 => {
-                (*value).type_0 = ARGS_STRING;
-                (*value).c2rust_unnamed.string = (*arg)
+                *value = args_value::borrowed_string((*arg)
                     .string
                     .as_ref()
                     .expect("parser string argument owns its text")
                     .as_ptr()
-                    .cast_mut();
+                    .cast_mut());
             }
             1 => {
                 cmd_parse_build_commands((*arg).commands as *mut cmd_parse_commands, pi, pr);
@@ -617,16 +616,11 @@ unsafe extern "C" fn cmd_parse_build_command(
                     current_block = 16207960823932980356;
                     break;
                 }
-                (*value).type_0 = ARGS_COMMANDS;
-                let ref mut fresh1 = (*value).c2rust_unnamed.cmdlist;
-                *fresh1 = (*pr).cmdlist as *mut cmd_list;
+                *value = args_value::commands((*pr).cmdlist as *mut cmd_list);
             }
             2 => {
-                (*value).type_0 = ARGS_COMMANDS;
-                let ref mut fresh2 = (*value).c2rust_unnamed.cmdlist;
-                *fresh2 = (*arg).cmdlist as *mut cmd_list;
-                let ref mut fresh3 = (*(*value).c2rust_unnamed.cmdlist).references;
-                *fresh3 += 1;
+                (*(*arg).cmdlist).references += 1;
+                *value = args_value::commands((*arg).cmdlist as *mut cmd_list);
             }
             _ => {}
         }
@@ -666,14 +660,6 @@ unsafe extern "C" fn cmd_parse_build_command(
             }
         }
         _ => {}
-    }
-    idx = 0 as u_int;
-    while idx < count {
-        let value = values.as_mut_ptr().add(idx as usize);
-        if (*value).type_0 as ::core::ffi::c_uint == ARGS_COMMANDS {
-            cmd_list_free((*value).c2rust_unnamed.cmdlist);
-        }
-        idx = idx.wrapping_add(1);
     }
 }
 unsafe extern "C" fn cmd_parse_build_commands(
@@ -899,17 +885,7 @@ pub unsafe fn cmd_parse_from_argv(
 ) -> cmd_parse_result {
     let mut values: Vec<args_value> = argv
         .iter()
-        .map(|string| args_value {
-            type_0: ARGS_STRING,
-            c2rust_unnamed: args_value_c2rust_unnamed {
-                string: string.as_ptr().cast_mut(),
-            },
-            cached: ::core::ptr::null_mut(),
-            entry: args_value_entry {
-                owner: ::core::ptr::null_mut(),
-                index: 0,
-            },
-        })
+        .map(|string| args_value::borrowed_string(string.as_ptr()))
         .collect();
     cmd_parse_from_arguments(
         values.as_mut_ptr(),
@@ -959,10 +935,10 @@ pub unsafe fn cmd_parse_from_arguments(
     i = 0 as u_int;
     while i < count {
         end = 0 as ::core::ffi::c_int;
-        if (*values.offset(i as isize)).type_0 as ::core::ffi::c_uint
+        if (*values.offset(i as isize)).type_0() as ::core::ffi::c_uint
             == ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            let mut bytes = CStr::from_ptr((*values.add(i as usize)).c2rust_unnamed.string)
+            let mut bytes = CStr::from_ptr((*values.add(i as usize)).string_ptr())
                 .to_bytes()
                 .to_vec();
             size = bytes.len() as size_t;
@@ -981,12 +957,12 @@ pub unsafe fn cmd_parse_from_arguments(
                 (*arg).string = Some(CString::new(bytes).expect("argument contains no NUL"));
                 cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
             }
-        } else if (*values.offset(i as isize)).type_0 as ::core::ffi::c_uint
+        } else if (*values.offset(i as isize)).type_0() as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             arg = cmd_parse_new_argument();
             (*arg).type_0 = CMD_PARSE_PARSED_COMMANDS;
-            (*arg).cmdlist = (*values.offset(i as isize)).c2rust_unnamed.cmdlist as *mut cmd_list;
+            (*arg).cmdlist = (*values.offset(i as isize)).cmdlist();
             (*(*arg).cmdlist).references += 1;
             cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
         } else {

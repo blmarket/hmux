@@ -87,7 +87,7 @@ use crate::src::session::session_find_by_id;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
+    args, args_parse_cb, args_value, args_value_entry,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -485,15 +485,13 @@ pub unsafe fn cmd_parse(
     let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut args: *mut args = ::core::ptr::null_mut::<args>();
     if count == 0 as u_int
-        || (*values.offset(0 as ::core::ffi::c_int as isize)).type_0 as ::core::ffi::c_uint
+        || (*values.offset(0 as ::core::ffi::c_int as isize)).type_0() as ::core::ffi::c_uint
             != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return Err(CString::new("no command").unwrap());
     }
     entry = cmd_find(
-        (*values.offset(0 as ::core::ffi::c_int as isize))
-            .c2rust_unnamed
-            .string,
+        (*values.offset(0 as ::core::ffi::c_int as isize)).string_ptr(),
     )?;
     args = match args_parse(&raw const (*entry).args, values, count) {
         Ok(args) => args,

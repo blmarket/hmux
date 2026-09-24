@@ -17,7 +17,7 @@ use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
+    args, args_parse, args_parse_cb, args_value, args_value_entry,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -387,7 +387,7 @@ unsafe extern "C" fn cmd_refresh_client_exec(
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
             av = args_first_value(args, 'A' as i32 as u_char);
             while !av.is_null() {
-                cmd_refresh_client_update_offset(tc, (*av).c2rust_unnamed.string);
+                cmd_refresh_client_update_offset(tc, (*av).string_ptr());
                 av = args_next_value(av);
             }
             return CMD_RETURN_NORMAL;
@@ -396,7 +396,7 @@ unsafe extern "C" fn cmd_refresh_client_exec(
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
             av = args_first_value(args, 'B' as i32 as u_char);
             while !av.is_null() {
-                cmd_refresh_client_update_subscription(tc, (*av).c2rust_unnamed.string);
+                cmd_refresh_client_update_subscription(tc, (*av).string_ptr());
                 av = args_next_value(av);
             }
             return CMD_RETURN_NORMAL;

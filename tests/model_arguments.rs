@@ -1167,162 +1167,82 @@ fn original_copies_match() {
     record!(
         "src/arguments.rs::args_value",
         hmux2::src::arguments::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/client.rs::args_value",
         hmux2::src::client::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd.rs::args_value",
         hmux2::src::cmd::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_bind_key.rs::args_value",
         hmux2::src::cmd_bind_key::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_display_menu.rs::args_value",
         hmux2::src::cmd_display_menu::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_find_window.rs::args_value",
         hmux2::src::cmd_find_window::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_new_session.rs::args_value",
         hmux2::src::cmd_new_session::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_new_window.rs::args_value",
         hmux2::src::cmd_new_window::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_parse.rs::args_value",
         hmux2::src::cmd_parse::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_queue.rs::args_value",
         hmux2::src::cmd_queue::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_refresh_client.rs::args_value",
         hmux2::src::cmd_refresh_client::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_respawn_pane.rs::args_value",
         hmux2::src::cmd_respawn_pane::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_respawn_window.rs::args_value",
         hmux2::src::cmd_respawn_window::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/cmd_split_window.rs::args_value",
         hmux2::src::cmd_split_window::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/server_client.rs::args_value",
         hmux2::src::server_client::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
+        [payload, cached, entry]
     );
     record!(
         "src/window_copy.rs::args_value",
         hmux2::src::window_copy::args_value,
-        [type_0, c2rust_unnamed, cached, entry]
-    );
-    record!(
-        "src/arguments.rs::C2RustUnnamed_12",
-        hmux2::src::arguments::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/client.rs::C2RustUnnamed_49",
-        hmux2::src::client::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd.rs::C2RustUnnamed_37",
-        hmux2::src::cmd::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_bind_key.rs::C2RustUnnamed_37",
-        hmux2::src::cmd_bind_key::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_display_menu.rs::C2RustUnnamed_36",
-        hmux2::src::cmd_display_menu::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_find_window.rs::C2RustUnnamed_36",
-        hmux2::src::cmd_find_window::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_new_session.rs::C2RustUnnamed_38",
-        hmux2::src::cmd_new_session::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_new_window.rs::C2RustUnnamed_36",
-        hmux2::src::cmd_new_window::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_parse.rs::C2RustUnnamed_38",
-        hmux2::src::cmd_parse::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_queue.rs::C2RustUnnamed_38",
-        hmux2::src::cmd_queue::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_refresh_client.rs::C2RustUnnamed_36",
-        hmux2::src::cmd_refresh_client::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_respawn_pane.rs::C2RustUnnamed_36",
-        hmux2::src::cmd_respawn_pane::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_respawn_window.rs::C2RustUnnamed_36",
-        hmux2::src::cmd_respawn_window::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/cmd_split_window.rs::C2RustUnnamed_36",
-        hmux2::src::cmd_split_window::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/server_client.rs::C2RustUnnamed_39",
-        hmux2::src::server_client::args_value_c2rust_unnamed,
-        [string, cmdlist]
-    );
-    record!(
-        "src/window_copy.rs::C2RustUnnamed_39",
-        hmux2::src::window_copy::args_value_c2rust_unnamed,
-        [string, cmdlist]
+        [payload, cached, entry]
     );
     record!(
         "src/arguments.rs::C2RustUnnamed_11",

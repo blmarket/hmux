@@ -30,7 +30,7 @@ use crate::src::session::{
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
+    args, args_parse, args_parse_cb, args_value, args_value_entry,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -625,7 +625,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                         while !av.is_null() {
                                                             environ_put(
                                                                 env,
-                                                                (*av).c2rust_unnamed.string,
+                                                                (*av).string_ptr(),
                                                                 0 as ::core::ffi::c_int,
                                                             );
                                                             av = args_next_value(av);

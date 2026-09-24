@@ -9,12 +9,10 @@ use hmux2::src::cmd::{
     cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print, cmd_parse,
     cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
-use hmux2::src::shared::arguments::{args_value, ARGS_STRING};
+use hmux2::src::shared::arguments::args_value;
 
 unsafe fn display_message_command() -> *mut cmd {
-    let mut value: args_value = std::mem::zeroed();
-    value.type_0 = ARGS_STRING;
-    value.c2rust_unnamed.string = c"display-message".as_ptr().cast_mut();
+    let mut value = args_value::borrowed_string(c"display-message".as_ptr());
     cmd_parse(&mut value, 1, ptr::null(), 0, 0).expect("command parse reported an error")
 }
 

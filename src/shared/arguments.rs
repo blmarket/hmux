@@ -3,6 +3,7 @@
 use super::abi::{u_char, u_int};
 use super::command::{cmd, cmd_list, cmd_parse_input};
 use std::collections::BTreeMap;
+use std::ffi::CString;
 pub type args_type = ::core::ffi::c_uint;
 pub const ARGS_COMMANDS: args_type = 2;
 pub const ARGS_STRING: args_type = 1;
@@ -37,10 +38,6 @@ pub struct args {
     pub tree: args_tree,
     pub count: u_int,
     pub values: Vec<args_value>,
-    // Positional strings and rendered command-list values remain owned by args;
-    // the C-layout records above borrow pointers into this side storage.
-    pub(crate) positional_strings: Vec<Option<std::ffi::CString>>,
-    pub(crate) positional_caches: Vec<Option<std::ffi::CString>>,
 }
 
 impl args {
@@ -49,20 +46,90 @@ impl args {
             tree: unsafe { ::core::mem::zeroed() },
             count: unsafe { ::core::mem::zeroed() },
             values: Vec::new(),
-            positional_strings: Vec::new(),
-            positional_caches: Default::default(),
         }
     }
 }
 
-#[repr(C)]
-/// ABI-sized value record. Rust-owned args collections keep any string payload
-/// in adjacent owner storage and expose its pointer through this record.
+pub struct ArgsCommand(pub *mut cmd_list);
+
+impl Drop for ArgsCommand {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { crate::src::cmd::cmd_list_free(self.0) };
+        }
+    }
+}
+
+pub enum ArgsPayload {
+    None,
+    String(CString),
+    Command(ArgsCommand),
+    BorrowedString(*const ::core::ffi::c_char),
+    BorrowedCommand(*mut cmd_list),
+}
+
+/// Stored values own their payload; parser inputs may use borrowed variants.
 pub struct args_value {
-    pub type_0: args_type,
-    pub c2rust_unnamed: args_value_c2rust_unnamed,
-    pub cached: *mut ::core::ffi::c_char,
+    pub payload: ArgsPayload,
+    pub cached: Option<CString>,
     pub entry: args_value_entry,
+}
+
+impl args_value {
+    pub fn new(payload: ArgsPayload) -> Self {
+        Self {
+            payload,
+            cached: None,
+            entry: args_value_entry { owner: ::core::ptr::null_mut(), index: 0 },
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self::new(ArgsPayload::None)
+    }
+
+    pub fn string(value: CString) -> Self {
+        Self::new(ArgsPayload::String(value))
+    }
+
+    /// Takes over one existing command-list reference.
+    pub unsafe fn commands(value: *mut cmd_list) -> Self {
+        Self::new(ArgsPayload::Command(ArgsCommand(value)))
+    }
+
+    /// The pointer must remain valid until this temporary parser value is dropped.
+    pub unsafe fn borrowed_string(value: *const ::core::ffi::c_char) -> Self {
+        Self::new(ArgsPayload::BorrowedString(value))
+    }
+
+    /// The command list must remain valid until this temporary parser value is dropped.
+    pub unsafe fn borrowed_commands(value: *mut cmd_list) -> Self {
+        Self::new(ArgsPayload::BorrowedCommand(value))
+    }
+
+    pub fn type_0(&self) -> args_type {
+        match self.payload {
+            ArgsPayload::None => ARGS_NONE,
+            ArgsPayload::String(_) | ArgsPayload::BorrowedString(_) => ARGS_STRING,
+            ArgsPayload::Command(_) | ArgsPayload::BorrowedCommand(_) => ARGS_COMMANDS,
+        }
+    }
+
+    pub fn string_ptr(&self) -> *const ::core::ffi::c_char {
+        match &self.payload {
+            ArgsPayload::String(value) => value.as_ptr(),
+            ArgsPayload::BorrowedString(value) => *value,
+            _ => ::core::ptr::null(),
+        }
+    }
+
+    pub fn cmdlist(&self) -> *mut cmd_list {
+        match &self.payload {
+            ArgsPayload::Command(value) => value.0,
+            ArgsPayload::BorrowedCommand(value) => *value,
+            _ => ::core::ptr::null_mut(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -72,13 +139,6 @@ pub struct args_value_entry {
     pub owner: *mut args_values_storage,
     /// Stable position in the owner's append-only value collection.
     pub index: usize,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union args_value_c2rust_unnamed {
-    pub string: *mut ::core::ffi::c_char,
-    pub cmdlist: *mut cmd_list,
 }
 
 #[derive(Copy, Clone)]
@@ -123,11 +183,10 @@ pub struct args_values {
     pub storage: *mut args_values_storage,
 }
 
-/// Owns stable flag-value records and their Rust string payloads for one args_entry.
+/// Owns stable flag-value records for one args_entry.
 #[derive(Default)]
 pub struct args_values_storage {
     pub(crate) values: Vec<Box<args_value>>,
-    pub(crate) strings: Vec<Option<std::ffi::CString>>,
 }
 
 pub type args_parse_cb = Option<

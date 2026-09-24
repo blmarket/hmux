@@ -28,7 +28,7 @@ pub use crate::src::shared::abi::{
 };
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_value, args_value_c2rust_unnamed, args_value_entry,
+    args, args_value, args_value_entry,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
