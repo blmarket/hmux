@@ -1,7 +1,7 @@
 use crate::src::cmd_queue::{cmdq_append, cmdq_get_callback1};
-use crate::src::ffi::libc::{free, memcpy, memset, strcmp, strlen};
+use crate::src::ffi::libc::{memcpy, memset, strlen};
 use crate::src::format::{
-    format_add, format_create, format_create_defaults, format_defaults, format_expand_time,
+    format_add, format_create, format_create_defaults, format_defaults, format_expand_time_cstring,
     format_free,
 };
 use crate::src::format_draw::format_draw;
@@ -380,7 +380,6 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     log_debug(
         b"%s enter\0" as *const u8 as *const ::core::ffi::c_char,
         b"status_redraw\0" as *const u8 as *const ::core::ffi::c_char,
@@ -467,13 +466,8 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
             } else {
                 sle = (&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)
                     as *mut style_line_entry;
-                expanded = format_expand_time(ft, (*ov).string);
-                if force == 0
-                    && !(*sle).expanded.is_null()
-                    && strcmp(expanded, (*sle).expanded) == 0 as ::core::ffi::c_int
-                {
-                    free(expanded as *mut ::core::ffi::c_void);
-                } else {
+                let expanded = format_expand_time_cstring(ft, (*ov).string);
+                if force != 0 || (*c).status_expanded[i as usize].as_ref() != Some(&expanded) {
                     changed = 1 as ::core::ffi::c_int;
                     n = 0 as u_int;
                     while n < width {
@@ -491,13 +485,11 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
                         &raw mut ctx,
                         &raw mut gc,
                         width,
-                        expanded,
+                        expanded.as_ptr(),
                         &raw mut (*sle).ranges,
                         0 as ::core::ffi::c_int,
                     );
-                    let owned = CStr::from_ptr(expanded).to_owned();
-                    free(expanded.cast());
-                    server_client_set_status_expanded(c, i as usize, Some(owned));
+                    server_client_set_status_expanded(c, i as usize, Some(expanded));
                 }
             }
             i = i.wrapping_add(1);
@@ -720,7 +712,6 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut msgfmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*c).tty.sx == 0 as u_int || (*c).tty.sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -780,7 +771,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
         (*s).options,
         b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    expanded = format_expand_time(ft, msgfmt);
+    let expanded = format_expand_time_cstring(ft, msgfmt);
     format_free(ft);
     screen_write_start(&raw mut ctx, (*sl).active);
     screen_write_fast_copy(
@@ -801,12 +792,11 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
         &raw mut ctx,
         &raw mut gc,
         aw,
-        expanded,
+        expanded.as_ptr(),
         ::core::ptr::null_mut::<style_ranges>(),
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&raw mut ctx);
-    free(expanded as *mut ::core::ffi::c_void);
     if grid_compare((*(*sl).active).grid, old_screen.grid) == 0 as ::core::ffi::c_int {
         screen_free(&raw mut old_screen);
         return 0 as ::core::ffi::c_int;
