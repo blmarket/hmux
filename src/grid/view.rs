@@ -1,7 +1,7 @@
 use crate::src::grid::{
     grid_clear, grid_collect_history, grid_get_cell, grid_get_line, grid_move_cells,
     grid_move_lines, grid_scroll_history, grid_scroll_history_region, grid_set_cell,
-    grid_set_cells, grid_set_padding, grid_string_cells, grid_string_cells_bytes,
+    grid_set_cells, grid_set_padding, grid_string_cells_bytes,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
@@ -283,26 +283,6 @@ pub unsafe extern "C" fn grid_view_delete_cells(
     );
     grid_clear(gd, sx.wrapping_sub(nx), py, nx, 1 as u_int, bg);
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_view_string_cells(
-    mut gd: *mut grid,
-    mut px: u_int,
-    mut py: u_int,
-    mut nx: u_int,
-) -> *mut ::core::ffi::c_char {
-    px = px;
-    py = (*gd).hsize.wrapping_add(py);
-    return grid_string_cells(
-        gd,
-        px,
-        py,
-        nx,
-        ::core::ptr::null_mut::<*mut grid_cell>(),
-        0 as ::core::ffi::c_int,
-        ::core::ptr::null_mut::<screen>(),
-    );
-}
-
 pub unsafe fn grid_view_string_cells_bytes(
     gd: *mut grid,
     px: u_int,

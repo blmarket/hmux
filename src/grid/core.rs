@@ -14,7 +14,7 @@ use crate::src::tmux::start_time;
 use crate::src::utf8::{
     utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
 };
-use crate::src::xmalloc::{xmalloc, xsnprintf};
+use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
@@ -1673,23 +1673,6 @@ unsafe extern "C" fn grid_string_cells_code(
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn grid_string_cells(
-    gd: *mut grid,
-    px: u_int,
-    py: u_int,
-    nx: u_int,
-    lastgc: *mut *mut grid_cell,
-    flags: ::core::ffi::c_int,
-    s: *mut screen,
-) -> *mut ::core::ffi::c_char {
-    let bytes = grid_string_cells_bytes(gd, px, py, nx, lastgc, flags, s);
-    let buf = xmalloc(bytes.len() + 1) as *mut ::core::ffi::c_char;
-    memcpy(buf.cast(), bytes.as_ptr().cast(), bytes.len());
-    *buf.add(bytes.len()) = 0;
-    buf
-}
-
 pub unsafe fn grid_string_cells_bytes(
     gd: *mut grid,
     px: u_int,
