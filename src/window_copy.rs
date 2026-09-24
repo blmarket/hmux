@@ -8,7 +8,7 @@ use crate::src::ffi::libc::{
     strcasecmp, strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::format::{
-    format_add, format_add_owned_cb, format_create_defaults, format_expand, format_free,
+    format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring, format_free,
     format_get_pane, format_grid_hyperlink_cstring, format_single,
 };
 use crate::src::format_draw::format_draw;
@@ -7551,7 +7551,6 @@ unsafe extern "C" fn window_copy_write_line(
     let mut line_number: u_int = 0;
     let mut content_sx: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut current: ::core::ffi::c_int = 0;
     let mut mode: ::core::ffi::c_int = 0;
@@ -7684,8 +7683,8 @@ unsafe extern "C" fn window_copy_write_line(
             b"copy-mode-position-format\0" as *const u8 as *const ::core::ffi::c_char,
         );
         if *value as ::core::ffi::c_int != '\0' as i32 {
-            expanded = format_expand(ft, value);
-            if *expanded as ::core::ffi::c_int != '\0' as i32 {
+            let expanded = format_expand_cstring(ft, value);
+            if !expanded.is_empty() {
                 screen_write_cursormove(
                     ctx,
                     width as ::core::ffi::c_int,
@@ -7696,12 +7695,11 @@ unsafe extern "C" fn window_copy_write_line(
                     ctx,
                     &raw mut gc,
                     content_sx,
-                    expanded,
+                    expanded.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
                     0 as ::core::ffi::c_int,
                 );
             }
-            free(expanded as *mut ::core::ffi::c_void);
         }
     }
     if py == (*data).cy && (*data).cx >= content_sx {

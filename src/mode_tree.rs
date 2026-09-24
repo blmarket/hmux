@@ -8,7 +8,7 @@ use crate::src::cmd_queue::{
 use crate::src::ffi::libc::{
     __ctype_tolower_loc, __ctype_toupper_loc, free, memcpy, memset, strcasestr, strlen, strstr,
 };
-use crate::src::format::{format_add, format_create_defaults, format_expand, format_free};
+use crate::src::format::{format_add, format_create_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
@@ -1133,7 +1133,6 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     let mut text_width: u_int = 0;
     let mut prefix_width: u_int = 0;
     let mut left: u_int = 0;
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: size_t = 0;
@@ -1343,12 +1342,12 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 b"%d\0" as *const u8 as *const ::core::ffi::c_char,
                 (*line).flat,
             );
-            prefix = format_expand(
+            let prefix = format_expand_cstring(
                 ft,
                 b"#[fg=themelightgrey]#[bg=default]#[noacs]#{p/#{mode_tree_key_width}:#{?#{!=:#{mode_tree_key},},(#{mode_tree_key}),}}#{R:#{?mode_tree_parent_last,    ,#[acs]x#[fg=themelightgrey]#[bg=default]#[noacs]   },#{mode_tree_repeat}}#{?mode_tree_branch,#[acs]#{?mode_tree_last,mq,tq}+#[fg=themelightgrey]#[bg=default]#[noacs] ,}#{?mode_tree_has_children,#{?mode_tree_expanded,#[fg=themered]-#[fg=themelightgrey]#[bg=default]#[noacs] ,#[fg=themegreen]+#[fg=themelightgrey]#[bg=default]#[noacs] },#{?mode_tree_flat,,  }}\0"
                     as *const u8 as *const ::core::ffi::c_char,
             );
-            prefix_width = format_width(prefix);
+            prefix_width = format_width(prefix.as_ptr());
             if prefix_width > w {
                 prefix_width = w;
             }
@@ -1403,7 +1402,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     &raw mut ctx,
                     &raw const grid_default_cell,
                     prefix_width,
-                    prefix,
+                    prefix.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
                     0 as ::core::ffi::c_int,
                 );
@@ -1447,7 +1446,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     &raw mut ctx,
                     &raw mut gc,
                     prefix_width,
-                    prefix,
+                    prefix.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
                     1 as ::core::ffi::c_int,
                 );
@@ -1487,7 +1486,6 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 }
             }
             drop(text);
-            free(prefix as *mut ::core::ffi::c_void);
             if (*mti).tagged != 0 {
                 gc.fg = dfg;
                 gc0.fg = dfg0;
@@ -2157,9 +2155,8 @@ unsafe extern "C" fn mode_tree_draw_help_line(
     mut y: u_int,
     mut w: u_int,
 ) {
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let replaced = cmd_template_replace_cstring(line, item, 1 as ::core::ffi::c_int);
-    expanded = format_expand(ft, replaced.as_ptr());
+    let expanded = format_expand_cstring(ft, replaced.as_ptr());
     drop(replaced);
     screen_write_cursormove(
         ctx,
@@ -2178,11 +2175,10 @@ unsafe extern "C" fn mode_tree_draw_help_line(
         ctx,
         gc,
         w,
-        expanded,
+        expanded.as_ptr(),
         ::core::ptr::null_mut::<style_ranges>(),
         0 as ::core::ffi::c_int,
     );
-    free(expanded as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn mode_tree_draw_help(
     mut mtd: *mut mode_tree_data,
