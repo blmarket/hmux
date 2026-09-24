@@ -85,7 +85,6 @@ pub mod compat {
     pub mod imsg;
     pub mod imsg_buffer;
     pub mod ntohll;
-    pub mod recallocarray;
     pub mod setproctitle;
     pub mod stdio;
     pub mod strtonum;

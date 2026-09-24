@@ -20,7 +20,6 @@ use crate::src::window::{
     winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
     winlinks_next,
 };
-use crate::src::xmalloc::xreallocarray;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;

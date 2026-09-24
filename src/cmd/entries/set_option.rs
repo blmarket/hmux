@@ -85,7 +85,6 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -65,7 +65,6 @@ use crate::src::style::{
 use crate::src::tmux::{clean_name_cstring, global_options, global_w_options, setblocking};
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
-use crate::src::xmalloc::{xmalloc, xreallocarray};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::abi::ssize_t;

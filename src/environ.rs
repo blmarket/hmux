@@ -5,7 +5,7 @@ use crate::src::options::{
     options_get_string,
 };
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
-use crate::src::xmalloc::{xcalloc, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xcalloc, xvasprintf_cstring};
 use std::ffi::{CStr, CString, NulError};
 use std::marker::PhantomData;
 use std::ptr::NonNull;

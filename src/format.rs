@@ -81,7 +81,7 @@ use crate::src::window_copy::{
     window_copy_get_hyperlink_cstring, window_copy_get_line_cstring, window_copy_get_word_cstring,
 };
 use crate::src::window_tree::window_tree_mode;
-use crate::src::xmalloc::{xsnprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::abi::NULL_0;
@@ -794,3 +794,48 @@ pub const FORMAT_TYPE_UNKNOWN: format_type = 0;
 pub const FORMAT_TABLE_TIME: format_table_type = 1;
 
 pub const FORMAT_TABLE_STRING: format_table_type = 0;
+
+#[cfg(test)]
+mod format_entry_expansion_tests {
+    use super::*;
+    use crate::src::ffi::libc::strdup;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static CALLBACK_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn callback(_ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+        CALLBACK_CALLS.fetch_add(1, Ordering::SeqCst);
+        let value = strdup(b"cached\xff\0".as_ptr() as *const ::core::ffi::c_char);
+        assert!(!value.is_null());
+        value as *mut ::core::ffi::c_void
+    }
+
+    #[test]
+    fn expansion_caches_callback_then_replaces_the_same_entry() {
+        unsafe {
+            CALLBACK_CALLS.store(0, Ordering::SeqCst);
+            let ft = format_create(::core::ptr::null_mut(), ::core::ptr::null_mut(), 0, 0);
+            let key = b"zz_test_format_value\0".as_ptr() as *const ::core::ffi::c_char;
+            let expression = b"#{zz_test_format_value}\0".as_ptr() as *const ::core::ffi::c_char;
+            format_add_cb(ft, key, Some(callback));
+
+            for _ in 0..2 {
+                let expanded = format_expand_cstring(ft, expression);
+                assert_eq!(expanded.as_bytes(), b"cached\xff");
+            }
+            assert_eq!(CALLBACK_CALLS.load(Ordering::SeqCst), 1);
+
+            format_add(
+                ft,
+                key,
+                b"%s\0".as_ptr() as *const ::core::ffi::c_char,
+                b"replacement\0".as_ptr() as *const ::core::ffi::c_char,
+            );
+            let expanded = format_expand_cstring(ft, expression);
+            assert_eq!(expanded.as_bytes(), b"replacement");
+            assert_eq!(CALLBACK_CALLS.load(Ordering::SeqCst), 1);
+
+            format_free(ft);
+        }
+    }
+}

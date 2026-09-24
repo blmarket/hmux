@@ -62,7 +62,7 @@ use crate::src::window::{
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
     window_update_activity,
 };
-use crate::src::xmalloc::{xmalloc, xsnprintf, xvasprintf_cstring};
+use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 

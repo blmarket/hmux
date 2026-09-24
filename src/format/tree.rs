@@ -396,10 +396,13 @@ pub(crate) unsafe fn format_add_owned_cb(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::ffi::libc::strdup;
     use std::ffi::{CStr, CString};
 
     unsafe extern "C" fn cached_test_value(_ft: *mut format_tree) -> *mut ::core::ffi::c_void {
-        xstrdup(b"cached\xff\0".as_ptr() as *const ::core::ffi::c_char) as *mut ::core::ffi::c_void
+        let value = strdup(b"cached\xff\0".as_ptr() as *const ::core::ffi::c_char);
+        assert!(!value.is_null());
+        value as *mut ::core::ffi::c_void
     }
 
     #[test]

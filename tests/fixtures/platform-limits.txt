@@ -21,7 +21,6 @@ src/options_table.rs::SHRT_MAX 32767 4 4
 src/cmd.rs::SIZE_MAX 18446744073709551615 8 8
 src/cmd_parse.rs::SIZE_MAX 18446744073709551615 8 8
 src/compat/imsg_buffer.rs::SIZE_MAX 18446744073709551615 8 8
-src/compat/recallocarray.rs::SIZE_MAX 18446744073709551615 8 8
 src/control.rs::SIZE_MAX 18446744073709551615 8 8
 src/screen_redraw.rs::SIZE_MAX 18446744073709551615 8 8
 src/server_client.rs::SIZE_MAX 18446744073709551615 8 8

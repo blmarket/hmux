@@ -131,11 +131,6 @@ fn platform_layouts() {
         hmux2::src::compat::imsg_buffer::SIZE_MAX
     );
     constant!(
-        "src/compat/recallocarray.rs::SIZE_MAX",
-        ::core::ffi::c_ulong,
-        hmux2::src::compat::recallocarray::SIZE_MAX
-    );
-    constant!(
         "src/control.rs::SIZE_MAX",
         ::core::ffi::c_ulong,
         hmux2::src::control::SIZE_MAX

@@ -41,7 +41,7 @@ use crate::src::window::{
     window_pane_tree_minmax, window_pane_tree_next, windows_minmax, windows_next,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xsnprintf, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
 use std::ffi::{CStr, CString};
 
 macro_rules! store_options_cause {

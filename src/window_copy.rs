@@ -131,7 +131,7 @@ use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_pane_set_searchstr, window_set_active_pane,
 };
-use crate::src::xmalloc::{xmalloc, xreallocarray, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 

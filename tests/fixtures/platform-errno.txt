@@ -17,7 +17,6 @@ src/server_client.rs::EINTR 4 4 4
 src/cmd_source_file.rs::EINVAL 22 4 4
 src/compat/imsg.rs::EINVAL 22 4 4
 src/compat/imsg_buffer.rs::EINVAL 22 4 4
-src/compat/recallocarray.rs::EINVAL 22 4 4
 src/compat/strtonum.rs::EINVAL 22 4 4
 src/file.rs::EINVAL 22 4 4
 src/client.rs::ENAMETOOLONG 36 4 4
@@ -26,7 +25,6 @@ src/cfg.rs::ENOENT 2 4 4
 src/client.rs::ENOENT 2 4 4
 src/cmd_source_file.rs::ENOENT 2 4 4
 src/cmd_source_file.rs::ENOMEM 12 4 4
-src/compat/recallocarray.rs::ENOMEM 12 4 4
 src/file.rs::ENOMEM 12 4 4
 src/compat/imsg.rs::ERANGE 34 4 4
 src/compat/imsg_buffer.rs::ERANGE 34 4 4

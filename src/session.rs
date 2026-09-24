@@ -89,7 +89,6 @@ use crate::src::window::{
     winlink_find_by_window_id, winlink_next, winlink_previous, winlink_remove, winlink_set_window,
     winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::xcalloc;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

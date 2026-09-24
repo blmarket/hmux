@@ -144,7 +144,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring};
+use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
 
 fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
     if let Some(message) = cause.take() {

@@ -90,7 +90,6 @@ pub use crate::src::shared::window::{
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::tmux::checkshell;
 use crate::src::tty::tty_window_offset;
-use crate::src::xmalloc::xstrdup;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;

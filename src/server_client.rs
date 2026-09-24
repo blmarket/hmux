@@ -98,7 +98,7 @@ use crate::src::window::{
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use crate::src::xmalloc::{xcalloc, xmalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;

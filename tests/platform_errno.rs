@@ -111,11 +111,6 @@ fn platform_layouts() {
         hmux2::src::compat::imsg_buffer::EINVAL
     );
     constant!(
-        "src/compat/recallocarray.rs::EINVAL",
-        ::core::ffi::c_int,
-        hmux2::src::compat::recallocarray::EINVAL
-    );
-    constant!(
         "src/compat/strtonum.rs::EINVAL",
         ::core::ffi::c_int,
         hmux2::src::compat::strtonum::EINVAL
@@ -154,11 +149,6 @@ fn platform_layouts() {
         "src/cmd_source_file.rs::ENOMEM",
         ::core::ffi::c_int,
         hmux2::src::cmd_source_file::ENOMEM
-    );
-    constant!(
-        "src/compat/recallocarray.rs::ENOMEM",
-        ::core::ffi::c_int,
-        hmux2::src::compat::recallocarray::ENOMEM
     );
     constant!(
         "src/file.rs::ENOMEM",

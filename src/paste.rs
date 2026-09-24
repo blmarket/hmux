@@ -12,7 +12,6 @@ pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::utf8::utf8_strvis;
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 macro_rules! set_paste_cause {
@@ -540,11 +539,13 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: *mut paste_buffer) -> CString
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::ffi::libc::{malloc, strdup};
     use std::ffi::CString;
 
     unsafe fn allocated_bytes(bytes: &[u8]) -> *mut ::core::ffi::c_char {
-        let data = crate::src::xmalloc::xmalloc(bytes.len());
-        ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), data.cast::<u8>(), bytes.len());
+        let data = malloc(bytes.len()).cast::<u8>();
+        assert!(!data.is_null());
+        ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), data, bytes.len());
         data.cast()
     }
 
@@ -583,7 +584,7 @@ mod tests {
             let mut cause: Option<CString> = None;
             assert_eq!(
                 paste_set(
-                    xstrdup(c"payload".as_ptr()),
+                    strdup(c"payload".as_ptr()),
                     7,
                     c"owner-rename-alias".as_ptr(),
                     &raw mut cause,

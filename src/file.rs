@@ -82,7 +82,6 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::find_home_cstr;
-use crate::src::xmalloc::xmalloc;
 use std::any::Any;
 use std::ffi::{CStr, CString};
 

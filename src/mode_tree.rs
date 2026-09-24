@@ -119,7 +119,6 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
 use crate::src::window::window_zoom;
-use crate::src::xmalloc::xasprintf;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
