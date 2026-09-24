@@ -225,9 +225,7 @@ mod callbacks;
 use callbacks::*;
 mod expression;
 use expression::*;
-pub use expression::{
-    format_single_from_target, format_skip, format_true,
-};
+pub use expression::{format_skip, format_true};
 pub(crate) use expression::format_pretty_time_cstring;
 pub(crate) use expression::{
     format_expand_cstring, format_expand_time_cstring, format_single_cstring,

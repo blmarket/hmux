@@ -3568,14 +3568,6 @@ pub(crate) unsafe fn format_single_from_state_cstring(
 ) -> CString {
     format_single_cstring(item, fmt, c, (*fs).s, (*fs).wl, (*fs).wp)
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_single_from_target(
-    mut item: *mut cmdq_item,
-    mut fmt: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    xstrdup(format_single_from_target_cstring(item, fmt).as_ptr())
-}
-
 pub(crate) unsafe fn format_single_from_target_cstring(
     item: *mut cmdq_item,
     fmt: *const ::core::ffi::c_char,
