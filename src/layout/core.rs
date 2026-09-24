@@ -71,7 +71,7 @@ use crate::src::window::{
     window_pane_get_pane_status, window_pane_is_floating, window_pane_scrollbar_reserve,
     window_push_zoom,
 };
-use crate::src::xmalloc::{xasprintf, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -1988,16 +1988,14 @@ pub unsafe fn layout_get_tiled_cell(
     }
     Ok(lc)
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_get_floating_cell(
+pub unsafe fn layout_get_floating_cell(
     mut item: *mut cmdq_item,
     mut args: *mut args,
     mut lines: pane_lines,
     mut w: *mut window,
     mut wp: *mut window_pane,
     mut flags: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut layout_cell {
+) -> Result<*mut layout_cell, CString> {
     let mut lcnew: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut fg: layout_geometry = layout_geometry {
@@ -2008,15 +2006,9 @@ pub unsafe extern "C" fn layout_get_floating_cell(
     };
     layout_geometry_init(&raw mut fg);
     if flags & SPAWN_SPLIT != 0 {
-        if layout_split_floating_cell(lc, w, &raw mut fg, lines, flags, cause)
-            != 0 as ::core::ffi::c_int
-        {
-            return ::core::ptr::null_mut::<layout_cell>();
-        }
-    } else if layout_floating_args_parse(item, args, lines, w, &raw mut fg, cause)
-        != 0 as ::core::ffi::c_int
-    {
-        return ::core::ptr::null_mut::<layout_cell>();
+        layout_split_floating_cell(lc, w, &raw mut fg, lines, flags)?;
+    } else {
+        layout_floating_args_parse(item, args, lines, w, &raw mut fg)?;
     }
     if flags & SPAWN_FLOATOVERZOOM != 0 {
         window_push_zoom(
@@ -2038,17 +2030,21 @@ pub unsafe extern "C" fn layout_get_floating_cell(
         );
     }
     lcnew = layout_floating_pane(w, wp, &raw mut fg);
-    return lcnew;
+    Ok(lcnew)
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_floating_args_parse(
+fn layout_position_error(message: &CStr) -> CString {
+    let mut bytes = b"position ".to_vec();
+    bytes.extend_from_slice(message.to_bytes());
+    CString::new(bytes).expect("diagnostic contains no NUL")
+}
+
+pub unsafe fn layout_floating_args_parse(
     mut item: *mut cmdq_item,
     mut args: *mut args,
     mut lines: pane_lines,
     mut w: *mut window,
     mut lg: *mut layout_geometry,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Result<(), CString> {
     let mut sx: ::core::ffi::c_int = 0;
     let mut sy: ::core::ffi::c_int = 0;
     let mut ox: ::core::ffi::c_int = 0;
@@ -2076,12 +2072,7 @@ pub unsafe extern "C" fn layout_floating_args_parse(
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                xasprintf(
-                    cause,
-                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
-                return -(1 as ::core::ffi::c_int);
+                return Err(layout_position_error(error.message()));
             }
         };
         if lines as ::core::ffi::c_uint
@@ -2101,12 +2092,7 @@ pub unsafe extern "C" fn layout_floating_args_parse(
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                xasprintf(
-                    cause,
-                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
-                return -(1 as ::core::ffi::c_int);
+                return Err(layout_position_error(error.message()));
             }
         };
         if lines as ::core::ffi::c_uint
@@ -2126,12 +2112,7 @@ pub unsafe extern "C" fn layout_floating_args_parse(
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                xasprintf(
-                    cause,
-                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
-                return -(1 as ::core::ffi::c_int);
+                return Err(layout_position_error(error.message()));
             }
         };
     }
@@ -2146,12 +2127,7 @@ pub unsafe extern "C" fn layout_floating_args_parse(
         ) {
             Ok(value) => value as ::core::ffi::c_int,
             Err(error) => {
-                xasprintf(
-                    cause,
-                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.message().as_ptr(),
-                );
-                return -(1 as ::core::ffi::c_int);
+                return Err(layout_position_error(error.message()));
             }
         };
     }
@@ -2190,28 +2166,24 @@ pub unsafe extern "C" fn layout_floating_args_parse(
         }
     }
     if sx < PANE_MINIMUM || sx > PANE_MAXIMUM {
-        *cause = xstrdup(b"invalid width\0" as *const u8 as *const ::core::ffi::c_char);
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"invalid width".to_owned());
     }
     if sy < PANE_MINIMUM || sy > PANE_MAXIMUM {
-        *cause = xstrdup(b"invalid height\0" as *const u8 as *const ::core::ffi::c_char);
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"invalid height".to_owned());
     }
     (*lg).sx = sx as u_int;
     (*lg).sy = sy as u_int;
     (*lg).xoff = ox;
     (*lg).yoff = oy;
-    return 0 as ::core::ffi::c_int;
+    Ok(())
 }
-#[no_mangle]
-pub unsafe extern "C" fn layout_split_floating_cell(
+pub unsafe fn layout_split_floating_cell(
     mut lc: *mut layout_cell,
     mut w: *mut window,
     mut out: *mut layout_geometry,
     mut lines: pane_lines,
     mut flags: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Result<(), CString> {
     let mut old: layout_geometry = layout_geometry {
         sx: 0,
         sy: 0,
@@ -2368,8 +2340,7 @@ pub unsafe extern "C" fn layout_split_floating_cell(
         || old.sx < PANE_MINIMUM as u_int
         || old.sy < PANE_MINIMUM as u_int
     {
-        *cause = xstrdup(b"no space for a new pane\0" as *const u8 as *const ::core::ffi::c_char);
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"no space for a new pane".to_owned());
     }
     layout_set_size(lc, old.sx, old.sy, old.xoff, old.yoff);
     memcpy(
@@ -2377,7 +2348,7 @@ pub unsafe extern "C" fn layout_split_floating_cell(
         &raw mut new as *const ::core::ffi::c_void,
         ::core::mem::size_of::<layout_geometry>() as size_t,
     );
-    return 0 as ::core::ffi::c_int;
+    Ok(())
 }
 #[no_mangle]
 pub unsafe extern "C" fn layout_remove_tile(

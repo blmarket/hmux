@@ -136,7 +136,6 @@ unsafe extern "C" fn cmd_break_pane_float(
     mut wp: *mut window_pane,
 ) -> cmd_retval {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut lines: pane_lines = window_get_pane_lines(w);
     let mut fg: *mut layout_geometry = &raw mut (*lc).fg;
     if window_pane_is_floating(wp) != 0 {
@@ -154,15 +153,12 @@ unsafe extern "C" fn cmd_break_pane_float(
         );
         return CMD_RETURN_ERROR;
     }
-    if layout_floating_args_parse(item, args, lines, w, fg, &raw mut cause)
-        != 0 as ::core::ffi::c_int
-    {
+    if let Err(cause) = layout_floating_args_parse(item, args, lines, w, fg) {
         cmdq_error(
             item,
             b"failed to float pane: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause,
+            cause.as_ptr(),
         );
-        free(cause as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
     layout_remove_tile(w, lc);
