@@ -2,10 +2,10 @@ use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client};
 use crate::src::ffi::libc::{
-    __errno_location, _exit, close, closefrom, dup2, execl, fork, free, memcpy, open, setpgid,
+    __errno_location, _exit, close, closefrom, dup2, execl, fork, memcpy, open, setpgid,
     sigfillset, sigprocmask, socketpair, strerror,
 };
-use crate::src::format::{format_create, format_defaults, format_expand_time, format_free};
+use crate::src::format::{format_create, format_defaults, format_expand_time_cstring, format_free};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::{
@@ -129,7 +129,6 @@ unsafe extern "C" fn cmd_pipe_pane_exec(
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut old_fd: ::core::ffi::c_int = 0;
     let mut pipe_fd: [::core::ffi::c_int; 2] = [0; 2];
     let mut null_fd: ::core::ffi::c_int = 0;
@@ -191,7 +190,7 @@ unsafe extern "C" fn cmd_pipe_pane_exec(
         0 as ::core::ffi::c_int,
     );
     format_defaults(ft, tc, s, wl, wp);
-    cmd = format_expand_time(ft, args_string(args, 0 as u_int));
+    let cmd = format_expand_time_cstring(ft, args_string(args, 0 as u_int));
     format_free(ft);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
@@ -210,7 +209,6 @@ unsafe extern "C" fn cmd_pipe_pane_exec(
             );
             close(pipe_fd[0 as ::core::ffi::c_int as usize]);
             close(pipe_fd[1 as ::core::ffi::c_int as usize]);
-            free(cmd as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         0 => {
@@ -254,7 +252,7 @@ unsafe extern "C" fn cmd_pipe_pane_exec(
                 _PATH_BSHELL.as_ptr(),
                 b"sh\0" as *const u8 as *const ::core::ffi::c_char,
                 b"-c\0" as *const u8 as *const ::core::ffi::c_char,
-                cmd,
+                cmd.as_ptr(),
                 NULL as *mut ::core::ffi::c_char,
             );
             _exit(1 as ::core::ffi::c_int);
@@ -302,7 +300,6 @@ unsafe extern "C" fn cmd_pipe_pane_exec(
             if in_0 != 0 {
                 bufferevent_enable((*wp).pipe_event, EV_READ as ::core::ffi::c_short);
             }
-            free(cmd as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     };
