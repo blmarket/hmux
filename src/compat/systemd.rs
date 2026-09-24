@@ -27,7 +27,7 @@ pub use crate::src::shared::socket::{
 };
 use crate::src::tmux::socket_path;
 use crate::src::xmalloc::{xasprintf, xstrdup};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -48,11 +48,9 @@ pub unsafe extern "C" fn systemd_activated() -> ::core::ffi::c_int {
     return (sd_listen_fds(0 as ::core::ffi::c_int) >= 1 as ::core::ffi::c_int)
         as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn systemd_create_socket(
+pub unsafe fn systemd_create_socket(
     mut flags: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Result<::core::ffi::c_int, CString> {
     let mut fds: ::core::ffi::c_int = 0;
     let mut fd: ::core::ffi::c_int = 0;
     let mut sa: sockaddr_un = sockaddr_un {
@@ -83,19 +81,17 @@ pub unsafe extern "C" fn systemd_create_socket(
         ) == -(1 as ::core::ffi::c_int))
         {
             socket_path = xstrdup(&raw mut sa.sun_path as *mut ::core::ffi::c_char);
-            return fd;
+            return Ok(fd);
         }
     } else {
-        return server_create_socket(flags as uint64_t, cause);
+        return server_create_socket(flags as uint64_t);
     }
-    if !cause.is_null() {
-        xasprintf(
-            cause,
-            b"systemd socket error (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            strerror(*__errno_location()),
-        );
-    }
-    return -(1 as ::core::ffi::c_int);
+    let saved_errno = *__errno_location();
+    let reason = CStr::from_ptr(strerror(saved_errno)).to_bytes();
+    let mut message = b"systemd socket error (".to_vec();
+    message.extend_from_slice(reason);
+    message.push(b')');
+    Err(CString::new(message).expect("strerror returns a C string"))
 }
 unsafe extern "C" fn job_removed_handler(
     mut m: *mut sd_bus_message,

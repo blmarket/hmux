@@ -40,9 +40,9 @@ use crate::src::window::{
     all_window_panes, window_pane_destroy_ready, window_pane_wait_finish, windows_minmax,
     windows_next,
 };
-use crate::src::xmalloc::{xasprintf, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 unsafe fn server_clear_messages() {
     message_log.clear();
@@ -307,11 +307,9 @@ pub unsafe extern "C" fn server_is_marked(
 pub unsafe extern "C" fn server_check_marked() -> ::core::ffi::c_int {
     return cmd_find_valid_state(&raw mut marked_pane);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_create_socket(
+pub unsafe fn server_create_socket(
     mut flags: uint64_t,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Result<::core::ffi::c_int, CString> {
     let mut sa: sockaddr_un = sockaddr_un {
         sun_family: 0,
         sun_path: [0; 108],
@@ -366,20 +364,21 @@ pub unsafe extern "C" fn server_create_socket(
                     *__errno_location() = saved_errno;
                 } else {
                     setblocking(fd, 0 as ::core::ffi::c_int);
-                    return fd;
+                    return Ok(fd);
                 }
             }
         }
     }
-    if !cause.is_null() {
-        xasprintf(
-            cause,
-            b"error creating %s (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            socket_path,
-            strerror(*__errno_location()),
-        );
-    }
-    return -(1 as ::core::ffi::c_int);
+    let saved_errno = *__errno_location();
+    let path = CStr::from_ptr(socket_path).to_bytes();
+    let reason = CStr::from_ptr(strerror(saved_errno)).to_bytes();
+    let mut message = Vec::with_capacity(17 + path.len() + reason.len());
+    message.extend_from_slice(b"error creating ");
+    message.extend_from_slice(path);
+    message.extend_from_slice(b" (");
+    message.extend_from_slice(reason);
+    message.push(b')');
+    Err(CString::new(message).expect("C strings contain no interior NUL"))
 }
 unsafe extern "C" fn server_tidy_event(
     mut fd: ::core::ffi::c_int,
@@ -457,7 +456,7 @@ unsafe fn server_start_inner(
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
     let mut tv: timeval = timeval {
         tv_sec: 3600 as __time_t,
         tv_usec: 0,
@@ -506,9 +505,15 @@ unsafe fn server_start_inner(
     hooks_build_events();
     server_clear_messages();
     gettimeofday(&raw mut start_time, NULL);
-    server_fd = systemd_create_socket(flags as ::core::ffi::c_int, &raw mut cause);
-    if server_fd != -(1 as ::core::ffi::c_int) {
-        server_update_socket();
+    match systemd_create_socket(flags as ::core::ffi::c_int) {
+        Ok(socket) => {
+            server_fd = socket;
+            server_update_socket();
+        }
+        Err(error) => {
+            server_fd = -1;
+            cause = Some(error);
+        }
     }
     if !flags & CLIENT_NOFORK as uint64_t != 0 {
         c = server_client_create(fd);
@@ -524,17 +529,16 @@ unsafe fn server_start_inner(
         lockfile.release();
         close(lockfd);
     }
-    if !cause.is_null() {
+    if let Some(cause) = cause {
         if !c.is_null() {
-            server_client_set_exit_message(c, Some(std::ffi::CStr::from_ptr(cause).to_owned()));
-            free(cause as *mut ::core::ffi::c_void);
+            server_client_set_exit_message(c, Some(cause));
             (*c).retval = 1 as ::core::ffi::c_int;
             (*c).flags |= CLIENT_EXIT as uint64_t;
         } else {
             fprintf(
                 stderr,
                 b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ptr(),
             );
             exit(1 as ::core::ffi::c_int);
         }
@@ -821,11 +825,7 @@ unsafe extern "C" fn server_signal(mut sig: ::core::ffi::c_int) {
         }
         SIGUSR1 => {
             event_del(&raw mut server_ev_accept);
-            fd = server_create_socket(
-                server_client_flags,
-                ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-            );
-            if fd != -(1 as ::core::ffi::c_int) {
+            if let Ok(fd) = server_create_socket(server_client_flags) {
                 close(server_fd);
                 server_fd = fd;
                 server_update_socket();
