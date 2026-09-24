@@ -36,10 +36,8 @@ pub use crate::src::shared::command::{
     cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_list, cmdq_state, cmds,
 };
 pub use crate::src::shared::control::{
-    control_block, control_block_all_entry, control_block_entry, control_line, control_line_entry,
-    control_pane, control_pane_blocks, control_pane_entry, control_pane_pending_entry,
-    control_panes, control_state, control_state_all_blocks, control_state_deferred,
-    control_state_pending_list, control_window, control_window_entry, control_windows,
+    control_block, control_pane, control_pane_entry, control_panes, control_state, control_window,
+    control_window_entry, control_windows,
 };
 use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
@@ -102,6 +100,7 @@ use crate::src::window::{
     winlink_find_by_window,
 };
 use crate::src::xmalloc::xvasprintf_cstring;
+use std::collections::VecDeque;
 use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -145,8 +144,8 @@ unsafe extern "C" fn control_window_cmp(
     return 0 as ::core::ffi::c_int;
 }
 
-// The C-layout records remain at the start of these private allocations.
-// Their raw `line` fields borrow bytes owned by the adjacent CString.
+// The C-layout record remains at the start of this private allocation. Its
+// raw `line` field borrows bytes owned by the adjacent CString.
 #[repr(C)]
 struct ControlBlockOwner {
     block: control_block,
@@ -155,99 +154,260 @@ struct ControlBlockOwner {
 const _: () = assert!(std::mem::offset_of!(ControlBlockOwner, block) == 0);
 
 impl ControlBlockOwner {
-    fn new(line: Option<CString>, size: size_t) -> *mut control_block {
+    fn new(line: Option<CString>, size: size_t) -> Box<Self> {
         let line_ptr = line
             .as_ref()
             .map_or(std::ptr::null_mut(), |line| line.as_ptr().cast_mut());
-        Box::into_raw(Box::new(Self {
+        Box::new(Self {
             block: control_block {
                 size,
                 line: line_ptr,
                 t: 0,
-                entry: control_block_entry {
-                    tqe_next: std::ptr::null_mut(),
-                    tqe_prev: std::ptr::null_mut(),
-                },
-                all_entry: control_block_all_entry {
-                    tqe_next: std::ptr::null_mut(),
-                    tqe_prev: std::ptr::null_mut(),
-                },
             },
             line,
-        }))
-        .cast()
+        })
     }
 }
 
+/// Owns the Rust queues that sit beside the C-shaped control state. Boxed
+/// blocks keep exposed record addresses stable while ordered handles move.
+/// `control_state` stays first so existing client pointers can address it.
 #[repr(C)]
-struct ControlLineOwner {
-    record: control_line,
-    line: CString,
+struct ControlStateOwner {
+    state: control_state,
+    deferred: VecDeque<CString>,
+    all_blocks: VecDeque<Box<ControlBlockOwner>>,
+    pending_panes: VecDeque<*mut control_pane>,
 }
-const _: () = assert!(std::mem::offset_of!(ControlLineOwner, record) == 0);
+const _: () = assert!(std::mem::offset_of!(ControlStateOwner, state) == 0);
 
-impl ControlLineOwner {
-    fn new(line: CString) -> *mut control_line {
-        let line_ptr = line.as_ptr().cast_mut();
-        Box::into_raw(Box::new(Self {
-            record: control_line {
-                line: line_ptr,
-                entry: control_line_entry {
-                    tqe_next: std::ptr::null_mut(),
-                    tqe_prev: std::ptr::null_mut(),
-                },
-            },
-            line,
-        }))
-        .cast()
+impl ControlStateOwner {
+    fn new() -> Self {
+        Self {
+            state: unsafe { std::mem::zeroed() },
+            deferred: VecDeque::new(),
+            all_blocks: VecDeque::new(),
+            pending_panes: VecDeque::new(),
+        }
     }
+
+    fn add_block(&mut self, owner: Box<ControlBlockOwner>) -> *mut control_block {
+        let block = &owner.block as *const control_block as *mut control_block;
+        self.all_blocks.push_back(owner);
+        block
+    }
+
+    fn block(&self, index: usize) -> *mut control_block {
+        self.all_blocks
+            .get(index)
+            .map_or(std::ptr::null_mut(), |owner| {
+                &owner.block as *const control_block as *mut control_block
+            })
+    }
+
+    fn remove_block(&mut self, block: *mut control_block) {
+        let index = self
+            .all_blocks
+            .iter()
+            .position(|owner| std::ptr::eq(&owner.block, block))
+            .expect("control block must be owned by its state");
+        drop(
+            self.all_blocks
+                .remove(index)
+                .expect("located control block"),
+        );
+    }
+
+    fn pending_snapshot(&self) -> Vec<*mut control_pane> {
+        self.pending_panes.iter().copied().collect()
+    }
+
+    fn remove_pending(&mut self, pane: *mut control_pane) -> bool {
+        let Some(index) = self.pending_panes.iter().position(|queued| *queued == pane) else {
+            return false;
+        };
+        self.pending_panes.remove(index).is_some()
+    }
+}
+
+unsafe fn control_state_owner(cs: *mut control_state) -> *mut ControlStateOwner {
+    cs.cast()
+}
+
+unsafe fn control_first_block(cs: *mut control_state) -> *mut control_block {
+    (*control_state_owner(cs)).block(0)
+}
+
+unsafe fn control_first_pane_block(cp: *mut control_pane) -> *mut control_block {
+    (*cp)
+        .blocks
+        .front()
+        .copied()
+        .unwrap_or(std::ptr::null_mut())
+}
+
+unsafe fn control_remove_pane_block(cp: *mut control_pane, block: *mut control_block) {
+    let index = (*cp)
+        .blocks
+        .iter()
+        .position(|candidate| *candidate == block)
+        .expect("control pane block must be queued on its pane");
+    (*cp).blocks.remove(index).expect("located pane block");
+}
+
+unsafe fn control_add_block(
+    cs: *mut control_state,
+    owner: Box<ControlBlockOwner>,
+) -> *mut control_block {
+    (*control_state_owner(cs)).add_block(owner)
 }
 
 #[cfg(test)]
-mod line_ownership_tests {
+mod control_queue_tests {
     use super::*;
 
     #[test]
-    fn mixed_block_queue_releases_owned_reply_and_preserves_accounting() {
+    fn state_block_owner_preserves_order_addresses_and_reply_accounting() {
         unsafe {
-            let mut state: control_state = std::mem::zeroed();
-            state.all_blocks.tqh_last = &raw mut state.all_blocks.tqh_first;
+            let mut owner = ControlStateOwner::new();
+            let cs = &raw mut owner.state;
 
-            let output = ControlBlockOwner::new(None, 10);
-            (*output).all_entry.tqe_prev = state.all_blocks.tqh_last;
-            *state.all_blocks.tqh_last = output;
-            state.all_blocks.tqh_last = &raw mut (*output).all_entry.tqe_next;
+            let output = control_add_block(cs, ControlBlockOwner::new(None, 10));
+            let reply_text = CString::new(b"reply-\xff".as_slice()).unwrap();
+            let reply = control_add_block(cs, ControlBlockOwner::new(Some(reply_text), 0));
+            (*cs).queued_reply_bytes = 8;
+            for size in 1..=64 {
+                control_add_block(cs, ControlBlockOwner::new(None, size));
+            }
 
-            let line = CString::new(b"reply-\xff".as_slice()).unwrap();
-            let reply = ControlBlockOwner::new(Some(line), 0);
-            (*reply).all_entry.tqe_prev = state.all_blocks.tqh_last;
-            *state.all_blocks.tqh_last = reply;
-            state.all_blocks.tqh_last = &raw mut (*reply).all_entry.tqe_next;
-            state.queued_reply_bytes = 8;
+            assert_eq!(control_first_block(cs), output);
+            assert_eq!((*control_state_owner(cs)).block(1), reply);
             assert_eq!(
                 std::ffi::CStr::from_ptr((*reply).line).to_bytes(),
                 b"reply-\xff"
             );
 
-            control_free_block(&mut state, output);
-            assert_eq!(state.all_blocks.tqh_first, reply);
-            assert_eq!(state.queued_reply_bytes, 8);
-            control_free_block(&mut state, reply);
-            assert!(state.all_blocks.tqh_first.is_null());
-            assert_eq!(
-                state.all_blocks.tqh_last,
-                &raw mut state.all_blocks.tqh_first
-            );
-            assert_eq!(state.queued_reply_bytes, 0);
+            control_free_block(cs, output);
+            assert_eq!(control_first_block(cs), reply);
+            assert_eq!((*cs).queued_reply_bytes, 8);
+            control_free_block(cs, reply);
+            assert_eq!((*control_state_owner(cs)).block(0), control_first_block(cs));
+            assert_eq!((*cs).queued_reply_bytes, 0);
         }
     }
 
     #[test]
     fn deferred_line_transfer_keeps_bytes_alive() {
+        let mut owner = ControlStateOwner::new();
+        owner
+            .deferred
+            .push_back(CString::new(b"first-\xff".as_slice()).unwrap());
+        owner.deferred.push_back(CString::new("second").unwrap());
+        let line = owner.deferred.pop_front().unwrap();
+        assert_eq!(line.as_bytes(), b"first-\xff");
+        let line = owner.deferred.pop_front().unwrap();
+        assert_eq!(line.as_bytes(), b"second");
+    }
+
+    #[test]
+    fn pane_block_handles_keep_order_and_addresses_while_state_owns_blocks() {
         unsafe {
-            let deferred = ControlLineOwner::new(CString::new(b"notice-\xff".as_slice()).unwrap());
-            let ControlLineOwner { line, .. } = *Box::from_raw(deferred.cast::<ControlLineOwner>());
-            assert_eq!(line.as_bytes(), b"notice-\xff");
+            let mut owner = ControlStateOwner::new();
+            let cs = &raw mut owner.state;
+            let first = control_add_block(cs, ControlBlockOwner::new(None, 12));
+            let middle = control_add_block(cs, ControlBlockOwner::new(None, 23));
+            let last = control_add_block(cs, ControlBlockOwner::new(None, 34));
+            let mut pane = control_pane {
+                pane: 7,
+                offset: window_pane_offset { used: 0 },
+                queued: window_pane_offset { used: 0 },
+                flags: 0,
+                pending_flag: 0,
+                blocks: VecDeque::from([first, middle, last]),
+                entry: control_pane_entry {
+                    owner: std::ptr::null_mut(),
+                },
+            };
+            let pane_ptr = &raw mut pane;
+
+            assert_eq!(control_first_pane_block(pane_ptr), first);
+            control_remove_pane_block(pane_ptr, middle);
+            control_free_block(cs, middle);
+            assert_eq!(control_first_pane_block(pane_ptr), first);
+            assert_eq!((*last).size, 34);
+            assert_eq!((*control_state_owner(cs)).block(0), first);
+            assert_eq!((*control_state_owner(cs)).block(1), last);
+            control_remove_pane_block(pane_ptr, first);
+            control_free_block(cs, first);
+            assert_eq!(control_first_pane_block(pane_ptr), last);
+            assert_eq!(control_first_block(cs), last);
+            control_remove_pane_block(pane_ptr, last);
+            control_free_block(cs, last);
+            assert!(control_first_block(cs).is_null());
+        }
+    }
+
+    #[test]
+    fn pending_snapshot_defers_reentrant_appends_to_the_next_pass() {
+        let mut owner = ControlStateOwner::new();
+        let mut panes: Vec<Box<control_pane>> = (0..3)
+            .map(|pane| {
+                Box::new(control_pane {
+                    pane,
+                    offset: window_pane_offset { used: 0 },
+                    queued: window_pane_offset { used: 0 },
+                    flags: 0,
+                    pending_flag: 1,
+                    blocks: VecDeque::new(),
+                    entry: control_pane_entry {
+                        owner: std::ptr::null_mut(),
+                    },
+                })
+            })
+            .collect();
+        let pointers: Vec<_> = panes.iter_mut().map(|pane| &raw mut **pane).collect();
+        owner.pending_panes.extend(pointers[..2].iter().copied());
+
+        let pass = owner.pending_snapshot();
+        owner.pending_panes.push_back(pointers[2]);
+        assert_eq!(pass, pointers[..2]);
+        assert!(owner.remove_pending(pointers[0]));
+        assert!(!owner.remove_pending(pointers[0]));
+        assert_eq!(owner.pending_snapshot(), pointers[1..]);
+    }
+
+    #[test]
+    fn pane_index_owns_pane_boxes_and_keeps_addresses_stable() {
+        unsafe {
+            fn pane(id: u_int) -> *mut control_pane {
+                Box::into_raw(Box::new(control_pane {
+                    pane: id,
+                    offset: window_pane_offset { used: 0 },
+                    queued: window_pane_offset { used: 0 },
+                    flags: 0,
+                    pending_flag: 0,
+                    blocks: VecDeque::new(),
+                    entry: control_pane_entry {
+                        owner: std::ptr::null_mut(),
+                    },
+                }))
+            }
+
+            let mut index = control_panes {
+                storage: std::ptr::null_mut(),
+            };
+            let first = pane(4);
+            let second = pane(9);
+            assert!(control_panes_insert(&raw mut index, first).is_null());
+            assert!(control_panes_insert(&raw mut index, second).is_null());
+            assert_eq!(control_panes_find(&raw mut index, first), first);
+            assert_eq!(control_panes_next(first), second);
+            assert_eq!(control_panes_prev(second), first);
+
+            drop(control_panes_remove(&raw mut index, first));
+            assert_eq!(control_panes_minmax(&raw mut index, RB_NEGINF), second);
+            drop(control_panes_remove(&raw mut index, second));
+            assert!(index.storage.is_null());
         }
     }
 }
@@ -267,13 +427,7 @@ unsafe extern "C" fn control_free_block(mut cs: *mut control_state, mut cb: *mut
             (*cs).queued_reply_bytes = 0 as size_t;
         }
     }
-    if !(*cb).all_entry.tqe_next.is_null() {
-        (*(*cb).all_entry.tqe_next).all_entry.tqe_prev = (*cb).all_entry.tqe_prev;
-    } else {
-        (*cs).all_blocks.tqh_last = (*cb).all_entry.tqe_prev;
-    }
-    *(*cb).all_entry.tqe_prev = (*cb).all_entry.tqe_next;
-    drop(Box::from_raw(cb.cast::<ControlBlockOwner>()));
+    (*control_state_owner(cs)).remove_block(cb);
 }
 unsafe extern "C" fn control_get_pane(
     mut c: *mut client,
@@ -286,14 +440,7 @@ unsafe extern "C" fn control_get_pane(
         queued: window_pane_offset { used: 0 },
         flags: 0,
         pending_flag: 0,
-        pending_entry: control_pane_pending_entry {
-            tqe_next: ::core::ptr::null_mut::<control_pane>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut control_pane>(),
-        },
-        blocks: control_pane_blocks {
-            tqh_first: ::core::ptr::null_mut::<control_block>(),
-            tqh_last: ::core::ptr::null_mut::<*mut control_block>(),
-        },
+        blocks: VecDeque::new(),
         entry: control_pane_entry {
             owner: std::ptr::null_mut(),
         },
@@ -310,9 +457,22 @@ unsafe extern "C" fn control_add_pane(
     if !cp.is_null() {
         return cp;
     }
-    cp = Box::into_raw(Box::new(::core::mem::zeroed::<control_pane>()));
+    cp = Box::into_raw(Box::new(control_pane {
+        pane: 0,
+        offset: window_pane_offset { used: 0 },
+        queued: window_pane_offset { used: 0 },
+        flags: 0,
+        pending_flag: 0,
+        blocks: VecDeque::new(),
+        entry: control_pane_entry {
+            owner: std::ptr::null_mut(),
+        },
+    }));
     (*cp).pane = (*wp).id;
-    control_panes_insert(&raw mut (*cs).panes, cp);
+    let existing = control_panes_insert(&raw mut (*cs).panes, cp);
+    if !existing.is_null() {
+        return existing;
+    }
     memcpy(
         &raw mut (*cp).offset as *mut ::core::ffi::c_void,
         &raw mut (*wp).offset as *const ::core::ffi::c_void,
@@ -323,8 +483,6 @@ unsafe extern "C" fn control_add_pane(
         &raw mut (*wp).offset as *const ::core::ffi::c_void,
         ::core::mem::size_of::<window_pane_offset>() as size_t,
     );
-    (*cp).blocks.tqh_first = ::core::ptr::null_mut::<control_block>();
-    (*cp).blocks.tqh_last = &raw mut (*cp).blocks.tqh_first;
     return cp;
 }
 unsafe extern "C" fn control_get_window(
@@ -397,21 +555,8 @@ pub unsafe extern "C" fn control_clear_window_size(mut c: *mut client, mut windo
 }
 unsafe extern "C" fn control_discard_pane(mut c: *mut client, mut cp: *mut control_pane) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
-    let mut cb1: *mut control_block = ::core::ptr::null_mut::<control_block>();
-    cb = (*cp).blocks.tqh_first;
-    while !cb.is_null() && {
-        cb1 = (*cb).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*cb).entry.tqe_next.is_null() {
-            (*(*cb).entry.tqe_next).entry.tqe_prev = (*cb).entry.tqe_prev;
-        } else {
-            (*cp).blocks.tqh_last = (*cb).entry.tqe_prev;
-        }
-        *(*cb).entry.tqe_prev = (*cb).entry.tqe_next;
+    while let Some(cb) = (*cp).blocks.pop_front() {
         control_free_block(cs, cb);
-        cb = cb1;
     }
 }
 unsafe extern "C" fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut window_pane {
@@ -444,12 +589,10 @@ pub unsafe extern "C" fn control_reset_offsets(mut c: *mut client) {
         1 as ::core::ffi::c_int != 0
     } {
         control_discard_pane(c, cp);
-        control_panes_remove(&raw mut (*cs).panes, cp);
-        drop(Box::from_raw(cp));
+        drop(control_panes_remove(&raw mut (*cs).panes, cp));
         cp = cp1;
     }
-    (*cs).pending_list.tqh_first = ::core::ptr::null_mut::<control_pane>();
-    (*cs).pending_list.tqh_last = &raw mut (*cs).pending_list.tqh_first;
+    (*control_state_owner(cs)).pending_panes.clear();
     (*cs).pending_count = 0 as u_int;
 }
 #[no_mangle]
@@ -607,7 +750,7 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
     if control_check_reply_buffer(c, size) != 0 {
         return;
     }
-    if (*cs).all_blocks.tqh_first.is_null() {
+    if control_first_block(cs).is_null() {
         log_debug(
             b"%s: %s: writing line: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_write_line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -627,11 +770,7 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
         bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
         return;
     }
-    cb = ControlBlockOwner::new(Some(line), 0);
-    (*cb).all_entry.tqe_next = ::core::ptr::null_mut::<control_block>();
-    (*cb).all_entry.tqe_prev = (*cs).all_blocks.tqh_last;
-    *(*cs).all_blocks.tqh_last = cb;
-    (*cs).all_blocks.tqh_last = &raw mut (*cb).all_entry.tqe_next;
+    cb = control_add_block(cs, ControlBlockOwner::new(Some(line), 0));
     (*cs).queued_reply_bytes = (*cs).queued_reply_bytes.wrapping_add(size);
     (*cb).t = get_timer();
     log_debug(
@@ -644,22 +783,8 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
 }
 unsafe extern "C" fn control_flush_deferred(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cl: *mut control_line = ::core::ptr::null_mut::<control_line>();
-    let mut cl1: *mut control_line = ::core::ptr::null_mut::<control_line>();
-    cl = (*cs).deferred.tqh_first;
-    while !cl.is_null() && {
-        cl1 = (*cl).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*cl).entry.tqe_next.is_null() {
-            (*(*cl).entry.tqe_next).entry.tqe_prev = (*cl).entry.tqe_prev;
-        } else {
-            (*cs).deferred.tqh_last = (*cl).entry.tqe_prev;
-        }
-        *(*cl).entry.tqe_prev = (*cl).entry.tqe_next;
-        let ControlLineOwner { line, .. } = *Box::from_raw(cl.cast::<ControlLineOwner>());
+    while let Some(line) = (*control_state_owner(cs)).deferred.pop_front() {
         control_write_line(c, line);
-        cl = cl1;
     }
 }
 #[no_mangle]
@@ -720,7 +845,6 @@ pub unsafe extern "C" fn control_notify_write(
     mut args: ...
 ) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cl: *mut control_line = ::core::ptr::null_mut::<control_line>();
     let mut ap: ::core::ffi::VaList;
     if cs.is_null() {
         return;
@@ -737,11 +861,7 @@ pub unsafe extern "C" fn control_notify_write(
         (*c).name,
         line.as_ptr(),
     );
-    cl = ControlLineOwner::new(line);
-    (*cl).entry.tqe_next = ::core::ptr::null_mut::<control_line>();
-    (*cl).entry.tqe_prev = (*cs).deferred.tqh_last;
-    *(*cs).deferred.tqh_last = cl;
-    (*cs).deferred.tqh_last = &raw mut (*cl).entry.tqe_next;
+    (*control_state_owner(cs)).deferred.push_back(line);
 }
 unsafe extern "C" fn control_check_age(
     mut c: *mut client,
@@ -751,7 +871,7 @@ unsafe extern "C" fn control_check_age(
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut t: uint64_t = 0;
     let mut age: uint64_t = 0;
-    cb = (*cp).blocks.tqh_first;
+    cb = control_first_pane_block(cp);
     if cb.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -818,16 +938,9 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
                 return;
             }
             window_pane_update_used_data(wp, &raw mut (*cp).queued, new_size);
-            cb = ControlBlockOwner::new(None, new_size);
-            (*cb).all_entry.tqe_next = ::core::ptr::null_mut::<control_block>();
-            (*cb).all_entry.tqe_prev = (*cs).all_blocks.tqh_last;
-            *(*cs).all_blocks.tqh_last = cb;
-            (*cs).all_blocks.tqh_last = &raw mut (*cb).all_entry.tqe_next;
+            cb = control_add_block(cs, ControlBlockOwner::new(None, new_size));
             (*cb).t = get_timer();
-            (*cb).entry.tqe_next = ::core::ptr::null_mut::<control_block>();
-            (*cb).entry.tqe_prev = (*cp).blocks.tqh_last;
-            *(*cp).blocks.tqh_last = cb;
-            (*cp).blocks.tqh_last = &raw mut (*cb).entry.tqe_next;
+            (*cp).blocks.push_back(cb);
             log_debug(
                 b"%s: %s: new output block of %zu for %%%u\0" as *const u8
                     as *const ::core::ffi::c_char,
@@ -843,10 +956,7 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
                     (*c).name,
                     (*wp).id,
                 );
-                (*cp).pending_entry.tqe_next = ::core::ptr::null_mut::<control_pane>();
-                (*cp).pending_entry.tqe_prev = (*cs).pending_list.tqh_last;
-                *(*cs).pending_list.tqh_last = cp;
-                (*cs).pending_list.tqh_last = &raw mut (*cp).pending_entry.tqe_next;
+                (*control_state_owner(cs)).pending_panes.push_back(cp);
                 (*cp).pending_flag = 1 as ::core::ffi::c_int;
                 (*cs).pending_count = (*cs).pending_count.wrapping_add(1);
             }
@@ -963,7 +1073,7 @@ unsafe extern "C" fn control_read_callback(
 #[no_mangle]
 pub unsafe extern "C" fn control_all_done(mut c: *mut client) -> ::core::ffi::c_int {
     let mut cs: *mut control_state = (*c).control_state;
-    if !(*cs).all_blocks.tqh_first.is_null() {
+    if !control_first_block(cs).is_null() {
         return 0 as ::core::ffi::c_int;
     }
     return (evbuffer_get_length((*(*cs).write_event).output) == 0 as size_t) as ::core::ffi::c_int;
@@ -1021,14 +1131,9 @@ pub unsafe extern "C" fn control_wait_exit(mut fd: ::core::ffi::c_int) {
 }
 unsafe extern "C" fn control_flush_all_blocks(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
-    let mut cb1: *mut control_block = ::core::ptr::null_mut::<control_block>();
-    cb = (*cs).all_blocks.tqh_first;
-    while !cb.is_null() && {
-        cb1 = (*cb).all_entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if (*cb).size != 0 as size_t {
+    loop {
+        let cb = control_first_block(cs);
+        if cb.is_null() || (*cb).size != 0 as size_t {
             break;
         }
         log_debug(
@@ -1048,7 +1153,6 @@ unsafe extern "C" fn control_flush_all_blocks(mut c: *mut client) {
             1 as size_t,
         );
         control_free_block(cs, cb);
-        cb = cb1;
     }
 }
 unsafe extern "C" fn control_append_data(
@@ -1151,29 +1255,17 @@ unsafe extern "C" fn control_write_pending(
     let mut used: size_t = 0 as size_t;
     let mut size: size_t = 0;
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
-    let mut cb1: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut age: uint64_t = 0;
     let mut t: uint64_t = get_timer();
     wp = control_window_pane(c, (*cp).pane);
     if wp.is_null() || (*wp).fd == -(1 as ::core::ffi::c_int) {
-        cb = (*cp).blocks.tqh_first;
-        while !cb.is_null() && {
-            cb1 = (*cb).entry.tqe_next;
-            1 as ::core::ffi::c_int != 0
-        } {
-            if !(*cb).entry.tqe_next.is_null() {
-                (*(*cb).entry.tqe_next).entry.tqe_prev = (*cb).entry.tqe_prev;
-            } else {
-                (*cp).blocks.tqh_last = (*cb).entry.tqe_prev;
-            }
-            *(*cb).entry.tqe_prev = (*cb).entry.tqe_next;
+        while let Some(cb) = (*cp).blocks.pop_front() {
             control_free_block(cs, cb);
-            cb = cb1;
         }
         control_flush_all_blocks(c);
         return 0 as ::core::ffi::c_int;
     }
-    while used != limit && !(*cp).blocks.tqh_first.is_null() {
+    while used != limit && !(*cp).blocks.is_empty() {
         if control_check_age(c, wp, cp) != 0 {
             if !message.is_null() {
                 evbuffer_free(message);
@@ -1181,7 +1273,7 @@ unsafe extern "C" fn control_write_pending(
             message = ::core::ptr::null_mut::<evbuffer>();
             break;
         } else {
-            cb = (*cp).blocks.tqh_first;
+            cb = control_first_pane_block(cp);
             if (*cb).t < t {
                 age = t.wrapping_sub((*cb).t);
             } else {
@@ -1206,14 +1298,9 @@ unsafe extern "C" fn control_write_pending(
             message = control_append_data(c, cp, age, message, wp, size);
             (*cb).size = (*cb).size.wrapping_sub(size);
             if (*cb).size == 0 as size_t {
-                if !(*cb).entry.tqe_next.is_null() {
-                    (*(*cb).entry.tqe_next).entry.tqe_prev = (*cb).entry.tqe_prev;
-                } else {
-                    (*cp).blocks.tqh_last = (*cb).entry.tqe_prev;
-                }
-                *(*cb).entry.tqe_prev = (*cb).entry.tqe_next;
+                control_remove_pane_block(cp, cb);
                 control_free_block(cs, cb);
-                cb = (*cs).all_blocks.tqh_first;
+                cb = control_first_block(cs);
                 if !cb.is_null() && (*cb).size == 0 as size_t {
                     if !wp.is_null() && !message.is_null() {
                         control_write_data(c, message);
@@ -1227,7 +1314,7 @@ unsafe extern "C" fn control_write_pending(
     if !message.is_null() {
         control_write_data(c, message);
     }
-    return !(*cp).blocks.tqh_first.is_null() as ::core::ffi::c_int;
+    return !(*cp).blocks.is_empty() as ::core::ffi::c_int;
 }
 unsafe extern "C" fn control_write_callback(
     mut bufev: *mut bufferevent,
@@ -1235,8 +1322,6 @@ unsafe extern "C" fn control_write_callback(
 ) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    let mut cp1: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     let mut evb: *mut evbuffer = (*(*cs).write_event).output;
     let mut space: size_t = 0;
     let mut limit: size_t = 0;
@@ -1259,26 +1344,25 @@ unsafe extern "C" fn control_write_callback(
         if limit < CONTROL_WRITE_MINIMUM as size_t {
             limit = CONTROL_WRITE_MINIMUM as size_t;
         }
-        cp = (*cs).pending_list.tqh_first;
-        while !cp.is_null() && {
-            cp1 = (*cp).pending_entry.tqe_next;
-            1 as ::core::ffi::c_int != 0
-        } {
+        let pending = (*control_state_owner(cs)).pending_snapshot();
+        for cp in pending {
             if evbuffer_get_length(evb) >= CONTROL_BUFFER_HIGH as size_t {
                 break;
             }
-            if !(control_write_pending(c, cp, limit) != 0) {
-                if !(*cp).pending_entry.tqe_next.is_null() {
-                    (*(*cp).pending_entry.tqe_next).pending_entry.tqe_prev =
-                        (*cp).pending_entry.tqe_prev;
-                } else {
-                    (*cs).pending_list.tqh_last = (*cp).pending_entry.tqe_prev;
-                }
-                *(*cp).pending_entry.tqe_prev = (*cp).pending_entry.tqe_next;
-                (*cp).pending_flag = 0 as ::core::ffi::c_int;
-                (*cs).pending_count = (*cs).pending_count.wrapping_sub(1);
+            if !(*control_state_owner(cs))
+                .pending_panes
+                .iter()
+                .any(|pane| *pane == cp)
+            {
+                continue;
             }
-            cp = cp1;
+            if !(control_write_pending(c, cp, limit) != 0) {
+                let owner = &mut *control_state_owner(cs);
+                if owner.remove_pending(cp) {
+                    (*cp).pending_flag = 0 as ::core::ffi::c_int;
+                    (*cs).pending_count = (*cs).pending_count.wrapping_sub(1);
+                }
+            }
         }
     }
     if evbuffer_get_length(evb) == 0 as size_t {
@@ -1340,16 +1424,11 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
         setblocking((*c).out_fd, 0 as ::core::ffi::c_int);
     }
     setblocking((*c).fd, 0 as ::core::ffi::c_int);
-    (*c).control_state = Box::into_raw(Box::new(::core::mem::zeroed::<control_state>()));
-    cs = (*c).control_state;
+    let state_owner = Box::into_raw(Box::new(ControlStateOwner::new()));
+    cs = &raw mut (*state_owner).state;
+    (*c).control_state = cs;
     (*cs).panes.storage = std::ptr::null_mut();
     (*cs).windows.storage = std::ptr::null_mut();
-    (*cs).pending_list.tqh_first = ::core::ptr::null_mut::<control_pane>();
-    (*cs).pending_list.tqh_last = &raw mut (*cs).pending_list.tqh_first;
-    (*cs).all_blocks.tqh_first = ::core::ptr::null_mut::<control_block>();
-    (*cs).all_blocks.tqh_last = &raw mut (*cs).all_blocks.tqh_first;
-    (*cs).deferred.tqh_first = ::core::ptr::null_mut::<control_line>();
-    (*cs).deferred.tqh_last = &raw mut (*cs).deferred.tqh_first;
     (*cs).subs = monitor_create_client(
         c,
         Some(
@@ -1442,16 +1521,13 @@ pub unsafe extern "C" fn control_discard(mut c: *mut client) {
 #[no_mangle]
 pub unsafe extern "C" fn control_discard_all(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
-    let mut cb1: *mut control_block = ::core::ptr::null_mut::<control_block>();
     control_discard(c);
-    cb = (*cs).all_blocks.tqh_first;
-    while !cb.is_null() && {
-        cb1 = (*cb).all_entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
+    loop {
+        let cb = control_first_block(cs);
+        if cb.is_null() {
+            break;
+        }
         control_free_block(cs, cb);
-        cb = cb1;
     }
     (*cs).queued_reply_bytes = 0 as size_t;
     bufferevent_disable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
@@ -1459,30 +1535,12 @@ pub unsafe extern "C" fn control_discard_all(mut c: *mut client) {
 #[no_mangle]
 pub unsafe extern "C" fn control_stop(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
-    let mut cb1: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut cw: *mut control_window = ::core::ptr::null_mut::<control_window>();
     let mut cw1: *mut control_window = ::core::ptr::null_mut::<control_window>();
-    let mut cl: *mut control_line = ::core::ptr::null_mut::<control_line>();
-    let mut cl1: *mut control_line = ::core::ptr::null_mut::<control_line>();
     if cs.is_null() {
         return;
     }
     monitor_destroy((*cs).subs);
-    cl = (*cs).deferred.tqh_first;
-    while !cl.is_null() && {
-        cl1 = (*cl).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*cl).entry.tqe_next.is_null() {
-            (*(*cl).entry.tqe_next).entry.tqe_prev = (*cl).entry.tqe_prev;
-        } else {
-            (*cs).deferred.tqh_last = (*cl).entry.tqe_prev;
-        }
-        *(*cl).entry.tqe_prev = (*cl).entry.tqe_next;
-        drop(Box::from_raw(cl.cast::<ControlLineOwner>()));
-        cl = cl1;
-    }
     if !(*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
         bufferevent_free((*cs).write_event);
     }
@@ -1497,16 +1555,15 @@ pub unsafe extern "C" fn control_stop(mut c: *mut client) {
         drop(Box::from_raw(cw));
         cw = cw1;
     }
-    cb = (*cs).all_blocks.tqh_first;
-    while !cb.is_null() && {
-        cb1 = (*cb).all_entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
+    loop {
+        let cb = control_first_block(cs);
+        if cb.is_null() {
+            break;
+        }
         control_free_block(cs, cb);
-        cb = cb1;
     }
     (*c).control_state = ::core::ptr::null_mut::<control_state>();
-    drop(Box::from_raw(cs));
+    drop(Box::from_raw(control_state_owner(cs)));
 }
 #[no_mangle]
 pub unsafe extern "C" fn control_add_sub(
@@ -1539,7 +1596,9 @@ pub unsafe fn control_panes_find(
         return std::ptr::null_mut();
     };
     let key = control_panes_key(elm);
-    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
+    map.get(&key).map_or(std::ptr::null_mut(), |node| {
+        &**node as *const control_pane as *mut control_pane
+    })
 }
 pub unsafe fn control_panes_nfind(
     head: *mut control_panes,
@@ -1551,7 +1610,9 @@ pub unsafe fn control_panes_nfind(
     let key = control_panes_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| {
+            &**node as *const control_pane as *mut control_pane
+        })
 }
 pub unsafe fn control_panes_insert(
     head: *mut control_panes,
@@ -1563,9 +1624,12 @@ pub unsafe fn control_panes_insert(
     }
     let map = &mut *(*head).storage;
     match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Occupied(entry) => {
+            drop(Box::from_raw(elm));
+            return &**entry.get() as *const control_pane as *mut control_pane;
+        }
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
+            entry.insert(Box::from_raw(elm));
         }
     }
     (*elm).entry.owner = map as *mut _;
@@ -1574,24 +1638,28 @@ pub unsafe fn control_panes_insert(
 pub unsafe fn control_panes_remove(
     head: *mut control_panes,
     elm: *mut control_pane,
-) -> *mut control_pane {
+) -> Option<Box<control_pane>> {
     if elm.is_null() {
-        return std::ptr::null_mut();
+        return None;
     }
     let key = control_panes_key(elm);
     let Some(map) = (*head).storage.as_mut() else {
-        return std::ptr::null_mut();
+        return None;
     };
-    if map.get(&key).copied() != Some(elm) {
-        return std::ptr::null_mut();
+    if map
+        .get(&key)
+        .map(|node| &**node as *const control_pane as *mut control_pane)
+        != Some(elm)
+    {
+        return None;
     }
-    map.remove(&key);
+    let owner = map.remove(&key);
     (*elm).entry.owner = std::ptr::null_mut();
     if map.is_empty() {
         drop(Box::from_raw((*head).storage));
         (*head).storage = std::ptr::null_mut();
     }
-    elm
+    owner
 }
 pub unsafe fn control_panes_minmax(
     head: *mut control_panes,
@@ -1605,7 +1673,9 @@ pub unsafe fn control_panes_minmax(
     } else {
         map.last_key_value()
     };
-    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
+    pair.map_or(std::ptr::null_mut(), |(_, node)| {
+        &**node as *const control_pane as *mut control_pane
+    })
 }
 pub unsafe fn control_panes_next(elm: *mut control_pane) -> *mut control_pane {
     let Some(map) = (*elm).entry.owner.as_ref() else {
@@ -1614,7 +1684,9 @@ pub unsafe fn control_panes_next(elm: *mut control_pane) -> *mut control_pane {
     let key = control_panes_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| {
+            &**node as *const control_pane as *mut control_pane
+        })
 }
 pub unsafe fn control_panes_prev(elm: *mut control_pane) -> *mut control_pane {
     let Some(map) = (*elm).entry.owner.as_ref() else {
@@ -1623,7 +1695,9 @@ pub unsafe fn control_panes_prev(elm: *mut control_pane) -> *mut control_pane {
     let key = control_panes_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
-        .map_or(std::ptr::null_mut(), |(_, node)| *node)
+        .map_or(std::ptr::null_mut(), |(_, node)| {
+            &**node as *const control_pane as *mut control_pane
+        })
 }
 
 unsafe fn control_windows_key(elm: *mut control_window) -> u32 {

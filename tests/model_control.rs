@@ -12,56 +12,17 @@ fn original_copies_match() {
     record!(
         "src/control.rs::control_block",
         hmux2::src::control::control_block,
-        [size, line, t, entry, all_entry]
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_38",
-        hmux2::src::control::control_block_all_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_39",
-        hmux2::src::control::control_block_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/control.rs::control_line",
-        hmux2::src::control::control_line,
-        [line, entry]
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_36",
-        hmux2::src::control::control_line_entry,
-        [tqe_next, tqe_prev]
+        [size, line, t]
     );
     record!(
         "src/control.rs::control_pane",
         hmux2::src::control::control_pane,
-        [
-            pane,
-            offset,
-            queued,
-            flags,
-            pending_flag,
-            pending_entry,
-            blocks,
-            entry
-        ]
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_42",
-        hmux2::src::control::control_pane_blocks,
-        [tqh_first, tqh_last]
+        [pane, offset, queued, flags, pending_flag, blocks, entry]
     );
     record!(
         "src/control.rs::C2RustUnnamed_41",
         hmux2::src::control::control_pane_entry,
         [owner]
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_43",
-        hmux2::src::control::control_pane_pending_entry,
-        [tqe_next, tqe_prev]
     );
     record!(
         "src/control.rs::control_panes",
@@ -409,15 +370,12 @@ fn original_copies_match() {
         [
             panes,
             windows,
-            pending_list,
             pending_count,
-            all_blocks,
             queued_reply_bytes,
             read_event,
             write_event,
             subs,
-            guard_depth,
-            deferred
+            guard_depth
         ]
     );
     record!(
@@ -679,21 +637,6 @@ fn original_copies_match() {
         "src/window_visible.rs::control_state",
         *mut hmux2::src::window_visible::control_state,
         []
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_37",
-        hmux2::src::control::control_state_all_blocks,
-        [tqh_first, tqh_last]
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_35",
-        hmux2::src::control::control_state_deferred,
-        [tqh_first, tqh_last]
-    );
-    record!(
-        "src/control.rs::C2RustUnnamed_40",
-        hmux2::src::control::control_state_pending_list,
-        [tqh_first, tqh_last]
     );
     record!(
         "src/control.rs::control_window",
