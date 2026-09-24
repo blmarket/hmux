@@ -543,48 +543,16 @@ unsafe extern "C" fn cmd_split_window_exec(
                                     free(title as *mut ::core::ffi::c_void);
                                 }
                                 if input != 0 {
-                                    match window_pane_start_input(new_wp, item, &raw mut cause) {
-                                        -1 => {
-                                            current_block = 13617326970112485193;
-                                            match current_block {
-                                                14804284628290581338 => {
-                                                    input = 0 as ::core::ffi::c_int;
-                                                    current_block = 12543410360505780601;
-                                                }
-                                                _ => {
-                                                    cmdq_error(
-                                                        item,
-                                                        b"%s\0" as *const u8
-                                                            as *const ::core::ffi::c_char,
-                                                        cause,
-                                                    );
-                                                    free(cause as *mut ::core::ffi::c_void);
-                                                    current_block = 9814746494299271243;
-                                                }
-                                            }
+                                    match window_pane_start_input(new_wp, item) {
+                                        Err(error) => {
+                                            cmdq_error(item, c"%s".as_ptr(), error.as_ptr());
+                                            current_block = 9814746494299271243;
                                         }
-                                        1 => {
-                                            current_block = 14804284628290581338;
-                                            match current_block {
-                                                14804284628290581338 => {
-                                                    input = 0 as ::core::ffi::c_int;
-                                                    current_block = 12543410360505780601;
-                                                }
-                                                _ => {
-                                                    cmdq_error(
-                                                        item,
-                                                        b"%s\0" as *const u8
-                                                            as *const ::core::ffi::c_char,
-                                                        cause,
-                                                    );
-                                                    free(cause as *mut ::core::ffi::c_void);
-                                                    current_block = 9814746494299271243;
-                                                }
-                                            }
-                                        }
-                                        _ => {
+                                        Ok(1) => {
+                                            input = 0;
                                             current_block = 12543410360505780601;
                                         }
+                                        Ok(_) => current_block = 12543410360505780601,
                                     }
                                 } else {
                                     current_block = 12543410360505780601;

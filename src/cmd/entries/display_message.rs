@@ -167,18 +167,17 @@ unsafe extern "C" fn cmd_display_message_exec(
         if wp.is_null() {
             return CMD_RETURN_NORMAL;
         }
-        match window_pane_start_input(wp, item, &raw mut cause) {
-            -1 => {
+        match window_pane_start_input(wp, item) {
+            Err(error) => {
                 cmdq_error(
                     item,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
+                    error.as_ptr(),
                 );
-                free(cause as *mut ::core::ffi::c_void);
                 return CMD_RETURN_ERROR;
             }
-            1 => return CMD_RETURN_NORMAL,
-            0 => return CMD_RETURN_WAIT,
+            Ok(1) => return CMD_RETURN_NORMAL,
+            Ok(0) => return CMD_RETURN_WAIT,
             _ => {}
         }
     }

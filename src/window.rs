@@ -65,7 +65,7 @@ use crate::src::style::{
 use crate::src::tmux::{clean_name_cstring, global_options, global_w_options, setblocking};
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
-use crate::src::xmalloc::{xmalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xmalloc, xreallocarray};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::abi::ssize_t;
@@ -4749,22 +4749,19 @@ unsafe fn window_pane_input_cancel(data: *mut ::core::ffi::c_void) {
     let cdata = Box::from_raw(data.cast::<window_pane_input_data>());
     server_client_unref(cdata.client);
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_start_input(
+pub unsafe fn window_pane_start_input(
     mut wp: *mut window_pane,
     mut item: *mut cmdq_item,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Result<::core::ffi::c_int, std::ffi::CString> {
     let mut c: *mut client = cmdq_get_client(item);
     if !(*wp).flags & PANE_EMPTY != 0 {
-        *cause = xstrdup(b"pane is not empty\0" as *const u8 as *const ::core::ffi::c_char);
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"pane is not empty".to_owned());
     }
     if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
-        return 1 as ::core::ffi::c_int;
+        return Ok(1);
     }
     if !(*c).session.is_null() {
-        return 1 as ::core::ffi::c_int;
+        return Ok(1);
     }
     let cdata = Box::into_raw(Box::new(window_pane_input_data {
         item,
@@ -4796,7 +4793,7 @@ pub unsafe extern "C" fn window_pane_start_input(
     if !file.is_null() {
         (*cdata).file = file;
     }
-    return 0 as ::core::ffi::c_int;
+    Ok(0)
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_get_new_data(
