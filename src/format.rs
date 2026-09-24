@@ -231,8 +231,8 @@ pub use expression::{
 };
 pub(crate) use expression::format_pretty_time_cstring;
 pub(crate) use expression::{
-    format_expand_cstring, format_single_cstring, format_single_from_state_cstring,
-    format_single_from_target_cstring,
+    format_expand_cstring, format_expand_time_cstring, format_single_cstring,
+    format_single_from_state_cstring, format_single_from_target_cstring,
 };
 
 pub struct format_modifier {

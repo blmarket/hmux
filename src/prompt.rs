@@ -1,10 +1,11 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::ffi::libc::{
-    free, memcpy, memmove, memset, strchr, strcmp, strlcat, strlen, strncmp,
+    memcpy, memmove, memset, strchr, strcmp, strlcat, strlen, strncmp,
 };
 use crate::src::format::{
-    format_add, format_create_defaults, format_create_from_state, format_expand_time, format_free,
+    format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
+    format_free,
 };
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
@@ -100,10 +101,9 @@ pub use crate::src::shared::window::{
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::tmux::{global_options, global_s_options};
 use crate::src::utf8::{
-    utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr, utf8_fromcstr_vec, utf8_open, utf8_set,
+    utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set,
     utf8_strlen, utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray};
 use std::ffi::{CStr, CString};
 use std::mem::MaybeUninit;
 
@@ -111,6 +111,15 @@ pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
+
+unsafe fn prompt_buffer_cells(pr: *mut prompt) -> *mut utf8_data {
+    (*pr).buffer.as_mut_ptr()
+}
+
+unsafe fn prompt_trim_buffer(pr: *mut prompt) {
+    let len = utf8_strlen(prompt_buffer_cells(pr)) + 1;
+    (*pr).buffer.truncate(len);
+}
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -320,6 +329,7 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
     let mut allocation = Box::new(MaybeUninit::<prompt>::zeroed());
     let pr = allocation.as_mut_ptr();
     // The remaining C-style fields accept zero; initialize the owned Rust field before use.
+    (&raw mut (*pr).buffer).write(Vec::new());
     (&raw mut (*pr).completion).write(prompt_completion::default());
     (&raw mut (*pr).copied).write(None);
     let pr = Box::into_raw(allocation) as *mut prompt;
@@ -347,20 +357,18 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
     let expanded = if (*pd).flags & PROMPT_NOFORMAT != 0 {
         None
     } else {
-        Some(format_expand_time(ft, input))
+        Some(format_expand_time_cstring(ft, input))
     };
-    let tmp = expanded.map_or(input, |value| value.cast_const());
     if (*pd).flags & PROMPT_INCREMENTAL != 0 {
-        (&raw mut (*pr).last).write(Some(CStr::from_ptr(tmp).to_owned()));
-        (*pr).buffer = utf8_fromcstr(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        let last = expanded.unwrap_or_else(|| CStr::from_ptr(input).to_owned());
+        (&raw mut (*pr).last).write(Some(last));
+        (*pr).buffer = utf8_fromcstr_vec(b"\0" as *const u8 as *const ::core::ffi::c_char);
     } else {
         (&raw mut (*pr).last).write(None);
-        (*pr).buffer = utf8_fromcstr(tmp);
+        let tmp = expanded.as_ref().map_or(input, |value| value.as_ptr());
+        (*pr).buffer = utf8_fromcstr_vec(tmp);
     }
-    (*pr).index = utf8_strlen((*pr).buffer);
-    if let Some(expanded) = expanded {
-        free(expanded.cast());
-    }
+    (*pr).index = utf8_strlen((*pr).buffer.as_ptr());
     (*pr).inputcb = (*pd).inputcb;
     (*pr).freecb = (*pd).freecb;
     (*pr).data = (*pd).data;
@@ -396,7 +404,6 @@ pub unsafe extern "C" fn prompt_free(mut pr: *mut prompt) {
         if (*pr).freecb.is_some() && !(*pr).data.is_null() {
             (*pr).freecb.expect("non-null function pointer")((*pr).data);
         }
-        free((*pr).buffer as *mut ::core::ffi::c_void);
         prompt_clear_complete(pr);
         drop(Box::from_raw(pr));
     }
@@ -428,7 +435,7 @@ unsafe extern "C" fn prompt_fire_callback(
 #[no_mangle]
 pub unsafe extern "C" fn prompt_incremental_start(mut pr: *mut prompt) {
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
-        let input = utf8_tocstr_cstring((*pr).buffer);
+        let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
         let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
         bytes.push(b'=');
         bytes.extend_from_slice(input.as_bytes());
@@ -470,17 +477,13 @@ pub unsafe extern "C" fn prompt_update(
     let expanded = if (*pr).flags & PROMPT_NOFORMAT != 0 {
         None
     } else {
-        Some(format_expand_time(ft, input))
+        Some(format_expand_time_cstring(ft, input))
     };
-    let tmp = expanded.map_or(input, |value| value.cast_const());
+    let tmp = expanded.as_ref().map_or(input, |value| value.as_ptr());
     // Decode first because input may point into the current buffer.
-    let replacement = utf8_fromcstr(tmp);
-    free((*pr).buffer.cast());
+    let replacement = utf8_fromcstr_vec(tmp);
     (*pr).buffer = replacement;
-    (*pr).index = utf8_strlen((*pr).buffer);
-    if let Some(expanded) = expanded {
-        free(expanded.cast());
-    }
+    (*pr).index = utf8_strlen((*pr).buffer.as_ptr());
     memset(
         &raw mut (*pr).hindex as *mut u_int as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -593,7 +596,7 @@ unsafe extern "C" fn prompt_draw_complete(
     if display.is_null() {
         return;
     }
-    if (*pr).index != utf8_strlen((*pr).buffer) {
+    if (*pr).index != utf8_strlen(prompt_buffer_cells(pr)) {
         return;
     }
     if cx < ax || cx.wrapping_sub(ax) >= aw {
@@ -640,7 +643,7 @@ unsafe extern "C" fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree
             ::core::ptr::null_mut::<window_pane>(),
         );
     }
-    let tmp = utf8_tocstr_cstring((*pr).buffer);
+    let tmp = utf8_tocstr_cstring(prompt_buffer_cells(pr));
     format_add(
         ft,
         b"prompt_input\0" as *const u8 as *const ::core::ffi::c_char,
@@ -674,22 +677,18 @@ unsafe extern "C" fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree
     }
     return ft;
 }
-unsafe extern "C" fn prompt_expand1(
+unsafe fn prompt_expand1(
     mut pr: *mut prompt,
     mut ft: *mut format_tree,
-) -> *mut ::core::ffi::c_char {
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    prompt = format_expand_time(ft, (*pr).string.as_ptr());
+) -> CString {
+    let prompt = format_expand_time_cstring(ft, (*pr).string.as_ptr());
     format_add(
         ft,
         b"message\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        prompt,
+        prompt.as_ptr(),
     );
-    expanded = format_expand_time(ft, (*pr).message_format.as_ptr());
-    free(prompt as *mut ::core::ffi::c_void);
-    return expanded;
+    format_expand_time_cstring(ft, (*pr).message_format.as_ptr())
 }
 unsafe extern "C" fn prompt_effective_style(
     mut pr: *mut prompt,
@@ -698,7 +697,6 @@ unsafe extern "C" fn prompt_effective_style(
 ) {
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut gc: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*pr).flags & PROMPT_COMMANDMODE != 0 {
         s = (*pr).command_style_str.as_ptr();
         gc = &raw mut (*pr).command_style;
@@ -708,22 +706,21 @@ unsafe extern "C" fn prompt_effective_style(
     }
     style_set(sy, gc);
     if !s.is_null() {
-        expanded = format_expand_time(ft, s);
-        if style_parse(sy, &raw const grid_default_cell, expanded) != 0 as ::core::ffi::c_int {
+        let expanded = format_expand_time_cstring(ft, s);
+        if style_parse(sy, &raw const grid_default_cell, expanded.as_ptr())
+            != 0 as ::core::ffi::c_int
+        {
             style_set(sy, gc);
         }
-        free(expanded as *mut ::core::ffi::c_void);
     }
 }
-unsafe extern "C" fn prompt_layout(
+unsafe fn prompt_layout(
     mut pr: *mut prompt,
     mut ax: u_int,
     mut aw: u_int,
     mut pl: *mut prompt_layout,
-    mut expanded: *mut *mut ::core::ffi::c_char,
     mut sy: *mut style,
-) {
-    let mut local: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+) -> CString {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut pcursor: u_int = 0;
     let mut pwidth: u_int = 0;
@@ -742,23 +739,17 @@ unsafe extern "C" fn prompt_layout(
     if !sy.is_null() {
         prompt_effective_style(pr, sy, ft);
     }
-    if !expanded.is_null() {
-        *expanded = prompt_expand1(pr, ft);
-    } else {
-        local = prompt_expand1(pr, ft);
-        expanded = &raw mut local;
-    }
+    let expanded = prompt_expand1(pr, ft);
     format_free(ft);
     if aw == 0 as u_int {
-        free(local as *mut ::core::ffi::c_void);
-        return;
+        return expanded;
     }
-    (*pl).label_width = format_width(*expanded);
+    (*pl).label_width = format_width(expanded.as_ptr());
     if (*pl).label_width > aw {
         (*pl).label_width = aw;
     }
-    pcursor = utf8_strwidth((*pr).buffer, (*pr).index as ssize_t);
-    pwidth = utf8_strwidth((*pr).buffer, -(1 as ::core::ffi::c_int) as ssize_t);
+    pcursor = utf8_strwidth(prompt_buffer_cells(pr), (*pr).index as ssize_t);
+    pwidth = utf8_strwidth(prompt_buffer_cells(pr), -(1 as ::core::ffi::c_int) as ssize_t);
     if (*pr).flags & PROMPT_QUOTENEXT != 0 {
         pwidth = pwidth.wrapping_add(1);
     }
@@ -788,7 +779,7 @@ unsafe extern "C" fn prompt_layout(
         .display
         .as_ref()
         .map_or(::core::ptr::null(), |s| s.as_ptr());
-    if !display.is_null() && (*pr).index == utf8_strlen((*pr).buffer) && (*pl).cursor_x < aw {
+    if !display.is_null() && (*pr).index == utf8_strlen(prompt_buffer_cells(pr)) && (*pl).cursor_x < aw {
         avail = aw.wrapping_sub((*pl).cursor_x);
         width = utf8_cstrwidth(display);
         if width > avail {
@@ -822,7 +813,7 @@ unsafe extern "C" fn prompt_layout(
     }
     (*pl).input_x = (*pl).content_x.wrapping_add((*pl).label_width);
     (*pl).cursor_x = (*pl).cursor_x.wrapping_add((*pl).content_x);
-    free(local as *mut ::core::ffi::c_void);
+    expanded
 }
 unsafe extern "C" fn prompt_mouse_complete(
     mut pr: *mut prompt,
@@ -846,7 +837,7 @@ unsafe extern "C" fn prompt_mouse_complete(
     if display.is_null() || (*pr).completion.names.is_empty() {
         return PROMPT_KEY_NOT_HANDLED;
     }
-    if (*pr).index != utf8_strlen((*pr).buffer) {
+    if (*pr).index != utf8_strlen(prompt_buffer_cells(pr)) {
         return PROMPT_KEY_NOT_HANDLED;
     }
     if cx < ax || cx.wrapping_sub(ax) >= aw || x < cx {
@@ -950,7 +941,6 @@ pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_dr
     let mut i: u_int = 0;
     let mut width: u_int = 0;
     let mut pcursor: u_int = 0;
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*pr).flags & PROMPT_COMMANDMODE != 0 {
         (*s).default_cstyle = (*pr).command_cstyle;
         (*s).default_mode = (*pr).command_cmode;
@@ -960,7 +950,7 @@ pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_dr
         (*s).default_mode = (*pr).cmode;
         (*s).default_ccolour = (*pr).ccolour;
     }
-    prompt_layout(pr, ax, aw, &raw mut pl, &raw mut expanded, &raw mut sy);
+    let expanded = prompt_layout(pr, ax, aw, &raw mut pl, &raw mut sy);
     memcpy(
         &raw mut gc as *mut ::core::ffi::c_void,
         &raw mut sy.gc as *const ::core::ffi::c_void,
@@ -977,7 +967,7 @@ pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_dr
     if sy.fill != 8 as ::core::ffi::c_int {
         screen_write_clearcharacter(ctx, aw, sy.fill as u_int);
     }
-    pcursor = utf8_strwidth((*pr).buffer, (*pr).index as ssize_t);
+    pcursor = utf8_strwidth(prompt_buffer_cells(pr), (*pr).index as ssize_t);
     if pl.content_width != 0 as u_int {
         screen_write_cursormove(
             ctx,
@@ -990,7 +980,7 @@ pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_dr
                 ctx,
                 &raw mut gc,
                 pl.label_width,
-                expanded,
+                expanded.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
                 0 as ::core::ffi::c_int,
             );
@@ -1003,7 +993,7 @@ pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_dr
         );
         width = 0 as u_int;
         i = 0 as u_int;
-        while (*(*pr).buffer.offset(i as isize)).size as ::core::ffi::c_int
+        while (*prompt_buffer_cells(pr).offset(i as isize)).size as ::core::ffi::c_int
             != 0 as ::core::ffi::c_int
         {
             if prompt_redraw_quote(
@@ -1025,7 +1015,7 @@ pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_dr
                 pl.input_width,
                 &raw mut width,
                 &raw mut gc,
-                (*pr).buffer.offset(i as isize) as *mut utf8_data,
+                prompt_buffer_cells(pr).offset(i as isize) as *mut utf8_data,
             ) == 0
             {
                 break;
@@ -1052,7 +1042,6 @@ pub unsafe extern "C" fn prompt_draw(mut pr: *mut prompt, mut pd: *mut prompt_dr
             &raw mut gc,
         );
     }
-    free(expanded as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_mouse(
@@ -1104,7 +1093,6 @@ pub unsafe extern "C" fn prompt_mouse(
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut pwidth: u_int = 0;
     let mut width: u_int = 0;
     let mut target: u_int = 0;
@@ -1112,12 +1100,11 @@ pub unsafe extern "C" fn prompt_mouse(
     if x < ax || x >= ax.wrapping_add(aw) {
         return PROMPT_KEY_NOT_HANDLED;
     }
-    prompt_layout(pr, ax, aw, &raw mut pl, &raw mut expanded, &raw mut sy);
-    free(expanded as *mut ::core::ffi::c_void);
+    drop(prompt_layout(pr, ax, aw, &raw mut pl, &raw mut sy));
     if pl.input_width == 0 as u_int {
         return PROMPT_KEY_HANDLED;
     }
-    pwidth = utf8_strwidth((*pr).buffer, -(1 as ::core::ffi::c_int) as ssize_t);
+    pwidth = utf8_strwidth(prompt_buffer_cells(pr), -(1 as ::core::ffi::c_int) as ssize_t);
     if (*pr).flags & PROMPT_QUOTENEXT != 0 {
         pwidth = pwidth.wrapping_add(1);
     }
@@ -1137,9 +1124,9 @@ pub unsafe extern "C" fn prompt_mouse(
     }
     width = 0 as u_int;
     idx = 0 as size_t;
-    while (*(*pr).buffer.offset(idx as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
+    while (*prompt_buffer_cells(pr).offset(idx as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
     {
-        ud = (*pr).buffer.offset(idx as isize) as *mut utf8_data;
+        ud = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
         if width >= target {
             break;
         }
@@ -1343,17 +1330,14 @@ unsafe fn prompt_save_copied(pr: *mut prompt, idx: size_t) {
         width: 0,
     };
     let mut copied = vec![empty; count.wrapping_add(1)];
-    copied[..count].copy_from_slice(std::slice::from_raw_parts(
-        (*pr).buffer.offset(idx as isize),
-        count,
-    ));
+    let buffer = &(*pr).buffer;
+    copied[..count].copy_from_slice(&buffer[idx..idx + count]);
     (*pr).copied = Some(copied.into_boxed_slice());
 }
 
 unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut size: size_t = 0;
     let mut n: size_t = 0;
     let mut bufsize: size_t = 0;
     let mut i: u_int = 0;
@@ -1361,7 +1345,6 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
     let mut udp: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
     let mut scratch: Vec<utf8_data> = Vec::new();
     let mut more: utf8_state = UTF8_MORE;
-    size = utf8_strlen((*pr).buffer);
     if let Some(copied) = (*pr).copied.as_ref() {
         ud = copied.as_ptr() as *mut utf8_data;
         n = utf8_strlen(copied.as_ptr());
@@ -1419,35 +1402,11 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
         n = udp.offset_from(ud) as ::core::ffi::c_long as size_t;
     }
     if n != 0 as size_t {
-        (*pr).buffer = xreallocarray(
-            (*pr).buffer as *mut ::core::ffi::c_void,
-            size.wrapping_add(n).wrapping_add(1 as size_t),
-            ::core::mem::size_of::<utf8_data>() as size_t,
-        ) as *mut utf8_data;
-        if (*pr).index == size {
-            memcpy(
-                (*pr).buffer.offset((*pr).index as isize) as *mut ::core::ffi::c_void,
-                ud as *const ::core::ffi::c_void,
-                n.wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-            );
-            (*pr).index = (*pr).index.wrapping_add(n);
-            (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
-        } else {
-            memmove(
-                (*pr).buffer.offset((*pr).index as isize).offset(n as isize)
-                    as *mut ::core::ffi::c_void,
-                (*pr).buffer.offset((*pr).index as isize) as *const ::core::ffi::c_void,
-                size.wrapping_add(1 as size_t)
-                    .wrapping_sub((*pr).index)
-                    .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-            );
-            memcpy(
-                (*pr).buffer.offset((*pr).index as isize) as *mut ::core::ffi::c_void,
-                ud as *const ::core::ffi::c_void,
-                n.wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-            );
-            (*pr).index = (*pr).index.wrapping_add(n);
-        }
+        let pasted = std::slice::from_raw_parts(ud, n);
+        (*pr)
+            .buffer
+            .splice((*pr).index..(*pr).index, pasted.iter().copied());
+        (*pr).index = (*pr).index.wrapping_add(n);
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -1458,8 +1417,6 @@ unsafe extern "C" fn prompt_replace_complete(
     let mut word: [::core::ffi::c_char; 64] = [0; 64];
     let mut allocated: Option<CString> = None;
     let mut size: size_t = 0;
-    let mut n: size_t = 0;
-    let mut off: size_t = 0;
     let mut idx: size_t = 0;
     let mut used: size_t = 0;
     let mut first: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
@@ -1469,20 +1426,20 @@ unsafe extern "C" fn prompt_replace_complete(
     if idx != 0 as size_t {
         idx = idx.wrapping_sub(1);
     }
-    size = utf8_strlen((*pr).buffer);
-    first = (*pr).buffer.offset(idx as isize) as *mut utf8_data;
-    while first > (*pr).buffer && prompt_space(first) == 0 {
+    size = utf8_strlen(prompt_buffer_cells(pr));
+    first = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
+    while first > prompt_buffer_cells(pr) && prompt_space(first) == 0 {
         first = first.offset(-1);
     }
     while (*first).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int && prompt_space(first) != 0
     {
         first = first.offset(1);
     }
-    last = (*pr).buffer.offset(idx as isize) as *mut utf8_data;
+    last = prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data;
     while (*last).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int && prompt_space(last) == 0 {
         last = last.offset(1);
     }
-    while last > (*pr).buffer && prompt_space(last) != 0 {
+    while last > prompt_buffer_cells(pr) && prompt_space(last) != 0 {
         last = last.offset(-1);
     }
     if (*last).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
@@ -1491,6 +1448,8 @@ unsafe extern "C" fn prompt_replace_complete(
     if last < first {
         return 0 as ::core::ffi::c_int;
     }
+    let first_index = first.offset_from(prompt_buffer_cells(pr)) as usize;
+    let last_index = last.offset_from(prompt_buffer_cells(pr)) as usize;
     if s.is_null() {
         used = 0 as size_t;
         ud = first;
@@ -1518,45 +1477,31 @@ unsafe extern "C" fn prompt_replace_complete(
         allocated = prompt_complete(
             pr,
             &raw mut word as *mut ::core::ffi::c_char,
-            first.offset_from((*pr).buffer) as ::core::ffi::c_long as u_int,
+            first.offset_from(prompt_buffer_cells(pr)) as ::core::ffi::c_long as u_int,
         );
         let Some(completion) = allocated.as_ref() else {
             return 0 as ::core::ffi::c_int;
         };
         s = completion.as_ptr();
     }
-    n = size
-        .wrapping_sub(last.offset_from((*pr).buffer) as ::core::ffi::c_long as size_t)
-        .wrapping_add(1 as size_t);
-    memmove(
-        first as *mut ::core::ffi::c_void,
-        last as *const ::core::ffi::c_void,
-        n.wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-    );
-    size = size.wrapping_sub(last.offset_from(first) as ::core::ffi::c_long as size_t);
-    size = size.wrapping_add(strlen(s));
-    off = first.offset_from((*pr).buffer) as ::core::ffi::c_long as size_t;
-    (*pr).buffer = xreallocarray(
-        (*pr).buffer as *mut ::core::ffi::c_void,
-        size.wrapping_add(1 as size_t),
-        ::core::mem::size_of::<utf8_data>() as size_t,
-    ) as *mut utf8_data;
-    first = (*pr).buffer.offset(off as isize);
-    memmove(
-        first.offset(strlen(s) as isize) as *mut ::core::ffi::c_void,
-        first as *const ::core::ffi::c_void,
-        n.wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-    );
-    idx = 0 as size_t;
-    while idx < strlen(s) {
-        utf8_set(
-            first.offset(idx as isize) as *mut utf8_data,
-            *s.offset(idx as isize) as u_char,
-        );
-        idx = idx.wrapping_add(1);
+    let replacement_bytes = CStr::from_ptr(s).to_bytes();
+    let mut replacement =
+        Vec::with_capacity(first_index + replacement_bytes.len() + size + 1 - last_index);
+    let buffer = &(*pr).buffer;
+    replacement.extend_from_slice(&buffer[..first_index]);
+    for &byte in replacement_bytes {
+        let mut cell = utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
+        utf8_set(&raw mut cell, byte);
+        replacement.push(cell);
     }
-    (*pr).index =
-        (first.offset_from((*pr).buffer) as ::core::ffi::c_long as size_t).wrapping_add(strlen(s));
+    replacement.extend_from_slice(&buffer[last_index..=size]);
+    (*pr).buffer = replacement;
+    (*pr).index = first_index + replacement_bytes.len();
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn prompt_forward_word(
@@ -1568,7 +1513,7 @@ unsafe extern "C" fn prompt_forward_word(
     let mut idx: size_t = (*pr).index;
     let mut word_is_separators: ::core::ffi::c_int = 0;
     if vi == 0 {
-        while idx != size && prompt_space((*pr).buffer.offset(idx as isize) as *mut utf8_data) != 0
+        while idx != size && prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0
         {
             idx = idx.wrapping_add(1);
         }
@@ -1579,16 +1524,16 @@ unsafe extern "C" fn prompt_forward_word(
     }
     word_is_separators = (prompt_in_list(
         separators,
-        (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
     ) != 0
-        && prompt_space((*pr).buffer.offset(idx as isize) as *mut utf8_data) == 0)
+        && prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) == 0)
         as ::core::ffi::c_int;
     loop {
         idx = idx.wrapping_add(1);
-        if prompt_space((*pr).buffer.offset(idx as isize) as *mut utf8_data) != 0 {
+        if prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0 {
             if vi != 0 {
                 while idx != size
-                    && prompt_space((*pr).buffer.offset(idx as isize) as *mut utf8_data) != 0
+                    && prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0
                 {
                     idx = idx.wrapping_add(1);
                 }
@@ -1598,7 +1543,7 @@ unsafe extern "C" fn prompt_forward_word(
             && word_is_separators
                 == prompt_in_list(
                     separators,
-                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                 ))
         {
             break;
@@ -1622,24 +1567,24 @@ unsafe extern "C" fn prompt_end_word(
             (*pr).index = idx;
             return;
         }
-        if !(prompt_space((*pr).buffer.offset(idx as isize) as *mut utf8_data) != 0) {
+        if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0) {
             break;
         }
     }
     word_is_separators = prompt_in_list(
         separators,
-        (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
     );
     loop {
         idx = idx.wrapping_add(1);
         if idx == size {
             break;
         }
-        if !(prompt_space((*pr).buffer.offset(idx as isize) as *mut utf8_data) == 0
+        if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) == 0
             && word_is_separators
                 == prompt_in_list(
                     separators,
-                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                 ))
         {
             break;
@@ -1655,21 +1600,21 @@ unsafe extern "C" fn prompt_backward_word(
     let mut word_is_separators: ::core::ffi::c_int = 0;
     while idx != 0 as size_t {
         idx = idx.wrapping_sub(1);
-        if prompt_space((*pr).buffer.offset(idx as isize) as *mut utf8_data) == 0 {
+        if prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) == 0 {
             break;
         }
     }
     word_is_separators = prompt_in_list(
         separators,
-        (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
     );
     while idx != 0 as size_t {
         idx = idx.wrapping_sub(1);
-        if !(prompt_space((*pr).buffer.offset(idx as isize) as *mut utf8_data) != 0
+        if !(prompt_space(prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data) != 0
             || word_is_separators
                 != prompt_in_list(
                     separators,
-                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                 ))
         {
             continue;
@@ -1693,7 +1638,7 @@ unsafe fn prompt_done_with_history(
     pr: *mut prompt,
     redraw: *mut ::core::ffi::c_int,
 ) -> prompt_key_result {
-    let s = utf8_tocstr_cstring((*pr).buffer);
+    let s = utf8_tocstr_cstring(prompt_buffer_cells(pr));
     if !s.as_bytes().is_empty() {
         prompt_add_history(s.as_ptr(), (*pr).type_0 as u_int);
     }
@@ -1715,7 +1660,7 @@ unsafe extern "C" fn prompt_check_move(
         }
         _ => return PROMPT_KEY_NOT_HANDLED,
     }
-    let s = utf8_tocstr_cstring((*pr).buffer);
+    let s = utf8_tocstr_cstring(prompt_buffer_cells(pr));
     if prompt_fire_callback(
         pr,
         s.as_ptr(),
@@ -1761,14 +1706,14 @@ pub unsafe extern "C" fn prompt_key(
         }
         return PROMPT_KEY_CLOSE;
     }
-    size = utf8_strlen((*pr).buffer);
+    size = utf8_strlen(prompt_buffer_cells(pr));
     key &= !KEYC_MASK_FLAGS;
     key = prompt_keypad_key(key);
     if (*pr).flags & PROMPT_NUMERIC != 0 {
         if key >= '0' as i32 as key_code && key <= '9' as i32 as key_code {
             current_block = 1115217863795707468;
         } else {
-            let input = utf8_tocstr_cstring((*pr).buffer);
+            let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
             if prompt_fire_callback(
                 pr,
                 input.as_ptr(),
@@ -1845,17 +1790,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -1873,9 +1818,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -1887,9 +1831,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -1898,7 +1841,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -1906,17 +1849,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -1926,9 +1869,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -1936,8 +1879,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -1952,14 +1894,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -1967,10 +1909,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -1994,16 +1935,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -2054,14 +1994,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -2072,14 +2011,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -2188,17 +2126,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -2216,9 +2154,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2230,9 +2167,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2241,7 +2177,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -2249,17 +2185,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -2269,9 +2205,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -2279,8 +2215,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -2295,14 +2230,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -2310,10 +2245,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -2337,16 +2271,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -2397,14 +2330,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -2415,14 +2347,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -2531,17 +2462,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -2559,9 +2490,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2573,9 +2503,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2584,7 +2513,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -2592,17 +2521,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -2612,9 +2541,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -2622,8 +2551,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -2638,14 +2566,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -2653,10 +2581,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -2680,16 +2607,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -2740,14 +2666,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -2758,14 +2683,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -2874,17 +2798,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -2902,9 +2826,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2916,9 +2839,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -2927,7 +2849,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -2935,17 +2857,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -2955,9 +2877,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -2965,8 +2887,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -2981,14 +2902,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -2996,10 +2917,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -3023,16 +2943,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -3083,14 +3002,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -3101,14 +3019,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -3217,17 +3134,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -3245,9 +3162,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3259,9 +3175,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3270,7 +3185,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -3278,17 +3193,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -3298,9 +3213,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -3308,8 +3223,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -3324,14 +3238,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -3339,10 +3253,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -3366,16 +3279,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -3426,14 +3338,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -3444,14 +3355,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -3560,17 +3470,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -3588,9 +3498,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3602,9 +3511,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3613,7 +3521,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -3621,17 +3529,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -3641,9 +3549,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -3651,8 +3559,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -3667,14 +3574,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -3682,10 +3589,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -3709,16 +3615,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -3769,14 +3674,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -3787,14 +3691,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -3903,17 +3806,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -3931,9 +3834,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3945,9 +3847,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -3956,7 +3857,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -3964,17 +3865,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -3984,9 +3885,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -3994,8 +3895,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -4010,14 +3910,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -4025,10 +3925,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -4052,16 +3951,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -4112,14 +4010,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -4130,14 +4027,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -4246,17 +4142,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -4274,9 +4170,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4288,9 +4183,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4299,7 +4193,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -4307,17 +4201,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -4327,9 +4221,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -4337,8 +4231,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -4353,14 +4246,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -4368,10 +4261,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -4395,16 +4287,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -4455,14 +4346,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -4473,14 +4363,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -4589,17 +4478,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -4617,9 +4506,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4631,9 +4519,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4642,7 +4529,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -4650,17 +4537,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -4670,9 +4557,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -4680,8 +4567,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -4696,14 +4582,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -4711,10 +4597,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -4738,16 +4623,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -4798,14 +4682,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -4816,14 +4699,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -4932,17 +4814,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -4960,9 +4842,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4974,9 +4855,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -4985,7 +4865,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -4993,17 +4873,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -5013,9 +4893,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -5023,8 +4903,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -5039,14 +4918,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -5054,10 +4933,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -5081,16 +4959,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -5141,14 +5018,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -5159,14 +5035,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -5275,17 +5150,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -5303,9 +5178,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5317,9 +5191,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5328,7 +5201,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -5336,17 +5209,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -5356,9 +5229,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -5366,8 +5239,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -5382,14 +5254,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -5397,10 +5269,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -5424,16 +5295,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -5484,14 +5354,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -5502,14 +5371,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -5618,17 +5486,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -5646,9 +5514,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5660,9 +5527,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -5671,7 +5537,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -5679,17 +5545,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -5699,9 +5565,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -5709,8 +5575,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -5725,14 +5590,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -5740,10 +5605,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -5767,16 +5631,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -5827,14 +5690,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -5845,14 +5707,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -5961,17 +5822,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -5989,9 +5850,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6003,9 +5863,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6014,7 +5873,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -6022,17 +5881,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -6042,9 +5901,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -6052,8 +5911,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -6068,14 +5926,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -6083,10 +5941,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -6110,16 +5967,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -6170,14 +6026,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -6188,14 +6043,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -6304,17 +6158,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -6332,9 +6186,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6346,9 +6199,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6357,7 +6209,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -6365,17 +6217,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -6385,9 +6237,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -6395,8 +6247,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -6411,14 +6262,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -6426,10 +6277,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -6453,16 +6303,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -6513,14 +6362,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -6531,14 +6379,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -6647,17 +6494,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -6675,9 +6522,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6689,9 +6535,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -6700,7 +6545,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -6708,17 +6553,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -6728,9 +6573,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -6738,8 +6583,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -6754,14 +6598,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -6769,10 +6613,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -6796,16 +6639,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -6856,14 +6698,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -6874,14 +6715,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -6990,17 +6830,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -7018,9 +6858,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7032,9 +6871,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7043,7 +6881,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -7051,17 +6889,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -7071,9 +6909,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -7081,8 +6919,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -7097,14 +6934,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -7112,10 +6949,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -7139,16 +6975,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -7199,14 +7034,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -7217,14 +7051,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -7333,17 +7166,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -7361,9 +7194,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7375,9 +7207,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7386,7 +7217,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -7394,17 +7225,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -7414,9 +7245,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -7424,8 +7255,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -7440,14 +7270,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -7455,10 +7285,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -7482,16 +7311,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -7542,14 +7370,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -7560,14 +7387,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -7676,17 +7502,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -7704,9 +7530,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7718,9 +7543,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -7729,7 +7553,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -7737,17 +7561,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -7757,9 +7581,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -7767,8 +7591,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -7783,14 +7606,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -7798,10 +7621,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -7825,16 +7647,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -7885,14 +7706,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -7903,14 +7723,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -8019,17 +7838,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -8047,9 +7866,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8061,9 +7879,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8072,7 +7889,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -8080,17 +7897,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -8100,9 +7917,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -8110,8 +7927,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -8126,14 +7942,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -8141,10 +7957,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -8168,16 +7983,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -8228,14 +8042,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -8246,14 +8059,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -8362,17 +8174,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -8390,9 +8202,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8404,9 +8215,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8415,7 +8225,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -8423,17 +8233,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -8443,9 +8253,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -8453,8 +8263,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -8469,14 +8278,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -8484,10 +8293,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -8511,16 +8319,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -8571,14 +8378,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -8589,14 +8395,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -8705,17 +8510,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -8733,9 +8538,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8747,9 +8551,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -8758,7 +8561,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -8766,17 +8569,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -8786,9 +8589,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -8796,8 +8599,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -8812,14 +8614,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -8827,10 +8629,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -8854,16 +8655,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -8914,14 +8714,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -8932,14 +8731,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -9048,17 +8846,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -9076,9 +8874,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9090,9 +8887,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9101,7 +8897,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -9109,17 +8905,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -9129,9 +8925,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -9139,8 +8935,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -9155,14 +8950,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -9170,10 +8965,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -9197,16 +8991,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -9257,14 +9050,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -9275,14 +9067,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -9391,17 +9182,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -9419,9 +9210,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9433,9 +9223,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9444,7 +9233,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -9452,17 +9241,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -9472,9 +9261,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -9482,8 +9271,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -9498,14 +9286,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -9513,10 +9301,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -9540,16 +9327,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -9600,14 +9386,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -9618,14 +9403,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -9734,17 +9518,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -9762,9 +9546,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9776,9 +9559,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -9787,7 +9569,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -9795,17 +9577,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -9815,9 +9597,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -9825,8 +9607,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -9841,14 +9622,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -9856,10 +9637,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -9883,16 +9663,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -9943,14 +9722,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -9961,14 +9739,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -10077,17 +9854,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -10105,9 +9882,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -10119,9 +9895,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -10130,7 +9905,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -10138,17 +9913,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -10158,9 +9933,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -10168,8 +9943,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -10184,14 +9958,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -10199,10 +9973,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -10226,16 +9999,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -10286,14 +10058,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -10304,14 +10075,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -10420,17 +10190,17 @@ pub unsafe extern "C" fn prompt_key(
                                 if idx >= 2 as size_t {
                                     utf8_copy(
                                         &raw mut tmp,
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(2 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(2 as size_t) as isize)
                                             as *mut utf8_data,
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                     );
                                     utf8_copy(
-                                        (*pr).buffer.offset(idx.wrapping_sub(1 as size_t) as isize)
+                                        prompt_buffer_cells(pr).offset(idx.wrapping_sub(1 as size_t) as isize)
                                             as *mut utf8_data,
                                         &raw mut tmp,
                                     );
@@ -10448,9 +10218,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -10462,9 +10231,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    free((*pr).buffer as *mut ::core::ffi::c_void);
-                                    (*pr).buffer = utf8_fromcstr(histstr);
-                                    (*pr).index = utf8_strlen((*pr).buffer);
+                                    (*pr).buffer = utf8_fromcstr_vec(histstr);
+                                    (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     current_block = 5848346009959455809;
                                 }
                             }
@@ -10473,7 +10241,7 @@ pub unsafe extern "C" fn prompt_key(
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) == 0
                                     {
                                         break;
@@ -10481,17 +10249,17 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 word_is_separators = prompt_in_list(
                                     (*pr).word_separators.as_ptr(),
-                                    (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                    prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                 );
                                 while idx != 0 as size_t {
                                     idx = idx.wrapping_sub(1);
                                     if !(prompt_space(
-                                        (*pr).buffer.offset(idx as isize) as *mut utf8_data
+                                        prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data
                                     ) != 0
                                         || word_is_separators
                                             != prompt_in_list(
                                                 (*pr).word_separators.as_ptr(),
-                                                (*pr).buffer.offset(idx as isize) as *mut utf8_data,
+                                                prompt_buffer_cells(pr).offset(idx as isize) as *mut utf8_data,
                                             ))
                                     {
                                         continue;
@@ -10501,9 +10269,9 @@ pub unsafe extern "C" fn prompt_key(
                                 }
                                 prompt_save_copied(pr, idx);
                                 memmove(
-                                    (*pr).buffer.offset(idx as isize)
+                                    prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
-                                    (*pr).buffer.offset((*pr).index as isize)
+                                    prompt_buffer_cells(pr).offset((*pr).index as isize)
                                         as *const ::core::ffi::c_void,
                                     size
                                         .wrapping_add(1 as size_t)
@@ -10511,8 +10279,7 @@ pub unsafe extern "C" fn prompt_key(
                                         .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
                                 );
                                 memset(
-                                    (*pr)
-                                        .buffer
+                                    prompt_buffer_cells(pr)
                                         .offset(size as isize)
                                         .offset(-((*pr).index.wrapping_sub(idx) as isize))
                                         as *mut ::core::ffi::c_void,
@@ -10527,14 +10294,14 @@ pub unsafe extern "C" fn prompt_key(
                             }
                             8994603623389184299 => {
                                 if (*pr).index < size {
-                                    (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
+                                    (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size = 0 as u_char;
                                     current_block = 5848346009959455809;
                                 } else {
                                     current_block = 4485073238441121731;
                                 }
                             }
                             1491684083417518595 => {
-                                (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size =
+                                (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size =
                                     0 as u_char;
                                 (*pr).index = 0 as size_t;
                                 current_block = 5848346009959455809;
@@ -10542,10 +10309,9 @@ pub unsafe extern "C" fn prompt_key(
                             5070726005990265983 => {
                                 if (*pr).index != size {
                                     memmove(
-                                        (*pr).buffer.offset((*pr).index as isize)
+                                        prompt_buffer_cells(pr).offset((*pr).index as isize)
                                             as *mut ::core::ffi::c_void,
-                                        (*pr)
-                                            .buffer
+                                        prompt_buffer_cells(pr)
                                             .offset((*pr).index as isize)
                                             .offset(1 as ::core::ffi::c_int as isize)
                                             as *const ::core::ffi::c_void,
@@ -10569,16 +10335,15 @@ pub unsafe extern "C" fn prompt_key(
                                 if (*pr).index != 0 as size_t {
                                     if (*pr).index == size {
                                         (*pr).index = (*pr).index.wrapping_sub(1);
-                                        (*(*pr).buffer.offset((*pr).index as isize)).size =
+                                        (*prompt_buffer_cells(pr).offset((*pr).index as isize)).size =
                                             0 as u_char;
                                     } else {
                                         memmove(
-                                            (*pr)
-                                                .buffer
+                                            prompt_buffer_cells(pr)
                                                 .offset((*pr).index as isize)
                                                 .offset(-(1 as ::core::ffi::c_int as isize))
                                                 as *mut ::core::ffi::c_void,
-                                            (*pr).buffer.offset((*pr).index as isize)
+                                            prompt_buffer_cells(pr).offset((*pr).index as isize)
                                                 as *const ::core::ffi::c_void,
                                             size.wrapping_add(1 as size_t)
                                                 .wrapping_sub((*pr).index)
@@ -10629,14 +10394,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
                                     }
@@ -10647,14 +10411,13 @@ pub unsafe extern "C" fn prompt_key(
                                 if !(*pr).flags & PROMPT_INCREMENTAL != 0 {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    if (*(*pr).buffer.offset(0 as ::core::ffi::c_int as isize)).size
+                                    if (*prompt_buffer_cells(pr).offset(0 as ::core::ffi::c_int as isize)).size
                                         as ::core::ffi::c_int
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        free((*pr).buffer as *mut ::core::ffi::c_void);
-                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
-                                        (*pr).index = utf8_strlen((*pr).buffer);
+                                        (*pr).buffer = utf8_fromcstr_vec(prompt_last(pr));
+                                        (*pr).index = utf8_strlen(prompt_buffer_cells(pr));
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
                                     }
@@ -10775,51 +10538,27 @@ pub unsafe extern "C" fn prompt_key(
             } else {
                 return PROMPT_KEY_HANDLED;
             }
-            (*pr).buffer = xreallocarray(
-                (*pr).buffer as *mut ::core::ffi::c_void,
-                size.wrapping_add(2 as size_t),
-                ::core::mem::size_of::<utf8_data>() as size_t,
-            ) as *mut utf8_data;
-            if (*pr).index == size {
-                utf8_copy(
-                    (*pr).buffer.offset((*pr).index as isize) as *mut utf8_data,
-                    &raw mut tmp,
-                );
-                (*pr).index = (*pr).index.wrapping_add(1);
-                (*(*pr).buffer.offset((*pr).index as isize)).size = 0 as u_char;
-            } else {
-                memmove(
-                    (*pr)
-                        .buffer
-                        .offset((*pr).index as isize)
-                        .offset(1 as ::core::ffi::c_int as isize)
-                        as *mut ::core::ffi::c_void,
-                    (*pr).buffer.offset((*pr).index as isize) as *const ::core::ffi::c_void,
-                    size.wrapping_add(1 as size_t)
-                        .wrapping_sub((*pr).index)
-                        .wrapping_mul(::core::mem::size_of::<utf8_data>() as size_t),
-                );
-                utf8_copy(
-                    (*pr).buffer.offset((*pr).index as isize) as *mut utf8_data,
-                    &raw mut tmp,
-                );
-                (*pr).index = (*pr).index.wrapping_add(1);
-            }
+            (*pr).buffer.insert((*pr).index, tmp);
+            (*pr).index = (*pr).index.wrapping_add(1);
             if (*pr).flags & PROMPT_SINGLE != 0 {
-                if utf8_strlen((*pr).buffer) != 1 as size_t {
+                if utf8_strlen(prompt_buffer_cells(pr)) != 1 as size_t {
                     (*pr).closed = 1 as ::core::ffi::c_int;
                     result = PROMPT_KEY_CLOSE;
                 } else {
-                    let input = utf8_tocstr_cstring((*pr).buffer);
+                    let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
                     result = prompt_done(pr, input.as_ptr(), redraw);
                 }
             }
         }
         _ => {}
     }
+    // Key editing changes the C-visible end marker in place. Keep the Vec
+    // length at that marker so later inserts and replacements never retain
+    // cells that the prompt no longer exposes.
+    prompt_trim_buffer(pr);
     *redraw = 1 as ::core::ffi::c_int;
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
-        let input = utf8_tocstr_cstring((*pr).buffer);
+        let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
         let mut bytes = Vec::with_capacity(input.as_bytes().len() + 1);
         bytes.push(prefix as u8);
         bytes.extend_from_slice(input.as_bytes());
@@ -10970,4 +10709,79 @@ pub unsafe extern "C" fn prompt_type_string(mut type_0: prompt_type) -> *const :
         _ => {}
     }
     return b"unknown\0" as *const u8 as *const ::core::ffi::c_char;
+}
+
+#[cfg(test)]
+mod prompt_buffer_tests {
+    use super::*;
+
+    fn make_prompt(input: &CStr, index: usize, copied: Option<Box<[utf8_data]>>) -> Box<prompt> {
+        let mut allocation = Box::new(MaybeUninit::<prompt>::zeroed());
+        let raw = allocation.as_mut_ptr();
+        unsafe {
+            (&raw mut (*raw).string).write(CString::new(Vec::new()).unwrap());
+            (&raw mut (*raw).buffer).write(utf8_fromcstr_vec(input.as_ptr()));
+            (&raw mut (*raw).last).write(None);
+            (&raw mut (*raw).message_format).write(CString::new(Vec::new()).unwrap());
+            (&raw mut (*raw).word_separators).write(CString::new(Vec::new()).unwrap());
+            (&raw mut (*raw).style_str).write(CString::new(Vec::new()).unwrap());
+            (&raw mut (*raw).command_style_str).write(CString::new(Vec::new()).unwrap());
+            (&raw mut (*raw).copied).write(copied);
+            (&raw mut (*raw).completion).write(prompt_completion::default());
+            (*raw).index = index;
+            Box::from_raw(Box::into_raw(allocation).cast::<prompt>())
+        }
+    }
+
+    fn cell(byte: u8) -> utf8_data {
+        let mut result = utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
+        unsafe { utf8_set(&raw mut result, byte) };
+        result
+    }
+
+    #[test]
+    fn completion_keeps_prefix_suffix_bytes_and_only_the_logical_sentinel() {
+        let input = CString::new("cmd old tail").unwrap();
+        let replacement = CString::new(vec![0xff]).unwrap();
+        let mut pr = make_prompt(&input, 7, None);
+        pr.buffer.push(cell(b'!'));
+
+        unsafe {
+            assert_eq!(
+                prompt_replace_complete(&mut *pr, replacement.as_ptr()),
+                1
+            );
+            assert_eq!(
+                utf8_tocstr_cstring(pr.buffer.as_ptr()).as_bytes(),
+                b"cmd \xff tail"
+            );
+            assert_eq!(pr.index, 5);
+            assert_eq!(pr.buffer.len(), utf8_strlen(pr.buffer.as_ptr()) + 1);
+        }
+    }
+
+    #[test]
+    fn copied_paste_inserts_cells_before_the_sentinel() {
+        let input = CString::new(&b"a\xc3\xa9Z"[..]).unwrap();
+        let copied = CString::new(&b"\xce\xbb"[..]).unwrap();
+        let copied_cells = unsafe { utf8_fromcstr_vec(copied.as_ptr()) }.into_boxed_slice();
+        let mut pr = make_prompt(&input, 1, Some(copied_cells));
+        pr.buffer.push(cell(b'!'));
+
+        unsafe {
+            assert_eq!(prompt_paste(&mut *pr), 1);
+            prompt_trim_buffer(&mut *pr);
+            assert_eq!(
+                utf8_tocstr_cstring(pr.buffer.as_ptr()).as_bytes(),
+                b"a\xce\xbb\xc3\xa9Z"
+            );
+            assert_eq!(pr.index, 2);
+            assert_eq!(pr.buffer.len(), utf8_strlen(pr.buffer.as_ptr()) + 1);
+        }
+    }
 }

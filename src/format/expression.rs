@@ -3478,9 +3478,17 @@ pub(super) unsafe fn format_expand1_cstring(
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_expand_time(
+    ft: *mut format_tree,
+    fmt: *const ::core::ffi::c_char,
+) -> *mut ::core::ffi::c_char {
+    xstrdup(format_expand_time_cstring(ft, fmt).as_ptr())
+}
+
+/// Expand a time-aware format into Rust-owned storage.
+pub(crate) unsafe fn format_expand_time_cstring(
     mut ft: *mut format_tree,
     mut fmt: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
+) -> CString {
     let mut es: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
         loop_0: 0,
@@ -3509,7 +3517,7 @@ pub unsafe extern "C" fn format_expand_time(
     es.ft = ft;
     es.flags = FORMAT_EXPAND_TIME;
     es.start_time = get_timer();
-    return xstrdup(format_expand1_cstring(&raw mut es, fmt).as_ptr());
+    format_expand1_cstring(&raw mut es, fmt)
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_expand(
@@ -3614,13 +3622,15 @@ mod format_choose_tests {
             let input = CString::new(b"\xff:##:#,:#}:tail#".to_vec()).unwrap();
             let owned = format_expand_cstring(ft, input.as_ptr());
             let exported = format_expand(ft, input.as_ptr());
+            let timed_owned = format_expand_time_cstring(ft, input.as_ptr());
             let timed = format_expand_time(ft, input.as_ptr());
             drop(input);
             format_free(ft);
 
             assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
+            assert_eq!(timed_owned.as_bytes(), owned.as_bytes());
             assert_eq!(CStr::from_ptr(exported), owned.as_c_str());
-            assert_eq!(CStr::from_ptr(timed), owned.as_c_str());
+            assert_eq!(CStr::from_ptr(timed), timed_owned.as_c_str());
             free(exported.cast());
             free(timed.cast());
             // Freeing the C adapters cannot invalidate the independent owner.

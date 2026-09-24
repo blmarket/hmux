@@ -74,7 +74,7 @@ pub struct prompt_completion {
 #[repr(C)]
 pub struct prompt {
     pub string: CString,
-    pub buffer: *mut utf8_data,
+    pub buffer: Vec<utf8_data>,
     pub state: cmd_find_state,
     pub last: Option<CString>,
     pub index: size_t,
