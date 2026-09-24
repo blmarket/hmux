@@ -10,6 +10,21 @@ use std::ffi::{CStr, CString, NulError};
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
+struct ProcessEnvironmentSeed(*mut *mut ::core::ffi::c_char);
+
+impl Drop for ProcessEnvironmentSeed {
+    fn drop(&mut self) {
+        unsafe {
+            // setenv may replace the initially allocated pointer array. If it
+            // did, the seed is no longer the active process environment and
+            // remains ours to free. Otherwise ownership has moved to environ.
+            if environ != self.0 {
+                free(self.0 as *mut ::core::ffi::c_void);
+            }
+        }
+    }
+}
+
 /// Owns one boxed environment with Rust-owned ordered entries.
 ///
 /// This wrapper owns a tree returned by
@@ -536,13 +551,12 @@ pub unsafe extern "C" fn environ_update(
 #[no_mangle]
 pub unsafe extern "C" fn environ_push(mut env: *mut environ) {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut new_environ: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    environ = xcalloc(
+    let seed = xcalloc(
         1 as size_t,
         ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
     ) as *mut *mut ::core::ffi::c_char;
-    new_environ = environ;
+    environ = seed;
+    let seed_owner = ProcessEnvironmentSeed(seed);
     envent = environ_first(env);
     while !envent.is_null() {
         if !(*envent).value.is_none()
@@ -553,9 +567,7 @@ pub unsafe extern "C" fn environ_push(mut env: *mut environ) {
         }
         envent = environ_next(envent);
     }
-    if environ != new_environ {
-        free(new_environ as *mut ::core::ffi::c_void);
-    }
+    drop(seed_owner);
 }
 #[no_mangle]
 pub unsafe extern "C" fn environ_log(
