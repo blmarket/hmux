@@ -3512,14 +3512,6 @@ pub(crate) unsafe fn format_expand_time_cstring(
     es.start_time = get_timer();
     format_expand1_cstring(&raw mut es, fmt)
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_expand(
-    ft: *mut format_tree,
-    fmt: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    xstrdup(format_expand_cstring(ft, fmt).as_ptr())
-}
-
 /// Own the expanded bytes independently of the tree. A null format is empty.
 pub(crate) unsafe fn format_expand_cstring(
     mut ft: *mut format_tree,
@@ -3609,21 +3601,18 @@ mod format_choose_tests {
     use super::*;
 
     #[test]
-    fn expanded_owners_and_c_results_outlive_their_inputs_and_tree() {
+    fn expanded_owners_outlive_their_inputs_and_tree() {
         unsafe {
             let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
             let input = CString::new(b"\xff:##:#,:#}:tail#".to_vec()).unwrap();
             let owned = format_expand_cstring(ft, input.as_ptr());
-            let exported = format_expand(ft, input.as_ptr());
             let timed_owned = format_expand_time_cstring(ft, input.as_ptr());
             drop(input);
             format_free(ft);
 
             assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
             assert_eq!(timed_owned.as_bytes(), owned.as_bytes());
-            assert_eq!(CStr::from_ptr(exported), owned.as_c_str());
-            free(exported.cast());
-            // Freeing the C adapters cannot invalidate the independent owner.
+            // The independent owner remains valid after the tree is freed.
             assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
         }
     }

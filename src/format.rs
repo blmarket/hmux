@@ -226,7 +226,7 @@ use callbacks::*;
 mod expression;
 use expression::*;
 pub use expression::{
-    format_expand, format_single,
+    format_single,
     format_single_from_target, format_skip, format_true,
 };
 pub(crate) use expression::format_pretty_time_cstring;
