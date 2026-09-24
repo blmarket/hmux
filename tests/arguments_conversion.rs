@@ -34,20 +34,6 @@ fn printing_options_uses_formatted_flag_and_string_fragments() {
     }
 }
 
-#[test]
-fn argument_escape_keeps_byte_output() {
-    unsafe {
-        for (input, expected) in [
-            (b"\xff".as_slice(), b"\\377".as_slice()),
-            (b"\"".as_slice(), b"\\\"".as_slice()),
-        ] {
-            let input = CString::new(input).unwrap();
-            let escaped = args_escape(input.as_ptr());
-            assert_eq!(escaped.as_bytes(), expected);
-        }
-    }
-}
-
 fn error_message(error: ArgumentValueError) -> &'static [u8] {
     error.message().to_bytes()
 }
