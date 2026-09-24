@@ -32,7 +32,7 @@ use crate::src::file::{
     file_read_done, file_write_done, file_write_ready,
 };
 use crate::src::format::{
-    format_create, format_defaults, format_expand, format_expand_time, format_free,
+    format_create, format_defaults, format_expand, format_expand_time_cstring, format_free,
     format_lost_client,
 };
 use crate::src::input::input_cancel_requests;
@@ -4450,7 +4450,6 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
 unsafe extern "C" fn server_client_set_title(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     template = options_get_string(
         (*s).options,
@@ -4469,16 +4468,9 @@ unsafe extern "C" fn server_client_set_title(mut c: *mut client) {
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
     );
-    title = format_expand_time(ft, template);
-    if (*c).title.is_none()
-        || strcmp(
-            title,
-            ((*c).title)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ) != 0 as ::core::ffi::c_int
-    {
-        server_client_replace_title(c, Some(CStr::from_ptr(title).to_owned()));
+    let title = format_expand_time_cstring(ft, template);
+    if (*c).title.as_ref().is_none_or(|old| old != &title) {
+        server_client_replace_title(c, Some(title));
         tty_set_title(
             &raw mut (*c).tty,
             ((*c).title)
@@ -4486,7 +4478,6 @@ unsafe extern "C" fn server_client_set_title(mut c: *mut client) {
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     }
-    free(title as *mut ::core::ffi::c_void);
     format_free(ft);
 }
 unsafe extern "C" fn server_client_set_path(mut c: *mut client) {
