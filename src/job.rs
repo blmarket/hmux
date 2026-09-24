@@ -112,11 +112,11 @@ static mut all_jobs: joblist = joblist {
 };
 
 pub unsafe fn job_run(
-    mut cmd: *const ::core::ffi::c_char,
+    cmd: Option<&CStr>,
     argv: &Vec<CString>,
     mut e: *mut environ,
     mut s: *mut session,
-    mut cwd: *const ::core::ffi::c_char,
+    cwd: Option<&CStr>,
     mut updatecb: job_update_cb,
     mut completecb: job_complete_cb,
     mut freecb: job_free_cb,
@@ -211,28 +211,20 @@ pub unsafe fn job_run(
     }
     match current_block {
         224731115979188411 => {
-            if cmd.is_null() {
+            if cmd.is_none() {
                 cmd_log_argv(argv, c"job_run:");
                 log_debug(
                     b"%s: cwd=%s, shell=%s\0" as *const u8 as *const ::core::ffi::c_char,
                     b"job_run\0" as *const u8 as *const ::core::ffi::c_char,
-                    if cwd.is_null() {
-                        b"\0" as *const u8 as *const ::core::ffi::c_char
-                    } else {
-                        cwd
-                    },
+                    cwd.map_or(b"\0" as *const u8 as *const ::core::ffi::c_char, CStr::as_ptr),
                     shell,
                 );
             } else {
                 log_debug(
                     b"%s: cmd=%s, cwd=%s, shell=%s\0" as *const u8 as *const ::core::ffi::c_char,
                     b"job_run\0" as *const u8 as *const ::core::ffi::c_char,
-                    cmd,
-                    if cwd.is_null() {
-                        b"\0" as *const u8 as *const ::core::ffi::c_char
-                    } else {
-                        cwd
-                    },
+                    cmd.unwrap().as_ptr(),
+                    cwd.map_or(b"\0" as *const u8 as *const ::core::ffi::c_char, CStr::as_ptr),
                     shell,
                 );
             }
@@ -250,14 +242,14 @@ pub unsafe fn job_run(
                         &raw mut oldset,
                         ::core::ptr::null_mut::<sigset_t>(),
                     );
-                    if !cwd.is_null() {
-                        if chdir(cwd) == 0 as ::core::ffi::c_int {
+                    if let Some(cwd) = cwd {
+                        if chdir(cwd.as_ptr()) == 0 as ::core::ffi::c_int {
                             environ_set(
                                 env,
                                 b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
                                 0 as ::core::ffi::c_int,
                                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                cwd,
+                                cwd.as_ptr(),
                             );
                         } else {
                             home = find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
@@ -331,7 +323,7 @@ pub unsafe fn job_run(
                         close(out[0 as ::core::ffi::c_int as usize]);
                     }
                     closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
-                    if !cmd.is_null() {
+                    if let Some(cmd) = cmd {
                         if flags & JOB_DEFAULTSHELL != 0 {
                             setenv(
                                 b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
@@ -343,7 +335,7 @@ pub unsafe fn job_run(
                             shell,
                             argv0.as_ptr(),
                             b"-c\0" as *const u8 as *const ::core::ffi::c_char,
-                            cmd,
+                            cmd.as_ptr(),
                             NULL as *mut ::core::ffi::c_char,
                         );
                         _exit(1 as ::core::ffi::c_int);
@@ -367,8 +359,8 @@ pub unsafe fn job_run(
                     );
                     drop(env_owner.take());
                     drop(argv0);
-                    let cmd_owner = if !cmd.is_null() {
-                        Some(CStr::from_ptr(cmd).to_owned())
+                    let cmd_owner = if let Some(cmd) = cmd {
+                        Some(cmd.to_owned())
                     } else {
                         cmd_stringify_argv_cstring(argv)
                     };

@@ -384,14 +384,11 @@ unsafe extern "C" fn cmd_run_shell_timer(
 ) {
     let mut cdata: *mut cmd_run_shell_data = arg as *mut cmd_run_shell_data;
     let mut c: *mut client = (*cdata).client;
-    let cmd = (*cdata)
-        .cmd
-        .as_ref()
-        .map_or(::core::ptr::null(), |cmd| cmd.as_ptr());
+    let cmd = (*cdata).cmd.as_deref();
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if (*cdata).state.is_null() {
-        if cmd.is_null() {
+        if cmd.is_none() {
             if !(*cdata).item.is_null() {
                 cmdq_continue((*cdata).item);
             }
@@ -403,7 +400,7 @@ unsafe extern "C" fn cmd_run_shell_timer(
             &Vec::new(),
             ::core::ptr::null_mut::<environ>(),
             (*cdata).s,
-            (*cdata).cwd.as_ptr(),
+            Some((*cdata).cwd.as_c_str()),
             None,
             Some(cmd_run_shell_callback as unsafe extern "C" fn(*mut job) -> ()),
             Some(cmd_run_shell_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
@@ -422,13 +419,13 @@ unsafe extern "C" fn cmd_run_shell_timer(
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     b"failed to run command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cmd,
+                    cmd.unwrap().as_ptr(),
                 );
             } else {
                 cmdq_error(
                     (*cdata).item,
                     b"failed to run command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cmd,
+                    cmd.unwrap().as_ptr(),
                 );
                 cmdq_continue((*cdata).item);
             }

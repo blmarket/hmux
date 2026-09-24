@@ -204,11 +204,14 @@ unsafe extern "C" fn cmd_if_shell_exec(
     // job_run leaves data untouched on failure, so reclaim it below.
     let cdata = Box::into_raw(cdata);
     if job_run(
-        shellcmd.as_ptr(),
+        Some(shellcmd.as_c_str()),
         &Vec::new(),
         ::core::ptr::null_mut::<environ>(),
         s,
-        server_client_get_cwd(cmdq_get_client(item), s),
+        {
+            let cwd = server_client_get_cwd(cmdq_get_client(item), s);
+            (!cwd.is_null()).then(|| std::ffi::CStr::from_ptr(cwd))
+        },
         None,
         Some(cmd_if_shell_callback as unsafe extern "C" fn(*mut job) -> ()),
         Some(cmd_if_shell_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),

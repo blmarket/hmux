@@ -8558,11 +8558,11 @@ unsafe fn window_copy_pipe_run(
     }
     if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
         job = job_run(
-            cmd,
+            Some(CStr::from_ptr(cmd)),
             &Vec::new(),
             ::core::ptr::null_mut::<environ>(),
             s,
-            ::core::ptr::null::<::core::ffi::c_char>(),
+            None,
             None,
             None,
             None,

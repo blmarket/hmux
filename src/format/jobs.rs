@@ -179,11 +179,14 @@ pub(super) unsafe fn format_job_get(
     }
     if force != 0 || (*fj).job.is_null() && (*fj).last != t {
         (*fj).job = job_run(
-            expanded.as_ptr(),
+            Some(expanded.as_c_str()),
             &Vec::new(),
             ::core::ptr::null_mut::<environ>(),
             ::core::ptr::null_mut::<session>(),
-            server_client_get_cwd((*ft).client, ::core::ptr::null_mut::<session>()),
+            {
+                let cwd = server_client_get_cwd((*ft).client, ::core::ptr::null_mut::<session>());
+                (!cwd.is_null()).then(|| CStr::from_ptr(cwd))
+            },
             Some(format_job_update as unsafe extern "C" fn(*mut job) -> ()),
             Some(format_job_complete as unsafe extern "C" fn(*mut job) -> ()),
             None,

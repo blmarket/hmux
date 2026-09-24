@@ -1137,11 +1137,11 @@ pub unsafe fn popup_display(
     (*pd).psx = sx;
     (*pd).psy = sy;
     (*pd).job = job_run(
-        shellcmd,
+        (!shellcmd.is_null()).then(|| CStr::from_ptr(shellcmd)),
         argv,
         env,
         s,
-        cwd,
+        (!cwd.is_null()).then(|| CStr::from_ptr(cwd)),
         Some(popup_job_update_cb as unsafe extern "C" fn(*mut job) -> ()),
         Some(popup_job_complete_cb as unsafe extern "C" fn(*mut job) -> ()),
         None,
