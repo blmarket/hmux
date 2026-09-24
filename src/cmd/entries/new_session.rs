@@ -2,7 +2,7 @@ use crate::src::arguments::{
     args_count, args_first_value, args_get, args_has, args_next_value, args_to_vector,
 };
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
-use crate::src::cmd::{cmd_free_argv, cmd_get_args, cmd_get_entry};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, OwnedArgv};
 use crate::src::cmd_attach_session::cmd_attach_session;
 use crate::src::cmd_find::cmd_find_from_session;
 use crate::src::cmd_queue::{
@@ -229,6 +229,7 @@ unsafe extern "C" fn cmd_new_session_exec(
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
     };
+    let mut argv_owner = OwnedArgv::default();
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -649,11 +650,9 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                             sc.tc = c;
                                                         }
                                                         sc.name = wname;
-                                                        args_to_vector(
-                                                            args,
-                                                            &raw mut sc.argc,
-                                                            &raw mut sc.argv,
-                                                        );
+                                                        argv_owner = args_to_vector(args);
+                                                        sc.argc = argv_owner.argc();
+                                                        sc.argv = argv_owner.as_mut_ptr();
                                                         sc.idx = -(1 as ::core::ffi::c_int);
                                                         sc.cwd =
                                                             args_get(args, 'c' as i32 as u_char);
@@ -812,9 +811,6 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                             if cfg_finished != 0 {
                                                                 cfg_show_causes(s);
                                                             }
-                                                            if !sc.argv.is_null() {
-                                                                cmd_free_argv(sc.argc, sc.argv);
-                                                            }
                                                             free(
                                                                 formatted_cwd
                                                                     as *mut ::core::ffi::c_void,
@@ -834,9 +830,6 @@ unsafe extern "C" fn cmd_new_session_exec(
             }
         }
         _ => {}
-    }
-    if !sc.argv.is_null() {
-        cmd_free_argv(sc.argc, sc.argv);
     }
     free(formatted_cwd as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;

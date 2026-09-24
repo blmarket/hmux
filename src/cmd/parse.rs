@@ -1,4 +1,3 @@
-use crate::src::arguments::args_free_value;
 use crate::src::cmd::{
     cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_free, cmd_list_move,
     cmd_list_new, cmd_list_print_cstring, cmd_parse,
@@ -91,7 +90,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::global_environ;
-use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use libc;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
@@ -116,7 +115,7 @@ pub struct cmd_parse_arguments {
 /// Box-owned parser argument; payload ownership depends on `type_0`.
 pub struct cmd_parse_argument {
     pub type_0: cmd_parse_argument_type,
-    pub string: *mut ::core::ffi::c_char,
+    pub string: Option<CString>,
     pub commands: *mut cmd_parse_commands,
     pub cmdlist: *mut cmd_list,
 }
@@ -216,16 +215,14 @@ unsafe extern "C" fn cmd_parse_print_commands(
 unsafe fn cmd_parse_new_argument() -> *mut cmd_parse_argument {
     Box::into_raw(Box::new(cmd_parse_argument {
         type_0: CMD_PARSE_STRING,
-        string: ::core::ptr::null_mut(),
+        string: None,
         commands: ::core::ptr::null_mut(),
         cmdlist: ::core::ptr::null_mut(),
     }))
 }
 unsafe extern "C" fn cmd_parse_free_argument(mut arg: *mut cmd_parse_argument) {
     match (*arg).type_0 as ::core::ffi::c_uint {
-        0 => {
-            free((*arg).string as *mut ::core::ffi::c_void);
-        }
+        0 => {}
         1 => {
             cmd_parse_free_commands((*arg).commands as *mut cmd_parse_commands);
         }
@@ -315,7 +312,7 @@ impl hmux_cmdparse::Context for ParserContext {
             format_defaults(ft, (*pi).c, (*fsp).s, (*fsp).wl, (*fsp).wp);
             let expanded = format_expand(ft, token.as_c_str().as_ptr());
             format_free(ft);
-            take_parser_token(expanded)
+            take_parser_token_from_malloc(expanded)
         }
     }
 
@@ -346,18 +343,23 @@ impl hmux_cmdparse::Context for ParserContext {
     }
 }
 
-// Lexer strings use malloc; copy before freeing instead of CString::from_raw.
-unsafe fn take_parser_token(raw: *mut core::ffi::c_char) -> hmux_cmdparse::TokenText {
+fn take_parser_token(text: CString) -> hmux_cmdparse::TokenText {
+    hmux_cmdparse::TokenText::from_cstring(text)
+}
+
+// Format expansion is still a C allocation at this boundary; never transfer
+// it to CString::from_raw because its allocator contract belongs to xmalloc.
+unsafe fn take_parser_token_from_malloc(raw: *mut core::ffi::c_char) -> hmux_cmdparse::TokenText {
     let text = CStr::from_ptr(raw).to_owned();
     free(raw.cast());
-    hmux_cmdparse::TokenText::from_cstring(text)
+    take_parser_token(text)
 }
 
 fn next_parser_token(
 ) -> Option<Result<(usize, hmux_cmdparse::Token, usize), hmux_cmdparse::LexError>> {
     use hmux_cmdparse::Token;
     unsafe {
-        let mut lexer_token = core::ptr::null_mut();
+        let mut lexer_token = None;
         let token = match yylex(&mut lexer_token) {
             0 => return None,
             10 => Token::Newline,
@@ -370,7 +372,7 @@ fn next_parser_token(
             ELIF => Token::Elif,
             ENDIF => Token::Endif,
             kind @ (FORMAT | TOKEN | EQUALS) => {
-                let text = take_parser_token(lexer_token);
+                let text = take_parser_token(lexer_token.expect("word token owns its text"));
                 match kind {
                     FORMAT => Token::Format(text),
                     TOKEN => Token::Word(text),
@@ -394,7 +396,7 @@ unsafe fn build_parser_commands(
             match argument {
                 hmux_cmdparse::ParseArgument::String(text) => {
                     (*arg).type_0 = CMD_PARSE_STRING;
-                    (*arg).string = xstrdup(text.as_c_str().as_ptr());
+                    (*arg).string = Some(text.as_c_str().to_owned());
                 }
                 hmux_cmdparse::ParseArgument::Commands(commands) => {
                     (*arg).type_0 = CMD_PARSE_COMMANDS;
@@ -477,7 +479,11 @@ unsafe extern "C" fn cmd_parse_log_commands(
                         prefix,
                         i,
                         j,
-                        (*arg).string,
+                        (*arg)
+                            .string
+                            .as_ref()
+                            .expect("parser string argument owns its text")
+                            .as_ptr(),
                     );
                 }
                 1 => {
@@ -528,7 +534,12 @@ unsafe extern "C" fn cmd_parse_expand_alias(
         (*pr).cmdlist = cmd_list_new();
         return 1 as ::core::ffi::c_int;
     }
-    name = (*first).string;
+    name = (*first)
+        .string
+        .as_ref()
+        .expect("alias command owns its name")
+        .as_ptr()
+        .cast_mut();
     let Some(alias) = cmd_get_alias(name) else {
         return 0 as ::core::ffi::c_int;
     };
@@ -597,8 +608,12 @@ unsafe extern "C" fn cmd_parse_build_command(
         match (*arg).type_0 as ::core::ffi::c_uint {
             0 => {
                 (*value).type_0 = ARGS_STRING;
-                let ref mut fresh0 = (*value).c2rust_unnamed.string;
-                *fresh0 = xstrdup((*arg).string);
+                (*value).c2rust_unnamed.string = (*arg)
+                    .string
+                    .as_ref()
+                    .expect("parser string argument owns its text")
+                    .as_ptr()
+                    .cast_mut();
             }
             1 => {
                 cmd_parse_build_commands((*arg).commands as *mut cmd_parse_commands, pi, pr);
@@ -660,7 +675,10 @@ unsafe extern "C" fn cmd_parse_build_command(
     }
     idx = 0 as u_int;
     while idx < count {
-        args_free_value(values.as_mut_ptr().add(idx as usize));
+        let value = values.as_mut_ptr().add(idx as usize);
+        if (*value).type_0 as ::core::ffi::c_uint == ARGS_COMMANDS {
+            cmd_list_free((*value).c2rust_unnamed.cmdlist);
+        }
         idx = idx.wrapping_add(1);
     }
 }
@@ -905,7 +923,6 @@ pub unsafe fn cmd_parse_from_arguments(
     let mut cmd: *mut cmd_parse_command = ::core::ptr::null_mut::<cmd_parse_command>();
     let mut arg: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
     let mut i: u_int = 0;
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut size: size_t = 0;
     let mut end: ::core::ffi::c_int = 0;
     let mut pr = cmd_parse_result::empty();
@@ -925,31 +942,24 @@ pub unsafe fn cmd_parse_from_arguments(
         if (*values.offset(i as isize)).type_0 as ::core::ffi::c_uint
             == ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            copy = xstrdup((*values.offset(i as isize)).c2rust_unnamed.string);
-            size = strlen(copy);
-            if size != 0 as size_t
-                && *copy.offset(size.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
-                    == ';' as i32
-            {
-                size = size.wrapping_sub(1);
-                *copy.offset(size as isize) = '\0' as i32 as ::core::ffi::c_char;
-                if size > 0 as size_t
-                    && *copy.offset(size.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
-                        == '\\' as i32
-                {
-                    *copy.offset(size.wrapping_sub(1 as size_t) as isize) =
-                        ';' as i32 as ::core::ffi::c_char;
+            let mut bytes = CStr::from_ptr((*values.add(i as usize)).c2rust_unnamed.string)
+                .to_bytes()
+                .to_vec();
+            size = bytes.len() as size_t;
+            if size != 0 && bytes[size as usize - 1] == b';' {
+                size -= 1;
+                if size > 0 && bytes[size as usize - 1] == b'\\' {
+                    bytes[size as usize - 1] = b';';
                 } else {
-                    end = 1 as ::core::ffi::c_int;
+                    end = 1;
                 }
             }
             if end == 0 || size != 0 as size_t {
+                bytes.truncate(size as usize);
                 arg = cmd_parse_new_argument();
                 (*arg).type_0 = CMD_PARSE_STRING;
-                (*arg).string = copy;
+                (*arg).string = Some(CString::new(bytes).expect("argument contains no NUL"));
                 cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
-            } else {
-                free(copy as *mut ::core::ffi::c_void);
             }
         } else if (*values.offset(i as isize)).type_0 as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1013,8 +1023,7 @@ unsafe extern "C" fn yylex_is_var(
         != 0
         || ch as ::core::ffi::c_int == '_' as i32) as ::core::ffi::c_int;
 }
-/// A lexer scratch buffer. Only completed tokens need a libc allocation for
-/// the generated parser's existing free and transfer paths.
+/// A lexer scratch buffer that yields a Rust-owned completed token.
 struct LexerBuffer {
     bytes: Vec<u8>,
 }
@@ -1048,12 +1057,8 @@ impl LexerBuffer {
         self.bytes.push(byte as u8);
     }
 
-    unsafe fn into_raw(self) -> *mut ::core::ffi::c_char {
-        let size = self.bytes.len() + 1;
-        let buf = xmalloc(size) as *mut ::core::ffi::c_char;
-        ::core::ptr::copy_nonoverlapping(self.bytes.as_ptr(), buf.cast(), self.bytes.len());
-        *buf.add(self.bytes.len()) = 0;
-        buf
+    fn into_cstring(self) -> CString {
+        CString::new(self.bytes).expect("lexer token contains no interior NUL")
     }
 }
 unsafe extern "C" fn yylex_getc1() -> ::core::ffi::c_int {
@@ -1102,7 +1107,7 @@ unsafe extern "C" fn yylex_getc() -> ::core::ffi::c_int {
         }
     }
 }
-unsafe extern "C" fn yylex_get_word(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi::c_char {
+unsafe fn yylex_get_word(mut ch: ::core::ffi::c_int) -> CString {
     let mut buf = LexerBuffer::new();
     loop {
         buf.push(ch as ::core::ffi::c_char);
@@ -1114,15 +1119,15 @@ unsafe extern "C" fn yylex_get_word(mut ch: ::core::ffi::c_int) -> *mut ::core::
         }
     }
     yylex_ungetc(ch);
-    let buf = buf.into_raw();
+    let buf = buf.into_cstring();
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"yylex_get_word\0" as *const u8 as *const ::core::ffi::c_char,
-        buf,
+        buf.as_ptr(),
     );
-    return buf;
+    buf
 }
-unsafe fn yylex(lexed: &mut *mut core::ffi::c_char) -> ::core::ffi::c_int {
+unsafe fn yylex(lexed: &mut Option<CString>) -> ::core::ffi::c_int {
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
     let mut token: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -1132,6 +1137,7 @@ unsafe fn yylex(lexed: &mut *mut core::ffi::c_char) -> ::core::ffi::c_int {
     if (*ps).eol != 0 {
         (*(*ps).input).line = (*(*ps).input).line.wrapping_add(1);
     }
+    *lexed = None;
     (*ps).eol = 0 as ::core::ffi::c_int;
     condition = (*ps).condition;
     (*ps).condition = 0 as ::core::ffi::c_int;
@@ -1165,7 +1171,7 @@ unsafe fn yylex(lexed: &mut *mut core::ffi::c_char) -> ::core::ffi::c_int {
                 next = yylex_getc();
                 if condition != 0 && next == '{' as i32 {
                     *lexed = yylex_format();
-                    if lexed.is_null() {
+                    if lexed.is_none() {
                         return 258 as ::core::ffi::c_int;
                     }
                     return 264 as ::core::ffi::c_int;
@@ -1179,8 +1185,8 @@ unsafe fn yylex(lexed: &mut *mut core::ffi::c_char) -> ::core::ffi::c_int {
                 }
             } else {
                 if ch == '%' as i32 {
-                    *lexed = yylex_get_word('%' as i32);
-                    cp = *lexed;
+                    *lexed = Some(yylex_get_word('%' as i32));
+                    cp = lexed.as_mut().expect("percent token owns its text").as_ptr().cast_mut();
                     while *cp as ::core::ffi::c_int != '\0' as i32 {
                         if *cp as ::core::ffi::c_int != '%' as i32
                             && *(*__ctype_b_loc())
@@ -1198,52 +1204,34 @@ unsafe fn yylex(lexed: &mut *mut core::ffi::c_char) -> ::core::ffi::c_int {
                         return 265 as ::core::ffi::c_int;
                     }
                     (*ps).condition = 1 as ::core::ffi::c_int;
-                    if strcmp(
-                        *lexed,
-                        b"%hidden\0" as *const u8 as *const ::core::ffi::c_char,
-                    ) == 0 as ::core::ffi::c_int
-                    {
-                        free(*lexed as *mut ::core::ffi::c_void);
-                        return 259 as ::core::ffi::c_int;
+                    let directive = lexed
+                        .as_ref()
+                        .expect("percent token owns its text")
+                        .as_bytes();
+                    let keyword = match directive {
+                        b"%hidden" => 259,
+                        b"%if" => 260,
+                        b"%else" => 261,
+                        b"%elif" => 262,
+                        b"%endif" => 263,
+                        _ => 258,
+                    };
+                    if keyword != 258 {
+                        *lexed = None;
+                        return keyword;
                     }
-                    if strcmp(*lexed, b"%if\0" as *const u8 as *const ::core::ffi::c_char)
-                        == 0 as ::core::ffi::c_int
-                    {
-                        free(*lexed as *mut ::core::ffi::c_void);
-                        return 260 as ::core::ffi::c_int;
-                    }
-                    if strcmp(
-                        *lexed,
-                        b"%else\0" as *const u8 as *const ::core::ffi::c_char,
-                    ) == 0 as ::core::ffi::c_int
-                    {
-                        free(*lexed as *mut ::core::ffi::c_void);
-                        return 261 as ::core::ffi::c_int;
-                    }
-                    if strcmp(
-                        *lexed,
-                        b"%elif\0" as *const u8 as *const ::core::ffi::c_char,
-                    ) == 0 as ::core::ffi::c_int
-                    {
-                        free(*lexed as *mut ::core::ffi::c_void);
-                        return 262 as ::core::ffi::c_int;
-                    }
-                    if strcmp(
-                        *lexed,
-                        b"%endif\0" as *const u8 as *const ::core::ffi::c_char,
-                    ) == 0 as ::core::ffi::c_int
-                    {
-                        free(*lexed as *mut ::core::ffi::c_void);
-                        return 263 as ::core::ffi::c_int;
-                    }
-                    free(*lexed as *mut ::core::ffi::c_void);
                     return 258 as ::core::ffi::c_int;
                 }
-                token = yylex_token(ch);
-                if token.is_null() {
+                let token_owner = yylex_token(ch);
+                if token_owner.is_none() {
                     return 258 as ::core::ffi::c_int;
                 }
-                *lexed = token;
+                *lexed = token_owner;
+                token = lexed
+                    .as_ref()
+                    .expect("word token owns its text")
+                    .as_ptr()
+                    .cast_mut();
                 if !strchr(token, '=' as i32).is_null()
                     && yylex_is_var(*token, 1 as ::core::ffi::c_int) != 0
                 {
@@ -1264,7 +1252,7 @@ unsafe fn yylex(lexed: &mut *mut core::ffi::c_char) -> ::core::ffi::c_int {
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn yylex_format() -> *mut ::core::ffi::c_char {
+unsafe fn yylex_format() -> Option<CString> {
     let mut current_block: u64;
     let mut buf = LexerBuffer::new();
     let mut ch: ::core::ffi::c_int = 0;
@@ -1301,18 +1289,18 @@ unsafe extern "C" fn yylex_format() -> *mut ::core::ffi::c_char {
     match current_block {
         10048703153582371463 => {
             if !(brackets != 0 as ::core::ffi::c_int) {
-                let buf = buf.into_raw();
+                let buf = buf.into_cstring();
                 log_debug(
                     b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     b"yylex_format\0" as *const u8 as *const ::core::ffi::c_char,
-                    buf,
+                    buf.as_ptr(),
                 );
-                return buf;
+                return Some(buf);
             }
         }
         _ => {}
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    None
 }
 unsafe fn yylex_token_escape(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
     let mut current_block: u64;
@@ -1623,7 +1611,13 @@ mod parser_collection_tests {
                 cmd.arguments
                     .items
                     .iter()
-                    .map(|arg| CStr::from_ptr(arg.string).to_bytes().to_vec())
+                    .map(|arg| {
+                        arg.string
+                            .as_ref()
+                            .expect("parser string argument owns its text")
+                            .as_bytes()
+                            .to_vec()
+                    })
                     .collect()
             })
             .collect();
@@ -1689,7 +1683,7 @@ mod parser_collection_tests {
         }
     }
 }
-unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi::c_char {
+unsafe fn yylex_token(mut ch: ::core::ffi::c_int) -> Option<CString> {
     let mut current_block: u64;
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
     let mut buf = LexerBuffer::new();
@@ -1867,17 +1861,17 @@ unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi
     }
     match current_block {
         9856007333916341158 => {
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+            return None;
         }
         _ => {
             yylex_ungetc(ch);
-            let buf = buf.into_raw();
+            let buf = buf.into_cstring();
             log_debug(
                 b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 b"yylex_token\0" as *const u8 as *const ::core::ffi::c_char,
-                buf,
+                buf.as_ptr(),
             );
-            return buf;
+            return Some(buf);
         }
     };
 }

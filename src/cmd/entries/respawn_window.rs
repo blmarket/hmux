@@ -1,7 +1,7 @@
 use crate::src::arguments::{
     args_first_value, args_get, args_has, args_next_value, args_to_vector,
 };
-use crate::src::cmd::{cmd_free_argv, cmd_get_args};
+use crate::src::cmd::{cmd_get_args, OwnedArgv};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::ffi::libc::free;
@@ -123,6 +123,7 @@ unsafe extern "C" fn cmd_respawn_window_exec(
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
     };
+    let mut argv_owner = OwnedArgv::default();
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut s: *mut session = (*target).s;
     let mut wl: *mut winlink = (*target).wl;
@@ -132,7 +133,9 @@ unsafe extern "C" fn cmd_respawn_window_exec(
     sc.s = s;
     sc.wl = wl;
     sc.tc = tc;
-    args_to_vector(args, &raw mut sc.argc, &raw mut sc.argv);
+    argv_owner = args_to_vector(args);
+    sc.argc = argv_owner.argc();
+    sc.argv = argv_owner.as_mut_ptr();
     sc.environ = environ_create();
     av = args_first_value(args, 'e' as i32 as u_char);
     while !av.is_null() {
@@ -159,16 +162,10 @@ unsafe extern "C" fn cmd_respawn_window_exec(
             cause,
         );
         free(cause as *mut ::core::ffi::c_void);
-        if !sc.argv.is_null() {
-            cmd_free_argv(sc.argc, sc.argv);
-        }
         environ_free(sc.environ);
         return CMD_RETURN_ERROR;
     }
     server_redraw_window((*wl).window);
-    if !sc.argv.is_null() {
-        cmd_free_argv(sc.argc, sc.argv);
-    }
     environ_free(sc.environ);
     return CMD_RETURN_NORMAL;
 }

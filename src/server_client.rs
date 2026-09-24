@@ -1,7 +1,7 @@
 use crate::src::alerts::alerts_check_session;
 use crate::src::arguments::OwnedArgumentVector;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
-use crate::src::cmd::{cmd_free_argv, cmd_list_all_have, cmd_list_free, cmd_unpack_argv};
+use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv, OwnedArgv};
 use crate::src::cmd_find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd_parse::cmd_parse_from_arguments;
 use crate::src::cmd_queue::{
@@ -4737,9 +4737,8 @@ unsafe extern "C" fn server_client_dispatch_command(
     let mut data: msg_command = msg_command { argc: 0 };
     let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut len: size_t = 0;
+    let mut argv = OwnedArgv::default();
     let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut argv: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
@@ -4765,10 +4764,17 @@ unsafe extern "C" fn server_client_dispatch_command(
     {
         return -(1 as ::core::ffi::c_int);
     }
-    if cmd_unpack_argv(buf, len, data.argc, &raw mut argv) != 0 as ::core::ffi::c_int {
-        cause = Some(CString::new("command too long").unwrap());
+    let unpacked = if len == 0 {
+        OwnedArgv::unpack(&mut [], data.argc)
     } else {
-        argc = data.argc;
+        OwnedArgv::unpack(
+            std::slice::from_raw_parts_mut(buf.cast::<u8>(), len as usize),
+            data.argc,
+        )
+    };
+    if let Ok(decoded) = unpacked {
+        argv = decoded;
+        argc = argv.argc();
         if argc == 0 as ::core::ffi::c_int {
             new_item = cmdq_get_callback1(
                 b"server_client_default_command\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4783,7 +4789,13 @@ unsafe extern "C" fn server_client_dispatch_command(
             );
             current_block = 13472856163611868459;
         } else {
-            let mut values = OwnedArgumentVector::from_argv(argc, argv);
+            cmd_log_argv(
+                argc,
+                argv.as_mut_ptr(),
+                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                b"cmd_unpack_argv\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            let mut values = OwnedArgumentVector::from_argv(argc, argv.as_mut_ptr());
             let pr = cmd_parse_from_arguments(
                 values.as_mut_ptr(),
                 argc as u_int,
@@ -4796,7 +4808,6 @@ unsafe extern "C" fn server_client_dispatch_command(
                     current_block = 12680788052841528405;
                 }
                 1 | _ => {
-                    cmd_free_argv(argc, argv);
                     if (*c).flags & CLIENT_READONLY as uint64_t != 0
                         && cmd_list_all_have(pr.cmdlist, CMD_READONLY) == 0
                     {
@@ -4842,8 +4853,9 @@ unsafe extern "C" fn server_client_dispatch_command(
                 return 0 as ::core::ffi::c_int;
             }
         }
+    } else {
+        cause = Some(CString::new("command too long").unwrap());
     }
-    cmd_free_argv(argc, argv);
     cmdq_append(
         c,
         cmdq_get_error(cause.as_ref().map_or(::core::ptr::null(), |error| error.as_ptr())),

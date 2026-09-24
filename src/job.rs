@@ -1,5 +1,5 @@
 use crate::src::cfg::cfg_finished;
-use crate::src::cmd::{cmd_copy_argv, cmd_log_argv, cmd_stringify_argv_cstring};
+use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring, OwnedArgv};
 use crate::src::cmd_queue::cmdq_print;
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::environ::{
@@ -361,7 +361,8 @@ pub unsafe extern "C" fn job_run(
                         );
                         _exit(1 as ::core::ffi::c_int);
                     } else {
-                        argvp = cmd_copy_argv(argc, argv);
+                        let mut exec_argv = OwnedArgv::copy_from_raw(argc, argv);
+                        argvp = exec_argv.as_mut_ptr();
                         execvp(
                             *argvp.offset(0 as ::core::ffi::c_int as isize),
                             argvp as *const *mut ::core::ffi::c_char,

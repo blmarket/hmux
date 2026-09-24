@@ -5,11 +5,10 @@ use hmux2::src::arguments::{
     args_create, args_free, args_print, args_push_positional, args_to_vector,
 };
 use hmux2::src::cmd::{
-    cmd, cmd_free, cmd_free_argv, cmd_list_append, cmd_list_append_all, cmd_list_copy,
+    cmd, cmd_free, cmd_list_append, cmd_list_append_all, cmd_list_copy,
     cmd_list_first, cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print,
     cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
-use hmux2::src::ffi::libc::free;
 use hmux2::src::shared::arguments::{args_value, ARGS_COMMANDS, ARGS_STRING};
 
 unsafe fn display_message_command() -> *mut cmd {
@@ -24,8 +23,7 @@ fn command_printer_keeps_exported_c_buffer_and_empty_arguments() {
     unsafe {
         let command = display_message_command();
         let printed = cmd_print(command);
-        assert_eq!(CStr::from_ptr(printed).to_bytes(), b"display-message");
-        free(printed.cast());
+        assert_eq!(printed.as_bytes(), b"display-message");
         cmd_free(command);
     }
 }
@@ -35,8 +33,7 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
     unsafe {
         let list = cmd_list_new();
         let empty = cmd_list_print(list, 0);
-        assert_eq!(CStr::from_ptr(empty).to_bytes(), b"");
-        free(empty.cast());
+        assert_eq!(empty.as_bytes(), b"");
 
         for _ in 0..3 {
             let item = display_message_command();
@@ -73,8 +70,7 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             expected.extend_from_slice(separator2);
             expected.extend_from_slice(name);
             let printed = cmd_list_print(list, flags);
-            assert_eq!(CStr::from_ptr(printed).to_bytes(), expected);
-            free(printed.cast());
+            assert_eq!(printed.as_bytes(), expected);
         }
         let args = args_create();
         let positional = args_push_positional(args);
@@ -83,20 +79,17 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
 
         let printed = args_print(args);
         assert_eq!(
-            CStr::from_ptr(printed).to_bytes(),
+            printed.as_bytes(),
             b"{ display-message ; display-message ;; display-message }"
         );
-        free(printed.cast());
 
-        let mut argc = 0;
-        let mut argv = std::ptr::null_mut();
-        args_to_vector(args, &mut argc, &mut argv);
-        assert_eq!(argc, 1);
+        let mut argv = args_to_vector(args);
+        assert_eq!(argv.argc(), 1);
+        let argv_ptr = argv.as_mut_ptr();
         assert_eq!(
-            CStr::from_ptr(*argv).to_bytes(),
+            CStr::from_ptr(*argv_ptr).to_bytes(),
             b"display-message ; display-message ;; display-message"
         );
-        cmd_free_argv(argc, argv);
         args_free(args);
     }
 }
@@ -135,10 +128,9 @@ fn list_splice_copy_and_refcount_keep_command_pointers_stable() {
         assert!(cmd_list_next(copied_third).is_null());
         let printed = cmd_list_print(copied, 0);
         assert_eq!(
-            CStr::from_ptr(printed).to_bytes(),
+            printed.as_bytes(),
             b"display-message ; display-message ;; display-message"
         );
-        free(printed.cast());
 
         (*destination).references += 1;
         cmd_list_free(destination);

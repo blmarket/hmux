@@ -1,4 +1,4 @@
-use crate::src::cmd::{cmd_copy_argv, cmd_free_argv, cmd_log_argv, cmd_stringify_argv_cstring};
+use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring, OwnedArgv};
 use crate::src::cmd_find::cmd_find_from_winlink_pane;
 use crate::src::cmd_queue::{cmdq_get_client, cmdq_get_target};
 use crate::src::compat::fdforkpty::fdforkpty;
@@ -41,7 +41,8 @@ use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
 pub use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_add_pane, window_create, window_destroy_panes, window_pane_index,
-    window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
+    window_pane_reset_mode_all, window_pane_set_argv, window_pane_set_cwd, window_pane_set_event,
+    window_pane_set_shell,
     window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_remove_pane,
     window_replace_name, window_set_active_pane, winlink_add, winlink_find_by_index,
     winlink_remove, winlink_set_window, winlink_stack_remove,
@@ -669,9 +670,7 @@ pub unsafe extern "C" fn spawn_pane(
         window_pane_set_cwd(new_wp, Some(cwd));
     }
     if argc > 0 as ::core::ffi::c_int {
-        cmd_free_argv((*new_wp).argc, (*new_wp).argv);
-        (*new_wp).argc = argc;
-        (*new_wp).argv = cmd_copy_argv(argc, argv);
+        window_pane_set_argv(new_wp, OwnedArgv::copy_from_raw(argc, argv));
     }
     // `child_owner` owns the C tree for the whole synchronous spawn
     // operation. Its raw pointer is borrowed by the translated C calls below;
@@ -898,7 +897,8 @@ pub unsafe extern "C" fn spawn_pane(
             if (*new_wp).argc != 0 as ::core::ffi::c_int
                 && (*new_wp).argc != 1 as ::core::ffi::c_int
             {
-                argvp = cmd_copy_argv((*new_wp).argc, (*new_wp).argv);
+                let mut exec_argv = OwnedArgv::copy_from_raw((*new_wp).argc, (*new_wp).argv);
+                argvp = exec_argv.as_mut_ptr();
                 execvp(
                     *argvp.offset(0 as ::core::ffi::c_int as isize),
                     argvp as *const *mut ::core::ffi::c_char,

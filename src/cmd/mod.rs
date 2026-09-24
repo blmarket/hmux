@@ -5,6 +5,8 @@ pub(crate) use self::core::{
     cmd_list_print_cstring, cmd_print_cstring, cmd_stringify_argv_cstring,
     cmd_template_replace_cstring,
 };
+pub(crate) use self::core::cmd_append_argv;
+pub(crate) use crate::src::shared::command::OwnedArgv;
 pub mod entries;
 pub mod find;
 pub mod parse;
@@ -14,13 +16,13 @@ pub mod queue;
 pub use self::core::{
     __builtin_va_list, __va_list_tag, args, args_parse, args_parse_cb, args_value,
     args_value_c2rust_unnamed, args_value_entry, client, client_file, client_file_cb,
-    client_file_entry, client_files, cmd, cmd_append_argv, cmd_copy, cmd_copy_argv, cmd_entry,
-    cmd_entry_flag, cmd_find, cmd_find_state, cmd_free, cmd_free_argv, cmd_get_alias, cmd_get_args,
+    client_file_entry, client_files, cmd, cmd_copy, cmd_entry,
+    cmd_entry_flag, cmd_find, cmd_find_state, cmd_free, cmd_get_alias, cmd_get_args,
     cmd_get_entry, cmd_get_group, cmd_get_parse_flags, cmd_get_source, cmd_list, cmd_list_all_have,
     cmd_list_any_have, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_first,
     cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print, cmd_log_argv,
-    cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window, cmd_pack_argv, cmd_parse, cmd_prepend_argv,
-    cmd_print, cmd_stringify_argv, cmd_table, cmd_template_replace, cmd_unpack_argv,
+    cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window, cmd_pack_argv, cmd_parse,
+    cmd_print, cmd_stringify_argv, cmd_table, cmd_template_replace,
     cmdq_item, cmdq_list, cmds, control_state, environ, format_job_tree, format_tree, hyperlinks,
     input_ctx, input_request, input_requests, key_binding, key_binding_entry, key_bindings,
     key_event, key_table, key_table_entry, layout_cell, layout_cell_entry, layout_cells,

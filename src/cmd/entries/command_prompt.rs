@@ -2,12 +2,11 @@ use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_free,
     args_make_commands_get_command_cstring, args_make_commands_prepare,
 };
-use crate::src::cmd::{cmd_append_argv, cmd_copy_argv, cmd_free_argv, cmd_get_args, cmd_list_free};
+use crate::src::cmd::{cmd_append_argv, cmd_get_args, cmd_list_free, OwnedArgv};
 use crate::src::cmd_queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::ffi::libc::free;
 use crate::src::prompt::prompt_type;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args_command_state;
@@ -91,8 +90,7 @@ pub struct cmd_command_prompt_cdata {
     pub wp: *mut window_pane,
     pub prompts: Vec<cmd_command_prompt_prompt>,
     pub current: u_int,
-    pub argc: ::core::ffi::c_int,
-    pub argv: *mut *mut ::core::ffi::c_char,
+    pub argv: OwnedArgv,
 }
 pub struct cmd_command_prompt_prompt {
     pub input: Option<CString>,
@@ -218,8 +216,7 @@ unsafe extern "C" fn cmd_command_prompt_exec(
         wp: ::core::ptr::null_mut(),
         prompts: Vec::new(),
         current: 0,
-        argc: 0,
-        argv: ::core::ptr::null_mut(),
+        argv: OwnedArgv::default(),
     }));
     if wait != 0 {
         (*cdata).item = item;
@@ -360,7 +357,7 @@ unsafe extern "C" fn cmd_command_prompt_callback(
             if (*cdata).flags & PROMPT_INCREMENTAL != 0 {
                 current_block = 11745758271394821990;
             } else {
-                cmd_append_argv(&raw mut (*cdata).argc, &raw mut (*cdata).argv, s);
+                cmd_append_argv(&mut (*cdata).argv, s);
                 (*cdata).current = (*cdata).current.wrapping_add(1);
                 if ((*cdata).current as usize) != (*cdata).prompts.len() {
                     let (prompt_ptr, input_ptr) =
@@ -380,17 +377,16 @@ unsafe extern "C" fn cmd_command_prompt_callback(
         match current_block {
             11745758271394821990 => {}
             _ => {
-                argc = (*cdata).argc;
-                argv = cmd_copy_argv((*cdata).argc, (*cdata).argv);
+                let mut argv_owner = (*cdata).argv.copy();
                 if key as ::core::ffi::c_uint
                     != PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    cmd_append_argv(&raw mut argc, &raw mut argv, s);
+                    cmd_append_argv(&mut argv_owner, s);
                 } else {
-                    cmd_free_argv((*cdata).argc, (*cdata).argv);
-                    (*cdata).argc = argc;
-                    (*cdata).argv = cmd_copy_argv(argc, argv);
+                    (*cdata).argv = argv_owner.copy();
                 }
+                argc = argv_owner.argc();
+                argv = argv_owner.as_mut_ptr();
                 match args_make_commands((*cdata).state, argc, argv) {
                     Err(error) => {
                         cmdq_append(
@@ -402,17 +398,16 @@ unsafe extern "C" fn cmd_command_prompt_callback(
                         );
                     }
                     Ok(cmdlist) if item.is_null() => {
-                    new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
-                    cmdq_append(c, new_item);
-                    cmd_list_free(cmdlist);
+                        new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
+                        cmdq_append(c, new_item);
+                        cmd_list_free(cmdlist);
                     }
                     Ok(cmdlist) => {
-                    new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
-                    cmdq_insert_after(item, new_item);
-                    cmd_list_free(cmdlist);
+                        new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
+                        cmdq_insert_after(item, new_item);
+                        cmd_list_free(cmdlist);
                     }
                 }
-                cmd_free_argv(argc, argv);
                 if (*cdata).flags & PROMPT_INCREMENTAL != 0 {
                     return PROMPT_CONTINUE;
                 }
@@ -432,7 +427,6 @@ unsafe extern "C" fn cmd_command_prompt_free(mut data: *mut ::core::ffi::c_void)
         cdata.item = ::core::ptr::null_mut::<cmdq_item>();
     }
     cdata.prompts.clear();
-    cmd_free_argv(cdata.argc, cdata.argv);
     args_make_commands_free(cdata.state);
 }
 

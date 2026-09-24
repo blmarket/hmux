@@ -10,7 +10,7 @@ use super::key::key_event;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::{window, winlink};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 pub type cmd_retval = ::core::ffi::c_int;
 pub const CMD_RETURN_STOP: cmd_retval = 2;
 pub const CMD_RETURN_WAIT: cmd_retval = 1;
@@ -21,6 +21,144 @@ pub type cmd_find_type = ::core::ffi::c_uint;
 pub const CMD_FIND_SESSION: cmd_find_type = 2;
 pub const CMD_FIND_WINDOW: cmd_find_type = 1;
 pub const CMD_FIND_PANE: cmd_find_type = 0;
+
+/// Owns command argument strings. The pointer cache exists only as a scoped
+/// view for translated C APIs and is rebuilt whenever the collection changes.
+/// The strings themselves remain byte preserving and are freed by Rust.
+#[derive(Default)]
+pub struct OwnedArgv {
+    strings: Vec<Option<CString>>,
+    pointers: Vec<*mut ::core::ffi::c_char>,
+}
+
+impl OwnedArgv {
+    pub fn len(&self) -> usize {
+        self.strings.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.strings.is_empty()
+    }
+
+    pub fn push_cstr(&mut self, value: &CStr) {
+        self.strings.push(Some(value.to_owned()));
+        self.rebuild_pointer_view();
+    }
+
+    pub fn push_optional_cstr(&mut self, value: Option<&CStr>) {
+        self.strings.push(value.map(CStr::to_owned));
+        self.rebuild_pointer_view();
+    }
+
+    pub fn prepend_cstr(&mut self, value: &CStr) {
+        self.strings.insert(0, Some(value.to_owned()));
+        self.rebuild_pointer_view();
+    }
+
+    pub fn copy(&self) -> Self {
+        let mut result = Self {
+            strings: self.strings.clone(),
+            pointers: Vec::new(),
+        };
+        result.rebuild_pointer_view();
+        result
+    }
+
+    /// Copy the first `argc` C strings. Null entries are retained as nulls,
+    /// matching `cmd_copy_argv`'s historical behavior.
+    pub unsafe fn copy_from_raw(
+        argc: ::core::ffi::c_int,
+        argv: *mut *mut ::core::ffi::c_char,
+    ) -> Self {
+        let mut result = Self::default();
+        for index in 0..argc.max(0) as usize {
+            let value = *argv.add(index);
+            if value.is_null() {
+                result.push_optional_cstr(None);
+            } else {
+                result.push_optional_cstr(Some(CStr::from_ptr(value)));
+            }
+        }
+        result
+    }
+
+    /// Decode the length-delimited argv wire representation. As in the C
+    /// implementation, the final byte is forced to NUL before token scans.
+    pub fn unpack(buffer: &mut [u8], argc: ::core::ffi::c_int) -> Result<Self, ()> {
+        if argc == 0 {
+            return Ok(Self::default());
+        }
+        if argc < 0 || argc > 1000 || buffer.is_empty() {
+            return Err(());
+        }
+        *buffer.last_mut().expect("nonempty buffer") = 0;
+        let mut result = Self::default();
+        let mut start = 0;
+        for _ in 0..argc {
+            if start >= buffer.len() {
+                return Err(());
+            }
+            let tail = &buffer[start..];
+            let end = tail.iter().position(|byte| *byte == 0).ok_or(())?;
+            result.push_cstr(CStr::from_bytes_with_nul(&tail[..=end]).map_err(|_| ())?);
+            start += end + 1;
+        }
+        Ok(result)
+    }
+
+    /// Borrow a null-terminated pointer array for synchronous C calls. The
+    /// returned pointer is invalidated by the next mutation of this owner.
+    pub fn as_mut_ptr(&mut self) -> *mut *mut ::core::ffi::c_char {
+        if self.strings.is_empty() {
+            ::core::ptr::null_mut()
+        } else {
+            self.pointers.as_mut_ptr()
+        }
+    }
+
+    pub fn argc(&self) -> ::core::ffi::c_int {
+        ::core::ffi::c_int::try_from(self.strings.len()).expect("argv length exceeds c_int")
+    }
+
+    fn rebuild_pointer_view(&mut self) {
+        self.pointers.clear();
+        self.pointers.reserve(self.strings.len() + 1);
+        self.pointers.extend(self.strings.iter_mut().map(|string| {
+            string
+                .as_mut()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+        }));
+        self.pointers.push(::core::ptr::null_mut());
+    }
+}
+
+#[cfg(test)]
+mod owned_argv_tests {
+    use super::OwnedArgv;
+    use std::ffi::CStr;
+
+    #[test]
+    fn unpack_preserves_empty_and_non_utf8_arguments_and_terminates_view() {
+        let mut bytes = [b'a', 0, 0, 0xff, 0, b'x'];
+        let mut argv = OwnedArgv::unpack(&mut bytes, 3).expect("three arguments fit");
+        assert_eq!(bytes[5], 0);
+        assert_eq!(argv.argc(), 3);
+        let pointers = argv.as_mut_ptr();
+        assert_eq!(unsafe { CStr::from_ptr(*pointers.add(0)) }.to_bytes(), b"a");
+        assert_eq!(unsafe { CStr::from_ptr(*pointers.add(1)) }.to_bytes(), b"");
+        assert_eq!(unsafe { CStr::from_ptr(*pointers.add(2)) }.to_bytes(), &[0xff]);
+        assert!(unsafe { (*pointers.add(3)).is_null() });
+
+        let mut empty = OwnedArgv::unpack(&mut [], 0).expect("empty argv is valid");
+        assert!(empty.as_mut_ptr().is_null());
+    }
+
+    #[test]
+    fn unpack_rejects_more_arguments_than_the_wire_buffer_contains() {
+        let mut bytes = [b'x', 0];
+        assert!(OwnedArgv::unpack(&mut bytes, 2).is_err());
+    }
+}
 
 pub type cmd_parse_status = ::core::ffi::c_uint;
 pub const CMD_PARSE_SUCCESS: cmd_parse_status = 1;

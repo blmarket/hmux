@@ -152,7 +152,7 @@ use crate::src::tmux::global_options;
 use crate::src::window::{
     window_find_by_id, window_has_pane, window_pane_find_by_id, winlink_find_by_window,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf_cstring};
+use crate::src::xmalloc::{xstrdup, xvasprintf_cstring};
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
@@ -293,47 +293,8 @@ pub unsafe extern "C" fn cmd_log_argv(
         i += 1;
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_prepend_argv(
-    mut argc: *mut ::core::ffi::c_int,
-    mut argv: *mut *mut *mut ::core::ffi::c_char,
-    mut arg: *const ::core::ffi::c_char,
-) {
-    let mut new_argv: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut i: ::core::ffi::c_int = 0;
-    new_argv = xreallocarray(
-        NULL,
-        (*argc + 1 as ::core::ffi::c_int) as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-    ) as *mut *mut ::core::ffi::c_char;
-    let ref mut fresh0 = *new_argv.offset(0 as ::core::ffi::c_int as isize);
-    *fresh0 = xstrdup(arg);
-    i = 0 as ::core::ffi::c_int;
-    while i < *argc {
-        let ref mut fresh1 = *new_argv.offset((1 as ::core::ffi::c_int + i) as isize);
-        *fresh1 = *(*argv).offset(i as isize);
-        i += 1;
-    }
-    free(*argv as *mut ::core::ffi::c_void);
-    *argv = new_argv;
-    *argc += 1;
-}
-#[no_mangle]
-pub unsafe extern "C" fn cmd_append_argv(
-    mut argc: *mut ::core::ffi::c_int,
-    mut argv: *mut *mut *mut ::core::ffi::c_char,
-    mut arg: *const ::core::ffi::c_char,
-) {
-    *argv = xreallocarray(
-        *argv as *mut ::core::ffi::c_void,
-        (*argc + 1 as ::core::ffi::c_int) as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-    ) as *mut *mut ::core::ffi::c_char;
-    let fresh2 = *argc;
-    *argc = *argc + 1;
-    let ref mut fresh3 = *(*argv).offset(fresh2 as isize);
-    *fresh3 = xstrdup(arg);
+pub(crate) unsafe fn cmd_append_argv(argv: &mut OwnedArgv, arg: *const ::core::ffi::c_char) {
+    argv.push_cstr(CStr::from_ptr(arg));
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_pack_argv(
@@ -365,88 +326,6 @@ pub unsafe extern "C" fn cmd_pack_argv(
         i += 1;
     }
     return 0 as ::core::ffi::c_int;
-}
-#[no_mangle]
-pub unsafe extern "C" fn cmd_unpack_argv(
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let mut i: ::core::ffi::c_int = 0;
-    let mut arglen: size_t = 0;
-    if argc == 0 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    if argc < 0 as ::core::ffi::c_int || argc > 1000 as ::core::ffi::c_int {
-        return -(1 as ::core::ffi::c_int);
-    }
-    *argv = xcalloc(
-        argc as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-    ) as *mut *mut ::core::ffi::c_char;
-    *buf.offset(len.wrapping_sub(1 as size_t) as isize) = '\0' as i32 as ::core::ffi::c_char;
-    i = 0 as ::core::ffi::c_int;
-    while i < argc {
-        if len == 0 as size_t {
-            cmd_free_argv(argc, *argv);
-            return -(1 as ::core::ffi::c_int);
-        }
-        arglen = strlen(buf).wrapping_add(1 as size_t);
-        let ref mut fresh4 = *(*argv).offset(i as isize);
-        *fresh4 = xstrdup(buf);
-        buf = buf.offset(arglen as isize);
-        len = len.wrapping_sub(arglen);
-        i += 1;
-    }
-    cmd_log_argv(
-        argc,
-        *argv,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_unpack_argv\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    return 0 as ::core::ffi::c_int;
-}
-#[no_mangle]
-pub unsafe extern "C" fn cmd_copy_argv(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
-) -> *mut *mut ::core::ffi::c_char {
-    let mut new_argv: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut i: ::core::ffi::c_int = 0;
-    if argc == 0 as ::core::ffi::c_int {
-        return ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    }
-    new_argv = xcalloc(
-        (argc + 1 as ::core::ffi::c_int) as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-    ) as *mut *mut ::core::ffi::c_char;
-    i = 0 as ::core::ffi::c_int;
-    while i < argc {
-        if !(*argv.offset(i as isize)).is_null() {
-            let ref mut fresh5 = *new_argv.offset(i as isize);
-            *fresh5 = xstrdup(*argv.offset(i as isize));
-        }
-        i += 1;
-    }
-    return new_argv;
-}
-#[no_mangle]
-pub unsafe extern "C" fn cmd_free_argv(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
-) {
-    let mut i: ::core::ffi::c_int = 0;
-    if argc == 0 as ::core::ffi::c_int {
-        return;
-    }
-    i = 0 as ::core::ffi::c_int;
-    while i < argc {
-        free(*argv.offset(i as isize) as *mut ::core::ffi::c_void);
-        i += 1;
-    }
-    free(argv as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_stringify_argv(
@@ -697,10 +576,8 @@ pub unsafe extern "C" fn cmd_copy(
     (*new_cmd).line = (*cmd).line;
     return new_cmd;
 }
-#[no_mangle]
-pub unsafe extern "C" fn cmd_print(cmd: *mut cmd) -> *mut ::core::ffi::c_char {
-    let printed = cmd_print_cstring(cmd);
-    xstrdup(printed.as_ptr())
+pub unsafe fn cmd_print(cmd: *mut cmd) -> CString {
+    cmd_print_cstring(cmd)
 }
 
 pub(crate) unsafe fn cmd_print_cstring(cmd: *mut cmd) -> CString {
@@ -855,13 +732,11 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: *const cmd_list, flags: i32
     CString::new(buf).expect("command list contains no interior NUL")
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn cmd_list_print(
+pub unsafe fn cmd_list_print(
     cmdlist: *const cmd_list,
     flags: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    let printed = cmd_list_print_cstring(cmdlist, flags);
-    xstrdup(printed.as_ptr())
+) -> CString {
+    cmd_list_print_cstring(cmdlist, flags)
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_first(mut cmdlist: *mut cmd_list) -> *mut cmd {

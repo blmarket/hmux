@@ -2,7 +2,7 @@ use crate::src::arguments::{
     args_count, args_first_value, args_get, args_has, args_next_value, args_percentage_result,
     args_string, args_strtonum_result, args_to_vector,
 };
-use crate::src::cmd::{cmd_append_argv, cmd_free_argv, cmd_get_args};
+use crate::src::cmd::{cmd_append_argv, cmd_get_args, OwnedArgv};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::ffi::libc::{free, strcmp, strtol};
@@ -1255,6 +1255,7 @@ unsafe extern "C" fn cmd_display_popup_exec(
     let mut cause: Option<std::ffi::CString> = None;
     let mut argv: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
+    let mut argv_owner = OwnedArgv::default();
     let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_title: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
     let mut modify: ::core::ffi::c_int = popup_present(tc);
@@ -1389,10 +1390,12 @@ unsafe extern "C" fn cmd_display_popup_exec(
                                 if checkshell(shell) == 0 {
                                     shell = _PATH_BSHELL.as_ptr();
                                 }
-                                cmd_append_argv(&raw mut argc, &raw mut argv, shell);
+                                cmd_append_argv(&mut argv_owner, shell);
                             } else {
-                                args_to_vector(args, &raw mut argc, &raw mut argv);
+                                argv_owner = args_to_vector(args);
                             }
+                            argc = argv_owner.argc();
+                            argv = argv_owner.as_mut_ptr();
                             if args_has(args, 'e' as i32 as u_char) >= 1 as ::core::ffi::c_int {
                                 env = environ_create();
                                 av = args_first_value(args, 'e' as i32 as u_char);
@@ -1497,7 +1500,6 @@ unsafe extern "C" fn cmd_display_popup_exec(
                         environ_free(env);
                         free(formatted_cwd as *mut ::core::ffi::c_void);
                         free(formatted_title as *mut ::core::ffi::c_void);
-                        cmd_free_argv(argc, argv);
                         return CMD_RETURN_WAIT;
                     }
                     current_block = 6589043366517631393;
@@ -1508,14 +1510,12 @@ unsafe extern "C" fn cmd_display_popup_exec(
     }
     match current_block {
         1988999557336856620 => {
-            cmd_free_argv(argc, argv);
             environ_free(env);
             free(formatted_cwd as *mut ::core::ffi::c_void);
             free(formatted_title as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         _ => {
-            cmd_free_argv(argc, argv);
             environ_free(env);
             free(formatted_cwd as *mut ::core::ffi::c_void);
             free(formatted_title as *mut ::core::ffi::c_void);

@@ -1,5 +1,5 @@
 use crate::src::cmd::{
-    cmd_append_argv, cmd_get_args, cmd_get_entry, cmd_get_source, cmd_list_copy, cmd_list_first,
+    cmd_get_args, cmd_get_entry, cmd_get_source, cmd_list_copy, cmd_list_first,
     cmd_list_free, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::cmd_find::cmd_find_copy_state;
@@ -873,36 +873,28 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
     }
     drop(Box::from_raw(args));
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_to_vector(
-    mut args: *mut args,
-    mut argc: *mut ::core::ffi::c_int,
-    mut argv: *mut *mut *mut ::core::ffi::c_char,
-) {
-    let mut i: u_int = 0;
-    *argc = 0 as ::core::ffi::c_int;
-    *argv = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    i = 0 as u_int;
-    while i < (*args).count {
-        match (*(*args).values.as_mut_ptr().offset(i as isize)).type_0 as ::core::ffi::c_uint {
+pub unsafe fn args_to_vector(args: *mut args) -> OwnedArgv {
+    let mut argv = OwnedArgv::default();
+    for value in (*args).values.iter() {
+        match value.type_0 as ::core::ffi::c_uint {
             1 => {
-                cmd_append_argv(
-                    argc,
-                    argv,
-                    (*(*args).values.as_mut_ptr().offset(i as isize)).c2rust_unnamed.string,
+                assert!(
+                    !value.c2rust_unnamed.string.is_null(),
+                    "string argument value must own a C string"
                 );
+                argv.push_cstr(CStr::from_ptr(value.c2rust_unnamed.string));
             }
             2 => {
-                let s = cmd_list_print_cstring(
-                    (*(*args).values.as_mut_ptr().offset(i as isize)).c2rust_unnamed.cmdlist,
+                let printed = cmd_list_print_cstring(
+                    value.c2rust_unnamed.cmdlist,
                     0 as ::core::ffi::c_int,
                 );
-                cmd_append_argv(argc, argv, s.as_ptr());
+                argv.push_cstr(&printed);
             }
-            0 | _ => {}
+            _ => {}
         }
-        i = i.wrapping_add(1);
     }
+    argv
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_from_vector(
@@ -995,10 +987,8 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: *mut args_value) {
         0 | _ => {}
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn args_print(args: *mut args) -> *mut ::core::ffi::c_char {
-    let printed = args_print_cstring(args);
-    xstrdup(printed.as_ptr())
+pub unsafe fn args_print(args: *mut args) -> CString {
+    args_print_cstring(args)
 }
 
 pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
@@ -1138,11 +1128,8 @@ pub(crate) unsafe fn args_escape_cstring(s: &CStr) -> CString {
     CString::new(result).expect("utf8_strvis output has no interior NUL")
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn args_escape(s: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char {
-    // C callers still own and libc-free the returned duplicate.
-    let escaped = args_escape_cstring(CStr::from_ptr(s));
-    xstrdup(escaped.as_ptr())
+pub unsafe fn args_escape(s: *const ::core::ffi::c_char) -> CString {
+    args_escape_cstring(CStr::from_ptr(s))
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_has(mut args: *mut args, mut flag: u_char) -> ::core::ffi::c_int {

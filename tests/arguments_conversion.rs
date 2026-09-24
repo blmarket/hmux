@@ -30,14 +30,13 @@ fn printing_options_uses_formatted_flag_and_string_fragments() {
         args_set(args, b'v', ptr::null_mut(), 0);
         args_set(args, b'n', string_value(c"hello"), 0);
         let printed = args_print(args);
-        assert_eq!(CStr::from_ptr(printed).to_bytes(), b"-v -n hello");
-        free(printed.cast());
+        assert_eq!(printed.as_bytes(), b"-v -n hello");
         args_free(args);
     }
 }
 
 #[test]
-fn exported_argument_escape_keeps_c_owned_byte_output() {
+fn argument_escape_keeps_byte_output() {
     unsafe {
         for (input, expected) in [
             (b"\xff".as_slice(), b"\\377".as_slice()),
@@ -45,8 +44,7 @@ fn exported_argument_escape_keeps_c_owned_byte_output() {
         ] {
             let input = CString::new(input).unwrap();
             let escaped = args_escape(input.as_ptr());
-            assert_eq!(CStr::from_ptr(escaped).to_bytes(), expected);
-            free(escaped.cast());
+            assert_eq!(escaped.as_bytes(), expected);
         }
     }
 }
@@ -317,8 +315,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         );
 
         let rendered = cmd_list_print((*value).c2rust_unnamed.cmdlist, 0);
-        assert_eq!(CStr::from_ptr(rendered).to_bytes(), b"");
-        free(rendered.cast());
+        assert_eq!(rendered.as_bytes(), b"");
         args_free(args);
 
         let args = args_create();
