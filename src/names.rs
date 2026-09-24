@@ -1,7 +1,6 @@
 use crate::src::cmd::cmd_stringify_argv_cstring;
 use crate::src::ffi::libc::{
-    __ctype_b_loc, __xpg_basename, free, gettimeofday, memcpy, strchr, strcmp, strcspn, strlen,
-    strncmp,
+    __ctype_b_loc, __xpg_basename, gettimeofday, memcpy, strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring,
