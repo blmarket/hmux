@@ -2,8 +2,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::compat::utf8proc::{utf8proc_wctomb, utf8proc_wcwidth};
 use crate::src::compat::vis::vis;
 use crate::src::ffi::libc::{
-    __ctype_b_loc, __errno_location, free, memcpy, memset, strchr, strlen, strncmp, strtoull,
-    wctomb,
+    __ctype_b_loc, __errno_location, memcpy, memset, strchr, strlen, strncmp, strtoull, wctomb,
 };
 use crate::src::log::{fatalx, log_debug};
 use crate::src::options::{
@@ -29,7 +28,6 @@ pub use crate::src::shared::utf8::{wchar_t, UTF8_SIZE};
 pub use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::tmux::global_options;
-use crate::src::xmalloc::{xmalloc, xrealloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -1714,26 +1712,8 @@ pub unsafe extern "C" fn utf8_strvis(
     *dst = '\0' as i32 as ::core::ffi::c_char;
     return dst.offset_from(start) as ::core::ffi::c_long as size_t;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_stravis(
-    mut dst: *mut *mut ::core::ffi::c_char,
-    mut src: *const ::core::ffi::c_char,
-    mut flag: ::core::ffi::c_int,
-) -> size_t {
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
-    buf = xreallocarray(NULL, 4 as size_t, strlen(src).wrapping_add(1 as size_t))
-        as *mut ::core::ffi::c_char;
-    len = utf8_strvis(buf, src, strlen(src), flag);
-    *dst = xrealloc(
-        buf as *mut ::core::ffi::c_void,
-        len.wrapping_add(1 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    return len;
-}
-
-/// Escape a C string using the same byte conversion as `utf8_stravis`, with
-/// the result owned by Rust. The legacy entry point still returns C storage.
+/// Escape a C string using the same byte conversion as `utf8_strvis`, with
+/// the result owned by Rust.
 pub(crate) unsafe fn utf8_stravis_cstring(src: *const ::core::ffi::c_char, flag: i32) -> CString {
     let source_len = strlen(src);
     // `utf8_strvis` writes at most four bytes for each source byte, followed
@@ -1765,24 +1745,6 @@ pub(crate) unsafe fn utf8_stravisx_bytes(
     let escaped_len = utf8_strvis(buffer.as_mut_ptr().cast(), src, srclen, flag);
     buffer.truncate(escaped_len);
     buffer
-}
-#[no_mangle]
-pub unsafe extern "C" fn utf8_stravisx(
-    mut dst: *mut *mut ::core::ffi::c_char,
-    mut src: *const ::core::ffi::c_char,
-    mut srclen: size_t,
-    mut flag: ::core::ffi::c_int,
-) -> size_t {
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: size_t = 0;
-    buf = xreallocarray(NULL, 4 as size_t, srclen.wrapping_add(1 as size_t))
-        as *mut ::core::ffi::c_char;
-    len = utf8_strvis(buf, src, srclen, flag);
-    *dst = xrealloc(
-        buf as *mut ::core::ffi::c_void,
-        len.wrapping_add(1 as size_t),
-    ) as *mut ::core::ffi::c_char;
-    return len;
 }
 #[no_mangle]
 pub unsafe extern "C" fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
@@ -1824,14 +1786,6 @@ pub unsafe extern "C" fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::co
     }
     return 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_sanitize(
-    src: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let sanitized = utf8_sanitize_cstring(src);
-    xstrdup(sanitized.as_ptr())
-}
-
 /// The input is a NUL-terminated C string. The result is ASCII and retains
 /// the old sanitizer's first-NUL view and underscore width for UTF-8 cells.
 pub(crate) unsafe fn utf8_sanitize_cstring(mut src: *const ::core::ffi::c_char) -> CString {
@@ -1907,50 +1861,6 @@ pub unsafe extern "C" fn utf8_strwidth(mut s: *const utf8_data, mut n: ssize_t) 
     }
     return width;
 }
-#[no_mangle]
-pub unsafe extern "C" fn utf8_fromcstr(mut src: *const ::core::ffi::c_char) -> *mut utf8_data {
-    let mut dst: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut n: size_t = 0 as size_t;
-    let mut more: utf8_state = UTF8_MORE;
-    while *src as ::core::ffi::c_int != '\0' as i32 {
-        dst = xreallocarray(
-            dst as *mut ::core::ffi::c_void,
-            n.wrapping_add(1 as size_t),
-            ::core::mem::size_of::<utf8_data>() as size_t,
-        ) as *mut utf8_data;
-        more = utf8_open(dst.offset(n as isize) as *mut utf8_data, *src as u_char);
-        if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
-            loop {
-                src = src.offset(1);
-                if !(*src as ::core::ffi::c_int != '\0' as i32
-                    && more as ::core::ffi::c_uint
-                        == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
-                    break;
-                }
-                more = utf8_append(dst.offset(n as isize) as *mut utf8_data, *src as u_char);
-            }
-            if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                n = n.wrapping_add(1);
-                continue;
-            } else {
-                src = src.offset(-((*dst.offset(n as isize)).have as ::core::ffi::c_int as isize));
-            }
-        }
-        utf8_set(dst.offset(n as isize) as *mut utf8_data, *src as u_char);
-        n = n.wrapping_add(1);
-        src = src.offset(1);
-    }
-    dst = xreallocarray(
-        dst as *mut ::core::ffi::c_void,
-        n.wrapping_add(1 as size_t),
-        ::core::mem::size_of::<utf8_data>() as size_t,
-    ) as *mut utf8_data;
-    (*dst.offset(n as isize)).size = 0 as u_char;
-    return dst;
-}
-
 // Decode into Rust-owned cells while retaining the size-zero terminator used
 // by the existing UTF-8 routines that borrow this array as a C-style view.
 pub(crate) unsafe fn utf8_fromcstr_vec(mut src: *const ::core::ffi::c_char) -> Vec<utf8_data> {
@@ -1990,35 +1900,8 @@ pub(crate) unsafe fn utf8_fromcstr_vec(mut src: *const ::core::ffi::c_char) -> V
     cells
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn utf8_tocstr(mut src: *mut utf8_data) -> *mut ::core::ffi::c_char {
-    let mut dst: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut n: size_t = 0 as size_t;
-    while (*src).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        dst = xreallocarray(
-            dst as *mut ::core::ffi::c_void,
-            n.wrapping_add((*src).size as size_t),
-            1 as size_t,
-        ) as *mut ::core::ffi::c_char;
-        memcpy(
-            dst.offset(n as isize) as *mut ::core::ffi::c_void,
-            &raw mut (*src).data as *mut u_char as *const ::core::ffi::c_void,
-            (*src).size as size_t,
-        );
-        n = n.wrapping_add((*src).size as size_t);
-        src = src.offset(1);
-    }
-    dst = xreallocarray(
-        dst as *mut ::core::ffi::c_void,
-        n.wrapping_add(1 as size_t),
-        1 as size_t,
-    ) as *mut ::core::ffi::c_char;
-    *dst.offset(n as isize) = '\0' as i32 as ::core::ffi::c_char;
-    return dst;
-}
-
 /// Copy the C-visible part of a sentinel-terminated cell stream into Rust-owned storage.
-/// The legacy utf8_tocstr copies all cell bytes, but C consumers stop at the first NUL.
+/// C consumers stop at the first NUL, even when it occurs inside a cell.
 pub(crate) unsafe fn utf8_tocstr_cstring(mut src: *const utf8_data) -> CString {
     let mut bytes = Vec::new();
     while (*src).size != 0 {
@@ -2072,20 +1955,6 @@ pub unsafe extern "C" fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_
         s = s.offset(1);
     }
     return width;
-}
-#[no_mangle]
-pub unsafe extern "C" fn utf8_padcstr(
-    s: *const ::core::ffi::c_char,
-    width: u_int,
-) -> *mut ::core::ffi::c_char {
-    xstrdup(utf8_pad_cstring(s, width, false).as_ptr())
-}
-#[no_mangle]
-pub unsafe extern "C" fn utf8_rpadcstr(
-    s: *const ::core::ffi::c_char,
-    width: u_int,
-) -> *mut ::core::ffi::c_char {
-    xstrdup(utf8_pad_cstring(s, width, true).as_ptr())
 }
 pub(crate) unsafe fn utf8_pad_cstring(
     s: *const ::core::ffi::c_char,
@@ -2170,16 +2039,25 @@ mod tests {
             ] {
                 let input = input.as_ptr().cast();
                 assert_eq!(utf8_sanitize_cstring(input).as_bytes(), expected);
-                let exported = utf8_sanitize(input);
-                assert!(!exported.is_null());
-                assert_eq!(CStr::from_ptr(exported).to_bytes(), expected);
-                free(exported.cast());
             }
         }
     }
 
     #[test]
-    fn utf8_tocstr_cstring_matches_legacy_c_view() {
+    fn owned_cell_decoder_retries_each_byte_after_a_bad_sequence() {
+        unsafe {
+            let cells = utf8_fromcstr_vec(b"\xe2(\xa1\0".as_ptr().cast());
+            assert_eq!(cells.len(), 4);
+            for (cell, byte) in cells[..3].iter().zip([0xe2, b'(', 0xa1]) {
+                assert_eq!(cell.size, 1);
+                assert_eq!(cell.data[0], byte);
+            }
+            assert_eq!(cells[3].size, 0);
+        }
+    }
+
+    #[test]
+    fn utf8_tocstr_cstring_stops_at_the_first_nul_in_a_cell_or_between_cells() {
         unsafe {
             for parts in [
                 vec![],
@@ -2196,11 +2074,39 @@ mod tests {
                 }
                 cells.push(std::mem::zeroed());
 
-                let legacy = utf8_tocstr(cells.as_mut_ptr());
-                let expected = CStr::from_ptr(legacy).to_bytes().to_vec();
-                free(legacy.cast());
+                let mut expected = Vec::new();
+                for cell in &cells {
+                    if cell.size == 0 {
+                        break;
+                    }
+                    let bytes = &cell.data[..cell.size as usize];
+                    if let Some(end) = bytes.iter().position(|&byte| byte == 0) {
+                        expected.extend_from_slice(&bytes[..end]);
+                        break;
+                    }
+                    expected.extend_from_slice(bytes);
+                }
                 assert_eq!(utf8_tocstr_cstring(cells.as_ptr()).as_bytes(), expected);
             }
+        }
+    }
+
+    #[test]
+    fn owned_vis_helpers_preserve_multibyte_and_explicit_length_bytes() {
+        unsafe {
+            let input = CString::new(&b"a\xc3\xa9\xff"[..]).unwrap();
+            let escaped = utf8_stravis_cstring(
+                input.as_ptr(),
+                crate::src::shared::vis::VIS_OCTAL,
+            );
+            assert_eq!(escaped.as_bytes(), b"a\xc3\xa9\\377");
+
+            let bytes = utf8_stravisx_bytes(
+                b"a\0b".as_ptr().cast(),
+                3,
+                crate::src::shared::vis::VIS_OCTAL,
+            );
+            assert_eq!(bytes, b"a\\000b");
         }
     }
 

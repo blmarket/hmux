@@ -1,8 +1,7 @@
 use hmux2::src::shared::grid::utf8_data;
 use hmux2::src::shared::utf8::{UTF8_DONE, UTF8_ERROR, UTF8_MORE};
-use hmux2::src::utf8::{utf8_append, utf8_cstrhas, utf8_fromcstr, utf8_open, utf8_towc};
+use hmux2::src::utf8::{utf8_append, utf8_cstrhas, utf8_open, utf8_towc};
 use hmux2::src::utf8_decode::{decode_utf8, DecodeResult};
-use std::ffi::CString;
 
 fn empty_data() -> utf8_data {
     utf8_data {
@@ -32,57 +31,7 @@ fn legacy_stream_adapter_consumes_an_invalid_candidate_before_recovery() {
 }
 
 #[test]
-fn c_string_recovery_still_retries_each_byte_after_a_bad_sequence() {
-    let input = CString::new(vec![0xe2, b'(', 0xa1]).unwrap();
-    let decoded = unsafe { utf8_fromcstr(input.as_ptr()) };
-    assert!(!decoded.is_null());
-
-    unsafe {
-        let cells = std::slice::from_raw_parts(decoded, 4);
-        assert_eq!(cells[0].size, 1);
-        assert_eq!(cells[0].data[0], 0xe2);
-        assert_eq!(cells[1].size, 1);
-        assert_eq!(cells[1].data[0], b'(');
-        assert_eq!(cells[2].size, 1);
-        assert_eq!(cells[2].data[0], 0xa1);
-        assert_eq!(cells[3].size, 0);
-        libc::free(decoded.cast());
-    }
-}
-
-#[test]
-fn cstrhas_matches_decoded_cells_without_owning_an_array() {
-    // Cover plain text, a valid multibyte cell, invalid lead and continuation
-    // bytes, a malformed candidate, a truncated candidate, and first-NUL.
-    for input in [
-        &b"abc\0"[..],
-        &b"a\xc3\xa9z\0"[..],
-        &b"\xff\x80\0"[..],
-        &b"\xe2(\xa1\0"[..],
-        &b"a\xe2(\xa1\0"[..], // Match before a malformed suffix.
-        &b"\xf0\x9f\x92\0"[..],
-        &b"a\0\xc3\xa9"[..],
-        &b"\0ignored"[..],
-    ] {
-        unsafe {
-            let decoded = utf8_fromcstr(input.as_ptr().cast());
-            let mut cell = decoded;
-            while (*cell).size != 0 {
-                let mut query = *cell;
-                query.have = 0;
-                query.width = 99;
-                assert_eq!(
-                    utf8_cstrhas(input.as_ptr().cast(), &query),
-                    1,
-                    "decoded cell {:?} missing from {input:?}",
-                    &query.data[..query.size as usize]
-                );
-                cell = cell.add(1);
-            }
-            libc::free(decoded.cast());
-        }
-    }
-
+fn cstrhas_respects_utf8_cells_and_the_first_nul() {
     let query = |bytes: &[u8]| {
         let mut cell = empty_data();
         cell.size = bytes.len() as u8;

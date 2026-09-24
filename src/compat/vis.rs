@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, calloc, memcpy, realloc, strlen};
+use crate::src::ffi::libc::{__ctype_b_loc, memcpy, strlen};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::ctype::{
     _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
@@ -1061,30 +1061,20 @@ pub unsafe extern "C" fn strnvis(
     }
     return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn stravis(
-    mut outp: *mut *mut ::core::ffi::c_char,
-    mut src: *const ::core::ffi::c_char,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut len: ::core::ffi::c_int = 0;
-    let mut serrno: ::core::ffi::c_int = 0;
-    buf = calloc(4 as size_t, strlen(src).wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
-    if buf.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    len = strvis(buf, src, flag);
-    serrno = *__errno_location();
-    *outp = realloc(
-        buf as *mut ::core::ffi::c_void,
-        (len + 1 as ::core::ffi::c_int) as size_t,
-    ) as *mut ::core::ffi::c_char;
-    if (*outp).is_null() {
-        *outp = buf;
-        *__errno_location() = serrno;
-    }
-    return len;
+/// Escape a C string into Rust-owned storage, preserving `stravis` byte rules.
+pub(crate) unsafe fn stravis_cstring(
+    src: *const ::core::ffi::c_char,
+    flag: ::core::ffi::c_int,
+) -> std::ffi::CString {
+    let source_len = strlen(src);
+    let capacity = source_len
+        .checked_mul(4)
+        .and_then(|size| size.checked_add(1))
+        .expect("escaped string is too large");
+    let mut buffer = vec![0u8; capacity];
+    let escaped_len = strvis(buffer.as_mut_ptr().cast(), src, flag) as usize;
+    buffer.truncate(escaped_len + 1);
+    std::ffi::CString::from_vec_with_nul(buffer).expect("vis output contains no interior NUL")
 }
 #[no_mangle]
 pub unsafe extern "C" fn strvisx(
@@ -1112,4 +1102,22 @@ pub unsafe extern "C" fn strvisx(
     }
     *dst = '\0' as i32 as ::core::ffi::c_char;
     return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
+}
+
+#[cfg(test)]
+mod owned_vis_tests {
+    use super::*;
+
+    #[test]
+    fn stravis_cstring_owns_escaped_output() {
+        let input = std::ffi::CString::new(&b"a\t\\\xff"[..]).unwrap();
+        let escaped = unsafe {
+            stravis_cstring(
+                input.as_ptr(),
+                VIS_CSTYLE | VIS_TAB | VIS_OCTAL,
+            )
+        };
+        drop(input);
+        assert_eq!(escaped.as_bytes(), b"a\\t\\\\\\377");
+    }
 }
