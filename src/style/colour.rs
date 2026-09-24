@@ -619,7 +619,8 @@ pub unsafe extern "C" fn colour_totheme(mut c: ::core::ffi::c_int) -> client_the
     }
     return THEME_UNKNOWN;
 }
-unsafe fn colour_fromstring_impl(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
+    let s = input.as_ptr();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: ::core::ffi::c_int = 0;
@@ -3947,7 +3948,7 @@ pub fn colour_parse(input: &[u8]) -> Option<i32> {
 /// Bounded C string entry point. Locale-sensitive operations remain in libc.
 pub fn colour_parse_cstr(input: &std::ffi::CStr) -> Option<i32> {
     // The kernel only reads input through its terminating NUL; it retains no pointer.
-    let value = unsafe { colour_fromstring_impl(input.as_ptr()) };
+    let value = unsafe { colour_fromstring_impl(input) };
     (value != -1).then_some(value)
 }
 
