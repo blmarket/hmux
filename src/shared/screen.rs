@@ -8,6 +8,7 @@ use super::{
     screen_write::screen_write_cline,
 };
 use std::collections::VecDeque;
+use std::ffi::CString;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct screen_sel {
@@ -21,22 +22,14 @@ pub struct screen_sel {
     pub clipx: u_int,
     pub cell: grid_cell,
 }
-/// Screen title history, newest title first.
-///
-/// The C strings remain allocated with `xstrdup`/`free` because `screen_pop_title`
-/// transfers one directly back into `screen::title`.
-/// Only the pointer in `screen` is part of its C-compatible layout; this storage
-/// is private to Rust.
-#[derive(Default)]
-pub struct screen_titles {
-    pub(crate) entries: VecDeque<*mut ::core::ffi::c_char>,
-}
+/// Kept as a compatibility name for translated modules that import the old
+/// history type. Screen history is now stored inline as owned C strings.
+pub type screen_titles = VecDeque<CString>;
 #[repr(C)]
 pub struct screen {
-    pub title: *mut ::core::ffi::c_char,
-    pub path: *mut ::core::ffi::c_char,
-    pub titles: *mut screen_titles,
-    pub ntitles: u_int,
+    pub title: CString,
+    pub path: Option<CString>,
+    pub titles: VecDeque<CString>,
     pub grid: *mut grid,
     pub cx: u_int,
     pub cy: u_int,
@@ -53,11 +46,28 @@ pub struct screen {
     pub saved_grid: *mut grid,
     pub saved_cell: grid_cell,
     pub saved_flags: ::core::ffi::c_int,
-    pub tabs: *mut bitstr_t,
+    pub tabs: Vec<bitstr_t>,
     pub sel: Option<Box<screen_sel>>,
     pub write_list: *mut screen_write_cline,
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
+}
+
+impl screen {
+    /// A valid empty record for paths that initialize a screen in place.
+    /// All scalar and pointer fields retain their translated zero state while
+    /// the drop-bearing owners are initialized with their Rust invariants.
+    pub fn empty() -> Self {
+        let mut storage = ::core::mem::MaybeUninit::<Self>::zeroed();
+        let screen = storage.as_mut_ptr();
+        unsafe {
+            ::core::ptr::addr_of_mut!((*screen).title).write(CString::default());
+            ::core::ptr::addr_of_mut!((*screen).path).write(None);
+            ::core::ptr::addr_of_mut!((*screen).titles).write(VecDeque::new());
+            ::core::ptr::addr_of_mut!((*screen).tabs).write(Vec::new());
+            storage.assume_init()
+        }
+    }
 }
 
 pub const MODE_BRACKETPASTE: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;

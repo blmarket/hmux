@@ -382,11 +382,7 @@ mod input_request_ownership_tests {
 
             input_reply(ictx, 1, b"queued\0".as_ptr().cast());
             let mut reply = input_request_palette_data { idx: 7, c: -1 };
-            input_request_reply(
-                &mut c,
-                INPUT_REQUEST_PALETTE,
-                (&raw mut reply).cast(),
-            );
+            input_request_reply(&mut c, INPUT_REQUEST_PALETTE, (&raw mut reply).cast());
 
             assert!(input_ctx_requests(ictx).is_empty());
             assert!(input_client_requests(&mut c).is_empty());
@@ -4237,7 +4233,7 @@ unsafe extern "C" fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                     0 | 2 => {
                         screen_pop_title((*sctx).s);
                         if !wp.is_null() {
-                            input_fire_pane_title_changed(wp, (*(*sctx).s).title);
+                            input_fire_pane_title_changed(wp, (*(*sctx).s).title.as_ptr());
                             server_redraw_window_borders(w);
                             server_status_window(w);
                         }
@@ -5047,10 +5043,7 @@ unsafe extern "C" fn input_exit_apc(mut ictx: *mut input_ctx) {
             1 as ::core::ffi::c_int,
         ) != 0
     {
-        input_fire_pane_title_changed(
-            wp,
-            (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char,
-        );
+        input_fire_pane_title_changed(wp, (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char);
         server_redraw_window_borders((*wp).window as *mut window);
         server_status_window((*wp).window as *mut window);
     }
@@ -6129,7 +6122,8 @@ unsafe extern "C" fn input_request_timer_callback(
             {
                 input_send_reply(
                     (*ir).ictx,
-                    (*ir).data
+                    (*ir)
+                        .data
                         .as_ref()
                         .expect("queued input request has no reply data")
                         .as_ptr(),
@@ -6354,7 +6348,8 @@ pub unsafe extern "C" fn input_request_reply(
         {
             input_send_reply(
                 (*ir).ictx,
-                (*ir).data
+                (*ir)
+                    .data
                     .as_ref()
                     .expect("queued input request has no reply data")
                     .as_ptr(),

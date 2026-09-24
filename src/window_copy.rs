@@ -51,9 +51,8 @@ pub use crate::src::shared::arguments::{
 pub use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -425,7 +424,7 @@ unsafe extern "C" fn window_copy_clone_screen(
     let mut wx: u_int = 0;
     let mut wy: u_int = 0;
     let mut reflow: ::core::ffi::c_int = 0;
-    dst = Box::into_raw(Box::new(::core::mem::zeroed::<screen>()));
+    dst = Box::into_raw(Box::new(screen::empty()));
     sy = (*(*src).grid).hsize.wrapping_add((*(*src).grid).sy);
     if trim != 0 {
         while sy > (*(*src).grid).hsize {
@@ -561,6 +560,7 @@ unsafe extern "C" fn window_copy_common_init(
     let mut storage = Box::<window_copy_mode_data>::new_uninit();
     let uninit_data = storage.as_mut_ptr();
     uninit_data.write_bytes(0, 1);
+    (&raw mut (*uninit_data).screen).write(screen::empty());
     (&raw mut (*uninit_data).jumpchar).write(Vec::new());
     (&raw mut (*uninit_data).searchmark_owner).write(None);
     (&raw mut (*uninit_data).searchstr).write(None);
@@ -707,7 +707,7 @@ unsafe extern "C" fn window_copy_view_init(
     data = window_copy_common_init(wme);
     (*data).viewmode = 1 as ::core::ffi::c_int;
     (*data).line_numbers = 0 as ::core::ffi::c_int;
-    (*data).backing = Box::into_raw(Box::new(::core::mem::zeroed::<screen>()));
+    (*data).backing = Box::into_raw(Box::new(screen::empty()));
     screen_init((*data).backing, sx, (*(*base).grid).sy, UINT_MAX);
     (*data).ictx = input_init(
         ::core::ptr::null_mut::<window_pane>(),
@@ -6473,49 +6473,7 @@ unsafe extern "C" fn window_copy_search(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = (*data).backing;
-    let mut ss: screen = screen {
-        title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: std::ptr::null_mut(),
-        ntitles: 0,
-        grid: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        default_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        default_ccolour: 0,
-        rupper: 0,
-        rlower: 0,
-        mode: 0,
-        default_mode: 0,
-        saved_cx: 0,
-        saved_cy: 0,
-        saved_grid: ::core::ptr::null_mut::<grid>(),
-        saved_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        saved_flags: 0,
-        tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: None,
-        write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        progress_bar: progress_bar {
-            state: PROGRESS_BAR_HIDDEN,
-            progress: 0,
-        },
-    };
+    let mut ss: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -6811,49 +6769,7 @@ unsafe extern "C" fn window_copy_search_marks(
 ) -> ::core::ffi::c_int {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = (*data).backing;
-    let mut ss: screen = screen {
-        title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: std::ptr::null_mut(),
-        ntitles: 0,
-        grid: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        default_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        default_ccolour: 0,
-        rupper: 0,
-        rlower: 0,
-        mode: 0,
-        default_mode: 0,
-        saved_cx: 0,
-        saved_cy: 0,
-        saved_grid: ::core::ptr::null_mut::<grid>(),
-        saved_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        saved_flags: 0,
-        tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: None,
-        write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        progress_bar: progress_bar {
-            state: PROGRESS_BAR_HIDDEN,
-            progress: 0,
-        },
-    };
+    let mut ss: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),

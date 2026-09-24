@@ -31,9 +31,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::colour::{
@@ -339,6 +338,7 @@ unsafe fn mode_tree_alloc_data() -> *mut mode_tree_data {
     ::core::ptr::write(&raw mut (*mtd).lines, Vec::new());
     ::core::ptr::write(&raw mut (*mtd).search, None);
     ::core::ptr::write(&raw mut (*mtd).filter, None);
+    ::core::ptr::write(&raw mut (*mtd).screen, screen::empty());
     let mtd = Box::into_raw(allocation.assume_init());
     (*mtd).references = 1;
     mtd
@@ -1238,7 +1238,9 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     ft,
                     b"mode_tree_key\0" as *const u8 as *const ::core::ffi::c_char,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*mti).keystr).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*mti).keystr)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
             } else {
                 format_add(
@@ -1431,7 +1433,9 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                             &raw mut ctx,
                             &raw mut gc0,
                             w.wrapping_sub(width),
-                            ((*mti).text).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                            ((*mti).text)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                             ::core::ptr::null_mut::<style_ranges>(),
                             0 as ::core::ffi::c_int,
                         );
@@ -1473,7 +1477,9 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                             &raw mut ctx,
                             &raw mut gc,
                             w.wrapping_sub(width),
-                            ((*mti).text).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                            ((*mti).text)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                             ::core::ptr::null_mut::<style_ranges>(),
                             1 as ::core::ffi::c_int,
                         );
@@ -2849,7 +2855,17 @@ mod identity_tests {
                 mode_tree_build_lines(mtd, &raw mut (*mtd).children, 0);
                 match expected {
                     Some(expected) => {
-                        assert_eq!(CStr::from_ptr(((*item).keystr).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(), expected);
+                        assert_eq!(
+                            CStr::from_ptr(
+                                ((*item).keystr)
+                                    .as_ref()
+                                    .map_or(::core::ptr::null_mut(), |value| value
+                                        .as_ptr()
+                                        .cast_mut())
+                            )
+                            .to_bytes(),
+                            expected
+                        );
                         assert_eq!((*item).keylen, expected.len());
                     }
                     None => {

@@ -40,9 +40,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 pub use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU,
@@ -286,7 +285,7 @@ pub unsafe extern "C" fn status_get_range(
 unsafe extern "C" fn status_push_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
     if (*sl).active == &raw mut (*sl).screen {
-        server_client_set_saved_status_screen(c, Box::new(std::mem::zeroed::<screen>()));
+        server_client_set_saved_status_screen(c, Box::new(screen::empty()));
         screen_init((*sl).active, (*c).tty.sx, status_line_size(c), 0 as u_int);
     }
     (*sl).references += 1;
@@ -574,8 +573,12 @@ pub unsafe extern "C" fn status_message_set(
     server_client_set_message(c, Some(s));
     server_add_message(
         b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ((*c).message_string).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).message_string)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     if delay == -(1 as ::core::ffi::c_int) {
         delay = options_get_number(
@@ -696,49 +699,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
         bg: 0,
     };
     let mut s: *mut session = (*c).session;
-    let mut old_screen: screen = screen {
-        title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: std::ptr::null_mut(),
-        ntitles: 0,
-        grid: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        default_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        default_ccolour: 0,
-        rupper: 0,
-        rlower: 0,
-        mode: 0,
-        default_mode: 0,
-        saved_cx: 0,
-        saved_cy: 0,
-        saved_grid: ::core::ptr::null_mut::<grid>(),
-        saved_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        saved_flags: 0,
-        tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: None,
-        write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        progress_bar: progress_bar {
-            state: PROGRESS_BAR_HIDDEN,
-            progress: 0,
-        },
-    };
+    let mut old_screen: screen = screen::empty();
     let mut lines: u_int = 0;
     let mut messageline: u_int = 0;
     let mut ax: u_int = 0;
@@ -763,7 +724,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     if (*c).tty.sx == 0 as u_int || (*c).tty.sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    old_screen = std::ptr::replace((*sl).active, std::mem::zeroed::<screen>());
+    old_screen = std::ptr::replace((*sl).active, screen::empty());
     lines = status_line_size(c);
     if lines <= 1 as u_int {
         lines = 1 as u_int;
@@ -788,7 +749,11 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
         ft,
     );
     if (*c).message_ignore_styles != 0 {
-        let msg = status_message_escape(((*c).message_string).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+        let msg = status_message_escape(
+            ((*c).message_string)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
         format_add(
             ft,
             b"message\0" as *const u8 as *const ::core::ffi::c_char,
@@ -800,7 +765,9 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
             ft,
             b"message\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).message_string).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).message_string)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     }
     format_add(
@@ -1052,49 +1019,7 @@ pub unsafe extern "C" fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi
         scrolled: 0,
         bg: 0,
     };
-    let mut old_screen: screen = screen {
-        title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: std::ptr::null_mut(),
-        ntitles: 0,
-        grid: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        default_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        default_ccolour: 0,
-        rupper: 0,
-        rlower: 0,
-        mode: 0,
-        default_mode: 0,
-        saved_cx: 0,
-        saved_cy: 0,
-        saved_grid: ::core::ptr::null_mut::<grid>(),
-        saved_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        saved_flags: 0,
-        tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: None,
-        write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        progress_bar: progress_bar {
-            state: PROGRESS_BAR_HIDDEN,
-            progress: 0,
-        },
-    };
+    let mut old_screen: screen = screen::empty();
     let mut pdd: prompt_draw_data = prompt_draw_data {
         ctx: ::core::ptr::null_mut::<screen_write_ctx>(),
         cursor_x: ::core::ptr::null_mut::<u_int>(),
@@ -1109,7 +1034,7 @@ pub unsafe extern "C" fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi
     if (*c).tty.sx == 0 as u_int || (*c).tty.sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    old_screen = std::ptr::replace((*sl).active, std::mem::zeroed::<screen>());
+    old_screen = std::ptr::replace((*sl).active, screen::empty());
     lines = status_line_size(c);
     if lines <= 1 as u_int {
         lines = 1 as u_int;

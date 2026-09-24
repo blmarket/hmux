@@ -21,6 +21,17 @@ pub struct status_line {
     pub entries: [style_line_entry; 5],
 }
 
+impl status_line {
+    pub fn empty() -> Self {
+        let mut storage = ::core::mem::MaybeUninit::<Self>::zeroed();
+        let status = storage.as_mut_ptr();
+        unsafe {
+            ::core::ptr::addr_of_mut!((*status).screen).write(screen::empty());
+            storage.assume_init()
+        }
+    }
+}
+
 pub type status_prompt_input_cb = Option<
     unsafe extern "C" fn(
         *mut client,

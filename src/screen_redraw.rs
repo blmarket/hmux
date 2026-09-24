@@ -18,9 +18,8 @@ pub use crate::src::shared::borders::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 pub use crate::src::shared::client::{
     CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSTATUS,
@@ -1184,7 +1183,9 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
     log_debug(
         b"%s: building @%u scene (%ux%u %u,%u; generation %llu)\0" as *const u8
             as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*w).id,
         bctx.sx,
         bctx.sy,
@@ -1243,7 +1244,9 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
     }
     log_debug(
         b"%s: finished building @%u scene\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*w).id,
     );
     return scene;
@@ -1296,7 +1299,9 @@ unsafe extern "C" fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {
     if !reason.is_null() {
         log_debug(
             b"%s: @%u scene invalid: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*w).id,
             reason,
         );
@@ -2394,49 +2399,7 @@ unsafe extern "C" fn redraw_draw_pane_prompt(
     let mut scene: *mut redraw_scene = (*dctx).scene;
     let mut c: *mut client = (*scene).c;
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut screen: screen = screen {
-        title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: std::ptr::null_mut(),
-        ntitles: 0,
-        grid: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        default_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        default_ccolour: 0,
-        rupper: 0,
-        rlower: 0,
-        mode: 0,
-        default_mode: 0,
-        saved_cx: 0,
-        saved_cy: 0,
-        saved_grid: ::core::ptr::null_mut::<grid>(),
-        saved_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        saved_flags: 0,
-        tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: None,
-        write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        progress_bar: progress_bar {
-            state: PROGRESS_BAR_HIDDEN,
-            progress: 0,
-        },
-    };
+    let mut screen: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -2580,7 +2543,9 @@ unsafe extern "C" fn redraw_draw(
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(
             b"%s: starting @%u redraw (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*w).id,
             redraw_flags_to_string(flags),
         );
@@ -2721,7 +2686,9 @@ unsafe extern "C" fn redraw_draw(
     tty_reset(tty);
     log_debug(
         b"%s: finished @%u redraw\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*(*scene).w).id,
     );
 }

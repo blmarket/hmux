@@ -80,7 +80,7 @@ impl menu_data {
             fs: unsafe { ::core::mem::zeroed() },
             key: unsafe { ::core::mem::zeroed() },
             m: unsafe { ::core::mem::zeroed() },
-            s: unsafe { ::core::mem::zeroed() },
+            s: screen::empty(),
             px: unsafe { ::core::mem::zeroed() },
             py: unsafe { ::core::mem::zeroed() },
             menu: unsafe { ::core::mem::zeroed() },

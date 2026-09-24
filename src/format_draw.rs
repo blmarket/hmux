@@ -12,9 +12,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -977,51 +976,7 @@ pub unsafe extern "C" fn format_draw(
     ];
     let mut size: size_t = strlen(expanded);
     let mut os: *mut screen = (*octx).s;
-    let mut s: [screen; 8] = [const {
-        screen {
-            title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            titles: std::ptr::null_mut(),
-            ntitles: 0,
-            grid: ::core::ptr::null_mut::<grid>(),
-            cx: 0,
-            cy: 0,
-            cstyle: SCREEN_CURSOR_DEFAULT,
-            default_cstyle: SCREEN_CURSOR_DEFAULT,
-            ccolour: 0,
-            default_ccolour: 0,
-            rupper: 0,
-            rlower: 0,
-            mode: 0,
-            default_mode: 0,
-            saved_cx: 0,
-            saved_cy: 0,
-            saved_grid: ::core::ptr::null_mut::<grid>(),
-            saved_cell: grid_cell {
-                data: utf8_data {
-                    data: [0; 32],
-                    have: 0,
-                    size: 0,
-                    width: 0,
-                },
-                attr: 0,
-                flags: 0,
-                fg: 0,
-                bg: 0,
-                us: 0,
-                link: 0,
-            },
-            saved_flags: 0,
-            tabs: ::core::ptr::null_mut::<bitstr_t>(),
-            sel: None,
-            write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-            progress_bar: progress_bar {
-                state: PROGRESS_BAR_HIDDEN,
-                progress: 0,
-            },
-        }
-    }; 8];
+    let mut s: [screen; 8] = std::array::from_fn(|_| screen::empty());
     let mut hl: *mut hyperlinks = (*os).hyperlinks;
     let mut ctx: [screen_write_ctx; 8] = [const {
         screen_write_ctx {

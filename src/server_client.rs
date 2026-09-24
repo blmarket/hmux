@@ -93,12 +93,12 @@ use crate::src::window::{
     window_pane_scrollbar_visible, window_pane_send_resize, window_pane_send_theme_update,
     window_pane_set_mode, window_pane_status_get_range, window_pane_tree_minmax,
     window_pane_tree_next, window_redraw_active_switch, window_set_active_pane,
-    window_update_focus, window_winlinks_first, window_winlinks_next, windows_minmax,
-    windows_next, winlink_find_by_index,
+    window_update_focus, window_winlinks_first, window_winlinks_next, windows_minmax, windows_next,
+    winlink_find_by_index,
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xrecallocarray, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xsnprintf, xstrdup};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -109,9 +109,8 @@ pub use crate::src::shared::arguments::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 
 impl client {
@@ -144,7 +143,10 @@ impl ClientRegistry {
     }
 
     pub(crate) fn first(&self) -> *mut client {
-        self.ordered.first().copied().unwrap_or(::core::ptr::null_mut())
+        self.ordered
+            .first()
+            .copied()
+            .unwrap_or(::core::ptr::null_mut())
     }
 
     pub(crate) fn next(&self, current: *mut client) -> *mut client {
@@ -175,7 +177,11 @@ impl ClientRegistry {
         let Some(index) = self.indices.remove(&key) else {
             return false;
         };
-        let next = self.ordered.get(index + 1).copied().unwrap_or(::core::ptr::null_mut());
+        let next = self
+            .ordered
+            .get(index + 1)
+            .copied()
+            .unwrap_or(::core::ptr::null_mut());
         if index > 0 {
             let previous = self.ordered[index - 1];
             self.successors.insert(previous as usize, next);
@@ -602,7 +608,12 @@ mod client_message_owner_tests {
                 Some(CString::new(b"session-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr(((*c).exit_session).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
+                CStr::from_ptr(
+                    ((*c).exit_session)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
                 b"session-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -752,10 +763,7 @@ mod client_message_owner_tests {
                 expected.push(value);
                 assert_eq!((*c).term_caps.len(), expected.len());
                 for (index, cap) in expected.iter().enumerate() {
-                    assert_eq!(
-                        (&(*c).term_caps)[index].as_bytes(),
-                        cap.as_bytes()
-                    );
+                    assert_eq!((&(*c).term_caps)[index].as_bytes(), cap.as_bytes());
                 }
             }
             server_client_clear_term_caps(c);
@@ -987,16 +995,7 @@ pub unsafe extern "C" fn server_client_ranges_is_empty(
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_client_ensure_ranges(mut r: *mut visible_ranges, mut n: u_int) {
-    if (*r).size >= n {
-        return;
-    }
-    (*r).ranges = xrecallocarray(
-        (*r).ranges as *mut ::core::ffi::c_void,
-        (*r).size as size_t,
-        n as size_t,
-        ::core::mem::size_of::<visible_range>() as size_t,
-    ) as *mut visible_range;
-    (*r).size = n;
+    (*r).ensure(n);
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_client_overlay_range(
@@ -1063,8 +1062,12 @@ pub unsafe extern "C" fn server_client_check_nested(mut c: *mut client) -> ::cor
     }
     wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
     while !wp.is_null() {
-        if strcmp(&raw mut (*wp).tty as *mut ::core::ffi::c_char, ((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-            == 0 as ::core::ffi::c_int
+        if strcmp(
+            &raw mut (*wp).tty as *mut ::core::ffi::c_char,
+            ((*c).ttyname)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) == 0 as ::core::ffi::c_int
         {
             return 1 as ::core::ffi::c_int;
         }
@@ -1236,30 +1239,52 @@ pub unsafe extern "C" fn server_client_open(
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if strcmp(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ttynam) == 0 as ::core::ffi::c_int
+    if strcmp(
+        ((*c).ttyname)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ttynam,
+    ) == 0 as ::core::ffi::c_int
         || (isatty(STDIN_FILENO) != 0
             && {
                 ttynam = ttyname(STDIN_FILENO);
                 !ttynam.is_null()
             }
-            && strcmp(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ttynam) == 0 as ::core::ffi::c_int
+            && strcmp(
+                ((*c).ttyname)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ttynam,
+            ) == 0 as ::core::ffi::c_int
             || isatty(STDOUT_FILENO) != 0
                 && {
                     ttynam = ttyname(STDOUT_FILENO);
                     !ttynam.is_null()
                 }
-                && strcmp(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ttynam) == 0 as ::core::ffi::c_int
+                && strcmp(
+                    ((*c).ttyname)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ttynam,
+                ) == 0 as ::core::ffi::c_int
             || isatty(STDERR_FILENO) != 0
                 && {
                     ttynam = ttyname(STDERR_FILENO);
                     !ttynam.is_null()
                 }
-                && strcmp(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ttynam) == 0 as ::core::ffi::c_int)
+                && strcmp(
+                    ((*c).ttyname)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ttynam,
+                ) == 0 as ::core::ffi::c_int)
     {
         xasprintf(
             cause,
             b"can't use %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).ttyname)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         return -(1 as ::core::ffi::c_int);
     }
@@ -1536,11 +1561,6 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
         control_stop(c);
     }
     if (*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
-        let owner = c;
-        assert_eq!((*c).tty.r.ranges, &raw mut (*owner).tty_range);
-        (*c).tty.r.ranges = ::core::ptr::null_mut();
-        (*c).tty.r.used = 0;
-        (*c).tty.r.size = 0;
         tty_free(&raw mut (*c).tty);
     }
     server_client_set_ttyname(c, None);
@@ -1974,7 +1994,9 @@ unsafe extern "C" fn server_client_check_mouse(
     let mut loc: key_code_mouse_location = KEYC_MOUSE_LOCATION_NOWHERE;
     log_debug(
         b"%s mouse %02x at %u,%u (last %u,%u) (%d)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*m).b,
         (*m).x,
         (*m).y,
@@ -1987,7 +2009,9 @@ unsafe extern "C" fn server_client_check_mouse(
         if !lwp.is_null() {
             log_debug(
                 b"%s mouse last pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*lwp).id,
             );
         }
@@ -2614,7 +2638,9 @@ unsafe extern "C" fn server_client_is_bracket_paste(
         (*c).paste_time = current_time;
         log_debug(
             b"%s: bracket paste on\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -2624,7 +2650,9 @@ unsafe extern "C" fn server_client_is_bracket_paste(
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong & !CLIENT_BRACKETPASTING) as uint64_t;
         log_debug(
             b"%s: bracket paste off\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -2666,7 +2694,9 @@ unsafe extern "C" fn server_client_is_assume_paste(mut c: *mut client) -> ::core
         (*c).paste_time = current_time;
         log_debug(
             b"%s: assume paste on\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -2674,7 +2704,9 @@ unsafe extern "C" fn server_client_is_assume_paste(mut c: *mut client) -> ::core
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong & !CLIENT_ASSUMEPASTING) as uint64_t;
         log_debug(
             b"%s: assume paste off\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     }
     return 0 as ::core::ffi::c_int;
@@ -3719,7 +3751,9 @@ unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                             as *const ::core::ffi::c_char,
                         b"server_client_check_pane_buffer\0" as *const u8
                             as *const ::core::ffi::c_char,
-                        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                        ((*c).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                         (*wpo).used.wrapping_sub((*wp).base_offset),
                         new_size,
                         (*wp).id,
@@ -3888,7 +3922,9 @@ unsafe extern "C" fn server_client_reset_state(mut c: *mut client) {
         log_debug(
             b"%s: client %s mode %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"server_client_reset_state\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             screen_mode_to_string(mode),
         );
     }
@@ -4064,14 +4100,18 @@ unsafe extern "C" fn server_client_exit_timer(
         log_debug(
             b"%s: %s took too long to exit\0" as *const u8 as *const ::core::ffi::c_char,
             b"server_client_exit_timer\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         server_client_lost(c);
     } else if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
         log_debug(
             b"%s: %s took too long to flush\0" as *const u8 as *const ::core::ffi::c_char,
             b"server_client_exit_timer\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         server_client_check_exit(c, 1 as ::core::ffi::c_int);
     }
@@ -4116,7 +4156,12 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
             let mut data = Vec::from((*c).retval.to_ne_bytes());
             if !(*c).exit_message.is_none() {
                 data.extend_from_slice(
-                    ::std::ffi::CStr::from_ptr(((*c).exit_message).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes_with_nul(),
+                    ::std::ffi::CStr::from_ptr(
+                        ((*c).exit_message)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )
+                    .to_bytes_with_nul(),
                 );
             }
             proc_send(
@@ -4250,7 +4295,9 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
     if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
         log_debug(
             b"%s: redraw%s%s%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
                 b" window\0" as *const u8 as *const ::core::ffi::c_char
             } else {
@@ -4296,13 +4343,17 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
         if n != 0 as size_t {
             log_debug(
                 b"%s: redraw deferred (%zu left)\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 n,
             );
         } else {
             log_debug(
                 b"%s: redraw deferred (blocked)\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         if event_initialized(&raw mut ev) == 0 {
@@ -4347,7 +4398,9 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
     }
     log_debug(
         b"%s: redraw needed\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     tflags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
     (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
@@ -4396,7 +4449,9 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
     (*c).redraw = evbuffer_get_length((*tty).out);
     log_debug(
         b"%s: redraw added %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*c).redraw,
     );
 }
@@ -4444,30 +4499,18 @@ unsafe extern "C" fn server_client_set_title(mut c: *mut client) {
 }
 unsafe extern "C" fn server_client_set_path(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
-    let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if (*s).curw.is_null() || (*(*(*s).curw).window).active.is_null() {
         return;
     }
-    if (*(*(*(*s).curw).window).active).base.path.is_null() {
-        path = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    } else {
-        path = (*(*(*(*s).curw).window).active).base.path;
-    }
-    if (*c).path.is_none()
-        || strcmp(
-            path,
-            ((*c).path)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ) != 0 as ::core::ffi::c_int
-    {
-        server_client_replace_path(c, Some(CStr::from_ptr(path).to_owned()));
-        tty_set_path(
-            &raw mut (*c).tty,
-            ((*c).path)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+    let active = (*(*(*s).curw).window).active;
+    let path = (*active)
+        .base
+        .path
+        .as_ref()
+        .map_or(c"", |path| path.as_c_str());
+    if (*c).path.as_deref() != Some(path) {
+        server_client_replace_path(c, Some(path.to_owned()));
+        tty_set_path(&raw mut (*c).tty, path.as_ptr());
     }
 }
 unsafe extern "C" fn server_client_set_progress_bar(mut c: *mut client) {
@@ -5003,8 +5046,20 @@ unsafe extern "C" fn server_client_dispatch_identify(
     }
     (*c).flags |= CLIENT_IDENTIFIED as uint64_t;
     server_client_ensure_term_name(c);
-    if !(*c).ttyname.is_none() && *(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int != '\0' as i32 {
-        server_client_set_name(c, Some(CStr::from_ptr(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned()));
+    if !(*c).ttyname.is_none()
+        && *(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int != '\0' as i32
+    {
+        server_client_set_name(
+            c,
+            Some(
+                CStr::from_ptr(
+                    ((*c).ttyname)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )
+                .to_owned(),
+            ),
+        );
     } else {
         server_client_set_name(
             c,
@@ -5014,7 +5069,9 @@ unsafe extern "C" fn server_client_dispatch_identify(
     log_debug(
         b"client %p name is %s\0" as *const u8 as *const ::core::ffi::c_char,
         c,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         control_start(c);
@@ -5024,8 +5081,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
             (*c).fd = -(1 as ::core::ffi::c_int);
         } else {
             let owner = c;
-            (*c).tty.r.ranges = &raw mut (*owner).tty_range;
-            (*c).tty.r.size = 1;
+            (*c).tty.r.ensure(1);
             tty_resize(&raw mut (*c).tty);
             (*c).flags |= CLIENT_TERMINAL as uint64_t;
         }
@@ -5045,7 +5101,9 @@ unsafe extern "C" fn server_client_dispatch_identify(
     {
         log_debug(
             b"%s: paste time limit exceeded\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
             & !(CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING)) as uint64_t;
@@ -5080,7 +5138,9 @@ pub unsafe extern "C" fn server_client_get_cwd(
     mut s: *mut session,
 ) -> *const ::core::ffi::c_char {
     if cfg_finished == 0 && !cfg_client.is_null() {
-        return ((*cfg_client).cwd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+        return ((*cfg_client).cwd)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
     if !c.is_null() && (*c).session.is_null() && !(*c).cwd.is_none() {
         return ((*c).cwd)
@@ -5099,7 +5159,9 @@ pub unsafe extern "C" fn server_client_get_cwd(
         }
         && !(*s).cwd.is_none()
     {
-        return ((*s).cwd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+        return ((*s).cwd)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
     if let Some(home) = find_home_cstr() {
         return home.as_ptr();
@@ -5202,7 +5264,9 @@ pub unsafe extern "C" fn server_client_set_flags(
         }
         log_debug(
             b"client %s set flag %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             next,
         );
         if not != 0 {

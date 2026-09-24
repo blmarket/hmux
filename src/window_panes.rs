@@ -33,9 +33,8 @@ pub use crate::src::shared::borders::{
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{
@@ -231,7 +230,7 @@ unsafe extern "C" fn window_panes_set_preview(mut data: *mut window_panes_modeda
     };
     let mut sx: u_int = (*(*src).grid).sx;
     let mut sy: u_int = (*(*src).grid).sy;
-    (*data).preview = Some(Box::new(::core::mem::zeroed()));
+    (*data).preview = Some(Box::new(screen::empty()));
     let dst = (*data).preview.as_deref_mut().unwrap() as *mut screen;
     screen_init(dst, sx, sy, 0 as u_int);
     screen_write_start(&raw mut ctx, dst);
@@ -1650,7 +1649,7 @@ unsafe extern "C" fn window_panes_init(
         session: ::core::ptr::null_mut(),
         source_session: 0,
         source_window: 0,
-        screen: ::core::mem::zeroed(),
+        screen: screen::empty(),
         preview: None,
         timer: ::core::mem::zeroed(),
         state: ::core::ptr::null_mut(),

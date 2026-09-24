@@ -317,7 +317,6 @@ pub struct tty_code {
     pub value: tty_code_value,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tty {
     pub client: *mut client,
@@ -371,6 +370,17 @@ pub struct tty {
     pub key_timer: event,
     /// Root of Box-owned nodes, invalid after rebuild or tty_close.
     pub key_tree: *mut tty_key,
+}
+
+impl tty {
+    pub fn empty() -> Self {
+        let mut storage = ::core::mem::MaybeUninit::<Self>::zeroed();
+        let tty = storage.as_mut_ptr();
+        unsafe {
+            ::core::ptr::addr_of_mut!((*tty).r).write(Default::default());
+            storage.assume_init()
+        }
+    }
 }
 
 #[repr(C)]

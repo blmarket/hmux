@@ -15,9 +15,8 @@ pub use crate::src::shared::abi::{__clockid_t, __syscall_slong_t, clockid_t};
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -721,7 +720,7 @@ unsafe extern "C" fn window_clock_init(
     let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     data = Box::into_raw(Box::new(window_clock_mode_data {
-        screen: ::core::mem::zeroed(),
+        screen: screen::empty(),
         tim: 0,
         timer: ::core::mem::zeroed(),
     }));

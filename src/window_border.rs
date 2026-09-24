@@ -17,9 +17,8 @@ pub use crate::src::shared::arguments::args;
 pub use crate::src::shared::borders::{CELL_BORDERS, CELL_NONE, SIMPLE_BORDERS};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -91,49 +90,7 @@ unsafe extern "C" fn window_set_fill_cell(
     mut gc: *mut grid_cell,
 ) {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut s: screen = screen {
-        title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: std::ptr::null_mut(),
-        ntitles: 0,
-        grid: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        default_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        default_ccolour: 0,
-        rupper: 0,
-        rlower: 0,
-        mode: 0,
-        default_mode: 0,
-        saved_cx: 0,
-        saved_cy: 0,
-        saved_grid: ::core::ptr::null_mut::<grid>(),
-        saved_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        saved_flags: 0,
-        tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: None,
-        write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        progress_bar: progress_bar {
-            state: PROGRESS_BAR_HIDDEN,
-            progress: 0,
-        },
-    };
+    let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -391,49 +348,7 @@ pub unsafe extern "C" fn window_make_pane_status(
         scrolled: 0,
         bg: 0,
     };
-    let mut old: screen = screen {
-        title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: std::ptr::null_mut(),
-        ntitles: 0,
-        grid: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        default_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        default_ccolour: 0,
-        rupper: 0,
-        rlower: 0,
-        mode: 0,
-        default_mode: 0,
-        saved_cx: 0,
-        saved_cy: 0,
-        saved_grid: ::core::ptr::null_mut::<grid>(),
-        saved_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        saved_flags: 0,
-        tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: None,
-        write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        progress_bar: progress_bar {
-            state: PROGRESS_BAR_HIDDEN,
-            progress: 0,
-        },
-    };
+    let mut old: screen = screen::empty();
     let mut i: u_int = 0;
     let mut pane_lines: pane_lines = PANE_LINES_SINGLE;
     let mut pane_status: ::core::ffi::c_int = 0;
@@ -456,7 +371,7 @@ pub unsafe extern "C" fn window_make_pane_status(
     let expanded_raw = format_expand_time(ft, fmt);
     let expanded = CStr::from_ptr(expanded_raw).to_owned();
     free(expanded_raw.cast());
-    old = std::ptr::replace(&raw mut (*wp).status_screen, std::mem::zeroed::<screen>());
+    old = std::ptr::replace(&raw mut (*wp).status_screen, screen::empty());
     screen_init(&raw mut (*wp).status_screen, width, 1 as u_int, 0 as u_int);
     (*wp).status_screen.mode = 0 as ::core::ffi::c_int;
     screen_write_start(&raw mut ctx, &raw mut (*wp).status_screen);

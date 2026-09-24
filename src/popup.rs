@@ -27,9 +27,8 @@ pub use crate::src::shared::arguments::args;
 pub use crate::src::shared::client::CLIENT_REDRAWOVERLAY;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -136,7 +135,6 @@ pub struct popup_data {
     pub lx: u_int,
     pub ly: u_int,
     pub lb: u_int,
-    pub(crate) overlay_ranges: [visible_range; 2],
 }
 
 impl popup_data {
@@ -150,10 +148,10 @@ impl popup_data {
             border_style: Default::default(),
             border_cell: unsafe { ::core::mem::zeroed() },
             border_lines: unsafe { ::core::mem::zeroed() },
-            s: unsafe { ::core::mem::zeroed() },
+            s: screen::empty(),
             defaults: unsafe { ::core::mem::zeroed() },
             palette: unsafe { ::core::mem::zeroed() },
-            r: unsafe { ::core::mem::zeroed() },
+            r: visible_ranges::default(),
             job: unsafe { ::core::mem::zeroed() },
             ictx: unsafe { ::core::mem::zeroed() },
             status: unsafe { ::core::mem::zeroed() },
@@ -174,7 +172,6 @@ impl popup_data {
             lx: unsafe { ::core::mem::zeroed() },
             ly: unsafe { ::core::mem::zeroed() },
             lb: unsafe { ::core::mem::zeroed() },
-            overlay_ranges: [visible_range { px: 0, nx: 0 }; 2],
         }
     }
 }
@@ -267,8 +264,13 @@ unsafe extern "C" fn popup_reapply_styles(mut pd: *mut popup_data) {
     );
     if !(*pd).style.is_none() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
-        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, ((*pd).style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-            == 0 as ::core::ffi::c_int
+        if style_parse(
+            &raw mut sytmp,
+            &raw mut (*pd).defaults,
+            ((*pd).style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) == 0 as ::core::ffi::c_int
         {
             (*pd).defaults.fg = sytmp.gc.fg;
             (*pd).defaults.bg = sytmp.gc.bg;
@@ -291,7 +293,9 @@ unsafe extern "C" fn popup_reapply_styles(mut pd: *mut popup_data) {
         if style_parse(
             &raw mut sytmp,
             &raw mut (*pd).border_cell,
-            ((*pd).border_style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*pd).border_style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) == 0 as ::core::ffi::c_int
         {
             (*pd).border_cell.fg = sytmp.gc.fg;
@@ -382,49 +386,7 @@ unsafe extern "C" fn popup_check_cb(
 unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ffi::c_void) {
     let mut pd: *mut popup_data = data as *mut popup_data;
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut s: screen = screen {
-        title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: std::ptr::null_mut(),
-        ntitles: 0,
-        grid: ::core::ptr::null_mut::<grid>(),
-        cx: 0,
-        cy: 0,
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        default_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        default_ccolour: 0,
-        rupper: 0,
-        rlower: 0,
-        mode: 0,
-        default_mode: 0,
-        saved_cx: 0,
-        saved_cy: 0,
-        saved_grid: ::core::ptr::null_mut::<grid>(),
-        saved_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        saved_flags: 0,
-        tabs: ::core::ptr::null_mut::<bitstr_t>(),
-        sel: None,
-        write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-        hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-        progress_bar: progress_bar {
-            state: PROGRESS_BAR_HIDDEN,
-            progress: 0,
-        },
-    };
+    let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -487,7 +449,9 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
             (*pd).sy,
             (*pd).border_lines,
             &raw mut (*pd).border_cell,
-            ((*pd).title).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*pd).title)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         screen_write_cursormove(
             &raw mut ctx,
@@ -945,7 +909,6 @@ pub unsafe extern "C" fn popup_modify(
         let updated = popup_optional_string(title);
         let owner = &mut *pd;
         owner.title = updated;
-
     }
     if !border_style.is_null() {
         let updated = popup_optional_string(border_style);
@@ -956,7 +919,9 @@ pub unsafe extern "C" fn popup_modify(
         if style_parse(
             &raw mut sytmp,
             &raw mut (*pd).border_cell,
-            ((*pd).border_style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*pd).border_style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) == 0 as ::core::ffi::c_int
         {
             (*pd).border_cell.fg = sytmp.gc.fg;
@@ -969,8 +934,13 @@ pub unsafe extern "C" fn popup_modify(
         owner.style = updated;
 
         style_set(&raw mut sytmp, &raw mut (*pd).defaults);
-        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, ((*pd).style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-            == 0 as ::core::ffi::c_int
+        if style_parse(
+            &raw mut sytmp,
+            &raw mut (*pd).defaults,
+            ((*pd).style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) == 0 as ::core::ffi::c_int
         {
             (*pd).defaults.fg = sytmp.gc.fg;
             (*pd).defaults.bg = sytmp.gc.bg;
@@ -1097,16 +1067,11 @@ pub unsafe extern "C" fn popup_display(
         title: popup_optional_string(title),
         style: popup_optional_string(style),
         border_style: popup_optional_string(border_style),
-        overlay_ranges: [visible_range { px: 0, nx: 0 }; 2],
         ..popup_data::empty()
     });
     pd = Box::into_raw(owner).cast::<popup_data>();
     (*pd).item = item;
     (*pd).flags = flags;
-    let owner = &mut *pd;
-    owner.r.ranges = owner.overlay_ranges.as_mut_ptr();
-    owner.r.size = owner.overlay_ranges.len() as u_int;
-
     (*pd).c = c;
     (*(*pd).c).references += 1;
     (*pd).cb = cb;
@@ -1129,7 +1094,9 @@ pub unsafe extern "C" fn popup_display(
         if style_parse(
             &raw mut sytmp,
             &raw mut (*pd).border_cell,
-            ((*pd).border_style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*pd).border_style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) == 0 as ::core::ffi::c_int
         {
             (*pd).border_cell.fg = sytmp.gc.fg;
@@ -1154,8 +1121,13 @@ pub unsafe extern "C" fn popup_display(
     );
     if !style.is_null() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
-        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, ((*pd).style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-            == 0 as ::core::ffi::c_int
+        if style_parse(
+            &raw mut sytmp,
+            &raw mut (*pd).defaults,
+            ((*pd).style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) == 0 as ::core::ffi::c_int
         {
             (*pd).defaults.fg = sytmp.gc.fg;
             (*pd).defaults.bg = sytmp.gc.bg;

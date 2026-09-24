@@ -73,9 +73,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 pub use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_DEAD, CLIENT_EXIT, CLIENT_EXITED, CLIENT_FOCUSED, CLIENT_SUSPENDED,
@@ -328,8 +327,7 @@ pub unsafe fn window_winlinks_first(w: *mut window) -> *mut winlink {
     if w.is_null() {
         return std::ptr::null_mut();
     }
-    (*w)
-        .winlinks
+    (*w).winlinks
         .storage
         .as_deref()
         .and_then(|links| links.ordered.first().copied())
@@ -356,10 +354,7 @@ pub unsafe fn window_winlinks_next(w: *mut window, wl: *mut winlink) -> *mut win
 /// Append a non-owning winlink handle to the window's association order.
 pub unsafe fn window_winlinks_append(w: *mut window, wl: *mut winlink) {
     assert!(!w.is_null() && !wl.is_null());
-    let links = (*w)
-        .winlinks
-        .storage
-        .get_or_insert_with(|| Box::default());
+    let links = (*w).winlinks.storage.get_or_insert_with(|| Box::default());
     assert!(
         !links.positions.contains_key(&wl),
         "winlink is already present in this window"
@@ -1316,9 +1311,7 @@ pub unsafe extern "C" fn window_find_by_id(mut id: u_int) -> *mut window {
         alerts_queued: 0,
         options: ::core::ptr::null_mut::<options>(),
         references: 0,
-        winlinks: window_winlinks {
-            storage: None,
-        },
+        winlinks: window_winlinks { storage: None },
         entry: window_entry {
             owner: std::ptr::null_mut(),
         },
@@ -2975,92 +2968,8 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
         pipe_event: ::core::ptr::null_mut::<bufferevent>(),
         pipe_offset: window_pane_offset { used: 0 },
         screen: ::core::ptr::null_mut::<screen>(),
-        base: screen {
-            title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            titles: std::ptr::null_mut(),
-            ntitles: 0,
-            grid: ::core::ptr::null_mut::<grid>(),
-            cx: 0,
-            cy: 0,
-            cstyle: SCREEN_CURSOR_DEFAULT,
-            default_cstyle: SCREEN_CURSOR_DEFAULT,
-            ccolour: 0,
-            default_ccolour: 0,
-            rupper: 0,
-            rlower: 0,
-            mode: 0,
-            default_mode: 0,
-            saved_cx: 0,
-            saved_cy: 0,
-            saved_grid: ::core::ptr::null_mut::<grid>(),
-            saved_cell: grid_cell {
-                data: utf8_data {
-                    data: [0; 32],
-                    have: 0,
-                    size: 0,
-                    width: 0,
-                },
-                attr: 0,
-                flags: 0,
-                fg: 0,
-                bg: 0,
-                us: 0,
-                link: 0,
-            },
-            saved_flags: 0,
-            tabs: ::core::ptr::null_mut::<bitstr_t>(),
-            sel: None,
-            write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-            progress_bar: progress_bar {
-                state: PROGRESS_BAR_HIDDEN,
-                progress: 0,
-            },
-        },
-        status_screen: screen {
-            title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            titles: std::ptr::null_mut(),
-            ntitles: 0,
-            grid: ::core::ptr::null_mut::<grid>(),
-            cx: 0,
-            cy: 0,
-            cstyle: SCREEN_CURSOR_DEFAULT,
-            default_cstyle: SCREEN_CURSOR_DEFAULT,
-            ccolour: 0,
-            default_ccolour: 0,
-            rupper: 0,
-            rlower: 0,
-            mode: 0,
-            default_mode: 0,
-            saved_cx: 0,
-            saved_cy: 0,
-            saved_grid: ::core::ptr::null_mut::<grid>(),
-            saved_cell: grid_cell {
-                data: utf8_data {
-                    data: [0; 32],
-                    have: 0,
-                    size: 0,
-                    width: 0,
-                },
-                attr: 0,
-                flags: 0,
-                fg: 0,
-                bg: 0,
-                us: 0,
-                link: 0,
-            },
-            saved_flags: 0,
-            tabs: ::core::ptr::null_mut::<bitstr_t>(),
-            sel: None,
-            write_list: ::core::ptr::null_mut::<screen_write_cline>(),
-            hyperlinks: ::core::ptr::null_mut::<hyperlinks>(),
-            progress_bar: progress_bar {
-                state: PROGRESS_BAR_HIDDEN,
-                progress: 0,
-            },
-        },
+        base: screen::empty(),
+        status_screen: screen::empty(),
         modes: window_pane_modes::default(),
         searchstr: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         searchregex: 0,
@@ -3128,11 +3037,7 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
             default_type: STYLE_DEFAULT_BASE,
             link: 0,
         },
-        r: visible_ranges {
-            ranges: ::core::ptr::null_mut::<visible_range>(),
-            used: 0,
-            size: 0,
-        },
+        r: visible_ranges::default(),
         entry: window_pane_entry {
             tqe_next: ::core::ptr::null_mut::<window_pane>(),
             tqe_prev: ::core::ptr::null_mut::<*mut window_pane>(),
@@ -3157,7 +3062,6 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
 #[repr(C)]
 struct WindowPaneOwned {
     pane: window_pane,
-    visible_ranges: Vec<visible_range>,
     searchstr_owner: Option<CString>,
     shell_owner: Option<CString>,
     cwd_owner: Option<CString>,
@@ -3168,22 +3072,16 @@ const _: () = assert!(::core::mem::offset_of!(WindowPaneOwned, pane) == 0);
 /// Return the next mode in a pane's stack. Entries are boxed individually,
 /// so this derives ordering from the owning collection without putting queue
 /// links into each callback-visible mode entry.
-pub(crate) unsafe fn window_pane_mode_next(
-    wme: *mut window_mode_entry,
-) -> *mut window_mode_entry {
+pub(crate) unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut window_mode_entry {
     if wme.is_null() || (*wme).wp.is_null() {
         return ::core::ptr::null_mut();
     }
     let Some(storage) = (*(*wme).wp).modes.storage.as_ref() else {
         return ::core::ptr::null_mut();
     };
-    let Some(index) = storage
-        .entries
-        .iter()
-        .position(|entry| {
-            (&**entry as *const window_mode_entry) == (wme as *const window_mode_entry)
-        })
-    else {
+    let Some(index) = storage.entries.iter().position(|entry| {
+        (&**entry as *const window_mode_entry) == (wme as *const window_mode_entry)
+    }) else {
         return ::core::ptr::null_mut();
     };
     storage
@@ -3213,12 +3111,9 @@ unsafe fn window_pane_mode_remove(
     let modes = &mut (*wp).modes;
     let (removed, empty) = {
         let storage = modes.storage.as_mut()?;
-        let index = storage
-            .entries
-            .iter()
-            .position(|entry| {
-                (&**entry as *const window_mode_entry) == (wme as *const window_mode_entry)
-            })?;
+        let index = storage.entries.iter().position(|entry| {
+            (&**entry as *const window_mode_entry) == (wme as *const window_mode_entry)
+        })?;
         let removed = storage.entries.remove(index);
         (removed, storage.entries.is_empty())
     };
@@ -3268,7 +3163,7 @@ mod window_mode_collection_tests {
         unsafe {
             // The production pane owner is zero-initialized before its fields
             // are populated; modes itself is initialized explicitly here.
-            let wp = Box::into_raw(Box::new(::core::mem::zeroed::<window_pane>()));
+            let wp = Box::into_raw(Box::new(window_pane::empty()));
             (*wp).modes = window_pane_modes::default();
 
             let a = window_pane_mode_insert_front(wp, boxed_mode(wp));
@@ -3341,18 +3236,8 @@ pub(crate) unsafe fn window_pane_set_cwd(wp: *mut window_pane, cwd: Option<CStri
 /// A prior `pane.r.ranges` element pointer is invalid after this function
 /// grows the vector. All callers consume the view before asking for new ranges.
 pub(crate) unsafe fn window_pane_ensure_visible_ranges(wp: *mut window_pane, n: u_int) {
-    let owner = wp as *mut WindowPaneOwned;
-    let r = &raw mut (*wp).r;
-    if (*r).size >= n {
-        return;
-    }
-    let ranges_ptr = {
-        let ranges = &mut (*owner).visible_ranges;
-        ranges.resize(n as usize, visible_range { px: 0, nx: 0 });
-        ranges.as_mut_ptr()
-    };
-    (*r).ranges = ranges_ptr;
-    (*r).size = n;
+    let r = &mut (*wp).r;
+    r.ensure(n);
 }
 
 unsafe extern "C" fn window_pane_create(
@@ -3364,8 +3249,7 @@ unsafe extern "C" fn window_pane_create(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
     wp = Box::into_raw(Box::new(WindowPaneOwned {
-        pane: std::mem::zeroed::<window_pane>(),
-        visible_ranges: Vec::new(),
+        pane: window_pane::empty(),
         searchstr_owner: None,
         shell_owner: None,
         cwd_owner: None,

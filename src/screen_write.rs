@@ -29,9 +29,8 @@ pub use crate::src::shared::borders::{
 pub use crate::src::shared::client::CLIENT_REDRAWWINDOW;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -5220,7 +5219,7 @@ mod write_row_tests {
     fn scroll_moves_text_owners_and_tears_down_rows() {
         unsafe {
             let mut grid = crate::src::grid::grid_create_box(4, 3, 0);
-            let mut s: screen = std::mem::zeroed();
+            let mut s: screen = screen::empty();
             s.grid = &raw mut *grid;
             s.rupper = 0;
             s.rlower = 2;

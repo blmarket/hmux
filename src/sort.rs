@@ -11,9 +11,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 pub use crate::src::shared::client::{
     CLIENT_ATTACHED, CLIENT_DEAD, CLIENT_EXIT, CLIENT_SUSPENDED, CLIENT_UNATTACHEDFLAGS,
@@ -130,7 +129,10 @@ unsafe extern "C" fn sort_buffer_cmp(
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match (*sort_crit).order as ::core::ffi::c_uint {
         4 => {
-            result = strcmp(((*pa).name).as_ptr().cast_mut(), ((*pb).name).as_ptr().cast_mut());
+            result = strcmp(
+                ((*pa).name).as_ptr().cast_mut(),
+                ((*pb).name).as_ptr().cast_mut(),
+            );
         }
         1 => {
             if (*pa).order > (*pb).order {
@@ -147,7 +149,10 @@ unsafe extern "C" fn sort_buffer_cmp(
         0 | 2 | 3 | 5 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp(((*pa).name).as_ptr().cast_mut(), ((*pb).name).as_ptr().cast_mut());
+        result = strcmp(
+            ((*pa).name).as_ptr().cast_mut(),
+            ((*pb).name).as_ptr().cast_mut(),
+        );
     }
     if (*sort_crit).reversed != 0 {
         result = -result;
@@ -166,7 +171,14 @@ unsafe extern "C" fn sort_client_cmp(
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match (*sort_crit).order as ::core::ffi::c_uint {
         4 => {
-            result = strcmp(((*ca).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ((*cb).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+            result = strcmp(
+                ((*ca).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*cb).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            );
         }
         6 => {
             result = (*ca).tty.sx.wrapping_sub((*cb).tty.sx) as ::core::ffi::c_int;
@@ -211,7 +223,14 @@ unsafe extern "C" fn sort_client_cmp(
         2 | 3 | 5 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp(((*ca).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ((*cb).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+        result = strcmp(
+            ((*ca).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*cb).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
     }
     if (*sort_crit).reversed != 0 {
         result = -result;
@@ -267,12 +286,18 @@ unsafe extern "C" fn sort_session_cmp(
             }
         }
         4 => {
-            result = strcmp(((*sa).name).as_ptr().cast_mut(), ((*sb).name).as_ptr().cast_mut());
+            result = strcmp(
+                ((*sa).name).as_ptr().cast_mut(),
+                ((*sb).name).as_ptr().cast_mut(),
+            );
         }
         3 | 5 | 6 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp(((*sa).name).as_ptr().cast_mut(), ((*sb).name).as_ptr().cast_mut());
+        result = strcmp(
+            ((*sa).name).as_ptr().cast_mut(),
+            ((*sb).name).as_ptr().cast_mut(),
+        );
     }
     if (*sort_crit).reversed != 0 {
         result = -result;
@@ -309,7 +334,7 @@ unsafe extern "C" fn sort_pane_cmp(
             result = ai.wrapping_sub(bi) as ::core::ffi::c_int;
         }
         4 => {
-            result = strcmp((*(*a).screen).title, (*(*b).screen).title);
+            result = strcmp((*(*a).screen).title.as_ptr(), (*(*b).screen).title.as_ptr());
         }
         7 => {
             window_pane_zindex(a, &raw mut ai);
@@ -319,7 +344,7 @@ unsafe extern "C" fn sort_pane_cmp(
         3 | 5 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp((*(*a).screen).title, (*(*b).screen).title);
+        result = strcmp((*(*a).screen).title.as_ptr(), (*(*b).screen).title.as_ptr());
     }
     if (*sort_crit).reversed != 0 {
         result = -result;

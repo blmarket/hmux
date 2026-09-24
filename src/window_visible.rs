@@ -4,9 +4,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -85,15 +84,11 @@ pub unsafe extern "C" fn window_position_is_visible(
     return 0 as ::core::ffi::c_int;
 }
 
-/// Grow the pane-owned range array while keeping the legacy `visible_ranges`
-/// view for synchronous readers. A caller-supplied view retains its existing
-/// C allocation path. Growing either view invalidates prior element pointers.
+/// Grow the owned range storage and refresh its synchronous pointer view.
+/// Growing the vector invalidates prior element pointers.
 unsafe fn window_visible_ensure_ranges(wp: *mut window_pane, r: *mut visible_ranges, n: u_int) {
     if r != &raw mut (*wp).r {
         server_client_ensure_ranges(r, n);
-        return;
-    }
-    if (*r).size >= n {
         return;
     }
     window_pane_ensure_visible_ranges(wp, n);
@@ -111,14 +106,10 @@ pub unsafe extern "C" fn window_visible_ranges(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
-    static mut sr_range: visible_range = visible_range {
-        px: 0 as u_int,
-        nx: 0 as u_int,
-    };
     static mut sr: visible_ranges = visible_ranges {
-        ranges: &raw mut sr_range,
+        ranges: ::core::ptr::null_mut(),
         used: 0 as u_int,
-        size: 1 as u_int,
+        storage: Vec::new(),
     };
     let mut found_self: ::core::ffi::c_int = 0;
     let mut sb_w: ::core::ffi::c_int = 0;
@@ -151,6 +142,7 @@ pub unsafe extern "C" fn window_visible_ranges(
                     if !r.is_null() {
                         return r;
                     }
+                    sr.ensure(1);
                     (*sr.ranges.offset(0 as ::core::ffi::c_int as isize)).px = px as u_int;
                     (*sr.ranges.offset(0 as ::core::ffi::c_int as isize)).nx = width;
                     sr.used = 1 as u_int;

@@ -24,9 +24,8 @@ pub use crate::src::shared::abi::{__compar_fn_t, __int32_t};
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::cmd_parse_input;
@@ -622,7 +621,7 @@ unsafe extern "C" fn window_switch_init(
     };
     data = Box::into_raw(Box::new(window_switch_modedata {
         wp: ::core::ptr::null_mut(),
-        screen: ::core::mem::zeroed(),
+        screen: screen::empty(),
         zoomed: 0,
         format: CStr::from_ptr(format).to_owned(),
         command: CStr::from_ptr(command).to_owned(),
@@ -748,7 +747,9 @@ unsafe extern "C" fn window_switch_run_command(
                 wl = winlink_find_by_index(&raw mut (*s).windows, (*item).winlink);
                 if !s.is_null() && !wl.is_null() {
                     let mut bytes = Vec::from(b"=".as_slice());
-                    bytes.extend_from_slice(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_bytes());
+                    bytes.extend_from_slice(
+                        CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_bytes(),
+                    );
                     bytes.push(b':');
                     bytes.extend_from_slice(((*wl).idx as u32).to_string().as_bytes());
                     bytes.push(b'.');

@@ -235,6 +235,19 @@ pub struct window_pane {
     pub tree_entry: window_pane_tree_entry,
 }
 
+impl window_pane {
+    pub fn empty() -> Self {
+        let mut storage = ::core::mem::MaybeUninit::<Self>::zeroed();
+        let pane = storage.as_mut_ptr();
+        unsafe {
+            ::core::ptr::addr_of_mut!((*pane).base).write(screen::empty());
+            ::core::ptr::addr_of_mut!((*pane).status_screen).write(screen::empty());
+            ::core::ptr::addr_of_mut!((*pane).r).write(visible_ranges::default());
+            storage.assume_init()
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_tree_entry {

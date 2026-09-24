@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{calloc, free, memcpy, snprintf, strlcat, strlen};
+use crate::src::ffi::libc::{memcpy, snprintf, strlcat, strlen};
 use crate::src::grid::{
     grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_destroy,
     grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
@@ -12,9 +12,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -70,24 +69,17 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::style::style_apply;
-use crate::src::tmux::{clean_name, global_options};
+use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::tty_acs::tty_acs_get;
 use crate::src::utf8::{utf8_copy, utf8_to_data};
-use crate::src::xmalloc::xstrdup;
+use std::collections::VecDeque;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 unsafe extern "C" fn screen_free_titles(mut s: *mut screen) {
-    if (*s).titles.is_null() {
-        return;
-    }
-    while let Some(title) = (*(*s).titles).entries.pop_front() {
-        free(title as *mut ::core::ffi::c_void);
-    }
-    drop(Box::from_raw((*s).titles));
-    (*s).titles = ::core::ptr::null_mut::<screen_titles>();
-    (*s).ntitles = 0 as u_int;
+    (*s).titles = VecDeque::new();
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_init(
@@ -98,17 +90,16 @@ pub unsafe extern "C" fn screen_init(
 ) {
     (*s).grid = grid_create(sx, sy, hlimit);
     (*s).saved_grid = ::core::ptr::null_mut::<grid>();
-    (*s).title = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-    (*s).titles = ::core::ptr::null_mut::<screen_titles>();
-    (*s).ntitles = 0 as u_int;
-    (*s).path = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    (*s).title = CString::default();
+    (*s).titles = VecDeque::new();
+    (*s).path = None;
     (*s).cstyle = SCREEN_CURSOR_DEFAULT;
     (*s).default_cstyle = SCREEN_CURSOR_DEFAULT;
     (*s).mode = MODE_CURSOR;
     (*s).default_mode = 0 as ::core::ffi::c_int;
     (*s).ccolour = -(1 as ::core::ffi::c_int);
     (*s).default_ccolour = -(1 as ::core::ffi::c_int);
-    (*s).tabs = ::core::ptr::null_mut::<bitstr_t>();
+    (*s).tabs = Vec::new();
     std::ptr::write(&raw mut (*s).sel, None);
     (*s).write_list = ::core::ptr::null_mut::<screen_write_cline>();
     (*s).hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
@@ -158,12 +149,9 @@ pub unsafe extern "C" fn screen_reset_hyperlinks(mut s: *mut screen) {
 #[no_mangle]
 pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
     drop((*s).sel.take());
-    free((*s).tabs as *mut ::core::ffi::c_void);
-    free((*s).path as *mut ::core::ffi::c_void);
-    free((*s).title as *mut ::core::ffi::c_void);
-    (*s).tabs = std::ptr::null_mut();
-    (*s).path = std::ptr::null_mut();
-    (*s).title = std::ptr::null_mut();
+    (*s).tabs = Vec::new();
+    (*s).path = None;
+    (*s).title = CString::default();
     if !(*s).write_list.is_null() {
         screen_write_free_list(s);
     }
@@ -181,18 +169,15 @@ pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_reset_tabs(mut s: *mut screen) {
-    let mut i: u_int = 0;
-    free((*s).tabs as *mut ::core::ffi::c_void);
-    (*s).tabs = calloc(
-        ((*(*s).grid).sx.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as size_t,
-        ::core::mem::size_of::<bitstr_t>() as size_t,
-    ) as *mut bitstr_t;
-    if (*s).tabs.is_null() {
+    let bytes = ((*(*s).grid).sx as usize).div_ceil(8);
+    (*s).tabs.clear();
+    if (*s).tabs.try_reserve_exact(bytes).is_err() {
         fatal(b"bit_alloc failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    i = 8 as u_int;
+    (*s).tabs.resize(bytes, 0);
+    let mut i: u_int = 8;
     while i < (*(*s).grid).sx {
-        let ref mut fresh0 = *(*s).tabs.offset((i >> 3 as ::core::ffi::c_int) as isize);
+        let ref mut fresh0 = *(&mut (*s).tabs).get_unchecked_mut((i >> 3) as usize);
         *fresh0 = (*fresh0 as ::core::ffi::c_int | (1 as ::core::ffi::c_int) << (i & 0x7 as u_int))
             as bitstr_t;
         i = i.wrapping_add(8 as u_int);
@@ -210,10 +195,10 @@ pub(crate) unsafe fn screen_share_hyperlinks(dst: *mut screen, src: *const scree
     (*dst).hyperlinks = shared;
 }
 pub(crate) unsafe fn screen_has_tab(s: *const screen, column: u_int) -> bool {
-    *(*s).tabs.add(column as usize / 8) & (1 << (column % 8)) != 0
+    *(&(*s).tabs).get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0
 }
 pub(crate) unsafe fn screen_set_tab(s: *mut screen, column: u_int, set: bool) {
-    let byte = &mut *(*s).tabs.add(column as usize / 8);
+    let byte = (&mut (*s).tabs).get_unchecked_mut(column as usize / 8);
     let mask = 1 << (column % 8);
     if set {
         *byte |= mask;
@@ -222,7 +207,7 @@ pub(crate) unsafe fn screen_set_tab(s: *mut screen, column: u_int, set: bool) {
     }
 }
 pub(crate) unsafe fn screen_clear_tabs(s: *mut screen) {
-    std::ptr::write_bytes((*s).tabs, 0, ((*(*s).grid).sx as usize).div_ceil(8));
+    (*s).tabs.fill(0);
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_set_default_cursor(mut s: *mut screen, mut oo: *mut options) {
@@ -309,12 +294,9 @@ pub unsafe extern "C" fn screen_set_title(
     mut title: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut new_title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    new_title = clean_name(title, untrusted);
-    if new_title.is_null() {
+    let Some(new_title) = clean_name_cstring(CStr::from_ptr(title), untrusted) else {
         return 0 as ::core::ffi::c_int;
-    }
-    free((*s).title as *mut ::core::ffi::c_void);
+    };
     (*s).title = new_title;
     return 1 as ::core::ffi::c_int;
 }
@@ -324,13 +306,10 @@ pub unsafe extern "C" fn screen_set_path(
     mut path: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut new_path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    new_path = clean_name(path, untrusted);
-    if new_path.is_null() {
+    let Some(new_path) = clean_name_cstring(CStr::from_ptr(path), untrusted) else {
         return 0 as ::core::ffi::c_int;
-    }
-    free((*s).path as *mut ::core::ffi::c_void);
-    (*s).path = new_path;
+    };
+    (*s).path = Some(new_path);
     return 1 as ::core::ffi::c_int;
 }
 #[no_mangle]
@@ -338,37 +317,27 @@ pub unsafe extern "C" fn screen_push_title(mut s: *mut screen) {
     log_debug(
         b"%s: %u\0" as *const u8 as *const ::core::ffi::c_char,
         b"screen_push_title\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).ntitles,
+        (*s).titles.len() as u_int,
     );
-    while !(*s).titles.is_null() && (*(*s).titles).entries.len() >= 10 {
-        let Some(title) = (*(*s).titles).entries.pop_back() else {
+    while (*s).titles.len() >= 10 {
+        let Some(_title) = (*s).titles.pop_back() else {
             break;
         };
-        free(title as *mut ::core::ffi::c_void);
-        (*s).ntitles = (*s).ntitles.wrapping_sub(1);
     }
-    if (*s).titles.is_null() {
-        (*s).titles = Box::into_raw(Box::new(screen_titles {
-            entries: Default::default(),
-        }));
-    }
-    (*(*s).titles).entries.push_front(xstrdup((*s).title));
-    (*s).ntitles = (*s).ntitles.wrapping_add(1);
+    (*s).titles.push_front((*s).title.clone());
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_pop_title(mut s: *mut screen) {
-    if (*s).titles.is_null() {
+    if (*s).titles.is_empty() {
         return;
     }
     log_debug(
         b"%s: %u\0" as *const u8 as *const ::core::ffi::c_char,
         b"screen_pop_title\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).ntitles,
+        (*s).titles.len() as u_int,
     );
-    if let Some(title) = (*(*s).titles).entries.pop_front() {
-        free((*s).title as *mut ::core::ffi::c_void);
+    if let Some(title) = (*s).titles.pop_front() {
         (*s).title = title;
-        (*s).ntitles = (*s).ntitles.wrapping_sub(1);
     }
 }
 #[no_mangle]
@@ -1141,26 +1110,32 @@ mod text_owner_tests {
                 .unwrap();
             options_default(options, extended_keys);
             global_options = options;
-            let mut current: screen = std::mem::zeroed();
+            let mut current: screen = screen::empty();
             screen_init(&raw mut current, 10, 2, 0);
-            assert_eq!(CStr::from_ptr(current.title), c"");
-            assert!(current.path.is_null());
+            assert_eq!(current.title.as_c_str(), c"");
+            assert!(current.path.is_none());
             assert_eq!(
                 screen_set_title(&raw mut current, c"original".as_ptr(), 0),
                 1
             );
             screen_push_title(&raw mut current);
-            assert_eq!(screen_set_title(&raw mut current, current.title, 0), 1);
+            assert_eq!(
+                screen_set_title(&raw mut current, current.title.as_ptr(), 0),
+                1
+            );
             assert_eq!(
                 screen_set_path(&raw mut current, c"/tmp/path".as_ptr(), 0),
                 1
             );
-            assert_eq!(screen_set_path(&raw mut current, current.path, 0), 1);
+            assert_eq!(
+                screen_set_path(&raw mut current, current.path.as_ref().unwrap().as_ptr(), 0,),
+                1
+            );
             assert_eq!(
                 screen_set_title(&raw mut current, b"\xff\0".as_ptr().cast(), 0),
                 0
             );
-            assert_eq!(CStr::from_ptr(current.title), c"original");
+            assert_eq!(current.title.as_c_str(), c"original");
 
             assert!(screen_has_tab(&raw const current, 8));
             screen_set_tab(&raw mut current, 3, true);
@@ -1223,13 +1198,13 @@ mod text_owner_tests {
             );
             screen_share_hyperlinks(&raw mut current, &raw const current);
             assert_eq!((*current.hyperlinks).references, 1);
-            let mut old = std::mem::replace(&mut current, std::mem::zeroed());
+            let mut old = std::mem::replace(&mut current, screen::empty());
             screen_init(&raw mut current, 10, 2, 0);
             screen_set_title(&raw mut current, c"new".as_ptr(), 0);
             screen_set_title(&raw mut old, c"changed".as_ptr(), 0);
             screen_pop_title(&raw mut old);
-            assert_eq!(CStr::from_ptr(old.title), c"original");
-            assert_eq!(CStr::from_ptr(old.path), c"/tmp/path");
+            assert_eq!(old.title.as_c_str(), c"original");
+            assert_eq!(old.path.as_ref().unwrap().as_c_str(), c"/tmp/path");
             assert_eq!(old.write_list, rows);
             assert_eq!((&(*old.write_list).data)[0], b'A' as std::ffi::c_char);
             assert_eq!(
@@ -1247,9 +1222,9 @@ mod text_owner_tests {
             assert!(current.sel.is_none());
             assert!(screen_has_tab(&raw const old, 16));
             screen_free(&raw mut old);
-            assert!(old.titles.is_null());
+            assert!(old.titles.is_empty());
             assert!(old.sel.is_none());
-            assert!(old.tabs.is_null());
+            assert!(old.tabs.is_empty());
             assert!(old.write_list.is_null());
             assert!(old.grid.is_null());
             assert!(old.saved_grid.is_null());
@@ -1281,7 +1256,7 @@ mod text_owner_tests {
                 ),
                 0
             );
-            assert_eq!(CStr::from_ptr(current.title), c"new");
+            assert_eq!(current.title.as_c_str(), c"new");
 
             cell.data.data[0] = b'X';
             crate::src::grid::grid_set_cell(current.grid, 0, 0, &cell);
@@ -1318,14 +1293,13 @@ mod text_owner_tests {
                 assert_eq!(screen_set_title(&raw mut current, title.as_ptr(), 0), 1);
                 screen_push_title(&raw mut current);
             }
-            assert_eq!(current.ntitles, 10);
-            assert_eq!((*current.titles).entries.len(), 10);
+            assert_eq!(current.titles.len(), 10);
             for expected in history.iter().skip(1).rev() {
                 screen_pop_title(&raw mut current);
-                assert_eq!(CStr::from_ptr(current.title), *expected);
+                assert_eq!(current.title.as_c_str(), *expected);
             }
-            assert_eq!(current.ntitles, 0);
-            assert_eq!(CStr::from_ptr(current.title), c"history-1");
+            assert_eq!(current.titles.len(), 0);
+            assert_eq!(current.title.as_c_str(), c"history-1");
             assert_eq!(screen_set_title(&raw mut current, c"new".as_ptr(), 0), 1);
             screen_push_title(&raw mut current);
             screen_set_selection(
@@ -1341,15 +1315,15 @@ mod text_owner_tests {
             );
             screen_clear_tabs(&raw mut current);
             screen_reinit(&raw mut current, 0);
-            assert_eq!(current.ntitles, 0);
+            assert_eq!(current.titles.len(), 0);
             assert!(current.sel.is_none());
             assert!(screen_has_tab(&raw const current, 8));
-            assert_eq!(CStr::from_ptr(current.title), c"new");
+            assert_eq!(current.title.as_c_str(), c"new");
             screen_free(&raw mut current);
-            assert!(current.titles.is_null());
+            assert!(current.titles.is_empty());
             screen_init(&raw mut current, 10, 2, 0);
-            assert_eq!(CStr::from_ptr(current.title), c"");
-            assert!(current.path.is_null());
+            assert_eq!(current.title.as_c_str(), c"");
+            assert!(current.path.is_none());
             screen_free(&raw mut current);
             global_options = saved_options;
             options_free(options);

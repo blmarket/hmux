@@ -200,9 +200,6 @@ pub struct client {
     // status.active can borrow either the inline screen or this saved screen.
     // Keep ownership separate from that switching observer.
     pub(crate) saved_status_screen: Option<Box<screen>>,
-    // tty_init zeroes its Copy record; the range view is installed afterwards
-    // and borrows this stable storage until tty_free.
-    pub(crate) tty_range: super::display::visible_range,
 }
 
 impl client {
@@ -234,7 +231,7 @@ impl client {
             term_type: Default::default(),
             term_caps: Vec::new(),
             ttyname: Default::default(),
-            tty: unsafe { ::core::mem::zeroed() },
+            tty: tty::empty(),
             written: unsafe { ::core::mem::zeroed() },
             discarded: unsafe { ::core::mem::zeroed() },
             redraw: unsafe { ::core::mem::zeroed() },
@@ -246,7 +243,7 @@ impl client {
             exit_timer: unsafe { ::core::mem::zeroed() },
             click_button: unsafe { ::core::mem::zeroed() },
             click_event: unsafe { ::core::mem::zeroed() },
-            status: unsafe { ::core::mem::zeroed() },
+            status: status_line::empty(),
             cycle_timer: unsafe { ::core::mem::zeroed() },
             theme: unsafe { ::core::mem::zeroed() },
             input_requests: Vec::new(),
@@ -284,7 +281,6 @@ impl client {
             clipboard_npanes: unsafe { ::core::mem::zeroed() },
             status_expanded: Default::default(),
             saved_status_screen: Default::default(),
-            tty_range: super::display::visible_range { px: 0, nx: 0 },
         }
     }
 }

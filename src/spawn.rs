@@ -56,9 +56,8 @@ pub use crate::src::shared::arguments::args;
 pub use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -707,7 +706,9 @@ pub unsafe extern "C" fn spawn_pane(
                 b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*ee).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*ee).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
     }
@@ -864,7 +865,8 @@ pub unsafe extern "C" fn spawn_pane(
             if !(*s).tio.is_none() {
                 memcpy(
                     &raw mut now.c_cc as *mut cc_t as *mut ::core::ffi::c_void,
-                    &raw const (*s).tio.as_ref().unwrap().c_cc as *const cc_t as *const ::core::ffi::c_void,
+                    &raw const (*s).tio.as_ref().unwrap().c_cc as *const cc_t
+                        as *const ::core::ffi::c_void,
                     ::core::mem::size_of::<[cc_t; 32]>() as size_t,
                 );
             }
@@ -1356,7 +1358,7 @@ mod tests {
                     result as *mut ::core::ffi::c_void,
                 )
                 .into_state_ptr();
-                let wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
+                let wp = Box::into_raw(Box::new(window_pane::empty()));
                 (*wp).editor = state;
                 (*wp).flags = PANE_STATUSREADY;
                 (*wp).status = 0;
