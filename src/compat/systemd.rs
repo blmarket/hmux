@@ -26,8 +26,9 @@ pub use crate::src::shared::socket::{
     SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
 };
 use crate::src::tmux::socket_path;
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
+
+static mut SYSTEMD_SOCKET_PATH: Option<CString> = None;
 
 struct ForeignCString(*mut ::core::ffi::c_char);
 
@@ -147,7 +148,10 @@ pub unsafe fn systemd_create_socket(
             &raw mut addrlen,
         ) == -(1 as ::core::ffi::c_int))
         {
-            socket_path = xstrdup(&raw mut sa.sun_path as *mut ::core::ffi::c_char);
+            let path = CStr::from_ptr(sa.sun_path.as_ptr()).to_owned();
+            let path_ptr = path.as_ptr();
+            SYSTEMD_SOCKET_PATH = Some(path);
+            socket_path = path_ptr;
             return Ok(fd);
         }
     } else {
