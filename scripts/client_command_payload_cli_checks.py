@@ -35,7 +35,15 @@ def check(binary, socket):
             run(b"display-message", b"-p", b"X" * 16384),
             run(b"not-a-command"),
             run(b"display-message", b"-z"),
+            run(b"display-message", b"-p", b"first;"),
+            run(b"display-message", b"-p", b"semi\\;"),
+            run(b"display-message", b"-p", b"left;", b"display-message", b"-p", b"right"),
         ]
+        assert run(
+            b"set-option", b"-s", b"command-alias[0]",
+            b"short=display-message -p aliased",
+        ) == (0, b"", b"")
+        results.append(run(b"short"))
         assert results == [
             (0, b"normal\n", b""),
             (0, b"\xff\xfe\n", b""),
@@ -45,6 +53,10 @@ def check(binary, socket):
             (1, b"", b"command too long\n"),
             (1, b"", b"unknown command: not-a-command\n"),
             (1, b"", b"command display-message: unknown flag -z\n"),
+            (0, b"first\n", b""),
+            (0, b"semi;\n", b""),
+            (0, b"left\nright\n", b""),
+            (0, b"aliased\n", b""),
         ], [(code, len(stdout), stderr) for code, stdout, stderr in results]
         return results
     finally:
