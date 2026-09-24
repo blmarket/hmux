@@ -3547,18 +3547,6 @@ pub(crate) unsafe fn format_expand_cstring(
     es.start_time = get_timer();
     return format_expand1_cstring(&raw mut es, fmt);
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_single(
-    item: *mut cmdq_item,
-    fmt: *const ::core::ffi::c_char,
-    c: *mut client,
-    s: *mut session,
-    wl: *mut winlink,
-    wp: *mut window_pane,
-) -> *mut ::core::ffi::c_char {
-    xstrdup(format_single_cstring(item, fmt, c, s, wl, wp).as_ptr())
-}
-
 pub(crate) unsafe fn format_single_cstring(
     mut item: *mut cmdq_item,
     mut fmt: *const ::core::ffi::c_char,
