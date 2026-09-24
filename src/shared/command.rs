@@ -118,8 +118,8 @@ pub struct cmdq_item {
     pub entry: cmdq_item_entry,
 }
 
+/// Legacy C layout for the former `cmd_list` TAILQ header.
 #[repr(C)]
-/// Box-owned by `cmd_list`; its intrusive tail points into this stable record.
 pub struct cmds {
     pub tqh_first: *mut cmd,
     pub tqh_last: *mut *mut cmd,
@@ -151,8 +151,8 @@ pub struct cmd_find_state {
 pub struct cmd_list {
     pub references: ::core::ffi::c_int,
     pub group: u_int,
-    /// Box-owned queue header, released with the final `cmd_list_free` reference.
-    pub list: *mut cmds,
+    /// Box-owned command pointer array, released with the final `cmd_list_free` reference.
+    pub list: *mut Vec<*mut cmd>,
 }
 
 #[repr(C)]
@@ -164,7 +164,6 @@ pub struct cmd {
     pub file: *mut ::core::ffi::c_char,
     pub line: u_int,
     pub parse_flags: ::core::ffi::c_int,
-    pub qentry: cmd_qentry,
 }
 
 #[derive(Copy, Clone)]
@@ -202,13 +201,6 @@ pub struct cmdq_state {
 
 pub type cmdq_cb =
     Option<unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval>;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_qentry {
-    pub tqe_next: *mut cmd,
-    pub tqe_prev: *mut *mut cmd,
-}
 
 #[derive(Copy, Clone)]
 #[repr(C)]

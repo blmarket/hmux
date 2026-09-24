@@ -20,7 +20,7 @@ pub use self::core::{
     cmd_list_any_have, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_first,
     cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print, cmd_log_argv,
     cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window, cmd_pack_argv, cmd_parse, cmd_prepend_argv,
-    cmd_print, cmd_qentry, cmd_stringify_argv, cmd_table, cmd_template_replace, cmd_unpack_argv,
+    cmd_print, cmd_stringify_argv, cmd_table, cmd_template_replace, cmd_unpack_argv,
     cmdq_item, cmdq_list, cmds, control_state, environ, format_job_tree, format_tree, hyperlinks,
     input_ctx, input_request, input_requests, key_binding, key_binding_entry, key_bindings,
     key_event, key_table, key_table_entry, layout_cell, layout_cell_entry, layout_cells,

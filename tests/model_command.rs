@@ -13,7 +13,7 @@ fn original_copies_match() {
     record!(
         "src/cmd.rs::cmd",
         hmux2::src::cmd::cmd,
-        [entry, args, group, file, line, parse_flags, qentry]
+        [entry, args, group, file, line, parse_flags]
     );
     record!(
         "src/cmd_attach_session.rs::cmd",
@@ -2187,11 +2187,6 @@ fn original_copies_match() {
         "src/window_visible.rs::cmd_list",
         hmux2::src::window_visible::cmd_list,
         [references, group, list]
-    );
-    record!(
-        "src/cmd.rs::C2RustUnnamed_33",
-        hmux2::src::cmd::cmd_qentry,
-        [tqe_next, tqe_prev]
     );
     record!("src/cfg.rs::cmdq_cb", hmux2::src::cfg::cmdq_cb, []);
     record!(

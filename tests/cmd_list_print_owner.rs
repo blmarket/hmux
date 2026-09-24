@@ -5,8 +5,9 @@ use hmux2::src::arguments::{
     args_create, args_free, args_print, args_push_positional, args_to_vector,
 };
 use hmux2::src::cmd::{
-    cmd, cmd_free, cmd_free_argv, cmd_list_append, cmd_list_new, cmd_list_print, cmd_parse,
-    cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
+    cmd, cmd_free, cmd_free_argv, cmd_list_append, cmd_list_append_all, cmd_list_copy,
+    cmd_list_first, cmd_list_free, cmd_list_move, cmd_list_new, cmd_list_next, cmd_list_print,
+    cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::ffi::libc::free;
 use hmux2::src::shared::arguments::{args_value, ARGS_COMMANDS, ARGS_STRING};
@@ -45,9 +46,9 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             let item = display_message_command();
             cmd_list_append(list, item);
         }
-        let first = (*(*list).list).tqh_first;
-        let second = (*first).qentry.tqe_next;
-        let third = (*second).qentry.tqe_next;
+        let first = cmd_list_first(list);
+        let second = cmd_list_next(first);
+        let third = cmd_list_next(second);
         (*third).group = (*second).group.wrapping_add(1);
 
         let name = b"display-message";
@@ -101,5 +102,55 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
         );
         cmd_free_argv(argc, argv);
         args_free(args);
+    }
+}
+
+#[test]
+fn list_splice_copy_and_refcount_keep_command_pointers_stable() {
+    unsafe {
+        let destination = cmd_list_new();
+        let first = display_message_command();
+        cmd_list_append(destination, first);
+
+        let source = cmd_list_new();
+        let second = display_message_command();
+        cmd_list_append(source, second);
+        cmd_list_append_all(destination, source);
+        assert!(cmd_list_first(source).is_null());
+        assert_eq!(cmd_list_first(destination), first);
+        assert_eq!(cmd_list_next(first), second);
+
+        let tail = cmd_list_new();
+        let third = display_message_command();
+        cmd_list_append(tail, third);
+        cmd_list_move(destination, tail);
+        assert!(cmd_list_first(tail).is_null());
+        assert_eq!(cmd_list_next(second), third);
+        assert!(cmd_list_next(third).is_null());
+
+        let copied = cmd_list_copy(destination, 0, ptr::null_mut());
+        let copied_first = cmd_list_first(copied);
+        let copied_second = cmd_list_next(copied_first);
+        let copied_third = cmd_list_next(copied_second);
+        assert!(!copied_first.is_null());
+        assert_ne!(copied_first, first);
+        assert_ne!(copied_second, second);
+        assert_ne!(copied_third, third);
+        assert!(cmd_list_next(copied_third).is_null());
+        let printed = cmd_list_print(copied, 0);
+        assert_eq!(
+            CStr::from_ptr(printed).to_bytes(),
+            b"display-message ; display-message ;; display-message"
+        );
+        free(printed.cast());
+
+        (*destination).references += 1;
+        cmd_list_free(destination);
+        assert_eq!(cmd_list_first(destination), first);
+        assert_eq!(cmd_list_next(second), third);
+        cmd_list_free(destination);
+        cmd_list_free(source);
+        cmd_list_free(tail);
+        cmd_list_free(copied);
     }
 }

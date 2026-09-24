@@ -97,8 +97,7 @@ pub use crate::src::shared::client::{
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
 pub use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmd_qentry, cmdq_item, cmdq_list,
-    cmds,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds,
 };
 pub use crate::src::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
 pub use crate::src::shared::control::control_state;
@@ -155,7 +154,16 @@ use crate::src::window::{
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf_cstring,
 };
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
+use std::sync::{Mutex, OnceLock};
+
+// `cmd_list_next` receives only an element pointer, so keep its owner and index
+// in a side table rather than putting neighbor links back in `cmd`.
+fn cmd_list_memberships() -> &'static Mutex<HashMap<usize, (usize, usize)>> {
+    static MEMBERSHIPS: OnceLock<Mutex<HashMap<usize, (usize, usize)>>> = OnceLock::new();
+    MEMBERSHIPS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -752,43 +760,49 @@ pub unsafe extern "C" fn cmd_list_new() -> *mut cmd_list {
     let fresh6 = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
     (*cmdlist).group = fresh6;
-    (*cmdlist).list = Box::into_raw(Box::new(::core::mem::zeroed::<cmds>()));
-    (*(*cmdlist).list).tqh_first = ::core::ptr::null_mut::<cmd>();
-    (*(*cmdlist).list).tqh_last = &raw mut (*(*cmdlist).list).tqh_first;
+    (*cmdlist).list = Box::into_raw(Box::new(Vec::<*mut cmd>::new()));
     return cmdlist;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_append(mut cmdlist: *mut cmd_list, mut cmd: *mut cmd) {
     (*cmd).group = (*cmdlist).group;
-    (*cmd).qentry.tqe_next = ::core::ptr::null_mut::<cmd>();
-    (*cmd).qentry.tqe_prev = (*(*cmdlist).list).tqh_last;
-    *(*(*cmdlist).list).tqh_last = cmd;
-    (*(*cmdlist).list).tqh_last = &raw mut (*cmd).qentry.tqe_next;
+    let commands = &mut *(*cmdlist).list;
+    let mut memberships = cmd_list_memberships()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    memberships.insert(cmd as usize, (cmdlist as usize, commands.len()));
+    commands.push(cmd);
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_append_all(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list) {
-    let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    cmd = (*(*from).list).tqh_first;
-    while !cmd.is_null() {
+    if cmdlist == from {
+        return;
+    }
+    let destination = &mut *(*cmdlist).list;
+    let source = &mut *(*from).list;
+    let mut memberships = cmd_list_memberships()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let offset = destination.len();
+    for (index, &cmd) in source.iter().enumerate() {
         (*cmd).group = (*cmdlist).group;
-        cmd = (*cmd).qentry.tqe_next;
+        memberships.insert(cmd as usize, (cmdlist as usize, offset + index));
     }
-    if !(*(*from).list).tqh_first.is_null() {
-        *(*(*cmdlist).list).tqh_last = (*(*from).list).tqh_first;
-        (*(*(*from).list).tqh_first).qentry.tqe_prev = (*(*cmdlist).list).tqh_last;
-        (*(*cmdlist).list).tqh_last = (*(*from).list).tqh_last;
-        (*(*from).list).tqh_first = ::core::ptr::null_mut::<cmd>();
-        (*(*from).list).tqh_last = &raw mut (*(*from).list).tqh_first;
-    }
+    destination.append(source);
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_move(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list) {
-    if !(*(*from).list).tqh_first.is_null() {
-        *(*(*cmdlist).list).tqh_last = (*(*from).list).tqh_first;
-        (*(*(*from).list).tqh_first).qentry.tqe_prev = (*(*cmdlist).list).tqh_last;
-        (*(*cmdlist).list).tqh_last = (*(*from).list).tqh_last;
-        (*(*from).list).tqh_first = ::core::ptr::null_mut::<cmd>();
-        (*(*from).list).tqh_last = &raw mut (*(*from).list).tqh_first;
+    if cmdlist != from {
+        let destination = &mut *(*cmdlist).list;
+        let source = &mut *(*from).list;
+        let mut memberships = cmd_list_memberships()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let offset = destination.len();
+        for (index, &cmd) in source.iter().enumerate() {
+            memberships.insert(cmd as usize, (cmdlist as usize, offset + index));
+        }
+        destination.append(source);
     }
     let fresh8 = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
@@ -796,25 +810,21 @@ pub unsafe extern "C" fn cmd_list_move(mut cmdlist: *mut cmd_list, mut from: *mu
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_free(mut cmdlist: *mut cmd_list) {
-    let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    let mut cmd1: *mut cmd = ::core::ptr::null_mut::<cmd>();
     (*cmdlist).references -= 1;
     if (*cmdlist).references != 0 as ::core::ffi::c_int {
         return;
     }
-    cmd = (*(*cmdlist).list).tqh_first;
-    while !cmd.is_null() && {
-        cmd1 = (*cmd).qentry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(*cmd).qentry.tqe_next.is_null() {
-            (*(*cmd).qentry.tqe_next).qentry.tqe_prev = (*cmd).qentry.tqe_prev;
-        } else {
-            (*(*cmdlist).list).tqh_last = (*cmd).qentry.tqe_prev;
+    let commands = std::mem::take(&mut *(*cmdlist).list);
+    {
+        let mut memberships = cmd_list_memberships()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for &cmd in &commands {
+            memberships.remove(&(cmd as usize));
         }
-        *(*cmd).qentry.tqe_prev = (*cmd).qentry.tqe_next;
+    }
+    for cmd in commands {
         cmd_free(cmd);
-        cmd = cmd1;
     }
     drop(Box::from_raw((*cmdlist).list));
     drop(Box::from_raw(cmdlist));
@@ -825,7 +835,6 @@ pub unsafe extern "C" fn cmd_list_copy(
     mut argc: ::core::ffi::c_int,
     mut argv: *mut *mut ::core::ffi::c_char,
 ) -> *mut cmd_list {
-    let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut group: u_int = (*cmdlist).group;
@@ -836,8 +845,7 @@ pub unsafe extern "C" fn cmd_list_copy(
         s.as_ptr(),
     );
     new_cmdlist = cmd_list_new();
-    cmd = (*(*cmdlist).list).tqh_first;
-    while !cmd.is_null() {
+    for &cmd in &*(*cmdlist).list {
         if (*cmd).group != group {
             let fresh7 = cmd_list_next_group;
             cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
@@ -846,7 +854,6 @@ pub unsafe extern "C" fn cmd_list_copy(
         }
         new_cmd = cmd_copy(cmd, argc, argv);
         cmd_list_append(new_cmdlist, new_cmd);
-        cmd = (*cmd).qentry.tqe_next;
     }
     let s = cmd_list_print_cstring(new_cmdlist, 0);
     log_debug(
@@ -858,13 +865,12 @@ pub unsafe extern "C" fn cmd_list_copy(
 }
 pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: *const cmd_list, flags: i32) -> CString {
     let mut buf = Vec::new();
-    let mut cmd = (*(*cmdlist).list).tqh_first;
-    while !cmd.is_null() {
+    let commands = &*(*cmdlist).list;
+    for (index, &cmd) in commands.iter().enumerate() {
         let this = cmd_print_cstring(cmd);
         buf.extend_from_slice(this.as_bytes());
 
-        let next = (*cmd).qentry.tqe_next;
-        if !next.is_null() {
+        if let Some(&next) = commands.get(index + 1) {
             let grouped = flags & CMD_LIST_PRINT_NO_GROUPS == 0 && (*cmd).group != (*next).group;
             let separator: &[u8] = match (flags & CMD_LIST_PRINT_ESCAPED != 0, grouped) {
                 (false, false) => b" ; ",
@@ -874,7 +880,6 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: *const cmd_list, flags: i32
             };
             buf.extend_from_slice(separator);
         }
-        cmd = next;
     }
     // All fragments came from C strings or nonzero literal bytes.
     CString::new(buf).expect("command list contains no interior NUL")
@@ -890,24 +895,37 @@ pub unsafe extern "C" fn cmd_list_print(
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_first(mut cmdlist: *mut cmd_list) -> *mut cmd {
-    return (*(*cmdlist).list).tqh_first;
+    return (*(*cmdlist).list)
+        .first()
+        .copied()
+        .unwrap_or(::core::ptr::null_mut());
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_next(mut cmd: *mut cmd) -> *mut cmd {
-    return (*cmd).qentry.tqe_next;
+    if cmd.is_null() {
+        return ::core::ptr::null_mut();
+    }
+    let memberships = cmd_list_memberships()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(&(cmdlist, index)) = memberships.get(&(cmd as usize)) {
+        let commands = &*(*(cmdlist as *mut cmd_list)).list;
+        return commands
+            .get(index + 1)
+            .copied()
+            .unwrap_or(::core::ptr::null_mut());
+    }
+    return ::core::ptr::null_mut();
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_all_have(
     mut cmdlist: *mut cmd_list,
     mut flag: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    cmd = (*(*cmdlist).list).tqh_first;
-    while !cmd.is_null() {
+    for &cmd in &*(*cmdlist).list {
         if !(*(*cmd).entry).flags & flag != 0 {
             return 0 as ::core::ffi::c_int;
         }
-        cmd = (*cmd).qentry.tqe_next;
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -916,13 +934,10 @@ pub unsafe extern "C" fn cmd_list_any_have(
     mut cmdlist: *mut cmd_list,
     mut flag: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    cmd = (*(*cmdlist).list).tqh_first;
-    while !cmd.is_null() {
+    for &cmd in &*(*cmdlist).list {
         if (*(*cmd).entry).flags & flag != 0 {
             return 1 as ::core::ffi::c_int;
         }
-        cmd = (*cmd).qentry.tqe_next;
     }
     return 0 as ::core::ffi::c_int;
 }
