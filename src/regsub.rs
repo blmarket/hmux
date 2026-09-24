@@ -75,7 +75,16 @@ unsafe fn regsub_expand(
         cp = cp.offset(1);
     }
 }
-pub(crate) unsafe fn regsub_cstring(
+pub fn regsub_cstring(
+    pattern: &CStr,
+    with: &CStr,
+    text: &CStr,
+    flags: ::core::ffi::c_int,
+) -> Option<CString> {
+    unsafe { regsub_raw(pattern.as_ptr(), with.as_ptr(), text.as_ptr(), flags) }
+}
+
+unsafe fn regsub_raw(
     mut pattern: *const ::core::ffi::c_char,
     mut with: *const ::core::ffi::c_char,
     mut text: *const ::core::ffi::c_char,

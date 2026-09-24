@@ -748,11 +748,11 @@ pub unsafe extern "C" fn monitor_destroy(mut ms: *mut monitor_set) {
         drop(Box::from_raw(ms));
     }
 }
-pub(crate) struct ParsedMonitor {
-    pub(crate) name: CString,
-    pub(crate) type_0: monitor_type,
-    pub(crate) id: ::core::ffi::c_int,
-    pub(crate) format: CString,
+pub struct ParsedMonitor {
+    pub name: CString,
+    pub type_0: monitor_type,
+    pub id: ::core::ffi::c_int,
+    pub format: CString,
 }
 
 unsafe fn monitor_parse_parts(
@@ -808,12 +808,12 @@ unsafe fn monitor_parse_parts(
     ))
 }
 
-pub(crate) unsafe fn monitor_parse_owned(
-    value: *const ::core::ffi::c_char,
-) -> Option<ParsedMonitor> {
+pub fn monitor_parse_owned(value: &CStr) -> Option<ParsedMonitor> {
     let mut type_0 = MONITOR_SESSION;
     let mut id = -1;
-    let (name, format) = monitor_parse_parts(CStr::from_ptr(value), &raw mut type_0, &raw mut id)?;
+    let (name, format) = unsafe {
+        monitor_parse_parts(value, &raw mut type_0, &raw mut id)?
+    };
     Some(ParsedMonitor {
         name,
         type_0,

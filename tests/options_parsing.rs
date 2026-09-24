@@ -1,8 +1,9 @@
 //! Isolated option-name regressions for set-option/show-options parsing.
 
-use hmux2::src::ffi::libc::free;
-use hmux2::src::options::{options_match, options_match_command, options_parse};
-use std::ffi::{CStr, CString};
+use hmux2::src::options::{
+    options_match_owned, options_parse_owned, OptionMatchFailure,
+};
+use std::ffi::CString;
 
 #[derive(Debug, PartialEq, Eq)]
 struct MatchOutcome {
@@ -11,49 +12,44 @@ struct MatchOutcome {
     ambiguous: i32,
 }
 
-unsafe fn run_match(input: &[u8], abi_adapter: bool) -> MatchOutcome {
-    let input = CString::new(input).expect("test input has no embedded NUL");
-    let mut key = std::ptr::null_mut();
-    let mut ambiguous = 0;
-    let name = if abi_adapter {
-        options_match(input.as_ptr(), &mut key, &mut ambiguous)
-    } else {
-        options_match_command(input.as_ptr(), &mut key, &mut ambiguous)
-    };
-    let outcome = MatchOutcome {
-        name: (!name.is_null()).then(|| CStr::from_ptr(name).to_bytes().to_vec()),
-        key: (!key.is_null()).then(|| CStr::from_ptr(key).to_bytes().to_vec()),
-        ambiguous,
-    };
-    if !name.is_null() {
-        free(name.cast());
-    }
-    if !key.is_null() {
-        free(key.cast());
-    }
-    outcome
+fn cstring_until_nul(input: &[u8]) -> CString {
+    let end = input.iter().position(|&byte| byte == 0).unwrap_or(input.len());
+    CString::new(&input[..end]).expect("test input prefix has no NUL")
 }
 
-unsafe fn run_parse(input: &[u8]) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
-    let mut nul_terminated = input.to_vec();
-    nul_terminated.push(0);
-    let mut key = std::ptr::null_mut();
-    let name = options_parse(nul_terminated.as_ptr().cast(), &mut key);
-    let result = (
-        (!name.is_null()).then(|| CStr::from_ptr(name).to_bytes().to_vec()),
-        (!key.is_null()).then(|| CStr::from_ptr(key).to_bytes().to_vec()),
-    );
-    if !name.is_null() {
-        free(name.cast());
+unsafe fn run_match(input: &[u8]) -> MatchOutcome {
+    let input = CString::new(input).expect("test input has no embedded NUL");
+    match options_match_owned(input.as_c_str()) {
+        Ok(parsed) => MatchOutcome {
+            name: Some(parsed.name.into_bytes()),
+            key: parsed.array_key.map(CString::into_bytes),
+            ambiguous: 0,
+        },
+        Err(OptionMatchFailure::Ambiguous) => MatchOutcome {
+            name: None,
+            key: None,
+            ambiguous: 1,
+        },
+        Err(OptionMatchFailure::Parse | OptionMatchFailure::Invalid) => MatchOutcome {
+            name: None,
+            key: None,
+            ambiguous: 0,
+        },
     }
-    if !key.is_null() {
-        free(key.cast());
-    }
-    result
+}
+
+fn run_parse(input: &[u8]) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    let input = cstring_until_nul(input);
+    options_parse_owned(input.as_c_str()).map_or((None, None), |parsed| {
+        (
+            Some(parsed.name.into_bytes()),
+            parsed.array_key.map(CString::into_bytes),
+        )
+    })
 }
 
 #[test]
-fn options_parse_array_key_owns_c_results_and_preserves_bytes() {
+fn options_parse_array_key_preserves_bytes_and_normalizes_numbers() {
     let cases: &[(&[u8], Option<&[u8]>, Option<&[u8]>)] = &[
         (b"status-format[0007]", Some(b"status-format"), Some(b"7")),
         (b"@test[\xff]", Some(b"@test"), Some(b"\xff")),
@@ -67,7 +63,7 @@ fn options_parse_array_key_owns_c_results_and_preserves_bytes() {
     ];
     for &(input, name, key) in cases {
         assert_eq!(
-            unsafe { run_parse(input) },
+            run_parse(input),
             (name.map(<[u8]>::to_vec), key.map(<[u8]>::to_vec)),
             "input={input:?}"
         );
@@ -93,9 +89,10 @@ const CASES: &[(&[u8], Option<&[u8]>, Option<&[u8]>, i32)] = &[
     (b"not-an-option", None, None, 0),
 ];
 
-fn assert_cases(abi_adapter: bool) {
+#[test]
+fn options_match_owned_cases() {
     for &(input, name, key, ambiguous) in CASES {
-        let actual = unsafe { run_match(input, abi_adapter) };
+        let actual = unsafe { run_match(input) };
         assert_eq!(
             actual,
             MatchOutcome {
@@ -109,44 +106,20 @@ fn assert_cases(abi_adapter: bool) {
 }
 
 #[test]
-fn set_option_command_adapter_cases() {
-    assert_cases(false);
-}
-
-#[test]
-fn show_options_command_adapter_cases() {
-    assert_cases(false);
-}
-
-#[test]
-fn options_match_abi_adapter_matches_command_adapter() {
-    for &(input, ..) in CASES {
-        assert_eq!(
-            unsafe { run_match(input, false) },
-            unsafe { run_match(input, true) },
-            "input={input:?}"
-        );
-    }
-}
-
-#[test]
-fn parse_and_match_preserve_untouched_outputs() {
+fn options_match_owned_reports_parse_ambiguity_and_invalidity() {
     unsafe {
-        let sentinel = 1usize as *mut std::ffi::c_char;
-        let mut key = sentinel;
-        let name = options_parse(c"".as_ptr(), &mut key);
-        assert!(name.is_null());
-        assert_eq!(key, sentinel);
-
-        let mut ambiguous = 42;
-        let name = options_match_command(c"".as_ptr(), &mut key, &mut ambiguous);
-        assert!(name.is_null());
-        assert_eq!(key, sentinel);
-        assert_eq!(ambiguous, 42);
-
-        let name = options_match_command(c"status[]".as_ptr(), &mut key, &mut ambiguous);
-        assert!(name.is_null());
-        assert!(key.is_null());
-        assert_eq!(ambiguous, 42);
+        assert!(matches!(
+            options_match_owned(c""),
+            Err(OptionMatchFailure::Parse)
+        ));
+        assert!(matches!(
+            options_match_owned(c"status-"),
+            Err(OptionMatchFailure::Ambiguous)
+        ));
+        assert!(matches!(
+            options_match_owned(c"not-an-option"),
+            Err(OptionMatchFailure::Invalid)
+        ));
     }
+    assert!(options_parse_owned(c"status[]").is_none());
 }

@@ -1,12 +1,10 @@
-use hmux2::src::names::parse_window_name;
-use std::ffi::{c_char, CStr};
+use hmux2::src::names::parse_window_name_cstring;
+use std::ffi::CStr;
 
 unsafe fn parsed(input: &[u8]) -> Vec<u8> {
-    let result = parse_window_name(input.as_ptr().cast::<c_char>());
-    assert!(!result.is_null());
-    let bytes = CStr::from_ptr(result).to_bytes().to_vec();
-    libc::free(result.cast());
-    bytes
+    let end = input.iter().position(|&byte| byte == 0).unwrap();
+    let input = CStr::from_bytes_with_nul(&input[..=end]).unwrap();
+    parse_window_name_cstring(input).into_bytes()
 }
 
 #[test]

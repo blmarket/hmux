@@ -1,5 +1,5 @@
 //! Exercise the expanded operands returned by format_choose through public formats.
-use hmux2::src::format::{format_create, format_expand, format_free};
+use hmux2::src::format::{format_create, format_expand_cstring, format_free};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::tmux::{global_options, global_s_options, global_w_options};
 use std::ffi::CStr;
@@ -40,13 +40,12 @@ fn compare_repeat_and_arithmetic_expand_split_operands() {
             (b"prefix#{O/s:body}tail\0", b"prefixtail"),
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
-            let result = format_expand(tree, expression.as_ptr());
+            let result = format_expand_cstring(tree, expression.as_ptr());
             assert_eq!(
-                CStr::from_ptr(result).to_bytes(),
+                result.as_bytes(),
                 expected,
                 "{expression:?}"
             );
-            libc::free(result.cast());
         }
         format_free(tree);
         global_options = saved_options;

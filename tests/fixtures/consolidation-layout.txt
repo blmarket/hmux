@@ -44,7 +44,7 @@ monitor_type 4 4
 mouse_event 80 8 valid=0 ignore=4 key=8 statusat=16 statuslines=20 x=24 y=28 b=32 lx=36 ly=40 lb=44 ox=48 oy=52 s=56 w=60 wp=64 sgr_type=68 sgr_b=72
 prompt_free_cb 8 8
 prompt_input_cb 8 8
-screen 200 8 title=0 path=8 titles=16 ntitles=24 grid=32 cx=40 cy=44 cstyle=48 default_cstyle=52 ccolour=56 default_ccolour=60 rupper=64 rlower=68 mode=72 default_mode=76 saved_cx=80 saved_cy=84 saved_grid=88 saved_cell=96 saved_flags=152 tabs=160 sel=168 write_list=176 hyperlinks=184 progress_bar=192
+screen 248 8 title=0 path=16 titles=32 grid=64 cx=72 cy=76 cstyle=80 default_cstyle=84 ccolour=88 default_ccolour=92 rupper=96 rlower=100 mode=104 default_mode=108 saved_cx=112 saved_cy=116 saved_grid=120 saved_cell=128 saved_flags=184 tabs=192 sel=216 write_list=224 hyperlinks=232 progress_bar=240
 screen_sel 88 4 hidden=0 rectangle=4 modekeys=8 sx=12 sy=16 ex=20 ey=24 clipx=28 cell=32
 socklen_t 4 4
 sort_criteria 16 8 order=0 reversed=4 order_seq=8
@@ -54,7 +54,7 @@ uint16_t 2 2
 uint32_t 4 4
 va_list 24 8
 visible_range 8 4 px=0 nx=4
-visible_ranges 16 8 ranges=0 used=8 size=12
+visible_ranges 40 8 ranges=24 used=32
 window_pane_offset 8 8 used=0
 window_pane_resize 32 8 sx=0 sy=4 osx=8 osy=12 entry=16
 window_pane_resize_entry 16 8 tqe_next=0 tqe_prev=8

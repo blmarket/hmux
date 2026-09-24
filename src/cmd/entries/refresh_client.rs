@@ -127,7 +127,7 @@ unsafe extern "C" fn cmd_refresh_client_update_subscription(
     mut tc: *mut client,
     mut value: *const ::core::ffi::c_char,
 ) {
-    let Some(parsed) = monitor_parse_owned(value) else {
+    let Some(parsed) = monitor_parse_owned(CStr::from_ptr(value)) else {
         control_remove_sub(tc, value);
         return;
     };

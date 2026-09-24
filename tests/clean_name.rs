@@ -1,14 +1,10 @@
-use hmux2::src::tmux::clean_name;
-use std::ffi::{c_char, CStr};
+use hmux2::src::tmux::clean_name_cstring;
+use std::ffi::CStr;
 
 unsafe fn cleaned(input: &[u8], untrusted: bool) -> Option<Vec<u8>> {
-    let result = clean_name(input.as_ptr().cast::<c_char>(), i32::from(untrusted));
-    if result.is_null() {
-        return None;
-    }
-    let bytes = CStr::from_ptr(result).to_bytes().to_vec();
-    libc::free(result.cast());
-    Some(bytes)
+    let end = input.iter().position(|&byte| byte == 0).unwrap();
+    let input = CStr::from_bytes_with_nul(&input[..=end]).unwrap();
+    clean_name_cstring(input, i32::from(untrusted)).map(std::ffi::CString::into_bytes)
 }
 
 #[test]

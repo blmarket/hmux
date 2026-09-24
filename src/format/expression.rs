@@ -875,7 +875,13 @@ pub(super) unsafe fn format_sub(
     if (*fm).argc() >= 3 as ::core::ffi::c_int && !strchr((*fm).arg(2), 'i' as i32).is_null() {
         flags |= REG_ICASE;
     }
-    regsub_cstring(pattern, with, text, flags).unwrap_or_else(|| CStr::from_ptr(text).to_owned())
+    regsub_cstring(
+        CStr::from_ptr(pattern),
+        CStr::from_ptr(with),
+        CStr::from_ptr(text),
+        flags,
+    )
+    .unwrap_or_else(|| CStr::from_ptr(text).to_owned())
 }
 
 pub(super) unsafe fn format_search(
@@ -3513,7 +3519,7 @@ pub(crate) unsafe fn format_expand_time_cstring(
     format_expand1_cstring(&raw mut es, fmt)
 }
 /// Own the expanded bytes independently of the tree. A null format is empty.
-pub(crate) unsafe fn format_expand_cstring(
+pub unsafe fn format_expand_cstring(
     mut ft: *mut format_tree,
     mut fmt: *const ::core::ffi::c_char,
 ) -> CString {

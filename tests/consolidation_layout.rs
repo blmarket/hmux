@@ -427,7 +427,6 @@ fn migrated_layouts_match_every_original_copy() {
             title,
             path,
             titles,
-            ntitles,
             grid,
             cx,
             cy,
@@ -731,7 +730,7 @@ fn migrated_layouts_match_every_original_copy() {
     );
     family!(
         visible_ranges,
-        [ranges, used, size],
+        [ranges, used],
         [
             alerts,
             arguments,

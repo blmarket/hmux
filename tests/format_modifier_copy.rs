@@ -1,5 +1,5 @@
 //! Exercise modifier parsing and replacement through public format expansion.
-use hmux2::src::format::{format_create, format_expand, format_free};
+use hmux2::src::format::{format_create, format_expand_cstring, format_free};
 use std::ffi::{CStr, CString};
 
 #[test]
@@ -17,22 +17,20 @@ fn modifier_key_survives_nested_expansion_and_failure_cleanup() {
             (b"before#{R:bad}after\0", b"before"),
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
-            let result = format_expand(tree, expression.as_ptr());
+            let result = format_expand_cstring(tree, expression.as_ptr());
             assert_eq!(
-                CStr::from_ptr(result).to_bytes(),
+                result.as_bytes(),
                 expected,
                 "{expression:?}"
             );
-            libc::free(result.cast());
         }
 
         // Force the modifier Vec to grow while parsing, then use saved
         // substitution pointers after parsing has finished.
         let expression =
             CString::new(format!("#{{{}s|a|b|;s|b|c|;l:a}}", "l;".repeat(40))).unwrap();
-        let result = format_expand(tree, expression.as_ptr());
-        assert_eq!(CStr::from_ptr(result).to_bytes(), b"c");
-        libc::free(result.cast());
+        let result = format_expand_cstring(tree, expression.as_ptr());
+        assert_eq!(result.as_bytes(), b"c");
 
         format_free(tree);
     }

@@ -1,6 +1,6 @@
 //! Exercise conditional scratch strings through public format expansion.
 use hmux2::src::environ::{environ_create, environ_free};
-use hmux2::src::format::{format_add, format_create, format_expand, format_free};
+use hmux2::src::format::{format_add, format_create, format_expand_cstring, format_free};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use std::ffi::CStr;
@@ -39,13 +39,12 @@ fn conditionals_expand_true_false_fallback_and_nested_branches() {
             (b"#{?#{?yes,1,0},#{?no,wrong,nested},fallback}\0", b"nested"),
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
-            let result = format_expand(tree, expression.as_ptr());
+            let result = format_expand_cstring(tree, expression.as_ptr());
             assert_eq!(
-                CStr::from_ptr(result).to_bytes(),
+                result.as_bytes(),
                 expected,
                 "{expression:?}"
             );
-            libc::free(result.cast());
         }
 
         format_free(tree);
