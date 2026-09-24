@@ -71,7 +71,7 @@ fn resize_queue_preserves_order_and_exception_removal() {
 
 #[test]
 fn pane_owner_drops_resize_storage_without_manual_cleanup() {
-    let mut pane = Box::new(unsafe { std::mem::zeroed::<window_pane>() });
+    let mut pane = Box::new(window_pane::empty());
     pane.resize_queue.push_back(resize(100, 40, 0, 0));
     assert!(pane.resize_queue.storage.is_some());
     drop(pane);

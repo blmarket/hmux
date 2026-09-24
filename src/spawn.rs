@@ -1377,7 +1377,7 @@ mod tests {
                     result as *mut ::core::ffi::c_void,
                 )
                 .into_state_ptr();
-                let wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
+                let wp = Box::into_raw(Box::new(window_pane::empty()));
                 (*wp).editor = state;
                 (*wp).flags = PANE_STATUSREADY;
                 (*wp).status = 0;
@@ -1396,7 +1396,7 @@ mod tests {
                     result as *mut ::core::ffi::c_void,
                 )
                 .into_state_ptr();
-                let wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
+                let wp = Box::into_raw(Box::new(window_pane::empty()));
                 (*wp).editor = state;
                 (*wp).flags = PANE_STATUSREADY;
                 (*wp).status = 1 << 8;
