@@ -18,7 +18,7 @@ fn object_keys_survive_scratch_and_input_destruction() {
             let key = CString::new(key).unwrap();
             let node = json_find(object, key.as_ptr());
             assert!(!node.is_null(), "missing {key:?}");
-            assert_eq!(CStr::from_ptr((*node).key), key.as_c_str());
+            assert_eq!(CStr::from_ptr(((*node).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())), key.as_c_str());
         }
         json_destroy_node(object);
     }

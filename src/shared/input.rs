@@ -1,5 +1,8 @@
 //! Authoritative input declarations.
 
+use std::collections::VecDeque;
+use std::ffi::CString;
+
 use super::abi::{size_t, u_char, u_int, uint64_t};
 use super::client::client;
 use super::colour::colour_palette;
@@ -33,9 +36,8 @@ pub struct input_ctx {
     pub interm_len: size_t,
     pub param_buf: [u_char; 64],
     pub param_len: size_t,
-    pub input_buf: *mut u_char,
+    pub input_buf: Vec<u_char>,
     pub input_len: size_t,
-    pub input_space: size_t,
     pub input_end: input_end_type,
     pub param_list: [input_param; 24],
     pub param_list_len: u_int,
@@ -45,16 +47,13 @@ pub struct input_ctx {
     pub last: utf8_data,
     pub state: *const input_state,
     pub flags: ::core::ffi::c_int,
-    // Opaque handle to the request collection owned by InputCtxOwner. The
-    // second pointer preserves the translated C record's size and alignment.
-    pub requests: input_requests,
+    pub(crate) requests: VecDeque<Box<input_request>>,
     pub request_count: u_int,
     pub request_timer: event,
     pub since_ground: *mut evbuffer,
     pub ground_timer: event,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct input_request {
     pub c: *mut client,
@@ -63,13 +62,14 @@ pub struct input_request {
     pub t: uint64_t,
     pub end: input_end_type,
     pub idx: ::core::ffi::c_int,
-    pub data: *mut ::core::ffi::c_void,
+    /// Formatted reply owned by a queued request; absent for terminal queries.
+    pub data: Option<CString>,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct input_requests {
-    /// Points at the collection held by the input or client owner.
+    /// Points at the observer collection held by the client owner.
     pub collection: *mut ::core::ffi::c_void,
     /// Retained to preserve the translated record's size and alignment.
     pub reserved: *mut ::core::ffi::c_void,
@@ -95,21 +95,15 @@ pub struct input_transition {
     pub state: *const input_state,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct input_param {
-    pub type_0: input_param_type_0,
-    pub c2rust_unnamed: input_param_c2rust_unnamed,
+// Rust representation of tmux's tagged parameter union. Each string is owned
+// by its parameter; resetting or dropping the parameter releases it.
+#[derive(Default)]
+pub enum input_param {
+    #[default]
+    Missing,
+    Number(::core::ffi::c_int),
+    String(CString),
 }
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union input_param_c2rust_unnamed {
-    pub num: ::core::ffi::c_int,
-    pub str_0: *mut ::core::ffi::c_char,
-}
-
-pub type input_param_type_0 = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

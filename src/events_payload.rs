@@ -91,18 +91,6 @@ pub const EVENT_PAYLOAD_INT: event_payload_type = 2;
 pub const EVENT_PAYLOAD_TIME: event_payload_type = 1;
 pub const EVENT_PAYLOAD_STRING: event_payload_type = 0;
 
-// The public item pointer addresses the first field of this private owner.
-// Its name and optional union string pointer borrow these fields until
-// replacement or payload free.
-#[repr(C)]
-struct EventPayloadItemOwner {
-    item: event_payload_item,
-    name: Option<CString>,
-    string: Option<CString>,
-}
-
-const _: () = assert!(std::mem::offset_of!(EventPayloadItemOwner, item) == 0);
-
 unsafe fn event_payload_name_key(name: *const ::core::ffi::c_char) -> Vec<u8> {
     std::ffi::CStr::from_ptr(name).to_bytes().to_vec()
 }
@@ -133,7 +121,7 @@ unsafe fn event_payload_tree_insert(
     }
     match (*(*head).entries)
         .entries
-        .entry(event_payload_name_key((*elm).name))
+        .entry(event_payload_name_key(((*elm).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())))
     {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -155,7 +143,7 @@ unsafe fn event_payload_tree_remove(
     }
     let removed = (*(*head).entries)
         .entries
-        .remove(&event_payload_name_key((*elm).name));
+        .remove(&event_payload_name_key(((*elm).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())));
     if let Some(removed) = removed {
         (*removed).entry.rbe_parent = ::core::ptr::null_mut::<event_payload_item>();
         removed
@@ -191,7 +179,7 @@ unsafe fn event_payload_tree_next(elm: *mut event_payload_item) -> *mut event_pa
     (*(*head).entries)
         .entries
         .range((
-            std::ops::Bound::Excluded(event_payload_name_key((*elm).name)),
+            std::ops::Bound::Excluded(event_payload_name_key(((*elm).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))),
             std::ops::Bound::Unbounded,
         ))
         .next()
@@ -267,15 +255,15 @@ unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) 
 }
 unsafe fn event_payload_free_item(epi: *mut event_payload_item) {
     event_payload_free_value(epi);
-    drop(Box::from_raw(epi.cast::<EventPayloadItemOwner>()));
+    drop(Box::from_raw(epi));
 }
 
 unsafe fn event_payload_new_item() -> *mut event_payload_item {
     // Every field is C-style pointer or integer storage, including the union.
-    Box::into_raw(Box::new(EventPayloadItemOwner {
-        item: ::core::mem::zeroed::<event_payload_item>(),
+    Box::into_raw(Box::new(event_payload_item {
         name: None,
         string: None,
+        ..event_payload_item::empty()
     }))
     .cast()
 }
@@ -286,9 +274,9 @@ unsafe extern "C" fn event_payload_set_item(
 ) {
     let mut old: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     // `name` may borrow the item being replaced, so copy before its callback.
-    let owner = &mut *new.cast::<EventPayloadItemOwner>();
+    let owner = &mut *new;
     owner.name = Some(CStr::from_ptr(name).to_owned());
-    owner.item.name = owner.name.as_ref().unwrap().as_ptr().cast_mut();
+
     old = event_payload_tree_insert(&raw mut (*ep).items, new);
     if !old.is_null() {
         event_payload_tree_remove(&raw mut (*ep).items, old);
@@ -452,9 +440,9 @@ pub unsafe extern "C" fn event_payload_set_string(
     let string = xvasprintf_cstring(fmt, ap);
     let epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_STRING;
-    let owner = &mut *epi.cast::<EventPayloadItemOwner>();
+    let owner = &mut *epi;
     owner.string = Some(string);
-    owner.item.c2rust_unnamed.string = owner.string.as_ref().unwrap().as_ptr().cast_mut();
+    owner.c2rust_unnamed.string = owner.string.as_ref().unwrap().as_ptr().cast_mut();
     event_payload_set_item(ep, name, epi);
 }
 #[no_mangle]
@@ -622,7 +610,7 @@ unsafe extern "C" fn event_payload_add_item(
             evbuffer_add_printf(
                 evb,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*(*epi).c2rust_unnamed.client).name,
+                ((*(*epi).c2rust_unnamed.client).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         5 => {
@@ -727,7 +715,7 @@ pub unsafe extern "C" fn event_payload_add_formats(
     let prefix = CStr::from_ptr(prefix).to_bytes();
     epi = event_payload_tree_minmax(&raw mut (*ep).items, -1);
     while !epi.is_null() {
-        let key = (*epi).name;
+        let key = (*epi).name.as_ref().unwrap().as_ptr();
         if !(*key as ::core::ffi::c_int == '_' as i32) {
             let value = event_payload_item_print_owned(epi);
             let key_bytes = CStr::from_ptr(key).to_bytes();
@@ -745,7 +733,7 @@ pub unsafe extern "C" fn event_payload_add_formats(
             let named = if (*epi).type_0 as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                Some((*(*epi).c2rust_unnamed.session).name)
+                Some((*(*epi).c2rust_unnamed.session).name.as_ptr().cast_mut())
             } else if (*epi).type_0 as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -784,7 +772,9 @@ pub unsafe extern "C" fn event_payload_next(
 pub unsafe extern "C" fn event_payload_item_name(
     mut epi: *mut event_payload_item,
 ) -> *const ::core::ffi::c_char {
-    return (*epi).name;
+    return ((*epi).name)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_item_type(
@@ -816,7 +806,7 @@ pub unsafe extern "C" fn event_payload_log(
             evbuffer_add_printf(
                 evb,
                 b"%s=\0" as *const u8 as *const ::core::ffi::c_char,
-                (*epi).name,
+                ((*epi).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
             event_payload_add_item(epi, evb);
             epi = event_payload_tree_next(epi);
@@ -1064,7 +1054,7 @@ mod tests {
 
     fn named_item(name: &CStr) -> Box<event_payload_item> {
         Box::new(event_payload_item {
-            name: name.as_ptr() as *mut ::core::ffi::c_char,
+            name: Some(name.to_owned()),
             type_0: EVENT_PAYLOAD_STRING,
             c2rust_unnamed: event_payload_item_c2rust_unnamed {
                 string: ::core::ptr::null_mut::<::core::ffi::c_char>(),
@@ -1075,7 +1065,7 @@ mod tests {
                 rbe_parent: ::core::ptr::null_mut::<event_payload_item>(),
                 rbe_color: 0,
             },
-        })
+         ..event_payload_item::empty() })
     }
 
     #[test]

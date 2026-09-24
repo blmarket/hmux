@@ -107,9 +107,9 @@ pub struct popup_data {
     pub c: *mut client,
     pub item: *mut cmdq_item,
     pub flags: ::core::ffi::c_int,
-    pub title: *mut ::core::ffi::c_char,
-    pub style: *mut ::core::ffi::c_char,
-    pub border_style: *mut ::core::ffi::c_char,
+    pub title: Option<std::ffi::CString>,
+    pub style: Option<std::ffi::CString>,
+    pub border_style: Option<std::ffi::CString>,
     pub border_cell: grid_cell,
     pub border_lines: box_lines,
     pub s: screen,
@@ -136,19 +136,48 @@ pub struct popup_data {
     pub lx: u_int,
     pub ly: u_int,
     pub lb: u_int,
+    pub(crate) overlay_ranges: [visible_range; 2],
 }
 
-// Overlay and job callbacks borrow this C-shaped prefix. The owner keeps the
-// optional strings alive for as long as the popup is installed on the client.
-#[repr(C)]
-struct PopupOwner {
-    raw: popup_data,
-    title: Option<CString>,
-    style: Option<CString>,
-    border_style: Option<CString>,
-    overlay_ranges: [visible_range; 2],
+impl popup_data {
+    pub fn empty() -> Self {
+        Self {
+            c: unsafe { ::core::mem::zeroed() },
+            item: unsafe { ::core::mem::zeroed() },
+            flags: unsafe { ::core::mem::zeroed() },
+            title: Default::default(),
+            style: Default::default(),
+            border_style: Default::default(),
+            border_cell: unsafe { ::core::mem::zeroed() },
+            border_lines: unsafe { ::core::mem::zeroed() },
+            s: unsafe { ::core::mem::zeroed() },
+            defaults: unsafe { ::core::mem::zeroed() },
+            palette: unsafe { ::core::mem::zeroed() },
+            r: unsafe { ::core::mem::zeroed() },
+            job: unsafe { ::core::mem::zeroed() },
+            ictx: unsafe { ::core::mem::zeroed() },
+            status: unsafe { ::core::mem::zeroed() },
+            cb: unsafe { ::core::mem::zeroed() },
+            arg: unsafe { ::core::mem::zeroed() },
+            close: unsafe { ::core::mem::zeroed() },
+            px: unsafe { ::core::mem::zeroed() },
+            py: unsafe { ::core::mem::zeroed() },
+            sx: unsafe { ::core::mem::zeroed() },
+            sy: unsafe { ::core::mem::zeroed() },
+            ppx: unsafe { ::core::mem::zeroed() },
+            ppy: unsafe { ::core::mem::zeroed() },
+            psx: unsafe { ::core::mem::zeroed() },
+            psy: unsafe { ::core::mem::zeroed() },
+            dragging: unsafe { ::core::mem::zeroed() },
+            dx: unsafe { ::core::mem::zeroed() },
+            dy: unsafe { ::core::mem::zeroed() },
+            lx: unsafe { ::core::mem::zeroed() },
+            ly: unsafe { ::core::mem::zeroed() },
+            lb: unsafe { ::core::mem::zeroed() },
+            overlay_ranges: [visible_range { px: 0, nx: 0 }; 2],
+        }
+    }
 }
-const _: () = assert!(std::mem::offset_of!(PopupOwner, raw) == 0);
 
 unsafe fn popup_optional_string(value: *const ::core::ffi::c_char) -> Option<CString> {
     if value.is_null() {
@@ -178,7 +207,7 @@ unsafe extern "C" fn popup_free(mut pd: *mut popup_data) {
     }
     screen_free(&raw mut (*pd).s);
     colour_palette_free(&raw mut (*pd).palette);
-    drop(Box::from_raw(pd.cast::<PopupOwner>()));
+    drop(Box::from_raw(pd));
 }
 unsafe extern "C" fn popup_reapply_styles(mut pd: *mut popup_data) {
     let mut c: *mut client = (*pd).c;
@@ -236,9 +265,9 @@ unsafe extern "C" fn popup_reapply_styles(mut pd: *mut popup_data) {
         b"popup-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
-    if !(*pd).style.is_null() {
+    if !(*pd).style.is_none() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
-        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, (*pd).style)
+        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, ((*pd).style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
             == 0 as ::core::ffi::c_int
         {
             (*pd).defaults.fg = sytmp.gc.fg;
@@ -257,12 +286,12 @@ unsafe extern "C" fn popup_reapply_styles(mut pd: *mut popup_data) {
         b"popup-border-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
-    if !(*pd).border_style.is_null() {
+    if !(*pd).border_style.is_none() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
         if style_parse(
             &raw mut sytmp,
             &raw mut (*pd).border_cell,
-            (*pd).border_style,
+            ((*pd).border_style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) == 0 as ::core::ffi::c_int
         {
             (*pd).border_cell.fg = sytmp.gc.fg;
@@ -458,7 +487,7 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
             (*pd).sy,
             (*pd).border_lines,
             &raw mut (*pd).border_cell,
-            (*pd).title,
+            ((*pd).title).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         screen_write_cursormove(
             &raw mut ctx,
@@ -914,20 +943,20 @@ pub unsafe extern "C" fn popup_modify(
     };
     if !title.is_null() {
         let updated = popup_optional_string(title);
-        let owner = &mut *pd.cast::<PopupOwner>();
+        let owner = &mut *pd;
         owner.title = updated;
-        owner.raw.title = owner.title.as_ref().unwrap().as_ptr().cast_mut();
+
     }
     if !border_style.is_null() {
         let updated = popup_optional_string(border_style);
-        let owner = &mut *pd.cast::<PopupOwner>();
+        let owner = &mut *pd;
         owner.border_style = updated;
-        owner.raw.border_style = owner.border_style.as_ref().unwrap().as_ptr().cast_mut();
+
         style_set(&raw mut sytmp, &raw mut (*pd).border_cell);
         if style_parse(
             &raw mut sytmp,
             &raw mut (*pd).border_cell,
-            (*pd).border_style,
+            ((*pd).border_style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) == 0 as ::core::ffi::c_int
         {
             (*pd).border_cell.fg = sytmp.gc.fg;
@@ -936,11 +965,11 @@ pub unsafe extern "C" fn popup_modify(
     }
     if !style.is_null() {
         let updated = popup_optional_string(style);
-        let owner = &mut *pd.cast::<PopupOwner>();
+        let owner = &mut *pd;
         owner.style = updated;
-        owner.raw.style = owner.style.as_ref().unwrap().as_ptr().cast_mut();
+
         style_set(&raw mut sytmp, &raw mut (*pd).defaults);
-        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, (*pd).style)
+        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, ((*pd).style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
             == 0 as ::core::ffi::c_int
         {
             (*pd).defaults.fg = sytmp.gc.fg;
@@ -1064,31 +1093,20 @@ pub unsafe extern "C" fn popup_display(
     if (*c).tty.sx < sx || (*c).tty.sy < sy {
         return -(1 as ::core::ffi::c_int);
     }
-    let owner = Box::new(PopupOwner {
-        raw: std::mem::zeroed(),
+    let owner = Box::new(popup_data {
         title: popup_optional_string(title),
         style: popup_optional_string(style),
         border_style: popup_optional_string(border_style),
         overlay_ranges: [visible_range { px: 0, nx: 0 }; 2],
+        ..popup_data::empty()
     });
     pd = Box::into_raw(owner).cast::<popup_data>();
     (*pd).item = item;
     (*pd).flags = flags;
-    let owner = &mut *pd.cast::<PopupOwner>();
-    owner.raw.r.ranges = owner.overlay_ranges.as_mut_ptr();
-    owner.raw.r.size = owner.overlay_ranges.len() as u_int;
-    owner.raw.title = owner
-        .title
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |s| s.as_ptr().cast_mut());
-    owner.raw.style = owner
-        .style
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |s| s.as_ptr().cast_mut());
-    owner.raw.border_style = owner
-        .border_style
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |s| s.as_ptr().cast_mut());
+    let owner = &mut *pd;
+    owner.r.ranges = owner.overlay_ranges.as_mut_ptr();
+    owner.r.size = owner.overlay_ranges.len() as u_int;
+
     (*pd).c = c;
     (*(*pd).c).references += 1;
     (*pd).cb = cb;
@@ -1111,7 +1129,7 @@ pub unsafe extern "C" fn popup_display(
         if style_parse(
             &raw mut sytmp,
             &raw mut (*pd).border_cell,
-            (*pd).border_style,
+            ((*pd).border_style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) == 0 as ::core::ffi::c_int
         {
             (*pd).border_cell.fg = sytmp.gc.fg;
@@ -1136,7 +1154,7 @@ pub unsafe extern "C" fn popup_display(
     );
     if !style.is_null() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
-        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, (*pd).style)
+        if style_parse(&raw mut sytmp, &raw mut (*pd).defaults, ((*pd).style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
             == 0 as ::core::ffi::c_int
         {
             (*pd).defaults.fg = sytmp.gc.fg;

@@ -504,7 +504,7 @@ pub unsafe extern "C" fn cmd_get_source(
     mut line: *mut u_int,
 ) {
     if !file.is_null() {
-        *file = (*cmd).file;
+        *file = ((*cmd).file).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
     if !line.is_null() {
         *line = (*cmd).line;
@@ -625,28 +625,17 @@ pub unsafe extern "C" fn cmd_find(
         return found;
     };
 }
-/// The public command borrows its source filename from this stable box.
-#[repr(C)]
-struct CmdOwner {
-    node: cmd,
-    file: Option<CString>,
-}
-
-const _: () = assert!(::core::mem::offset_of!(CmdOwner, node) == 0);
 
 unsafe fn cmd_new_owned(file: *const ::core::ffi::c_char) -> *mut cmd {
-    let mut owner = Box::new(CmdOwner {
-        node: ::core::mem::zeroed::<cmd>(),
+    let mut owner = Box::new(cmd {
         file: if file.is_null() {
             None
         } else {
             Some(CStr::from_ptr(file).to_owned())
         },
+        ..cmd::empty()
     });
-    owner.node.file = owner
-        .file
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |file| file.as_ptr() as *mut _);
+
     Box::into_raw(owner).cast::<cmd>()
 }
 
@@ -712,7 +701,7 @@ pub unsafe extern "C" fn cmd_parse(
 #[no_mangle]
 pub unsafe extern "C" fn cmd_free(mut cmd: *mut cmd) {
     args_free((*cmd).args);
-    drop(Box::from_raw(cmd.cast::<CmdOwner>()));
+    drop(Box::from_raw(cmd));
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_copy(
@@ -721,7 +710,11 @@ pub unsafe extern "C" fn cmd_copy(
     mut argv: *mut *mut ::core::ffi::c_char,
 ) -> *mut cmd {
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    new_cmd = cmd_new_owned((*cmd).file);
+    new_cmd = cmd_new_owned(
+        ((*cmd).file)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     (*new_cmd).entry = (*cmd).entry;
     (*new_cmd).args = args_copy((*cmd).args, argc, argv);
     (*new_cmd).line = (*cmd).line;

@@ -72,9 +72,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 pub use crate::src::shared::client::{
     CLIENT_DEAD, CLIENT_EXIT, CLIENT_SUSPENDED, CLIENT_UNATTACHEDFLAGS,
@@ -92,8 +91,8 @@ use crate::src::shared::grid::*;
 pub use crate::src::shared::hyperlinks::hyperlinks;
 pub use crate::src::shared::input::input_request_type;
 pub use crate::src::shared::input::{
-    input_cell, input_ctx, input_end_type, input_param, input_param_c2rust_unnamed,
-    input_param_type_0, input_request, input_requests, input_state, input_transition,
+    input_cell, input_ctx, input_end_type, input_param, input_request, input_requests, input_state,
+    input_transition,
 };
 pub use crate::src::shared::input::{
     INPUT_BUF_DEFAULT_SIZE, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
@@ -161,55 +160,64 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub const INPUT_END_BEL: input_end_type = 1;
 pub const INPUT_END_ST: input_end_type = 0;
 
-// input_ctx keeps its C layout and stable address. input_buf is a borrowed
-// view of this owner's Vec, refreshed whenever the Vec may move. The parser
-// never keeps an input_buf pointer across a buffer resize or input_ground.
-#[repr(C)]
-struct InputCtxOwner {
-    ctx: input_ctx,
-    requests: VecDeque<Box<InputRequestOwner>>,
-    buffer: Vec<u8>,
-    param_strings: [Option<CString>; 24],
-}
-const _: () = assert!(::core::mem::offset_of!(InputCtxOwner, ctx) == 0);
-
-impl InputCtxOwner {
-    fn new() -> *mut input_ctx {
-        let mut owner = Box::new(Self {
-            ctx: unsafe { ::core::mem::zeroed() },
+impl input_ctx {
+    // Only Rust constructs and accesses this record. Callbacks borrow its boxed,
+    // stable address; no foreign consumer depends on the translated C layout.
+    fn new() -> Self {
+        Self {
+            wp: ::core::ptr::null_mut(),
+            event: ::core::ptr::null_mut(),
+            ctx: screen_write_ctx {
+                wp: ::core::ptr::null_mut(),
+                s: ::core::ptr::null_mut(),
+                flags: 0,
+                init_ctx_cb: None,
+                arg: ::core::ptr::null_mut(),
+                item: None,
+                scrolled: 0,
+                bg: 0,
+            },
+            palette: ::core::ptr::null_mut(),
+            c: ::core::ptr::null_mut(),
+            cell: unsafe { ::core::mem::zeroed() },
+            old_cell: unsafe { ::core::mem::zeroed() },
+            old_cx: 0,
+            old_cy: 0,
+            old_mode: 0,
+            interm_buf: [0; 4],
+            interm_len: 0,
+            param_buf: [0; 64],
+            param_len: 0,
+            input_buf: vec![0; INPUT_BUF_START as usize],
+            input_len: 0,
+            input_end: INPUT_END_ST,
+            param_list: std::array::from_fn(|_| input_param::Missing),
+            param_list_len: 0,
+            utf8data: unsafe { ::core::mem::zeroed() },
+            utf8started: 0,
+            ch: 0,
+            last: unsafe { ::core::mem::zeroed() },
+            state: ::core::ptr::null(),
+            flags: 0,
             requests: VecDeque::new(),
-            buffer: vec![0; INPUT_BUF_START as usize],
-            param_strings: std::array::from_fn(|_| None),
-        });
-        owner.sync_buffer();
-        let owner = Box::into_raw(owner);
-        unsafe {
-            (*owner).ctx.requests.collection = &mut (*owner).requests as *mut _ as *mut _;
+            request_count: 0,
+            request_timer: unsafe { ::core::mem::zeroed() },
+            since_ground: ::core::ptr::null_mut(),
+            ground_timer: unsafe { ::core::mem::zeroed() },
         }
-        owner.cast::<input_ctx>()
-    }
-
-    fn sync_buffer(&mut self) {
-        self.ctx.input_buf = self.buffer.as_mut_ptr();
-        self.ctx.input_space = self.buffer.len();
     }
 
     fn shrink_buffer(&mut self) {
-        if self.buffer.len() > INPUT_BUF_START as usize {
-            self.buffer.truncate(INPUT_BUF_START as usize);
-            self.buffer.shrink_to_fit();
-            self.sync_buffer();
+        if self.input_buf.len() > INPUT_BUF_START as usize {
+            self.input_buf.truncate(INPUT_BUF_START as usize);
+            self.input_buf.shrink_to_fit();
         }
     }
 }
 
-unsafe fn input_clear_param_strings(ictx: *mut input_ctx) {
-    let owner = ictx.cast::<InputCtxOwner>();
-    for i in 0..(*ictx).param_list_len as usize {
-        if (*owner).param_strings[i].is_some() {
-            (*ictx).param_list[i].c2rust_unnamed.str_0 = ::core::ptr::null_mut();
-            (*owner).param_strings[i] = None;
-        }
+unsafe fn input_clear_params(ictx: *mut input_ctx) {
+    for param in &mut (&mut (*ictx).param_list)[..(*ictx).param_list_len as usize] {
+        *param = input_param::Missing;
     }
 }
 
@@ -220,14 +228,17 @@ mod input_buffer_ownership_tests {
     #[test]
     fn colon_parameter_survives_later_numeric_error_until_next_split() {
         unsafe {
-            let ictx = InputCtxOwner::new();
+            let ictx = Box::into_raw(Box::new(input_ctx::new()));
             let invalid = b"38:5:196;invalid\0";
             (&mut (*ictx).param_buf)[..invalid.len()].copy_from_slice(invalid);
             (*ictx).param_len = invalid.len() - 1;
             assert_eq!(input_split(ictx), -1);
             assert_eq!((*ictx).param_list_len, 1);
             assert_eq!(
-                CStr::from_ptr((*ictx).param_list[0].c2rust_unnamed.str_0),
+                match &(*ictx).param_list[0] {
+                    input_param::String(value) => value.as_c_str(),
+                    _ => panic!("expected string parameter"),
+                },
                 c"38:5:196"
             );
 
@@ -237,86 +248,66 @@ mod input_buffer_ownership_tests {
             assert_eq!(input_split(ictx), 0);
             assert_eq!((*ictx).param_list_len, 1);
             assert_eq!(
-                CStr::from_ptr((*ictx).param_list[0].c2rust_unnamed.str_0),
+                match &(*ictx).param_list[0] {
+                    input_param::String(value) => value.as_c_str(),
+                    _ => panic!("expected string parameter"),
+                },
                 c"48:5:25"
             );
-            input_clear_param_strings(ictx);
-            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+            input_clear_params(ictx);
+            drop(Box::from_raw(ictx));
         }
     }
 
     #[test]
     fn parser_buffer_grows_preserves_bytes_and_shrinks() {
         unsafe {
-            let ictx = InputCtxOwner::new();
-            assert_eq!((*ictx).input_space, INPUT_BUF_START as usize);
+            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+            assert_eq!((*ictx).input_buf.len(), INPUT_BUF_START as usize);
             for ch in (0..96).map(|i| if i == 17 { 0 } else { b'a' + (i % 26) }) {
                 (*ictx).ch = ch as i32;
                 input_input(ictx);
-                assert_eq!(
-                    (*ictx).input_buf,
-                    (*ictx.cast::<InputCtxOwner>()).buffer.as_mut_ptr()
-                );
             }
             assert_eq!((*ictx).input_len, 96);
-            assert_eq!(*(*ictx).input_buf.add(17), 0);
-            assert_eq!(*(*ictx).input_buf.add(96), 0);
-            assert_eq!((*ictx).input_space, 128);
+            assert_eq!((&(*ictx).input_buf)[17], 0);
+            assert_eq!((&(*ictx).input_buf)[96], 0);
+            assert_eq!((*ictx).input_buf.len(), 128);
 
-            (*ictx.cast::<InputCtxOwner>()).shrink_buffer();
-            assert_eq!((*ictx).input_space, INPUT_BUF_START as usize);
-            assert_eq!(
-                (*ictx).input_buf,
-                (*ictx.cast::<InputCtxOwner>()).buffer.as_mut_ptr()
-            );
-            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+            (*ictx).shrink_buffer();
+            assert_eq!((*ictx).input_buf.len(), INPUT_BUF_START as usize);
+            drop(Box::from_raw(ictx));
         }
     }
 }
 
-// InputCtxOwner owns each boxed request in collection order. The public
-// request stays at a stable address as the VecDeque grows, and queued replies
-// borrow bytes from this owner until input_free_request removes and drops it.
-#[repr(C)]
-struct InputRequestOwner {
-    request: input_request,
-    reply: Option<CString>,
-}
-const _: () = assert!(::core::mem::offset_of!(InputRequestOwner, request) == 0);
-
-impl InputRequestOwner {
+// input_ctx owns each boxed request. Boxes preserve addresses used by client
+// observers as the deque grows; removing a request also drops its reply data.
+impl input_request {
     fn new() -> Box<Self> {
         Box::new(Self {
-            request: unsafe { ::core::mem::zeroed() },
-            reply: None,
+            c: ::core::ptr::null_mut(),
+            ictx: ::core::ptr::null_mut(),
+            type_0: INPUT_REQUEST_PALETTE,
+            t: 0,
+            end: INPUT_END_ST,
+            idx: 0,
+            data: None,
         })
-    }
-
-    unsafe fn set_reply(ir: *mut input_request, reply: CString) {
-        let owner = &mut *ir.cast::<Self>();
-        owner.request.data = reply.as_ptr() as *mut ::core::ffi::c_void;
-        owner.reply = Some(reply);
     }
 }
 
-unsafe fn input_ctx_requests<'a>(ictx: *mut input_ctx) -> &'a mut VecDeque<Box<InputRequestOwner>> {
-    &mut *(*ictx)
-        .requests
-        .collection
-        .cast::<VecDeque<Box<InputRequestOwner>>>()
+unsafe fn input_ctx_requests<'a>(ictx: *mut input_ctx) -> &'a mut VecDeque<Box<input_request>> {
+    &mut (*ictx).requests
 }
 
 unsafe fn input_client_requests<'a>(c: *mut client) -> &'a mut Vec<*mut input_request> {
-    &mut *(*c)
-        .input_requests
-        .collection
-        .cast::<Vec<*mut input_request>>()
+    &mut (*c).input_requests
 }
 
 unsafe fn input_ctx_request_handles(ictx: *mut input_ctx) -> Vec<*mut input_request> {
     input_ctx_requests(ictx)
         .iter_mut()
-        .map(|owner| &mut owner.request as *mut input_request)
+        .map(|owner| &mut **owner as *mut input_request)
         .collect()
 }
 
@@ -327,19 +318,17 @@ pub(crate) unsafe fn input_client_has_requests(c: *mut client) -> bool {
 #[cfg(test)]
 mod input_request_ownership_tests {
     use super::*;
-    use std::ffi::CStr;
 
     #[test]
     fn queued_reply_survives_earlier_request_removal() {
         unsafe {
-            let ictx = InputCtxOwner::new();
-            let mut client_requests: Vec<*mut input_request> = Vec::new();
-            let mut c: client = ::core::mem::zeroed();
-            c.input_requests.collection = &mut client_requests as *mut _ as *mut _;
+            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+
+            let mut c: client = client::empty();
 
             // Seed one pending nonqueue request without starting a timer.
-            let mut pending_owner = InputRequestOwner::new();
-            let pending = &mut pending_owner.request as *mut input_request;
+            let mut pending_owner = input_request::new();
+            let pending = &mut *pending_owner as *mut input_request;
             (*pending).ictx = ictx;
             (*pending).c = &mut c;
             (*pending).type_0 = INPUT_REQUEST_PALETTE;
@@ -356,7 +345,7 @@ mod input_request_ownership_tests {
             let queued = *input_ctx_request_handles(ictx).last().unwrap();
             assert_eq!((*queued).type_0, INPUT_REQUEST_QUEUE);
             assert_eq!(
-                CStr::from_ptr((*queued).data.cast()).to_bytes(),
+                (*queued).data.as_ref().unwrap().to_bytes(),
                 b"reply:\xff\xfe"
             );
 
@@ -364,26 +353,25 @@ mod input_request_ownership_tests {
             assert_eq!(input_ctx_request_handles(ictx), vec![queued]);
             assert_eq!(input_client_requests(&mut c), &[]);
             assert_eq!(
-                CStr::from_ptr((*queued).data.cast()).to_bytes(),
+                (*queued).data.as_ref().unwrap().to_bytes(),
                 b"reply:\xff\xfe"
             );
             input_free_request(queued);
             assert!(input_ctx_requests(ictx).is_empty());
             assert_eq!((*ictx).request_count, 0);
-            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+            drop(Box::from_raw(ictx));
         }
     }
 
     #[test]
     fn matched_request_can_be_freed_before_later_queued_reply() {
         unsafe {
-            let ictx = InputCtxOwner::new();
-            let mut client_requests: Vec<*mut input_request> = Vec::new();
-            let mut c: client = ::core::mem::zeroed();
-            c.input_requests.collection = &mut client_requests as *mut _ as *mut _;
+            let ictx = Box::into_raw(Box::new(input_ctx::new()));
 
-            let mut pending_owner = InputRequestOwner::new();
-            let pending = &mut pending_owner.request as *mut input_request;
+            let mut c: client = client::empty();
+
+            let mut pending_owner = input_request::new();
+            let pending = &mut *pending_owner as *mut input_request;
             (*pending).ictx = ictx;
             (*pending).c = &mut c;
             (*pending).type_0 = INPUT_REQUEST_PALETTE;
@@ -403,32 +391,31 @@ mod input_request_ownership_tests {
             assert!(input_ctx_requests(ictx).is_empty());
             assert!(input_client_requests(&mut c).is_empty());
             assert_eq!((*ictx).request_count, 0);
-            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+            drop(Box::from_raw(ictx));
         }
     }
 
     #[test]
     fn reply_without_pending_request_does_not_queue() {
         unsafe {
-            let ictx = InputCtxOwner::new();
+            let ictx = Box::into_raw(Box::new(input_ctx::new()));
             input_reply(ictx, 1, b"\x1b[0n\0".as_ptr().cast());
             assert!(input_ctx_requests(ictx).is_empty());
             assert_eq!((*ictx).request_count, 0);
-            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+            drop(Box::from_raw(ictx));
         }
     }
 
     #[test]
     fn cancelling_client_drops_its_requests_from_the_input_owner() {
         unsafe {
-            let ictx = InputCtxOwner::new();
-            let mut client_requests: Vec<*mut input_request> = Vec::new();
-            let mut c: client = ::core::mem::zeroed();
-            c.input_requests.collection = &mut client_requests as *mut _ as *mut _;
+            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+
+            let mut c: client = client::empty();
 
             for type_0 in [INPUT_REQUEST_PALETTE, INPUT_REQUEST_CLIPBOARD] {
-                let mut owner = InputRequestOwner::new();
-                let ir = &mut owner.request as *mut input_request;
+                let mut owner = input_request::new();
+                let ir = &mut *owner as *mut input_request;
                 (*ir).ictx = ictx;
                 (*ir).c = &mut c;
                 (*ir).type_0 = type_0;
@@ -443,14 +430,10 @@ mod input_request_ownership_tests {
             assert!(!input_client_has_requests(&mut c));
             assert!(input_ctx_requests(ictx).is_empty());
             assert_eq!((*ictx).request_count, 0);
-            drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+            drop(Box::from_raw(ictx));
         }
     }
 }
-
-pub const INPUT_STRING: input_param_type_0 = 2;
-pub const INPUT_NUMBER: input_param_type_0 = 1;
-pub const INPUT_MISSING: input_param_type_0 = 0;
 
 pub const INPUT_ESC_ST: input_esc_type = 14;
 pub const INPUT_ESC_SCSG1_OFF: input_esc_type = 12;
@@ -2471,7 +2454,7 @@ pub unsafe extern "C" fn input_init(
     mut c: *mut client,
 ) -> *mut input_ctx {
     let mut ictx: *mut input_ctx = ::core::ptr::null_mut::<input_ctx>();
-    ictx = InputCtxOwner::new();
+    ictx = Box::into_raw(Box::new(input_ctx::new()));
     (*ictx).wp = wp;
     (*ictx).event = bev;
     (*ictx).palette = palette;
@@ -2513,11 +2496,11 @@ pub unsafe extern "C" fn input_init(
 }
 #[no_mangle]
 pub unsafe extern "C" fn input_free(mut ictx: *mut input_ctx) {
-    input_clear_param_strings(ictx);
+    input_clear_params(ictx);
     loop {
         let ir = input_ctx_requests(ictx)
             .front_mut()
-            .map(|owner| &mut owner.request as *mut input_request);
+            .map(|owner| &mut **owner as *mut input_request);
         let Some(ir) = ir else {
             break;
         };
@@ -2527,7 +2510,7 @@ pub unsafe extern "C" fn input_free(mut ictx: *mut input_ctx) {
     evbuffer_free((*ictx).since_ground);
     event_del(&raw mut (*ictx).ground_timer);
     screen_write_stop_sync((*ictx).wp);
-    drop(Box::from_raw(ictx.cast::<InputCtxOwner>()));
+    drop(Box::from_raw(ictx));
 }
 #[no_mangle]
 pub unsafe extern "C" fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_int) {
@@ -2691,7 +2674,7 @@ unsafe extern "C" fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ip: *mut input_param = ::core::ptr::null_mut::<input_param>();
     let mut i: u_int = 0;
-    input_clear_param_strings(ictx);
+    input_clear_params(ictx);
     (*ictx).param_list_len = 0 as u_int;
     if (*ictx).param_len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
@@ -2708,25 +2691,16 @@ unsafe extern "C" fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int
             break;
         }
         if *out as ::core::ffi::c_int == '\0' as i32 {
-            (*ip).type_0 = INPUT_MISSING;
+            *ip = input_param::Missing;
         } else if !strchr(out, ':' as i32).is_null() {
-            (*ip).type_0 = INPUT_STRING;
-            let owner = ictx.cast::<InputCtxOwner>();
-            let index = (*ictx).param_list_len as usize;
-            (*owner).param_strings[index] = Some(CStr::from_ptr(out).to_owned());
-            (*ip).c2rust_unnamed.str_0 = (*owner).param_strings[index]
-                .as_ref()
-                .unwrap()
-                .as_ptr()
-                .cast_mut();
+            *ip = input_param::String(CStr::from_ptr(out).to_owned());
         } else {
-            (*ip).type_0 = INPUT_NUMBER;
-            (*ip).c2rust_unnamed.num = strtonum(
+            *ip = input_param::Number(strtonum(
                 out,
                 0 as ::core::ffi::c_longlong,
                 INT_MAX as ::core::ffi::c_longlong,
                 &raw mut errstr,
-            ) as ::core::ffi::c_int;
+            ) as ::core::ffi::c_int);
             if !errstr.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -2745,29 +2719,12 @@ unsafe extern "C" fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int
     while i < (*ictx).param_list_len {
         ip = (&raw mut (*ictx).param_list as *mut input_param).offset(i as isize)
             as *mut input_param;
-        if (*ip).type_0 as ::core::ffi::c_uint
-            == INPUT_MISSING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            log_debug(
-                b"parameter %u: missing\0" as *const u8 as *const ::core::ffi::c_char,
-                i,
-            );
-        } else if (*ip).type_0 as ::core::ffi::c_uint
-            == INPUT_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            log_debug(
-                b"parameter %u: string %s\0" as *const u8 as *const ::core::ffi::c_char,
-                i,
-                (*ip).c2rust_unnamed.str_0,
-            );
-        } else if (*ip).type_0 as ::core::ffi::c_uint
-            == INPUT_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            log_debug(
-                b"parameter %u: number %d\0" as *const u8 as *const ::core::ffi::c_char,
-                i,
-                (*ip).c2rust_unnamed.num,
-            );
+        match &*ip {
+            input_param::Missing => log_debug(c"parameter %u: missing".as_ptr(), i),
+            input_param::String(value) => {
+                log_debug(c"parameter %u: string %s".as_ptr(), i, value.as_ptr());
+            }
+            input_param::Number(value) => log_debug(c"parameter %u: number %d".as_ptr(), i, *value),
         }
         i = i.wrapping_add(1);
     }
@@ -2786,17 +2743,11 @@ unsafe extern "C" fn input_get(
     }
     ip = (&raw mut (*ictx).param_list as *mut input_param).offset(validx as isize)
         as *mut input_param;
-    if (*ip).type_0 as ::core::ffi::c_uint
-        == INPUT_MISSING as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return defval;
-    }
-    if (*ip).type_0 as ::core::ffi::c_uint
-        == INPUT_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    retval = (*ip).c2rust_unnamed.num;
+    retval = match &*ip {
+        input_param::Missing => return defval,
+        input_param::String(_) => return -1,
+        input_param::Number(value) => *value,
+    };
     if retval < minval {
         return minval;
     }
@@ -2831,7 +2782,7 @@ unsafe extern "C" fn input_reply(
     let reply = xvasprintf_cstring(fmt, ap);
     if add != 0 && !input_ctx_requests(ictx).is_empty() {
         ir = input_make_request(ictx, INPUT_REQUEST_QUEUE);
-        InputRequestOwner::set_reply(ir, reply);
+        (*ir).data = Some(reply);
     } else {
         input_send_reply(ictx, reply.as_ptr());
     };
@@ -2842,7 +2793,7 @@ unsafe extern "C" fn input_clear(mut ictx: *mut input_ctx) {
     (*ictx).interm_len = 0 as size_t;
     *(&raw mut (*ictx).param_buf as *mut u_char) = '\0' as i32 as u_char;
     (*ictx).param_len = 0 as size_t;
-    *(*ictx).input_buf = '\0' as i32 as u_char;
+    (&mut (*ictx).input_buf)[0] = 0;
     (*ictx).input_len = 0 as size_t;
     (*ictx).input_end = INPUT_END_ST;
     (*ictx).flags &= !INPUT_DISCARD;
@@ -2853,7 +2804,7 @@ unsafe extern "C" fn input_ground(mut ictx: *mut input_ctx) {
         (*ictx).since_ground,
         evbuffer_get_length((*ictx).since_ground),
     );
-    (*ictx.cast::<InputCtxOwner>()).shrink_buffer();
+    (*ictx).shrink_buffer();
 }
 unsafe extern "C" fn input_print(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -2907,21 +2858,19 @@ unsafe extern "C" fn input_parameter(mut ictx: *mut input_ctx) -> ::core::ffi::c
 }
 unsafe extern "C" fn input_input(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut available: size_t = 0;
-    let owner = ictx.cast::<InputCtxOwner>();
-    available = (*owner).buffer.len();
+    available = (*ictx).input_buf.len();
     while (*ictx).input_len.wrapping_add(1 as size_t) >= available {
         available = available.wrapping_mul(2 as size_t);
         if available > input_buffer_size {
             (*ictx).flags |= INPUT_DISCARD;
             return 0 as ::core::ffi::c_int;
         }
-        (*owner).buffer.resize(available, 0);
-        (*owner).sync_buffer();
+        (*ictx).input_buf.resize(available, 0);
     }
     let fresh1 = (*ictx).input_len;
     (*ictx).input_len = (*ictx).input_len.wrapping_add(1);
-    *(*ictx).input_buf.offset(fresh1 as isize) = (*ictx).ch as u_char;
-    *(*ictx).input_buf.offset((*ictx).input_len as isize) = '\0' as i32 as u_char;
+    (&mut (*ictx).input_buf)[fresh1] = (*ictx).ch as u_char;
+    (&mut (*ictx).input_buf)[(*ictx).input_len] = '\0' as i32 as u_char;
     return 0 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
@@ -4419,7 +4368,10 @@ unsafe extern "C" fn input_csi_dispatch_sgr_rgb(
 }
 unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
-    let mut s: *mut ::core::ffi::c_char = (*ictx).param_list[i as usize].c2rust_unnamed.str_0;
+    let s = match &(*ictx).param_list[i as usize] {
+        input_param::String(value) => value.as_ptr(),
+        _ => panic!("SGR colon parser requires a string parameter"),
+    };
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut p: [::core::ffi::c_int; 8] = [0; 8];
@@ -4560,26 +4512,26 @@ unsafe extern "C" fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut 
 #[cfg(test)]
 mod sgr_colon_tests {
     use super::{
-        colour_join_rgb, grid_cell, input_csi_dispatch_sgr_colon, input_ctx,
-        input_param_c2rust_unnamed, COLOUR_FLAG_256, GRID_ATTR_UNDERSCORE_2,
-        GRID_ATTR_UNDERSCORE_3,
+        colour_join_rgb, grid_cell, input_csi_dispatch_sgr_colon, input_ctx, input_param,
+        COLOUR_FLAG_256, GRID_ATTR_UNDERSCORE_2, GRID_ATTR_UNDERSCORE_3,
     };
 
     fn parse(source: &[u8]) -> grid_cell {
         assert!(source.contains(&0));
-        let mut source_copy = source.to_vec();
-        // This parser only reads the parameter pointer and edits the cell.
-        let mut ictx: input_ctx = unsafe { std::mem::zeroed() };
-        ictx.param_list[0].c2rust_unnamed = input_param_c2rust_unnamed {
-            str_0: source_copy.as_mut_ptr().cast(),
-        };
+        let mut ictx = input_ctx::new();
+        let parameter = std::ffi::CStr::from_bytes_until_nul(source).unwrap();
+        ictx.param_list[0] = input_param::String(parameter.to_owned());
         ictx.cell.cell.fg = 11;
         ictx.cell.cell.bg = 12;
         ictx.cell.cell.us = 13;
         ictx.cell.cell.attr = GRID_ATTR_UNDERSCORE_2 as u16;
         unsafe { input_csi_dispatch_sgr_colon(&raw mut ictx, 0) };
         assert_eq!(
-            source_copy, source,
+            match &ictx.param_list[0] {
+                input_param::String(value) => value.as_c_str(),
+                _ => panic!("expected string parameter"),
+            },
+            parameter,
             "the input parameter must not be tokenized"
         );
         ictx.cell.cell
@@ -4632,9 +4584,7 @@ unsafe extern "C" fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
     }
     i = 0 as u_int;
     while i < (*ictx).param_list_len {
-        if (*ictx).param_list[i as usize].type_0 as ::core::ffi::c_uint
-            == INPUT_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
+        if matches!(&(*ictx).param_list[i as usize], input_param::String(_)) {
             input_csi_dispatch_sgr_colon(ictx, i);
         } else {
             n = input_get(ictx, i, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
@@ -4796,7 +4746,7 @@ unsafe extern "C" fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::f
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut buf: *mut u_char = (*ictx).input_buf;
+    let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut len: size_t = (*ictx).input_len;
     let mut s: *mut screen = (*sctx).s;
     let mut ps: ::core::ffi::c_int = 0;
@@ -4884,7 +4834,7 @@ unsafe extern "C" fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
     let mut wp: *mut window_pane = (*ictx).wp;
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut buf: *mut u_char = (*ictx).input_buf;
+    let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut len: size_t = (*ictx).input_len;
     let prefix: [::core::ffi::c_char; 6] =
         ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"tmux;\0");
@@ -4953,7 +4903,7 @@ unsafe extern "C" fn input_enter_osc(mut ictx: *mut input_ctx) {
 unsafe extern "C" fn input_exit_osc(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut wp: *mut window_pane = (*ictx).wp;
-    let mut p: *mut u_char = (*ictx).input_buf;
+    let mut p: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut option: u_int = 0;
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return;
@@ -5084,7 +5034,7 @@ unsafe extern "C" fn input_exit_apc(mut ictx: *mut input_ctx) {
     log_debug(
         b"%s: \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
         b"input_exit_apc\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ictx).input_buf,
+        (*ictx).input_buf.as_ptr(),
     );
     if !wp.is_null()
         && options_get_number(
@@ -5093,11 +5043,14 @@ unsafe extern "C" fn input_exit_apc(mut ictx: *mut input_ctx) {
         ) != 0
         && screen_set_title(
             (*sctx).s,
-            (*ictx).input_buf as *const ::core::ffi::c_char,
+            (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char,
             1 as ::core::ffi::c_int,
         ) != 0
     {
-        input_fire_pane_title_changed(wp, (*ictx).input_buf as *const ::core::ffi::c_char);
+        input_fire_pane_title_changed(
+            wp,
+            (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char,
+        );
         server_redraw_window_borders((*wp).window as *mut window);
         server_status_window((*wp).window as *mut window);
     }
@@ -5131,9 +5084,9 @@ unsafe extern "C" fn input_exit_rename(mut ictx: *mut input_ctx) {
     log_debug(
         b"%s: \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
         b"input_exit_rename\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ictx).input_buf,
+        (*ictx).input_buf.as_ptr(),
     );
-    if utf8_isvalid((*ictx).input_buf as *const ::core::ffi::c_char) == 0 {
+    if utf8_isvalid((*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char) == 0 {
         return;
     }
     w = (*wp).window as *mut window;
@@ -5168,7 +5121,7 @@ unsafe extern "C" fn input_exit_rename(mut ictx: *mut input_ctx) {
         );
         window_set_name(
             w,
-            (*ictx).input_buf as *const ::core::ffi::c_char,
+            (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char,
             1 as ::core::ffi::c_int,
         );
     }
@@ -6166,7 +6119,7 @@ unsafe extern "C" fn input_request_timer_callback(
         // this stable handle still belongs to the owner before dereferencing.
         if !input_ctx_requests(ictx)
             .iter()
-            .any(|owner| std::ptr::eq(&owner.request, ir))
+            .any(|owner| std::ptr::eq(&**owner, ir))
         {
             continue;
         }
@@ -6174,7 +6127,13 @@ unsafe extern "C" fn input_request_timer_callback(
             if (*ir).type_0 as ::core::ffi::c_uint
                 == INPUT_REQUEST_QUEUE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                input_send_reply((*ir).ictx, (*ir).data as *const ::core::ffi::c_char);
+                input_send_reply(
+                    (*ir).ictx,
+                    (*ir).data
+                        .as_ref()
+                        .expect("queued input request has no reply data")
+                        .as_ptr(),
+                );
             }
             input_free_request(ir);
         }
@@ -6195,8 +6154,8 @@ unsafe extern "C" fn input_make_request(
     mut ictx: *mut input_ctx,
     mut type_0: input_request_type,
 ) -> *mut input_request {
-    let mut owner = InputRequestOwner::new();
-    let ir = &mut owner.request as *mut input_request;
+    let mut owner = input_request::new();
+    let ir = &mut *owner as *mut input_request;
     (*ir).type_0 = type_0;
     (*ir).ictx = ictx;
     (*ir).t = get_timer();
@@ -6221,7 +6180,7 @@ unsafe extern "C" fn input_free_request(mut ir: *mut input_request) {
     let requests = input_ctx_requests(ictx);
     let index = requests
         .iter()
-        .position(|owner| std::ptr::eq(&owner.request, ir))
+        .position(|owner| std::ptr::eq(&**owner, ir))
         .expect("request missing from its input context owner");
     drop(requests.remove(index).unwrap());
 }
@@ -6380,7 +6339,7 @@ pub unsafe extern "C" fn input_request_reply(
     for ir in input_ctx_request_handles(ictx) {
         if !input_ctx_requests(ictx)
             .iter()
-            .any(|owner| std::ptr::eq(&owner.request, ir))
+            .any(|owner| std::ptr::eq(&**owner, ir))
         {
             continue;
         }
@@ -6393,7 +6352,13 @@ pub unsafe extern "C" fn input_request_reply(
         if (*ir).type_0 as ::core::ffi::c_uint
             == INPUT_REQUEST_QUEUE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            input_send_reply((*ir).ictx, (*ir).data as *const ::core::ffi::c_char);
+            input_send_reply(
+                (*ir).ictx,
+                (*ir).data
+                    .as_ref()
+                    .expect("queued input request has no reply data")
+                    .as_ptr(),
+            );
         } else if ir == found {
             if (*ir).type_0 as ::core::ffi::c_uint
                 == INPUT_REQUEST_PALETTE as ::core::ffi::c_int as ::core::ffi::c_uint

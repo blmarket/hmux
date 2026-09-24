@@ -22,13 +22,23 @@ pub const SPAWN_MODAL: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
 pub const SPAWN_FLOATOVERZOOM: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
 pub const SPAWN_NONOTIFY: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct spawn_editor_state {
-    pub path: *mut ::core::ffi::c_char,
+    pub path: std::ffi::CString,
     pub pid: pid_t,
     pub cb: spawn_finish_edit_cb,
     pub arg: *mut ::core::ffi::c_void,
+}
+
+impl spawn_editor_state {
+    pub fn empty() -> Self {
+        Self {
+            path: Default::default(),
+            pid: unsafe { ::core::mem::zeroed() },
+            cb: unsafe { ::core::mem::zeroed() },
+            arg: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 pub type spawn_finish_edit_cb =

@@ -1,6 +1,6 @@
 src/format.rs::format_cb 8 8 []
 src/window_copy.rs::format_cb 8 8 []
-src/format.rs::format_entry 64 8 [0, 8, 16, 24, 32]
+src/format.rs::format_entry 88 8 [0, 16, 32, 40, 48]
 src/format.rs::C2RustUnnamed_30 32 8 [0, 8, 16, 24]
 src/format.rs::format_entry_tree 8 8 [0]
 src/alerts.rs::format_job_tree 8 8 []

@@ -99,7 +99,12 @@ pub static mut cmd_show_environment_entry: cmd_entry = unsafe {
 };
 unsafe fn cmd_show_environment_escape(envent: *const environ_entry) -> CString {
     // The entry value is a C string: only bytes before its first NUL are visible.
-    let value = CStr::from_ptr((*envent).value).to_bytes();
+    let value = CStr::from_ptr(
+        ((*envent).value)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    )
+    .to_bytes();
     let mut escaped = Vec::with_capacity(value.len().saturating_mul(2));
     for &byte in value {
         if matches!(byte, b'$' | b'`' | b'"' | b'\\') {
@@ -122,36 +127,36 @@ unsafe extern "C" fn cmd_show_environment_print(
         return;
     }
     if args_has(args, 's' as i32 as u_char) == 0 {
-        if !(*envent).value.is_null() {
+        if !(*envent).value.is_none() {
             cmdq_print(
                 item,
                 b"%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*envent).name,
-                (*envent).value,
+                ((*envent).name).as_ptr().cast_mut(),
+                ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         } else {
             cmdq_print(
                 item,
                 b"-%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*envent).name,
+                ((*envent).name).as_ptr().cast_mut(),
             );
         }
         return;
     }
-    if !(*envent).value.is_null() {
+    if !(*envent).value.is_none() {
         let escaped = cmd_show_environment_escape(envent);
         cmdq_print(
             item,
             b"%s=\"%s\"; export %s;\0" as *const u8 as *const ::core::ffi::c_char,
-            (*envent).name,
+            ((*envent).name).as_ptr().cast_mut(),
             escaped.as_ptr(),
-            (*envent).name,
+            ((*envent).name).as_ptr().cast_mut(),
         );
     } else {
         cmdq_print(
             item,
             b"unset %s;\0" as *const u8 as *const ::core::ffi::c_char,
-            (*envent).name,
+            ((*envent).name).as_ptr().cast_mut(),
         );
     };
 }
@@ -226,8 +231,8 @@ mod tests {
     fn escape_preserves_non_utf8_bytes_and_stops_at_first_nul() {
         let mut value = b"\xff$`\"\\\0ignored".to_vec();
         let entry = environ_entry {
-            name: std::ptr::null_mut(),
-            value: value.as_mut_ptr().cast(),
+            name: Default::default(),
+            value: Some(std::ffi::CStr::from_bytes_until_nul(&value).unwrap().to_owned()),
             flags: 0,
             owner: std::ptr::null_mut(),
         };

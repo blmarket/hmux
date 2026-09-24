@@ -19,9 +19,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
@@ -63,7 +62,7 @@ pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::screen_write_cline;
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
 pub use crate::src::shared::session::{
-    session_group, session_group_entry, session_groups, sessions, SessionGroupOwner,
+    session_group, session_group_entry, session_groups, sessions,
 };
 pub use crate::src::shared::sort::sort_criteria;
 pub use crate::src::shared::spawn::spawn_editor_state;
@@ -85,10 +84,10 @@ use crate::src::status::status_update_cache;
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::{
-    window_update_activity, window_update_focus, winlink_add, winlink_clear_flags,
-    winlink_find_by_index, winlink_find_by_window, winlink_find_by_window_id, winlink_next,
-    winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push, winlink_stack_remove,
-    window_winlinks_first, window_winlinks_next, winlinks_minmax, winlinks_next,
+    window_update_activity, window_update_focus, window_winlinks_first, window_winlinks_next,
+    winlink_add, winlink_clear_flags, winlink_find_by_index, winlink_find_by_window,
+    winlink_find_by_window_id, winlink_next, winlink_previous, winlink_remove, winlink_set_window,
+    winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc};
 use std::ffi::{CStr, CString};
@@ -103,25 +102,10 @@ pub static mut next_session_id: u_int = 0;
 #[no_mangle]
 pub static mut session_groups: session_groups = session_groups { storage: None };
 
-/// The node stays at offset zero so existing session pointers retain their
-/// layout. Its `tio`, `cwd`, and `name` pointers borrow boxed owner values.
-#[repr(C)]
-struct SessionOwner {
-    node: session,
-    tio: Option<Box<termios>>,
-    cwd: Option<CString>,
-    name: CString,
-}
-const _: () = assert!(::core::mem::offset_of!(SessionOwner, node) == 0);
-
 /// `session.cwd` borrows this value until replacement or early destruction.
 pub(crate) unsafe fn session_set_cwd(s: *mut session, cwd: Option<CString>) {
-    let owner = s.cast::<SessionOwner>();
+    let owner = s;
     (*owner).cwd = cwd;
-    (*s).cwd = (*owner)
-        .cwd
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |cwd| cwd.as_ptr() as *mut _);
 }
 
 /// C producers return libc-owned strings, not CString-owned allocations.
@@ -136,9 +120,9 @@ pub(crate) unsafe fn session_set_cwd_from_c_owned(
 
 /// Replace the borrowed public name after callers remove the old map key.
 pub(crate) unsafe fn session_replace_name(s: *mut session, name: CString) -> CString {
-    let owner = s.cast::<SessionOwner>();
+    let owner = s;
     let previous = std::mem::replace(&mut (*owner).name, name);
-    (*s).name = (*owner).name.as_ptr() as *mut _;
+
     previous
 }
 #[no_mangle]
@@ -146,29 +130,34 @@ pub unsafe extern "C" fn session_cmp(
     mut s1: *mut session,
     mut s2: *mut session,
 ) -> ::core::ffi::c_int {
-    return strcmp((*s1).name, (*s2).name);
+    return strcmp(
+        ((*s1).name).as_ptr().cast_mut(),
+        ((*s2).name).as_ptr().cast_mut(),
+    );
 }
 pub(crate) unsafe fn sessions_key(elm: *mut session) -> Vec<u8> {
-    std::ffi::CStr::from_ptr((*elm).name).to_bytes().to_vec()
+    std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut())
+        .to_bytes()
+        .to_vec()
 }
 pub unsafe fn sessions_find(head: *mut sessions, elm: *mut session) -> *mut session {
     let Some(map) = (*head).storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn sessions_nfind(head: *mut sessions, elm: *mut session) -> *mut session {
     let Some(map) = (*head).storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn sessions_insert(head: *mut sessions, elm: *mut session) -> *mut session {
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     let map = (*head)
         .storage
         .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
@@ -186,7 +175,7 @@ pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut se
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     let Some(map) = (*head).storage.as_deref_mut() else {
         return std::ptr::null_mut();
     };
@@ -227,7 +216,7 @@ pub unsafe fn sessions_next(elm: *mut session) -> *mut session {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -237,7 +226,7 @@ pub unsafe fn sessions_prev(elm: *mut session) -> *mut session {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -248,7 +237,10 @@ pub unsafe extern "C" fn session_group_cmp(
     mut s1: *mut session_group,
     mut s2: *mut session_group,
 ) -> ::core::ffi::c_int {
-    return strcmp((*s1).name, (*s2).name);
+    return strcmp(
+        ((*s1).name).as_ptr().cast_mut(),
+        ((*s2).name).as_ptr().cast_mut(),
+    );
 }
 pub unsafe fn session_groups_find(
     head: *mut session_groups,
@@ -257,7 +249,7 @@ pub unsafe fn session_groups_find(
     let Some(map) = (*head).storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.get(key)
         .map_or(std::ptr::null_mut(), |owner| owner.node_ptr())
 }
@@ -268,29 +260,22 @@ pub unsafe fn session_groups_nfind(
     let Some(map) = (*head).storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
-impl SessionGroupOwner {
+impl session_group {
     pub fn new(name: &std::ffi::CStr) -> Box<Self> {
-        let mut owner = Box::new(Self {
-            node: session_group {
-                name: std::ptr::null(),
-                entry: session_group_entry {
+        let mut owner = Box::new(session_group { name: name.to_owned(), entry: session_group_entry {
                     owner: std::ptr::null_mut(),
-                },
-            },
-            name: name.to_owned(),
-            members: Vec::new(),
-        });
-        owner.node.name = owner.name.as_ptr();
+                }, members: Vec::new() });
+
         owner
     }
 
     pub fn node_ptr(&self) -> *mut session_group {
-        std::ptr::addr_of!(self.node).cast_mut()
+        std::ptr::addr_of!(*self).cast_mut()
     }
 }
 
@@ -298,7 +283,7 @@ impl SessionGroupOwner {
 /// the incoming owner is dropped without entering the index.
 pub unsafe fn session_groups_insert(
     head: *mut session_groups,
-    owner: Box<SessionGroupOwner>,
+    owner: Box<session_group>,
 ) -> *mut session_group {
     let key = owner.name.to_bytes();
     let map = (*head)
@@ -321,7 +306,7 @@ pub unsafe fn session_groups_remove(head: *mut session_groups, elm: *mut session
     if elm.is_null() {
         return false;
     }
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     let Some(map) = (*head).storage.as_deref_mut() else {
         return false;
     };
@@ -355,7 +340,7 @@ pub unsafe fn session_groups_next(elm: *mut session_group) -> *mut session_group
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
@@ -364,7 +349,7 @@ pub unsafe fn session_groups_prev(elm: *mut session_group) -> *mut session_group
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
@@ -386,8 +371,8 @@ pub unsafe extern "C" fn session_alive(mut s: *mut session) -> ::core::ffi::c_in
 pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *mut session {
     let mut s: session = session {
         id: 0,
-        name: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        cwd: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: Default::default(),
+        cwd: Default::default(),
         creation_time: timeval {
             tv_sec: 0,
             tv_usec: 0,
@@ -456,14 +441,14 @@ pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *
         options: ::core::ptr::null_mut::<options>(),
         flags: 0,
         attached: 0,
-        tio: ::core::ptr::null_mut::<termios>(),
+        tio: None,
         environ: ::core::ptr::null_mut::<environ>(),
         references: 0,
         entry: session_entry {
             owner: std::ptr::null_mut(),
         },
     };
-    s.name = name as *mut ::core::ffi::c_char;
+    s.name = ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned();
     return sessions_find(&raw mut sessions, &raw mut s);
 }
 #[no_mangle]
@@ -506,8 +491,7 @@ pub unsafe extern "C" fn session_create(
     mut tio: *mut termios,
 ) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut owner = Box::new(SessionOwner {
-        node: std::mem::zeroed::<session>(),
+    let mut owner = Box::new(session {
         tio: if tio.is_null() {
             None
         } else {
@@ -515,12 +499,9 @@ pub unsafe extern "C" fn session_create(
         },
         cwd: Some(CStr::from_ptr(cwd).to_owned()),
         name: CString::new("").expect("empty session name has no NUL"),
+        ..session::empty()
     });
-    owner.node.tio = owner
-        .tio
-        .as_deref_mut()
-        .map_or(::core::ptr::null_mut(), |tio| tio as *mut termios);
-    owner.node.cwd = owner.cwd.as_ref().unwrap().as_ptr() as *mut _;
+
     s = Box::into_raw(owner).cast::<session>();
     (*s).references = 1 as ::core::ffi::c_int;
     (*s).flags = 0 as ::core::ffi::c_int;
@@ -560,7 +541,7 @@ pub unsafe extern "C" fn session_create(
     sessions_insert(&raw mut sessions, s);
     log_debug(
         b"new session %s $%u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
         (*s).id,
     );
     if gettimeofday(&raw mut (*s).creation_time, NULL) != 0 as ::core::ffi::c_int {
@@ -578,7 +559,7 @@ pub unsafe extern "C" fn session_add_ref(
     log_debug(
         b"%s: %s %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
         b"session_add_ref\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
         from,
         (*s).references,
     );
@@ -592,7 +573,7 @@ pub unsafe extern "C" fn session_remove_ref(
     log_debug(
         b"%s: %s %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
         b"session_remove_ref\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
         from,
         (*s).references,
     );
@@ -621,14 +602,14 @@ unsafe extern "C" fn session_free(
     let mut s: *mut session = arg as *mut session;
     log_debug(
         b"session %s freed (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
         (*s).references,
     );
     if (*s).references == 0 as ::core::ffi::c_int {
         environ_free((*s).environ);
         options_free((*s).options);
         crate::src::window::winlink_stack_clear(&raw mut (*s).lastw);
-        drop(Box::from_raw(s.cast::<SessionOwner>()));
+        drop(Box::from_raw(s));
     }
 }
 #[no_mangle]
@@ -640,7 +621,7 @@ pub unsafe extern "C" fn session_destroy(
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     log_debug(
         b"session %s destroyed (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
         from,
     );
     if (*s).curw.is_null() {
@@ -654,8 +635,8 @@ pub unsafe extern "C" fn session_destroy(
             s,
         );
     }
-    (*s).tio = ::core::ptr::null_mut();
-    (*s.cast::<SessionOwner>()).tio = None;
+    (*s).tio = None;
+    (*s).tio = None;
     if event_initialized(&raw mut (*s).lock_timer) != 0 {
         event_del(&raw mut (*s).lock_timer);
     }
@@ -693,7 +674,7 @@ unsafe extern "C" fn session_lock_timer(
     }
     log_debug(
         b"session %s locked, activity time %lld\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
         (*s).activity_time.tv_sec as ::core::ffi::c_longlong,
     );
     server_lock_session(s);
@@ -717,7 +698,7 @@ pub unsafe extern "C" fn session_update_activity(mut s: *mut session, mut from: 
     log_debug(
         b"session $%u %s activity %lld.%06d\0" as *const u8 as *const ::core::ffi::c_char,
         (*s).id,
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
         (*s).activity_time.tv_sec as ::core::ffi::c_longlong,
         (*s).activity_time.tv_usec as ::core::ffi::c_int,
     );
@@ -772,7 +753,7 @@ pub unsafe extern "C" fn session_next_session(
     if i == n {
         fatalx(
             b"session %s not found in sorted list\0" as *const u8 as *const ::core::ffi::c_char,
-            (*s).name,
+            ((*s).name).as_ptr().cast_mut(),
         );
     }
     i = i.wrapping_add(1);
@@ -802,7 +783,7 @@ pub unsafe extern "C" fn session_previous_session(
     if i == n {
         fatalx(
             b"session %s not found in sorted list\0" as *const u8 as *const ::core::ffi::c_char,
-            (*s).name,
+            ((*s).name).as_ptr().cast_mut(),
         );
     }
     if i == 0 as u_int {
@@ -1073,7 +1054,7 @@ pub unsafe extern "C" fn session_group_contains(mut target: *mut session) -> *mu
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     sg = session_groups_minmax(&raw mut session_groups, RB_NEGINF);
     while !sg.is_null() {
-        if (*sg.cast::<SessionGroupOwner>()).members.contains(&target) {
+        if (*sg).members.contains(&target) {
             return sg;
         }
         sg = session_groups_next(sg);
@@ -1085,12 +1066,12 @@ pub unsafe extern "C" fn session_group_find(
     mut name: *const ::core::ffi::c_char,
 ) -> *mut session_group {
     let mut sg: session_group = session_group {
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: Default::default(),
         entry: session_group_entry {
             owner: std::ptr::null_mut(),
         },
-    };
-    sg.name = name;
+     ..session_group::empty() };
+    sg.name = ::std::ffi::CStr::from_ptr(name).to_owned();
     return session_groups_find(&raw mut session_groups, &raw mut sg);
 }
 #[no_mangle]
@@ -1102,7 +1083,7 @@ pub unsafe extern "C" fn session_group_new(
     if !sg.is_null() {
         return sg;
     }
-    let owner = SessionGroupOwner::new(std::ffi::CStr::from_ptr(name));
+    let owner = session_group::new(std::ffi::CStr::from_ptr(name));
     sg = owner.node_ptr();
     assert!(session_groups_insert(&raw mut session_groups, owner).is_null());
     return sg;
@@ -1136,7 +1117,7 @@ unsafe extern "C" fn session_group_fire(
         ep,
         b"group\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*sg).name,
+        ((*sg).name).as_ptr().cast_mut(),
     );
     event_payload_set_uint(
         ep,
@@ -1148,7 +1129,7 @@ unsafe extern "C" fn session_group_fire(
 #[no_mangle]
 pub unsafe extern "C" fn session_group_add(mut sg: *mut session_group, mut s: *mut session) {
     if session_group_contains(s).is_null() {
-        (*sg.cast::<SessionGroupOwner>()).members.push(s);
+        (*sg).members.push(s);
         session_group_fire(
             b"session-added-to-group\0" as *const u8 as *const ::core::ffi::c_char,
             sg,
@@ -1167,7 +1148,7 @@ unsafe extern "C" fn session_group_remove(mut s: *mut session) {
         sg,
         s,
     );
-    let members = &mut (*sg.cast::<SessionGroupOwner>()).members;
+    let members = &mut (*sg).members;
     let index = members
         .iter()
         .position(|member| *member == s)
@@ -1182,16 +1163,16 @@ pub unsafe fn session_group_members(sg: *mut session_group) -> Vec<*mut session>
     if sg.is_null() {
         return Vec::new();
     }
-    (*sg.cast::<SessionGroupOwner>()).members.clone()
+    (*sg).members.clone()
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_group_count(mut sg: *mut session_group) -> u_int {
-    return u_int::try_from((*sg.cast::<SessionGroupOwner>()).members.len())
+    return u_int::try_from((*sg).members.len())
         .expect("session group has too many members");
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_group_attached_count(mut sg: *mut session_group) -> u_int {
-    (*sg.cast::<SessionGroupOwner>())
+    (*sg)
         .members
         .iter()
         .fold(0, |count, member| count.wrapping_add((**member).attached))
@@ -1203,7 +1184,7 @@ pub unsafe extern "C" fn session_group_synchronize_to(mut s: *mut session) {
     if sg.is_null() {
         return;
     }
-    let target = (*sg.cast::<SessionGroupOwner>())
+    let target = (*sg)
         .members
         .iter()
         .copied()

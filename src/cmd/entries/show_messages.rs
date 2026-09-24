@@ -132,8 +132,8 @@ unsafe extern "C" fn cmd_show_messages_terminals(
                 item,
                 b"Terminal %u: %s for %s, flags=0x%x:\0" as *const u8 as *const ::core::ffi::c_char,
                 n,
-                (*term).name,
-                (*(*(*term).tty).client).name,
+                ((*term).name).as_ptr().cast_mut(),
+                ((*(*(*term).tty).client).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*term).flags,
             );
             n = n.wrapping_add(1);

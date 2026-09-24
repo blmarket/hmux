@@ -144,55 +144,28 @@ unsafe extern "C" fn control_window_cmp(
     return 0 as ::core::ffi::c_int;
 }
 
-// The C-layout record remains at the start of this private allocation. Its
-// raw `line` field borrows bytes owned by the adjacent CString.
-#[repr(C)]
-struct ControlBlockOwner {
-    block: control_block,
-    line: Option<CString>,
-}
-const _: () = assert!(std::mem::offset_of!(ControlBlockOwner, block) == 0);
-
-impl ControlBlockOwner {
+impl control_block {
     fn new(line: Option<CString>, size: size_t) -> Box<Self> {
-        let line_ptr = line
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |line| line.as_ptr().cast_mut());
-        Box::new(Self {
-            block: control_block {
-                size,
-                line: line_ptr,
-                t: 0,
-            },
-            line,
+        Box::new(control_block {
+            size: size,
+            line: line,
+            t: 0,
         })
     }
 }
 
-/// Owns the Rust queues that sit beside the C-shaped control state. Boxed
-/// blocks keep exposed record addresses stable while ordered handles move.
-/// `control_state` stays first so existing client pointers can address it.
-#[repr(C)]
-struct ControlStateOwner {
-    state: control_state,
-    deferred: VecDeque<CString>,
-    all_blocks: VecDeque<Box<ControlBlockOwner>>,
-    pending_panes: VecDeque<*mut control_pane>,
-}
-const _: () = assert!(std::mem::offset_of!(ControlStateOwner, state) == 0);
-
-impl ControlStateOwner {
+impl control_state {
     fn new() -> Self {
-        Self {
-            state: unsafe { std::mem::zeroed() },
+        control_state {
             deferred: VecDeque::new(),
             all_blocks: VecDeque::new(),
             pending_panes: VecDeque::new(),
+            ..control_state::empty()
         }
     }
 
-    fn add_block(&mut self, owner: Box<ControlBlockOwner>) -> *mut control_block {
-        let block = &owner.block as *const control_block as *mut control_block;
+    fn add_block(&mut self, owner: Box<control_block>) -> *mut control_block {
+        let block = &*owner as *const control_block as *mut control_block;
         self.all_blocks.push_back(owner);
         block
     }
@@ -201,7 +174,7 @@ impl ControlStateOwner {
         self.all_blocks
             .get(index)
             .map_or(std::ptr::null_mut(), |owner| {
-                &owner.block as *const control_block as *mut control_block
+                &**owner as *const control_block as *mut control_block
             })
     }
 
@@ -209,7 +182,7 @@ impl ControlStateOwner {
         let index = self
             .all_blocks
             .iter()
-            .position(|owner| std::ptr::eq(&owner.block, block))
+            .position(|owner| std::ptr::eq(&**owner, block))
             .expect("control block must be owned by its state");
         drop(
             self.all_blocks
@@ -230,15 +203,15 @@ impl ControlStateOwner {
     }
 }
 
-unsafe fn control_state_owner(cs: *mut control_state) -> *mut ControlStateOwner {
+unsafe fn control_state_owner(cs: *mut control_state) -> *mut control_state {
     cs.cast()
 }
 
 #[doc(hidden)]
 /// Allocate the owner backing a control client's state pointer.
 pub fn control_state_new() -> *mut control_state {
-    let owner = Box::into_raw(Box::new(ControlStateOwner::new()));
-    unsafe { &raw mut (*owner).state }
+    let owner = Box::into_raw(Box::new(control_state::new()));
+    owner
 }
 
 #[doc(hidden)]
@@ -277,7 +250,7 @@ unsafe fn control_remove_pane_block(cp: *mut control_pane, block: *mut control_b
 
 unsafe fn control_add_block(
     cs: *mut control_state,
-    owner: Box<ControlBlockOwner>,
+    owner: Box<control_block>,
 ) -> *mut control_block {
     (*control_state_owner(cs)).add_block(owner)
 }
@@ -289,21 +262,21 @@ mod control_queue_tests {
     #[test]
     fn state_block_owner_preserves_order_addresses_and_reply_accounting() {
         unsafe {
-            let mut owner = ControlStateOwner::new();
-            let cs = &raw mut owner.state;
+            let mut owner = control_state::new();
+            let cs = &raw mut owner;
 
-            let output = control_add_block(cs, ControlBlockOwner::new(None, 10));
+            let output = control_add_block(cs, control_block::new(None, 10));
             let reply_text = CString::new(b"reply-\xff".as_slice()).unwrap();
-            let reply = control_add_block(cs, ControlBlockOwner::new(Some(reply_text), 0));
+            let reply = control_add_block(cs, control_block::new(Some(reply_text), 0));
             (*cs).queued_reply_bytes = 8;
             for size in 1..=64 {
-                control_add_block(cs, ControlBlockOwner::new(None, size));
+                control_add_block(cs, control_block::new(None, size));
             }
 
             assert_eq!(control_first_block(cs), output);
             assert_eq!((*control_state_owner(cs)).block(1), reply);
             assert_eq!(
-                std::ffi::CStr::from_ptr((*reply).line).to_bytes(),
+                std::ffi::CStr::from_ptr(((*reply).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
                 b"reply-\xff"
             );
 
@@ -318,7 +291,7 @@ mod control_queue_tests {
 
     #[test]
     fn deferred_line_transfer_keeps_bytes_alive() {
-        let mut owner = ControlStateOwner::new();
+        let mut owner = control_state::new();
         owner
             .deferred
             .push_back(CString::new(b"first-\xff".as_slice()).unwrap());
@@ -332,11 +305,11 @@ mod control_queue_tests {
     #[test]
     fn pane_block_handles_keep_order_and_addresses_while_state_owns_blocks() {
         unsafe {
-            let mut owner = ControlStateOwner::new();
-            let cs = &raw mut owner.state;
-            let first = control_add_block(cs, ControlBlockOwner::new(None, 12));
-            let middle = control_add_block(cs, ControlBlockOwner::new(None, 23));
-            let last = control_add_block(cs, ControlBlockOwner::new(None, 34));
+            let mut owner = control_state::new();
+            let cs = &raw mut owner;
+            let first = control_add_block(cs, control_block::new(None, 12));
+            let middle = control_add_block(cs, control_block::new(None, 23));
+            let last = control_add_block(cs, control_block::new(None, 34));
             let mut pane = control_pane {
                 pane: 7,
                 offset: window_pane_offset { used: 0 },
@@ -369,7 +342,7 @@ mod control_queue_tests {
 
     #[test]
     fn pending_snapshot_defers_reentrant_appends_to_the_next_pass() {
-        let mut owner = ControlStateOwner::new();
+        let mut owner = control_state::new();
         let mut panes: Vec<Box<control_pane>> = (0..3)
             .map(|pane| {
                 Box::new(control_pane {
@@ -434,8 +407,8 @@ mod control_queue_tests {
 
 unsafe extern "C" fn control_free_block(mut cs: *mut control_state, mut cb: *mut control_block) {
     let mut size: size_t = 0;
-    if (*cb).size == 0 as size_t && !(*cb).line.is_null() {
-        size = (*cb.cast::<ControlBlockOwner>())
+    if (*cb).size == 0 as size_t && !(*cb).line.is_none() {
+        size = (*cb)
             .line
             .as_ref()
             .expect("reply block has an owned line")
@@ -752,7 +725,7 @@ unsafe extern "C" fn control_check_reply_buffer(
     log_debug(
         b"%s: %s: %zu bytes of replies buffered\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_check_reply_buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         size,
     );
     if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {
@@ -774,7 +747,7 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
         log_debug(
             b"%s: %s: writing line: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_write_line\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             line.as_ptr(),
         );
         bufferevent_write(
@@ -790,14 +763,14 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
         bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
         return;
     }
-    cb = control_add_block(cs, ControlBlockOwner::new(Some(line), 0));
+    cb = control_add_block(cs, control_block::new(Some(line), 0));
     (*cs).queued_reply_bytes = (*cs).queued_reply_bytes.wrapping_add(size);
     (*cb).t = get_timer();
     log_debug(
         b"%s: %s: storing line: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_write_line\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
-        (*cb).line,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*cb).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
 }
@@ -878,7 +851,7 @@ pub unsafe extern "C" fn control_notify_write(
     log_debug(
         b"%s: %s: deferring notification: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_notify_write\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         line.as_ptr(),
     );
     (*control_state_owner(cs)).deferred.push_back(line);
@@ -903,7 +876,7 @@ unsafe extern "C" fn control_check_age(
     log_debug(
         b"%s: %s: %%%u is %llu behind\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_check_age\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*wp).id,
         age as ::core::ffi::c_ulonglong,
     );
@@ -958,14 +931,14 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
                 return;
             }
             window_pane_update_used_data(wp, &raw mut (*cp).queued, new_size);
-            cb = control_add_block(cs, ControlBlockOwner::new(None, new_size));
+            cb = control_add_block(cs, control_block::new(None, new_size));
             (*cb).t = get_timer();
             (*cp).blocks.push_back(cb);
             log_debug(
                 b"%s: %s: new output block of %zu for %%%u\0" as *const u8
                     as *const ::core::ffi::c_char,
                 b"control_write_output\0" as *const u8 as *const ::core::ffi::c_char,
-                (*c).name,
+                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*cb).size,
                 (*wp).id,
             );
@@ -973,7 +946,7 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
                 log_debug(
                     b"%s: %s: %%%u now pending\0" as *const u8 as *const ::core::ffi::c_char,
                     b"control_write_output\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*c).name,
+                    ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     (*wp).id,
                 );
                 (*control_state_owner(cs)).pending_panes.push_back(cp);
@@ -987,7 +960,7 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
     log_debug(
         b"%s: %s: ignoring pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_write_output\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*wp).id,
     );
     window_pane_update_used_data(wp, &raw mut (*cp).offset, SIZE_MAX as size_t);
@@ -1048,7 +1021,7 @@ unsafe extern "C" fn control_read_callback(
         log_debug(
             b"%s: %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_read_callback\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             line,
         );
         if *line as ::core::ffi::c_int == '\0' as i32 {
@@ -1159,13 +1132,13 @@ unsafe extern "C" fn control_flush_all_blocks(mut c: *mut client) {
         log_debug(
             b"%s: %s: flushing line: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_flush_all_blocks\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
-            (*cb).line,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*cb).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         bufferevent_write(
             (*cs).write_event,
-            (*cb).line as *const ::core::ffi::c_void,
-            strlen((*cb).line),
+            ((*cb).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()) as *const ::core::ffi::c_void,
+            strlen(((*cb).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())),
         );
         bufferevent_write(
             (*cs).write_event,
@@ -1252,7 +1225,7 @@ unsafe extern "C" fn control_write_data(mut c: *mut client, mut message: *mut ev
     log_debug(
         b"%s: %s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_write_data\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         evbuffer_get_length(message) as ::core::ffi::c_int,
         evbuffer_pullup(message, -(1 as ::core::ffi::c_int) as ssize_t),
     );
@@ -1303,7 +1276,7 @@ unsafe extern "C" fn control_write_pending(
                 b"%s: %s: output block %zu (age %llu) for %%%u (used %zu/%zu)\0" as *const u8
                     as *const ::core::ffi::c_char,
                 b"control_write_pending\0" as *const u8 as *const ::core::ffi::c_char,
-                (*c).name,
+                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*cb).size,
                 age as ::core::ffi::c_ulonglong,
                 (*cp).pane,
@@ -1354,7 +1327,7 @@ unsafe extern "C" fn control_write_callback(
         log_debug(
             b"%s: %s: %zu bytes available, %u panes\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_write_callback\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             space,
             (*cs).pending_count,
         );

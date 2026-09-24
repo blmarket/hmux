@@ -1,7 +1,7 @@
 src/cmd_if_shell.rs::job 8 8 []
 src/cmd_run_shell.rs::job 8 8 []
 src/format.rs::job 8 8 []
-src/job.rs::job 120 8 [0, 4, 8, 16, 20, 52, 56, 64, 72, 80, 88, 96, 104]
+src/job.rs::job 128 8 [0, 4, 8, 24, 28, 60, 64, 72, 80, 88, 96, 104, 112]
 src/popup.rs::job 8 8 []
 src/window_copy.rs::job 8 8 []
 src/cmd_if_shell.rs::job_complete_cb 8 8 []

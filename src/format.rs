@@ -446,11 +446,11 @@ pub unsafe extern "C" fn format_defaults(
     mut wp: *mut window_pane,
 ) {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    if !c.is_null() && !(*c).name.is_null() {
+    if !c.is_null() && !(*c).name.is_none() {
         log_debug(
             b"%s: c=%s\0" as *const u8 as *const ::core::ffi::c_char,
             b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     } else {
         log_debug(

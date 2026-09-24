@@ -5,14 +5,31 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 #[repr(C)]
-/// Box-owned with its key by the parser until recursive `json_destroy_node`.
-/// Parent pointers and owner-side collections borrow stable node addresses.
 pub struct json_node {
     pub type_0: json_node_type,
-    pub key: *mut ::core::ffi::c_char,
+    pub key: Option<std::ffi::CString>,
     pub parent: *mut json_node,
     pub c2rust_unnamed: json_node_c2rust_unnamed,
     pub oentry: json_node_oentry,
+    // The tagged union is still Copy and zero-initialized by parser code.
+    // It borrows this string and the array storage below until node teardown;
+    // move these into the variants when migrating the union itself.
+    pub(crate) string: Option<std::ffi::CString>,
+    pub(crate) members: Option<Box<json_members_storage>>,
+}
+
+impl json_node {
+    pub fn empty() -> Self {
+        Self {
+            type_0: unsafe { ::core::mem::zeroed() },
+            key: Default::default(),
+            parent: unsafe { ::core::mem::zeroed() },
+            c2rust_unnamed: unsafe { ::core::mem::zeroed() },
+            oentry: unsafe { ::core::mem::zeroed() },
+            string: Default::default(),
+            members: Default::default(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

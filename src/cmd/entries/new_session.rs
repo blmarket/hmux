@@ -326,7 +326,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                 if !as_0.is_null() {
                     retval = cmd_attach_session(
                         item,
-                        (*as_0).name,
+                        ((*as_0).name).as_ptr().cast_mut(),
                         args_has(args, 'D' as i32 as u_char),
                         args_has(args, 'X' as i32 as u_char),
                         0 as ::core::ffi::c_int,
@@ -353,10 +353,10 @@ unsafe extern "C" fn cmd_new_session_exec(
                         sg = session_group_contains(groupwith);
                     }
                     if !sg.is_null() {
-                        prefix = Some(CStr::from_ptr((*sg).name).to_owned());
+                        prefix = Some(CStr::from_ptr(((*sg).name).as_ptr().cast_mut()).to_owned());
                         current_block = 6717214610478484138;
                     } else if !groupwith.is_null() {
-                        prefix = Some(CStr::from_ptr((*groupwith).name).to_owned());
+                        prefix = Some(CStr::from_ptr(((*groupwith).name).as_ptr().cast_mut()).to_owned());
                         current_block = 6717214610478484138;
                     } else if check_name(group) == 0 {
                         cmdq_error(
@@ -401,7 +401,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                             );
                             cwd = formatted_cwd;
                         } else {
-                            // session_create copies this borrowed cwd into SessionOwner.
+                            // session_create copies this borrowed cwd into session.
                             cwd = server_client_get_cwd(c, ::core::ptr::null_mut::<session>());
                         }
                         if detached == 0
@@ -684,7 +684,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                                 if sg.is_null() {
                                                                     if !groupwith.is_null() {
                                                                         sg = session_group_new(
-                                                                            (*groupwith).name,
+                                                                            ((*groupwith).name).as_ptr().cast_mut(),
                                                                         );
                                                                         session_group_add(
                                                                             sg, groupwith,

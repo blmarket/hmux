@@ -36,7 +36,22 @@ mod tests {
 pub struct args {
     pub tree: args_tree,
     pub count: u_int,
-    pub values: *mut args_value,
+    pub values: Vec<args_value>,
+    // args_value is also used in malloc arrays passed by parser producers,
+    // with a libc-free cache contract. Positional caches borrow these strings;
+    // args_free clears those views before running the shared value cleanup.
+    pub(crate) positional_caches: Vec<Option<std::ffi::CString>>,
+}
+
+impl args {
+    pub fn empty() -> Self {
+        Self {
+            tree: unsafe { ::core::mem::zeroed() },
+            count: unsafe { ::core::mem::zeroed() },
+            values: Vec::new(),
+            positional_caches: Default::default(),
+        }
+    }
 }
 
 #[repr(C)]
@@ -129,11 +144,20 @@ pub struct args_parse {
 }
 
 #[repr(C)]
-/// Box-owned from `args_make_commands_prepare` until its matching free call.
-/// Its command and parse-source pointers borrow the enclosing owner.
-/// Async command callbacks borrow the stable address and release it once done.
 pub struct args_command_state {
     pub cmdlist: *mut cmd_list,
-    pub cmd: *mut ::core::ffi::c_char,
+    pub cmd: Option<std::ffi::CString>,
     pub pi: cmd_parse_input,
+    pub(crate) file: Option<std::ffi::CString>,
+}
+
+impl args_command_state {
+    pub fn empty() -> Self {
+        Self {
+            cmdlist: unsafe { ::core::mem::zeroed() },
+            cmd: Default::default(),
+            pi: unsafe { ::core::mem::zeroed() },
+            file: Default::default(),
+        }
+    }
 }

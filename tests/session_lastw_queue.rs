@@ -71,7 +71,7 @@ fn history_entry_is_removed_before_its_owner() {
 #[test]
 fn boxed_session_drops_its_winlink_owner() {
     unsafe {
-        let mut owner = Box::new(std::mem::zeroed::<session>());
+        let mut owner = Box::new(session::empty());
         let link = winlink_add(&raw mut owner.windows, 9);
         let weak = owner
             .windows

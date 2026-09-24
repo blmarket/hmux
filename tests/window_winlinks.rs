@@ -19,7 +19,7 @@ unsafe fn window_indices(w: *mut window) -> Vec<i32> {
 #[test]
 fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
-        let mut owner = Box::new(std::mem::zeroed::<session>());
+        let mut owner = Box::new(session::empty());
         let mut first_window = Box::new(std::mem::zeroed::<window>());
         let mut second_window = Box::new(std::mem::zeroed::<window>());
         // These synthetic windows retain one external reference so moving the

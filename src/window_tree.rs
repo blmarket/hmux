@@ -608,7 +608,7 @@ unsafe extern "C" fn window_tree_build_session(
         ::core::ptr::null_mut::<mode_tree_item>(),
         item as *mut ::core::ffi::c_void,
         ModeTreeIdentity::session((*s).id),
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
         text.as_ptr(),
         expanded,
     ) as *mut mode_tree_item;
@@ -1580,10 +1580,10 @@ unsafe extern "C" fn window_tree_search(
                 return 0 as ::core::ffi::c_int;
             }
             if icase != 0 {
-                return (strcasestr((*s).name, ss) != NULL as *mut ::core::ffi::c_char)
+                return (strcasestr(((*s).name).as_ptr().cast_mut(), ss) != NULL as *mut ::core::ffi::c_char)
                     as ::core::ffi::c_int;
             }
-            return (strstr((*s).name, ss) != NULL as *mut ::core::ffi::c_char)
+            return (strstr(((*s).name).as_ptr().cast_mut(), ss) != NULL as *mut ::core::ffi::c_char)
                 as ::core::ffi::c_int;
         }
         2 => {
@@ -1987,13 +1987,13 @@ unsafe fn window_tree_get_target(
     let target = match (*item).type_0 as ::core::ffi::c_uint {
         1 if !s.is_null() => {
             let mut bytes = Vec::from(b"=".as_slice());
-            bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+            bytes.extend_from_slice(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_bytes());
             bytes.push(b':');
             Some(CString::new(bytes).unwrap())
         }
         2 if !s.is_null() && !wl.is_null() => {
             let mut bytes = Vec::from(b"=".as_slice());
-            bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+            bytes.extend_from_slice(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_bytes());
             bytes.push(b':');
             bytes.extend_from_slice((*wl).idx.to_string().as_bytes());
             bytes.push(b'.');
@@ -2001,7 +2001,7 @@ unsafe fn window_tree_get_target(
         }
         3 if !s.is_null() && !wl.is_null() && !wp.is_null() => {
             let mut bytes = Vec::from(b"=".as_slice());
-            bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+            bytes.extend_from_slice(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_bytes());
             bytes.push(b':');
             bytes.extend_from_slice((*wl).idx.to_string().as_bytes());
             bytes.extend_from_slice(b".%");
@@ -2424,7 +2424,7 @@ unsafe extern "C" fn window_tree_key(
                 1 => {
                     if !ns.is_null() {
                         let mut bytes = b"Kill session ".to_vec();
-                        bytes.extend_from_slice(CStr::from_ptr((*ns).name).to_bytes());
+                        bytes.extend_from_slice(CStr::from_ptr(((*ns).name).as_ptr().cast_mut()).to_bytes());
                         bytes.extend_from_slice(b"? ");
                         Some(CString::new(bytes).expect("session name contains no NUL"))
                     } else {

@@ -129,24 +129,13 @@ pub type off_t = __off_t;
 
 pub type uintmax_t = ::libc::uintmax_t;
 
-// The C-facing state is the prefix because panes and editor callers retain
-// its pointer until completion. The path allocation belongs to this box.
-#[repr(C)]
-struct SpawnEditorOwner {
-    state: spawn_editor_state,
-    path: CString,
-}
-
-impl SpawnEditorOwner {
+impl spawn_editor_state {
     fn new(path: CString, cb: spawn_finish_edit_cb, arg: *mut ::core::ffi::c_void) -> Box<Self> {
-        Box::new(Self {
-            state: spawn_editor_state {
-                path: path.as_ptr() as *mut ::core::ffi::c_char,
-                pid: 0,
-                cb,
-                arg,
-            },
-            path,
+        Box::new(spawn_editor_state {
+            path: path,
+            pid: 0,
+            cb: cb,
+            arg: arg,
         })
     }
 
@@ -344,7 +333,7 @@ pub unsafe extern "C" fn spawn_window(
                 xasprintf(
                     cause,
                     b"window %s:%d still active\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*s).name,
+                    ((*s).name).as_ptr().cast_mut(),
                     (*(*sc).wl).idx,
                 );
                 return ::core::ptr::null_mut::<winlink>();
@@ -602,7 +591,7 @@ pub unsafe extern "C" fn spawn_pane(
             xasprintf(
                 cause,
                 b"pane %s:%d.%u still active\0" as *const u8 as *const ::core::ffi::c_char,
-                (*s).name,
+                ((*s).name).as_ptr().cast_mut(),
                 (*(*sc).wl).idx,
                 idx,
             );
@@ -717,7 +706,7 @@ pub unsafe extern "C" fn spawn_pane(
                 b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ee).value,
+                ((*ee).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
     }
@@ -871,10 +860,10 @@ pub unsafe extern "C" fn spawn_pane(
             if tcgetattr(STDIN_FILENO, &raw mut now) != 0 as ::core::ffi::c_int {
                 _exit(1 as ::core::ffi::c_int);
             }
-            if !(*s).tio.is_null() {
+            if !(*s).tio.is_none() {
                 memcpy(
                     &raw mut now.c_cc as *mut cc_t as *mut ::core::ffi::c_void,
-                    &raw mut (*(*s).tio).c_cc as *mut cc_t as *const ::core::ffi::c_void,
+                    &raw const (*s).tio.as_ref().unwrap().c_cc as *const cc_t as *const ::core::ffi::c_void,
                     ::core::mem::size_of::<[cc_t; 32]>() as size_t,
                 );
             }
@@ -1005,7 +994,7 @@ pub unsafe extern "C" fn spawn_pane(
     return new_wp;
 }
 unsafe extern "C" fn spawn_editor_free(es: *mut spawn_editor_state) {
-    let owner = Box::from_raw(es as *mut SpawnEditorOwner);
+    let owner = Box::from_raw(es as *mut spawn_editor_state);
     unlink(owner.path.as_ptr());
 }
 #[no_mangle]
@@ -1059,7 +1048,7 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
         return;
     }
     f = fopen(
-        (*es).path,
+        ((*es).path).as_ptr().cast_mut(),
         b"r\0" as *const u8 as *const ::core::ffi::c_char,
     ) as *mut FILE;
     if !f.is_null() {
@@ -1177,7 +1166,8 @@ pub unsafe extern "C" fn spawn_editor(
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     fclose(f);
-    es = SpawnEditorOwner::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb, arg).into_state_ptr();
+    es =
+        spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb, arg).into_state_ptr();
     lg.sx = (*w).sx.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
     lg.sy = (*w).sy.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
     lg.xoff = (*w)
@@ -1364,7 +1354,7 @@ mod tests {
 
                 fs::write(path.to_str().unwrap(), b"edited by child").unwrap();
                 let result = Box::into_raw(Box::new(Vec::<u8>::new()));
-                let state = SpawnEditorOwner::new(
+                let state = spawn_editor_state::new(
                     path.to_owned(),
                     Some(capture_editor_result),
                     result as *mut ::core::ffi::c_void,

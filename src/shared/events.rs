@@ -25,20 +25,46 @@ pub type event_payload_print_cb =
 
 #[repr(C)]
 pub struct event_payload_item {
-    pub name: *mut ::core::ffi::c_char,
+    pub name: Option<std::ffi::CString>,
     pub type_0: event_payload_type,
     pub c2rust_unnamed: event_payload_item_c2rust_unnamed,
     pub entry: event_payload_item_entry,
+    // The Copy payload union also stores borrowed object pointers and callbacks.
+    // Its string variant borrows this allocation until this item is freed.
+    pub(crate) string: Option<std::ffi::CString>,
 }
 
-#[derive(Copy, Clone)]
+impl event_payload_item {
+    pub fn empty() -> Self {
+        Self {
+            name: Default::default(),
+            type_0: unsafe { ::core::mem::zeroed() },
+            c2rust_unnamed: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+            string: Default::default(),
+        }
+    }
+}
+
 #[repr(C)]
 pub struct events_sink {
-    pub name: *mut ::core::ffi::c_char,
+    pub name: std::ffi::CString,
     pub cb: events_cb,
     pub data: *mut ::core::ffi::c_void,
     pub dead: ::core::ffi::c_int,
     pub generation: u_int,
+}
+
+impl events_sink {
+    pub fn empty() -> Self {
+        Self {
+            name: Default::default(),
+            cb: unsafe { ::core::mem::zeroed() },
+            data: unsafe { ::core::mem::zeroed() },
+            dead: unsafe { ::core::mem::zeroed() },
+            generation: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 pub type events_cb = Option<

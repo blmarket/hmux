@@ -2,8 +2,8 @@ use hmux2::src::monitor::*;
 use std::{ffi::CStr, ptr::null_mut};
 
 unsafe fn find_item(set: *mut monitor_set, name: &CStr) -> *mut monitor_item {
-    let mut key = std::mem::zeroed::<monitor_item>();
-    key.name = name.as_ptr().cast_mut();
+    let mut key = monitor_item::empty();
+    key.name = ::std::ffi::CStr::from_ptr(name.as_ptr().cast_mut()).to_owned();
     monitor_items_find(&raw mut (*set).items, &raw mut key)
 }
 
@@ -27,19 +27,32 @@ fn byte_names_composite_keys_and_nested_cleanup() {
 
             let item = find_item(set, name);
             assert!(!item.is_null());
-            assert_eq!(CStr::from_ptr((*item).name), name);
-            assert_eq!(CStr::from_ptr((*item).format), format);
+            assert_eq!(CStr::from_ptr(((*item).name).as_ptr().cast_mut()), name);
+            assert_eq!(CStr::from_ptr(((*item).format).as_ptr().cast_mut()), format);
         }
 
         // A caller can replace a monitor using pointers it previously read
         // from that monitor. The old item is destroyed during replacement.
         let old = find_item(set, c"z");
         assert!(!old.is_null());
-        monitor_add(set, (*old).name, MONITOR_SESSION, -1, (*old).format, 0);
+        monitor_add(
+            set,
+            ((*old).name).as_ptr().cast_mut(),
+            MONITOR_SESSION,
+            -1,
+            ((*old).format).as_ptr().cast_mut(),
+            0,
+        );
         let replacement = find_item(set, c"z");
         assert!(!replacement.is_null());
-        assert_eq!(CStr::from_ptr((*replacement).name), c"z");
-        assert_eq!(CStr::from_ptr((*replacement).format), c"\xfeZ");
+        assert_eq!(
+            CStr::from_ptr(((*replacement).name).as_ptr().cast_mut()),
+            c"z"
+        );
+        assert_eq!(
+            CStr::from_ptr(((*replacement).format).as_ptr().cast_mut()),
+            c"\xfeZ"
+        );
 
         for name in [c"z", c"\xff", c"a"] {
             let item = find_item(set, name);
@@ -65,7 +78,7 @@ fn byte_names_composite_keys_and_nested_cleanup() {
         }
         let mut item = monitor_items_minmax(&raw mut (*set).items, -1);
         for name in [c"a", c"z", c"\xff"] {
-            assert_eq!(CStr::from_ptr((*item).name), name);
+            assert_eq!(CStr::from_ptr(((*item).name).as_ptr().cast_mut()), name);
             item = monitor_items_next(item);
         }
         assert!(item.is_null());

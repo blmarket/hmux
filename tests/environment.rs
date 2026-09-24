@@ -106,7 +106,7 @@ fn updates_preserve_entry_addresses_and_removal_preserves_saved_successors() {
         let mut removed = 0;
         while !current.is_null() {
             let next = environ_next(current);
-            let name = std::ffi::CStr::from_ptr((*current).name).to_owned();
+            let name = std::ffi::CStr::from_ptr(((*current).name).as_ptr().cast_mut()).to_owned();
             env.unset_cstr(&name);
             current = next;
             removed += 1;
@@ -129,13 +129,21 @@ fn variadic_updates_can_read_the_previous_value_before_replacement() {
     unsafe {
         environ_set(
             env.as_ptr(),
-            (*entry).name,
+            ((*entry).name).as_ptr().cast_mut(),
             0x40,
             c"%s-new".as_ptr(),
-            (*entry).value,
+            (*entry).value.as_ref().unwrap().as_ptr(),
         );
         assert_eq!(entry, env.find_bytes(b"VAR").unwrap().unwrap().as_ptr());
-        assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"old\xff-new");
+        assert_eq!(
+            CStr::from_ptr(
+                ((*entry).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+            )
+            .to_bytes(),
+            b"old\xff-new"
+        );
         assert_eq!((*entry).flags, 0x40);
     }
     env.clear(b"VAR").unwrap();

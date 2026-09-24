@@ -136,7 +136,7 @@ unsafe extern "C" fn cmd_rename_session_exec(
     let newname =
         clean_name_cstring(CStr::from_ptr(tmp), 0).expect("check_name validated the session name");
     free(tmp as *mut ::core::ffi::c_void);
-    if strcmp(newname.as_ptr(), (*s).name) == 0 as ::core::ffi::c_int {
+    if strcmp(newname.as_ptr(), ((*s).name).as_ptr().cast_mut()) == 0 as ::core::ffi::c_int {
         return CMD_RETURN_NORMAL;
     }
     if !session_find(newname.as_ptr()).is_null() {
@@ -159,7 +159,7 @@ unsafe extern "C" fn cmd_rename_session_exec(
         ep,
         b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).name,
+        ((*s).name).as_ptr().cast_mut(),
     );
     event_payload_set_string(
         ep,

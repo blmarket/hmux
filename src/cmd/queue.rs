@@ -110,28 +110,15 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;
 
-/// The public queue item borrows its printable name and, for an error
-/// callback, its message from this stable box.
-#[repr(C)]
-struct CmdqItemOwner {
-    node: cmdq_item,
-    name: Option<CString>,
-    error: Option<CString>,
-    cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
-    wait_file: *mut client_file,
-}
-
-const _: () = assert!(::core::mem::offset_of!(CmdqItemOwner, node) == 0);
-
 unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_item {
-    let mut owner = Box::new(CmdqItemOwner {
-        node: ::core::mem::zeroed::<cmdq_item>(),
+    let mut owner = Box::new(cmdq_item {
         name: None,
         error: None,
         cancel_data: None,
         wait_file: ::core::ptr::null_mut(),
+        ..cmdq_item::empty()
     });
-    let item = &raw mut owner.node;
+    let item = &raw mut *owner;
     let label = if label.is_null() {
         b"(null)".as_slice()
     } else {
@@ -145,12 +132,12 @@ unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_it
     bytes.extend_from_slice(address.as_bytes());
     bytes.push(b']');
     owner.name = Some(CString::new(bytes).expect("queue item label has no NUL"));
-    owner.node.name = owner.name.as_ref().unwrap().as_ptr() as *mut _;
+
     Box::into_raw(owner).cast::<cmdq_item>()
 }
 
 unsafe fn cmdq_drop_owner(item: *mut cmdq_item) {
-    drop(Box::from_raw(item.cast::<CmdqItemOwner>()));
+    drop(Box::from_raw(item));
 }
 
 /// Register the release path for callback data when this item is removed
@@ -160,7 +147,7 @@ pub(crate) unsafe fn cmdq_set_cancel_data(
     cancel: unsafe fn(*mut ::core::ffi::c_void),
 ) {
     assert_eq!((*item).type_0, CMDQ_CALLBACK);
-    let owner = &mut *item.cast::<CmdqItemOwner>();
+    let owner = &mut *item;
     assert!(
         owner.cancel_data.is_none(),
         "callback cancel hook already set"
@@ -172,7 +159,7 @@ unsafe fn cmdq_cancel_unfired_data(item: *mut cmdq_item) {
     if (*item).flags & CMDQ_FIRED != 0 {
         return;
     }
-    if let Some(cancel) = (&mut *item.cast::<CmdqItemOwner>()).cancel_data.take() {
+    if let Some(cancel) = (&mut *item).cancel_data.take() {
         cancel((*item).data);
     }
 }
@@ -182,7 +169,7 @@ unsafe fn cmdq_cancel_unfired_data(item: *mut cmdq_item) {
 /// it while the command is waiting.
 pub(crate) unsafe fn cmdq_set_wait_file(item: *mut cmdq_item, cf: *mut client_file) {
     assert!(!cf.is_null());
-    let owner = &mut *item.cast::<CmdqItemOwner>();
+    let owner = &mut *item;
     assert!(
         owner.wait_file.is_null(),
         "queue item already owns a file wait"
@@ -191,7 +178,7 @@ pub(crate) unsafe fn cmdq_set_wait_file(item: *mut cmdq_item, cf: *mut client_fi
 }
 
 pub(crate) unsafe fn cmdq_clear_wait_file(item: *mut cmdq_item, cf: *mut client_file) {
-    let owner = &mut *item.cast::<CmdqItemOwner>();
+    let owner = &mut *item;
     if owner.wait_file == cf {
         owner.wait_file = ::core::ptr::null_mut();
     }
@@ -206,7 +193,7 @@ pub(crate) unsafe fn cmdq_abort_file_wait(c: *mut client) {
     if first.is_null() || (*first).flags & CMDQ_WAITING == 0 {
         return;
     }
-    let cf = (*first.cast::<CmdqItemOwner>()).wait_file;
+    let cf = (*first).wait_file;
     if cf.is_null() {
         return;
     }
@@ -237,12 +224,12 @@ unsafe extern "C" fn cmdq_name(mut c: *mut client) -> *const ::core::ffi::c_char
     if c.is_null() {
         return b"<global>\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    if !(*c).name.is_null() {
+    if !(*c).name.is_none() {
         xsnprintf(
             &raw mut s as *mut ::core::ffi::c_char,
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
             b"<%s>\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     } else {
         xsnprintf(
@@ -281,7 +268,9 @@ pub unsafe extern "C" fn cmdq_free(mut queue: *mut cmdq_list) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_get_name(mut item: *mut cmdq_item) -> *const ::core::ffi::c_char {
-    return (*item).name;
+    return ((*item).name)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_get_cmd(mut item: *mut cmdq_item) -> *mut cmd {
@@ -456,7 +445,7 @@ pub unsafe extern "C" fn cmdq_append(
             b"%s %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_append\0" as *const u8 as *const ::core::ffi::c_char,
             cmdq_name(c),
-            (*item).name,
+            ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         item = next;
         if item.is_null() {
@@ -494,8 +483,8 @@ pub unsafe extern "C" fn cmdq_insert_after(
             b"%s %s: %s after %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_insert_after\0" as *const u8 as *const ::core::ffi::c_char,
             cmdq_name(c),
-            (*item).name,
-            (*after).name,
+            ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*after).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         after = item;
         item = next;
@@ -614,7 +603,7 @@ pub unsafe extern "C" fn cmdq_continue(mut item: *mut cmdq_item) {
 }
 unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
     assert!(
-        (*item.cast::<CmdqItemOwner>()).wait_file.is_null(),
+        (*item).wait_file.is_null(),
         "file wait must finish or cancel before queue item removal"
     );
     cmdq_cancel_unfired_data(item);
@@ -696,7 +685,7 @@ pub unsafe extern "C" fn cmdq_get_command(
         log_debug(
             b"%s: %s group %u\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_get_command\0" as *const u8 as *const ::core::ffi::c_char,
-            (*item).name,
+            ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*item).group,
         );
         if first.is_null() {
@@ -759,7 +748,7 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
             let key = key_string_format((*state).event.key, false);
             server_add_message(
                 b"%s%s key %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*c).name,
+                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 user.as_ptr(),
                 key.as_ptr(),
                 tmp.as_ptr(),
@@ -767,7 +756,7 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
         } else {
             server_add_message(
                 b"%s%s command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*c).name,
+                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 user.as_ptr(),
                 tmp.as_ptr(),
             );
@@ -977,9 +966,9 @@ pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -
         ),
         ::core::ptr::null_mut(),
     );
-    let owner = &mut *item.cast::<CmdqItemOwner>();
+    let owner = &mut *item;
     owner.error = Some(CStr::from_ptr(error).to_owned());
-    owner.node.data = owner.error.as_ref().unwrap().as_ptr().cast_mut().cast();
+    owner.data = owner.error.as_ref().unwrap().as_ptr().cast_mut().cast();
     item
 }
 unsafe extern "C" fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
@@ -1026,7 +1015,7 @@ pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {
             b"%s %s: %s (%d), flags %x\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
             name,
-            (*item).name,
+            ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*item).type_0 as ::core::ffi::c_uint,
             (*item).flags,
         );
@@ -1178,7 +1167,7 @@ pub unsafe extern "C" fn cmdq_error(
     } else if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         server_add_message(
             b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             msg.as_ptr(),
         );
         if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {

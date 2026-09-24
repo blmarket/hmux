@@ -34,23 +34,13 @@ static mut paste_by_time: paste_time_tree = paste_time_tree {
     entries: std::collections::BTreeMap::new(),
 };
 
-/// The public buffer lends its name and data from this stable owner.
-#[repr(C)]
-struct PasteBufferOwner {
-    node: paste_buffer,
-    name: CString,
-    data: Option<Box<[u8]>>,
-}
-
-const _: () = assert!(::core::mem::offset_of!(PasteBufferOwner, node) == 0);
-
 unsafe fn paste_new_owned(name: CString) -> *mut paste_buffer {
-    let mut owner = Box::new(PasteBufferOwner {
-        node: ::core::mem::zeroed::<paste_buffer>(),
-        name,
+    let mut owner = Box::new(paste_buffer {
+        name: name,
         data: None,
+        ..paste_buffer::empty()
     });
-    owner.node.name = owner.name.as_ptr() as *mut _;
+
     Box::into_raw(owner).cast::<paste_buffer>()
 }
 
@@ -68,20 +58,16 @@ unsafe fn paste_take_data(pb: *mut paste_buffer, data: *mut ::core::ffi::c_char,
 
 unsafe fn paste_store_data(pb: *mut paste_buffer, data: Option<Box<[u8]>>) {
     let size = data.as_ref().map_or(0, |bytes| bytes.len());
-    let owner = &mut *pb.cast::<PasteBufferOwner>();
+    let owner = &mut *pb;
     owner.data = data;
-    owner.node.data = owner
-        .data
-        .as_mut()
-        .map_or(::core::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-        .cast::<::core::ffi::c_char>();
-    owner.node.size = size;
+
+    owner.size = size;
 }
 
 unsafe fn paste_replace_name(pb: *mut paste_buffer, name: CString) -> CString {
-    let owner = pb.cast::<PasteBufferOwner>();
+    let owner = pb;
     let previous = std::mem::replace(&mut (*owner).name, name);
-    (*pb).name = (*owner).name.as_ptr() as *mut _;
+
     previous
 }
 
@@ -104,7 +90,7 @@ unsafe fn paste_name_tree_insert(
     head: *mut paste_name_tree,
     elm: *mut paste_buffer,
 ) -> *mut paste_buffer {
-    match (*head).entries.entry(paste_name_key((*elm).name)) {
+    match (*head).entries.entry(paste_name_key(((*elm).name).as_ptr().cast_mut())) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
@@ -119,7 +105,7 @@ unsafe fn paste_name_tree_remove(
 ) -> *mut paste_buffer {
     (*head)
         .entries
-        .remove(&paste_name_key((*elm).name))
+        .remove(&paste_name_key(((*elm).name).as_ptr().cast_mut()))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 // The original comparator puts larger order values first and treats equal
@@ -213,7 +199,7 @@ unsafe extern "C" fn paste_fire_event(
 pub unsafe extern "C" fn paste_buffer_name(
     mut pb: *mut paste_buffer,
 ) -> *const ::core::ffi::c_char {
-    return (*pb).name;
+    return ((*pb).name).as_ptr().cast_mut();
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_buffer_order(mut pb: *mut paste_buffer) -> u_int {
@@ -231,7 +217,11 @@ pub unsafe extern "C" fn paste_buffer_data(
     if !size.is_null() {
         *size = (*pb).size;
     }
-    return (*pb).data;
+    return ((*pb).data)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| {
+            value.as_ptr().cast_mut().cast::<::core::ffi::c_char>()
+        });
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buffer {
@@ -257,7 +247,7 @@ pub unsafe extern "C" fn paste_get_top(
         return ::core::ptr::null_mut::<paste_buffer>();
     }
     if !name.is_null() {
-        *name = xstrdup((*pb).name);
+        *name = xstrdup(((*pb).name).as_ptr().cast_mut());
     }
     return pb;
 }
@@ -272,14 +262,14 @@ pub unsafe extern "C" fn paste_get_name(mut name: *const ::core::ffi::c_char) ->
 pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
     paste_fire_event(
         b"paste-buffer-deleted\0" as *const u8 as *const ::core::ffi::c_char,
-        (*pb).name,
+        ((*pb).name).as_ptr().cast_mut(),
     );
     paste_name_tree_remove(&raw mut paste_by_name, pb);
     paste_time_tree_remove(&raw mut paste_by_time, pb);
     if (*pb).automatic != 0 {
         paste_num_automatic = paste_num_automatic.wrapping_sub(1);
     }
-    drop(Box::from_raw(pb.cast::<PasteBufferOwner>()));
+    drop(Box::from_raw(pb));
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_add(
@@ -346,7 +336,7 @@ pub(crate) unsafe fn paste_add_owned(mut prefix: *const ::core::ffi::c_char, dat
     paste_time_tree_insert(&raw mut paste_by_time, pb);
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        (*pb).name,
+        ((*pb).name).as_ptr().cast_mut(),
     );
 }
 #[no_mangle]
@@ -413,7 +403,7 @@ pub unsafe extern "C" fn paste_rename(
     );
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        (*pb).name,
+        ((*pb).name).as_ptr().cast_mut(),
     );
     return 0 as ::core::ffi::c_int;
 }
@@ -485,7 +475,7 @@ unsafe fn paste_set_inner(
     paste_next_order = paste_next_order.wrapping_add(1);
     (*pb).order = fresh1;
     (*pb).created = time(::core::ptr::null_mut::<time_t>());
-    old = paste_get_name((*pb).name);
+    old = paste_get_name(((*pb).name).as_ptr().cast_mut());
     if !old.is_null() {
         paste_free(old);
     }
@@ -493,7 +483,7 @@ unsafe fn paste_set_inner(
     paste_time_tree_insert(&raw mut paste_by_time, pb);
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        (*pb).name,
+        ((*pb).name).as_ptr().cast_mut(),
     );
     return 0 as ::core::ffi::c_int;
 }
@@ -506,7 +496,7 @@ pub unsafe extern "C" fn paste_replace(
     paste_take_data(pb, data, size);
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        (*pb).name,
+        ((*pb).name).as_ptr().cast_mut(),
     );
 }
 #[no_mangle]
@@ -518,7 +508,16 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: *mut paste_buffer) -> CString
     let width = 200;
     let len = (*pb).size.min(width);
     let mut buffer = vec![0u8; len * 8 + 4];
-    let used = utf8_strvis(buffer.as_mut_ptr().cast(), (*pb).data, len, flags);
+    let used = utf8_strvis(
+        buffer.as_mut_ptr().cast(),
+        ((*pb).data)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| {
+                value.as_ptr().cast_mut().cast::<::core::ffi::c_char>()
+            }),
+        len,
+        flags,
+    );
     if (*pb).size > width || used > width {
         buffer[width..width + 4].copy_from_slice(b"...\0");
     }
@@ -586,22 +585,25 @@ mod tests {
             let pb = paste_get_name(c"owner-rename-alias".as_ptr());
             assert!(!pb.is_null());
             assert_eq!(
-                paste_rename((*pb).name, c"owner-renamed".as_ptr(), &raw mut cause),
+                paste_rename(((*pb).name).as_ptr().cast_mut(), c"owner-renamed".as_ptr(), &raw mut cause),
                 0
             );
             assert!(cause.is_null());
             assert!(paste_get_name(c"owner-rename-alias".as_ptr()).is_null());
             assert_eq!(paste_get_name(c"owner-renamed".as_ptr()), pb);
-            assert_eq!(CStr::from_ptr((*pb).name), c"owner-renamed");
+            assert_eq!(
+                CStr::from_ptr(((*pb).name).as_ptr().cast_mut()),
+                c"owner-renamed"
+            );
             paste_free(pb);
         }
     }
 
     fn named_buffer(name: &CString) -> Box<paste_buffer> {
         Box::new(paste_buffer {
-            data: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+            data: Default::default(),
             size: 0,
-            name: name.as_ptr() as *mut ::core::ffi::c_char,
+            name: name.clone(),
             created: 0,
             automatic: 0,
             order: 0,

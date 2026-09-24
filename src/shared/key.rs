@@ -2163,17 +2163,27 @@ pub struct key_event {
     pub len: size_t,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
-/// Box-owned until its last reference is released. The registry and clients
-/// borrow its stable address; registry removal clears the `entry.owner` link.
 pub struct key_table {
-    pub name: *const ::core::ffi::c_char,
+    pub name: std::ffi::CString,
     pub activity_time: timeval,
     pub key_bindings: key_bindings,
     pub default_key_bindings: key_bindings,
     pub references: u_int,
     pub entry: key_table_entry,
+}
+
+impl key_table {
+    pub fn empty() -> Self {
+        Self {
+            name: Default::default(),
+            activity_time: unsafe { ::core::mem::zeroed() },
+            key_bindings: unsafe { ::core::mem::zeroed() },
+            default_key_bindings: unsafe { ::core::mem::zeroed() },
+            references: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -2189,18 +2199,27 @@ pub struct key_bindings {
     pub storage: *mut std::collections::BTreeMap<u64, *mut key_binding>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
-/// Each live/default index owns a boxed record. Index removal clears the
-/// borrowed `entry.owner` link; the containing owner holds `note` until
-/// replacement or removal, and the table holds borrowed `tablename` text.
 pub struct key_binding {
     pub key: key_code,
     pub cmdlist: *mut cmd_list,
-    pub note: *const ::core::ffi::c_char,
+    pub note: Option<std::ffi::CString>,
     pub tablename: *const ::core::ffi::c_char,
     pub flags: ::core::ffi::c_int,
     pub entry: key_binding_entry,
+}
+
+impl key_binding {
+    pub fn empty() -> Self {
+        Self {
+            key: unsafe { ::core::mem::zeroed() },
+            cmdlist: unsafe { ::core::mem::zeroed() },
+            note: Default::default(),
+            tablename: unsafe { ::core::mem::zeroed() },
+            flags: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

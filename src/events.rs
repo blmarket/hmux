@@ -69,23 +69,15 @@ use std::ffi::{CStr, CString};
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-static mut events_sinks: Vec<Box<EventsSinkOwner>> = Vec::new();
+static mut events_sinks: Vec<Box<events_sink>> = Vec::new();
 static mut events_dispatching: u_int = 0;
 static mut events_generation: u_int = 0;
-
-// Hooks and wait items retain the stable address of the sink until
-// events_remove_sink, including removal deferred by events_fire.
-#[repr(C)]
-struct EventsSinkOwner {
-    sink: events_sink,
-    name: CString,
-}
 
 unsafe extern "C" fn events_free_sink(mut es: *mut events_sink) {
     let sinks = &mut *(&raw mut events_sinks);
     if let Some(index) = sinks
         .iter()
-        .position(|sink| (&sink.sink as *const events_sink).cast_mut() == es)
+        .position(|sink| (&**sink as *const events_sink).cast_mut() == es)
     {
         drop(sinks.remove(index));
     }
@@ -94,7 +86,7 @@ unsafe extern "C" fn events_free_dead() {
     let sinks = &mut *(&raw mut events_sinks);
     let mut index = 0;
     while index < sinks.len() {
-        if sinks[index].sink.dead != 0 {
+        if sinks[index].dead != 0 {
             drop(sinks.remove(index));
         } else {
             index += 1;
@@ -108,18 +100,15 @@ pub unsafe extern "C" fn events_add_sink(
     mut data: *mut ::core::ffi::c_void,
 ) -> *mut events_sink {
     events_generation = events_generation.wrapping_add(1);
-    let mut owner = Box::new(EventsSinkOwner {
-        sink: events_sink {
-            name: ::core::ptr::null_mut(),
-            cb,
-            data,
-            dead: 0,
-            generation: events_generation,
-        },
+    let mut owner = Box::new(events_sink {
         name: CStr::from_ptr(name).to_owned(),
+        cb: cb,
+        data: data,
+        dead: 0,
+        generation: events_generation,
     });
-    owner.sink.name = owner.name.as_ptr().cast_mut();
-    let es = &raw mut owner.sink;
+
+    let es = &raw mut *owner;
     (&mut *(&raw mut events_sinks)).push(owner);
     es
 }
@@ -159,11 +148,11 @@ pub unsafe extern "C" fn events_fire(
     while index < (&*(&raw const events_sinks)).len() {
         es = {
             let sinks = &mut *(&raw mut events_sinks);
-            &raw mut sinks[index].sink
+            &raw mut *sinks[index]
         };
         index += 1;
         if !((*es).dead != 0 || (*es).generation > generation) {
-            if strcmp((*es).name, name) == 0 as ::core::ffi::c_int {
+            if strcmp(((*es).name).as_ptr().cast_mut(), name) == 0 as ::core::ffi::c_int {
                 (*es).cb.expect("non-null function pointer")(name, ep, (*es).data);
             }
         }

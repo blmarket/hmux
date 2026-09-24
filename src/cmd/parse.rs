@@ -3405,8 +3405,10 @@ unsafe fn yylex_token_variable(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
     }
     name[namelen as usize] = '\0' as i32 as ::core::ffi::c_char;
     envent = environ_find(global_environ, &raw mut name as *mut ::core::ffi::c_char);
-    if !envent.is_null() && !(*envent).value.is_null() {
-        value = (*envent).value;
+    if !envent.is_null() && !(*envent).value.is_none() {
+        value = ((*envent).value)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         log_debug(
             b"%s: %s -> %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"yylex_token_variable\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3455,10 +3457,10 @@ unsafe fn yylex_token_tilde(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
             b"HOME\0" as *const u8 as *const ::core::ffi::c_char,
         );
         if !envent.is_null()
-            && !(*envent).value.is_null()
-            && *(*envent).value as ::core::ffi::c_int != '\0' as i32
+            && !(*envent).value.is_none()
+            && *(*envent).value.as_ref().expect("environment value is present").as_ptr() as ::core::ffi::c_int != '\0' as i32
         {
-            home = (*envent).value;
+            home = ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         } else {
             pw = getpwuid(getuid());
             if !pw.is_null() {

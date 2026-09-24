@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 fn window_resize_replacement_and_pane_reset_release_indexes() {
     unsafe {
         let state = control_state_new();
-        let mut client: client = std::mem::zeroed();
+        let mut client: client = client::empty();
         client.control_state = state;
         let c = &mut client;
         for id in [u32::MAX, 0, 17] {

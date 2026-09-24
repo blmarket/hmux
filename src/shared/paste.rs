@@ -3,18 +3,30 @@
 use super::abi::{size_t, time_t, u_int};
 
 #[repr(C)]
-/// Box-owned from `paste_add` or `paste_set` until `paste_free`. The name and
-/// order indexes borrow its stable address. Data is C-owned; the name borrows
-/// the enclosing Rust owner.
 pub struct paste_buffer {
-    pub data: *mut ::core::ffi::c_char,
+    pub data: Option<Box<[u8]>>,
     pub size: size_t,
-    pub name: *mut ::core::ffi::c_char,
+    pub name: std::ffi::CString,
     pub created: time_t,
     pub automatic: ::core::ffi::c_int,
     pub order: u_int,
     pub name_entry: paste_buffer_name_entry,
     pub time_entry: paste_buffer_time_entry,
+}
+
+impl paste_buffer {
+    pub fn empty() -> Self {
+        Self {
+            data: Default::default(),
+            size: unsafe { ::core::mem::zeroed() },
+            name: Default::default(),
+            created: unsafe { ::core::mem::zeroed() },
+            automatic: unsafe { ::core::mem::zeroed() },
+            order: unsafe { ::core::mem::zeroed() },
+            name_entry: unsafe { ::core::mem::zeroed() },
+            time_entry: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

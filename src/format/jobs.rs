@@ -5,31 +5,16 @@
 use super::*;
 use std::ffi::{CStr, CString};
 
-// The public record stays at offset zero for job callbacks. Its string
-// pointers borrow from the owner until the cache entry is removed and the
-// process job has been freed.
-#[repr(C)]
-struct FormatJobOwner {
-    node: format_job,
-    cmd: CString,
-    expanded: Option<CString>,
-    out: Option<CString>,
-}
-
-const _: () = assert!(std::mem::offset_of!(FormatJobOwner, node) == 0);
-
 unsafe fn format_job_set_expanded(fj: *mut format_job, value: CString) {
-    let owner = &mut *fj.cast::<FormatJobOwner>();
-    owner.node.expanded = std::ptr::null();
+    let owner = &mut *fj;
+    owner.expanded = Default::default();
     owner.expanded = Some(value);
-    owner.node.expanded = owner.expanded.as_ref().unwrap().as_ptr();
 }
 
 unsafe fn format_job_set_out(fj: *mut format_job, value: CString) {
-    let owner = &mut *fj.cast::<FormatJobOwner>();
-    owner.node.out = std::ptr::null_mut();
+    let owner = &mut *fj;
+    owner.out = Default::default();
     owner.out = Some(value);
-    owner.node.out = owner.out.as_ref().unwrap().as_ptr().cast_mut();
 }
 
 // evbuffer_readline returns a libc allocation. Copy its visible C-string
@@ -41,7 +26,7 @@ unsafe fn format_job_set_out_from_malloc(fj: *mut format_job, value: *mut ::core
 }
 
 unsafe fn format_job_message(fj: *mut format_job, suffix: &[u8]) -> CString {
-    let cmd = CStr::from_ptr((*fj).cmd).to_bytes();
+    let cmd = CStr::from_ptr(((*fj).cmd).as_ptr().cast_mut()).to_bytes();
     let mut bytes = Vec::with_capacity(2 + cmd.len() + suffix.len());
     bytes.extend_from_slice(b"<'");
     bytes.extend_from_slice(cmd);
@@ -75,8 +60,8 @@ pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
         b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"format_job_update\0" as *const u8 as *const ::core::ffi::c_char,
         fj,
-        (*fj).cmd,
-        (*fj).out,
+        ((*fj).cmd).as_ptr().cast_mut(),
+        ((*fj).out).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     t = time(::core::ptr::null_mut::<time_t>());
     if (*fj).status != 0 && (*fj).last != t {
@@ -114,7 +99,7 @@ pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
         b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"format_job_complete\0" as *const u8 as *const ::core::ffi::c_char,
         fj,
-        (*fj).cmd,
+        ((*fj).cmd).as_ptr().cast_mut(),
         output.as_ptr(),
     );
     if !output.as_bytes().is_empty() || (*fj).updated == 0 {
@@ -172,8 +157,8 @@ pub(super) unsafe fn format_job_get(
     );
     next.flags &= !FORMAT_EXPAND_TIME;
     let expanded = format_expand1_cstring(&raw mut next, cmd);
-    if (*fj).expanded.is_null()
-        || strcmp(expanded.as_ptr(), (*fj).expanded) != 0 as ::core::ffi::c_int
+    if (*fj).expanded.is_none()
+        || strcmp(expanded.as_ptr(), ((*fj).expanded).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())) != 0 as ::core::ffi::c_int
     {
         format_job_set_expanded(fj, expanded.clone());
         force = 1 as ::core::ffi::c_int;
@@ -205,16 +190,21 @@ pub(super) unsafe fn format_job_get(
         }
         (*fj).last = t;
         (*fj).updated = 0 as ::core::ffi::c_int;
-    } else if !(*fj).job.is_null() && t - (*fj).last > 1 as time_t && (*fj).out.is_null() {
+    } else if !(*fj).job.is_null() && t - (*fj).last > 1 as time_t && (*fj).out.is_none() {
         format_job_set_out(fj, format_job_message(fj, b"' not ready>"));
     }
     if (*ft).flags & FORMAT_STATUS != 0 {
         (*fj).status = 1 as ::core::ffi::c_int;
     }
-    if (*fj).out.is_null() {
+    if (*fj).out.is_none() {
         return CString::default();
     }
-    return format_expand1_cstring(&raw mut next, (*fj).out);
+    return format_expand1_cstring(
+        &raw mut next,
+        ((*fj).out)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
 }
 // Do not retain a map borrow across format expansion or process callbacks.
 unsafe fn format_job_find_or_insert(
@@ -229,20 +219,15 @@ unsafe fn format_job_find_or_insert(
         let node = format_job {
             client,
             tag,
-            cmd: command.as_ptr(),
-            expanded: std::ptr::null(),
+            cmd: ::std::ffi::CStr::from_ptr(command.as_ptr()).to_owned(),
+            expanded: Default::default(),
             last: 0,
-            out: std::ptr::null_mut(),
+            out: Default::default(),
             updated: 0,
             job: std::ptr::null_mut(),
             status: 0,
         };
-        Box::into_raw(Box::new(FormatJobOwner {
-            node,
-            cmd: command,
-            expanded: None,
-            out: None,
-        }))
+        Box::into_raw(Box::new(format_job { cmd: command, expanded: None, out: None, ..node }))
         .cast::<format_job>()
     })
 }
@@ -276,12 +261,12 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
         log_debug(
             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"format_job_tidy\0" as *const u8 as *const ::core::ffi::c_char,
-            (*fj).cmd,
+            ((*fj).cmd).as_ptr().cast_mut(),
         );
         if !(*fj).job.is_null() {
             job_free((*fj).job);
         }
-        drop(Box::from_raw(fj.cast::<FormatJobOwner>()));
+        drop(Box::from_raw(fj));
     }
 }
 #[no_mangle]
@@ -349,7 +334,7 @@ mod tests {
             for pair in jobs.windows(2) {
                 let (a, b) = (pair[0], pair[1]);
                 assert!(
-                    (*a).tag < (*b).tag || ((*a).tag == (*b).tag && strcmp((*a).cmd, (*b).cmd) < 0)
+                    (*a).tag < (*b).tag || ((*a).tag == (*b).tag && strcmp(((*a).cmd).as_ptr().cast_mut(), ((*b).cmd).as_ptr().cast_mut()) < 0)
                 );
             }
             format_job_tidy_at(&mut cache, 1, 0);
@@ -362,7 +347,7 @@ mod tests {
     #[test]
     fn client_teardown_releases_the_rust_cache() {
         unsafe {
-            let mut c: client = std::mem::zeroed();
+            let mut c: client = client::empty();
             c.jobs = Box::into_raw(Box::new(format_job_tree::default()));
             let cmd = CString::new("job").unwrap();
             let fj = format_job_find_or_insert(c.jobs, &mut c, 0, cmd.as_ptr());
@@ -398,7 +383,7 @@ mod tests {
             for (cmd, fj) in survivors {
                 assert_eq!(cache.entries.get(&(0, cmd.as_bytes().to_vec())), Some(&fj));
                 assert_eq!(
-                    std::ffi::CStr::from_ptr((*fj).out).to_bytes(),
+                    std::ffi::CStr::from_ptr(((*fj).out).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
                     cmd.as_bytes()
                 );
             }
@@ -416,14 +401,30 @@ mod tests {
             let fj = format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_ptr());
             let output = xstrdup(b"first\0".as_ptr().cast());
             format_job_set_out_from_malloc(fj, output);
-            assert_eq!(CStr::from_ptr((*fj).out).to_bytes(), b"first");
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*fj).out)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"first"
+            );
             format_job_set_expanded(fj, CString::new(b"expanded\xff".to_vec()).unwrap());
             format_job_set_out(fj, format_job_message(fj, b"' not ready>"));
             assert_eq!(
-                CStr::from_ptr((*fj).out).to_bytes(),
+                CStr::from_ptr(((*fj).out).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
                 b"<'printf '\xff'' not ready>"
             );
-            assert_eq!(CStr::from_ptr((*fj).expanded).to_bytes(), b"expanded\xff");
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*fj).expanded)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"expanded\xff"
+            );
             assert_eq!(
                 fj,
                 format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_ptr())

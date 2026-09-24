@@ -370,7 +370,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
         args_free_values(values, 3);
         free(values.cast());
 
-        let first = (*(*args).values).cached as *const core::ffi::c_char;
+        let first = (&(*args).values)[0].cached as *const core::ffi::c_char;
         assert!(!first.is_null());
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
         assert_eq!(args_string(args, 0), first);
@@ -420,7 +420,7 @@ fn copied_argument_templates_own_intermediate_and_final_strings() {
             b"A'\\''B"
         );
         assert_eq!(
-            CStr::from_ptr((*(*copied).values).c2rust_unnamed.string).to_bytes(),
+            CStr::from_ptr((&(*copied).values)[0].c2rust_unnamed.string).to_bytes(),
             b"X Y:A'B"
         );
         args_free(copied);

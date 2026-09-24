@@ -58,7 +58,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
             if !names.is_empty() {
                 names.push(b',');
             }
-            names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
+            names.extend_from_slice(std::ffi::CStr::from_ptr(((*loop_0).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
         }
         loop_0 = clients.next(loop_0);
     }
@@ -248,7 +248,7 @@ unsafe fn format_cb_window_linked_sessions_list(mut ft: *mut format_tree) -> Opt
         if !names.is_empty() {
             names.push(b',');
         }
-        names.extend_from_slice(std::ffi::CStr::from_ptr((*(*wl).session).name).to_bytes());
+        names.extend_from_slice(std::ffi::CStr::from_ptr(((*(*wl).session).name).as_ptr().cast_mut()).to_bytes());
         wl = window_winlinks_next(w, wl);
     }
     if names.is_empty() {
@@ -290,7 +290,7 @@ unsafe fn format_cb_window_active_sessions_list(mut ft: *mut format_tree) -> Opt
             if !names.is_empty() {
                 names.push(b',');
             }
-            names.extend_from_slice(std::ffi::CStr::from_ptr((*(*wl).session).name).to_bytes());
+            names.extend_from_slice(std::ffi::CStr::from_ptr(((*(*wl).session).name).as_ptr().cast_mut()).to_bytes());
         }
         wl = window_winlinks_next(w, wl);
     }
@@ -340,7 +340,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
                 if !names.is_empty() {
                     names.push(b',');
                 }
-                names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
+                names.extend_from_slice(std::ffi::CStr::from_ptr(((*loop_0).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
             }
         }
         loop_0 = clients.next(loop_0);
@@ -636,7 +636,7 @@ unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CStri
         if !names.is_empty() {
             names.push(b',');
         }
-        names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
+        names.extend_from_slice(std::ffi::CStr::from_ptr(((*loop_0).name).as_ptr().cast_mut()).to_bytes());
     }
     if names.is_empty() {
         return None;
@@ -666,7 +666,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
                     if !names.is_empty() {
                         names.push(b',');
                     }
-                    names.extend_from_slice(std::ffi::CStr::from_ptr((*loop_0).name).to_bytes());
+                    names.extend_from_slice(std::ffi::CStr::from_ptr(((*loop_0).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
                 }
             }
         }
@@ -1110,7 +1110,7 @@ unsafe fn format_cb_client_height(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_client_key_table(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return Some(CStr::from_ptr((*(*(*ft).c).keytable).name).to_owned());
+        return Some(CStr::from_ptr(((*(*(*ft).c).keytable).name).as_ptr().cast_mut()).to_owned());
     }
     return None;
 }
@@ -1119,13 +1119,13 @@ unsafe fn format_cb_client_last_session(mut ft: *mut format_tree) -> Option<CStr
         && !(*(*ft).c).last_session.is_null()
         && session_alive((*(*ft).c).last_session) != 0
     {
-        return Some(CStr::from_ptr((*(*(*ft).c).last_session).name).to_owned());
+        return Some(CStr::from_ptr(((*(*(*ft).c).last_session).name).as_ptr().cast_mut()).to_owned());
     }
     return None;
 }
 unsafe fn format_cb_client_name(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return Some(CStr::from_ptr((*(*ft).c).name).to_owned());
+        return Some(CStr::from_ptr(((*(*ft).c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
     }
     return None;
 }
@@ -1145,7 +1145,7 @@ unsafe fn format_cb_client_prefix(mut ft: *mut format_tree) -> Option<CString> {
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !(*ft).c.is_null() {
         name = server_client_get_key_table((*ft).c);
-        if strcmp((*(*(*ft).c).keytable).name, name) == 0 as ::core::ffi::c_int {
+        if strcmp(((*(*(*ft).c).keytable).name).as_ptr().cast_mut(), name) == 0 as ::core::ffi::c_int {
             return Some(c"0".to_owned());
         }
         return Some(c"1".to_owned());
@@ -1163,7 +1163,7 @@ unsafe fn format_cb_client_readonly(mut ft: *mut format_tree) -> Option<CString>
 }
 unsafe fn format_cb_client_session(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() && !(*(*ft).c).session.is_null() {
-        return Some(CStr::from_ptr((*(*(*ft).c).session).name).to_owned());
+        return Some(CStr::from_ptr(((*(*(*ft).c).session).name).as_ptr().cast_mut()).to_owned());
     }
     return None;
 }
@@ -1175,22 +1175,22 @@ unsafe fn format_cb_client_termfeatures(mut ft: *mut format_tree) -> Option<CStr
 }
 unsafe fn format_cb_client_termname(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return Some(CStr::from_ptr((*(*ft).c).term_name).to_owned());
+        return Some(CStr::from_ptr(((*(*ft).c).term_name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
     }
     return None;
 }
 unsafe fn format_cb_client_termtype(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        if (*(*ft).c).term_type.is_null() {
+        if (*(*ft).c).term_type.is_none() {
             return Some(c"".to_owned());
         }
-        return Some(CStr::from_ptr((*(*ft).c).term_type).to_owned());
+        return Some(CStr::from_ptr(((*(*ft).c).term_type).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
     }
     return None;
 }
 unsafe fn format_cb_client_tty(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).c.is_null() {
-        return Some(CStr::from_ptr((*(*ft).c).ttyname).to_owned());
+        return Some(CStr::from_ptr(((*(*ft).c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
     }
     return None;
 }
@@ -1214,8 +1214,8 @@ unsafe fn format_cb_client_user(mut ft: *mut format_tree) -> Option<CString> {
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     if !(*ft).c.is_null() {
-        if !(*(*ft).c).user.is_null() {
-            return Some(CStr::from_ptr((*(*ft).c).user).to_owned());
+        if !(*(*ft).c).user.is_none() {
+            return Some(CStr::from_ptr(((*(*ft).c).user).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
         }
         uid = proc_get_peer_uid((*(*ft).c).peer);
         if uid != -(1 as ::core::ffi::c_int) as uid_t && {
@@ -1226,7 +1226,7 @@ unsafe fn format_cb_client_user(mut ft: *mut format_tree) -> Option<CString> {
                 (*ft).c,
                 Some(std::ffi::CStr::from_ptr((*pw).pw_name).to_owned()),
             );
-            return Some(CStr::from_ptr((*(*ft).c).user).to_owned());
+            return Some(CStr::from_ptr(((*(*ft).c).user).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
         }
     }
     return None;
@@ -2355,7 +2355,7 @@ unsafe fn format_cb_session_group(mut ft: *mut format_tree) -> Option<CString> {
         sg = session_group_contains((*ft).s);
         !sg.is_null()
     } {
-        return Some(CStr::from_ptr((*sg).name).to_owned());
+        return Some(CStr::from_ptr(((*sg).name).as_ptr().cast_mut()).to_owned());
     }
     return None;
 }
@@ -2436,13 +2436,13 @@ unsafe fn format_cb_session_marked(mut ft: *mut format_tree) -> Option<CString> 
 }
 unsafe fn format_cb_session_name(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        return Some(CStr::from_ptr((*(*ft).s).name).to_owned());
+        return Some(CStr::from_ptr(((*(*ft).s).name).as_ptr().cast_mut()).to_owned());
     }
     return None;
 }
 unsafe fn format_cb_session_path(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).s.is_null() {
-        return Some(CStr::from_ptr((*(*ft).s).cwd).to_owned());
+        return Some(CStr::from_ptr(((*(*ft).s).cwd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
     }
     return None;
 }

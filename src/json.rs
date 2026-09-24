@@ -52,32 +52,27 @@ pub const TOK_OPENOBJECT: json_token_type = 0;
 pub const ERROR_CTX_LEN: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 pub const PARSE_DEPTH_MAX: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
 
-/// The public node borrows its key and optional string value from this stable box.
-#[repr(C)]
-struct JsonNodeOwner {
-    node: json_node,
-    key: Option<CString>,
-    string: Option<CString>,
-    members: Option<Box<json_members_storage>>,
-}
-
-const _: () = assert!(::core::mem::offset_of!(JsonNodeOwner, node) == 0);
-
 unsafe fn json_set_string(node: *mut json_node, string: CString) {
-    let owner = &mut *node.cast::<JsonNodeOwner>();
-    owner.node.c2rust_unnamed.str_0 = ::core::ptr::null_mut();
+    let owner = &mut *node;
+    owner.c2rust_unnamed.str_0 = ::core::ptr::null_mut();
     owner.string = Some(string);
-    owner.node.c2rust_unnamed.str_0 = owner.string.as_ref().unwrap().as_ptr().cast_mut();
+    owner.c2rust_unnamed.str_0 = owner.string.as_ref().unwrap().as_ptr().cast_mut();
 }
 
 unsafe fn json_fields_insert(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
-    if head.is_null() || elm.is_null() || (*elm).key.is_null() {
+    if head.is_null() || elm.is_null() || (*elm).key.is_none() {
         return ::core::ptr::null_mut::<json_node>();
     }
     if (*head).entries.is_null() {
         (*head).entries = Box::into_raw(Box::new(json_fields_storage::default()));
     }
-    let key = CStr::from_ptr((*elm).key).to_bytes().to_vec();
+    let key = CStr::from_ptr(
+        ((*elm).key)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    )
+    .to_bytes()
+    .to_vec();
     match (*(*head).entries).entries.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -88,10 +83,15 @@ unsafe fn json_fields_insert(head: *mut json_fields, elm: *mut json_node) -> *mu
 }
 
 unsafe fn json_fields_remove(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
-    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_null() {
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_none() {
         return ::core::ptr::null_mut::<json_node>();
     }
-    let key = CStr::from_ptr((*elm).key).to_bytes();
+    let key = CStr::from_ptr(
+        ((*elm).key)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    )
+    .to_bytes();
     let entries = &mut (*(*head).entries).entries;
     if entries.get(key).copied() != Some(elm) {
         return ::core::ptr::null_mut::<json_node>();
@@ -130,10 +130,16 @@ unsafe fn json_fields_find(
 }
 
 unsafe fn json_fields_next(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
-    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_null() {
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_none() {
         return ::core::ptr::null_mut::<json_node>();
     }
-    let key = CStr::from_ptr((*elm).key).to_bytes().to_vec();
+    let key = CStr::from_ptr(
+        ((*elm).key)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    )
+    .to_bytes()
+    .to_vec();
     (*(*head).entries)
         .entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
@@ -680,8 +686,7 @@ unsafe extern "C" fn json_create_node(
     mut val: *mut ::core::ffi::c_void,
 ) -> *mut json_node {
     let mut node: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut owner = Box::new(JsonNodeOwner {
-        node: ::core::mem::zeroed::<json_node>(),
+    let mut owner = Box::new(json_node {
         key: if key.is_null() {
             None
         } else {
@@ -689,11 +694,9 @@ unsafe extern "C" fn json_create_node(
         },
         string: None,
         members: None,
+        ..json_node::empty()
     });
-    owner.node.key = owner
-        .key
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |key| key.as_ptr() as *mut _);
+
     node = Box::into_raw(owner).cast::<json_node>();
     (*node).parent = parent;
     (*node).type_0 = type_0;
@@ -703,7 +706,7 @@ unsafe extern "C" fn json_create_node(
     } else if type_0 as ::core::ffi::c_uint
         == NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        let owner = node.cast::<JsonNodeOwner>();
+        let owner = node;
         (*owner).members = Some(Box::new(json_members_storage::default()));
         (*node).c2rust_unnamed.members.storage = (*owner).members.as_deref_mut().unwrap();
     }
@@ -750,7 +753,7 @@ pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
         }
         1 | 2 | _ => {}
     }
-    drop(Box::from_raw(node.cast::<JsonNodeOwner>()));
+    drop(Box::from_raw(node));
 }
 unsafe extern "C" fn json_assign_value(
     mut node: *mut json_node,
@@ -1255,7 +1258,7 @@ unsafe extern "C" fn json_string_append(mut buffer: *mut evbuffer, mut node: *mu
                 evbuffer_add_printf(
                     buffer,
                     b"\"%s\":\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*field).key,
+                    ((*field).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
                 json_string_append(buffer, field);
                 comma = 1 as ::core::ffi::c_int;
@@ -1373,12 +1376,12 @@ mod json_fields_tests {
             assert_eq!(json_fields_find(&mut head, probe_key.as_ptr()), items[1]);
 
             assert_eq!(
-                CStr::from_ptr((*json_fields_minmax(&mut head, RB_NEGINF)).key).to_bytes(),
+                CStr::from_ptr(((*json_fields_minmax(&mut head, RB_NEGINF)).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
                 b"alpha"
             );
             assert_eq!(
                 CStr::from_ptr(
-                    (*json_fields_minmax(&mut head, crate::src::shared::tree::RB_INF)).key
+                    ((*json_fields_minmax(&mut head, crate::src::shared::tree::RB_INF)).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
                 )
                 .to_bytes(),
                 b"\x80high"
@@ -1387,7 +1390,7 @@ mod json_fields_tests {
             let mut ordered = Vec::new();
             let mut item = json_fields_minmax(&mut head, RB_NEGINF);
             while !item.is_null() {
-                ordered.push(CStr::from_ptr((*item).key).to_bytes().to_vec());
+                ordered.push(CStr::from_ptr(((*item).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes().to_vec());
                 item = json_fields_next(&mut head, item);
             }
             assert_eq!(

@@ -1,4 +1,4 @@
-//! Frozen C layouts, excluding the migrated Rust-owned format storage.
+//! Layout snapshots for translated declarations and Rust-owned fields.
 use std::mem::{align_of, offset_of, size_of};
 #[test]
 fn original_copies_match() {

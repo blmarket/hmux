@@ -151,14 +151,27 @@ pub struct format_entry_tree_storage {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut format_entry>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct format_entry {
-    pub key: *mut ::core::ffi::c_char,
-    pub value: *mut ::core::ffi::c_char,
+    pub key: std::ffi::CString,
+    pub value: Option<std::ffi::CString>,
     pub time: time_t,
     pub cb: format_cb,
     pub entry: format_entry_entry,
+    pub(crate) owned_cb: Option<unsafe fn(*mut format_tree) -> Option<std::ffi::CString>>,
+}
+
+impl format_entry {
+    pub fn empty() -> Self {
+        Self {
+            key: Default::default(),
+            value: Default::default(),
+            time: unsafe { ::core::mem::zeroed() },
+            cb: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+            owned_cb: Default::default(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -174,16 +187,31 @@ pub type format_cb = Option<unsafe extern "C" fn(*mut format_tree) -> *mut ::cor
 
 pub type format_type = ::core::ffi::c_uint;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct format_job {
     pub client: *mut client,
     pub tag: u_int,
-    pub cmd: *const ::core::ffi::c_char,
-    pub expanded: *const ::core::ffi::c_char,
+    pub cmd: std::ffi::CString,
+    pub expanded: Option<std::ffi::CString>,
     pub last: time_t,
-    pub out: *mut ::core::ffi::c_char,
+    pub out: Option<std::ffi::CString>,
     pub updated: ::core::ffi::c_int,
     pub job: *mut job,
     pub status: ::core::ffi::c_int,
+}
+
+impl format_job {
+    pub fn empty() -> Self {
+        Self {
+            client: unsafe { ::core::mem::zeroed() },
+            tag: unsafe { ::core::mem::zeroed() },
+            cmd: Default::default(),
+            expanded: Default::default(),
+            last: unsafe { ::core::mem::zeroed() },
+            out: Default::default(),
+            updated: unsafe { ::core::mem::zeroed() },
+            job: unsafe { ::core::mem::zeroed() },
+            status: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }

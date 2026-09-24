@@ -37,6 +37,9 @@ def trace(binary):
 
         try:
             run(b"new-session", b"-d", b"-s", b"default", b"exec sleep 60")
+            # Keep the server alive while replacing its only session, so the
+            # next new-session does not race the previous server's shutdown.
+            run(b"set-option", b"-s", b"exit-empty", b"off")
             default_session = run(b"display-message", b"-p", b"-t", b"default", b"#{session_path}")
             default_pane = run(
                 b"display-message", b"-p", b"-t", b"default:0.0", b"#{pane_start_path}"

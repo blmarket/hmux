@@ -116,22 +116,28 @@ pub struct window_buffer_modedata {
     pub command: CString,
     pub format: CString,
     pub key_format: CString,
-    item_list: Vec<Box<WindowBufferItemOwner>>,
+    item_list: Vec<Box<window_buffer_itemdata>>,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_buffer_itemdata {
-    pub name: *const ::core::ffi::c_char,
+    pub name: std::ffi::CString,
     pub order: u_int,
     pub size: size_t,
 }
 
+impl window_buffer_itemdata {
+    pub fn empty() -> Self {
+        Self {
+            name: Default::default(),
+            order: unsafe { ::core::mem::zeroed() },
+            size: unsafe { ::core::mem::zeroed() },
+        }
+    }
+}
+
 // The mode tree borrows `item` during callbacks. The box keeps its address
 // stable as the list grows, and `name` keeps the C string alive with it.
-struct WindowBufferItemOwner {
-    item: window_buffer_itemdata,
-    _name: CString,
-}
+
 #[repr(C)]
 pub struct window_buffer_editdata {
     pub wp_id: u_int,
@@ -268,24 +274,21 @@ pub static mut window_buffer_mode: window_mode = unsafe {
 static mut window_buffer_order_seq: [sort_order; 4] =
     [SORT_CREATION, SORT_NAME, SORT_SIZE, SORT_END];
 fn window_buffer_add_item(
-    items: &mut Vec<Box<WindowBufferItemOwner>>,
+    items: &mut Vec<Box<window_buffer_itemdata>>,
     name: &CStr,
 ) -> *mut window_buffer_itemdata {
     let name = name.to_owned();
-    let mut owned = Box::new(WindowBufferItemOwner {
-        item: window_buffer_itemdata {
-            name: name.as_ptr(),
-            order: 0,
-            size: 0,
-        },
-        _name: name,
+    let mut owned = Box::new(window_buffer_itemdata {
+        name: name,
+        order: 0,
+        size: 0,
     });
-    let item = &mut owned.item as *mut window_buffer_itemdata;
+    let item = &mut *owned as *mut window_buffer_itemdata;
     items.push(owned);
     item
 }
 
-fn window_buffer_clear_items(items: &mut Vec<Box<WindowBufferItemOwner>>) {
+fn window_buffer_clear_items(items: &mut Vec<Box<window_buffer_itemdata>>) {
     for item in items.drain(..) {
         drop(item);
     }
@@ -322,9 +325,9 @@ unsafe extern "C" fn window_buffer_build(
     while (i as usize) < (*data).item_list.len() {
         item = {
             let items = &mut (*data).item_list;
-            &mut items[i as usize].item as *mut window_buffer_itemdata
+            &mut *items[i as usize] as *mut window_buffer_itemdata
         };
-        pb = paste_get_name((*item).name);
+        pb = paste_get_name(((*item).name).as_ptr().cast_mut());
         if !pb.is_null() {
             ft = format_create(
                 ::core::ptr::null_mut::<client>(),
@@ -354,7 +357,7 @@ unsafe extern "C" fn window_buffer_build(
                         ::core::ptr::null_mut::<mode_tree_item>(),
                         item as *mut ::core::ffi::c_void,
                         (*item).order as uint64_t,
-                        (*item).name,
+                        ((*item).name).as_ptr().cast_mut(),
                         text.as_ptr(),
                         -(1 as ::core::ffi::c_int),
                     );
@@ -382,7 +385,7 @@ unsafe extern "C" fn window_buffer_draw(
     let mut i: u_int = 0;
     let mut cx: u_int = (*(*ctx).s).cx;
     let mut cy: u_int = (*(*ctx).s).cy;
-    pb = paste_get_name((*item).name);
+    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
     if pb.is_null() {
         return;
     }
@@ -520,12 +523,12 @@ unsafe extern "C" fn window_buffer_search(
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufsize: size_t = 0;
-    pb = paste_get_name((*item).name);
+    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
     if pb.is_null() {
         return 0 as ::core::ffi::c_int;
     }
     if icase != 0 {
-        if !strcasestr((*item).name, ss).is_null() {
+        if !strcasestr(((*item).name).as_ptr().cast_mut(), ss).is_null() {
             return 1 as ::core::ffi::c_int;
         }
         bufdata = paste_buffer_data(pb, &raw mut bufsize);
@@ -537,7 +540,7 @@ unsafe extern "C" fn window_buffer_search(
             icase,
         );
     } else {
-        if !strstr((*item).name, ss).is_null() {
+        if !strstr(((*item).name).as_ptr().cast_mut(), ss).is_null() {
             return 1 as ::core::ffi::c_int;
         }
         bufdata = paste_buffer_data(pb, &raw mut bufsize);
@@ -589,7 +592,7 @@ unsafe extern "C" fn window_buffer_get_key(
         wl = (*data).fs.wl;
         wp = (*data).fs.wp;
     }
-    pb = paste_get_name((*item).name);
+    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
     if pb.is_null() {
         return KEYC_NONE as ::core::ffi::c_ulong as key_code;
     }
@@ -796,7 +799,7 @@ unsafe extern "C" fn window_buffer_do_delete(
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
-    pb = paste_get_name((*item).name);
+    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
     if !pb.is_null() {
         paste_free(pb);
     }
@@ -809,12 +812,12 @@ unsafe extern "C" fn window_buffer_do_paste(
 ) {
     let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
     let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
-    if !paste_get_name((*item).name).is_null() {
+    if !paste_get_name(((*item).name).as_ptr().cast_mut()).is_null() {
         mode_tree_run_command(
             c,
             ::core::ptr::null_mut::<cmd_find_state>(),
             (*data).command.as_ptr(),
-            (*item).name,
+            ((*item).name).as_ptr().cast_mut(),
         );
     }
 }
@@ -1003,7 +1006,7 @@ unsafe extern "C" fn window_buffer_start_edit(
     if !(*data).editor.is_null() {
         return;
     }
-    pb = paste_get_name((*item).name);
+    pb = paste_get_name(((*item).name).as_ptr().cast_mut());
     if pb.is_null() {
         return;
     }
@@ -1152,7 +1155,7 @@ mod tests {
         let mut items = Vec::new();
         let source = CString::new(b"\xffbuffer".to_vec()).unwrap();
         let first = window_buffer_add_item(&mut items, &source);
-        let first_name = unsafe { (*first).name };
+        let first_name = unsafe { ((*first).name).as_ptr().cast_mut() };
         drop(source);
 
         let empty = CStr::from_bytes_with_nul(b"\0").unwrap();
@@ -1161,14 +1164,14 @@ mod tests {
             window_buffer_add_item(&mut items, empty);
         }
 
-        assert_eq!(first, &mut items[0].item as *mut window_buffer_itemdata);
+        assert_eq!(first, &mut *items[0] as *mut window_buffer_itemdata);
         assert_eq!(
             unsafe { CStr::from_ptr(first_name).to_bytes() },
             b"\xffbuffer"
         );
-        assert_eq!(unsafe { (*first).name }, first_name);
+        assert_eq!(unsafe { ((*first).name).as_ptr().cast_mut() }, first_name);
         assert_eq!(
-            unsafe { CStr::from_ptr((*empty_item).name).to_bytes() },
+            unsafe { CStr::from_ptr(((*empty_item).name).as_ptr().cast_mut()).to_bytes() },
             b""
         );
 

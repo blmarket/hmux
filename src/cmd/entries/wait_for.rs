@@ -75,41 +75,51 @@ use std::ffi::{CStr, CString};
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct wait_channel {
-    pub name: *const ::core::ffi::c_char,
+    pub name: std::ffi::CString,
     pub locked: ::core::ffi::c_int,
     pub woken: ::core::ffi::c_int,
+    pub(crate) waiters: Vec<Box<wait_item>>,
+    pub(crate) lockers: Vec<Box<wait_item>>,
+}
+
+impl wait_channel {
+    pub fn empty() -> Self {
+        Self {
+            name: Default::default(),
+            locked: unsafe { ::core::mem::zeroed() },
+            woken: unsafe { ::core::mem::zeroed() },
+            waiters: Default::default(),
+            lockers: Default::default(),
+        }
+    }
 }
 pub struct wait_channels {
-    entries: std::collections::BTreeMap<Vec<u8>, Box<WaitChannelOwner>>,
+    entries: std::collections::BTreeMap<Vec<u8>, Box<wait_channel>>,
 }
 // The map owns each channel and its queues through this stable C-shaped
 // prefix. The name stays alive until the channel is removed.
-#[repr(C)]
-struct WaitChannelOwner {
-    channel: wait_channel,
-    name: CString,
-    waiters: Vec<Box<wait_item>>,
-    lockers: Vec<Box<wait_item>>,
-}
-#[derive(Copy, Clone)]
+
 #[repr(C)]
 pub struct wait_event_item {
     pub item: *mut cmdq_item,
     pub sink: *mut events_sink,
-    pub name: *mut ::core::ffi::c_char,
-    pub filter: *mut ::core::ffi::c_char,
+    pub name: std::ffi::CString,
+    pub filter: Option<std::ffi::CString>,
     pub verbose: ::core::ffi::c_int,
 }
-// The global owner vector and event sink retain the C-shaped prefix address.
-// The owner keeps its name and optional filter alive until the waiter is removed.
-#[repr(C)]
-struct WaitEventOwner {
-    event: wait_event_item,
-    name: CString,
-    filter: Option<CString>,
+
+impl wait_event_item {
+    pub fn empty() -> Self {
+        Self {
+            item: unsafe { ::core::mem::zeroed() },
+            sink: unsafe { ::core::mem::zeroed() },
+            name: Default::default(),
+            filter: Default::default(),
+            verbose: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[no_mangle]
@@ -141,7 +151,7 @@ pub static mut cmd_wait_for_entry: cmd_entry = unsafe {
         ),
     }
 };
-static mut wait_event_items: Vec<Box<WaitEventOwner>> = Vec::new();
+static mut wait_event_items: Vec<Box<wait_event_item>> = Vec::new();
 static mut wait_channels: wait_channels = wait_channels {
     entries: std::collections::BTreeMap::new(),
 };
@@ -157,19 +167,19 @@ unsafe fn wait_channels_find(
     (*head)
         .entries
         .get_mut(&wait_channel_key(name))
-        .map(|owner| &raw mut owner.channel)
+        .map(|owner| &raw mut **owner)
         .unwrap_or(::core::ptr::null_mut::<wait_channel>())
 }
 
 unsafe fn wait_channels_insert(
     head: *mut wait_channels,
-    mut owner: Box<WaitChannelOwner>,
+    mut owner: Box<wait_channel>,
 ) -> *mut wait_channel {
-    let key = wait_channel_key(owner.channel.name);
+    let key = wait_channel_key((owner.name).as_ptr().cast_mut());
     match (*head).entries.entry(key) {
-        std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut entry.get_mut().channel,
+        std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            let channel = &raw mut owner.channel;
+            let channel = &raw mut *owner;
             entry.insert(owner);
             channel
         }
@@ -179,18 +189,20 @@ unsafe fn wait_channels_insert(
 unsafe fn wait_channels_remove(
     head: *mut wait_channels,
     elm: *mut wait_channel,
-) -> Option<Box<WaitChannelOwner>> {
-    (*head).entries.remove(&wait_channel_key((*elm).name))
+) -> Option<Box<wait_channel>> {
+    (*head)
+        .entries
+        .remove(&wait_channel_key(((*elm).name).as_ptr().cast_mut()))
 }
 
 // Each channel is the first field of its boxed owner, so pointers handed to
 // the translated C routines can still find the Rust-owned queues.
 unsafe fn wait_channel_waiters(wc: *mut wait_channel) -> *mut Vec<Box<wait_item>> {
-    &raw mut (*wc.cast::<WaitChannelOwner>()).waiters
+    &raw mut (*wc).waiters
 }
 
 unsafe fn wait_channel_lockers(wc: *mut wait_channel) -> *mut Vec<Box<wait_item>> {
-    &raw mut (*wc.cast::<WaitChannelOwner>()).lockers
+    &raw mut (*wc).lockers
 }
 
 unsafe fn wait_item_ptr(list: *mut Vec<Box<wait_item>>, index: usize) -> *mut wait_item {
@@ -219,27 +231,27 @@ unsafe fn wait_item_remove(
     Some((&mut *list).remove(index))
 }
 
-fn wait_event_item_ptr(owner: &mut WaitEventOwner) -> *mut wait_event_item {
-    &raw mut owner.event
+fn wait_event_item_ptr(owner: &mut wait_event_item) -> *mut wait_event_item {
+    &raw mut *owner
 }
 
 unsafe fn wait_event_items_remove(
-    items: *mut Vec<Box<WaitEventOwner>>,
+    items: *mut Vec<Box<wait_event_item>>,
     item: *mut wait_event_item,
-) -> Option<Box<WaitEventOwner>> {
+) -> Option<Box<wait_event_item>> {
     let index = (&*items)
         .iter()
-        .position(|owner| ::core::ptr::eq(&owner.event, item))?;
+        .position(|owner| ::core::ptr::eq(&**owner, item))?;
     Some((&mut *items).remove(index))
 }
 
 unsafe fn wait_event_item_next(
-    items: *mut Vec<Box<WaitEventOwner>>,
+    items: *mut Vec<Box<wait_event_item>>,
     item: *mut wait_event_item,
 ) -> *mut wait_event_item {
     let index = (&*items)
         .iter()
-        .position(|owner| ::core::ptr::eq(&owner.event, item));
+        .position(|owner| ::core::ptr::eq(&**owner, item));
     index.map_or(::core::ptr::null_mut(), |index| {
         (&mut *items)
             .get_mut(index + 1)
@@ -249,7 +261,7 @@ unsafe fn wait_event_item_next(
 }
 
 unsafe fn wait_event_item_at(
-    items: *mut Vec<Box<WaitEventOwner>>,
+    items: *mut Vec<Box<wait_event_item>>,
     index: usize,
 ) -> *mut wait_event_item {
     (&mut *items)
@@ -260,20 +272,17 @@ unsafe fn wait_event_item_at(
 
 unsafe extern "C" fn cmd_wait_for_add(name: *const ::core::ffi::c_char) -> *mut wait_channel {
     let name = CStr::from_ptr(name).to_owned();
-    let mut owner = Box::new(WaitChannelOwner {
-        channel: wait_channel {
-            name: name.as_ptr(),
-            locked: 0,
-            woken: 0,
-        },
-        name,
+    let mut owner = Box::new(wait_channel {
+        name: name,
+        locked: 0,
+        woken: 0,
         waiters: Vec::new(),
         lockers: Vec::new(),
     });
     let wc = wait_channels_insert(&raw mut wait_channels, owner);
     log_debug(
         b"add wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wc).name,
+        ((*wc).name).as_ptr().cast_mut(),
     );
     return wc;
 }
@@ -286,7 +295,7 @@ unsafe extern "C" fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
     }
     log_debug(
         b"remove wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wc).name,
+        ((*wc).name).as_ptr().cast_mut(),
     );
     drop(wait_channels_remove(&raw mut wait_channels, wc));
 }
@@ -299,7 +308,7 @@ unsafe extern "C" fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     }
     log_debug(
         b"remove empty wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wc).name,
+        ((*wc).name).as_ptr().cast_mut(),
     );
     drop(wait_channels_remove(&raw mut wait_channels, wc));
 }
@@ -308,10 +317,12 @@ unsafe extern "C" fn cmd_wait_for_item_client_name(
     mut item: *mut cmdq_item,
 ) -> *const ::core::ffi::c_char {
     let mut c: *mut client = cmdq_get_client(item);
-    if c.is_null() || (*c).name.is_null() {
+    if c.is_null() || (*c).name.is_none() {
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    return (*c).name;
+    return ((*c).name)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
 }
 unsafe extern "C" fn cmd_wait_for_client_name(
     mut wei: *mut wait_event_item,
@@ -379,7 +390,7 @@ unsafe extern "C" fn cmd_wait_for_event_cb(
     if (*wei).verbose != 0 {
         cmd_wait_for_event_print(wei, ep);
     }
-    if !(*wei).filter.is_null() {
+    if !(*wei).filter.is_none() {
         ft = format_create(
             cmdq_get_client((*wei).item),
             (*wei).item,
@@ -387,7 +398,12 @@ unsafe extern "C" fn cmd_wait_for_event_cb(
             FORMAT_NOJOBS,
         );
         event_payload_add_formats(ep, ft, ::core::ptr::null::<::core::ffi::c_char>());
-        expanded = format_expand(ft, (*wei).filter);
+        expanded = format_expand(
+            ft,
+            ((*wei).filter)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
         flag = format_true(expanded);
         free(expanded as *mut ::core::ffi::c_void);
         format_free(ft);
@@ -401,8 +417,8 @@ unsafe extern "C" fn cmd_wait_for_event_cb(
         cmd_wait_for_event_free(owner);
     }
 }
-unsafe fn cmd_wait_for_event_free(owner: Box<WaitEventOwner>) {
-    events_remove_sink(owner.event.sink);
+unsafe fn cmd_wait_for_event_free(owner: Box<wait_event_item>) {
+    events_remove_sink(owner.sink);
 }
 unsafe extern "C" fn cmd_wait_for_event(
     mut item: *mut cmdq_item,
@@ -432,27 +448,19 @@ unsafe extern "C" fn cmd_wait_for_event(
         );
         return CMD_RETURN_ERROR;
     }
-    let mut owner = Box::new(WaitEventOwner {
-        event: wait_event_item {
-            item,
-            sink: ::core::ptr::null_mut(),
-            name: ::core::ptr::null_mut(),
-            filter: ::core::ptr::null_mut(),
-            verbose: args_has(args, 'v' as i32 as u_char),
-        },
+    let mut owner = Box::new(wait_event_item {
+        item: item,
+        sink: ::core::ptr::null_mut(),
         name: CStr::from_ptr(name).to_owned(),
         filter: if filter.is_null() {
             None
         } else {
             Some(CStr::from_ptr(filter).to_owned())
         },
+        verbose: args_has(args, 'v' as i32 as u_char),
     });
-    owner.event.name = owner.name.as_ptr().cast_mut();
-    owner.event.filter = owner
-        .filter
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |filter| filter.as_ptr().cast_mut());
-    wei = &raw mut owner.event;
+
+    wei = &raw mut *owner;
     (*wei).sink = events_add_sink(
         name,
         Some(
@@ -473,8 +481,8 @@ unsafe extern "C" fn cmd_wait_for_event_list(
     mut name: *const ::core::ffi::c_char,
 ) -> cmd_retval {
     for owner in (&raw const wait_event_items).as_ref().unwrap() {
-        let wei = &raw const owner.event as *mut wait_event_item;
-        if strcmp((*wei).name, name) == 0 as ::core::ffi::c_int {
+        let wei = std::ptr::from_ref(owner.as_ref()).cast_mut();
+        if strcmp(((*wei).name).as_ptr().cast_mut(), name) == 0 as ::core::ffi::c_int {
             cmdq_print(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -493,10 +501,10 @@ unsafe extern "C" fn cmd_wait_for_event_wake(
     let mut index = 0;
     while index < (&raw const wait_event_items).as_ref().unwrap().len() {
         let wei = wait_event_item_at(&raw mut wait_event_items, index);
-        if !(strcmp((*wei).name, name) != 0 as ::core::ffi::c_int) {
+        if !(strcmp(((*wei).name).as_ptr().cast_mut(), name) != 0 as ::core::ffi::c_int) {
             if !(strcmp(cmd_wait_for_client_name(wei), client_name) != 0 as ::core::ffi::c_int) {
                 let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(index);
-                cmdq_continue(owner.event.item);
+                cmdq_continue(owner.item);
                 cmd_wait_for_event_free(owner);
                 return CMD_RETURN_NORMAL;
             }
@@ -583,14 +591,14 @@ unsafe extern "C" fn cmd_wait_for_signal(
     if (*wait_channel_waiters(wc)).is_empty() && (*wc).woken == 0 {
         log_debug(
             b"signal wait channel %s, no waiters\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wc).name,
+            ((*wc).name).as_ptr().cast_mut(),
         );
         (*wc).woken = 1 as ::core::ffi::c_int;
         return CMD_RETURN_NORMAL;
     }
     log_debug(
         b"signal wait channel %s, with waiters\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wc).name,
+        ((*wc).name).as_ptr().cast_mut(),
     );
     let waiters = wait_channel_waiters(wc);
     let mut wi = wait_item_ptr(waiters, 0);
@@ -622,7 +630,7 @@ unsafe extern "C" fn cmd_wait_for_wait(
     if (*wc).woken != 0 {
         log_debug(
             b"wait channel %s already woken (%p)\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wc).name,
+            ((*wc).name).as_ptr().cast_mut(),
             c,
         );
         cmd_wait_for_remove(wc);
@@ -630,7 +638,7 @@ unsafe extern "C" fn cmd_wait_for_wait(
     }
     log_debug(
         b"wait channel %s not woken (%p)\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wc).name,
+        ((*wc).name).as_ptr().cast_mut(),
         c,
     );
     (*wait_channel_waiters(wc)).push(Box::new(wait_item { item }));
@@ -695,7 +703,7 @@ pub unsafe extern "C" fn cmd_wait_for_flush() {
         let Some(owner) = wait_event_items_remove(&raw mut wait_event_items, wei) else {
             break;
         };
-        cmdq_continue(owner.event.item);
+        cmdq_continue(owner.item);
         cmd_wait_for_event_free(owner);
         wei = wei1;
     }
@@ -704,7 +712,7 @@ pub unsafe extern "C" fn cmd_wait_for_flush() {
         .unwrap()
         .entries
         .values_mut()
-        .map(|owner| &raw mut owner.channel)
+        .map(|owner| &raw mut **owner)
         .collect::<Vec<_>>();
     for wc in channels {
         let waiters = wait_channel_waiters(wc);
@@ -734,15 +742,12 @@ mod tests {
     use super::*;
     use std::ffi::CString;
 
-    fn test_channel(name: &CStr) -> Box<WaitChannelOwner> {
+    fn test_channel(name: &CStr) -> Box<wait_channel> {
         let name = name.to_owned();
-        let owner = Box::new(WaitChannelOwner {
-            channel: wait_channel {
-                name: name.as_ptr(),
-                locked: 0,
-                woken: 0,
-            },
-            name,
+        let owner = Box::new(wait_channel {
+            name: name,
+            locked: 0,
+            woken: 0,
             waiters: Vec::new(),
             lockers: Vec::new(),
         });
@@ -775,12 +780,12 @@ mod tests {
             let ordered = channels
                 .entries
                 .values_mut()
-                .map(|owner| &raw mut owner.channel)
+                .map(|owner| &raw mut **owner)
                 .collect::<Vec<_>>();
             assert_eq!(ordered, vec![a, a0, a_high, z]);
 
             let mut removed = wait_channels_remove(&raw mut channels, a_high).unwrap();
-            assert_eq!(&raw mut removed.channel, a_high);
+            assert_eq!(&raw mut *removed, a_high);
             assert!(wait_channels_find(&raw mut channels, name_a_high.as_ptr()).is_null());
         }
     }
@@ -789,7 +794,7 @@ mod tests {
     fn channel_queues_keep_order_and_stable_element_addresses() {
         let name = CString::new("queue").unwrap();
         let mut owner = test_channel(&name);
-        let channel = &raw mut owner.channel;
+        let channel = &raw mut *owner;
         let original = (0..128)
             .map(|index| {
                 Box::new(wait_item {
@@ -842,21 +847,11 @@ mod tests {
     #[test]
     fn event_waiter_addresses_survive_owner_vector_growth_and_removal() {
         let name = CString::new("event").unwrap();
-        let mut items = Vec::<Box<WaitEventOwner>>::new();
+        let mut items = Vec::<Box<wait_event_item>>::new();
         let mut addresses = Vec::new();
         for _ in 0..128 {
-            let mut owner = Box::new(WaitEventOwner {
-                event: wait_event_item {
-                    item: ::core::ptr::null_mut(),
-                    sink: ::core::ptr::null_mut(),
-                    name: ::core::ptr::null_mut(),
-                    filter: ::core::ptr::null_mut(),
-                    verbose: 0,
-                },
-                name: name.clone(),
-                filter: None,
-            });
-            owner.event.name = owner.name.as_ptr().cast_mut();
+            let mut owner = Box::new(wait_event_item { item: ::core::ptr::null_mut(), sink: ::core::ptr::null_mut(), name: name.clone(), filter: None, verbose: 0 });
+
             addresses.push(wait_event_item_ptr(&mut owner));
             items.push(owner);
         }

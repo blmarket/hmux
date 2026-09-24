@@ -38,45 +38,39 @@ impl Drop for HyperlinksRef {
     }
 }
 
-// The C-layout record is the first field so tree index pointers still point
-// at hyperlinks_uri. The external ID remains valid until hyperlinks_remove.
-#[repr(C)]
-struct HyperlinkUriOwner {
-    node: hyperlinks_uri,
-    internal_id: CString,
-    external_id: CString,
-    uri: CString,
-}
-
-const _: () = assert!(std::mem::offset_of!(HyperlinkUriOwner, node) == 0);
-
 pub const MAX_HYPERLINKS: ::core::ffi::c_int = 5000 as ::core::ffi::c_int;
 pub const MAX_HYPERLINK_URI: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
 static mut hyperlinks_next_external_id: ::core::ffi::c_longlong = 1 as ::core::ffi::c_longlong;
 // This queue owns the records and their insertion order. Boxes keep each node
 // at a stable address for the per-table URI and inner-ID indexes.
-static mut GLOBAL_HYPERLINKS: VecDeque<Box<HyperlinkUriOwner>> = VecDeque::new();
+static mut GLOBAL_HYPERLINKS: VecDeque<Box<hyperlinks_uri>> = VecDeque::new();
 unsafe extern "C" fn hyperlinks_by_uri_cmp(
     mut left: *mut hyperlinks_uri,
     mut right: *mut hyperlinks_uri,
 ) -> ::core::ffi::c_int {
     let mut r: ::core::ffi::c_int = 0;
-    if *(*left).internal_id as ::core::ffi::c_int == '\0' as i32
-        || *(*right).internal_id as ::core::ffi::c_int == '\0' as i32
+    if *(*left).internal_id.as_ptr() as ::core::ffi::c_int == '\0' as i32
+        || *(*right).internal_id.as_ptr() as ::core::ffi::c_int == '\0' as i32
     {
-        if *(*left).internal_id as ::core::ffi::c_int != '\0' as i32 {
+        if *(*left).internal_id.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
             return -(1 as ::core::ffi::c_int);
         }
-        if *(*right).internal_id as ::core::ffi::c_int != '\0' as i32 {
+        if *(*right).internal_id.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
             return 1 as ::core::ffi::c_int;
         }
         return (*left).inner.wrapping_sub((*right).inner) as ::core::ffi::c_int;
     }
-    r = strcmp((*left).internal_id, (*right).internal_id);
+    r = strcmp(
+        ((*left).internal_id).as_ptr().cast_mut(),
+        ((*right).internal_id).as_ptr().cast_mut(),
+    );
     if r != 0 as ::core::ffi::c_int {
         return r;
     }
-    return strcmp((*left).uri, (*right).uri);
+    return strcmp(
+        ((*left).uri).as_ptr().cast_mut(),
+        ((*right).uri).as_ptr().cast_mut(),
+    );
 }
 
 unsafe extern "C" fn hyperlinks_by_inner_cmp(
@@ -90,12 +84,12 @@ unsafe extern "C" fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
     let global_hyperlinks = std::ptr::addr_of_mut!(GLOBAL_HYPERLINKS);
     let index = (*global_hyperlinks)
         .iter()
-        .position(|owner| std::ptr::addr_of!((**owner).node).cast_mut() == hlu)
+        .position(|owner| std::ptr::addr_of!(**owner).cast_mut() == hlu)
         .expect("hyperlink record missing from global insertion order");
     let owner = (*global_hyperlinks)
         .remove(index)
         .expect("hyperlink owner missing from global insertion order");
-    let hl = owner.node.tree;
+    let hl = owner.tree;
     hyperlinks_by_inner_tree_remove(&raw mut (*hl).by_inner, hlu);
     hyperlinks_by_uri_tree_remove(&raw mut (*hl).by_uri, hlu);
     drop(owner);
@@ -109,9 +103,9 @@ pub unsafe extern "C" fn hyperlinks_put(
     let mut find: hyperlinks_uri = hyperlinks_uri {
         tree: ::core::ptr::null_mut::<hyperlinks>(),
         inner: 0,
-        internal_id: ::core::ptr::null::<::core::ffi::c_char>(),
-        external_id: ::core::ptr::null::<::core::ffi::c_char>(),
-        uri: ::core::ptr::null::<::core::ffi::c_char>(),
+        internal_id: Default::default(),
+        external_id: Default::default(),
+        uri: Default::default(),
         by_inner_entry: hyperlink_inner_entry {
             owner: std::ptr::null_mut(),
         },
@@ -129,8 +123,8 @@ pub unsafe extern "C" fn hyperlinks_put(
     }
     let internal_id = utf8_stravis_cstring(internal_id_in, VIS_OCTAL | VIS_CSTYLE);
     if !internal_id.as_bytes().is_empty() {
-        find.uri = uri.as_ptr();
-        find.internal_id = internal_id.as_ptr();
+        find.uri = ::std::ffi::CStr::from_ptr(uri.as_ptr()).to_owned();
+        find.internal_id = ::std::ffi::CStr::from_ptr(internal_id.as_ptr()).to_owned();
         hlu = hyperlinks_by_uri_tree_find(&raw mut (*hl).by_uri, &raw mut find);
         if !hlu.is_null() {
             return (*hlu).inner;
@@ -138,17 +132,15 @@ pub unsafe extern "C" fn hyperlinks_put(
     }
     let fresh0 = hyperlinks_next_external_id;
     hyperlinks_next_external_id = hyperlinks_next_external_id + 1;
-    let mut owner = Box::new(HyperlinkUriOwner {
-        node: std::mem::zeroed(),
-        internal_id,
+    let mut owner = Box::new(hyperlinks_uri {
+        internal_id: internal_id,
         external_id: CString::new(format!("tmux{:X}", fresh0 as u64))
             .expect("generated hyperlink ID contains no NUL"),
-        uri,
+        uri: uri,
+        ..hyperlinks_uri::empty()
     });
-    owner.node.internal_id = owner.internal_id.as_ptr();
-    owner.node.external_id = owner.external_id.as_ptr();
-    owner.node.uri = owner.uri.as_ptr();
-    hlu = &mut owner.node;
+
+    hlu = &mut *owner;
     let fresh1 = (*hl).next_inner;
     (*hl).next_inner = (*hl).next_inner.wrapping_add(1);
     (*hlu).inner = fresh1;
@@ -161,7 +153,7 @@ pub unsafe extern "C" fn hyperlinks_put(
         let oldest_owner = (*global_hyperlinks)
             .front()
             .expect("new hyperlink missing from global insertion order");
-        let oldest = std::ptr::addr_of!((**oldest_owner).node).cast_mut();
+        let oldest = std::ptr::addr_of!(**oldest_owner).cast_mut();
         hyperlinks_remove(oldest);
     }
     return (*hlu).inner;
@@ -177,9 +169,9 @@ pub unsafe extern "C" fn hyperlinks_get(
     let mut find: hyperlinks_uri = hyperlinks_uri {
         tree: ::core::ptr::null_mut::<hyperlinks>(),
         inner: 0,
-        internal_id: ::core::ptr::null::<::core::ffi::c_char>(),
-        external_id: ::core::ptr::null::<::core::ffi::c_char>(),
-        uri: ::core::ptr::null::<::core::ffi::c_char>(),
+        internal_id: Default::default(),
+        external_id: Default::default(),
+        uri: Default::default(),
         by_inner_entry: hyperlink_inner_entry {
             owner: std::ptr::null_mut(),
         },
@@ -194,12 +186,12 @@ pub unsafe extern "C" fn hyperlinks_get(
         return 0 as ::core::ffi::c_int;
     }
     if !internal_id_out.is_null() {
-        *internal_id_out = (*hlu).internal_id;
+        *internal_id_out = ((*hlu).internal_id).as_ptr().cast_mut();
     }
     if !external_id_out.is_null() {
-        *external_id_out = (*hlu).external_id;
+        *external_id_out = ((*hlu).external_id).as_ptr().cast_mut();
     }
-    *uri_out = (*hlu).uri;
+    *uri_out = ((*hlu).uri).as_ptr().cast_mut();
     return 1 as ::core::ffi::c_int;
 }
 #[no_mangle]
@@ -338,14 +330,14 @@ pub unsafe fn hyperlinks_by_inner_tree_prev(elm: *mut hyperlinks_uri) -> *mut hy
 
 unsafe fn hyperlinks_by_uri_tree_key(elm: *mut hyperlinks_uri) -> (bool, Vec<u8>, Vec<u8>, u32) {
     {
-        let id = std::ffi::CStr::from_ptr((*elm).internal_id).to_bytes();
+        let id = std::ffi::CStr::from_ptr(((*elm).internal_id).as_ptr().cast_mut()).to_bytes();
         if id.is_empty() {
             (true, Vec::new(), Vec::new(), (*elm).inner)
         } else {
             (
                 false,
                 id.to_vec(),
-                std::ffi::CStr::from_ptr((*elm).uri).to_bytes().to_vec(),
+                std::ffi::CStr::from_ptr(((*elm).uri).as_ptr().cast_mut()).to_bytes().to_vec(),
                 0,
             )
         }

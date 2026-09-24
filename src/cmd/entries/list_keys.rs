@@ -175,7 +175,7 @@ unsafe fn cmd_list_keys_filter_key_list(
     bindings.retain(|&bd| {
         let key = ((*bd).key as ::core::ffi::c_ulonglong & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
             as key_code;
-        (filter_key == 0 || only == key) && (filter_notes == 0 || !(*bd).note.is_null())
+        (filter_key == 0 || only == key) && (filter_notes == 0 || !(*bd).note.is_none())
     });
 }
 unsafe fn cmd_list_keys_format_add_key_binding(
@@ -196,12 +196,12 @@ unsafe fn cmd_list_keys_format_add_key_binding(
             b"0\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    if !(*bd).note.is_null() {
+    if !(*bd).note.is_none() {
         format_add(
             ft,
             b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*bd).note,
+            ((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     } else {
         format_add(

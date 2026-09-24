@@ -174,18 +174,17 @@ pub struct mode_tree_line {
     pub flat: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct mode_tree_item {
     pub parent: *mut mode_tree_item,
     pub itemdata: *mut ::core::ffi::c_void,
     pub line: u_int,
     pub key: key_code,
-    pub keystr: *const ::core::ffi::c_char,
+    pub keystr: Option<std::ffi::CString>,
     pub keylen: size_t,
     pub identity: ModeTreeIdentity,
-    pub name: *const ::core::ffi::c_char,
-    pub text: *const ::core::ffi::c_char,
+    pub name: std::ffi::CString,
+    pub text: Option<std::ffi::CString>,
     pub expanded: ::core::ffi::c_int,
     pub tagged: ::core::ffi::c_int,
     pub draw_as_parent: ::core::ffi::c_int,
@@ -193,6 +192,33 @@ pub struct mode_tree_item {
     pub align: ::core::ffi::c_int,
     pub children: mode_tree_list,
     pub entry: mode_tree_item_entry,
+    pub(crate) identity_name: Option<std::ffi::CString>,
+    pub(crate) identity_detail: Option<std::ffi::CString>,
+}
+
+impl mode_tree_item {
+    pub fn empty() -> Self {
+        Self {
+            parent: unsafe { ::core::mem::zeroed() },
+            itemdata: unsafe { ::core::mem::zeroed() },
+            line: unsafe { ::core::mem::zeroed() },
+            key: unsafe { ::core::mem::zeroed() },
+            keystr: Default::default(),
+            keylen: unsafe { ::core::mem::zeroed() },
+            identity: unsafe { ::core::mem::zeroed() },
+            name: Default::default(),
+            text: Default::default(),
+            expanded: unsafe { ::core::mem::zeroed() },
+            tagged: unsafe { ::core::mem::zeroed() },
+            draw_as_parent: unsafe { ::core::mem::zeroed() },
+            no_tag: unsafe { ::core::mem::zeroed() },
+            align: unsafe { ::core::mem::zeroed() },
+            children: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+            identity_name: Default::default(),
+            identity_detail: Default::default(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

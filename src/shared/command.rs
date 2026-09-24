@@ -94,11 +94,8 @@ mod tests {
 }
 
 #[repr(C)]
-/// Box-owned by its command queue after insertion. Command and callback
-/// constructors return a stable address with a borrowed name;
-/// `cmdq_remove` unlinks and drops it.
 pub struct cmdq_item {
-    pub name: *mut ::core::ffi::c_char,
+    pub name: Option<std::ffi::CString>,
     pub queue: *mut cmdq_list,
     pub next: *mut cmdq_item,
     pub client: *mut client,
@@ -116,6 +113,37 @@ pub struct cmdq_item {
     pub cb: cmdq_cb,
     pub data: *mut ::core::ffi::c_void,
     pub entry: cmdq_item_entry,
+    pub(crate) error: Option<std::ffi::CString>,
+    pub(crate) cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
+    pub(crate) wait_file: *mut super::client::client_file,
+}
+
+impl cmdq_item {
+    pub fn empty() -> Self {
+        Self {
+            name: Default::default(),
+            queue: unsafe { ::core::mem::zeroed() },
+            next: unsafe { ::core::mem::zeroed() },
+            client: unsafe { ::core::mem::zeroed() },
+            target_client: unsafe { ::core::mem::zeroed() },
+            type_0: unsafe { ::core::mem::zeroed() },
+            group: unsafe { ::core::mem::zeroed() },
+            number: unsafe { ::core::mem::zeroed() },
+            time: unsafe { ::core::mem::zeroed() },
+            flags: unsafe { ::core::mem::zeroed() },
+            state: unsafe { ::core::mem::zeroed() },
+            source: unsafe { ::core::mem::zeroed() },
+            target: unsafe { ::core::mem::zeroed() },
+            cmdlist: unsafe { ::core::mem::zeroed() },
+            cmd: unsafe { ::core::mem::zeroed() },
+            cb: unsafe { ::core::mem::zeroed() },
+            data: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+            error: Default::default(),
+            cancel_data: Default::default(),
+            wait_file: Default::default(),
+        }
+    }
 }
 
 pub type cmds = Vec<*mut cmd>;
@@ -151,14 +179,26 @@ pub struct cmd_list {
 }
 
 #[repr(C)]
-/// Box-owned from `cmd_parse` or `cmd_copy` through `cmd_free`.
 pub struct cmd {
     pub entry: *const cmd_entry,
     pub args: *mut args,
     pub group: u_int,
-    pub file: *mut ::core::ffi::c_char,
+    pub file: Option<std::ffi::CString>,
     pub line: u_int,
     pub parse_flags: ::core::ffi::c_int,
+}
+
+impl cmd {
+    pub fn empty() -> Self {
+        Self {
+            entry: unsafe { ::core::mem::zeroed() },
+            args: unsafe { ::core::mem::zeroed() },
+            group: unsafe { ::core::mem::zeroed() },
+            file: Default::default(),
+            line: unsafe { ::core::mem::zeroed() },
+            parse_flags: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

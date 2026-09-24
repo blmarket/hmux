@@ -139,31 +139,15 @@ pub struct mode_tree_menu {
     pub line: u_int,
 }
 
-// The C-facing item stays at offset zero because its intrusive links and
-// callbacks retain its address until mode_tree_free_item removes it.
-#[repr(C)]
-struct ModeTreeItemOwner {
-    item: mode_tree_item,
-    identity_name: Option<CString>,
-    identity_detail: Option<CString>,
-    name: CString,
-    text: Option<CString>,
-    keystr: Option<CString>,
-}
-const _: () = assert!(std::mem::offset_of!(ModeTreeItemOwner, item) == 0);
-
-impl ModeTreeItemOwner {
+impl mode_tree_item {
     unsafe fn from_item(item: *mut mode_tree_item) -> *mut Self {
         item.cast()
     }
 
     fn set_keystr(&mut self, keystr: Option<CString>) {
         self.keystr = keystr;
-        self.item.keystr = self
-            .keystr
-            .as_ref()
-            .map_or(::core::ptr::null(), |s| s.as_ptr());
-        self.item.keylen = self.keystr.as_ref().map_or(0, |s| s.as_bytes().len());
+
+        self.keylen = self.keystr.as_ref().map_or(0, |s| s.as_bytes().len());
     }
 }
 pub type mode_tree_preview = ::core::ffi::c_uint;
@@ -318,7 +302,7 @@ unsafe extern "C" fn mode_tree_find_item(
 }
 unsafe extern "C" fn mode_tree_free_item(mut mti: *mut mode_tree_item) {
     mode_tree_free_items(&raw mut (*mti).children);
-    drop(Box::from_raw(ModeTreeItemOwner::from_item(mti)));
+    drop(Box::from_raw(mode_tree_item::from_item(mti)));
 }
 unsafe extern "C" fn mode_tree_free_items(mut mtl: *mut mode_tree_list) {
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
@@ -421,7 +405,7 @@ unsafe extern "C" fn mode_tree_build_lines(
         }
         let keystr = ((*mti).key != KEYC_NONE as ::core::ffi::c_ulong as key_code)
             .then(|| key_string_format((*mti).key, false));
-        (*ModeTreeItemOwner::from_item(mti)).set_keystr(keystr);
+        (*mode_tree_item::from_item(mti)).set_keystr(keystr);
         mti = (*mti).entry.tqe_next;
     }
     mti = (*mtl).tqh_first;
@@ -547,7 +531,9 @@ pub unsafe extern "C" fn mode_tree_get_current(
 pub unsafe extern "C" fn mode_tree_get_current_name(
     mut mtd: *mut mode_tree_data,
 ) -> *const ::core::ffi::c_char {
-    return (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).name;
+    return ((*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).name)
+        .as_ptr()
+        .cast_mut();
 }
 #[no_mangle]
 pub unsafe extern "C" fn mode_tree_select_top(mut mtd: *mut mode_tree_data) {
@@ -973,28 +959,24 @@ pub unsafe fn mode_tree_add_identity(
         (!identity.detail.is_null()).then(|| CStr::from_ptr(identity.detail).to_owned());
     let name = CStr::from_ptr(name).to_owned();
     let text = (!text.is_null()).then(|| CStr::from_ptr(text).to_owned());
-    let mut owner = Box::new(ModeTreeItemOwner {
-        item: ::core::mem::zeroed(),
-        identity_name,
-        identity_detail,
-        name,
-        text,
+    let mut owner = Box::new(mode_tree_item {
+        identity_name: identity_name,
+        identity_detail: identity_detail,
+        name: name,
+        text: text,
         keystr: None,
+        ..mode_tree_item::empty()
     });
-    owner.item.identity = identity;
-    owner.item.identity.name = owner
+    owner.identity = identity;
+    owner.identity.name = owner
         .identity_name
         .as_ref()
         .map_or(::core::ptr::null(), |s| s.as_ptr());
-    owner.item.identity.detail = owner
+    owner.identity.detail = owner
         .identity_detail
         .as_ref()
         .map_or(::core::ptr::null(), |s| s.as_ptr());
-    owner.item.name = owner.name.as_ptr();
-    owner.item.text = owner
-        .text
-        .as_ref()
-        .map_or(::core::ptr::null(), |s| s.as_ptr());
+
     mti = Box::into_raw(owner).cast::<mode_tree_item>();
     (*mti).parent = parent;
     (*mti).itemdata = itemdata;
@@ -1224,11 +1206,11 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             as *mut mode_tree_line;
         mti = (*line).item;
         if (*mti).align != 0
-            && strlen((*mti).name) as ::core::ffi::c_int
+            && strlen(((*mti).name).as_ptr().cast_mut()) as ::core::ffi::c_int
                 > *alignlen.as_mut_ptr().offset((*line).depth as isize)
         {
             *alignlen.as_mut_ptr().offset((*line).depth as isize) =
-                strlen((*mti).name) as ::core::ffi::c_int;
+                strlen(((*mti).name).as_ptr().cast_mut()) as ::core::ffi::c_int;
         }
         i = i.wrapping_add(1);
     }
@@ -1252,7 +1234,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     ft,
                     b"mode_tree_key\0" as *const u8 as *const ::core::ffi::c_char,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*mti).keystr,
+                    ((*mti).keystr).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
             } else {
                 format_add(
@@ -1369,7 +1351,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             } else {
                 tag = b"\0" as *const u8 as *const ::core::ffi::c_char;
             }
-            if !(*mti).text.is_null() {
+            if !(*mti).text.is_none() {
                 separator = b"#[fg=themelightgrey]: #[default]\0" as *const u8
                     as *const ::core::ffi::c_char;
             } else {
@@ -1377,7 +1359,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             }
             let field_width = (*mti).align * *alignlen.as_mut_ptr().offset((*line).depth as isize);
             let mut name = Vec::new();
-            mode_tree_append_printf_string(&mut name, (*mti).name);
+            mode_tree_append_printf_string(&mut name, ((*mti).name).as_ptr().cast_mut());
             let padding = (field_width.unsigned_abs() as usize).saturating_sub(name.len());
             let mut row = Vec::with_capacity(
                 name.len()
@@ -1434,7 +1416,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                         ::core::ptr::null_mut::<style_ranges>(),
                         0 as ::core::ffi::c_int,
                     );
-                    if !(*mti).text.is_null() && width < w {
+                    if !(*mti).text.is_none() && width < w {
                         screen_write_cursormove(
                             &raw mut ctx,
                             width as ::core::ffi::c_int,
@@ -1445,7 +1427,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                             &raw mut ctx,
                             &raw mut gc0,
                             w.wrapping_sub(width),
-                            (*mti).text,
+                            ((*mti).text).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                             ::core::ptr::null_mut::<style_ranges>(),
                             0 as ::core::ffi::c_int,
                         );
@@ -1476,7 +1458,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                         ::core::ptr::null_mut::<style_ranges>(),
                         1 as ::core::ffi::c_int,
                     );
-                    if !(*mti).text.is_null() && width < w {
+                    if !(*mti).text.is_none() && width < w {
                         screen_write_cursormove(
                             &raw mut ctx,
                             width as ::core::ffi::c_int,
@@ -1487,7 +1469,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                             &raw mut ctx,
                             &raw mut gc,
                             w.wrapping_sub(width),
-                            (*mti).text,
+                            ((*mti).text).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                             ::core::ptr::null_mut::<style_ranges>(),
                             1 as ::core::ffi::c_int,
                         );
@@ -1532,7 +1514,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 ::core::ptr::null::<::core::ffi::c_char>(),
             );
             let mut label_bytes = b" ".to_vec();
-            mode_tree_append_printf_string(&mut label_bytes, (*mti).name);
+            mode_tree_append_printf_string(&mut label_bytes, ((*mti).name).as_ptr().cast_mut());
             if !(*mtd).sort_crit.order_seq.is_null() {
                 label_bytes.extend_from_slice(b" (sort: ");
                 mode_tree_append_printf_string(
@@ -1897,10 +1879,10 @@ unsafe extern "C" fn mode_tree_search_backward(
             break;
         }
         if (*mtd).searchcb.is_none() {
-            if icase == 0 && !strstr((*mti).name, (*mtd).search).is_null() {
+            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), (*mtd).search).is_null() {
                 return mti;
             }
-            if icase != 0 && !strcasestr((*mti).name, (*mtd).search).is_null() {
+            if icase != 0 && !strcasestr(((*mti).name).as_ptr().cast_mut(), (*mtd).search).is_null() {
                 return mti;
             }
         } else if (*mtd).searchcb.expect("non-null function pointer")(
@@ -1954,10 +1936,10 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
             break;
         }
         if (*mtd).searchcb.is_none() {
-            if icase == 0 && !strstr((*mti).name, (*mtd).search).is_null() {
+            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), (*mtd).search).is_null() {
                 return mti;
             }
-            if icase != 0 && !strcasestr((*mti).name, (*mtd).search).is_null() {
+            if icase != 0 && !strcasestr(((*mti).name).as_ptr().cast_mut(), (*mtd).search).is_null() {
                 return mti;
             }
         } else if (*mtd).searchcb.expect("non-null function pointer")(
@@ -2098,7 +2080,7 @@ unsafe extern "C" fn mode_tree_display_menu(
     let title = if outside == 0 {
         items = (*mtd).menu;
         let mut bytes = b"#[align=centre]".to_vec();
-        bytes.extend_from_slice(CStr::from_ptr((*mti).name).to_bytes());
+        bytes.extend_from_slice(CStr::from_ptr(((*mti).name).as_ptr().cast_mut()).to_bytes());
         CString::new(bytes).expect("mode tree item names contain no NUL")
     } else {
         items = &raw const mode_tree_menu_items as *const menu_item;
@@ -2859,11 +2841,11 @@ mod identity_tests {
                 mode_tree_build_lines(mtd, &raw mut (*mtd).children, 0);
                 match expected {
                     Some(expected) => {
-                        assert_eq!(CStr::from_ptr((*item).keystr).to_bytes(), expected);
+                        assert_eq!(CStr::from_ptr(((*item).keystr).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(), expected);
                         assert_eq!((*item).keylen, expected.len());
                     }
                     None => {
-                        assert!((*item).keystr.is_null());
+                        assert!((*item).keystr.is_none());
                         assert_eq!((*item).keylen, 0);
                     }
                 }

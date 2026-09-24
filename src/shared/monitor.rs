@@ -50,20 +50,36 @@ pub struct monitor_items {
 }
 
 #[repr(C)]
-/// Box-owned by its monitor set. The item index borrows its stable address
-/// and its name, format, and last value until `monitor_free_item` releases the record.
 pub struct monitor_item {
-    pub name: *mut ::core::ffi::c_char,
-    pub format: *mut ::core::ffi::c_char,
+    pub name: std::ffi::CString,
+    pub format: std::ffi::CString,
     pub type_0: monitor_type,
     pub id: u_int,
     pub flags: ::core::ffi::c_int,
-    pub last: *mut ::core::ffi::c_char,
+    pub last: Option<std::ffi::CString>,
     pub panes: monitor_panes,
     pub windows: monitor_windows,
     pub fire_count: u_int,
     pub fire_time: time_t,
     pub entry: monitor_item_entry,
+}
+
+impl monitor_item {
+    pub fn empty() -> Self {
+        Self {
+            name: Default::default(),
+            format: Default::default(),
+            type_0: unsafe { ::core::mem::zeroed() },
+            id: unsafe { ::core::mem::zeroed() },
+            flags: unsafe { ::core::mem::zeroed() },
+            last: Default::default(),
+            panes: unsafe { ::core::mem::zeroed() },
+            windows: unsafe { ::core::mem::zeroed() },
+            fire_count: unsafe { ::core::mem::zeroed() },
+            fire_time: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -79,16 +95,25 @@ pub struct monitor_windows {
     pub storage: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_window>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
-/// Box-owned by a monitor item. Its index and timer traversal borrow this
-/// stable address until removal; the private owner releases `last` on drop.
 pub struct monitor_window {
     pub window: u_int,
     pub idx: u_int,
-    pub last: *mut ::core::ffi::c_char,
+    pub last: Option<std::ffi::CString>,
     pub generation: u_int,
     pub entry: monitor_window_entry,
+}
+
+impl monitor_window {
+    pub fn empty() -> Self {
+        Self {
+            window: unsafe { ::core::mem::zeroed() },
+            idx: unsafe { ::core::mem::zeroed() },
+            last: Default::default(),
+            generation: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -104,16 +129,25 @@ pub struct monitor_panes {
     pub storage: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_pane>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
-/// Box-owned by a monitor item. Its index and timer traversal borrow this
-/// stable address until removal; the private owner releases `last` on drop.
 pub struct monitor_pane {
     pub pane: u_int,
     pub idx: u_int,
-    pub last: *mut ::core::ffi::c_char,
+    pub last: Option<std::ffi::CString>,
     pub generation: u_int,
     pub entry: monitor_pane_entry,
+}
+
+impl monitor_pane {
+    pub fn empty() -> Self {
+        Self {
+            pane: unsafe { ::core::mem::zeroed() },
+            idx: unsafe { ::core::mem::zeroed() },
+            last: Default::default(),
+            generation: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

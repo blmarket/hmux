@@ -12,9 +12,7 @@ use std::ptr::NonNull;
 
 /// Owns one boxed environment with Rust-owned ordered entries.
 ///
-/// The ABI-visible [`environ`] and [`environ_entry`] records intentionally stay
-/// `Copy` because they are passed through the
-/// translated interface. This wrapper is the owner for a tree returned by
+/// This wrapper owns a tree returned by
 /// `environ_create` (or another function with the same allocation contract).
 /// It is deliberately not `Copy` or `Clone`; dropping it releases the entry
 /// storage before the outer record.
@@ -214,7 +212,7 @@ pub struct EnvironEntry<'a> {
 impl<'a> EnvironEntry<'a> {
     /// Borrow the original name bytes, including no trailing NUL.
     pub fn name(&self) -> &'a CStr {
-        unsafe { CStr::from_ptr((*self.raw.as_ptr()).name) }
+        unsafe { CStr::from_ptr(((*self.raw.as_ptr()).name).as_ptr().cast_mut()) }
     }
 
     /// Borrow the original name bytes without UTF-8 decoding.
@@ -225,7 +223,9 @@ impl<'a> EnvironEntry<'a> {
     /// Borrow the value, or return `None` for a present valueless entry.
     pub fn value(&self) -> Option<&'a CStr> {
         unsafe {
-            let value = (*self.raw.as_ptr()).value;
+            let value = ((*self.raw.as_ptr()).value)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
             (!value.is_null()).then(|| CStr::from_ptr(value))
         }
     }
@@ -280,18 +280,17 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
+    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
+    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 use crate::src::shared::colour::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
 pub use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
+use crate::src::shared::environment::environ_storage;
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
 pub use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::environment::{environ_storage, EnvironEntryOwner};
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
@@ -346,21 +345,12 @@ unsafe fn environ_insert(
     value: Option<CString>,
 ) {
     let key = name.as_bytes().to_vec();
-    let mut owned = Box::new(EnvironEntryOwner {
-        entry: environ_entry {
-            name: ::core::ptr::null_mut(),
-            value: ::core::ptr::null_mut(),
-            flags,
-            owner: env,
-        },
+    let owned = Box::new(environ_entry {
         name,
         value,
+        flags,
+        owner: env,
     });
-    owned.entry.name = owned.name.as_ptr() as *mut ::core::ffi::c_char;
-    owned.entry.value = owned
-        .value
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr() as *mut _);
     // Callers first look up the name and update existing entries in place.
     (*(*env).entries).entries.insert(key, owned);
 }
@@ -387,17 +377,17 @@ pub unsafe extern "C" fn environ_first(mut env: *mut environ) -> *mut environ_en
         .entries
         .values()
         .next()
-        .map(|owned| &owned.entry as *const environ_entry as *mut environ_entry)
+        .map(|owned| &**owned as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
 #[no_mangle]
 pub unsafe extern "C" fn environ_next(mut envent: *mut environ_entry) -> *mut environ_entry {
-    let key = CStr::from_ptr((*envent).name).to_bytes();
+    let key = CStr::from_ptr(((*envent).name).as_ptr().cast_mut()).to_bytes();
     (*(*(*envent).owner).entries)
         .entries
         .range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map(|(_, owned)| &owned.entry as *const environ_entry as *mut environ_entry)
+        .map(|(_, owned)| &**owned as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
 #[no_mangle]
@@ -405,15 +395,15 @@ pub unsafe extern "C" fn environ_copy(mut srcenv: *mut environ, mut dstenv: *mut
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     envent = environ_first(srcenv);
     while !envent.is_null() {
-        if (*envent).value.is_null() {
-            environ_clear(dstenv, (*envent).name);
+        if (*envent).value.is_none() {
+            environ_clear(dstenv, ((*envent).name).as_ptr().cast_mut());
         } else {
             environ_set(
                 dstenv,
-                (*envent).name,
+                ((*envent).name).as_ptr().cast_mut(),
                 (*envent).flags,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*envent).value,
+                ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         envent = environ_next(envent);
@@ -427,7 +417,7 @@ pub unsafe extern "C" fn environ_find(
     (*(*env).entries)
         .entries
         .get(CStr::from_ptr(name).to_bytes())
-        .map(|owned| &owned.entry as *const environ_entry as *mut environ_entry)
+        .map(|owned| &**owned as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
 #[no_mangle]
@@ -445,9 +435,9 @@ pub unsafe extern "C" fn environ_set(
     let value = xvasprintf_cstring(fmt, ap);
     let entries = &mut (*(*env).entries).entries;
     if let Some(owned) = entries.get_mut(CStr::from_ptr(name).to_bytes()) {
-        owned.entry.flags = flags;
+        owned.flags = flags;
         owned.value = Some(value);
-        owned.entry.value = owned.value.as_ref().unwrap().as_ptr() as *mut _;
+
     } else {
         environ_insert(env, CStr::from_ptr(name).to_owned(), flags, Some(value));
     };
@@ -460,7 +450,7 @@ pub unsafe extern "C" fn environ_clear(
     let entries = &mut (*(*env).entries).entries;
     if let Some(owned) = entries.get_mut(CStr::from_ptr(name).to_bytes()) {
         owned.value = None;
-        owned.entry.value = ::core::ptr::null_mut();
+
     } else {
         environ_insert(env, CStr::from_ptr(name).to_owned(), 0, None);
     };
@@ -523,15 +513,15 @@ pub unsafe extern "C" fn environ_update(
             envent1 = environ_next(envent);
             1 as ::core::ffi::c_int != 0
         } {
-            if fnmatch((*ov).string, (*envent).name, 0 as ::core::ffi::c_int)
+            if fnmatch((*ov).string, ((*envent).name).as_ptr().cast_mut(), 0 as ::core::ffi::c_int)
                 == 0 as ::core::ffi::c_int
             {
                 environ_set(
                     dst,
-                    (*envent).name,
+                    ((*envent).name).as_ptr().cast_mut(),
                     0 as ::core::ffi::c_int,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*envent).value,
+                    ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
                 found = 1 as ::core::ffi::c_int;
             }
@@ -555,11 +545,11 @@ pub unsafe extern "C" fn environ_push(mut env: *mut environ) {
     new_environ = environ;
     envent = environ_first(env);
     while !envent.is_null() {
-        if !(*envent).value.is_null()
-            && *(*envent).name as ::core::ffi::c_int != '\0' as i32
+        if !(*envent).value.is_none()
+            && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
             && !(*envent).flags & ENVIRON_HIDDEN != 0
         {
-            setenv((*envent).name, (*envent).value, 1 as ::core::ffi::c_int);
+            setenv(((*envent).name).as_ptr().cast_mut(), ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), 1 as ::core::ffi::c_int);
         }
         envent = environ_next(envent);
     }
@@ -579,12 +569,12 @@ pub unsafe extern "C" fn environ_log(
     let prefix = xvasprintf_cstring(fmt, ap);
     envent = environ_first(env);
     while !envent.is_null() {
-        if !(*envent).value.is_null() && *(*envent).name as ::core::ffi::c_int != '\0' as i32 {
+        if !(*envent).value.is_none() && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
             log_debug(
                 b"%s%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
                 prefix.as_ptr(),
-                (*envent).name,
-                (*envent).value,
+                ((*envent).name).as_ptr().cast_mut(),
+                ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         envent = environ_next(envent);

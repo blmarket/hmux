@@ -85,17 +85,6 @@ use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup, xvasprintf_cstring};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
-// The public args layout remains at offset zero. Vec growth may move positional
-// values, so cache ownership follows their stable indexes.
-#[repr(C)]
-struct ArgsOwner {
-    raw: args,
-    positional_values: Vec<args_value>,
-    positional_caches: Vec<Option<CString>>,
-}
-
-const _: () = assert!(std::mem::offset_of!(ArgsOwner, raw) == 0);
-
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_21;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_20;
 
@@ -381,29 +370,20 @@ unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_create() -> *mut args {
-    let owner = Box::new(ArgsOwner {
-        raw: args {
-            tree: args_tree {
+    let owner = Box::new(args { tree: args_tree {
                 entries: Box::into_raw(Box::new(args_tree_storage::default())),
-            },
-            count: 0,
-            values: ::core::ptr::null_mut(),
-        },
-        positional_values: Vec::new(),
-        positional_caches: Vec::new(),
-    });
+            }, count: 0, values: Vec::new(), positional_caches: Vec::new() });
     Box::into_raw(owner).cast::<args>()
 }
 /// Append a zeroed positional value and return its temporary write pointer.
 /// The pointer is invalidated by the next append; `args` retains the value.
 pub unsafe fn args_push_positional(args: *mut args) -> *mut args_value {
-    let owner = &mut *args.cast::<ArgsOwner>();
+    let owner = &mut *args;
     owner
-        .positional_values
+        .values
         .push(::core::mem::zeroed::<args_value>());
-    owner.raw.count = owner.positional_values.len() as u_int;
-    owner.raw.values = owner.positional_values.as_mut_ptr();
-    owner.raw.values.add(owner.positional_values.len() - 1)
+    owner.count = owner.values.len() as u_int;
+    owner.values.as_mut_ptr().add(owner.values.len() - 1)
 }
 pub(crate) unsafe fn args_new_flag_value() -> *mut args_value {
     Box::into_raw(Box::new(::core::mem::zeroed::<args_value>()))
@@ -813,7 +793,7 @@ pub unsafe extern "C" fn args_copy(
         new_value = args_push_positional(new_args);
         args_copy_copy_value(
             new_value,
-            (*args).values.offset(i as isize) as *mut args_value,
+            (*args).values.as_mut_ptr().offset(i as isize) as *mut args_value,
             argc,
             argv,
         );
@@ -847,18 +827,18 @@ pub unsafe extern "C" fn args_free_values(mut values: *mut args_value, mut count
 pub unsafe extern "C" fn args_free(mut args: *mut args) {
     let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
     let mut entry1: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    // The C-layout cached fields borrow strings in ArgsOwner. Clear those
+// The C-layout cached fields borrow strings in args. Clear those
     // pointers before args_free_value handles any independently C-owned cache.
-    let owner = &mut *args.cast::<ArgsOwner>();
+    let owner = &mut *args;
     for (index, cache) in owner.positional_caches.iter().enumerate() {
         if let Some(cache) = cache {
             debug_assert!(index < (*args).count as usize);
-            let value = (*args).values.add(index);
+            let value = (*args).values.as_mut_ptr().add(index);
             debug_assert_eq!((*value).cached, cache.as_ptr().cast_mut());
             (*value).cached = ::core::ptr::null_mut();
         }
     }
-    args_free_values((*args).values, (*args).count);
+    args_free_values(((*args).values).as_mut_ptr(), (*args).count);
     entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() && {
         entry1 = args_tree_next(&raw mut (*args).tree, entry);
@@ -879,7 +859,7 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         drop(Box::from_raw((*args).tree.entries));
         (*args).tree.entries = ::core::ptr::null_mut::<args_tree_storage>();
     }
-    drop(Box::from_raw(args.cast::<ArgsOwner>()));
+    drop(Box::from_raw(args));
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_to_vector(
@@ -892,17 +872,17 @@ pub unsafe extern "C" fn args_to_vector(
     *argv = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     i = 0 as u_int;
     while i < (*args).count {
-        match (*(*args).values.offset(i as isize)).type_0 as ::core::ffi::c_uint {
+        match (*(*args).values.as_mut_ptr().offset(i as isize)).type_0 as ::core::ffi::c_uint {
             1 => {
                 cmd_append_argv(
                     argc,
                     argv,
-                    (*(*args).values.offset(i as isize)).c2rust_unnamed.string,
+                    (*(*args).values.as_mut_ptr().offset(i as isize)).c2rust_unnamed.string,
                 );
             }
             2 => {
                 let s = cmd_list_print_cstring(
-                    (*(*args).values.offset(i as isize)).c2rust_unnamed.cmdlist,
+                    (*(*args).values.as_mut_ptr().offset(i as isize)).c2rust_unnamed.cmdlist,
                     0 as ::core::ffi::c_int,
                 );
                 cmd_append_argv(argc, argv, s.as_ptr());
@@ -1086,7 +1066,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
     while i < (*args).count {
         args_print_add_value(
             &mut buf,
-            (*args).values.offset(i as isize) as *mut args_value,
+            (*args).values.as_mut_ptr().offset(i as isize) as *mut args_value,
         );
         i = i.wrapping_add(1);
     }
@@ -1244,14 +1224,14 @@ pub unsafe extern "C" fn args_count(mut args: *mut args) -> u_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_values(mut args: *mut args) -> *mut args_value {
-    return (*args).values;
+    return ((*args).values).as_mut_ptr();
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_value(mut args: *mut args, mut idx: u_int) -> *mut args_value {
     if idx >= (*args).count {
         return ::core::ptr::null_mut::<args_value>();
     }
-    return (*args).values.offset(idx as isize) as *mut args_value;
+    return (*args).values.as_mut_ptr().offset(idx as isize) as *mut args_value;
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_string(
@@ -1261,7 +1241,7 @@ pub unsafe extern "C" fn args_string(
     if idx >= (*args).count {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    let value = (*args).values.add(idx as usize);
+    let value = (*args).values.as_mut_ptr().add(idx as usize);
     match (*value).type_0 as ::core::ffi::c_uint {
         0 => b"\0".as_ptr().cast(),
         1 => (*value).c2rust_unnamed.string,
@@ -1270,7 +1250,7 @@ pub unsafe extern "C" fn args_string(
                 return (*value).cached;
             }
             let printed = cmd_list_print_cstring((*value).c2rust_unnamed.cmdlist, 0);
-            let owner = &mut *args.cast::<ArgsOwner>();
+            let owner = &mut *args;
             let caches = &mut owner.positional_caches;
             if caches.len() <= idx as usize {
                 caches.resize_with(idx as usize + 1, || None);
@@ -1318,15 +1298,6 @@ pub unsafe extern "C" fn args_make_commands_now(
     args_make_commands_free(state);
     return cmdlist;
 }
-/// The public command state borrows these strings until its matching free.
-#[repr(C)]
-struct ArgsCommandStateOwner {
-    node: args_command_state,
-    cmd: Option<CString>,
-    file: Option<CString>,
-}
-
-const _: () = assert!(::core::mem::offset_of!(ArgsCommandStateOwner, node) == 0);
 
 #[no_mangle]
 pub unsafe extern "C" fn args_make_commands_prepare(
@@ -1344,14 +1315,14 @@ pub unsafe extern "C" fn args_make_commands_prepare(
     let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    state = Box::into_raw(Box::new(ArgsCommandStateOwner {
-        node: ::core::mem::zeroed::<args_command_state>(),
+    state = Box::into_raw(Box::new(args_command_state {
         cmd: None,
         file: None,
+        ..args_command_state::empty()
     }))
     .cast::<args_command_state>();
     if idx < (*args).count {
-        value = (*args).values.offset(idx as isize) as *mut args_value;
+        value = (*args).values.as_mut_ptr().offset(idx as isize) as *mut args_value;
         if (*value).type_0 as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -1368,31 +1339,28 @@ pub unsafe extern "C" fn args_make_commands_prepare(
     }
     if expand != 0 {
         let raw_cmd = format_single_from_target(item, cmd);
-        (*state.cast::<ArgsCommandStateOwner>()).cmd = if raw_cmd.is_null() {
+        (*state).cmd = if raw_cmd.is_null() {
             None
         } else {
             Some(CStr::from_ptr(raw_cmd).to_owned())
         };
         free(raw_cmd.cast());
     } else {
-        (*state.cast::<ArgsCommandStateOwner>()).cmd = Some(CStr::from_ptr(cmd).to_owned());
+        (*state).cmd = Some(CStr::from_ptr(cmd).to_owned());
     }
-    (*state).cmd = (*state.cast::<ArgsCommandStateOwner>())
-        .cmd
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |cmd| cmd.as_ptr() as *mut _);
+
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"args_make_commands_prepare\0" as *const u8 as *const ::core::ffi::c_char,
-        (*state).cmd,
+        ((*state).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     if wait != 0 {
         (*state).pi.item = item;
     }
     cmd_get_source(self_0, &raw mut file, &raw mut (*state).pi.line);
     if !file.is_null() {
-        (*state.cast::<ArgsCommandStateOwner>()).file = Some(CStr::from_ptr(file).to_owned());
-        (*state).pi.file = (*state.cast::<ArgsCommandStateOwner>())
+        (*state).file = Some(CStr::from_ptr(file).to_owned());
+        (*state).pi.file = (*state)
             .file
             .as_ref()
             .unwrap()
@@ -1421,7 +1389,12 @@ pub unsafe extern "C" fn args_make_commands(
         }
         return cmd_list_copy((*state).cmdlist, argc, argv);
     }
-    let mut cmd = CStr::from_ptr((*state).cmd).to_owned();
+    let mut cmd = CStr::from_ptr(
+        ((*state).cmd)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    )
+    .to_owned();
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1474,7 +1447,7 @@ pub unsafe extern "C" fn args_make_commands_free(mut state: *mut args_command_st
     if !(*state).pi.c.is_null() {
         server_client_unref((*state).pi.c);
     }
-    drop(Box::from_raw(state.cast::<ArgsCommandStateOwner>()));
+    drop(Box::from_raw(state));
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_make_commands_get_command(
@@ -1495,10 +1468,15 @@ pub(crate) unsafe fn args_make_commands_get_command_cstring(
         return CStr::from_ptr((*cmd_get_entry(first)).name).to_owned();
     }
     let n = strcspn(
-        (*state).cmd,
+        ((*state).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         b" ,\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    let command = CStr::from_ptr((*state).cmd).to_bytes();
+    let command = CStr::from_ptr(
+        ((*state).cmd)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    )
+    .to_bytes();
     // A negative printf precision leaves the whole string untruncated.
     let prefix = if n < 0 {
         command

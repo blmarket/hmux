@@ -1184,7 +1184,7 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
     log_debug(
         b"%s: building @%u scene (%ux%u %u,%u; generation %llu)\0" as *const u8
             as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*w).id,
         bctx.sx,
         bctx.sy,
@@ -1243,7 +1243,7 @@ unsafe extern "C" fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene 
     }
     log_debug(
         b"%s: finished building @%u scene\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*w).id,
     );
     return scene;
@@ -1296,7 +1296,7 @@ unsafe extern "C" fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {
     if !reason.is_null() {
         log_debug(
             b"%s: @%u scene invalid: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*w).id,
             reason,
         );
@@ -2563,7 +2563,7 @@ unsafe extern "C" fn redraw_draw(
         return;
     }
     if flags & REDRAW_STATUS != 0 {
-        if !(*c).message_string.is_null() {
+        if !(*c).message_string.is_none() {
             redraw = status_message_redraw(c);
         } else if !(*c).prompt.is_null() {
             redraw = status_prompt_redraw(c);
@@ -2580,7 +2580,7 @@ unsafe extern "C" fn redraw_draw(
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(
             b"%s: starting @%u redraw (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*w).id,
             redraw_flags_to_string(flags),
         );
@@ -2679,7 +2679,7 @@ unsafe extern "C" fn redraw_draw(
     }
     if flags & REDRAW_STATUS != 0 {
         lines = dctx.status_lines;
-        if !(*c).message_string.is_null() || !(*c).prompt.is_null() {
+        if !(*c).message_string.is_none() || !(*c).prompt.is_null() {
             lines = if lines == 0 as u_int {
                 1 as u_int
             } else {
@@ -2721,7 +2721,7 @@ unsafe extern "C" fn redraw_draw(
     tty_reset(tty);
     log_debug(
         b"%s: finished @%u redraw\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*(*scene).w).id,
     );
 }

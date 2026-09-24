@@ -53,7 +53,7 @@ fn stream_lookup_order_reference_release_and_double_removal() {
                 null_mut(),
             ));
         }
-        let mut probe: client_file = std::mem::zeroed();
+        let mut probe: client_file = client_file::empty();
         probe.stream = 1;
         assert_eq!((*client_files_nfind(&mut files, &mut probe)).stream, 42);
         assert!(client_files_find(&mut files, &mut probe).is_null());

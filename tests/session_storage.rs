@@ -2,8 +2,8 @@ use hmux2::src::session::*;
 use std::ffi::CStr;
 
 fn node(name: &CStr) -> Box<session> {
-    let mut node: Box<session> = Box::new(unsafe { std::mem::zeroed() });
-    node.name = name.as_ptr().cast_mut();
+    let mut node: Box<session> = Box::new(session::empty());
+    node.name = name.to_owned();
     node
 }
 
@@ -32,13 +32,13 @@ fn byte_order_duplicates_neighbors_and_removal() {
         );
         let mut node = sessions_minmax(&mut *head, -1);
         for name in [c"", c"a", c"z", c"\xff"] {
-            assert_eq!(CStr::from_ptr((*node).name), name);
+            assert_eq!(CStr::from_ptr(((*node).name).as_ptr().cast_mut()), name);
             node = sessions_next(node);
         }
         assert!(node.is_null());
         node = sessions_minmax(&mut *head, 1);
         for name in [c"\xff", c"z", c"a", c""] {
-            assert_eq!(CStr::from_ptr((*node).name), name);
+            assert_eq!(CStr::from_ptr(((*node).name).as_ptr().cast_mut()), name);
             node = sessions_prev(node);
         }
         assert!(node.is_null());
@@ -74,7 +74,7 @@ fn rename_preserves_identity_and_updates_name_order() {
         assert_eq!(sessions_next(first_ptr), second_ptr);
         // Same remove/change/reinsert sequence used by rename-session.
         assert_eq!(sessions_remove(head, first_ptr), first_ptr);
-        first.name = c"z".as_ptr().cast_mut();
+        first.name = ::std::ffi::CStr::from_ptr(c"z".as_ptr().cast_mut()).to_owned();
         assert!(sessions_insert(head, first_ptr).is_null());
         assert!(session_find(c"a".as_ptr()).is_null());
         assert_eq!(session_find(c"z".as_ptr()), first_ptr);
@@ -98,7 +98,9 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         sessions_insert(&mut head, &mut *first);
         sessions_insert(&mut head, &mut *second);
         sessions_insert(&mut head, &mut *last);
-        let name = CStr::from_ptr(first.name).to_bytes().to_vec();
+        let name = CStr::from_ptr((first.name).as_ptr().cast_mut())
+            .to_bytes()
+            .to_vec();
         assert_eq!(sessions_next(&mut *first), &mut *second as *mut _);
 
         // Group destruction removes the current session AND its cached successor.
@@ -108,7 +110,9 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         drop(second);
         assert_eq!(sessions_after(&mut head, &name), &mut *last as *mut _);
 
-        let last_name = CStr::from_ptr(last.name).to_bytes().to_vec();
+        let last_name = CStr::from_ptr((last.name).as_ptr().cast_mut())
+            .to_bytes()
+            .to_vec();
         sessions_remove(&mut head, &mut *last);
         drop(last);
         assert!(head.storage.is_none());

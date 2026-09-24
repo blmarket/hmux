@@ -82,44 +82,18 @@ use std::ffi::{CStr, CString};
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-/// The public monitor item borrows its name and format from this stable box.
-#[repr(C)]
-struct MonitorItemOwner {
-    node: monitor_item,
-    name: CString,
-    format: CString,
-    last: Option<CString>,
-}
-
-const _: () = assert!(::core::mem::offset_of!(MonitorItemOwner, node) == 0);
-
-#[repr(C)]
-struct MonitorPaneOwner {
-    node: monitor_pane,
-    last: Option<CString>,
-}
-
-#[repr(C)]
-struct MonitorWindowOwner {
-    node: monitor_window,
-    last: Option<CString>,
-}
-
-const _: () = assert!(::core::mem::offset_of!(MonitorPaneOwner, node) == 0);
-const _: () = assert!(::core::mem::offset_of!(MonitorWindowOwner, node) == 0);
-
 pub unsafe fn monitor_pane_new() -> *mut monitor_pane {
-    Box::into_raw(Box::new(MonitorPaneOwner {
-        node: ::core::mem::zeroed(),
+    Box::into_raw(Box::new(monitor_pane {
         last: None,
+        ..monitor_pane::empty()
     }))
     .cast()
 }
 
 pub unsafe fn monitor_window_new() -> *mut monitor_window {
-    Box::into_raw(Box::new(MonitorWindowOwner {
-        node: ::core::mem::zeroed(),
+    Box::into_raw(Box::new(monitor_window {
         last: None,
+        ..monitor_window::empty()
     }))
     .cast()
 }
@@ -158,7 +132,10 @@ unsafe extern "C" fn monitor_item_cmp(
     mut m1: *mut monitor_item,
     mut m2: *mut monitor_item,
 ) -> ::core::ffi::c_int {
-    return strcmp((*m1).name, (*m2).name);
+    return strcmp(
+        ((*m1).name).as_ptr().cast_mut(),
+        ((*m2).name).as_ptr().cast_mut(),
+    );
 }
 
 unsafe extern "C" fn monitor_pane_cmp(
@@ -210,7 +187,7 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
         1 as ::core::ffi::c_int != 0
     } {
         monitor_panes_remove(&raw mut (*me).panes, mp);
-        drop(Box::from_raw(mp.cast::<MonitorPaneOwner>()));
+        drop(Box::from_raw(mp));
         mp = mp1;
     }
     mw = monitor_windows_minmax(&raw mut (*me).windows, RB_NEGINF);
@@ -219,11 +196,11 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
         1 as ::core::ffi::c_int != 0
     } {
         monitor_windows_remove(&raw mut (*me).windows, mw);
-        drop(Box::from_raw(mw.cast::<MonitorWindowOwner>()));
+        drop(Box::from_raw(mw));
         mw = mw1;
     }
     monitor_items_remove(&raw mut (*ms).items, me);
-    drop(Box::from_raw(me.cast::<MonitorItemOwner>()));
+    drop(Box::from_raw(me));
 }
 unsafe extern "C" fn monitor_report(
     mut ms: *mut monitor_set,
@@ -235,7 +212,7 @@ unsafe extern "C" fn monitor_report(
     mut last: *const ::core::ffi::c_char,
 ) {
     // A callback may remove the item while still using the change record.
-    let name = CStr::from_ptr((*me).name).to_owned();
+    let name = CStr::from_ptr(((*me).name).as_ptr().cast_mut()).to_owned();
     let mut change: monitor_change = monitor_change {
         name: ::core::ptr::null::<::core::ffi::c_char>(),
         value: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -269,12 +246,10 @@ unsafe extern "C" fn monitor_check_value(
     mut wl: *mut winlink,
     mut wp: *mut window_pane,
     mut value: *mut ::core::ffi::c_char,
-    last: *mut *mut ::core::ffi::c_char,
     owned_last: *mut Option<CString>,
 ) {
     if (*owned_last).is_none() {
         let next = CStr::from_ptr(value).to_owned();
-        *last = next.as_ptr() as *mut _;
         *owned_last = Some(next);
         if (*me).flags & MONITOR_NOTIFY_INITIAL != 0
             && (!(*me).flags & MONITOR_NOTIFY_TRUE != 0 || format_true(value) != 0)
@@ -292,17 +267,13 @@ unsafe extern "C" fn monitor_check_value(
         free(value.cast());
         return;
     }
-    if strcmp(value, *last) == 0 as ::core::ffi::c_int {
+    if strcmp(value, (*owned_last).as_ref().unwrap().as_ptr()) == 0 as ::core::ffi::c_int {
         free(value.cast());
         return;
     }
     let notify = !(*me).flags & MONITOR_NOTIFY_TRUE != 0 || format_true(value) != 0;
     let next = CStr::from_ptr(value).to_owned();
     let old = (*owned_last).replace(next);
-    *last = (*owned_last)
-        .as_ref()
-        .expect("monitor last value installed")
-        .as_ptr() as *mut _;
     let previous = old.as_ref().expect("monitor last value existed");
     if notify {
         monitor_report(ms, me, s, wl, wp, value, previous.as_ptr());
@@ -316,7 +287,7 @@ unsafe extern "C" fn monitor_check_session(
 ) {
     let mut s: *mut session = monitor_get_session(ms);
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    value = format_expand(ft, (*me).format);
+    value = format_expand(ft, ((*me).format).as_ptr().cast_mut());
     monitor_check_value(
         ms,
         me,
@@ -324,8 +295,8 @@ unsafe extern "C" fn monitor_check_session(
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
         value,
+
         &raw mut (*me).last,
-        &raw mut (*me.cast::<MonitorItemOwner>()).last,
     );
 }
 unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
@@ -340,7 +311,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
     let mut find: monitor_pane = monitor_pane {
         pane: 0,
         idx: 0,
-        last: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        last: Default::default(),
         generation: 0,
         entry: monitor_pane_entry {
             owner: std::ptr::null_mut(),
@@ -355,7 +326,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
     while !wl.is_null() {
         if !((*wl).session != s) {
             ft = monitor_create_formats(c, s, wl, wp);
-            value = format_expand(ft, (*me).format);
+            value = format_expand(ft, ((*me).format).as_ptr().cast_mut());
             format_free(ft);
             find.pane = (*wp).id;
             find.idx = (*wl).idx as u_int;
@@ -373,8 +344,8 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
                 wl,
                 wp,
                 value,
+
                 &raw mut (*mp).last,
-                &raw mut (*mp.cast::<MonitorPaneOwner>()).last,
             );
         }
         wl = window_winlinks_next(w, wl);
@@ -393,13 +364,13 @@ unsafe extern "C" fn monitor_check_all_panes_one(
     let mut find: monitor_pane = monitor_pane {
         pane: 0,
         idx: 0,
-        last: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        last: Default::default(),
         generation: 0,
         entry: monitor_pane_entry {
             owner: std::ptr::null_mut(),
         },
     };
-    value = format_expand(ft, (*me).format);
+    value = format_expand(ft, ((*me).format).as_ptr().cast_mut());
     find.pane = (*wp).id;
     find.idx = (*wl).idx as u_int;
     mp = monitor_panes_find(&raw mut (*me).panes, &raw mut find);
@@ -417,8 +388,8 @@ unsafe extern "C" fn monitor_check_all_panes_one(
         wl,
         wp,
         value,
+
         &raw mut (*mp).last,
-        &raw mut (*mp.cast::<MonitorPaneOwner>()).last,
     );
 }
 unsafe extern "C" fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_int) {
@@ -431,7 +402,7 @@ unsafe extern "C" fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut gene
     } {
         if !((*mp).generation == generation) {
             monitor_panes_remove(&raw mut (*me).panes, mp);
-            drop(Box::from_raw(mp.cast::<MonitorPaneOwner>()));
+            drop(Box::from_raw(mp));
         }
         mp = mp1;
     }
@@ -447,7 +418,7 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
     let mut find: monitor_window = monitor_window {
         window: 0,
         idx: 0,
-        last: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        last: Default::default(),
         generation: 0,
         entry: monitor_window_entry {
             owner: std::ptr::null_mut(),
@@ -461,7 +432,7 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
     while !wl.is_null() {
         if !((*wl).session != s) {
             ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
-            value = format_expand(ft, (*me).format);
+            value = format_expand(ft, ((*me).format).as_ptr().cast_mut());
             format_free(ft);
             find.window = (*w).id;
             find.idx = (*wl).idx as u_int;
@@ -479,8 +450,8 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
                 wl,
                 ::core::ptr::null_mut::<window_pane>(),
                 value,
+
                 &raw mut (*mw).last,
-                &raw mut (*mw.cast::<MonitorWindowOwner>()).last,
             );
         }
         wl = window_winlinks_next(w, wl);
@@ -499,13 +470,13 @@ unsafe extern "C" fn monitor_check_all_windows_one(
     let mut find: monitor_window = monitor_window {
         window: 0,
         idx: 0,
-        last: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        last: Default::default(),
         generation: 0,
         entry: monitor_window_entry {
             owner: std::ptr::null_mut(),
         },
     };
-    value = format_expand(ft, (*me).format);
+    value = format_expand(ft, ((*me).format).as_ptr().cast_mut());
     find.window = (*w).id;
     find.idx = (*wl).idx as u_int;
     mw = monitor_windows_find(&raw mut (*me).windows, &raw mut find);
@@ -523,8 +494,8 @@ unsafe extern "C" fn monitor_check_all_windows_one(
         wl,
         ::core::ptr::null_mut::<window_pane>(),
         value,
+
         &raw mut (*mw).last,
-        &raw mut (*mw.cast::<MonitorWindowOwner>()).last,
     );
 }
 unsafe extern "C" fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u_int) {
@@ -537,7 +508,7 @@ unsafe extern "C" fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut ge
     } {
         if !((*mw).generation == generation) {
             monitor_windows_remove(&raw mut (*me).windows, mw);
-            drop(Box::from_raw(mw.cast::<MonitorWindowOwner>()));
+            drop(Box::from_raw(mw));
         }
         mw = mw1;
     }
@@ -895,12 +866,12 @@ pub unsafe extern "C" fn monitor_add(
     let owned_name = CStr::from_ptr(name).to_owned();
     let owned_format = CStr::from_ptr(format).to_owned();
     let mut find: monitor_item = monitor_item {
-        name: owned_name.as_ptr() as *mut ::core::ffi::c_char,
-        format: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        name: ::std::ffi::CStr::from_ptr(owned_name.as_ptr() as *mut ::core::ffi::c_char).to_owned(),
+        format: Default::default(),
         type_0: MONITOR_SESSION,
         id: 0,
         flags: 0,
-        last: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        last: Default::default(),
         panes: monitor_panes {
             storage: std::ptr::null_mut(),
         },
@@ -921,14 +892,13 @@ pub unsafe extern "C" fn monitor_add(
     if !me.is_null() {
         monitor_free_item(ms, me);
     }
-    let mut owner = Box::new(MonitorItemOwner {
-        node: ::core::mem::zeroed::<monitor_item>(),
+    let mut owner = Box::new(monitor_item {
         name: owned_name,
         format: owned_format,
         last: None,
+        ..monitor_item::empty()
     });
-    owner.node.name = owner.name.as_ptr() as *mut _;
-    owner.node.format = owner.format.as_ptr() as *mut _;
+
     me = Box::into_raw(owner).cast::<monitor_item>();
     (*me).type_0 = type_0;
     (*me).id = id as u_int;
@@ -968,12 +938,12 @@ pub unsafe extern "C" fn monitor_remove(
 ) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut find: monitor_item = monitor_item {
-        name: name as *mut ::core::ffi::c_char,
-        format: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        name: ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned(),
+        format: Default::default(),
         type_0: MONITOR_SESSION,
         id: 0,
         flags: 0,
-        last: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        last: Default::default(),
         panes: monitor_panes {
             storage: std::ptr::null_mut(),
         },
@@ -1001,12 +971,12 @@ pub unsafe extern "C" fn monitor_get_fire_count(
 ) -> u_int {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut find: monitor_item = monitor_item {
-        name: name as *mut ::core::ffi::c_char,
-        format: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        name: ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned(),
+        format: Default::default(),
         type_0: MONITOR_SESSION,
         id: 0,
         flags: 0,
-        last: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        last: Default::default(),
         panes: monitor_panes {
             storage: std::ptr::null_mut(),
         },
@@ -1032,12 +1002,12 @@ pub unsafe extern "C" fn monitor_get_fire_time(
 ) -> time_t {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut find: monitor_item = monitor_item {
-        name: name as *mut ::core::ffi::c_char,
-        format: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        name: ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned(),
+        format: Default::default(),
         type_0: MONITOR_SESSION,
         id: 0,
         flags: 0,
-        last: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+        last: Default::default(),
         panes: monitor_panes {
             storage: std::ptr::null_mut(),
         },
@@ -1064,7 +1034,7 @@ pub unsafe fn monitor_items_find(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_items_nfind(
@@ -1074,7 +1044,7 @@ pub unsafe fn monitor_items_nfind(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1083,7 +1053,7 @@ pub unsafe fn monitor_items_insert(
     head: *mut monitor_items,
     elm: *mut monitor_item,
 ) -> *mut monitor_item {
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     if (*head).storage.is_null() {
         (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
@@ -1104,7 +1074,7 @@ pub unsafe fn monitor_items_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     let Some(map) = (*head).storage.as_mut() else {
         return std::ptr::null_mut();
     };
@@ -1137,7 +1107,7 @@ pub unsafe fn monitor_items_next(elm: *mut monitor_item) -> *mut monitor_item {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1146,7 +1116,7 @@ pub unsafe fn monitor_items_prev(elm: *mut monitor_item) -> *mut monitor_item {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1394,7 +1364,7 @@ mod last_owner_tests {
                 0,
             );
             let item = monitor_items_minmax(&raw mut (*set).items, RB_NEGINF);
-            let owner = item.cast::<MonitorItemOwner>();
+            let owner = item;
             let first = b"\xffold\0";
             monitor_check_value(
                 set,
@@ -1403,11 +1373,11 @@ mod last_owner_tests {
                 ::core::ptr::null_mut(),
                 ::core::ptr::null_mut(),
                 xstrdup(first.as_ptr().cast()),
-                &raw mut (*item).last,
+
                 &raw mut (*owner).last,
             );
             assert_eq!(
-                CStr::from_ptr((*item).last).to_bytes(),
+                CStr::from_ptr(((*item).last).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
                 &first[..first.len() - 1]
             );
             monitor_check_value(
@@ -1417,7 +1387,7 @@ mod last_owner_tests {
                 ::core::ptr::null_mut(),
                 ::core::ptr::null_mut(),
                 xstrdup(first.as_ptr().cast()),
-                &raw mut (*item).last,
+
                 &raw mut (*owner).last,
             );
             assert!(capture.value.is_empty());
@@ -1430,7 +1400,7 @@ mod last_owner_tests {
                 ::core::ptr::null_mut(),
                 ::core::ptr::null_mut(),
                 xstrdup(second.as_ptr().cast()),
-                &raw mut (*item).last,
+
                 &raw mut (*owner).last,
             );
             assert_eq!(capture.value, &second[..second.len() - 1]);

@@ -1261,11 +1261,11 @@ pub unsafe extern "C" fn screen_write_menu(
         (*menu).count.wrapping_add(2 as u_int),
         lines,
         border_gc,
-        (*menu).title,
+        ((*menu).title).as_ptr().cast_mut(),
     );
     i = 0 as u_int;
     while i < (*menu).count {
-        name = (*(*menu).items.offset(i as isize)).name;
+        name = (*(*menu).items.as_mut_ptr().offset(i as isize)).name;
         if name.is_null() {
             screen_write_cursormove(
                 ctx,

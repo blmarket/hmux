@@ -375,15 +375,32 @@ pub struct tty {
 
 #[repr(C)]
 pub struct tty_term {
-    /// Borrowed view into the containing terminal owner's `CString`.
-    pub name: *mut ::core::ffi::c_char,
+    pub name: std::ffi::CString,
     pub tty: *mut tty,
     pub applied_features: ::core::ffi::c_int,
     pub acs: [[::core::ffi::c_char; 2]; 256],
-    /// Box-owned fixed capability slice of `tty_term_ncodes()` entries.
     pub codes: *mut tty_code,
     pub flags: ::core::ffi::c_int,
     pub entry: tty_term_entry,
+    // tty_code_value is a Copy union in a zero-initialized code array. Its string
+    // pointers borrow these allocations; replacement refreshes the code before
+    // the next terminal operation, and tty_term_free drops both together.
+    pub(crate) strings: Vec<Option<std::ffi::CString>>,
+}
+
+impl tty_term {
+    pub fn empty() -> Self {
+        Self {
+            name: Default::default(),
+            tty: unsafe { ::core::mem::zeroed() },
+            applied_features: unsafe { ::core::mem::zeroed() },
+            acs: unsafe { ::core::mem::zeroed() },
+            codes: unsafe { ::core::mem::zeroed() },
+            flags: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+            strings: Default::default(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

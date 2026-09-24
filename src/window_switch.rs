@@ -736,7 +736,7 @@ unsafe extern "C" fn window_switch_run_command(
             s = session_find_by_id((*item).session as u_int);
             if !s.is_null() {
                 let mut bytes = Vec::from(b"=".as_slice());
-                bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+                bytes.extend_from_slice(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_bytes());
                 bytes.push(b':');
                 target = Some(CString::new(bytes).expect("session target contains no NUL"));
                 cmd_find_from_session(&raw mut fs, s, 0 as ::core::ffi::c_int);
@@ -748,7 +748,7 @@ unsafe extern "C" fn window_switch_run_command(
                 wl = winlink_find_by_index(&raw mut (*s).windows, (*item).winlink);
                 if !s.is_null() && !wl.is_null() {
                     let mut bytes = Vec::from(b"=".as_slice());
-                    bytes.extend_from_slice(CStr::from_ptr((*s).name).to_bytes());
+                    bytes.extend_from_slice(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_bytes());
                     bytes.push(b':');
                     bytes.extend_from_slice(((*wl).idx as u32).to_string().as_bytes());
                     bytes.push(b'.');

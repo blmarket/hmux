@@ -15,11 +15,10 @@ pub const JOB_PTY: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const JOB_DEFAULTSHELL: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 
 #[repr(C)]
-/// Box-owned by `job_run` until `job_free` or `job_transfer`.
 pub struct job {
     pub state: job_state,
     pub flags: ::core::ffi::c_int,
-    pub cmd: *mut ::core::ffi::c_char,
+    pub cmd: Option<std::ffi::CString>,
     pub pid: pid_t,
     pub tty: [::core::ffi::c_char; 32],
     pub status: ::core::ffi::c_int,
@@ -30,6 +29,26 @@ pub struct job {
     pub freecb: job_free_cb,
     pub data: *mut ::core::ffi::c_void,
     pub entry: job_entry,
+}
+
+impl job {
+    pub fn empty() -> Self {
+        Self {
+            state: unsafe { ::core::mem::zeroed() },
+            flags: unsafe { ::core::mem::zeroed() },
+            cmd: Default::default(),
+            pid: unsafe { ::core::mem::zeroed() },
+            tty: unsafe { ::core::mem::zeroed() },
+            status: unsafe { ::core::mem::zeroed() },
+            fd: unsafe { ::core::mem::zeroed() },
+            event: unsafe { ::core::mem::zeroed() },
+            updatecb: unsafe { ::core::mem::zeroed() },
+            completecb: unsafe { ::core::mem::zeroed() },
+            freecb: unsafe { ::core::mem::zeroed() },
+            data: unsafe { ::core::mem::zeroed() },
+            entry: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 pub type job_update_cb = Option<unsafe extern "C" fn(*mut job) -> ()>;

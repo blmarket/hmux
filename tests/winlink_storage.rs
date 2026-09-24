@@ -83,7 +83,7 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
 #[test]
 fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
     unsafe {
-        let mut session = Box::new(std::mem::zeroed::<session>());
+        let mut session = Box::new(session::empty());
         let mut nodes = Vec::new();
         for idx in 1..=3 {
             let node = winlink_add(&raw mut session.windows, idx);

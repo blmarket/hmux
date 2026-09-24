@@ -163,7 +163,7 @@ pub struct window_customize_modedata {
     pub hide_global: ::core::ffi::c_int,
     pub hide_default: ::core::ffi::c_int,
     pub prompt_flags: ::core::ffi::c_int,
-    item_list: Vec<Box<CustomizeItemOwner>>,
+    item_list: Vec<Box<window_customize_itemdata>>,
     pub fs: cmd_find_state,
     pub change: window_customize_change,
 }
@@ -176,61 +176,72 @@ pub struct window_customize_itemdata {
     pub type_0: window_customize_item_type,
     pub option_type: window_customize_option_type,
     pub scope: window_customize_scope,
-    table: *mut ::core::ffi::c_char,
+    pub table: Option<std::ffi::CString>,
     pub key: key_code,
     pub oo: *mut options,
     pub environ: *mut environ,
     pub environ_flags: ::core::ffi::c_int,
-    name: *mut ::core::ffi::c_char,
-    array_key: *mut ::core::ffi::c_char,
+    pub name: Option<std::ffi::CString>,
+    pub array_key: Option<std::ffi::CString>,
 }
 
-// The first field is the stable pointer retained by mode-tree rows, prompts,
-// and editor callbacks. The strings are borrowed views into this owner's CStrings.
-#[repr(C)]
-struct CustomizeItemOwner {
-    item: window_customize_itemdata,
-    table: Option<CString>,
-    name: Option<CString>,
-    array_key: Option<CString>,
-}
-
-impl CustomizeItemOwner {
-    fn new() -> Self {
+impl window_customize_itemdata {
+    pub fn empty() -> Self {
         Self {
-            item: window_customize_itemdata {
-                data: ::core::ptr::null_mut(),
-                type_0: 0,
-                option_type: 0,
-                scope: 0,
-                table: ::core::ptr::null_mut(),
-                key: 0,
-                oo: ::core::ptr::null_mut(),
-                environ: ::core::ptr::null_mut(),
-                environ_flags: 0,
-                name: ::core::ptr::null_mut(),
-                array_key: ::core::ptr::null_mut(),
-            },
+            data: unsafe { ::core::mem::zeroed() },
+            type_0: unsafe { ::core::mem::zeroed() },
+            option_type: unsafe { ::core::mem::zeroed() },
+            scope: unsafe { ::core::mem::zeroed() },
+            table: Default::default(),
+            key: unsafe { ::core::mem::zeroed() },
+            oo: unsafe { ::core::mem::zeroed() },
+            environ: unsafe { ::core::mem::zeroed() },
+            environ_flags: unsafe { ::core::mem::zeroed() },
+            name: Default::default(),
+            array_key: Default::default(),
+        }
+    }
+}
+
+impl window_customize_itemdata {
+    fn new() -> Self {
+        window_customize_itemdata {
+            data: ::core::ptr::null_mut(),
+            type_0: 0,
+            option_type: 0,
+            scope: 0,
             table: None,
+            key: 0,
+            oo: ::core::ptr::null_mut(),
+            environ: ::core::ptr::null_mut(),
+            environ_flags: 0,
             name: None,
             array_key: None,
         }
     }
 }
 
-// All callers pass an item created as a CustomizeItemOwner. C-facing fields
+// All callers pass an item created as a window_customize_itemdata. C-facing fields
 // remain borrowed pointers, invalidated only when the owner is dropped.
 unsafe fn window_customize_set_table(item: *mut window_customize_itemdata, value: *const c_char) {
     let string = CStr::from_ptr(value).to_owned();
-    let owner = &mut *(item as *mut CustomizeItemOwner);
-    owner.item.table = string.as_ptr() as *mut c_char;
+    let owner = &mut *(item as *mut window_customize_itemdata);
+    owner.table = if (string.as_ptr() as *mut c_char).is_null() {
+        None
+    } else {
+        Some(::std::ffi::CStr::from_ptr(string.as_ptr() as *mut c_char).to_owned())
+    };
     owner.table = Some(string);
 }
 
 unsafe fn window_customize_set_name(item: *mut window_customize_itemdata, value: *const c_char) {
     let string = CStr::from_ptr(value).to_owned();
-    let owner = &mut *(item as *mut CustomizeItemOwner);
-    owner.item.name = string.as_ptr() as *mut c_char;
+    let owner = &mut *(item as *mut window_customize_itemdata);
+    owner.name = if (string.as_ptr() as *mut c_char).is_null() {
+        None
+    } else {
+        Some(::std::ffi::CStr::from_ptr(string.as_ptr() as *mut c_char).to_owned())
+    };
     owner.name = Some(string);
 }
 
@@ -239,13 +250,17 @@ unsafe fn window_customize_set_item_array_key(
     value: *const c_char,
 ) {
     let string = CStr::from_ptr(value).to_owned();
-    let owner = &mut *(item as *mut CustomizeItemOwner);
-    owner.item.array_key = string.as_ptr() as *mut c_char;
+    let owner = &mut *(item as *mut window_customize_itemdata);
+    owner.array_key = if (string.as_ptr() as *mut c_char).is_null() {
+        None
+    } else {
+        Some(::std::ffi::CStr::from_ptr(string.as_ptr() as *mut c_char).to_owned())
+    };
     owner.array_key = Some(string);
 }
 
 fn window_customize_new_item() -> *mut window_customize_itemdata {
-    Box::into_raw(Box::new(CustomizeItemOwner::new())) as *mut window_customize_itemdata
+    Box::into_raw(Box::new(window_customize_itemdata::new())) as *mut window_customize_itemdata
 }
 pub type window_customize_scope = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT: window_customize_scope = 9;
@@ -504,7 +519,12 @@ unsafe extern "C" fn window_customize_get_key(
 ) -> ::core::ffi::c_int {
     let mut kt: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    kt = key_bindings_get_table((*item).table, 0 as ::core::ffi::c_int);
+    kt = key_bindings_get_table(
+        ((*item).table)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        0 as ::core::ffi::c_int,
+    );
     if kt.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -532,7 +552,7 @@ unsafe fn window_customize_scope_text(
         }
         4 | 9 => {
             let mut bytes = b"session ".to_vec();
-            bytes.extend_from_slice(CStr::from_ptr((*(*fs).s).name).to_bytes());
+            bytes.extend_from_slice(CStr::from_ptr(((*(*fs).s).name).as_ptr().cast_mut()).to_bytes());
             CString::new(bytes).expect("session name contains no NUL")
         }
         6 => CString::new(format!("window {}", (*(*fs).wl).idx))
@@ -593,8 +613,8 @@ unsafe extern "C" fn window_customize_write_hook_fire(
 unsafe extern "C" fn window_customize_add_item(
     mut data: *mut window_customize_modedata,
 ) -> *mut window_customize_itemdata {
-    let mut owner = Box::new(CustomizeItemOwner::new());
-    let item = &mut owner.item as *mut window_customize_itemdata;
+    let mut owner = Box::new(window_customize_itemdata::new());
+    let item = &mut *owner as *mut window_customize_itemdata;
     (*data).item_list.push(owner);
     item
 }
@@ -667,7 +687,7 @@ unsafe extern "C" fn window_customize_write_value(
     return retval;
 }
 unsafe extern "C" fn window_customize_free_item(mut item: *mut window_customize_itemdata) {
-    drop(Box::from_raw(item as *mut CustomizeItemOwner));
+    drop(Box::from_raw(item as *mut window_customize_itemdata));
 }
 unsafe extern "C" fn window_customize_copy_item(
     mut item: *mut window_customize_itemdata,
@@ -683,14 +703,29 @@ unsafe extern "C" fn window_customize_copy_item(
     (*new_item).oo = (*item).oo;
     (*new_item).environ = (*item).environ;
     (*new_item).environ_flags = (*item).environ_flags;
-    if !(*item).table.is_null() {
-        window_customize_set_table(new_item, (*item).table);
+    if !(*item).table.is_none() {
+        window_customize_set_table(
+            new_item,
+            ((*item).table)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
     }
-    if !(*item).name.is_null() {
-        window_customize_set_name(new_item, (*item).name);
+    if !(*item).name.is_none() {
+        window_customize_set_name(
+            new_item,
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
     }
-    if !(*item).array_key.is_null() {
-        window_customize_set_item_array_key(new_item, (*item).array_key);
+    if !(*item).array_key.is_none() {
+        window_customize_set_item_array_key(
+            new_item,
+            ((*item).array_key)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
     }
     return new_item;
 }
@@ -820,8 +855,12 @@ unsafe extern "C" fn window_customize_set_option_value(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut oo: *mut options = (*item).oo;
-    let mut name: *const ::core::ffi::c_char = (*item).name;
-    let mut array_key: *const ::core::ffi::c_char = (*item).array_key;
+    let mut name: *const ::core::ffi::c_char = ((*item).name)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+    let mut array_key: *const ::core::ffi::c_char = ((*item).array_key)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     let mut idx: u_int = 0;
     let mut keybuf: [::core::ffi::c_char; 32] = [0; 32];
     o = options_get(oo, name);
@@ -864,7 +903,11 @@ unsafe extern "C" fn window_customize_set_option_value(
     {
         hooks_add_event(name);
     }
-    options_push_changes((*item).name);
+    options_push_changes(
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     return 0 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn window_customize_option_editable(
@@ -879,7 +922,12 @@ unsafe extern "C" fn window_customize_option_editable(
     {
         return 0 as ::core::ffi::c_int;
     }
-    o = options_get((*item).oo, (*item).name);
+    o = options_get(
+        (*item).oo,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     if o.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -940,13 +988,18 @@ unsafe extern "C" fn window_customize_set_environment_value(
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut flags: ::core::ffi::c_int = 0;
     flags = (*item).environ_flags;
-    envent = environ_find((*item).environ, (*item).name);
+    envent = environ_find(
+        (*item).environ,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     if !envent.is_null() {
         flags = (*envent).flags;
     }
     environ_set(
         (*item).environ,
-        (*item).name,
+        ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         flags,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         s,
@@ -1014,12 +1067,31 @@ unsafe extern "C" fn window_customize_key_is_changed(
     if (*bd).flags != (*default_bd).flags {
         return 1 as ::core::ffi::c_int;
     }
-    if ((*bd).note == NULL as *const ::core::ffi::c_char) as ::core::ffi::c_int
-        != ((*default_bd).note == NULL as *const ::core::ffi::c_char) as ::core::ffi::c_int
+    if ((*bd).note
+        == if (NULL as *const ::core::ffi::c_char).is_null() {
+            None
+        } else {
+            Some(::std::ffi::CStr::from_ptr(NULL as *const ::core::ffi::c_char).to_owned())
+        }) as ::core::ffi::c_int
+        != ((*default_bd).note
+            == if (NULL as *const ::core::ffi::c_char).is_null() {
+                None
+            } else {
+                Some(::std::ffi::CStr::from_ptr(NULL as *const ::core::ffi::c_char).to_owned())
+            }) as ::core::ffi::c_int
     {
         return 1 as ::core::ffi::c_int;
     }
-    if !(*bd).note.is_null() && strcmp((*bd).note, (*default_bd).note) != 0 as ::core::ffi::c_int {
+    if !(*bd).note.is_none()
+        && strcmp(
+            ((*bd).note)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*default_bd).note)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) != 0 as ::core::ffi::c_int
+    {
         return 1 as ::core::ffi::c_int;
     }
     let cmd = cmd_list_print_cstring((*bd).cmdlist, 0);
@@ -1404,13 +1476,13 @@ unsafe extern "C" fn window_customize_build_keys(
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut count: u_int = 0 as u_int;
     let mut title_bytes = b"Key Table - ".to_vec();
-    title_bytes.extend_from_slice(CStr::from_ptr((*kt).name).to_bytes());
+    title_bytes.extend_from_slice(CStr::from_ptr(((*kt).name).as_ptr().cast_mut()).to_bytes());
     let title = CString::new(title_bytes).expect("key table name contains no NUL");
     top = mode_tree_add_identity(
         (*data).data,
         ::core::ptr::null_mut::<mode_tree_item>(),
         NULL,
-        ModeTreeIdentity::named(CUSTOMIZE_KEY_TABLE, 0, 0, (*kt).name, ::core::ptr::null()),
+        ModeTreeIdentity::named(CUSTOMIZE_KEY_TABLE, 0, 0, ((*kt).name).as_ptr().cast_mut(), ::core::ptr::null()),
         title.as_ptr(),
         ::core::ptr::null::<::core::ffi::c_char>(),
         0 as ::core::ffi::c_int,
@@ -1449,12 +1521,12 @@ unsafe extern "C" fn window_customize_build_keys(
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 key_string.as_ptr(),
             );
-            if !(*bd).note.is_null() {
+            if !(*bd).note.is_none() {
                 format_add(
                     ft,
                     b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*bd).note,
+                    ((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
             }
             if !filter.is_null() {
@@ -1467,7 +1539,7 @@ unsafe extern "C" fn window_customize_build_keys(
             item = window_customize_add_item(data);
             (*item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
             (*item).scope = WINDOW_CUSTOMIZE_KEY;
-            window_customize_set_table(item, (*kt).name);
+            window_customize_set_table(item, ((*kt).name).as_ptr().cast_mut());
             (*item).key = (*bd).key;
             let key_string = key_string_format((*item).key, false);
             window_customize_set_name(item, key_string.as_ptr());
@@ -1476,7 +1548,7 @@ unsafe extern "C" fn window_customize_build_keys(
                 (*data).data,
                 top,
                 item as *mut ::core::ffi::c_void,
-                window_customize_key_identity((*kt).name, (*bd).key, 0),
+                window_customize_key_identity(((*kt).name).as_ptr().cast_mut(), (*bd).key, 0),
                 expanded.as_ptr(),
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 0 as ::core::ffi::c_int,
@@ -1487,7 +1559,7 @@ unsafe extern "C" fn window_customize_build_keys(
                 (*data).data,
                 child,
                 item as *mut ::core::ffi::c_void,
-                window_customize_key_identity((*kt).name, (*bd).key, 1),
+                window_customize_key_identity(((*kt).name).as_ptr().cast_mut(), (*bd).key, 1),
                 b"Command\0" as *const u8 as *const ::core::ffi::c_char,
                 text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
@@ -1495,8 +1567,8 @@ unsafe extern "C" fn window_customize_build_keys(
             mode_tree_draw_as_parent(mti);
             mode_tree_no_tag(mti);
             drop(text);
-            let text = if !(*bd).note.is_null() {
-                window_customize_key_detail(CStr::from_ptr((*bd).note).to_bytes())
+            let text = if !(*bd).note.is_none() {
+                window_customize_key_detail(CStr::from_ptr(((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes())
             } else {
                 CString::new(Vec::new()).expect("empty key note")
             };
@@ -1504,7 +1576,7 @@ unsafe extern "C" fn window_customize_build_keys(
                 (*data).data,
                 child,
                 item as *mut ::core::ffi::c_void,
-                window_customize_key_identity((*kt).name, (*bd).key, 2),
+                window_customize_key_identity(((*kt).name).as_ptr().cast_mut(), (*bd).key, 2),
                 b"Note\0" as *const u8 as *const ::core::ffi::c_char,
                 text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
@@ -1522,7 +1594,7 @@ unsafe extern "C" fn window_customize_build_keys(
                 (*data).data,
                 child,
                 item as *mut ::core::ffi::c_void,
-                window_customize_key_identity((*kt).name, (*bd).key, 3),
+                window_customize_key_identity(((*kt).name).as_ptr().cast_mut(), (*bd).key, 3),
                 b"Repeat\0" as *const u8 as *const ::core::ffi::c_char,
                 text.as_ptr(),
                 -(1 as ::core::ffi::c_int),
@@ -1611,7 +1683,7 @@ unsafe extern "C" fn window_customize_build_environment(
             ft,
             b"environment_name\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*envent).name,
+            ((*envent).name).as_ptr().cast_mut(),
         );
         format_add(
             ft,
@@ -1623,12 +1695,12 @@ unsafe extern "C" fn window_customize_build_environment(
             ft,
             b"environment_removed\0" as *const u8 as *const ::core::ffi::c_char,
             b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*envent).value == NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int,
+            ((*envent).value == if (NULL as *mut ::core::ffi::c_char).is_null() { None } else { Some(::std::ffi::CStr::from_ptr(NULL as *mut ::core::ffi::c_char).to_owned()) }) as ::core::ffi::c_int,
         );
-        let value = if (*envent).value.is_null() {
+        let value = if (*envent).value.is_none() {
             CStr::from_bytes_with_nul(b"\0").expect("empty C string")
         } else {
-            CStr::from_ptr((*envent).value)
+            CStr::from_ptr(((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
         };
         format_add(
             ft,
@@ -1648,10 +1720,10 @@ unsafe extern "C" fn window_customize_build_environment(
         (*item).scope = scope;
         (*item).environ = env;
         (*item).environ_flags = (*envent).flags;
-        window_customize_set_name(item, (*envent).name);
+        window_customize_set_name(item, ((*envent).name).as_ptr().cast_mut());
         let text;
-        let name: Cow<'_, CStr> = if (*envent).value.is_null() {
-            let entry_name = CStr::from_ptr((*envent).name);
+        let name: Cow<'_, CStr> = if (*envent).value.is_none() {
+            let entry_name = CStr::from_ptr(((*envent).name).as_ptr().cast_mut());
             let mut bytes = Vec::with_capacity(entry_name.to_bytes().len() + 1);
             bytes.push(b'-');
             bytes.extend_from_slice(entry_name.to_bytes());
@@ -1659,7 +1731,7 @@ unsafe extern "C" fn window_customize_build_environment(
             Cow::Owned(CString::new(bytes).expect("environment name contains no NUL"))
         } else {
             text = Some(format_expand_cstring(ft, (*data).format.as_ptr()));
-            Cow::Borrowed(CStr::from_ptr((*envent).name))
+            Cow::Borrowed(CStr::from_ptr(((*envent).name).as_ptr().cast_mut()))
         };
         mode_tree_add_identity(
             (*data).data,
@@ -1669,7 +1741,7 @@ unsafe extern "C" fn window_customize_build_environment(
                 CUSTOMIZE_ENVIRONMENT,
                 group,
                 0,
-                (*envent).name,
+                ((*envent).name).as_ptr().cast_mut(),
                 ::core::ptr::null(),
             ),
             name.as_ptr(),
@@ -1859,7 +1931,9 @@ unsafe extern "C" fn window_customize_draw_key(
     if item.is_null() || window_customize_get_key(item, &raw mut kt, &raw mut bd) == 0 {
         return;
     }
-    note = (*bd).note;
+    note = ((*bd).note)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     if note.is_null() {
         note = b"There is no note for this key.\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -1900,7 +1974,7 @@ unsafe extern "C" fn window_customize_draw_key(
         0 as ::core::ffi::c_int,
         &raw const grid_default_cell,
         b"This key is in the %s table.\0" as *const u8 as *const ::core::ffi::c_char,
-        (*kt).name,
+        ((*kt).name).as_ptr().cast_mut(),
     ) == 0
     {
         return;
@@ -2027,8 +2101,12 @@ unsafe extern "C" fn window_customize_draw_option(
     if window_customize_check_item(data, item, &raw mut fs) == 0 {
         return;
     }
-    name = (*item).name;
-    array_key = (*item).array_key;
+    name = ((*item).name)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+    array_key = ((*item).array_key)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     o = options_get((*item).oo, name);
     if o.is_null() {
         return;
@@ -2732,7 +2810,12 @@ unsafe extern "C" fn window_customize_draw_environment(
     if window_customize_check_item(data, item, &raw mut fs) == 0 {
         return;
     }
-    envent = environ_find((*item).environ, (*item).name);
+    envent = environ_find(
+        (*item).environ,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     if envent.is_null() {
         return;
     }
@@ -2779,7 +2862,7 @@ unsafe extern "C" fn window_customize_draw_environment(
     if (*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
         return;
     }
-    if (*envent).value.is_null() {
+    if (*envent).value.is_none() {
         if screen_write_text(
             ctx,
             cx,
@@ -2800,7 +2883,7 @@ unsafe extern "C" fn window_customize_draw_environment(
         0 as ::core::ffi::c_int,
         b"Variable value: \0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*envent).value,
+        ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     ) == 0
     {
         return;
@@ -2810,11 +2893,16 @@ unsafe extern "C" fn window_customize_draw_environment(
     {
         return;
     }
-    parent = environ_find(global_environ, (*item).name);
+    parent = environ_find(
+        global_environ,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     if parent.is_null() {
         return;
     }
-    if (*parent).value.is_null() {
+    if (*parent).value.is_none() {
         if screen_write_text(
             ctx,
             cx,
@@ -2835,7 +2923,7 @@ unsafe extern "C" fn window_customize_draw_environment(
         0 as ::core::ffi::c_int,
         b"Global value: \0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*parent).value,
+        ((*parent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     ) == 0
     {
         return;
@@ -3067,8 +3155,12 @@ unsafe extern "C" fn window_customize_set_option_callback(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut oo: *mut options = (*item).oo;
-    let mut name: *const ::core::ffi::c_char = (*item).name;
-    let mut array_key: *const ::core::ffi::c_char = (*item).array_key;
+    let mut name: *const ::core::ffi::c_char = ((*item).name)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+    let mut array_key: *const ::core::ffi::c_char = ((*item).array_key)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: u_int = 0;
     let mut keybuf: [::core::ffi::c_char; 32] = [0; 32];
@@ -3161,7 +3253,7 @@ unsafe extern "C" fn window_customize_set_option_callback(
             {
                 hooks_add_event(name);
             }
-            options_push_changes((*item).name);
+            options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
             (*(*data).wp).flags |= PANE_REDRAW;
@@ -3188,13 +3280,18 @@ unsafe extern "C" fn window_customize_set_environment_callback(
         return PROMPT_CLOSE;
     }
     flags = (*item).environ_flags;
-    envent = environ_find((*item).environ, (*item).name);
+    envent = environ_find(
+        (*item).environ,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     if !envent.is_null() {
         flags = (*envent).flags;
     }
     environ_set(
         (*item).environ,
-        (*item).name,
+        ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         flags,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         s,
@@ -3228,7 +3325,12 @@ unsafe extern "C" fn window_customize_set_environment(
     if item.is_null() || window_customize_check_item(data, item, &raw mut fs) == 0 {
         return;
     }
-    envent = environ_find((*item).environ, (*item).name);
+    envent = environ_find(
+        (*item).environ,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     if envent.is_null() {
         return;
     }
@@ -3249,7 +3351,14 @@ unsafe extern "C" fn window_customize_set_environment(
     }
     let mut prompt_bytes = Vec::new();
     prompt_bytes.extend_from_slice(b"(");
-    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).name).to_bytes());
+    prompt_bytes.extend_from_slice(
+        CStr::from_ptr(
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        )
+        .to_bytes(),
+    );
     prompt_bytes.extend_from_slice(CStr::from_ptr(space).to_bytes());
     prompt_bytes.extend_from_slice(scope_text.as_bytes());
     prompt_bytes.extend_from_slice(b") ");
@@ -3261,16 +3370,21 @@ unsafe extern "C" fn window_customize_set_environment(
     (*new_item).scope = scope;
     (*new_item).environ = env;
     (*new_item).environ_flags = (*envent).flags;
-    window_customize_set_name(new_item, (*item).name);
+    window_customize_set_name(
+        new_item,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     (*data).references += 1;
     mode_tree_set_prompt(
         (*data).data,
         c,
         prompt.as_ptr(),
-        if (*envent).value.is_null() {
+        if (*envent).value.is_none() {
             b"\0" as *const u8 as *const ::core::ffi::c_char
         } else {
-            (*envent).value as *const ::core::ffi::c_char
+            ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()) as *const ::core::ffi::c_char
         },
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
@@ -3637,13 +3751,13 @@ unsafe extern "C" fn window_customize_start_edit(
         if window_customize_option_editable(data, item) == 0 {
             return;
         }
-        o = options_get((*item).oo, (*item).name);
+        o = options_get((*item).oo, ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         if o.is_null() {
             return;
         }
         value = Cow::Owned(options_to_cstring(
             o,
-            (*item).array_key,
+            ((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             0 as ::core::ffi::c_int,
         ));
         edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
@@ -3669,10 +3783,10 @@ unsafe extern "C" fn window_customize_start_edit(
         } else if strcmp(name, b"Note\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            value = Cow::Borrowed(if (*bd).note.is_null() {
+            value = Cow::Borrowed(if (*bd).note.is_none() {
                 c""
             } else {
-                CStr::from_ptr((*bd).note)
+                CStr::from_ptr(((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
             });
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_NOTE;
         } else {
@@ -3684,11 +3798,11 @@ unsafe extern "C" fn window_customize_start_edit(
         if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
             return;
         }
-        envent = environ_find((*item).environ, (*item).name);
-        if envent.is_null() || (*envent).value.is_null() {
+        envent = environ_find((*item).environ, ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+        if envent.is_null() || (*envent).value.is_none() {
             return;
         }
-        value = Cow::Borrowed(CStr::from_ptr((*envent).value));
+        value = Cow::Borrowed(CStr::from_ptr(((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())));
         edit_type = WINDOW_CUSTOMIZE_EDIT_ENVIRONMENT;
     } else {
         return;
@@ -3742,9 +3856,13 @@ unsafe extern "C" fn window_customize_set_option(
     let mut flag: ::core::ffi::c_int = 0;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
     let mut choice: u_int = 0;
-    let mut name: *const ::core::ffi::c_char = (*item).name;
+    let mut name: *const ::core::ffi::c_char = ((*item).name)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     let mut space: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut array_key: *const ::core::ffi::c_char = (*item).array_key;
+    let mut array_key: *const ::core::ffi::c_char = ((*item).array_key)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -3923,8 +4041,12 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    name = (*item).name;
-    array_key = (*item).array_key;
+    name = ((*item).name)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+    array_key = ((*item).array_key)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     if array_key.is_null()
         || window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
     {
@@ -3988,7 +4110,7 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
             0 as ::core::ffi::c_int,
             ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
         );
-        options_push_changes((*item).name);
+        options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         mode_tree_build((*data).data);
         mode_tree_draw((*data).data);
         (*(*data).wp).flags |= PANE_REDRAW;
@@ -4003,16 +4125,30 @@ unsafe extern "C" fn window_customize_set_array_key(
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     if item.is_null()
-        || (*item).array_key.is_null()
+        || (*item).array_key.is_none()
         || window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
     {
         return;
     }
     let mut prompt_bytes = Vec::new();
     prompt_bytes.extend_from_slice(b"(");
-    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).name).to_bytes());
+    prompt_bytes.extend_from_slice(
+        CStr::from_ptr(
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        )
+        .to_bytes(),
+    );
     prompt_bytes.extend_from_slice(b"[");
-    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).array_key).to_bytes());
+    prompt_bytes.extend_from_slice(
+        CStr::from_ptr(
+            ((*item).array_key)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        )
+        .to_bytes(),
+    );
     prompt_bytes.extend_from_slice(b"]) ");
     let prompt = CString::new(prompt_bytes).expect("array-key prompt contains no NUL");
     new_item = window_customize_new_item();
@@ -4021,14 +4157,24 @@ unsafe extern "C" fn window_customize_set_array_key(
     (*new_item).option_type = (*item).option_type;
     (*new_item).scope = (*item).scope;
     (*new_item).oo = (*item).oo;
-    window_customize_set_name(new_item, (*item).name);
-    window_customize_set_item_array_key(new_item, (*item).array_key);
+    window_customize_set_name(
+        new_item,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
+    window_customize_set_item_array_key(
+        new_item,
+        ((*item).array_key)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     (*data).references += 1;
     mode_tree_set_prompt(
         (*data).data,
         c,
         prompt.as_ptr(),
-        (*item).array_key,
+        ((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
         Some(
@@ -4056,13 +4202,25 @@ unsafe extern "C" fn window_customize_unset_environment(
     {
         return;
     }
-    if environ_find((*item).environ, (*item).name).is_null() {
+    if environ_find(
+        (*item).environ,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    )
+    .is_null()
+    {
         return;
     }
     if item == mode_tree_get_current((*data).data) as *mut window_customize_itemdata {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
-    environ_unset((*item).environ, (*item).name);
+    environ_unset(
+        (*item).environ,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
 }
 unsafe extern "C" fn window_customize_unset_option(
     mut data: *mut window_customize_modedata,
@@ -4074,18 +4232,23 @@ unsafe extern "C" fn window_customize_unset_option(
     {
         return;
     }
-    o = options_get((*item).oo, (*item).name);
+    o = options_get(
+        (*item).oo,
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
     if o.is_null() {
         return;
     }
-    if !(*item).array_key.is_null()
+    if !(*item).array_key.is_none()
         && item == mode_tree_get_current((*data).data) as *mut window_customize_itemdata
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
     options_remove_or_default(
         o,
-        (*item).array_key,
+        ((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
     );
 }
@@ -4100,12 +4263,12 @@ unsafe extern "C" fn window_customize_reset_option(
     {
         return;
     }
-    if !(*item).array_key.is_null() {
+    if !(*item).array_key.is_none() {
         return;
     }
     oo = (*item).oo;
     while !oo.is_null() {
-        o = options_get_only(oo, (*item).name);
+        o = options_get_only(oo, ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         if !o.is_null() {
             options_remove_or_default(
                 o,
@@ -4246,7 +4409,7 @@ unsafe extern "C" fn window_customize_set_key(
         (*new_item).data = data as *mut window_customize_modedata;
         (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
         (*new_item).scope = (*item).scope;
-        window_customize_set_table(new_item, (*item).table);
+        window_customize_set_table(new_item, ((*item).table).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         (*new_item).key = key;
         (*data).references += 1;
         mode_tree_set_prompt(
@@ -4280,17 +4443,17 @@ unsafe extern "C" fn window_customize_set_key(
         (*new_item).data = data as *mut window_customize_modedata;
         (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
         (*new_item).scope = (*item).scope;
-        window_customize_set_table(new_item, (*item).table);
+        window_customize_set_table(new_item, ((*item).table).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         (*new_item).key = key;
         (*data).references += 1;
         mode_tree_set_prompt(
             (*data).data,
             c,
             prompt.as_ptr(),
-            if (*bd).note.is_null() {
+            if (*bd).note.is_none() {
                 b"\0" as *const u8 as *const ::core::ffi::c_char
             } else {
-                (*bd).note
+                ((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
             },
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
@@ -4415,7 +4578,7 @@ unsafe extern "C" fn window_customize_add_key_callback(
         }
         1 | _ => {
             key_bindings_add(
-                (*item).table,
+                ((*item).table).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 key,
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 0 as ::core::ffi::c_int,
@@ -4480,7 +4643,7 @@ unsafe extern "C" fn window_customize_unset_key(
     if item == mode_tree_get_current((*data).data) as *mut window_customize_itemdata {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
-    key_bindings_remove((*kt).name, (*bd).key);
+    key_bindings_remove(((*kt).name).as_ptr().cast_mut(), (*bd).key);
 }
 unsafe extern "C" fn window_customize_reset_key(
     mut data: *mut window_customize_modedata,
@@ -4500,7 +4663,7 @@ unsafe extern "C" fn window_customize_reset_key(
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
     }
-    key_bindings_reset((*kt).name, (*bd).key);
+    key_bindings_reset(((*kt).name).as_ptr().cast_mut(), (*bd).key);
 }
 unsafe extern "C" fn window_customize_change_each(
     mut modedata: *mut ::core::ffi::c_void,
@@ -4514,7 +4677,7 @@ unsafe extern "C" fn window_customize_change_each(
     let name = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        Some(CStr::from_ptr((*item).name).to_owned())
+        Some(CStr::from_ptr(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned())
     } else {
         None
     };
@@ -4599,7 +4762,7 @@ unsafe extern "C" fn window_customize_change_current_callback(
     let name = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        Some(CStr::from_ptr((*item).name).to_owned())
+        Some(CStr::from_ptr(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned())
     } else {
         None
     };
@@ -4901,7 +5064,7 @@ unsafe extern "C" fn window_customize_key(
                             0 as ::core::ffi::c_int,
                             1 as ::core::ffi::c_int,
                         );
-                        options_push_changes((*item).name);
+                        options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
                     }
                     mode_tree_build((*data).data);
                 }
@@ -4919,7 +5082,7 @@ unsafe extern "C" fn window_customize_key(
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    options_push_changes((*item).name);
+                    options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
                     mode_tree_build((*data).data);
                 }
             }
@@ -4941,7 +5104,7 @@ unsafe extern "C" fn window_customize_key(
                             1 as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
                         );
-                        options_push_changes((*item).name);
+                        options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
                     }
                     mode_tree_build((*data).data);
                 }
@@ -4951,13 +5114,13 @@ unsafe extern "C" fn window_customize_key(
                     || (*item).type_0 as ::core::ffi::c_uint
                         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int
                             as ::core::ffi::c_uint
-                        && !(*item).array_key.is_null()
+                        && !(*item).array_key.is_none()
                     || (*item).type_0 as ::core::ffi::c_uint
                         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int
                             as ::core::ffi::c_uint)
                 {
                     let mut prompt_bytes = b"Reset ".to_vec();
-                    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).name).to_bytes());
+                    prompt_bytes.extend_from_slice(CStr::from_ptr(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
                     prompt_bytes.extend_from_slice(b" to default? ");
                     let reset_prompt =
                         CString::new(prompt_bytes).expect("C string parts have no NUL");
@@ -5023,11 +5186,11 @@ unsafe extern "C" fn window_customize_key(
             117 => {
                 if !item.is_null() {
                     let mut prompt_bytes = b"Unset ".to_vec();
-                    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).name).to_bytes());
-                    if !(*item).array_key.is_null() {
+                    prompt_bytes.extend_from_slice(CStr::from_ptr(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
+                    if !(*item).array_key.is_none() {
                         prompt_bytes.push(b'[');
                         prompt_bytes
-                            .extend_from_slice(CStr::from_ptr((*item).array_key).to_bytes());
+                            .extend_from_slice(CStr::from_ptr(((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
                         prompt_bytes.push(b']');
                     }
                     prompt_bytes.extend_from_slice(b"? ");
@@ -5176,9 +5339,33 @@ mod item_owner_tests {
             window_customize_set_name(item, b"second\0".as_ptr().cast());
             window_customize_free_item(item);
 
-            assert_eq!(CStr::from_ptr((*copy).table).to_bytes(), b"\xfftable");
-            assert_eq!(CStr::from_ptr((*copy).name).to_bytes(), b"first");
-            assert_eq!(CStr::from_ptr((*copy).array_key).to_bytes(), b"");
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*copy).table)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"\xfftable"
+            );
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*copy).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"first"
+            );
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*copy).array_key)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
             window_customize_free_item(copy);
         }
     }
@@ -5217,7 +5404,7 @@ mod item_owner_tests {
             }
             let first_address = {
                 let items = &mut (*data).item_list;
-                &mut items[0].item as *mut window_customize_itemdata
+                &mut *items[0] as *mut window_customize_itemdata
             };
             assert_eq!(first_address, first);
             let detached = window_customize_copy_item(first);
@@ -5225,7 +5412,15 @@ mod item_owner_tests {
 
             window_customize_destroy(data);
             assert_eq!((*data).references, 1);
-            assert_eq!(CStr::from_ptr((*detached).name).to_bytes(), b"stable");
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*detached).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"stable"
+            );
             window_customize_free_item_callback(detached.cast());
         }
     }

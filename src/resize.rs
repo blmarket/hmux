@@ -292,7 +292,7 @@ unsafe extern "C" fn clients_calculate_size(
                 log_debug(
                     b"%s: ignoring %s (1)\0" as *const u8 as *const ::core::ffi::c_char,
                     b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*loop_0).name,
+                    ((*loop_0).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
             } else if loop_0 != c
                 && skip_client.expect("non-null function pointer")(loop_0, type_0, current, s, w)
@@ -301,7 +301,7 @@ unsafe extern "C" fn clients_calculate_size(
                 log_debug(
                     b"%s: skipping %s (1)\0" as *const u8 as *const ::core::ffi::c_char,
                     b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*loop_0).name,
+                    ((*loop_0).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
             } else if type_0 == WINDOW_SIZE_LATEST
                 && n > 1 as u_int
@@ -310,7 +310,7 @@ unsafe extern "C" fn clients_calculate_size(
                 log_debug(
                     b"%s: %s is not latest\0" as *const u8 as *const ::core::ffi::c_char,
                     b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*loop_0).name,
+                    ((*loop_0).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
             } else {
                 if w.is_null()
@@ -344,7 +344,7 @@ unsafe extern "C" fn clients_calculate_size(
                     b"%s: after %s (%ux%u), size is %ux%u\0" as *const u8
                         as *const ::core::ffi::c_char,
                     b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*loop_0).name,
+                    ((*loop_0).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     cx,
                     cy,
                     *sx,
@@ -387,7 +387,7 @@ unsafe extern "C" fn clients_calculate_size(
                                     as *const ::core::ffi::c_char,
                                 b"clients_calculate_size\0" as *const u8
                                     as *const ::core::ffi::c_char,
-                                (*loop_0).name,
+                                ((*loop_0).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                                 (*w).id,
                                 cx,
                                 cy,
@@ -488,7 +488,7 @@ pub unsafe extern "C" fn default_window_size(
             b"default_window_size\0" as *const u8 as *const ::core::ffi::c_char,
             *sx,
             *sy,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     } else {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {

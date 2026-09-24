@@ -116,15 +116,6 @@ static mut all_jobs: joblist = joblist {
     lh_first: ::core::ptr::null::<job>() as *mut job,
 };
 
-/// The public job pointer borrows its command string from this stable box.
-#[repr(C)]
-struct JobOwner {
-    node: job,
-    cmd: Option<CString>,
-}
-
-const _: () = assert!(::core::mem::offset_of!(JobOwner, node) == 0);
-
 #[no_mangle]
 pub unsafe extern "C" fn job_run(
     mut cmd: *const ::core::ffi::c_char,
@@ -390,14 +381,8 @@ pub unsafe extern "C" fn job_run(
                     } else {
                         cmd_stringify_argv_cstring(argc, argv)
                     };
-                    let mut owner = Box::new(JobOwner {
-                        node: ::core::mem::zeroed::<job>(),
-                        cmd: cmd_owner,
-                    });
-                    owner.node.cmd = owner
-                        .cmd
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |cmd| cmd.as_ptr() as *mut _);
+                    let mut owner = Box::new(job { cmd: cmd_owner, ..job::empty() });
+
                     job = Box::into_raw(owner).cast::<job>();
                     (*job).state = JOB_RUNNING;
                     (*job).flags = flags;
@@ -460,7 +445,7 @@ pub unsafe extern "C" fn job_run(
                     log_debug(
                         b"run job %p: %s, pid %ld\0" as *const u8 as *const ::core::ffi::c_char,
                         job,
-                        (*job).cmd,
+                        ((*job).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                         (*job).pid as ::core::ffi::c_long,
                     );
                     return job;
@@ -488,7 +473,7 @@ pub unsafe extern "C" fn job_transfer(
     log_debug(
         b"transfer job %p: %s\0" as *const u8 as *const ::core::ffi::c_char,
         job,
-        (*job).cmd,
+        ((*job).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     if !pid.is_null() {
         *pid = (*job).pid;
@@ -506,7 +491,7 @@ pub unsafe extern "C" fn job_transfer(
     if !(*job).event.is_null() {
         bufferevent_free((*job).event);
     }
-    drop(Box::from_raw(job.cast::<JobOwner>()));
+    drop(Box::from_raw(job));
     return fd;
 }
 #[no_mangle]
@@ -514,7 +499,7 @@ pub unsafe extern "C" fn job_free(mut job: *mut job) {
     log_debug(
         b"free job %p: %s\0" as *const u8 as *const ::core::ffi::c_char,
         job,
-        (*job).cmd,
+        ((*job).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     if !(*job).entry.le_next.is_null() {
         (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
@@ -532,7 +517,7 @@ pub unsafe extern "C" fn job_free(mut job: *mut job) {
     if (*job).fd != -(1 as ::core::ffi::c_int) {
         close((*job).fd);
     }
-    drop(Box::from_raw(job.cast::<JobOwner>()));
+    drop(Box::from_raw(job));
 }
 #[no_mangle]
 pub unsafe extern "C" fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {
@@ -582,7 +567,7 @@ unsafe extern "C" fn job_write_callback(
     log_debug(
         b"job write %p: %s, pid %ld, output left %zu\0" as *const u8 as *const ::core::ffi::c_char,
         job,
-        (*job).cmd,
+        ((*job).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*job).pid as ::core::ffi::c_long,
         len,
     );
@@ -600,7 +585,7 @@ unsafe extern "C" fn job_error_callback(
     log_debug(
         b"job error %p: %s, pid %ld\0" as *const u8 as *const ::core::ffi::c_char,
         job,
-        (*job).cmd,
+        ((*job).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*job).pid as ::core::ffi::c_long,
     );
     if (*job).state as ::core::ffi::c_uint == JOB_DEAD as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -639,7 +624,7 @@ pub unsafe extern "C" fn job_check_died(mut pid: pid_t, mut status: ::core::ffi:
     log_debug(
         b"job died %p: %s, pid %ld\0" as *const u8 as *const ::core::ffi::c_char,
         job,
-        (*job).cmd,
+        ((*job).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*job).pid as ::core::ffi::c_long,
     );
     (*job).status = status;
@@ -714,7 +699,7 @@ pub unsafe extern "C" fn job_print_summary(
             item,
             b"Job %u: %s [fd=%d, pid=%ld, status=%d]\0" as *const u8 as *const ::core::ffi::c_char,
             n,
-            (*job).cmd,
+            ((*job).cmd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*job).fd,
             (*job).pid as ::core::ffi::c_long,
             (*job).status,

@@ -568,10 +568,10 @@ unsafe fn expand_path(
         }
         // On glibc, the previous `%s` rendered a cleared environment value
         // as `(null)`. Keep that behavior if this entry has no value.
-        let mut expanded = if (*value).value.is_null() {
+        let mut expanded = if (*value).value.is_none() {
             b"(null)".to_vec()
         } else {
-            CStr::from_ptr((*value).value).to_bytes().to_vec()
+            CStr::from_ptr(((*value).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes().to_vec()
         };
         expanded.extend_from_slice(CStr::from_ptr(end).to_bytes());
         return Some(CString::new(expanded).expect("C strings contain no interior NUL"));

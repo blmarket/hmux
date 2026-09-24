@@ -16,13 +16,27 @@ pub struct menu_item {
     pub key: key_code,
     pub command: *const ::core::ffi::c_char,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct menu {
-    pub title: *const ::core::ffi::c_char,
-    pub items: *mut menu_item,
+    pub title: std::ffi::CString,
+    pub items: Vec<menu_item>,
     pub count: u_int,
     pub width: u_int,
+    // menu_item also describes static, borrowed menu definitions. Runtime rows
+    // borrow these strings, which move and drop together with the item vector.
+    pub(crate) strings: Vec<crate::src::menu::MenuRowStrings>,
+}
+
+impl menu {
+    pub fn empty() -> Self {
+        Self {
+            title: Default::default(),
+            items: Default::default(),
+            count: unsafe { ::core::mem::zeroed() },
+            width: unsafe { ::core::mem::zeroed() },
+            strings: Default::default(),
+        }
+    }
 }
 pub const MENU_NOMOUSE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const MENU_STAYOPEN: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
@@ -32,9 +46,9 @@ pub const MENU_TAB: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub struct menu_data {
     pub w: *mut window,
     pub flags: ::core::ffi::c_int,
-    pub style: *mut ::core::ffi::c_char,
-    pub border_style: *mut ::core::ffi::c_char,
-    pub selected_style: *mut ::core::ffi::c_char,
+    pub style: Option<std::ffi::CString>,
+    pub border_style: Option<std::ffi::CString>,
+    pub selected_style: Option<std::ffi::CString>,
     pub style_gc: grid_cell,
     pub border_style_gc: grid_cell,
     pub selected_style_gc: grid_cell,
@@ -49,6 +63,32 @@ pub struct menu_data {
     pub choice: ::core::ffi::c_int,
     pub cb: menu_choice_cb,
     pub data: *mut ::core::ffi::c_void,
+}
+
+impl menu_data {
+    pub fn empty() -> Self {
+        Self {
+            w: unsafe { ::core::mem::zeroed() },
+            flags: unsafe { ::core::mem::zeroed() },
+            style: Default::default(),
+            border_style: Default::default(),
+            selected_style: Default::default(),
+            style_gc: unsafe { ::core::mem::zeroed() },
+            border_style_gc: unsafe { ::core::mem::zeroed() },
+            selected_style_gc: unsafe { ::core::mem::zeroed() },
+            border_lines: unsafe { ::core::mem::zeroed() },
+            fs: unsafe { ::core::mem::zeroed() },
+            key: unsafe { ::core::mem::zeroed() },
+            m: unsafe { ::core::mem::zeroed() },
+            s: unsafe { ::core::mem::zeroed() },
+            px: unsafe { ::core::mem::zeroed() },
+            py: unsafe { ::core::mem::zeroed() },
+            menu: unsafe { ::core::mem::zeroed() },
+            choice: unsafe { ::core::mem::zeroed() },
+            cb: unsafe { ::core::mem::zeroed() },
+            data: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 pub type menu_choice_cb =

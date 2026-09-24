@@ -130,7 +130,7 @@ unsafe extern "C" fn sort_buffer_cmp(
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match (*sort_crit).order as ::core::ffi::c_uint {
         4 => {
-            result = strcmp((*pa).name, (*pb).name);
+            result = strcmp(((*pa).name).as_ptr().cast_mut(), ((*pb).name).as_ptr().cast_mut());
         }
         1 => {
             if (*pa).order > (*pb).order {
@@ -147,7 +147,7 @@ unsafe extern "C" fn sort_buffer_cmp(
         0 | 2 | 3 | 5 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp((*pa).name, (*pb).name);
+        result = strcmp(((*pa).name).as_ptr().cast_mut(), ((*pb).name).as_ptr().cast_mut());
     }
     if (*sort_crit).reversed != 0 {
         result = -result;
@@ -166,7 +166,7 @@ unsafe extern "C" fn sort_client_cmp(
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match (*sort_crit).order as ::core::ffi::c_uint {
         4 => {
-            result = strcmp((*ca).name, (*cb).name);
+            result = strcmp(((*ca).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ((*cb).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         }
         6 => {
             result = (*ca).tty.sx.wrapping_sub((*cb).tty.sx) as ::core::ffi::c_int;
@@ -211,7 +211,7 @@ unsafe extern "C" fn sort_client_cmp(
         2 | 3 | 5 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp((*ca).name, (*cb).name);
+        result = strcmp(((*ca).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ((*cb).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
     }
     if (*sort_crit).reversed != 0 {
         result = -result;
@@ -267,12 +267,12 @@ unsafe extern "C" fn sort_session_cmp(
             }
         }
         4 => {
-            result = strcmp((*sa).name, (*sb).name);
+            result = strcmp(((*sa).name).as_ptr().cast_mut(), ((*sb).name).as_ptr().cast_mut());
         }
         3 | 5 | 6 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp((*sa).name, (*sb).name);
+        result = strcmp(((*sa).name).as_ptr().cast_mut(), ((*sb).name).as_ptr().cast_mut());
     }
     if (*sort_crit).reversed != 0 {
         result = -result;

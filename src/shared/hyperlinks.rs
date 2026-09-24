@@ -17,16 +17,29 @@ pub struct hyperlinks_by_uri_tree {
     pub storage:
         *mut std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlinks_uri {
     pub tree: *mut hyperlinks,
     pub inner: u_int,
-    pub internal_id: *const ::core::ffi::c_char,
-    pub external_id: *const ::core::ffi::c_char,
-    pub uri: *const ::core::ffi::c_char,
+    pub internal_id: std::ffi::CString,
+    pub external_id: std::ffi::CString,
+    pub uri: std::ffi::CString,
     pub by_inner_entry: hyperlink_inner_entry,
     pub by_uri_entry: hyperlink_uri_entry,
+}
+
+impl hyperlinks_uri {
+    pub fn empty() -> Self {
+        Self {
+            tree: unsafe { ::core::mem::zeroed() },
+            inner: unsafe { ::core::mem::zeroed() },
+            internal_id: Default::default(),
+            external_id: Default::default(),
+            uri: Default::default(),
+            by_inner_entry: unsafe { ::core::mem::zeroed() },
+            by_uri_entry: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 #[derive(Copy, Clone)]
 #[repr(C)]

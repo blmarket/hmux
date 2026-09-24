@@ -8,7 +8,6 @@ use super::window::{window, windows};
 use std::collections::VecDeque;
 
 #[repr(C)]
-/// State view inside `ControlStateOwner`, owned by the client through `control_stop`.
 pub struct control_state {
     pub panes: control_panes,
     pub windows: control_windows,
@@ -18,14 +17,44 @@ pub struct control_state {
     pub write_event: *mut bufferevent,
     pub subs: *mut monitor_set,
     pub guard_depth: ::core::ffi::c_int,
+    pub(crate) deferred: VecDeque<std::ffi::CString>,
+    pub(crate) all_blocks: VecDeque<Box<control_block>>,
+    pub(crate) pending_panes: VecDeque<*mut control_pane>,
+}
+
+impl control_state {
+    pub fn empty() -> Self {
+        Self {
+            panes: unsafe { ::core::mem::zeroed() },
+            windows: unsafe { ::core::mem::zeroed() },
+            pending_count: unsafe { ::core::mem::zeroed() },
+            queued_reply_bytes: unsafe { ::core::mem::zeroed() },
+            read_event: unsafe { ::core::mem::zeroed() },
+            write_event: unsafe { ::core::mem::zeroed() },
+            subs: unsafe { ::core::mem::zeroed() },
+            guard_depth: unsafe { ::core::mem::zeroed() },
+            deferred: Default::default(),
+            all_blocks: Default::default(),
+            pending_panes: Default::default(),
+        }
+    }
 }
 
 #[repr(C)]
-/// Address-stable view into its state-owned `ControlBlockOwner`.
 pub struct control_block {
     pub size: size_t,
-    pub line: *mut ::core::ffi::c_char,
+    pub line: Option<std::ffi::CString>,
     pub t: uint64_t,
+}
+
+impl control_block {
+    pub fn empty() -> Self {
+        Self {
+            size: unsafe { ::core::mem::zeroed() },
+            line: Default::default(),
+            t: unsafe { ::core::mem::zeroed() },
+        }
+    }
 }
 
 #[repr(C)]

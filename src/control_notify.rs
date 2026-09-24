@@ -342,16 +342,16 @@ unsafe extern "C" fn control_client_session_changed_cb(
                     c,
                     b"%%session-changed $%u %s\0" as *const u8 as *const ::core::ffi::c_char,
                     (*s).id,
-                    (*s).name,
+                    ((*s).name).as_ptr().cast_mut(),
                 );
             } else {
                 control_notify_write(
                     c,
                     b"%%client-session-changed %s $%u %s\0" as *const u8
                         as *const ::core::ffi::c_char,
-                    (*cc).name,
+                    ((*cc).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     (*s).id,
-                    (*s).name,
+                    ((*s).name).as_ptr().cast_mut(),
                 );
             }
         }
@@ -379,7 +379,7 @@ unsafe extern "C" fn control_client_detached_cb(
             control_notify_write(
                 c,
                 b"%%client-detached %s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*cc).name,
+                ((*cc).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         c = clients.next(c);
@@ -407,7 +407,7 @@ unsafe extern "C" fn control_session_renamed_cb(
                 c,
                 b"%%session-renamed $%u %s\0" as *const u8 as *const ::core::ffi::c_char,
                 (*s).id,
-                (*s).name,
+                ((*s).name).as_ptr().cast_mut(),
             );
         }
         c = clients.next(c);

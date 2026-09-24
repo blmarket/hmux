@@ -143,7 +143,7 @@ unsafe extern "C" fn status_timer_callback(
     if s.is_null() {
         return;
     }
-    if (*c).message_string.is_null() && (*c).prompt.is_null() {
+    if (*c).message_string.is_none() && (*c).prompt.is_null() {
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
     tv.tv_usec = 0 as __suseconds_t;
@@ -574,8 +574,8 @@ pub unsafe extern "C" fn status_message_set(
     server_client_set_message(c, Some(s));
     server_add_message(
         b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
-        (*c).message_string,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).message_string).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     if delay == -(1 as ::core::ffi::c_int) {
         delay = options_get_number(
@@ -618,7 +618,7 @@ pub unsafe extern "C" fn status_message_set(
 }
 #[no_mangle]
 pub unsafe extern "C" fn status_message_clear(mut c: *mut client) {
-    if (*c).message_string.is_null() {
+    if (*c).message_string.is_none() {
         return;
     }
     server_client_set_message(c, None);
@@ -788,7 +788,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
         ft,
     );
     if (*c).message_ignore_styles != 0 {
-        let msg = status_message_escape((*c).message_string);
+        let msg = status_message_escape(((*c).message_string).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
         format_add(
             ft,
             b"message\0" as *const u8 as *const ::core::ffi::c_char,
@@ -800,7 +800,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
             ft,
             b"message\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).message_string,
+            ((*c).message_string).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     }
     format_add(

@@ -1,4 +1,4 @@
-src/arguments.rs::args_command_state 112 8 [0, 8, 16]
+src/arguments.rs::args_command_state 136 8 [0, 8, 24]
 src/cmd_command_prompt.rs::args_command_state 8 8 []
 src/cmd_if_shell.rs::args_command_state 8 8 []
 src/cmd_run_shell.rs::args_command_state 8 8 []

@@ -114,70 +114,9 @@ pub use crate::src::shared::client::{
     overlay_resize_cb,
 };
 
-// ClientRegistry owns each ClientOwner until its refcount reaches zero.
-// The public client record stays at offset zero inside that stable Box.
-// message_string borrows the CString until the next replacement or clear.
-// ttyname borrows the CString until a new identify payload or client loss.
-// term_name borrows the CString until identify completion or client loss.
-// term_type borrows the CString until the extended DA reply or client loss.
-// cwd borrows the CString until a new identify payload or client loss.
-// title borrows the CString until a changed redraw title or client loss.
-// path borrows the CString until a changed pane path or client loss.
-// exit_session borrows the detached session name until client loss.
-// user borrows the cached passwd name until the final client free.
-// name borrows the identify result through final client destruction.
-// exit_message borrows the latest exit reason until client loss.
-// status entries borrow their expanded strings until redraw or client loss.
-// term_caps borrows term_cap_ptrs, whose entries borrow term_cap_strings.
-// Both views are refreshed after every identify capability and cleared after
-// tty_free, before the client owner is eventually dropped.
-// tty.r borrows tty_range only after tty_init clears and initializes the tty.
-#[repr(C)]
-struct ClientOwner {
-    node: client,
-    message: Option<CString>,
-    ttyname: Option<CString>,
-    term_name: Option<CString>,
-    term_type: Option<CString>,
-    cwd: Option<CString>,
-    title: Option<CString>,
-    path: Option<CString>,
-    exit_session: Option<CString>,
-    user: Option<CString>,
-    name: Option<CString>,
-    exit_message: Option<CString>,
-    status_expanded: [Option<CString>; 5],
-    saved_status_screen: Option<Box<screen>>,
-    term_cap_strings: Vec<CString>,
-    term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
-    input_request_handles: Vec<*mut input_request>,
-    tty_range: visible_range,
-}
-
-const _: () = assert!(std::mem::offset_of!(ClientOwner, node) == 0);
-
-impl ClientOwner {
+impl client {
     unsafe fn new() -> Box<Self> {
-        Box::new(Self {
-            node: std::mem::zeroed::<client>(),
-            message: None,
-            ttyname: None,
-            term_name: None,
-            term_type: None,
-            cwd: None,
-            title: None,
-            path: None,
-            exit_session: None,
-            user: None,
-            name: None,
-            exit_message: None,
-            status_expanded: std::array::from_fn(|_| None),
-            saved_status_screen: None,
-            term_cap_strings: Vec::new(),
-            term_cap_ptrs: Vec::new(),
-            input_request_handles: Vec::new(),
-            tty_range: visible_range { px: 0, nx: 0 },
-        })
+        Box::new(client::empty())
     }
 }
 
@@ -191,7 +130,7 @@ pub struct ClientRegistry {
     ordered: Vec<*mut client>,
     indices: std::collections::BTreeMap<usize, usize>,
     successors: std::collections::BTreeMap<usize, *mut client>,
-    owners: Vec<Box<ClientOwner>>,
+    owners: Vec<Box<client>>,
 }
 
 impl ClientRegistry {
@@ -215,8 +154,8 @@ impl ClientRegistry {
             .unwrap_or(::core::ptr::null_mut())
     }
 
-    pub(crate) fn push_back(&mut self, mut owner: Box<ClientOwner>) -> *mut client {
-        let value = &raw mut owner.node;
+    pub(crate) fn push_back(&mut self, mut owner: Box<client>) -> *mut client {
+        let value = &raw mut *owner;
         let key = value as usize;
         assert!(!self.indices.contains_key(&key), "client registered twice");
 
@@ -255,7 +194,7 @@ impl ClientRegistry {
         let index = self
             .owners
             .iter()
-            .position(|owner| std::ptr::eq(&owner.node, value))
+            .position(|owner| std::ptr::eq(&**owner, value))
             .expect("client owner missing at final release");
         self.owners.remove(index);
     }
@@ -275,13 +214,7 @@ pub type clients = ClientRegistry;
 pub static mut clients: ClientRegistry = ClientRegistry::new();
 
 pub(crate) unsafe fn server_client_set_message(c: *mut client, message: Option<CString>) {
-    let owner = c as *mut ClientOwner;
-    // Invalidate the compatibility pointer before releasing the old value.
-    (*c).message_string = ::core::ptr::null_mut();
-    (*owner).message = message;
-    if let Some(message) = (*owner).message.as_ref() {
-        (*c).message_string = message.as_ptr().cast_mut();
-    }
+    (*c).message_string = message;
 }
 
 pub(crate) unsafe fn server_client_set_status_expanded(
@@ -289,7 +222,7 @@ pub(crate) unsafe fn server_client_set_status_expanded(
     index: usize,
     expanded: Option<CString>,
 ) {
-    let owner = c.cast::<ClientOwner>();
+    let owner = c;
     assert!(index < (*owner).status_expanded.len());
     (*c).status.entries[index].expanded = ::core::ptr::null_mut();
     (*owner).status_expanded[index] = expanded;
@@ -299,111 +232,60 @@ pub(crate) unsafe fn server_client_set_status_expanded(
 }
 
 unsafe fn server_client_set_ttyname(c: *mut client, ttyname: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    // Invalidate the public view before replacing or releasing its owner.
-    (*c).ttyname = ::core::ptr::null_mut();
-    (*owner).ttyname = ttyname;
-    if let Some(ttyname) = (*owner).ttyname.as_ref() {
-        (*c).ttyname = ttyname.as_ptr().cast_mut();
-    }
+    (*c).ttyname = ttyname;
 }
 
 unsafe fn server_client_set_term_name(c: *mut client, term_name: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).term_name = ::core::ptr::null_mut();
-    (*owner).term_name = term_name;
-    if let Some(term_name) = (*owner).term_name.as_ref() {
-        (*c).term_name = term_name.as_ptr().cast_mut();
-    }
+    (*c).term_name = term_name;
 }
 
 unsafe fn server_client_set_cwd(c: *mut client, cwd: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).cwd = ::core::ptr::null();
-    (*owner).cwd = cwd;
-    if let Some(cwd) = (*owner).cwd.as_ref() {
-        (*c).cwd = cwd.as_ptr();
-    }
+    (*c).cwd = cwd;
 }
 
 unsafe fn server_client_replace_title(c: *mut client, title: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).title = ::core::ptr::null_mut();
-    (*owner).title = title;
-    if let Some(title) = (*owner).title.as_ref() {
-        (*c).title = title.as_ptr().cast_mut();
-    }
+    (*c).title = title;
 }
 
 unsafe fn server_client_replace_path(c: *mut client, path: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).path = ::core::ptr::null_mut();
-    (*owner).path = path;
-    if let Some(path) = (*owner).path.as_ref() {
-        (*c).path = path.as_ptr().cast_mut();
-    }
+    (*c).path = path;
 }
 
 unsafe fn server_client_set_exit_session(c: *mut client, exit_session: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).exit_session = ::core::ptr::null_mut();
-    (*owner).exit_session = exit_session;
-    if let Some(exit_session) = (*owner).exit_session.as_ref() {
-        (*c).exit_session = exit_session.as_ptr().cast_mut();
-    }
+    (*c).exit_session = exit_session;
 }
 
 pub(crate) unsafe fn server_client_set_user(c: *mut client, user: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).user = ::core::ptr::null();
-    (*owner).user = user;
-    if let Some(user) = (*owner).user.as_ref() {
-        (*c).user = user.as_ptr();
-    }
+    (*c).user = user;
 }
 
 unsafe fn server_client_set_name(c: *mut client, name: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).name = ::core::ptr::null();
-    (*owner).name = name;
-    if let Some(name) = (*owner).name.as_ref() {
-        (*c).name = name.as_ptr();
-    }
+    (*c).name = name;
 }
 
 pub(crate) unsafe fn server_client_set_exit_message(c: *mut client, exit_message: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).exit_message = ::core::ptr::null_mut();
-    (*owner).exit_message = exit_message;
-    if let Some(exit_message) = (*owner).exit_message.as_ref() {
-        (*c).exit_message = exit_message.as_ptr().cast_mut();
-    }
+    (*c).exit_message = exit_message;
 }
 
 pub(crate) unsafe fn server_client_set_term_type(c: *mut client, term_type: Option<CString>) {
-    let owner = c.cast::<ClientOwner>();
-    (*c).term_type = ::core::ptr::null_mut();
-    (*owner).term_type = term_type;
-    if let Some(term_type) = (*owner).term_type.as_ref() {
-        (*c).term_type = term_type.as_ptr().cast_mut();
-    }
+    (*c).term_type = term_type;
 }
 
 unsafe fn server_client_ensure_term_name(c: *mut client) {
-    if (*c).term_name.is_null() || *(*c).term_name == 0 {
+    if (*c).term_name.is_none() || *(*c).term_name.as_ref().unwrap().as_ptr() == 0 {
         server_client_set_term_name(c, Some(CString::new("unknown").unwrap()));
     }
 }
 
 pub(crate) unsafe fn server_client_set_saved_status_screen(c: *mut client, screen: Box<screen>) {
-    let owner = c as *mut ClientOwner;
+    let owner = c as *mut client;
     assert!((*owner).saved_status_screen.is_none());
     (*owner).saved_status_screen = Some(screen);
     (*c).status.active = (*owner).saved_status_screen.as_deref_mut().unwrap();
 }
 
 pub(crate) unsafe fn server_client_clear_saved_status_screen(c: *mut client) {
-    let owner = c as *mut ClientOwner;
+    let owner = c as *mut client;
     // Reset the public view before dropping the allocation it pointed into.
     (*c).status.active = &raw mut (*c).status.screen;
     assert!((*owner).saved_status_screen.is_some());
@@ -411,33 +293,13 @@ pub(crate) unsafe fn server_client_clear_saved_status_screen(c: *mut client) {
 }
 
 unsafe fn server_client_add_term_cap(c: *mut client, data: *const ::core::ffi::c_char) {
-    let owner = c as *mut ClientOwner;
-    // The pointer array can move on growth. Invalidate the public view first.
-    (*c).term_caps = ::core::ptr::null_mut();
-    (*c).term_ncaps = 0;
-    assert!((*owner).term_cap_strings.len() < u_int::MAX as usize);
-    (*owner)
-        .term_cap_strings
-        .push(CStr::from_ptr(data).to_owned());
-    let cap = (*owner)
-        .term_cap_strings
-        .last()
-        .unwrap()
-        .as_ptr()
-        .cast_mut();
-    (*owner).term_cap_ptrs.push(cap);
-    (*c).term_caps = (*owner).term_cap_ptrs.as_mut_ptr();
-    (*c).term_ncaps = (*owner).term_cap_ptrs.len() as u_int;
+    assert!((*c).term_caps.len() < u_int::MAX as usize);
+    (*c).term_caps.push(CStr::from_ptr(data).to_owned());
 }
 
 unsafe fn server_client_clear_term_caps(c: *mut client) {
-    let owner = c as *mut ClientOwner;
-    (*c).term_caps = ::core::ptr::null_mut();
-    (*c).term_ncaps = 0;
-    // Release on client loss, even when other references delay the final
-    // ClientOwner drop.
-    (*owner).term_cap_strings = Vec::new();
-    (*owner).term_cap_ptrs = Vec::new();
+    // Release on client loss, even if other references delay client destruction.
+    (*c).term_caps = Vec::new();
 }
 
 #[cfg(test)]
@@ -448,7 +310,7 @@ mod client_message_owner_tests {
         server_client_set_cwd, server_client_set_exit_message, server_client_set_exit_session,
         server_client_set_message, server_client_set_name, server_client_set_term_name,
         server_client_set_term_type, server_client_set_ttyname, server_client_set_user,
-        visible_range, ClientOwner,
+        visible_range,
     };
     use crate::src::status::status_message_clear;
     use std::ffi::{CStr, CString};
@@ -456,43 +318,40 @@ mod client_message_owner_tests {
     #[test]
     fn message_replacement_and_clear_keep_the_client_pointer_stable() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).message_string.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).message_string.is_none());
 
             server_client_set_message(c, Some(CString::new(vec![b'a', 0xff]).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).message_string).to_bytes(), b"a\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).message_string)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"a\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_message(c, Some(CString::new(Vec::<u8>::new()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).message_string).to_bytes(), b"");
-            assert!(!(*c).message_string.is_null());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).message_string)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
+            assert!(!(*c).message_string.is_none());
 
             // A live message has pushed a status screen. Keep one extra
             // reference so status_message_clear does not need a full screen.
             (*c).status.references = 2;
             status_message_clear(c);
-            assert!((*c).message_string.is_null());
-            assert!(owner.message.is_none());
+            assert!((*c).message_string.is_none());
+            assert!(owner.message_string.is_none());
             assert_eq!((*c).status.references, 1);
         }
     }
@@ -500,39 +359,36 @@ mod client_message_owner_tests {
     #[test]
     fn ttyname_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).ttyname.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).ttyname.is_none());
 
             server_client_set_ttyname(c, Some(CString::new(b"/dev/\xff".to_vec()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).ttyname).to_bytes(), b"/dev/\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).ttyname)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"/dev/\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_ttyname(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).ttyname.is_null());
-            assert_eq!(CStr::from_ptr((*c).ttyname).to_bytes(), b"");
+            assert!(!(*c).ttyname.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).ttyname)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_set_ttyname(c, None);
-            assert!((*c).ttyname.is_null());
+            assert!((*c).ttyname.is_none());
             assert!(owner.ttyname.is_none());
         }
     }
@@ -540,40 +396,45 @@ mod client_message_owner_tests {
     #[test]
     fn term_name_replacement_fallback_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
             server_client_ensure_term_name(c);
-            assert_eq!(CStr::from_ptr((*c).term_name).to_bytes(), b"unknown");
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).term_name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"unknown"
+            );
 
             server_client_set_term_name(c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).term_name).to_bytes(), b"term-\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).term_name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"term-\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_term_name(c, Some(CString::new("").unwrap()));
             server_client_ensure_term_name(c);
-            assert_eq!(CStr::from_ptr((*c).term_name).to_bytes(), b"unknown");
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).term_name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"unknown"
+            );
 
             server_client_set_term_name(c, None);
-            assert!((*c).term_name.is_null());
+            assert!((*c).term_name.is_none());
             assert!(owner.term_name.is_none());
         }
     }
@@ -581,39 +442,36 @@ mod client_message_owner_tests {
     #[test]
     fn cwd_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).cwd.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).cwd.is_none());
 
             server_client_set_cwd(c, Some(CString::new(b"/work-\xff".to_vec()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).cwd).to_bytes(), b"/work-\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).cwd)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"/work-\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_cwd(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).cwd.is_null());
-            assert_eq!(CStr::from_ptr((*c).cwd).to_bytes(), b"");
+            assert!(!(*c).cwd.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).cwd)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_set_cwd(c, None);
-            assert!((*c).cwd.is_null());
+            assert!((*c).cwd.is_none());
             assert!(owner.cwd.is_none());
         }
     }
@@ -621,39 +479,36 @@ mod client_message_owner_tests {
     #[test]
     fn term_type_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).term_type.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).term_type.is_none());
 
             server_client_set_term_type(c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).term_type).to_bytes(), b"term-\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).term_type)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"term-\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_term_type(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).term_type.is_null());
-            assert_eq!(CStr::from_ptr((*c).term_type).to_bytes(), b"");
+            assert!(!(*c).term_type.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).term_type)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_set_term_type(c, None);
-            assert!((*c).term_type.is_null());
+            assert!((*c).term_type.is_none());
             assert!(owner.term_type.is_none());
         }
     }
@@ -661,39 +516,36 @@ mod client_message_owner_tests {
     #[test]
     fn title_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).title.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).title.is_none());
 
             server_client_replace_title(c, Some(CString::new(b"title-\xff".to_vec()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).title).to_bytes(), b"title-\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).title)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"title-\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_replace_title(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).title.is_null());
-            assert_eq!(CStr::from_ptr((*c).title).to_bytes(), b"");
+            assert!(!(*c).title.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).title)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_replace_title(c, None);
-            assert!((*c).title.is_null());
+            assert!((*c).title.is_none());
             assert!(owner.title.is_none());
         }
     }
@@ -701,42 +553,39 @@ mod client_message_owner_tests {
     #[test]
     fn path_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).path.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).path.is_none());
 
             server_client_replace_path(
                 c,
                 Some(CString::new(b"file:///work-\xff".to_vec()).unwrap()),
             );
-            assert_eq!(CStr::from_ptr((*c).path).to_bytes(), b"file:///work-\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).path)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"file:///work-\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_replace_path(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).path.is_null());
-            assert_eq!(CStr::from_ptr((*c).path).to_bytes(), b"");
+            assert!(!(*c).path.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).path)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_replace_path(c, None);
-            assert!((*c).path.is_null());
+            assert!((*c).path.is_none());
             assert!(owner.path.is_none());
         }
     }
@@ -744,45 +593,34 @@ mod client_message_owner_tests {
     #[test]
     fn exit_session_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).exit_session.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).exit_session.is_none());
 
             server_client_set_exit_session(
                 c,
                 Some(CString::new(b"session-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr((*c).exit_session).to_bytes(),
+                CStr::from_ptr(((*c).exit_session).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
                 b"session-\xff"
             );
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_exit_session(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).exit_session.is_null());
-            assert_eq!(CStr::from_ptr((*c).exit_session).to_bytes(), b"");
+            assert!(!(*c).exit_session.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).exit_session)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_set_exit_session(c, None);
-            assert!((*c).exit_session.is_null());
+            assert!((*c).exit_session.is_none());
             assert!(owner.exit_session.is_none());
         }
     }
@@ -790,39 +628,36 @@ mod client_message_owner_tests {
     #[test]
     fn user_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).user.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).user.is_none());
 
             server_client_set_user(c, Some(CString::new(b"user-\xff".to_vec()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).user).to_bytes(), b"user-\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).user)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"user-\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_user(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).user.is_null());
-            assert_eq!(CStr::from_ptr((*c).user).to_bytes(), b"");
+            assert!(!(*c).user.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).user)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_set_user(c, None);
-            assert!((*c).user.is_null());
+            assert!((*c).user.is_none());
             assert!(owner.user.is_none());
         }
     }
@@ -830,39 +665,36 @@ mod client_message_owner_tests {
     #[test]
     fn name_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).name.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).name.is_none());
 
             server_client_set_name(c, Some(CString::new(b"/dev/pts/\xff".to_vec()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).name).to_bytes(), b"/dev/pts/\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"/dev/pts/\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_name(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).name.is_null());
-            assert_eq!(CStr::from_ptr((*c).name).to_bytes(), b"");
+            assert!(!(*c).name.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_set_name(c, None);
-            assert!((*c).name.is_null());
+            assert!((*c).name.is_none());
             assert!(owner.name.is_none());
         }
     }
@@ -870,39 +702,36 @@ mod client_message_owner_tests {
     #[test]
     fn exit_message_replacement_and_clear_keep_a_borrowed_client_view() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
-            assert!((*c).exit_message.is_null());
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
+            assert!((*c).exit_message.is_none());
 
             server_client_set_exit_message(c, Some(CString::new(b"error-\xff".to_vec()).unwrap()));
-            assert_eq!(CStr::from_ptr((*c).exit_message).to_bytes(), b"error-\xff");
-            assert_eq!(c, &raw mut owner.node);
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).exit_message)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b"error-\xff"
+            );
+            assert_eq!(c, &raw mut *owner);
 
             server_client_set_exit_message(c, Some(CString::new("").unwrap()));
-            assert!(!(*c).exit_message.is_null());
-            assert_eq!(CStr::from_ptr((*c).exit_message).to_bytes(), b"");
+            assert!(!(*c).exit_message.is_none());
+            assert_eq!(
+                CStr::from_ptr(
+                    ((*c).exit_message)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
+                b""
+            );
 
             server_client_set_exit_message(c, None);
-            assert!((*c).exit_message.is_null());
+            assert!((*c).exit_message.is_none());
             assert!(owner.exit_message.is_none());
         }
     }
@@ -910,27 +739,8 @@ mod client_message_owner_tests {
     #[test]
     fn term_caps_view_survives_growth_and_preserves_order_and_bytes() {
         unsafe {
-            let mut owner = Box::new(ClientOwner {
-                node: std::mem::zeroed::<client>(),
-                message: None,
-                ttyname: None,
-                term_name: None,
-                term_type: None,
-                cwd: None,
-                title: None,
-                path: None,
-                exit_session: None,
-                user: None,
-                name: None,
-                exit_message: None,
-                status_expanded: std::array::from_fn(|_| None),
-                saved_status_screen: None,
-                term_cap_strings: Vec::new(),
-                term_cap_ptrs: Vec::new(),
-                input_request_handles: Vec::new(),
-                tty_range: visible_range { px: 0, nx: 0 },
-            });
-            let c = &raw mut owner.node;
+            let mut owner = Box::new(client::empty());
+            let c = &raw mut *owner;
             let mut expected = Vec::new();
             for i in 0..64 {
                 let value = if i % 3 == 0 {
@@ -940,19 +750,17 @@ mod client_message_owner_tests {
                 };
                 server_client_add_term_cap(c, value.as_ptr());
                 expected.push(value);
-                assert_eq!((*c).term_ncaps as usize, expected.len());
+                assert_eq!((*c).term_caps.len(), expected.len());
                 for (index, cap) in expected.iter().enumerate() {
                     assert_eq!(
-                        CStr::from_ptr(*(*c).term_caps.add(index)).to_bytes(),
+                        (&(*c).term_caps)[index].as_bytes(),
                         cap.as_bytes()
                     );
                 }
             }
             server_client_clear_term_caps(c);
-            assert!((*c).term_caps.is_null());
-            assert_eq!((*c).term_ncaps, 0);
-            assert!(owner.term_cap_strings.is_empty());
-            assert!(owner.term_cap_ptrs.is_empty());
+            assert!((*c).term_caps.is_empty());
+            assert_eq!((*c).term_caps.len(), 0);
         }
     }
 }
@@ -1243,12 +1051,19 @@ pub unsafe extern "C" fn server_client_check_nested(mut c: *mut client) -> ::cor
         (*c).environ,
         b"TMUX\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if envent.is_null() || *(*envent).value as ::core::ffi::c_int == '\0' as i32 {
+    if envent.is_null()
+        || *(*envent)
+            .value
+            .as_ref()
+            .expect("environment value is present")
+            .as_ptr() as ::core::ffi::c_int
+            == '\0' as i32
+    {
         return 0 as ::core::ffi::c_int;
     }
     wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
     while !wp.is_null() {
-        if strcmp(&raw mut (*wp).tty as *mut ::core::ffi::c_char, (*c).ttyname)
+        if strcmp(&raw mut (*wp).tty as *mut ::core::ffi::c_char, ((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
             == 0 as ::core::ffi::c_int
         {
             return 1 as ::core::ffi::c_int;
@@ -1312,17 +1127,18 @@ unsafe extern "C" fn server_client_is_default_key_table(
     mut c: *mut client,
     mut table: *mut key_table,
 ) -> ::core::ffi::c_int {
-    return (strcmp((*table).name, server_client_get_key_table(c)) == 0 as ::core::ffi::c_int)
-        as ::core::ffi::c_int;
+    return (strcmp(
+        ((*table).name).as_ptr().cast_mut(),
+        server_client_get_key_table(c),
+    ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
-    let mut owner = ClientOwner::new();
-    c = &raw mut owner.node;
-    (*c).input_requests.collection = &mut owner.input_request_handles as *mut _ as *mut _;
+    let mut owner = client::new();
+    c = &raw mut *owner;
     (*c).references = 1 as ::core::ffi::c_int;
     (*c).peer = proc_add_peer(
         server_proc,
@@ -1420,30 +1236,30 @@ pub unsafe extern "C" fn server_client_open(
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if strcmp((*c).ttyname, ttynam) == 0 as ::core::ffi::c_int
+    if strcmp(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ttynam) == 0 as ::core::ffi::c_int
         || (isatty(STDIN_FILENO) != 0
             && {
                 ttynam = ttyname(STDIN_FILENO);
                 !ttynam.is_null()
             }
-            && strcmp((*c).ttyname, ttynam) == 0 as ::core::ffi::c_int
+            && strcmp(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ttynam) == 0 as ::core::ffi::c_int
             || isatty(STDOUT_FILENO) != 0
                 && {
                     ttynam = ttyname(STDOUT_FILENO);
                     !ttynam.is_null()
                 }
-                && strcmp((*c).ttyname, ttynam) == 0 as ::core::ffi::c_int
+                && strcmp(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ttynam) == 0 as ::core::ffi::c_int
             || isatty(STDERR_FILENO) != 0
                 && {
                     ttynam = ttyname(STDERR_FILENO);
                     !ttynam.is_null()
                 }
-                && strcmp((*c).ttyname, ttynam) == 0 as ::core::ffi::c_int)
+                && strcmp(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), ttynam) == 0 as ::core::ffi::c_int)
     {
         xasprintf(
             cause,
             b"can't use %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).ttyname,
+            ((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         return -(1 as ::core::ffi::c_int);
     }
@@ -1710,7 +1526,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
             c,
         );
     }
-    if !(*c).name.is_null() && (*c).flags & (CLIENT_CONTROL | CLIENT_TERMINAL) as uint64_t != 0 {
+    if !(*c).name.is_none() && (*c).flags & (CLIENT_CONTROL | CLIENT_TERMINAL) as uint64_t != 0 {
         events_fire_client(
             b"client-closed\0" as *const u8 as *const ::core::ffi::c_char,
             c,
@@ -1720,7 +1536,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
         control_stop(c);
     }
     if (*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
-        let owner = c.cast::<ClientOwner>();
+        let owner = c;
         assert_eq!((*c).tty.r.ranges, &raw mut (*owner).tty_range);
         (*c).tty.r.ranges = ::core::ptr::null_mut();
         (*c).tty.r.used = 0;
@@ -1843,7 +1659,10 @@ pub unsafe extern "C" fn server_client_detach(mut c: *mut client, mut msgtype: m
     (*c).flags |= CLIENT_EXIT as uint64_t;
     (*c).exit_type = CLIENT_EXIT_DETACH;
     (*c).exit_msgtype = msgtype;
-    server_client_set_exit_session(c, Some(CStr::from_ptr((*s).name).to_owned()));
+    server_client_set_exit_session(
+        c,
+        Some(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_owned()),
+    );
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_client_exec(
@@ -2155,7 +1974,7 @@ unsafe extern "C" fn server_client_check_mouse(
     let mut loc: key_code_mouse_location = KEYC_MOUSE_LOCATION_NOWHERE;
     log_debug(
         b"%s mouse %02x at %u,%u (last %u,%u) (%d)\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*m).b,
         (*m).x,
         (*m).y,
@@ -2168,7 +1987,7 @@ unsafe extern "C" fn server_client_check_mouse(
         if !lwp.is_null() {
             log_debug(
                 b"%s mouse last pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*c).name,
+                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*lwp).id,
             );
         }
@@ -2795,7 +2614,7 @@ unsafe extern "C" fn server_client_is_bracket_paste(
         (*c).paste_time = current_time;
         log_debug(
             b"%s: bracket paste on\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -2805,7 +2624,7 @@ unsafe extern "C" fn server_client_is_bracket_paste(
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong & !CLIENT_BRACKETPASTING) as uint64_t;
         log_debug(
             b"%s: bracket paste off\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -2847,7 +2666,7 @@ unsafe extern "C" fn server_client_is_assume_paste(mut c: *mut client) -> ::core
         (*c).paste_time = current_time;
         log_debug(
             b"%s: assume paste on\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -2855,7 +2674,7 @@ unsafe extern "C" fn server_client_is_assume_paste(mut c: *mut client) -> ::core
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong & !CLIENT_ASSUMEPASTING) as uint64_t;
         log_debug(
             b"%s: assume paste off\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     }
     return 0 as ::core::ffi::c_int;
@@ -3143,7 +2962,7 @@ unsafe extern "C" fn server_client_key_callback(
                                     == prefix2 as ::core::ffi::c_ulonglong
                                         & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
                                 && strcmp(
-                                    (*table).name,
+                                    ((*table).name).as_ptr().cast_mut(),
                                     b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
                                 ) != 0 as ::core::ffi::c_int
                             {
@@ -3161,13 +2980,13 @@ unsafe extern "C" fn server_client_key_callback(
                                         log_debug(
                                             b"key table %s (no pane)\0" as *const u8
                                                 as *const ::core::ffi::c_char,
-                                            (*table).name,
+                                            ((*table).name).as_ptr().cast_mut(),
                                         );
                                     } else {
                                         log_debug(
                                             b"key table %s (pane %%%u)\0" as *const u8
                                                 as *const ::core::ffi::c_char,
-                                            (*table).name,
+                                            ((*table).name).as_ptr().cast_mut(),
                                             (*wp).id,
                                         );
                                     }
@@ -3186,7 +3005,7 @@ unsafe extern "C" fn server_client_key_callback(
                                         as uint64_t;
                                     if prefix_delay > 0 as uint64_t
                                         && strcmp(
-                                            (*table).name,
+                                            ((*table).name).as_ptr().cast_mut(),
                                             b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
                                         ) == 0 as ::core::ffi::c_int
                                         && server_client_key_table_activity_diff(c) > prefix_delay
@@ -3256,7 +3075,7 @@ unsafe extern "C" fn server_client_key_callback(
                                         log_debug(
                                             b"not found in key table %s\0" as *const u8
                                                 as *const ::core::ffi::c_char,
-                                            (*table).name,
+                                            ((*table).name).as_ptr().cast_mut(),
                                         );
                                         if server_client_is_default_key_table(c, table) == 0
                                             || (*c).flags & CLIENT_REPEAT as uint64_t != 0
@@ -3284,7 +3103,7 @@ unsafe extern "C" fn server_client_key_callback(
                                         log_debug(
                                             b"found in key table %s\0" as *const u8
                                                 as *const ::core::ffi::c_char,
-                                            (*table).name,
+                                            ((*table).name).as_ptr().cast_mut(),
                                         );
                                         (*table).references = (*table).references.wrapping_add(1);
                                         repeat = server_client_repeat_time(c, bd);
@@ -3332,7 +3151,7 @@ unsafe extern "C" fn server_client_key_callback(
                                         log_debug(
                                             b"found in key table %s (not repeating)\0" as *const u8
                                                 as *const ::core::ffi::c_char,
-                                            (*table).name,
+                                            ((*table).name).as_ptr().cast_mut(),
                                         );
                                         server_client_set_key_table(
                                             c,
@@ -3541,7 +3360,7 @@ unsafe fn server_client_handle_key0(
         return 0 as ::core::ffi::c_int;
     }
     if !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
-        if !(*c).message_string.is_null() {
+        if !(*c).message_string.is_none() {
             if (*c).message_ignore_keys != 0 {
                 return 0 as ::core::ffi::c_int;
             }
@@ -3900,7 +3719,7 @@ unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                             as *const ::core::ffi::c_char,
                         b"server_client_check_pane_buffer\0" as *const u8
                             as *const ::core::ffi::c_char,
-                        (*c).name,
+                        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                         (*wpo).used.wrapping_sub((*wp).base_offset),
                         new_size,
                         (*wp).id,
@@ -4069,7 +3888,7 @@ unsafe extern "C" fn server_client_reset_state(mut c: *mut client) {
         log_debug(
             b"%s: client %s mode %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"server_client_reset_state\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             screen_mode_to_string(mode),
         );
     }
@@ -4245,21 +4064,23 @@ unsafe extern "C" fn server_client_exit_timer(
         log_debug(
             b"%s: %s took too long to exit\0" as *const u8 as *const ::core::ffi::c_char,
             b"server_client_exit_timer\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         server_client_lost(c);
     } else if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
         log_debug(
             b"%s: %s took too long to flush\0" as *const u8 as *const ::core::ffi::c_char,
             b"server_client_exit_timer\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         server_client_check_exit(c, 1 as ::core::ffi::c_int);
     }
 }
 unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c_int) {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut name: *const ::core::ffi::c_char = (*c).exit_session;
+    let mut name: *const ::core::ffi::c_char = ((*c).exit_session)
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
         return;
     }
@@ -4293,9 +4114,9 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
     match (*c).exit_type as ::core::ffi::c_uint {
         0 => {
             let mut data = Vec::from((*c).retval.to_ne_bytes());
-            if !(*c).exit_message.is_null() {
+            if !(*c).exit_message.is_none() {
                 data.extend_from_slice(
-                    ::std::ffi::CStr::from_ptr((*c).exit_message).to_bytes_with_nul(),
+                    ::std::ffi::CStr::from_ptr(((*c).exit_message).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes_with_nul(),
                 );
             }
             proc_send(
@@ -4429,7 +4250,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
     if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
         log_debug(
             b"%s: redraw%s%s%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
                 b" window\0" as *const u8 as *const ::core::ffi::c_char
             } else {
@@ -4475,13 +4296,13 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
         if n != 0 as size_t {
             log_debug(
                 b"%s: redraw deferred (%zu left)\0" as *const u8 as *const ::core::ffi::c_char,
-                (*c).name,
+                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 n,
             );
         } else {
             log_debug(
                 b"%s: redraw deferred (blocked)\0" as *const u8 as *const ::core::ffi::c_char,
-                (*c).name,
+                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         if event_initialized(&raw mut ev) == 0 {
@@ -4526,7 +4347,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
     }
     log_debug(
         b"%s: redraw needed\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     tflags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
     (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
@@ -4575,7 +4396,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
     (*c).redraw = evbuffer_get_length((*tty).out);
     log_debug(
         b"%s: redraw added %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*c).redraw,
     );
 }
@@ -4602,9 +4423,21 @@ unsafe extern "C" fn server_client_set_title(mut c: *mut client) {
         ::core::ptr::null_mut::<window_pane>(),
     );
     title = format_expand_time(ft, template);
-    if (*c).title.is_null() || strcmp(title, (*c).title) != 0 as ::core::ffi::c_int {
+    if (*c).title.is_none()
+        || strcmp(
+            title,
+            ((*c).title)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) != 0 as ::core::ffi::c_int
+    {
         server_client_replace_title(c, Some(CStr::from_ptr(title).to_owned()));
-        tty_set_title(&raw mut (*c).tty, (*c).title);
+        tty_set_title(
+            &raw mut (*c).tty,
+            ((*c).title)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
     }
     free(title as *mut ::core::ffi::c_void);
     format_free(ft);
@@ -4620,9 +4453,21 @@ unsafe extern "C" fn server_client_set_path(mut c: *mut client) {
     } else {
         path = (*(*(*(*s).curw).window).active).base.path;
     }
-    if (*c).path.is_null() || strcmp(path, (*c).path) != 0 as ::core::ffi::c_int {
+    if (*c).path.is_none()
+        || strcmp(
+            path,
+            ((*c).path)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) != 0 as ::core::ffi::c_int
+    {
         server_client_replace_path(c, Some(CStr::from_ptr(path).to_owned()));
-        tty_set_path(&raw mut (*c).tty, (*c).path);
+        tty_set_path(
+            &raw mut (*c).tty,
+            ((*c).path)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
     }
 }
 unsafe extern "C" fn server_client_set_progress_bar(mut c: *mut client) {
@@ -5160,8 +5005,8 @@ unsafe extern "C" fn server_client_dispatch_identify(
     }
     (*c).flags |= CLIENT_IDENTIFIED as uint64_t;
     server_client_ensure_term_name(c);
-    if !(*c).ttyname.is_null() && *(*c).ttyname as ::core::ffi::c_int != '\0' as i32 {
-        server_client_set_name(c, Some(CStr::from_ptr((*c).ttyname).to_owned()));
+    if !(*c).ttyname.is_none() && *(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int != '\0' as i32 {
+        server_client_set_name(c, Some(CStr::from_ptr(((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned()));
     } else {
         server_client_set_name(
             c,
@@ -5171,7 +5016,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
     log_debug(
         b"client %p name is %s\0" as *const u8 as *const ::core::ffi::c_char,
         c,
-        (*c).name,
+        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         control_start(c);
@@ -5180,7 +5025,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
             close((*c).fd);
             (*c).fd = -(1 as ::core::ffi::c_int);
         } else {
-            let owner = c.cast::<ClientOwner>();
+            let owner = c;
             (*c).tty.r.ranges = &raw mut (*owner).tty_range;
             (*c).tty.r.size = 1;
             tty_resize(&raw mut (*c).tty);
@@ -5202,7 +5047,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
     {
         log_debug(
             b"%s: paste time limit exceeded\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
             & !(CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING)) as uint64_t;
@@ -5238,22 +5083,26 @@ pub unsafe extern "C" fn server_client_get_cwd(
 ) -> *const ::core::ffi::c_char {
     let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if cfg_finished == 0 && !cfg_client.is_null() {
-        return (*cfg_client).cwd;
+        return ((*cfg_client).cwd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
-    if !c.is_null() && (*c).session.is_null() && !(*c).cwd.is_null() {
-        return (*c).cwd;
+    if !c.is_null() && (*c).session.is_null() && !(*c).cwd.is_none() {
+        return ((*c).cwd)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
-    if !s.is_null() && !(*s).cwd.is_null() {
-        return (*s).cwd;
+    if !s.is_null() && !(*s).cwd.is_none() {
+        return ((*s).cwd)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
     if !c.is_null()
         && {
             s = (*c).session;
             !s.is_null()
         }
-        && !(*s).cwd.is_null()
+        && !(*s).cwd.is_none()
     {
-        return (*s).cwd;
+        return ((*s).cwd).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     }
     home = find_home();
     if !home.is_null() {
@@ -5357,7 +5206,7 @@ pub unsafe extern "C" fn server_client_set_flags(
         }
         log_debug(
             b"client %s set flag %s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).name,
+            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             next,
         );
         if not != 0 {
@@ -5638,26 +5487,26 @@ unsafe extern "C" fn server_client_report_theme(mut c: *mut client, mut theme: c
 
 #[cfg(test)]
 mod client_registry_tests {
-    use super::{ClientOwner, ClientRegistry};
+    use super::{client, ClientRegistry};
 
     #[test]
     fn owns_stable_clients_and_preserves_order_after_removal() {
         unsafe {
             let mut registry = ClientRegistry::new();
-            let first = registry.push_back(ClientOwner::new());
-            let middle = registry.push_back(ClientOwner::new());
-            let last = registry.push_back(ClientOwner::new());
+            let first = registry.push_back(client::new());
+            let middle = registry.push_back(client::new());
+            let last = registry.push_back(client::new());
 
             assert_eq!(registry.first(), first);
             assert_eq!(registry.next(first), middle);
             assert_eq!(registry.next(middle), last);
 
-            registry.push_back(ClientOwner::new());
+            registry.push_back(client::new());
             assert_eq!(registry.next(first), middle);
             assert!(registry
                 .owners
                 .iter()
-                .any(|owner| std::ptr::eq(&owner.node, first)));
+                .any(|owner| std::ptr::eq(&**owner, first)));
             assert!(registry.remove(middle));
             assert_eq!(registry.next(first), last);
             assert_eq!(registry.next(middle), last);
@@ -5665,7 +5514,7 @@ mod client_registry_tests {
             assert!(registry
                 .owners
                 .iter()
-                .any(|owner| std::ptr::eq(&owner.node, middle)));
+                .any(|owner| std::ptr::eq(&**owner, middle)));
 
             registry.release(middle);
             assert!(registry.next(middle).is_null());
@@ -5673,7 +5522,7 @@ mod client_registry_tests {
             assert!(!registry
                 .owners
                 .iter()
-                .any(|owner| std::ptr::eq(&owner.node, middle)));
+                .any(|owner| std::ptr::eq(&**owner, middle)));
             registry.release(first);
             registry.release(last);
         }
