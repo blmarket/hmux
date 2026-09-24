@@ -1,6 +1,6 @@
 use super::{descriptor, ensure_runtime, handle};
 use crate::src::shared::abi::timeval;
-use crate::src::shared::event::{event, event_base};
+use crate::src::shared::event::{event, event_base, EventCallback};
 use hmux_rt::{Handle as _, Runtime as _, Signals as _};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use std::pin::pin;
 use std::rc::Rc;
 use std::task::Poll;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-type Callback = Option<unsafe extern "C" fn(c_int, c_short, *mut c_void)>;
+type Callback = EventCallback;
 struct EventState {
     key: usize,
     fd: c_int,
@@ -126,10 +126,10 @@ fn configure(ev: *mut event, interval: Option<Duration>) -> Rc<EventState> {
     unsafe {
         Rc::new(EventState {
             key: ev as usize,
-            fd: (*ev).ev_fd,
-            flags: (*ev).ev_events,
-            callback: (*ev).ev_evcallback.evcb_cb_union.evcb_callback,
-            arg: (*ev).ev_evcallback.evcb_arg,
+            fd: (*ev).fd,
+            flags: (*ev).flags,
+            callback: (*ev).callback,
+            arg: (*ev).arg,
             deadline: Cell::new(interval.map(|d| Instant::now() + d)),
             interval,
             active: Cell::new(0),
@@ -188,7 +188,7 @@ pub unsafe fn event_loop(flags: c_int) -> c_int {
     0
 }
 pub unsafe fn event_initialized(ev: *const event) -> c_int {
-    ((*ev).ev_evcallback.evcb_flags != 0) as c_int
+    (*ev).initialized as c_int
 }
 pub unsafe fn event_del(ev: *mut event) -> c_int {
     remove(ev as usize);
@@ -202,12 +202,13 @@ pub unsafe fn event_set(
     arg: *mut c_void,
 ) {
     event_del(ev);
-    std::ptr::write_bytes(ev, 0, 1);
-    (*ev).ev_fd = fd;
-    (*ev).ev_events = flags;
-    (*ev).ev_evcallback.evcb_flags = 1;
-    (*ev).ev_evcallback.evcb_cb_union.evcb_callback = callback;
-    (*ev).ev_evcallback.evcb_arg = arg;
+    ev.write(event {
+        initialized: true,
+        fd,
+        flags,
+        callback,
+        arg,
+    });
 }
 pub unsafe fn event_add(ev: *mut event, timeout: *const timeval) -> c_int {
     ensure_runtime();
@@ -254,7 +255,7 @@ pub unsafe fn event_once(
     arg: *mut c_void,
     timeout: *const timeval,
 ) -> c_int {
-    let mut ev: Box<event> = Box::new(std::mem::zeroed());
+    let mut ev: Box<event> = Box::default();
     event_set(&mut *ev, fd, flags & !0x10, cb, arg);
     let zero = timeval {
         tv_sec: 0,

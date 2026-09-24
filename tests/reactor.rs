@@ -36,7 +36,8 @@ unsafe extern "C" fn count(_: c_int, _: c_short, arg: *mut c_void) {
 fn timers_activation_cancellation_and_deadline_queries() {
     let rt = Runtime::new();
     unsafe {
-        let mut event: event = std::mem::zeroed();
+        let mut event = event::default();
+        assert_eq!(event_initialized(&event), 0);
         let mut calls = 0usize;
         event_set(
             &mut event,
@@ -64,6 +65,7 @@ fn timers_activation_cancellation_and_deadline_queries() {
         assert_eq!(event_pending(&event, 1, &mut absolute), 1);
         assert!(absolute.tv_sec > 0);
         event_del(&mut event);
+        assert_eq!(event_initialized(&event), 1);
         rt.tick();
         assert_eq!(calls, 0);
         event_active(&mut event, 1, 1);

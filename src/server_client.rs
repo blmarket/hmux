@@ -4172,47 +4172,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
         tv_sec: 0,
         tv_usec: 1000 as __suseconds_t,
     };
-    static mut ev: event = event {
-        ev_evcallback: event_callback {
-            evcb_active_next: event_callback_entry {
-                tqe_next: ::core::ptr::null::<event_callback>() as *mut event_callback,
-                tqe_prev: ::core::ptr::null::<*mut event_callback>() as *mut *mut event_callback,
-            },
-            evcb_flags: 0,
-            evcb_pri: 0,
-            evcb_closure: 0,
-            evcb_cb_union: event_callback_union {
-                evcb_callback: None,
-            },
-            evcb_arg: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-        },
-        ev_timeout_pos: event_timeout_pos {
-            ev_next_with_common_timeout: event_timeout_entry {
-                tqe_next: ::core::ptr::null::<event>() as *mut event,
-                tqe_prev: ::core::ptr::null::<*mut event>() as *mut *mut event,
-            },
-        },
-        ev_fd: 0,
-        ev_base: ::core::ptr::null::<event_base>() as *mut event_base,
-        ev_: event_io_or_signal {
-            ev_io: event_io {
-                ev_io_next: event_io_entry {
-                    le_next: ::core::ptr::null::<event>() as *mut event,
-                    le_prev: ::core::ptr::null::<*mut event>() as *mut *mut event,
-                },
-                ev_timeout: timeval {
-                    tv_sec: 0,
-                    tv_usec: 0,
-                },
-            },
-        },
-        ev_events: 0,
-        ev_res: 0,
-        ev_timeout: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-    };
+    static mut ev: event = event::new();
     let mut n: size_t = 0;
     if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
         return;

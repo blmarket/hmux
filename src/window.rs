@@ -1104,133 +1104,13 @@ pub unsafe extern "C" fn window_find_by_id(mut id: u_int) -> *mut window {
         id: 0,
         latest: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         name: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        name_event: event {
-            ev_evcallback: event_callback {
-                evcb_active_next: event_callback_entry {
-                    tqe_next: ::core::ptr::null_mut::<event_callback>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event_callback>(),
-                },
-                evcb_flags: 0,
-                evcb_pri: 0,
-                evcb_closure: 0,
-                evcb_cb_union: event_callback_union {
-                    evcb_callback: None,
-                },
-                evcb_arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-            },
-            ev_timeout_pos: event_timeout_pos {
-                ev_next_with_common_timeout: event_timeout_entry {
-                    tqe_next: ::core::ptr::null_mut::<event>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event>(),
-                },
-            },
-            ev_fd: 0,
-            ev_base: ::core::ptr::null_mut::<event_base>(),
-            ev_: event_io_or_signal {
-                ev_io: event_io {
-                    ev_io_next: event_io_entry {
-                        le_next: ::core::ptr::null_mut::<event>(),
-                        le_prev: ::core::ptr::null_mut::<*mut event>(),
-                    },
-                    ev_timeout: timeval {
-                        tv_sec: 0,
-                        tv_usec: 0,
-                    },
-                },
-            },
-            ev_events: 0,
-            ev_res: 0,
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
+        name_event: event::default(),
         name_time: timeval {
             tv_sec: 0,
             tv_usec: 0,
         },
-        alerts_timer: event {
-            ev_evcallback: event_callback {
-                evcb_active_next: event_callback_entry {
-                    tqe_next: ::core::ptr::null_mut::<event_callback>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event_callback>(),
-                },
-                evcb_flags: 0,
-                evcb_pri: 0,
-                evcb_closure: 0,
-                evcb_cb_union: event_callback_union {
-                    evcb_callback: None,
-                },
-                evcb_arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-            },
-            ev_timeout_pos: event_timeout_pos {
-                ev_next_with_common_timeout: event_timeout_entry {
-                    tqe_next: ::core::ptr::null_mut::<event>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event>(),
-                },
-            },
-            ev_fd: 0,
-            ev_base: ::core::ptr::null_mut::<event_base>(),
-            ev_: event_io_or_signal {
-                ev_io: event_io {
-                    ev_io_next: event_io_entry {
-                        le_next: ::core::ptr::null_mut::<event>(),
-                        le_prev: ::core::ptr::null_mut::<*mut event>(),
-                    },
-                    ev_timeout: timeval {
-                        tv_sec: 0,
-                        tv_usec: 0,
-                    },
-                },
-            },
-            ev_events: 0,
-            ev_res: 0,
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
-        offset_timer: event {
-            ev_evcallback: event_callback {
-                evcb_active_next: event_callback_entry {
-                    tqe_next: ::core::ptr::null_mut::<event_callback>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event_callback>(),
-                },
-                evcb_flags: 0,
-                evcb_pri: 0,
-                evcb_closure: 0,
-                evcb_cb_union: event_callback_union {
-                    evcb_callback: None,
-                },
-                evcb_arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-            },
-            ev_timeout_pos: event_timeout_pos {
-                ev_next_with_common_timeout: event_timeout_entry {
-                    tqe_next: ::core::ptr::null_mut::<event>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event>(),
-                },
-            },
-            ev_fd: 0,
-            ev_base: ::core::ptr::null_mut::<event_base>(),
-            ev_: event_io_or_signal {
-                ev_io: event_io {
-                    ev_io_next: event_io_entry {
-                        le_next: ::core::ptr::null_mut::<event>(),
-                        le_prev: ::core::ptr::null_mut::<*mut event>(),
-                    },
-                    ev_timeout: timeval {
-                        tv_sec: 0,
-                        tv_usec: 0,
-                    },
-                },
-            },
-            ev_events: 0,
-            ev_res: 0,
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
+        alerts_timer: event::default(),
+        offset_timer: event::default(),
         activity_time: timeval {
             tv_sec: 0,
             tv_usec: 0,
@@ -2655,47 +2535,7 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
         sb_slider_h: 0,
         sb_auto_visible: 0,
         sb_auto_hover: 0,
-        sb_auto_timer: event {
-            ev_evcallback: event_callback {
-                evcb_active_next: event_callback_entry {
-                    tqe_next: ::core::ptr::null_mut::<event_callback>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event_callback>(),
-                },
-                evcb_flags: 0,
-                evcb_pri: 0,
-                evcb_closure: 0,
-                evcb_cb_union: event_callback_union {
-                    evcb_callback: None,
-                },
-                evcb_arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-            },
-            ev_timeout_pos: event_timeout_pos {
-                ev_next_with_common_timeout: event_timeout_entry {
-                    tqe_next: ::core::ptr::null_mut::<event>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event>(),
-                },
-            },
-            ev_fd: 0,
-            ev_base: ::core::ptr::null_mut::<event_base>(),
-            ev_: event_io_or_signal {
-                ev_io: event_io {
-                    ev_io_next: event_io_entry {
-                        le_next: ::core::ptr::null_mut::<event>(),
-                        le_prev: ::core::ptr::null_mut::<*mut event>(),
-                    },
-                    ev_timeout: timeval {
-                        tv_sec: 0,
-                        tv_usec: 0,
-                    },
-                },
-            },
-            ev_events: 0,
-            ev_res: 0,
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
+        sb_auto_timer: event::default(),
         argv: Vec::new(),
         shell: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         cwd: ::core::ptr::null_mut::<::core::ffi::c_char>(),
@@ -2719,88 +2559,8 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
         offset: window_pane_offset { used: 0 },
         base_offset: 0,
         resize_queue: window_pane_resizes::default(),
-        resize_timer: event {
-            ev_evcallback: event_callback {
-                evcb_active_next: event_callback_entry {
-                    tqe_next: ::core::ptr::null_mut::<event_callback>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event_callback>(),
-                },
-                evcb_flags: 0,
-                evcb_pri: 0,
-                evcb_closure: 0,
-                evcb_cb_union: event_callback_union {
-                    evcb_callback: None,
-                },
-                evcb_arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-            },
-            ev_timeout_pos: event_timeout_pos {
-                ev_next_with_common_timeout: event_timeout_entry {
-                    tqe_next: ::core::ptr::null_mut::<event>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event>(),
-                },
-            },
-            ev_fd: 0,
-            ev_base: ::core::ptr::null_mut::<event_base>(),
-            ev_: event_io_or_signal {
-                ev_io: event_io {
-                    ev_io_next: event_io_entry {
-                        le_next: ::core::ptr::null_mut::<event>(),
-                        le_prev: ::core::ptr::null_mut::<*mut event>(),
-                    },
-                    ev_timeout: timeval {
-                        tv_sec: 0,
-                        tv_usec: 0,
-                    },
-                },
-            },
-            ev_events: 0,
-            ev_res: 0,
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
-        sync_timer: event {
-            ev_evcallback: event_callback {
-                evcb_active_next: event_callback_entry {
-                    tqe_next: ::core::ptr::null_mut::<event_callback>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event_callback>(),
-                },
-                evcb_flags: 0,
-                evcb_pri: 0,
-                evcb_closure: 0,
-                evcb_cb_union: event_callback_union {
-                    evcb_callback: None,
-                },
-                evcb_arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-            },
-            ev_timeout_pos: event_timeout_pos {
-                ev_next_with_common_timeout: event_timeout_entry {
-                    tqe_next: ::core::ptr::null_mut::<event>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event>(),
-                },
-            },
-            ev_fd: 0,
-            ev_base: ::core::ptr::null_mut::<event_base>(),
-            ev_: event_io_or_signal {
-                ev_io: event_io {
-                    ev_io_next: event_io_entry {
-                        le_next: ::core::ptr::null_mut::<event>(),
-                        le_prev: ::core::ptr::null_mut::<*mut event>(),
-                    },
-                    ev_timeout: timeval {
-                        tv_sec: 0,
-                        tv_usec: 0,
-                    },
-                },
-            },
-            ev_events: 0,
-            ev_res: 0,
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
+        resize_timer: event::default(),
+        sync_timer: event::default(),
         ictx: ::core::ptr::null_mut::<input_ctx>(),
         cached_gc: grid_cell {
             data: utf8_data {
