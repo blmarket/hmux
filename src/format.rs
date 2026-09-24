@@ -12,7 +12,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_find, environ_first, environ_next};
 use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, ctime_r, dirname, fnmatch, free, gethostname, getpid, getpwuid,
-    getuid, localtime_r, memcmp, memcpy, memset, regcomp, regexec, regfree, strcasecmp, strchr,
+    getuid, localtime_r, memcmp, memcpy, memset, regcomp, regexec, strcasecmp, strchr,
     strcmp, strcspn, strftime, strlcat, strlen, strstr, strtod, time,
 };
 use crate::src::ffi::libm::{fabs, fmod};

@@ -6,6 +6,20 @@ pub use crate::src::shared::regex::{
 };
 use std::ffi::{CStr, CString};
 
+pub(crate) struct CompiledRegex(*mut regex_t);
+
+impl CompiledRegex {
+    pub(crate) unsafe fn new(regex: *mut regex_t) -> Self {
+        Self(regex)
+    }
+}
+
+impl Drop for CompiledRegex {
+    fn drop(&mut self) {
+        unsafe { regfree(self.0) }
+    }
+}
+
 unsafe fn regsub_copy(
     buf: &mut Vec<u8>,
     text: *const ::core::ffi::c_char,
@@ -93,6 +107,7 @@ pub(crate) unsafe fn regsub_cstring(
     if regcomp(&raw mut r, pattern, flags) != 0 as ::core::ffi::c_int {
         return None;
     }
+    let regex_owner = CompiledRegex::new(&raw mut r);
     start = 0 as ssize_t;
     last = 0 as ssize_t;
     end = strlen(text) as ssize_t;
@@ -153,6 +168,6 @@ pub(crate) unsafe fn regsub_cstring(
             }
         }
     }
-    regfree(&raw mut r);
+    drop(regex_owner);
     Some(CString::new(buf).expect("regex substitution contains no NUL"))
 }

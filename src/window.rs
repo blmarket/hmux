@@ -16,7 +16,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{
     __ctype_b_loc, close, fnmatch, free, gethostname, getpid, gettimeofday, ioctl, kill, memcpy,
-    memset, regcomp, regexec, regfree, strcasecmp,
+    memset, regcomp, regexec, strcasecmp,
 };
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::file::{file_cancel, file_read_with_cmdq_wait};
@@ -4217,6 +4217,11 @@ pub unsafe extern "C" fn window_pane_search(
         }
         None
     };
+    let regex_owner = if regex != 0 {
+        Some(crate::src::regsub::CompiledRegex::new(&raw mut r))
+    } else {
+        None
+    };
     i = 0 as u_int;
     while i < (*(*s).grid).sy {
         let mut line = grid_view_string_cells_bytes((*s).grid, 0 as u_int, i, (*(*s).grid).sx);
@@ -4260,9 +4265,7 @@ pub unsafe extern "C" fn window_pane_search(
         }
         i = i.wrapping_add(1);
     }
-    if regex != 0 {
-        regfree(&raw mut r);
-    }
+    drop(regex_owner);
     if i == (*(*s).grid).sy {
         return 0 as u_int;
     }

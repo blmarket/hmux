@@ -849,6 +849,7 @@ pub(super) unsafe fn format_match(
         if regcomp(&raw mut r, pattern, flags) != 0 as ::core::ffi::c_int {
             return c"0".to_owned();
         }
+        let regex_owner = crate::src::regsub::CompiledRegex::new(&raw mut r);
         if regexec(
             &raw mut r,
             text,
@@ -857,10 +858,10 @@ pub(super) unsafe fn format_match(
             0 as ::core::ffi::c_int,
         ) != 0 as ::core::ffi::c_int
         {
-            regfree(&raw mut r);
+            drop(regex_owner);
             return c"0".to_owned();
         }
-        regfree(&raw mut r);
+        drop(regex_owner);
     }
     return c"1".to_owned();
 }

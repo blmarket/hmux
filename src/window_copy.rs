@@ -5,7 +5,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::{
     __ctype_tolower_loc, abs, free, llabs, memcmp, memcpy, memmove, memset, regcomp, regexec,
-    regfree, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp,
+    strcasecmp, strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand, format_free,
@@ -6305,6 +6305,11 @@ unsafe extern "C" fn window_copy_search_jump(
             return 0 as ::core::ffi::c_int;
         }
     }
+    let regex_owner = if regex != 0 {
+        Some(crate::src::regsub::CompiledRegex::new(&raw mut reg))
+    } else {
+        None
+    };
     if direction != 0 {
         i = fy;
         while i <= endline {
@@ -6370,9 +6375,7 @@ unsafe extern "C" fn window_copy_search_jump(
             }
         }
     }
-    if regex != 0 {
-        regfree(&raw mut reg);
-    }
+    drop(regex_owner);
     if found != 0 {
         window_copy_scroll_to(wme, px, i, 1 as ::core::ffi::c_int);
         return 1 as ::core::ffi::c_int;
@@ -6827,6 +6830,11 @@ unsafe extern "C" fn window_copy_search_marks(
             return 0 as ::core::ffi::c_int;
         }
     }
+    let regex_owner = if regex != 0 {
+        Some(crate::src::regsub::CompiledRegex::new(&raw mut reg))
+    } else {
+        None
+    };
     tstart = get_timer();
     if visible_only != 0 {
         window_copy_visible_lines(data, &raw mut start, &raw mut end);
@@ -6917,9 +6925,7 @@ unsafe extern "C" fn window_copy_search_marks(
     if ssp == &raw mut ss {
         screen_free(&raw mut ss);
     }
-    if regex != 0 {
-        regfree(&raw mut reg);
-    }
+    drop(regex_owner);
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn window_copy_clear_marks(mut wme: *mut window_mode_entry) {
