@@ -158,7 +158,7 @@ unsafe extern "C" fn cmd_load_buffer_done(
                 .name
                 .as_ref()
                 .map_or(::core::ptr::null(), |name| name.as_ptr()),
-            &raw mut cause,
+            Some(&mut cause),
         ) != 0 as ::core::ffi::c_int
         {
             cmdq_error(

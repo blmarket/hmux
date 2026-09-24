@@ -2693,7 +2693,7 @@ unsafe extern "C" fn tty_keys_clipboard(
         &raw mut cd as *mut ::core::ffi::c_void,
     );
     if (*tty).flags & TTY_OSC52QUERY != 0 {
-        paste_add_owned(::core::ptr::null(), out.into_boxed_slice());
+        paste_add_owned(None, out.into_boxed_slice());
         event_del(&raw mut (*tty).clipboard_timer);
         (*tty).flags &= !TTY_OSC52QUERY;
     }

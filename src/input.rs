@@ -5974,7 +5974,7 @@ unsafe extern "C" fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core
             out.as_ptr().cast(),
             out.len(),
         );
-        paste_add_owned(::core::ptr::null(), out.into_boxed_slice());
+        paste_add_owned(None, out.into_boxed_slice());
     } else {
         screen_write_start_pane(&raw mut ctx, wp, ::core::ptr::null_mut::<screen>());
         screen_write_setselection(
@@ -5988,7 +5988,7 @@ unsafe extern "C" fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core
             b"pane-set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
             wp,
         );
-        paste_add_owned(::core::ptr::null(), out.into_boxed_slice());
+        paste_add_owned(None, out.into_boxed_slice());
     };
 }
 unsafe extern "C" fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -6276,7 +6276,7 @@ unsafe extern "C" fn input_request_clipboard_reply(
     }
     if state == 3 as ::core::ffi::c_int && (*cd).len != 0 {
         let owned: Box<[u8]> = std::slice::from_raw_parts((*cd).buf.cast::<u8>(), (*cd).len).into();
-        paste_add_owned(::core::ptr::null(), owned);
+        paste_add_owned(None, owned);
     }
     if (*ir).idx == INPUT_END_BEL as ::core::ffi::c_int {
         input_reply_clipboard(

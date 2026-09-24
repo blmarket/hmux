@@ -718,7 +718,7 @@ unsafe extern "C" fn cmd_capture_pane_exec(
         if args_has(args, 'b' as i32 as u_char) != 0 {
             bufname = args_get(args, 'b' as i32 as u_char);
         }
-        if paste_set_owned(buf.into_boxed_slice(), bufname, &raw mut cause)
+        if paste_set_owned(buf.into_boxed_slice(), bufname, Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
             cmdq_error(

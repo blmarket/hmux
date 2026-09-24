@@ -15,6 +15,13 @@ fn substitution_preserves_matches_and_returns_freeable_bytes() {
         (b"x\0", b"Y\0", b"abc\0", b"abc"),
         (b"a\0", b"\0", b"banana\0", b"bnn"),
         (b"a\0", b"b\0", b"\0", b""),
+        (b"\0", b"ignored\0", b"plain\0", b"plain"),
+        (b"(a)?b\0", b"\\1\0", b"b\0", b"1"),
+        (b"x*\0", b"<\0", b"ab\0", b"a<b<"),
+        (b"a\0", b"\\q\0", b"a\0", b"q"),
+        (b"a\0", b"\\\0", b"a\0", b"\\"),
+        (b"x\0", b"\xff\0", b"x\0", b"\xff"),
+        (b"x\0", b"Y\0", b"\xffx\xfe\0", b"\xffY\xfe"),
     ] {
         let result = regsub_cstring(
             CStr::from_bytes_with_nul(pattern).unwrap(),

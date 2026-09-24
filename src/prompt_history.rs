@@ -1,11 +1,11 @@
 pub use crate::src::ffi::libc::__ssize_t;
 use crate::src::ffi::libc::{
-    __errno_location, fgetc, fopen, fputc, fputs, strcmp, strerror, strsep,
+    __errno_location, fgetc, fopen, fputc, fputs, strcmp, strerror,
 };
 use crate::src::compat::stdio::CFile;
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
-use crate::src::prompt::{prompt_type, prompt_type_string};
+use crate::src::prompt::prompt_type_string;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
 pub use crate::src::shared::options::options;
@@ -19,10 +19,10 @@ use std::ffi::{CStr, CString};
 
 // Keep the bytes through the first newline, including embedded NULs. The
 // history parser below intentionally sees only the first C-string segment.
-unsafe fn read_history_line(stream: *mut FILE, line: &mut Vec<u8>) -> bool {
+unsafe fn read_history_line(stream: &mut CFile, line: &mut Vec<u8>) -> bool {
     line.clear();
     loop {
-        let ch = fgetc(stream);
+        let ch = fgetc(stream.as_ptr());
         if ch == -1 {
             return !line.is_empty();
         }
@@ -55,27 +55,25 @@ unsafe fn prompt_find_history_file() -> Option<CString> {
     path.extend_from_slice(&history_file.to_bytes()[1..]);
     Some(CString::new(path).expect("C string paths contain no interior NUL"))
 }
-unsafe extern "C" fn prompt_add_typed_history(mut line: *mut ::core::ffi::c_char) {
-    let mut typestr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut type_0: prompt_type = PROMPT_TYPE_INVALID;
-    typestr = strsep(
-        &raw mut line,
-        b":\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    if !line.is_null() {
-        type_0 = prompt_type(typestr);
-    }
-    if type_0 as ::core::ffi::c_uint
-        == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if !line.is_null() {
-            line = line.offset(-1);
-            *line = ':' as i32 as ::core::ffi::c_char;
+unsafe fn prompt_add_typed_history(line: &CStr) {
+    let bytes = line.to_bytes();
+    if let Some(colon) = bytes.iter().position(|&byte| byte == b':') {
+        let prefix = &bytes[..colon];
+        let history_type = if prefix == b"command" {
+            Some(PROMPT_TYPE_COMMAND)
+        } else if prefix == b"search" {
+            Some(PROMPT_TYPE_SEARCH)
+        } else {
+            None
+        };
+        if let Some(history_type) = history_type {
+            let content = CStr::from_bytes_with_nul(&line.to_bytes_with_nul()[colon + 1..])
+                .expect("history content is a C string suffix");
+            prompt_add_history(content.as_ptr(), history_type as u_int);
+            return;
         }
-        prompt_add_history(typestr, PROMPT_TYPE_COMMAND as ::core::ffi::c_int as u_int);
-    } else {
-        prompt_add_history(line, type_0 as u_int);
-    };
+    }
+    prompt_add_history(line.as_ptr(), PROMPT_TYPE_COMMAND as u_int);
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_load_history() {
@@ -101,10 +99,11 @@ pub unsafe extern "C" fn prompt_load_history() {
         );
         return;
     }
-    let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
-    while read_history_line(stream.as_ptr(), &mut line) {
+    let mut stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
+    while read_history_line(&mut stream, &mut line) {
         line.push(0);
-        prompt_add_typed_history(line.as_mut_ptr().cast());
+        let line = CStr::from_bytes_until_nul(&line).expect("history line has a terminator");
+        prompt_add_typed_history(line);
     }
     drop(stream);
 }

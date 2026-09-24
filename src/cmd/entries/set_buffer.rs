@@ -249,7 +249,7 @@ unsafe extern "C" fn cmd_set_buffer_exec(
         let name = bufname
             .as_ref()
             .map_or(::core::ptr::null(), |name| name.as_ptr());
-        if paste_set_owned(bufdata.into_boxed_slice(), name, &raw mut cause)
+        if paste_set_owned(bufdata.into_boxed_slice(), name, Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
             cmdq_error(

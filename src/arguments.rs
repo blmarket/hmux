@@ -948,13 +948,13 @@ unsafe extern "C" fn args_print_add(
     let formatted = xvasprintf_cstring(fmt, ap);
     buf.extend_from_slice(formatted.as_bytes());
 }
-unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: *mut args_value) {
+unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     if !buf.is_empty() {
         args_print_add(buf, b" \0" as *const u8 as *const ::core::ffi::c_char);
     }
-    match (*value).type_0 as ::core::ffi::c_uint {
+    match value.type_0 as ::core::ffi::c_uint {
         2 => {
-            let expanded = cmd_list_print_cstring((*value).c2rust_unnamed.cmdlist, 0);
+            let expanded = cmd_list_print_cstring(value.c2rust_unnamed.cmdlist, 0);
             args_print_add(
                 buf,
                 b"{ %s }\0" as *const u8 as *const ::core::ffi::c_char,
@@ -962,7 +962,7 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: *mut args_value) {
             );
         }
         1 => {
-            let expanded = args_escape_cstring(CStr::from_ptr((*value).c2rust_unnamed.string));
+            let expanded = args_escape_cstring(CStr::from_ptr(value.c2rust_unnamed.string));
             args_print_add(
                 buf,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1036,7 +1036,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
                         (*entry).flag as ::core::ffi::c_int,
                     );
                 }
-                args_print_add_value(&mut buf, value);
+                args_print_add_value(&mut buf, &*value);
                 value = args_next_value(value);
             }
             last = entry;
@@ -1053,7 +1053,7 @@ pub(crate) unsafe fn args_print_cstring(args: *mut args) -> CString {
     while i < (*args).count {
         args_print_add_value(
             &mut buf,
-            (*args).values.as_mut_ptr().offset(i as isize) as *mut args_value,
+            &(&(*args).values)[i as usize],
         );
         i = i.wrapping_add(1);
     }

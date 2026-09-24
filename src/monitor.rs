@@ -755,13 +755,10 @@ pub struct ParsedMonitor {
     pub format: CString,
 }
 
-unsafe fn monitor_parse_parts(
-    value: &CStr,
-    type_0: *mut monitor_type,
-    id: *mut ::core::ffi::c_int,
-) -> Option<(CString, CString)> {
+unsafe fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
     let value_bytes = value.to_bytes();
-    *id = -(1 as ::core::ffi::c_int);
+    let mut type_0;
+    let mut id = -1;
     let Some(first_colon) = value_bytes.iter().position(|&byte| byte == b':') else {
         return None;
     };
@@ -774,52 +771,45 @@ unsafe fn monitor_parse_parts(
     let format_start = target_start + second_colon + 1;
 
     if target_bytes == b"%*" {
-        *type_0 = MONITOR_ALL_PANES;
+        type_0 = MONITOR_ALL_PANES;
     } else if target_bytes == b"@*" {
-        *type_0 = MONITOR_ALL_WINDOWS;
+        type_0 = MONITOR_ALL_WINDOWS;
     } else if target_bytes.is_empty() {
-        *type_0 = MONITOR_SESSION;
+        type_0 = MONITOR_SESSION;
     } else {
         let target = CString::new(target_bytes).expect("monitor target contains no NUL");
         if sscanf(
             target.as_ptr(),
             b"%%%d\0" as *const u8 as *const ::core::ffi::c_char,
-            id,
+            &raw mut id,
         ) == 1 as ::core::ffi::c_int
-            && *id >= 0 as ::core::ffi::c_int
+            && id >= 0 as ::core::ffi::c_int
         {
-            *type_0 = MONITOR_PANE;
+            type_0 = MONITOR_PANE;
         } else if sscanf(
             target.as_ptr(),
             b"@%d\0" as *const u8 as *const ::core::ffi::c_char,
-            id,
+            &raw mut id,
         ) == 1 as ::core::ffi::c_int
-            && *id >= 0 as ::core::ffi::c_int
+            && id >= 0 as ::core::ffi::c_int
         {
-            *type_0 = MONITOR_WINDOW;
+            type_0 = MONITOR_WINDOW;
         } else {
             return None;
         }
     }
 
-    Some((
-        CString::new(&value_bytes[..first_colon]).expect("monitor name contains no NUL"),
-        CString::new(&value_bytes[format_start..]).expect("monitor format contains no NUL"),
-    ))
+    Some(ParsedMonitor {
+        name: CString::new(&value_bytes[..first_colon]).expect("monitor name contains no NUL"),
+        type_0,
+        id,
+        format: CString::new(&value_bytes[format_start..])
+            .expect("monitor format contains no NUL"),
+    })
 }
 
 pub fn monitor_parse_owned(value: &CStr) -> Option<ParsedMonitor> {
-    let mut type_0 = MONITOR_SESSION;
-    let mut id = -1;
-    let (name, format) = unsafe {
-        monitor_parse_parts(value, &raw mut type_0, &raw mut id)?
-    };
-    Some(ParsedMonitor {
-        name,
-        type_0,
-        id,
-        format,
-    })
+    unsafe { monitor_parse_parts(value) }
 }
 
 #[no_mangle]

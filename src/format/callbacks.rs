@@ -3930,7 +3930,7 @@ mod owned_callback_tests {
                 paste_set_owned(
                     b"A\xff\0B".to_vec().into_boxed_slice(),
                     name.as_ptr(),
-                    &raw mut cause
+                    Some(&mut cause)
                 ),
                 0
             );

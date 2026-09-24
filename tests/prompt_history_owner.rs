@@ -141,6 +141,38 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 0)), c"one");
         assert_eq!(CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 1)), c"two");
+
+        prompt_history_clear(PROMPT_TYPE_COMMAND);
+        prompt_history_clear(PROMPT_TYPE_SEARCH);
+        options_set_number(options, c"prompt-history-limit".as_ptr(), 10);
+        std::fs::write(
+            &path,
+            b"plain\nunknown:value\n:empty-prefix\ncommand:\nsearch:a:b\ncommand:first:second\n",
+        )
+        .unwrap();
+        prompt_load_history();
+        let command_history = [
+            b"plain".as_slice(),
+            b"unknown:value".as_slice(),
+            b":empty-prefix".as_slice(),
+            b"".as_slice(),
+            b"first:second".as_slice(),
+        ];
+        assert_eq!(
+            prompt_history_size(PROMPT_TYPE_COMMAND),
+            command_history.len() as u32
+        );
+        for (index, expected) in command_history.into_iter().enumerate() {
+            assert_eq!(
+                CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, index as u32)).to_bytes(),
+                expected
+            );
+        }
+        assert_eq!(prompt_history_size(PROMPT_TYPE_SEARCH), 1);
+        assert_eq!(
+            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_SEARCH, 0)).to_bytes(),
+            b"a:b"
+        );
         std::fs::remove_file(path).unwrap();
 
         options_set_number(options, c"prompt-history-limit".as_ptr(), 0);

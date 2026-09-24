@@ -300,21 +300,25 @@ pub unsafe extern "C" fn paste_add(
         return;
     }
     let owned = std::slice::from_raw_parts(data.cast::<u8>(), size).into();
+    let prefix = if prefix.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(prefix).to_owned())
+    };
     paste_add_owned(prefix, owned);
     free(data.cast());
 }
 
-pub(crate) unsafe fn paste_add_owned(mut prefix: *const ::core::ffi::c_char, data: Box<[u8]>) {
+pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut pb1: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut limit: u_int = 0;
-    if prefix.is_null() {
-        prefix = b"buffer\0" as *const u8 as *const ::core::ffi::c_char;
-    }
     if data.is_empty() {
         return;
     }
-    let prefix_bytes = CStr::from_ptr(prefix).to_bytes().to_vec();
+    let prefix_bytes = prefix
+        .as_ref()
+        .map_or(b"buffer".as_slice(), CString::as_bytes);
     limit = options_get_number(
         global_options,
         b"buffer-limit\0" as *const u8 as *const ::core::ffi::c_char,
@@ -433,8 +437,9 @@ pub unsafe fn paste_set(
 pub(crate) unsafe fn paste_set_owned(
     data: Box<[u8]>,
     name: *const ::core::ffi::c_char,
-    cause: *mut Option<CString>,
+    cause: Option<&mut Option<CString>>,
 ) -> ::core::ffi::c_int {
+    let cause = cause.map_or_else(::core::ptr::null_mut, |cause| &raw mut *cause);
     paste_set_inner(data, name, cause, ::core::ptr::null_mut())
 }
 
@@ -455,7 +460,7 @@ unsafe fn paste_set_inner(
         return 0 as ::core::ffi::c_int;
     }
     if name.is_null() {
-        paste_add_owned(::core::ptr::null(), data);
+        paste_add_owned(None, data);
         free(c_producer);
         return 0 as ::core::ffi::c_int;
     }
@@ -540,6 +545,10 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: *mut paste_buffer) -> CString
 mod tests {
     use super::*;
     use crate::src::ffi::libc::{malloc, strdup};
+    use crate::src::options::{
+        options_create, options_default, options_free, options_search, options_set_number,
+    };
+    use crate::src::tmux::global_options;
     use std::ffi::CString;
 
     unsafe fn allocated_bytes(bytes: &[u8]) -> *mut ::core::ffi::c_char {
@@ -612,12 +621,12 @@ mod tests {
     #[test]
     fn invalid_names_return_owned_diagnostics() {
         unsafe {
-            let mut cause: Option<CString> = None;
+            let mut cause: Option<CString> = Some(c"stale".to_owned());
             assert_eq!(
                 paste_set_owned(
                     b"payload".to_vec().into_boxed_slice(),
                     c"".as_ptr(),
-                    &mut cause,
+                    Some(&mut cause),
                 ),
                 -1
             );
@@ -626,12 +635,52 @@ mod tests {
                 c"empty buffer name"
             );
 
-            cause = None;
+            cause = Some(c"stale".to_owned());
+            let name = c"owned-cause-success";
+            assert_eq!(
+                paste_set_owned(
+                    b"payload".to_vec().into_boxed_slice(),
+                    name.as_ptr(),
+                    Some(&mut cause),
+                ),
+                0
+            );
+            assert!(cause.is_none());
+            paste_free(paste_get_name(name.as_ptr()));
+
+            cause = Some(c"stale".to_owned());
+            assert_eq!(
+                paste_set_owned(
+                    Box::<[u8]>::default(),
+                    ::core::ptr::null(),
+                    Some(&mut cause),
+                ),
+                0
+            );
+            assert!(cause.is_none(), "empty-data success clears the cause");
+
+            assert_eq!(
+                paste_set_owned(b"payload".to_vec().into_boxed_slice(), c"".as_ptr(), None,),
+                -1,
+                "failure can discard its diagnostic"
+            );
+            assert_eq!(
+                paste_set_owned(
+                    b"payload".to_vec().into_boxed_slice(),
+                    c"owned-cause-none".as_ptr(),
+                    None,
+                ),
+                0,
+                "success can discard its diagnostic"
+            );
+            paste_free(paste_get_name(c"owned-cause-none".as_ptr()));
+
+            cause = Some(c"stale".to_owned());
             assert_eq!(
                 paste_rename(
                     ::core::ptr::null(),
                     c"renamed".as_ptr(),
-                    &mut cause,
+                    &raw mut cause,
                 ),
                 -1
             );
@@ -639,6 +688,69 @@ mod tests {
                 CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
                 c"no buffer"
             );
+        }
+    }
+
+    #[test]
+    fn raw_add_snapshots_optional_prefix_before_pruning() {
+        unsafe {
+            let previous_global_options = global_options;
+            global_options = options_create(::core::ptr::null_mut());
+            let buffer_limit = options_search(c"buffer-limit".as_ptr());
+            assert!(!buffer_limit.is_null());
+            options_default(global_options, buffer_limit);
+            options_set_number(global_options, c"buffer-limit".as_ptr(), 50);
+
+            // Empty data must return before attempting to read this invalid prefix.
+            paste_add(
+                1usize as *const ::core::ffi::c_char,
+                ::core::ptr::null_mut(),
+                0,
+            );
+
+            paste_add(::core::ptr::null(), allocated_bytes(b"x"), 1);
+            let default_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None)))
+                .to_bytes()
+                .to_vec();
+            assert!(default_name.starts_with(b"buffer"));
+
+            paste_add(c"".as_ptr(), allocated_bytes(b"x"), 1);
+            let empty_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None))).to_bytes();
+            assert!(!empty_name.is_empty() && empty_name.iter().all(u8::is_ascii_digit));
+
+            paste_add(c"custom-".as_ptr(), allocated_bytes(b"x"), 1);
+            let custom_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None))).to_bytes();
+            assert!(custom_name.starts_with(b"custom-"));
+
+            let binary_prefix = CString::new(b"binary-\xff".to_vec()).unwrap();
+            paste_add(binary_prefix.as_ptr(), allocated_bytes(b"x"), 1);
+            let binary_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None))).to_bytes();
+            assert!(binary_name.starts_with(b"binary-\xff"));
+
+            options_set_number(global_options, c"buffer-limit".as_ptr(), 1);
+            while paste_is_empty() == 0 {
+                let pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
+                assert!(!pb.is_null());
+                paste_free(pb);
+            }
+
+            paste_add(c"prune-prefix-".as_ptr(), allocated_bytes(b"x"), 1);
+            let old = paste_get_top(None);
+            assert!(!old.is_null());
+            let old_name = (*old).name.clone();
+            paste_add(paste_buffer_name(old), allocated_bytes(b"x"), 1);
+
+            assert!(paste_get_name(old_name.as_ptr()).is_null());
+            let new_name = CStr::from_ptr(paste_buffer_name(paste_get_top(None))).to_bytes();
+            assert!(new_name.starts_with(old_name.as_bytes()));
+
+            while paste_is_empty() == 0 {
+                let pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
+                assert!(!pb.is_null());
+                paste_free(pb);
+            }
+            options_free(global_options);
+            global_options = previous_global_options;
         }
     }
 

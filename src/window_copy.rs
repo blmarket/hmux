@@ -8447,11 +8447,16 @@ unsafe fn window_copy_get_selection(mut wme: *mut window_mode_entry) -> Option<V
 }
 unsafe fn window_copy_copy_buffer(
     mut wme: *mut window_mode_entry,
-    mut prefix: *const ::core::ffi::c_char,
+    prefix: *const ::core::ffi::c_char,
     buf: Vec<u8>,
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
+    let prefix = if set_paste != 0 && !buf.is_empty() && !prefix.is_null() {
+        Some(CStr::from_ptr(prefix).to_owned())
+    } else {
+        None
+    };
     let mut wp: *mut window_pane = (*wme).wp;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: ::core::ptr::null_mut::<window_pane>(),
@@ -8613,7 +8618,7 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
         bufname
             .as_ref()
             .map_or(::core::ptr::null(), |name| name.as_ptr()),
-        ::core::ptr::null_mut::<Option<std::ffi::CString>>(),
+        None,
     );
 }
 unsafe fn window_copy_copy_line(
