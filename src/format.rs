@@ -587,13 +587,8 @@ unsafe extern "C" fn format_is_word_separator(
         && *(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int == ' ' as i32)
         as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_grid_word(
-    gd: *mut grid,
-    x: u_int,
-    y: u_int,
-) -> *mut ::core::ffi::c_char {
-    format_grid_word_cstring(gd, x, y).map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+pub unsafe fn format_grid_word(gd: *mut grid, x: u_int, y: u_int) -> Option<CString> {
+    format_grid_word_cstring(gd, x, y)
 }
 pub(crate) unsafe fn format_grid_word_cstring(
     mut gd: *mut grid,
@@ -687,9 +682,8 @@ pub(crate) unsafe fn format_grid_word_cstring(
     }
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_grid_line(gd: *mut grid, y: u_int) -> *mut ::core::ffi::c_char {
-    format_grid_line_cstring(gd, y).map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+pub unsafe fn format_grid_line(gd: *mut grid, y: u_int) -> Option<CString> {
+    format_grid_line_cstring(gd, y)
 }
 pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -> Option<CString> {
     let mut gc: grid_cell = grid_cell {
@@ -735,15 +729,13 @@ pub(crate) unsafe fn format_grid_line_cstring(mut gd: *mut grid, mut y: u_int) -
     }
     return s;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_grid_hyperlink(
+pub unsafe fn format_grid_hyperlink(
     gd: *mut grid,
     x: u_int,
     y: u_int,
     s: *mut screen,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     format_grid_hyperlink_cstring(gd, x, y, s)
-        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
 }
 pub(crate) unsafe fn format_grid_hyperlink_cstring(
     mut gd: *mut grid,

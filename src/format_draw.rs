@@ -68,7 +68,6 @@ pub use crate::src::shared::window::{
 };
 use crate::src::style::{style_copy, style_link, style_parse, style_set, style_tostring};
 use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
-use crate::src::xmalloc::{xmalloc, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -1814,23 +1813,6 @@ pub unsafe extern "C" fn format_width(mut expanded: *const ::core::ffi::c_char) 
     }
     return width;
 }
-// Callers free the returned string with libc free. Only this final copy crosses
-// that ownership boundary; trim construction stays owned by the local Vec.
-unsafe fn format_trim_output(bytes: &[u8]) -> *mut ::core::ffi::c_char {
-    let copy = xmalloc(bytes.len() + 1).cast::<::core::ffi::c_char>();
-    ::core::ptr::copy_nonoverlapping(bytes.as_ptr(), copy.cast::<u8>(), bytes.len());
-    *copy.add(bytes.len()) = 0;
-    copy
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn format_trim_left(
-    expanded: *const ::core::ffi::c_char,
-    limit: u_int,
-) -> *mut ::core::ffi::c_char {
-    format_trim_output(&format_trim_left_bytes(expanded, limit))
-}
-
 pub(crate) unsafe fn format_trim_left_bytes(
     mut expanded: *const ::core::ffi::c_char,
     mut limit: u_int,
@@ -1919,14 +1901,6 @@ pub(crate) unsafe fn format_trim_left_bytes(
     }
     out
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_trim_right(
-    expanded: *const ::core::ffi::c_char,
-    limit: u_int,
-) -> *mut ::core::ffi::c_char {
-    format_trim_output(&format_trim_right_bytes(expanded, limit))
-}
-
 pub(crate) unsafe fn format_trim_right_bytes(
     mut expanded: *const ::core::ffi::c_char,
     mut limit: u_int,
@@ -2028,21 +2002,16 @@ pub(crate) unsafe fn format_trim_right_bytes(
 
 #[cfg(test)]
 mod trim_tests {
-    use super::{format_trim_left, format_trim_right};
-    use crate::src::ffi::libc::free;
-    use std::ffi::CStr;
+    use super::{format_trim_left_bytes, format_trim_right_bytes};
 
     fn trim(input: &[u8], limit: u32, left: bool) -> Vec<u8> {
         assert_eq!(input.last(), Some(&0));
         unsafe {
-            let ptr = if left {
-                format_trim_left(input.as_ptr().cast(), limit)
+            if left {
+                format_trim_left_bytes(input.as_ptr().cast(), limit)
             } else {
-                format_trim_right(input.as_ptr().cast(), limit)
-            };
-            let result = CStr::from_ptr(ptr).to_bytes().to_vec();
-            free(ptr.cast());
-            result
+                format_trim_right_bytes(input.as_ptr().cast(), limit)
+            }
         }
     }
 
