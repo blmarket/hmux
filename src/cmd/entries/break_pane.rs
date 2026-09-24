@@ -247,22 +247,20 @@ unsafe extern "C" fn cmd_break_pane_exec(
     }
     server_unzoom_window(w);
     if window_count_panes(w, 1 as ::core::ffi::c_int) == 1 as u_int {
-        if server_link_window(
+        if let Err(link_error) = server_link_window(
             src_s,
             wl,
             dst_s,
             idx,
             0 as ::core::ffi::c_int,
             (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
-            &raw mut cause,
-        ) != 0 as ::core::ffi::c_int
+        )
         {
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                link_error.as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         if !name.is_null() {
@@ -351,7 +349,13 @@ unsafe extern "C" fn cmd_break_pane_exec(
                     b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
                 )) as ::core::ffi::c_int;
         }
-        wl = session_attach(dst_s, w, idx, &raw mut cause);
+        wl = match session_attach(dst_s, w, idx) {
+            Ok(wl) => wl,
+            Err(error) => {
+                cmdq_error(item, c"%s".as_ptr(), error.as_ptr());
+                return CMD_RETURN_ERROR;
+            }
+        };
         layout_init(w, wp);
         (*wp).flags |= PANE_CHANGED;
         colour_palette_from_option(&raw mut (*wp).palette, (*wp).options);

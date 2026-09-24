@@ -89,7 +89,7 @@ use crate::src::window::{
     winlink_find_by_window_id, winlink_next, winlink_previous, winlink_remove, winlink_set_window,
     winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc};
+use crate::src::xmalloc::xcalloc;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -792,22 +792,16 @@ pub unsafe extern "C" fn session_previous_session(
     i = i.wrapping_sub(1);
     return l[i as usize];
 }
-#[no_mangle]
-pub unsafe extern "C" fn session_attach(
+pub unsafe fn session_attach(
     mut s: *mut session,
     mut w: *mut window,
     mut idx: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> *mut winlink {
+) -> Result<*mut winlink, std::ffi::CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     wl = winlink_add(&raw mut (*s).windows, idx);
     if wl.is_null() {
-        xasprintf(
-            cause,
-            b"index in use: %d\0" as *const u8 as *const ::core::ffi::c_char,
-            idx,
-        );
-        return ::core::ptr::null_mut::<winlink>();
+        return Err(std::ffi::CString::new(format!("index in use: {idx}"))
+            .expect("numeric diagnostic contains no NUL"));
     }
     (*wl).session = s;
     winlink_set_window(wl, w);
@@ -816,7 +810,7 @@ pub unsafe extern "C" fn session_attach(
         wl,
     );
     session_group_synchronize_from(s);
-    return wl;
+    Ok(wl)
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_detach(

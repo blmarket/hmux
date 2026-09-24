@@ -38,7 +38,6 @@ use crate::src::window::{
     window_remove_ref, window_unzoom, winlink_find_by_index, winlink_find_by_window,
     winlink_remove, winlink_stack_remove,
 };
-use crate::src::xmalloc::xasprintf;
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__uint32_t, uint32_t};
@@ -422,27 +421,21 @@ pub unsafe extern "C" fn server_renumber_all() {
         s = sessions_next(s);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_link_window(
+pub unsafe fn server_link_window(
     mut src: *mut session,
     mut srcwl: *mut winlink,
     mut dst: *mut session,
     mut dstidx: ::core::ffi::c_int,
     mut killflag: ::core::ffi::c_int,
     mut selectflag: ::core::ffi::c_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+) -> Result<(), std::ffi::CString> {
     let mut dstwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut srcsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut dstsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     srcsg = session_group_contains(src);
     dstsg = session_group_contains(dst);
     if src != dst && !srcsg.is_null() && !dstsg.is_null() && srcsg == dstsg {
-        xasprintf(
-            cause,
-            b"sessions are grouped\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"sessions are grouped".to_owned());
     }
     dstwl = ::core::ptr::null_mut::<winlink>();
     if dstidx != -(1 as ::core::ffi::c_int) {
@@ -450,12 +443,8 @@ pub unsafe extern "C" fn server_link_window(
     }
     if !dstwl.is_null() {
         if (*dstwl).window == (*srcwl).window {
-            xasprintf(
-                cause,
-                b"same index: %d\0" as *const u8 as *const ::core::ffi::c_char,
-                dstidx,
-            );
-            return -(1 as ::core::ffi::c_int);
+            return Err(std::ffi::CString::new(format!("same index: {dstidx}"))
+                .expect("numeric diagnostic contains no NUL"));
         }
         if killflag != 0 {
             events_fire_winlink(
@@ -478,10 +467,7 @@ pub unsafe extern "C" fn server_link_window(
                 b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
             )) as ::core::ffi::c_int;
     }
-    dstwl = session_attach(dst, (*srcwl).window, dstidx, cause);
-    if dstwl.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
+    dstwl = session_attach(dst, (*srcwl).window, dstidx)?;
     if marked_pane.wl == srcwl {
         marked_pane.wl = dstwl;
     }
@@ -489,7 +475,7 @@ pub unsafe extern "C" fn server_link_window(
         session_select(dst, (*dstwl).idx);
     }
     server_redraw_session_group(dst);
-    return 0 as ::core::ffi::c_int;
+    Ok(())
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_unlink_window(mut s: *mut session, mut wl: *mut winlink) {

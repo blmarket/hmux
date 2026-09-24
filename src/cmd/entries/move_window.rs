@@ -147,7 +147,6 @@ unsafe extern "C" fn cmd_move_window_exec(
     let mut src: *mut session = (*source).s;
     let mut dst: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = (*source).wl;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = 0;
     let mut kflag: ::core::ffi::c_int = 0;
     let mut dflag: ::core::ffi::c_int = 0;
@@ -195,22 +194,20 @@ unsafe extern "C" fn cmd_move_window_exec(
             return CMD_RETURN_ERROR;
         }
     }
-    if server_link_window(
+    if let Err(cause) = server_link_window(
         src,
         wl,
         dst,
         idx,
         kflag,
         (dflag == 0) as ::core::ffi::c_int,
-        &raw mut cause,
-    ) != 0 as ::core::ffi::c_int
+    )
     {
         cmdq_error(
             item,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            cause,
+            cause.as_ptr(),
         );
-        free(cause as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
     if cmd_get_entry(self_0) == &raw const cmd_move_window_entry {
