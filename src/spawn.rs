@@ -1,6 +1,7 @@
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring, OwnedArgv};
 use crate::src::cmd_find::cmd_find_from_winlink_pane;
 use crate::src::cmd_queue::{cmdq_get_client, cmdq_get_target};
+use crate::src::compat::stdio::CFile;
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::compat::systemd::systemd_move_to_new_cgroup;
 use crate::src::control::control_reset_pane;
@@ -14,7 +15,7 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, close, closefrom, execl, execvp, fclose, fdopen, fopen, fread,
+    __errno_location, _exit, chdir, close, closefrom, execl, execvp, fdopen, fopen, fread,
     free, fseeko, ftello, fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp,
     sigfillset, sigprocmask, strerror, strrchr, tcgetattr, tcsetattr, unlink,
 };
@@ -1031,10 +1032,11 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
         b"r\0" as *const u8 as *const ::core::ffi::c_char,
     ) as *mut FILE;
     if !f.is_null() {
-        if fseeko(f, 0 as __off_t, SEEK_END) == 0 as ::core::ffi::c_int {
-            len = ftello(f) as off_t;
+        let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
+        if fseeko(stream.as_ptr(), 0 as __off_t, SEEK_END) == 0 as ::core::ffi::c_int {
+            len = ftello(stream.as_ptr()) as off_t;
             if len >= 0 as off_t && len as uintmax_t <= SIZE_MAX as uintmax_t {
-                if fseeko(f, 0 as __off_t, SEEK_SET) == 0 as ::core::ffi::c_int {
+                if fseeko(stream.as_ptr(), 0 as __off_t, SEEK_SET) == 0 as ::core::ffi::c_int {
                     if len == 0 as off_t {
                         result = Some(Vec::new());
                     } else {
@@ -1045,7 +1047,7 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
                                 bytes.as_mut_ptr().cast::<::core::ffi::c_void>(),
                                 len as size_t,
                                 1 as size_t,
-                                f,
+                                stream.as_ptr(),
                             ) == 1 as ::core::ffi::c_ulong
                             {
                                 result = Some(bytes);
@@ -1057,7 +1059,7 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
                 len = 0 as off_t;
             }
         }
-        fclose(f);
+        drop(stream);
     }
     (*es).cb.expect("non-null function pointer")(result, (*es).arg);
     spawn_editor_free(es);
@@ -1142,12 +1144,19 @@ pub unsafe fn spawn_editor(
         unlink(&raw mut path as *mut ::core::ffi::c_char);
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
-    if fwrite(buf as *const ::core::ffi::c_void, len, 1 as size_t, f) != 1 as ::core::ffi::c_ulong {
-        fclose(f);
+    let stream = CFile::from_raw(f).expect("fdopen returned a non-null stream");
+    if fwrite(
+        buf as *const ::core::ffi::c_void,
+        len,
+        1 as size_t,
+        stream.as_ptr(),
+    ) != 1 as ::core::ffi::c_ulong
+    {
+        drop(stream);
         unlink(&raw mut path as *mut ::core::ffi::c_char);
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
-    fclose(f);
+    drop(stream);
     es =
         spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb, arg).into_state_ptr();
     lg.sx = (*w).sx.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
@@ -1216,6 +1225,7 @@ pub unsafe fn spawn_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::ffi::libc::fclose;
     use std::ffi::CStr;
     use std::fs;
     use std::process::{Command, Stdio};
