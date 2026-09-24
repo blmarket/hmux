@@ -1,7 +1,7 @@
 use crate::src::compat::getpeereid::getpeereid;
 use crate::src::compat::imsg::{
-    imsg_compose, imsg_free, imsgbuf_allow_fdpass, imsgbuf_clear, imsgbuf_flush, imsgbuf_get,
-    imsgbuf_init, imsgbuf_queuelen, imsgbuf_read, imsgbuf_write,
+    imsg_compose, imsgbuf_allow_fdpass, imsgbuf_clear, imsgbuf_flush, imsgbuf_get, imsgbuf_init,
+    imsgbuf_queuelen, imsgbuf_read, imsgbuf_write,
 };
 use crate::src::compat::setproctitle::setproctitle;
 pub use crate::src::ffi::libc::utsname;
@@ -90,12 +90,15 @@ unsafe extern "C" fn proc_event_cb(
                 peer,
                 imsg.hdr.type_0,
             );
+            let owned_buf = OwnedIbuf::from_raw(imsg.buf);
             if peer_check_version(peer, &raw mut imsg) != 0 as ::core::ffi::c_int {
-                imsg_free(&raw mut imsg);
+                drop(owned_buf);
+                imsg.buf = ::core::ptr::null_mut::<ibuf>();
                 break;
             } else {
                 (*peer).dispatchcb.expect("non-null function pointer")(&raw mut imsg, (*peer).arg);
-                imsg_free(&raw mut imsg);
+                drop(owned_buf);
+                imsg.buf = ::core::ptr::null_mut::<ibuf>();
             }
         }
     }

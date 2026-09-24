@@ -1,10 +1,8 @@
-use crate::src::compat::freezero::freezero;
 use crate::src::compat::htonll::htonll;
 use crate::src::compat::ntohll::ntohll;
 pub use crate::src::ffi::libc::msghdr;
 use crate::src::ffi::libc::{
-    __errno_location, abort, calloc, close, free, malloc, memcpy, memmove, memset, readv, realloc,
-    recvmsg, sendmsg, strlcpy, strndup, writev,
+    __errno_location, abort, close, memcpy, memset, readv, recvmsg, sendmsg, strlcpy, writev,
 };
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{
@@ -15,6 +13,8 @@ pub use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
 pub use crate::src::shared::message::{ibuf, ibufqueue, ibufqueue_bufs, msgbuf};
 pub use crate::src::shared::posix_io::iovec;
 pub use crate::src::shared::socket::SOL_SOCKET;
+use std::ffi::CString;
+use std::ptr::slice_from_raw_parts_mut;
 
 pub type __caddr_t = *mut ::core::ffi::c_char;
 pub type caddr_t = __caddr_t;
@@ -109,47 +109,119 @@ pub const UINT16_MAX: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 
 pub const IBUF_READ_SIZE: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 pub const IBUF_FD_MARK_ON_STACK: ::core::ffi::c_int = -(2 as ::core::ffi::c_int);
+
+fn try_zeroed_boxed_slice(len: usize) -> Result<Box<[u8]>, std::collections::TryReserveError> {
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(len)?;
+    bytes.resize(len, 0);
+    Ok(bytes.into_boxed_slice())
+}
+
+unsafe fn raw_boxed_bytes(buf: *mut ::core::ffi::c_uchar, len: size_t) -> Box<[u8]> {
+    Box::from_raw(slice_from_raw_parts_mut(buf, len))
+}
+
+// The raw ibuf record is retained for translated callbacks. Its payload pointer
+// always refers to a Rust-owned boxed slice for owned records; stack views use
+// IBUF_FD_MARK_ON_STACK and must never be reconstructed as an owner.
+pub(crate) unsafe fn ibuf_release_owned(mut buf: Box<ibuf>) {
+    let save_errno = *__errno_location();
+    if buf.fd == IBUF_FD_MARK_ON_STACK {
+        abort();
+    }
+    if buf.fd >= 0 {
+        close(buf.fd);
+    }
+    if !buf.buf.is_null() && buf.size > 0 {
+        memset(
+            buf.buf as *mut ::core::ffi::c_void,
+            0,
+            buf.size,
+        );
+        drop(raw_boxed_bytes(buf.buf, buf.size));
+        buf.buf = ::core::ptr::null_mut();
+        buf.size = 0;
+    }
+    drop(buf);
+    *__errno_location() = save_errno;
+}
+
+/// A temporary borrowed byte span used while parsing data in the reader
+/// scratch buffer. The read-header callback is a raw-pointer ABI, so no Rust
+/// slice remains live while it runs.
+struct IbufView<'a> {
+    bytes: &'a [u8],
+    cursor: usize,
+}
+
+impl<'a> IbufView<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, cursor: 0 }
+    }
+
+    fn as_ptr(&self) -> *mut ::core::ffi::c_uchar {
+        self.bytes.as_ptr().wrapping_add(self.cursor) as *mut ::core::ffi::c_uchar
+    }
+
+    fn take(&mut self, len: usize) -> Option<&'a [u8]> {
+        let end = self.cursor.checked_add(len)?;
+        let bytes = self.bytes.get(self.cursor..end)?;
+        self.cursor = end;
+        Some(bytes)
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_open(mut len: size_t) -> *mut ibuf {
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
-    buf = calloc(1 as size_t, ::core::mem::size_of::<ibuf>() as size_t) as *mut ibuf;
-    if buf.is_null() {
+    let Ok(mut buf) = Box::try_new(ibuf {
+        buf: ::core::ptr::null_mut(),
+        size: len,
+        max: len,
+        wpos: 0,
+        rpos: 0,
+        fd: -(1 as ::core::ffi::c_int),
+    }) else {
+        *__errno_location() = ENOMEM;
         return ::core::ptr::null_mut::<ibuf>();
-    }
+    };
     if len > 0 as size_t {
-        (*buf).buf = calloc(len, 1 as size_t) as *mut ::core::ffi::c_uchar;
-        if (*buf).buf.is_null() {
-            free(buf as *mut ::core::ffi::c_void);
-            return ::core::ptr::null_mut::<ibuf>();
+        match try_zeroed_boxed_slice(len) {
+            Ok(bytes) => buf.buf = Box::into_raw(bytes) as *mut ::core::ffi::c_uchar,
+            Err(_) => {
+                *__errno_location() = ENOMEM;
+                return ::core::ptr::null_mut::<ibuf>();
+            }
         }
     }
-    (*buf).max = len;
-    (*buf).size = (*buf).max;
-    (*buf).fd = -(1 as ::core::ffi::c_int);
-    return buf;
+    return Box::into_raw(buf);
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_dynamic(mut len: size_t, mut max: size_t) -> *mut ibuf {
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
     if max == 0 as size_t || max < len {
         *__errno_location() = EINVAL;
         return ::core::ptr::null_mut::<ibuf>();
     }
-    buf = calloc(1 as size_t, ::core::mem::size_of::<ibuf>() as size_t) as *mut ibuf;
-    if buf.is_null() {
+    let Ok(mut buf) = Box::try_new(ibuf {
+        buf: ::core::ptr::null_mut(),
+        size: len,
+        max,
+        wpos: 0,
+        rpos: 0,
+        fd: -(1 as ::core::ffi::c_int),
+    }) else {
+        *__errno_location() = ENOMEM;
         return ::core::ptr::null_mut::<ibuf>();
-    }
+    };
     if len > 0 as size_t {
-        (*buf).buf = calloc(len, 1 as size_t) as *mut ::core::ffi::c_uchar;
-        if (*buf).buf.is_null() {
-            free(buf as *mut ::core::ffi::c_void);
-            return ::core::ptr::null_mut::<ibuf>();
+        match try_zeroed_boxed_slice(len) {
+            Ok(bytes) => buf.buf = Box::into_raw(bytes) as *mut ::core::ffi::c_uchar,
+            Err(_) => {
+                *__errno_location() = ENOMEM;
+                return ::core::ptr::null_mut::<ibuf>();
+            }
         }
     }
-    (*buf).size = len;
-    (*buf).max = max;
-    (*buf).fd = -(1 as ::core::ffi::c_int);
-    return buf;
+    return Box::into_raw(buf);
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_reserve(
@@ -166,27 +238,31 @@ pub unsafe extern "C" fn ibuf_reserve(
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     if (*buf).wpos.wrapping_add(len) > (*buf).size {
-        let mut nb: *mut ::core::ffi::c_uchar = ::core::ptr::null_mut::<::core::ffi::c_uchar>();
+        let new_size = (*buf).wpos.wrapping_add(len);
         if (*buf).wpos.wrapping_add(len) > (*buf).max {
             *__errno_location() = ERANGE;
             return ::core::ptr::null_mut::<::core::ffi::c_void>();
         }
-        nb = realloc(
-            (*buf).buf as *mut ::core::ffi::c_void,
-            (*buf).wpos.wrapping_add(len),
-        ) as *mut ::core::ffi::c_uchar;
-        if nb.is_null() {
-            return ::core::ptr::null_mut::<::core::ffi::c_void>();
+        let old_size = (*buf).size;
+        let mut bytes = match try_zeroed_boxed_slice(new_size) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                *__errno_location() = ENOMEM;
+                return ::core::ptr::null_mut::<::core::ffi::c_void>();
+            }
+        };
+        if old_size > 0 {
+            ::core::ptr::copy_nonoverlapping((*buf).buf, bytes.as_mut_ptr(), old_size);
+            drop(raw_boxed_bytes((*buf).buf, old_size));
         }
-        memset(
-            nb.offset((*buf).size as isize) as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            (*buf).wpos.wrapping_add(len).wrapping_sub((*buf).size),
-        );
-        (*buf).buf = nb;
-        (*buf).size = (*buf).wpos.wrapping_add(len);
+        (*buf).buf = Box::into_raw(bytes) as *mut u8;
+        (*buf).size = new_size;
     }
-    b = (*buf).buf.offset((*buf).wpos as isize) as *mut ::core::ffi::c_void;
+    b = if (*buf).buf.is_null() {
+        ::core::ptr::null_mut()
+    } else {
+        (*buf).buf.add((*buf).wpos) as *mut ::core::ffi::c_void
+    };
     (*buf).wpos = (*buf).wpos.wrapping_add(len);
     return b;
 }
@@ -343,6 +419,10 @@ pub unsafe extern "C" fn ibuf_add_strbuf(
 ) -> ::core::ffi::c_int {
     let mut b: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut n: size_t = 0;
+    if len == 0 {
+        *__errno_location() = EOVERFLOW;
+        return -(1 as ::core::ffi::c_int);
+    }
     b = ibuf_reserve(buf, len) as *mut ::core::ffi::c_char;
     if b.is_null() {
         return -(1 as ::core::ffi::c_int);
@@ -372,8 +452,11 @@ pub unsafe extern "C" fn ibuf_seek(
         *__errno_location() = ERANGE;
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    return (*buf).buf.offset((*buf).rpos as isize).offset(pos as isize)
-        as *mut ::core::ffi::c_void;
+    let data = ibuf_data(buf as *const ibuf) as *mut u8;
+    if data.is_null() {
+        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    }
+    return data.add(pos) as *mut ::core::ffi::c_void;
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_set(
@@ -533,7 +616,10 @@ pub unsafe extern "C" fn ibuf_set_maxsize(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_data(mut buf: *const ibuf) -> *mut ::core::ffi::c_void {
-    return (*buf).buf.offset((*buf).rpos as isize) as *mut ::core::ffi::c_void;
+    if (*buf).buf.is_null() {
+        return ::core::ptr::null_mut::<::core::ffi::c_void>();
+    }
+    return (*buf).buf.add((*buf).rpos) as *mut ::core::ffi::c_void;
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_size(mut buf: *const ibuf) -> size_t {
@@ -595,6 +681,9 @@ pub unsafe extern "C" fn ibuf_get(
     if ibuf_size(buf) < len {
         *__errno_location() = EBADMSG;
         return -(1 as ::core::ffi::c_int);
+    }
+    if len == 0 {
+        return 0;
     }
     memcpy(data, ibuf_data(buf), len);
     (*buf).rpos = (*buf).rpos.wrapping_add(len);
@@ -700,22 +789,30 @@ pub unsafe extern "C" fn ibuf_get_n64(
     *value = ntohll(*value);
     return rv;
 }
-#[no_mangle]
-pub unsafe extern "C" fn ibuf_get_string(
-    mut buf: *mut ibuf,
-    mut len: size_t,
-) -> *mut ::core::ffi::c_char {
-    let mut str: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+pub unsafe fn ibuf_get_string(buf: *mut ibuf, len: size_t) -> Option<CString> {
     if ibuf_size(buf) < len {
         *__errno_location() = EBADMSG;
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
-    str = strndup(ibuf_data(buf) as *const ::core::ffi::c_char, len);
-    if str.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let bytes = if len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(ibuf_data(buf) as *const u8, len)
+    };
+    let string_len = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+    let Some(allocation_len) = string_len.checked_add(1) else {
+        *__errno_location() = ENOMEM;
+        return None;
+    };
+    let mut string_bytes = Vec::new();
+    if string_bytes.try_reserve_exact(allocation_len).is_err() {
+        *__errno_location() = ENOMEM;
+        return None;
     }
+    string_bytes.extend_from_slice(&bytes[..string_len]);
+    string_bytes.push(0);
     (*buf).rpos = (*buf).rpos.wrapping_add(len);
-    return str;
+    Some(CString::from_vec_with_nul_unchecked(string_bytes))
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_get_strbuf(
@@ -755,11 +852,7 @@ pub unsafe extern "C" fn ibuf_free(mut buf: *mut ibuf) {
     if (*buf).fd == IBUF_FD_MARK_ON_STACK {
         abort();
     }
-    if (*buf).fd >= 0 as ::core::ffi::c_int {
-        close((*buf).fd);
-    }
-    freezero((*buf).buf as *mut ::core::ffi::c_void, (*buf).size);
-    free(buf as *mut ::core::ffi::c_void);
+    ibuf_release_owned(Box::from_raw(buf));
     *__errno_location() = save_errno;
 }
 #[no_mangle]
@@ -818,19 +911,21 @@ pub unsafe extern "C" fn msgbuf_new_reader(
     >,
     mut arg: *mut ::core::ffi::c_void,
 ) -> *mut msgbuf {
-    let mut msgbuf: *mut msgbuf = ::core::ptr::null_mut::<msgbuf>();
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if hdrsz == 0 as size_t || hdrsz > (IBUF_READ_SIZE / 2 as ::core::ffi::c_int) as size_t {
         *__errno_location() = EINVAL;
         return ::core::ptr::null_mut::<msgbuf>();
     }
-    buf = malloc(IBUF_READ_SIZE as size_t) as *mut ::core::ffi::c_char;
-    if buf.is_null() {
-        return ::core::ptr::null_mut::<msgbuf>();
-    }
-    msgbuf = msgbuf_new();
+    let scratch = match try_zeroed_boxed_slice(IBUF_READ_SIZE as usize) {
+        Ok(scratch) => scratch,
+        Err(_) => {
+            *__errno_location() = ENOMEM;
+            return ::core::ptr::null_mut::<msgbuf>();
+        }
+    };
+    let buf = Box::into_raw(scratch) as *mut ::core::ffi::c_char;
+    let msgbuf = msgbuf_new();
     if msgbuf.is_null() {
-        free(buf as *mut ::core::ffi::c_void);
+        drop(raw_boxed_bytes(buf as *mut u8, IBUF_READ_SIZE as size_t));
         return ::core::ptr::null_mut::<msgbuf>();
     }
     (*msgbuf).rbuf = buf;
@@ -845,7 +940,12 @@ pub unsafe extern "C" fn msgbuf_free(mut msgbuf: *mut msgbuf) {
         return;
     }
     msgbuf_clear(msgbuf);
-    free((*msgbuf).rbuf as *mut ::core::ffi::c_void);
+    if !(*msgbuf).rbuf.is_null() {
+        drop(raw_boxed_bytes(
+            (*msgbuf).rbuf as *mut u8,
+            IBUF_READ_SIZE as size_t,
+        ));
+    }
     drop(Box::from_raw(msgbuf));
 }
 #[no_mangle]
@@ -1028,15 +1128,6 @@ unsafe extern "C" fn ibuf_read_process(
     mut msgbuf: *mut msgbuf,
     mut fd: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut current_block: u64;
-    let mut rbuf: ibuf = ibuf {
-        buf: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-        size: 0,
-        max: 0,
-        wpos: 0,
-        rpos: 0,
-        fd: 0,
-    };
     let mut msg: ibuf = ibuf {
         buf: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
         size: 0,
@@ -1046,70 +1137,95 @@ unsafe extern "C" fn ibuf_read_process(
         fd: 0,
     };
     let mut sz: ssize_t = 0;
-    ibuf_from_buffer(
-        &raw mut rbuf,
-        (*msgbuf).rbuf as *mut ::core::ffi::c_void,
-        (*msgbuf).roff,
-    );
-    loop {
+    let scratch = (*msgbuf).rbuf as *mut u8;
+    let read_len = (*msgbuf).roff;
+    let mut cursor = 0usize;
+    let mut failed = false;
+    'parse: loop {
         if (*msgbuf).rpmsg.is_null() {
-            if ibuf_size(&raw mut rbuf) < (*msgbuf).hdrsize {
-                current_block = 13586036798005543211;
+            if read_len.wrapping_sub(cursor) < (*msgbuf).hdrsize {
                 break;
             }
-            ibuf_from_buffer(&raw mut msg, ibuf_data(&raw mut rbuf), (*msgbuf).hdrsize);
+            let header_ptr = {
+                let header = std::slice::from_raw_parts(
+                    scratch.add(cursor),
+                    (*msgbuf).hdrsize,
+                );
+                IbufView::new(header).as_ptr()
+            };
+            ibuf_from_buffer(
+                &raw mut msg,
+                header_ptr as *mut ::core::ffi::c_void,
+                (*msgbuf).hdrsize,
+            );
             (*msgbuf).rpmsg = (*msgbuf).readhdr.expect("non-null function pointer")(
                 &raw mut msg,
                 (*msgbuf).rarg,
                 &raw mut fd,
             );
             if (*msgbuf).rpmsg.is_null() {
-                current_block = 12397102733025307875;
+                failed = true;
                 break;
             }
         }
-        if ibuf_left((*msgbuf).rpmsg) <= ibuf_size(&raw mut rbuf) {
+        let available = read_len.wrapping_sub(cursor);
+        if ibuf_left((*msgbuf).rpmsg) <= available {
             sz = ibuf_left((*msgbuf).rpmsg) as ssize_t;
         } else {
-            sz = ibuf_size(&raw mut rbuf) as ssize_t;
+            sz = available as ssize_t;
         }
-        if ibuf_get_ibuf(&raw mut rbuf, sz as size_t, &raw mut msg) == -(1 as ::core::ffi::c_int)
-            || ibuf_add_ibuf((*msgbuf).rpmsg, &raw mut msg) == -(1 as ::core::ffi::c_int)
+        let copy_len = sz as size_t;
+        let chunk = {
+            let input = std::slice::from_raw_parts(
+                scratch.add(cursor),
+                available,
+            );
+            let mut view = IbufView::new(input);
+            match view.take(copy_len) {
+                Some(chunk) => chunk,
+                None => {
+                    failed = true;
+                    break 'parse;
+                }
+            }
+        };
+        if ibuf_add(
+            (*msgbuf).rpmsg,
+            chunk.as_ptr() as *const ::core::ffi::c_void,
+            copy_len,
+        ) == -(1 as ::core::ffi::c_int)
         {
-            current_block = 12397102733025307875;
+            failed = true;
             break;
         }
+        cursor = cursor.wrapping_add(copy_len);
         if ibuf_left((*msgbuf).rpmsg) == 0 as size_t {
             ibufq_push(&raw mut (*msgbuf).rbufs, (*msgbuf).rpmsg);
             (*msgbuf).rpmsg = ::core::ptr::null_mut::<ibuf>();
         }
-        if !(ibuf_size(&raw mut rbuf) > 0 as size_t) {
-            current_block = 13586036798005543211;
+        if cursor >= read_len {
             break;
         }
     }
-    match current_block {
-        12397102733025307875 => {
-            if fd != -(1 as ::core::ffi::c_int) {
-                close(fd);
-            }
-            return -(1 as ::core::ffi::c_int);
+    if failed {
+        if fd != -(1 as ::core::ffi::c_int) {
+            close(fd);
         }
-        _ => {
-            if ibuf_size(&raw mut rbuf) > 0 as size_t {
-                memmove(
-                    (*msgbuf).rbuf as *mut ::core::ffi::c_void,
-                    ibuf_data(&raw mut rbuf),
-                    ibuf_size(&raw mut rbuf),
-                );
-            }
-            (*msgbuf).roff = ibuf_size(&raw mut rbuf);
-            if fd != -(1 as ::core::ffi::c_int) {
-                close(fd);
-            }
-            return 1 as ::core::ffi::c_int;
-        }
+        return -(1 as ::core::ffi::c_int);
+    }
+    let remaining = read_len.wrapping_sub(cursor);
+    if remaining > 0 {
+        let scratch = std::slice::from_raw_parts_mut(
+            (*msgbuf).rbuf as *mut u8,
+            IBUF_READ_SIZE as usize,
+        );
+        scratch.copy_within(cursor..read_len, 0);
+    }
+    (*msgbuf).roff = remaining;
+    if fd != -(1 as ::core::ffi::c_int) {
+        close(fd);
     };
+    1 as ::core::ffi::c_int
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_read(

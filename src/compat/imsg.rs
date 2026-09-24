@@ -124,6 +124,7 @@ pub unsafe extern "C" fn imsgbuf_get(
         ::core::mem::size_of::<imsg_hdr>() as size_t,
     ) == -(1 as ::core::ffi::c_int)
     {
+        ibuf_free(buf);
         return -(1 as ::core::ffi::c_int);
     }
     if ibuf_size(buf) != 0 {
@@ -171,6 +172,7 @@ pub unsafe extern "C" fn imsg_ibufq_pop(
         ::core::mem::size_of::<imsg_hdr>() as size_t,
     ) == -(1 as ::core::ffi::c_int)
     {
+        ibuf_free(buf);
         return -(1 as ::core::ffi::c_int);
     }
     if ibuf_size(buf) != 0 {

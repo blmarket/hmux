@@ -2,7 +2,6 @@
 
 use super::abi::{pid_t, size_t, uint32_t};
 use std::collections::VecDeque;
-use std::ptr::NonNull;
 pub type msgtype = ::core::ffi::c_uint;
 
 pub const MSG_WRITE_DONE: msgtype = 308;
@@ -79,7 +78,6 @@ pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 
 pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ibuf {
     pub buf: *mut ::core::ffi::c_uchar,
@@ -183,28 +181,28 @@ impl ibufqueue_bufs {
     }
 }
 
-pub(crate) struct OwnedIbuf(NonNull<ibuf>);
+pub(crate) struct OwnedIbuf(Option<Box<ibuf>>);
 
 impl OwnedIbuf {
-    unsafe fn from_raw(buf: *mut ibuf) -> Self {
-        Self(NonNull::new_unchecked(buf))
+    pub(crate) unsafe fn from_raw(buf: *mut ibuf) -> Self {
+        Self(Some(Box::from_raw(buf)))
     }
 
     fn as_ptr(&self) -> *mut ibuf {
-        self.0.as_ptr()
+        self.0.as_deref().unwrap() as *const ibuf as *mut ibuf
     }
 
-    fn into_raw(self) -> *mut ibuf {
-        let buf = self.0.as_ptr();
-        ::core::mem::forget(self);
-        buf
+    fn into_raw(mut self) -> *mut ibuf {
+        Box::into_raw(self.0.take().unwrap())
     }
 }
 
 impl Drop for OwnedIbuf {
     fn drop(&mut self) {
-        unsafe {
-            crate::src::compat::imsg_buffer::ibuf_free(self.0.as_ptr());
+        if let Some(buf) = self.0.take() {
+            unsafe {
+                crate::src::compat::imsg_buffer::ibuf_release_owned(buf);
+            }
         }
     }
 }
