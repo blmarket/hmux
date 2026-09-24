@@ -1,6 +1,7 @@
 use crate::src::cmd_queue::{cmdq_clear_wait_file, cmdq_set_wait_file};
+use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{
-    __errno_location, close, dup, fclose, ferror, fopen, fread, free, fwrite, memcpy, open, strcmp,
+    __errno_location, close, dup, ferror, fopen, fread, free, fwrite, memcpy, open, strcmp,
     strlen,
 };
 use crate::src::log::{fatalx, log_debug};
@@ -651,11 +652,14 @@ unsafe fn file_write_impl(
             f = fopen(((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), mode) as *mut FILE;
             if f.is_null() {
                 (*cf).error = *__errno_location();
-            } else if fwrite(bdata, 1 as size_t, bsize, f) as size_t != bsize {
-                fclose(f);
-                (*cf).error = EIO;
             } else {
-                fclose(f);
+                let file = CFile::from_raw(f).expect("fopen returned a non-null stream");
+                let write_failed = fwrite(bdata, 1 as size_t, bsize, file.as_ptr()) as size_t
+                    != bsize;
+                drop(file);
+                if write_failed {
+                    (*cf).error = EIO;
+                }
             }
             current_block = 4636144702248558238;
         } else {
@@ -766,6 +770,7 @@ unsafe fn file_read_impl(
     file_next_stream = file_next_stream + 1;
     let mut stream: u_int = fresh1 as u_int;
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
+    let mut file_owner: Option<CFile> = None;
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
     cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
@@ -795,14 +800,16 @@ unsafe fn file_read_impl(
             if f.is_null() {
                 (*cf).error = *__errno_location();
             } else {
+                file_owner = CFile::from_raw(f);
+                let file = file_owner.as_ref().expect("fopen returned a non-null stream");
                 loop {
                     size = fread(
                         &raw mut buffer as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
                         1 as size_t,
                         ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as size_t,
-                        f,
+                        file.as_ptr(),
                     ) as size_t;
-                    if ferror(f) != 0 {
+                    if ferror(file.as_ptr()) != 0 {
                         (*cf).error = *__errno_location();
                         current_block = 17369485759464587280;
                         break;
@@ -824,7 +831,7 @@ unsafe fn file_read_impl(
                 match current_block {
                     17369485759464587280 => {}
                     _ => {
-                        if ferror(f) != 0 {
+                        if ferror(file.as_ptr()) != 0 {
                             (*cf).error = EIO;
                         }
                     }
@@ -870,9 +877,7 @@ unsafe fn file_read_impl(
         }
         _ => {}
     }
-    if !f.is_null() {
-        fclose(f);
-    }
+    drop(file_owner);
     file_fire_done(cf);
     return ::core::ptr::null_mut::<client_file>();
 }
