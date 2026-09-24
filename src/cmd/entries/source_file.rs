@@ -6,9 +6,9 @@ use crate::src::cmd_queue::{
     cmdq_insert_after, cmdq_set_cancel_data,
 };
 use crate::src::compat::glob::GlobResult;
-use crate::src::ffi::libc::{__ctype_b_loc, free, strcmp, strerror};
+use crate::src::ffi::libc::{__ctype_b_loc, strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;
-use crate::src::format::format_single_from_target;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::log_debug;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
@@ -297,7 +297,6 @@ unsafe extern "C" fn cmd_source_file_exec(
     let mut cdata: *mut cmd_source_file_data = ::core::ptr::null_mut::<cmd_source_file_data>();
     let mut c: *mut client = cmdq_get_client(item);
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut parse_flags: ::core::ffi::c_int = 0;
@@ -363,10 +362,13 @@ unsafe extern "C" fn cmd_source_file_exec(
     i = 0 as u_int;
     while i < args_count(args) {
         path = args_string(args, i);
-        if args_has(args, 'F' as i32 as u_char) != 0 {
-            free(expanded as *mut ::core::ffi::c_void);
-            expanded = format_single_from_target(item, path);
-            path = expanded;
+        let expanded = if args_has(args, 'F' as i32 as u_char) != 0 {
+            Some(format_single_from_target_cstring(item, path))
+        } else {
+            None
+        };
+        if let Some(expanded) = expanded.as_ref() {
+            path = expanded.as_ptr();
         }
         if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
@@ -419,7 +421,6 @@ unsafe extern "C" fn cmd_source_file_exec(
         }
         i = i.wrapping_add(1);
     }
-    free(expanded as *mut ::core::ffi::c_void);
     (*cdata).after = item;
     (*cdata).retval = retval;
     if !(*cdata).files.is_empty() {

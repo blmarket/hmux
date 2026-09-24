@@ -8,8 +8,8 @@ use crate::src::cmd_queue::{
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::cmd_parse::cmd_parse_error_uppercase_first;
-use crate::src::ffi::libc::{__ctype_toupper_loc, free};
-use crate::src::format::format_single_from_target;
+use crate::src::ffi::libc::__ctype_toupper_loc;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::{job_get_data, job_get_status, job_run};
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
 pub use crate::src::shared::abi::__int32_t;
@@ -147,26 +147,23 @@ unsafe extern "C" fn cmd_if_shell_exec(
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut shellcmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut s: *mut session = (*target).s;
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    shellcmd = format_single_from_target(item, args_string(args, 0 as u_int));
+    let shellcmd = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
     if args_has(args, 'F' as i32 as u_char) != 0 {
-        if *shellcmd as ::core::ffi::c_int != '0' as i32
-            && *shellcmd as ::core::ffi::c_int != '\0' as i32
+        if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
+            && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32
         {
             cmdlist = args_make_commands_now(self_0, item, 1 as u_int, 0 as ::core::ffi::c_int);
         } else if count == 3 as u_int {
             cmdlist = args_make_commands_now(self_0, item, 2 as u_int, 0 as ::core::ffi::c_int);
         } else {
-            free(shellcmd as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
-        free(shellcmd as *mut ::core::ffi::c_void);
         if cmdlist.is_null() {
             return CMD_RETURN_ERROR;
         }
@@ -212,7 +209,7 @@ unsafe extern "C" fn cmd_if_shell_exec(
     // job_run leaves data untouched on failure, so reclaim it below.
     let cdata = Box::into_raw(cdata);
     if job_run(
-        shellcmd,
+        shellcmd.as_ptr(),
         0 as ::core::ffi::c_int,
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
         ::core::ptr::null_mut::<environ>(),
@@ -231,13 +228,11 @@ unsafe extern "C" fn cmd_if_shell_exec(
         cmdq_error(
             item,
             b"failed to run command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            shellcmd,
+            shellcmd.as_ptr(),
         );
-        free(shellcmd as *mut ::core::ffi::c_void);
         cmd_if_shell_free(cdata.cast());
         return CMD_RETURN_ERROR;
     }
-    free(shellcmd as *mut ::core::ffi::c_void);
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }

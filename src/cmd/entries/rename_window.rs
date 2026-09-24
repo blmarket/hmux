@@ -1,8 +1,7 @@
 use crate::src::arguments::args_string;
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
-use crate::src::ffi::libc::free;
-use crate::src::format::format_single_from_target;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::options::options_set_number;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::src::shared::abi::*;
@@ -104,24 +103,21 @@ unsafe extern "C" fn cmd_rename_window_exec(
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wl: *mut winlink = (*target).wl;
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    name = format_single_from_target(item, args_string(args, 0 as u_int));
-    if check_name(name) == 0 {
+    let name = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    if check_name(name.as_ptr()) == 0 {
         cmdq_error(
             item,
             b"invalid window name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
+            name.as_ptr(),
         );
-        free(name as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
-    window_set_name((*wl).window, name, 0 as ::core::ffi::c_int);
+    window_set_name((*wl).window, name.as_ptr(), 0 as ::core::ffi::c_int);
     options_set_number(
         (*(*wl).window).options,
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
-    free(name as *mut ::core::ffi::c_void);
     server_redraw_window_borders((*wl).window);
     server_status_window((*wl).window);
     return CMD_RETURN_NORMAL;

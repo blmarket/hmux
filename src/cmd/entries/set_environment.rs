@@ -2,8 +2,8 @@ use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
 use crate::src::environ::{environ_clear, environ_set, environ_unset};
-use crate::src::ffi::libc::{free, strchr};
-use crate::src::format::format_single_from_target;
+use crate::src::ffi::libc::strchr;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -109,7 +109,7 @@ unsafe extern "C" fn cmd_set_environment_exec(
     let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut expanded: Option<std::ffi::CString> = None;
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     if *name as ::core::ffi::c_int == '\0' as i32 {
         cmdq_error(
@@ -131,8 +131,8 @@ unsafe extern "C" fn cmd_set_environment_exec(
         value = args_string(args, 1 as u_int);
     }
     if !value.is_null() && args_has(args, 'F' as i32 as u_char) != 0 {
-        expanded = format_single_from_target(item, value);
-        value = expanded;
+        expanded = Some(format_single_from_target_cstring(item, value));
+        value = expanded.as_ref().expect("expanded value was set").as_ptr();
     }
     if args_has(args, 'g' as i32 as u_char) != 0 {
         env = global_environ;
@@ -207,6 +207,5 @@ unsafe extern "C" fn cmd_set_environment_exec(
         }
         _ => {}
     }
-    free(expanded as *mut ::core::ffi::c_void);
     return retval;
 }

@@ -7,8 +7,8 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_session, event_payload_set_string,
     event_payload_set_target,
 };
-use crate::src::ffi::libc::{free, strcmp};
-use crate::src::format::format_single_from_target;
+use crate::src::ffi::libc::strcmp;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::server_fn::server_status_session;
 pub use crate::src::session::sessions;
 use crate::src::session::{session_find, session_replace_name, sessions_insert, sessions_remove};
@@ -122,20 +122,17 @@ unsafe extern "C" fn cmd_rename_session_exec(
         wp: ::core::ptr::null_mut::<window_pane>(),
         idx: 0,
     };
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    tmp = format_single_from_target(item, args_string(args, 0 as u_int));
-    if check_name(tmp) == 0 {
+    let tmp = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
+    if check_name(tmp.as_ptr()) == 0 {
         cmdq_error(
             item,
             b"invalid session name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tmp,
+            tmp.as_ptr(),
         );
-        free(tmp as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
-    let newname =
-        clean_name_cstring(CStr::from_ptr(tmp), 0).expect("check_name validated the session name");
-    free(tmp as *mut ::core::ffi::c_void);
+    let newname = clean_name_cstring(CStr::from_ptr(tmp.as_ptr()), 0)
+        .expect("check_name validated the session name");
     if strcmp(newname.as_ptr(), ((*s).name).as_ptr().cast_mut()) == 0 as ::core::ffi::c_int {
         return CMD_RETURN_NORMAL;
     }

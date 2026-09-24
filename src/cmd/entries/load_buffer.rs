@@ -1,9 +1,9 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
-use crate::src::ffi::libc::{free, strerror};
+use crate::src::ffi::libc::strerror;
 use crate::src::file::file_read_with_owned_data_and_cmdq_wait;
-use crate::src::format::format_single_from_target;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::server_client_unref;
@@ -193,7 +193,6 @@ unsafe extern "C" fn cmd_load_buffer_exec(
         name: None,
     });
     let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
-    let mut path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if !bufname.is_null() {
         cdata.name = Some(CStr::from_ptr(bufname).to_owned());
     }
@@ -201,10 +200,10 @@ unsafe extern "C" fn cmd_load_buffer_exec(
         cdata.client = tc;
         (*tc).references += 1;
     }
-    path = format_single_from_target(item, args_string(args, 0 as u_int));
+    let path = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
     file_read_with_owned_data_and_cmdq_wait(
         cmdq_get_client(item),
-        path,
+        path.as_ptr(),
         Some(
             cmd_load_buffer_done
                 as unsafe extern "C" fn(
@@ -219,7 +218,6 @@ unsafe extern "C" fn cmd_load_buffer_exec(
         cdata,
         item,
     );
-    free(path as *mut ::core::ffi::c_void);
     return CMD_RETURN_WAIT;
 }
 

@@ -14,7 +14,7 @@ use crate::src::events_payload::{
     event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::free;
-use crate::src::format::{format_single, format_single_from_target};
+use crate::src::format::{format_single, format_single_from_target_cstring};
 use crate::src::layout::{
     layout_close_pane, layout_fix_panes, layout_get_floating_cell, layout_get_tiled_cell,
     layout_set_size,
@@ -227,7 +227,6 @@ unsafe extern "C" fn cmd_split_window_exec(
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut choice_cause: Option<std::ffi::CString> = None;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut lines: pane_lines = PANE_LINES_SINGLE;
@@ -512,13 +511,13 @@ unsafe extern "C" fn cmd_split_window_exec(
                                     }
                                 }
                                 if args_has(args, 'T' as i32 as u_char) != 0 {
-                                    title = format_single_from_target(
+                                    let title = format_single_from_target_cstring(
                                         item,
                                         args_get(args, 'T' as i32 as u_char),
                                     );
                                     screen_set_title(
                                         &raw mut (*new_wp).base,
-                                        title,
+                                        title.as_ptr(),
                                         0 as ::core::ffi::c_int,
                                     );
                                     ep = event_payload_create();
@@ -542,14 +541,13 @@ unsafe extern "C" fn cmd_split_window_exec(
                                         ep,
                                         b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
                                         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                        title,
+                                        title.as_ptr(),
                                     );
                                     events_fire(
                                         b"pane-title-changed\0" as *const u8
                                             as *const ::core::ffi::c_char,
                                         ep,
                                     );
-                                    free(title as *mut ::core::ffi::c_void);
                                 }
                                 if input != 0 {
                                     match window_pane_start_input(new_wp, item) {

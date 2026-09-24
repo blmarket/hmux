@@ -9,8 +9,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::free;
-use crate::src::format::format_single_from_target;
+use crate::src::format::format_single_from_target_cstring;
 use crate::src::options::{options_get_string, options_set_string};
 use crate::src::screen::screen_set_title;
 pub use crate::src::server::clients;
@@ -301,7 +300,6 @@ unsafe extern "C" fn cmd_select_pane_exec(
     let mut wp: *mut window_pane = (*target).wp;
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut oo: *mut options = (*wp).options;
-    let mut title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut visible: ::core::ffi::c_int = 0;
@@ -422,8 +420,8 @@ unsafe extern "C" fn cmd_select_pane_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        title = format_single_from_target(item, args_get(args, 'T' as i32 as u_char));
-        if screen_set_title(&raw mut (*wp).base, title, 0 as ::core::ffi::c_int) != 0 {
+        let title = format_single_from_target_cstring(item, args_get(args, 'T' as i32 as u_char));
+        if screen_set_title(&raw mut (*wp).base, title.as_ptr(), 0 as ::core::ffi::c_int) != 0 {
             ep = event_payload_create();
             cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
             event_payload_set_target(ep, &raw mut fs);
@@ -437,7 +435,7 @@ unsafe extern "C" fn cmd_select_pane_exec(
                 ep,
                 b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                title,
+                title.as_ptr(),
             );
             events_fire(
                 b"pane-title-changed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -446,7 +444,6 @@ unsafe extern "C" fn cmd_select_pane_exec(
             server_redraw_window_borders((*wp).window as *mut window);
             server_status_window((*wp).window as *mut window);
         }
-        free(title as *mut ::core::ffi::c_void);
         return CMD_RETURN_NORMAL;
     }
     if wp == (*w).active {
