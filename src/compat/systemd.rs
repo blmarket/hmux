@@ -55,7 +55,11 @@ fn systemd_message(
             .position(|part| part == b"%s")
             .expect("systemd diagnostic must have a %s marker");
         message.extend_from_slice(&template[..marker]);
-        message.extend_from_slice(unsafe { CStr::from_ptr(reason) }.to_bytes());
+        if reason.is_null() {
+            message.extend_from_slice(b"(null)");
+        } else {
+            message.extend_from_slice(unsafe { CStr::from_ptr(reason) }.to_bytes());
+        }
         message.extend_from_slice(&template[marker + 2..]);
     } else {
         message.extend_from_slice(template);
@@ -70,6 +74,26 @@ macro_rules! set_systemd_error {
     ($destination:ident, $format:expr $(,)?) => {
         $destination = Some(systemd_message($format, None))
     };
+}
+
+#[cfg(test)]
+mod systemd_message_tests {
+    use super::systemd_message;
+    use std::ffi::CString;
+
+    #[test]
+    fn preserves_reason_bytes_and_null_rendering() {
+        let format = c"systemd: %s";
+        let reason = CString::new(b"unit-\xff".to_vec()).unwrap();
+        assert_eq!(
+            systemd_message(format.as_ptr(), Some(reason.as_ptr())).as_bytes(),
+            b"systemd: unit-\xff"
+        );
+        assert_eq!(
+            systemd_message(format.as_ptr(), Some(::core::ptr::null())).as_bytes(),
+            b"systemd: (null)"
+        );
+    }
 }
 
 #[derive(Copy, Clone)]
