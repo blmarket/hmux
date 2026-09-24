@@ -1622,6 +1622,7 @@ pub(crate) unsafe fn tty_term_read_list(
         }
         return Err(CString::new(cause).expect("C strings contain no interior NUL"));
     }
+    let terminal_owner = CurrentTerminalOwner(cur_term);
     let mut current_block_23: u64;
     i = 0 as u_int;
     while i < tty_term_ncodes() {
@@ -1688,8 +1689,18 @@ pub(crate) unsafe fn tty_term_read_list(
         }
         i = i.wrapping_add(1);
     }
-    del_curterm(cur_term);
+    drop(terminal_owner);
     Ok(caps)
+}
+
+struct CurrentTerminalOwner(*mut TERMINAL);
+
+impl Drop for CurrentTerminalOwner {
+    fn drop(&mut self) {
+        unsafe {
+            del_curterm(self.0);
+        }
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_term_has(
