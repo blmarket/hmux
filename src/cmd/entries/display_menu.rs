@@ -7,7 +7,8 @@ use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_ge
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::ffi::libc::{free, strcmp, strtol};
 use crate::src::format::{
-    format_add, format_create_from_target, format_expand_cstring, format_free, format_single_from_target,
+    format_add, format_create_from_target, format_expand_cstring, format_free,
+    format_single_from_target_cstring,
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::log::log_debug;
@@ -1043,8 +1044,6 @@ unsafe extern "C" fn cmd_display_menu_exec(
     let mut border_style: *const ::core::ffi::c_char = args_get(args, 'S' as i32 as u_char);
     let mut selected_style: *const ::core::ffi::c_char = args_get(args, 'H' as i32 as u_char);
     let mut lines: box_lines = BOX_LINES_DEFAULT;
-    let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut formatted_title: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
     let mut cause: Option<std::ffi::CString> = None;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut starting_choice: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1088,15 +1087,18 @@ unsafe extern "C" fn cmd_display_menu_exec(
     }
     match current_block {
         1841672684692190573 => {
-            if args_has(args, 'T' as i32 as u_char) != 0 {
-                formatted_title =
-                    format_single_from_target(item, args_get(args, 'T' as i32 as u_char));
-                title = formatted_title;
+            let formatted_title = if args_has(args, 'T' as i32 as u_char) != 0 {
+                Some(format_single_from_target_cstring(
+                    item,
+                    args_get(args, 'T' as i32 as u_char),
+                ))
             } else {
-                title = c"".as_ptr();
-            }
+                None
+            };
+            let title = formatted_title
+                .as_ref()
+                .map_or(c"".as_ptr(), |title| title.as_ptr());
             menu = menu_create(title);
-            free(formatted_title as *mut ::core::ffi::c_void);
             i = 0 as u_int;
             loop {
                 if !(i != count) {
@@ -1244,14 +1246,14 @@ unsafe extern "C" fn cmd_display_popup_exec(
     let mut style: *const ::core::ffi::c_char = args_get(args, 's' as i32 as u_char);
     let mut border_style: *const ::core::ffi::c_char = args_get(args, 'S' as i32 as u_char);
     let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut formatted_cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
+    let mut formatted_cwd: Option<std::ffi::CString> = None;
     let mut default_cwd: Option<std::ffi::CString> = None;
     let mut cause: Option<std::ffi::CString> = None;
     let mut argv: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut argv_owner = OwnedArgv::default();
     let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut formatted_title: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
+    let mut formatted_title: Option<std::ffi::CString> = None;
     let mut modify: ::core::ffi::c_int = popup_present(tc);
     let mut flags: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1352,8 +1354,12 @@ unsafe extern "C" fn cmd_display_popup_exec(
                         } else {
                             value = args_get(args, 'd' as i32 as u_char);
                             if !value.is_null() {
-                                formatted_cwd = format_single_from_target(item, value);
-                                cwd = formatted_cwd;
+                                formatted_cwd =
+                                    Some(format_single_from_target_cstring(item, value));
+                                cwd = formatted_cwd
+                                    .as_ref()
+                                    .expect("formatted cwd was set")
+                                    .as_ptr();
                             } else {
                                 default_cwd = Some(
                                     std::ffi::CStr::from_ptr(server_client_get_cwd(tc, s))
@@ -1441,9 +1447,14 @@ unsafe extern "C" fn cmd_display_popup_exec(
                 1988999557336856620 => {}
                 _ => {
                     if args_has(args, 'T' as i32 as u_char) != 0 {
-                        formatted_title =
-                            format_single_from_target(item, args_get(args, 'T' as i32 as u_char));
-                        title = formatted_title;
+                        formatted_title = Some(format_single_from_target_cstring(
+                            item,
+                            args_get(args, 'T' as i32 as u_char),
+                        ));
+                        title = formatted_title
+                            .as_ref()
+                            .expect("formatted title was set")
+                            .as_ptr();
                     } else {
                         title = c"".as_ptr();
                     }
@@ -1492,8 +1503,6 @@ unsafe extern "C" fn cmd_display_popup_exec(
                     ) != 0 as ::core::ffi::c_int)
                     {
                         environ_free(env);
-                        free(formatted_cwd as *mut ::core::ffi::c_void);
-                        free(formatted_title as *mut ::core::ffi::c_void);
                         return CMD_RETURN_WAIT;
                     }
                     current_block = 6589043366517631393;
@@ -1505,14 +1514,10 @@ unsafe extern "C" fn cmd_display_popup_exec(
     match current_block {
         1988999557336856620 => {
             environ_free(env);
-            free(formatted_cwd as *mut ::core::ffi::c_void);
-            free(formatted_title as *mut ::core::ffi::c_void);
             return CMD_RETURN_ERROR;
         }
         _ => {
             environ_free(env);
-            free(formatted_cwd as *mut ::core::ffi::c_void);
-            free(formatted_title as *mut ::core::ffi::c_void);
             return CMD_RETURN_NORMAL;
         }
     };
