@@ -75,7 +75,7 @@ use crate::src::window::{
     window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
     window_remove_ref, winlink_find_by_index,
 };
-use crate::src::xmalloc::{xmemdup, xvasprintf_cstring};
+use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -654,16 +654,6 @@ unsafe extern "C" fn event_payload_add_item(
         _ => {}
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_item_print(
-    epi: *mut event_payload_item,
-) -> *mut ::core::ffi::c_char {
-    // External callers own the libc allocation, including bytes after an
-    // interior NUL written by a pointer print callback.
-    let value = event_payload_item_print_owned(epi);
-    xmemdup(value.as_ptr().cast(), value.len() - 1)
-}
-
 /// Printed payload bytes with one trailing NUL for synchronous C consumers.
 /// The bytes before that terminator may themselves contain NULs.
 pub(crate) unsafe fn event_payload_item_print_owned(epi: *mut event_payload_item) -> Vec<u8> {
@@ -693,15 +683,6 @@ pub(crate) unsafe fn event_payload_print_owned(
     (!epi.is_null()).then(|| event_payload_item_print_owned(epi))
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_print(
-    ep: *mut event_payload,
-    name: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    event_payload_print_owned(ep, name).map_or(::core::ptr::null_mut(), |value| {
-        xmemdup(value.as_ptr().cast(), value.len() - 1)
-    })
-}
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_add_formats(
     mut ep: *mut event_payload,
@@ -961,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn printed_pointer_bytes_keep_an_interior_nul_and_c_free_contract() {
+    fn printed_pointer_bytes_keep_an_interior_nul() {
         unsafe {
             let ep = event_payload_create();
             event_payload_set_pointer(
@@ -973,13 +954,11 @@ mod tests {
             );
             let item = event_payload_first(ep);
             assert_eq!(event_payload_item_print_owned(item), b"A\0B\0");
-            let exported = event_payload_print(ep, c"binary".as_ptr());
             assert_eq!(
-                std::slice::from_raw_parts(exported.cast::<u8>(), 4),
-                b"A\0B\0"
+                event_payload_print_owned(ep, c"binary".as_ptr()),
+                Some(b"A\0B\0".to_vec())
             );
-            crate::src::ffi::libc::free(exported.cast());
-            assert!(event_payload_print(ep, c"missing".as_ptr()).is_null());
+            assert!(event_payload_print_owned(ep, c"missing".as_ptr()).is_none());
             event_payload_free(ep);
         }
     }
