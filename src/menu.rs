@@ -5,7 +5,7 @@ use crate::src::cmd_queue::{
 };
 use crate::src::ffi::libc::{free, memcpy, memset, strlen};
 use crate::src::format::{
-    format_create_defaults, format_free, format_single, format_single_from_state,
+    format_create_defaults, format_free, format_single_cstring, format_single_from_state_cstring,
 };
 use crate::src::format_draw::{format_trim_right_bytes, format_width};
 use crate::src::grid::grid_default_cell;
@@ -129,14 +129,6 @@ impl menu {
     }
 }
 
-// The formatting helpers still return libc-owned strings. Copy their bytes
-// into the menu's Rust-owned storage at this boundary and release the source.
-unsafe fn menu_take_string(ptr: *mut ::core::ffi::c_char) -> CString {
-    let string = CStr::from_ptr(ptr).to_owned();
-    free(ptr as *mut ::core::ffi::c_void);
-    string
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn menu_add_items(
     mut menu: *mut menu,
@@ -165,7 +157,6 @@ pub unsafe extern "C" fn menu_add_item(
     let mut key_owned: Option<std::ffi::CString> = None;
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut width: u_int = 0;
     let mut max_width: u_int = 0;
     let mut line: ::core::ffi::c_int = 0;
@@ -190,20 +181,19 @@ pub unsafe extern "C" fn menu_add_item(
     if line != 0 {
         return;
     }
-    if !fs.is_null() {
-        s = format_single_from_state(qitem, (*item).name, c, fs);
+    let s = if !fs.is_null() {
+        format_single_from_state_cstring(qitem, (*item).name, c, fs)
     } else {
-        s = format_single(
+        format_single_cstring(
             qitem,
             (*item).name,
             c,
             ::core::ptr::null_mut::<session>(),
             ::core::ptr::null_mut::<winlink>(),
             ::core::ptr::null_mut::<window_pane>(),
-        );
-    }
-    if *s as ::core::ffi::c_int == '\0' as i32 {
-        free(s as *mut ::core::ffi::c_void);
+        )
+    };
+    if s.is_empty() {
         let owner = &mut *(menu as *mut menu);
         // The menu is still local during formatting, so this placeholder is
         // the last row if expansion suppresses it.
@@ -213,8 +203,8 @@ pub unsafe extern "C" fn menu_add_item(
         return;
     }
     max_width = (*c).tty.sx.wrapping_sub(4 as u_int);
-    slen = strlen(s);
-    if *s as ::core::ffi::c_int != '-' as i32
+    slen = strlen(s.as_ptr());
+    if *s.as_ptr() as ::core::ffi::c_int != '-' as i32
         && (*item).key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
         && (*item).key != KEYC_NONE as ::core::ffi::c_ulong as key_code
     {
@@ -233,7 +223,7 @@ pub unsafe extern "C" fn menu_add_item(
         max_width = max_width.wrapping_sub(1);
         suffix = b">\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    let mut name = format_trim_right_bytes(s, max_width);
+    let mut name = format_trim_right_bytes(s.as_ptr(), max_width);
     name.extend_from_slice(CStr::from_ptr(suffix).to_bytes());
     if !key.is_null() {
         name.extend_from_slice(b"#[default] #[align=right](");
@@ -245,28 +235,27 @@ pub unsafe extern "C" fn menu_add_item(
         owner.strings[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
         owner.items[index].name = owner.strings[index].name.as_ref().unwrap().as_ptr();
     }
-    free(s as *mut ::core::ffi::c_void);
     cmd = (*item).command;
-    if !cmd.is_null() {
+    let command = if !cmd.is_null() {
         if !fs.is_null() {
-            s = format_single_from_state(qitem, cmd, c, fs);
+            Some(format_single_from_state_cstring(qitem, cmd, c, fs))
         } else {
-            s = format_single(
+            Some(format_single_cstring(
                 qitem,
                 cmd,
                 c,
                 ::core::ptr::null_mut::<session>(),
                 ::core::ptr::null_mut::<winlink>(),
                 ::core::ptr::null_mut::<window_pane>(),
-            );
+            ))
         }
     } else {
-        s = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
+        None
+    };
     {
         let owner = &mut *(menu as *mut menu);
-        if !s.is_null() {
-            owner.strings[index].command = Some(menu_take_string(s));
+        if let Some(command) = command {
+            owner.strings[index].command = Some(command);
             owner.items[index].command = owner.strings[index].command.as_ref().unwrap().as_ptr();
         }
         owner.items[index].key = (*item).key;

@@ -3579,16 +3579,6 @@ pub(crate) unsafe fn format_single_cstring(
     format_free(ft);
     return expanded;
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_single_from_state(
-    mut item: *mut cmdq_item,
-    mut fmt: *const ::core::ffi::c_char,
-    mut c: *mut client,
-    mut fs: *mut cmd_find_state,
-) -> *mut ::core::ffi::c_char {
-    xstrdup(format_single_from_state_cstring(item, fmt, c, fs).as_ptr())
-}
-
 pub(crate) unsafe fn format_single_from_state_cstring(
     item: *mut cmdq_item,
     fmt: *const ::core::ffi::c_char,

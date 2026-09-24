@@ -226,12 +226,13 @@ use callbacks::*;
 mod expression;
 use expression::*;
 pub use expression::{
-    format_expand, format_expand_time, format_single, format_single_from_state,
+    format_expand, format_expand_time, format_single,
     format_single_from_target, format_skip, format_true,
 };
 pub(crate) use expression::format_pretty_time_cstring;
 pub(crate) use expression::{
-    format_expand_cstring, format_single_cstring, format_single_from_target_cstring,
+    format_expand_cstring, format_single_cstring, format_single_from_state_cstring,
+    format_single_from_target_cstring,
 };
 
 pub struct format_modifier {
