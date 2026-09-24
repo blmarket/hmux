@@ -12,7 +12,7 @@ pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::utf8::utf8_strvis;
-use crate::src::xmalloc::{xasprintf, xstrdup};
+use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 macro_rules! set_paste_cause {
@@ -24,17 +24,17 @@ macro_rules! set_paste_cause {
     }};
 }
 
-macro_rules! format_paste_cause {
-    ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
-        let cause = $cause;
-        if !cause.is_null() {
-            let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
-            xasprintf(&raw mut raw, $fmt $(, $arg)*);
-            let message = CStr::from_ptr(raw).to_owned();
-            free(raw.cast());
-            *cause = Some(message);
-        }
-    }};
+unsafe fn paste_name_cause(
+    cause: *mut Option<CString>,
+    prefix: &[u8],
+    name: *const ::core::ffi::c_char,
+) {
+    if cause.is_null() {
+        return;
+    }
+    let mut message = prefix.to_vec();
+    message.extend_from_slice(CStr::from_ptr(name).to_bytes());
+    *cause = Some(CString::new(message).expect("paste diagnostic contains no NUL"));
 }
 
 #[derive(Default)]
@@ -382,22 +382,14 @@ pub unsafe fn paste_rename(
     }
     let Some(name) = clean_name_cstring(CStr::from_ptr(newname), 0) else {
         if !cause.is_null() {
-            format_paste_cause!(
-                cause,
-                b"invalid buffer name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                newname,
-            );
+            paste_name_cause(cause, b"invalid buffer name: ", newname);
         }
         return -(1 as ::core::ffi::c_int);
     };
     pb = paste_get_name(oldname);
     if pb.is_null() {
         if !cause.is_null() {
-            format_paste_cause!(
-                cause,
-                b"no buffer %s\0" as *const u8 as *const ::core::ffi::c_char,
-                oldname,
-            );
+            paste_name_cause(cause, b"no buffer ", oldname);
         }
         return -(1 as ::core::ffi::c_int);
     }
@@ -476,11 +468,7 @@ unsafe fn paste_set_inner(
     }
     let Some(newname) = clean_name_cstring(CStr::from_ptr(name), 0) else {
         if !cause.is_null() {
-            format_paste_cause!(
-                cause,
-                b"invalid buffer name: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-            );
+            paste_name_cause(cause, b"invalid buffer name: ", name);
         }
         return -(1 as ::core::ffi::c_int);
     };
