@@ -457,12 +457,6 @@ pub(crate) unsafe fn options_default_to_cstring(oe: *const options_table_entry) 
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_default_to_string(
-    oe: *const options_table_entry,
-) -> *mut ::core::ffi::c_char {
-    xstrdup(options_default_to_cstring(oe).as_ptr())
-}
 unsafe extern "C" fn options_add(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
@@ -869,15 +863,12 @@ pub unsafe extern "C" fn options_is_string(mut o: *mut options_entry) -> ::core:
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint)
         as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_to_string(
+pub(crate) unsafe fn options_to_string(
     o: *mut options_entry,
     key: *const ::core::ffi::c_char,
     numeric: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    // Preserve the exported malloc/free contract while internal callers keep
-    // their string's Rust owner for the duration of their use.
-    xstrdup(options_to_cstring(o, key, numeric).as_ptr())
+) -> CString {
+    options_to_cstring(o, key, numeric)
 }
 
 pub(crate) unsafe fn options_to_cstring(
@@ -912,25 +903,6 @@ pub(crate) unsafe fn options_to_cstring(
     }
     options_value_to_cstring(o, &raw mut (*o).value, numeric)
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_parse(
-    name: *const ::core::ffi::c_char,
-    key: *mut *mut ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let input = CStr::from_ptr(name);
-    if input.is_empty() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let Some(parsed) = options_parse_owned(input) else {
-        return ::core::ptr::null_mut();
-    };
-    if let Some(array_key) = &parsed.array_key {
-        *key = xstrdup(array_key.as_ptr());
-    }
-    xstrdup(parsed.name.as_ptr())
-}
-
 /// Name and normalized array key owned through the command's synchronous use.
 pub struct OwnedOptionName {
     pub name: CString,
@@ -955,31 +927,6 @@ pub fn options_parse_owned(input: &CStr) -> Option<OwnedOptionName> {
     })
 }
 #[no_mangle]
-pub unsafe extern "C" fn options_parse_get(
-    mut oo: *mut options,
-    mut s: *const ::core::ffi::c_char,
-    mut key: *mut *mut ::core::ffi::c_char,
-    mut only: ::core::ffi::c_int,
-) -> *mut options_entry {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    name = options_parse(s, key);
-    if name.is_null() {
-        return ::core::ptr::null_mut::<options_entry>();
-    }
-    if only != 0 {
-        o = options_get_only(oo, name);
-    } else {
-        o = options_get(oo, name);
-    }
-    free(name as *mut ::core::ffi::c_void);
-    if o.is_null() {
-        free(*key as *mut ::core::ffi::c_void);
-        *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    return o;
-}
-#[no_mangle]
 pub unsafe extern "C" fn options_search(
     mut name: *const ::core::ffi::c_char,
 ) -> *const options_table_entry {
@@ -993,45 +940,6 @@ pub unsafe extern "C" fn options_search(
     }
     return ::core::ptr::null::<options_table_entry>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn options_match(
-    s: *const ::core::ffi::c_char,
-    key: *mut *mut ::core::ffi::c_char,
-    ambiguous: *mut ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    options_match_command(s, key, ambiguous)
-}
-
-/// Compatibility adapter for callers that free the returned C allocations.
-pub unsafe fn options_match_command(
-    s: *const ::core::ffi::c_char,
-    key: *mut *mut ::core::ffi::c_char,
-    ambiguous: *mut ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    let result = options_match_owned(CStr::from_ptr(s));
-    match result {
-        Ok(parsed) => {
-            *ambiguous = 0;
-            *key = parsed
-                .array_key
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |key| xstrdup(key.as_ptr()));
-            xstrdup(parsed.name.as_ptr())
-        }
-        Err(OptionMatchFailure::Parse) => {
-            if !CStr::from_ptr(s).is_empty() {
-                *key = ::core::ptr::null_mut();
-            }
-            ::core::ptr::null_mut()
-        }
-        Err(failure) => {
-            *key = ::core::ptr::null_mut();
-            *ambiguous = (failure == OptionMatchFailure::Ambiguous) as ::core::ffi::c_int;
-            ::core::ptr::null_mut()
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionMatchFailure {
     Parse,
@@ -1081,33 +989,6 @@ pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMat
             Err(OptionMatchFailure::Invalid)
         }
     }
-}
-#[no_mangle]
-pub unsafe extern "C" fn options_match_get(
-    mut oo: *mut options,
-    mut s: *const ::core::ffi::c_char,
-    mut key: *mut *mut ::core::ffi::c_char,
-    mut only: ::core::ffi::c_int,
-    mut ambiguous: *mut ::core::ffi::c_int,
-) -> *mut options_entry {
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    name = options_match(s, key, ambiguous);
-    if name.is_null() {
-        return ::core::ptr::null_mut::<options_entry>();
-    }
-    *ambiguous = 0 as ::core::ffi::c_int;
-    if only != 0 {
-        o = options_get_only(oo, name);
-    } else {
-        o = options_get(oo, name);
-    }
-    free(name as *mut ::core::ffi::c_void);
-    if o.is_null() {
-        free(*key as *mut ::core::ffi::c_void);
-        *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    return o;
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_get_string(

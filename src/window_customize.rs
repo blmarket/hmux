@@ -2076,6 +2076,7 @@ unsafe extern "C" fn window_customize_draw_option(
     let mut space: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut unit: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut value_owner: Option<CString> = None;
     let mut label: [::core::ffi::c_char; 64] = [0; 64];
     let mut default_value: Option<CString> = None;
     let mut choices: [::core::ffi::c_char; 256] = ::core::mem::transmute::<
@@ -2342,11 +2343,12 @@ unsafe extern "C" fn window_customize_draw_option(
                                         0 as ::core::ffi::c_int,
                                     );
                                     if !((*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int)) {
-                                        value = options_to_string(
+                                        value_owner = Some(options_to_string(
                                             o,
                                             array_key,
                                             0 as ::core::ffi::c_int,
-                                        );
+                                        ));
+                                        value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                         if !oe.is_null() && array_key.is_null() {
                                             let rendered = options_default_to_cstring(oe);
                                             if strcmp(rendered.as_ptr(), value)
@@ -2693,11 +2695,12 @@ unsafe extern "C" fn window_customize_draw_option(
                                                                                                     if !wo.is_null() && options_owner(o) != wo {
                                                                                                         parent = options_get_only(wo, name);
                                                                                                         if !parent.is_null() {
-                                                                                                            value = options_to_string(
+                                                                                                            value_owner = Some(options_to_string(
                                                                                                                 parent,
                                                                                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                                                                                                 0 as ::core::ffi::c_int,
-                                                                                                            );
+                                                                                                            ));
+                                                                                                            value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                                                                                             xsnprintf(
                                                                                                                 &raw mut label as *mut ::core::ffi::c_char,
                                                                                                                 ::core::mem::size_of::<[::core::ffi::c_char; 64]>()
@@ -2735,11 +2738,12 @@ unsafe extern "C" fn window_customize_draw_option(
                                                                                                             if !go.is_null() && options_owner(o) != go {
                                                                                                                 parent = options_get_only(go, name);
                                                                                                                 if !parent.is_null() {
-                                                                                                                    value = options_to_string(
-                                                                                                                        parent,
-                                                                                                                        ::core::ptr::null::<::core::ffi::c_char>(),
-                                                                                                                        0 as ::core::ffi::c_int,
-                                                                                                                    );
+                                                                                                                    value_owner = Some(options_to_string(
+                                                                                                                       parent,
+                                                                                                                       ::core::ptr::null::<::core::ffi::c_char>(),
+                                                                                                                       0 as ::core::ffi::c_int,
+                                                                                                                    ));
+                                                                                                                    value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                                                                                                     window_customize_write_value(
                                                                                                                         ctx,
                                                                                                                         (*s).cx,
@@ -2781,7 +2785,6 @@ unsafe extern "C" fn window_customize_draw_option(
             }
         }
     }
-    free(value as *mut ::core::ffi::c_void);
     drop(default_value);
     format_free(ft);
 }
