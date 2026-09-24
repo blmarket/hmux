@@ -186,7 +186,7 @@ unsafe extern "C" fn job_removed_handler(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn systemd_move_to_new_cgroup_owned() -> (::core::ffi::c_int, Option<CString>) {
+pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CString>) {
     let mut current_block: u64;
     let mut error: sd_bus_error = SD_BUS_ERROR_NULL;
     let mut m: *mut sd_bus_message = ::core::ptr::null_mut::<sd_bus_message>();
@@ -613,15 +613,4 @@ unsafe fn systemd_move_to_new_cgroup_owned() -> (::core::ffi::c_int, Option<CStr
     sd_bus_slot_unref(slot);
     sd_bus_unref(bus);
     (r, cause)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn systemd_move_to_new_cgroup(
-    cause: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let (status, error) = systemd_move_to_new_cgroup_owned();
-    if let Some(error) = error {
-        *cause = xstrdup(error.as_ptr());
-    }
-    status
 }

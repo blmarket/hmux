@@ -839,15 +839,18 @@ pub unsafe extern "C" fn spawn_pane(
                 chdir(b"/\0" as *const u8 as *const ::core::ffi::c_char);
             }
         } else {
-            if systemd_move_to_new_cgroup(cause) < 0 as ::core::ffi::c_int {
+            let (systemd_status, systemd_error) = systemd_move_to_new_cgroup();
+            if systemd_status < 0 as ::core::ffi::c_int {
                 log_debug(
                     b"%s: moving pane to new cgroup failed: %s\0" as *const u8
                         as *const ::core::ffi::c_char,
                     b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-                    *cause,
+                    systemd_error
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |error| error.as_ptr()),
                 );
-                free(*cause as *mut ::core::ffi::c_void);
             }
+            drop(systemd_error);
             if !actual_cwd.is_null() {
                 environ_set(
                     child,
