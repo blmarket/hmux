@@ -3877,10 +3877,7 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
         callback: FormatCallback::String(format_cb_wrap_flag),
     },
 ];
-pub(super) unsafe fn format_table_get(
-    key: *const ::core::ffi::c_char,
-) -> Option<&'static FormatTableEntry> {
-    let key = CStr::from_ptr(key);
+pub(super) fn format_table_get(key: &CStr) -> Option<&'static FormatTableEntry> {
     FORMAT_TABLE
         .binary_search_by(|entry| entry.key.cmp(key))
         .ok()
@@ -3898,12 +3895,12 @@ mod owned_callback_tests {
                 .windows(2)
                 .all(|pair| pair[0].key < pair[1].key));
             for entry in &FORMAT_TABLE {
-                assert!(std::ptr::eq(
-                    format_table_get(entry.key.as_ptr()).unwrap(),
+            assert!(std::ptr::eq(
+                    format_table_get(entry.key).unwrap(),
                     entry
                 ));
             }
-            assert!(format_table_get(c"not_a_builtin".as_ptr()).is_none());
+            assert!(format_table_get(c"not_a_builtin").is_none());
             let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
             for key in [
                 c"buffer_full",
@@ -3911,7 +3908,7 @@ mod owned_callback_tests {
                 c"session_created",
                 c"pane_dead_time",
             ] {
-                assert!(format_table_get(key.as_ptr()).unwrap().get(ft).is_none());
+                assert!(format_table_get(key).unwrap().get(ft).is_none());
             }
             format_free(ft);
         }
