@@ -241,8 +241,8 @@ fn server_client_set_term_name(c: &mut client, term_name: Option<CString>) {
     c.term_name = term_name;
 }
 
-unsafe fn server_client_set_cwd(c: *mut client, cwd: Option<CString>) {
-    (*c).cwd = cwd;
+fn server_client_set_cwd(c: &mut client, cwd: Option<CString>) {
+    c.cwd = cwd;
 }
 
 fn server_client_replace_title(c: &mut client, title: Option<CString>) {
@@ -448,7 +448,7 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).cwd.is_none());
 
-            server_client_set_cwd(c, Some(CString::new(b"/work-\xff".to_vec()).unwrap()));
+            server_client_set_cwd(&mut *c, Some(CString::new(b"/work-\xff".to_vec()).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).cwd)
@@ -460,7 +460,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_set_cwd(c, Some(CString::new("").unwrap()));
+            server_client_set_cwd(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).cwd.is_none());
             assert_eq!(
                 CStr::from_ptr(
@@ -472,7 +472,7 @@ mod client_message_owner_tests {
                 b""
             );
 
-            server_client_set_cwd(c, None);
+            server_client_set_cwd(&mut *c, None);
             assert!((*c).cwd.is_none());
             assert!(owner.cwd.is_none());
         }
@@ -1557,7 +1557,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     input_cancel_requests(c);
     server_client_replace_title(&mut *c, None);
     server_client_replace_path(&mut *c, None);
-    server_client_set_cwd(c, None);
+    server_client_set_cwd(&mut *c, None);
     server_client_set_exit_session(&mut *c, None);
     server_client_set_exit_message(&mut *c, None);
     event_del(&raw mut (*c).repeat_timer);
@@ -4854,12 +4854,12 @@ unsafe extern "C" fn server_client_dispatch_identify(
                 return -(1 as ::core::ffi::c_int);
             }
             if access(data, X_OK) == 0 as ::core::ffi::c_int {
-                server_client_set_cwd(c, Some(CStr::from_ptr(data).to_owned()));
+                server_client_set_cwd(&mut *c, Some(CStr::from_ptr(data).to_owned()));
             } else {
                 if let Some(home) = find_home_cstr() {
-                    server_client_set_cwd(c, Some(home.to_owned()));
+                    server_client_set_cwd(&mut *c, Some(home.to_owned()));
                 } else {
-                    server_client_set_cwd(c, Some(CString::new("/").unwrap()));
+                    server_client_set_cwd(&mut *c, Some(CString::new("/").unwrap()));
                 }
             }
             log_debug(
