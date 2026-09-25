@@ -185,7 +185,7 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         (*(*s).curw).idx,
     );
-    wl = crate::src::window::winlink_stack_first(&raw const (*s).lastw, &raw mut (*s).windows);
+    wl = crate::src::window::winlink_stack_first(&(*s).lastw, &raw mut (*s).windows);
     while !wl.is_null() {
         xsnprintf(
             &raw mut tmp as *mut ::core::ffi::c_char,
@@ -206,7 +206,7 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
             ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
         );
         wl = crate::src::window::winlink_stack_next(
-            &raw const (*s).lastw,
+            &(*s).lastw,
             &raw mut (*s).windows,
             wl,
         );
@@ -223,14 +223,14 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
     }
     s = (*(*ft).wl).session;
     idx = 0 as u_int;
-    wl = crate::src::window::winlink_stack_first(&raw const (*s).lastw, &raw mut (*s).windows);
+    wl = crate::src::window::winlink_stack_first(&(*s).lastw, &raw mut (*s).windows);
     while !wl.is_null() {
         idx = idx.wrapping_add(1);
         if wl == (*ft).wl {
             break;
         }
         wl = crate::src::window::winlink_stack_next(
-            &raw const (*s).lastw,
+            &(*s).lastw,
             &raw mut (*s).windows,
             wl,
         );
@@ -2705,7 +2705,7 @@ unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString
     if !(*ft).wl.is_null() {
         if (*ft).wl
             == crate::src::window::winlink_stack_first(
-                &raw const (*(*(*ft).wl).session).lastw,
+                &(*(*(*ft).wl).session).lastw,
                 &raw mut (*(*(*ft).wl).session).windows,
             )
         {

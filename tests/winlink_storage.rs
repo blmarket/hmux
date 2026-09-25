@@ -105,12 +105,12 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
         for (node, idx) in nodes.iter().zip(2..=4) {
             assert_eq!(winlink_find_by_index(&raw mut session.windows, idx), *node);
         }
-        assert_eq!(winlink_stack_indices(&raw const session.lastw), [3, 2]);
+        assert_eq!(winlink_stack_indices(&session.lastw), [3, 2]);
         assert_eq!(weak.as_ptr(), nodes[0] as *const winlink);
         for node in nodes {
             winlink_remove(&raw mut session.windows, node);
         }
-        assert!(winlink_stack_indices(&raw const session.lastw).is_empty());
+        assert!(winlink_stack_indices(&session.lastw).is_empty());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert!(session.windows.storage.is_none());
     }

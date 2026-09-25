@@ -1000,12 +1000,12 @@ pub unsafe extern "C" fn winlink_stack_remove(stack: *mut winlink_stack, wl: *mu
 }
 
 /// Append while rebuilding a session's saved visit order.
-pub unsafe fn winlink_stack_append(stack: *mut winlink_stack, wl: *mut winlink) {
-    if (*stack).storage.is_none() {
-        (*stack).storage = Some(Box::default());
+pub unsafe fn winlink_stack_append(stack: &mut winlink_stack, wl: *mut winlink) {
+    if stack.storage.is_none() {
+        stack.storage = Some(Box::default());
     }
     let weak = winlink_weak(wl);
-    (*stack)
+    stack
         .storage
         .as_mut()
         .expect("visit history was just initialized")
@@ -1013,12 +1013,12 @@ pub unsafe fn winlink_stack_append(stack: *mut winlink_stack, wl: *mut winlink) 
     (*wl).flags |= WINLINK_VISITED;
 }
 
-pub unsafe fn winlink_stack_clear(stack: *mut winlink_stack) {
-    (*stack).storage = None;
+pub fn winlink_stack_clear(stack: &mut winlink_stack) {
+    stack.storage = None;
 }
 
-pub unsafe fn winlink_stack_indices(stack: *const winlink_stack) -> Vec<::core::ffi::c_int> {
-    let Some(storage) = (*stack).storage.as_ref() else {
+pub fn winlink_stack_indices(stack: &winlink_stack) -> Vec<::core::ffi::c_int> {
+    let Some(storage) = stack.storage.as_ref() else {
         return Vec::new();
     };
     storage
@@ -1043,11 +1043,11 @@ fn checked_winlink_ptr(link: &refbox::Weak<winlink>) -> *mut winlink {
     }
 }
 
-pub unsafe fn winlink_stack_first(
-    stack: *const winlink_stack,
+pub fn winlink_stack_first(
+    stack: &winlink_stack,
     _links: *mut winlinks,
 ) -> *mut winlink {
-    let Some(storage) = (*stack).storage.as_ref() else {
+    let Some(storage) = stack.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     storage
@@ -1057,15 +1057,15 @@ pub unsafe fn winlink_stack_first(
         .unwrap_or(std::ptr::null_mut())
 }
 
-pub unsafe fn winlink_stack_next(
-    stack: *const winlink_stack,
+pub fn winlink_stack_next(
+    stack: &winlink_stack,
     _links: *mut winlinks,
     wl: *mut winlink,
 ) -> *mut winlink {
-    if wl.is_null() || (*stack).storage.is_none() {
+    if wl.is_null() || stack.storage.is_none() {
         return std::ptr::null_mut();
     }
-    let queue = (*stack).storage.as_ref().expect("checked above");
+    let queue = stack.storage.as_ref().expect("checked above");
     let Some(position) = queue
         .iter()
         .position(|link| checked_winlink_ptr(link) == wl)
@@ -2430,7 +2430,7 @@ pub unsafe extern "C" fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh7 as usize] = '*' as i32 as ::core::ffi::c_char;
     }
-    if wl == winlink_stack_first(&raw const (*s).lastw, &raw mut (*s).windows) {
+    if wl == winlink_stack_first(&(*s).lastw, &raw mut (*s).windows) {
         let fresh8 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh8 as usize] = '-' as i32 as ::core::ffi::c_char;
