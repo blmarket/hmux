@@ -282,10 +282,8 @@ impl client {
 
 #[repr(C)]
 pub struct client_files {
-    /// Each client owns its stream index allocation. File records remain
-    /// externally allocated and keep only `client_file_entry::owner` as a
-    /// traversal compatibility pointer.
-    pub storage: Option<Box<std::collections::BTreeMap<i32, *mut client_file>>>,
+    /// The client owns its stream index; file records remain externally owned.
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<i32, *mut client_file>>>,
 }
 
 #[repr(C)]
@@ -327,7 +325,7 @@ impl client_file {
             closed: unsafe { ::core::mem::zeroed() },
             cb: unsafe { ::core::mem::zeroed() },
             data: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            entry: client_file_entry { owner: None },
             callback_data: Default::default(),
             wait_item: Default::default(),
             wait_client: Default::default(),
@@ -337,11 +335,10 @@ impl client_file {
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client_file_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<i32, *mut client_file>,
+    /// Weak traversal handle into the client file index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<i32, *mut client_file>>>,
 }
 
 pub type client_file_cb = Option<

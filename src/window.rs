@@ -157,16 +157,22 @@ static mut next_window_pane_id: u_int = 0;
 static mut next_window_id: u_int = 0;
 static mut next_active_point: u_int = 0;
 pub fn windows_find(head: &windows, elm: &window) -> *mut window {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("window index already borrowed");
     let key = elm.id;
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub fn windows_nfind(head: &windows, elm: &window) -> *mut window {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("window index already borrowed");
     let key = elm.id;
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
@@ -174,17 +180,18 @@ pub fn windows_nfind(head: &windows, elm: &window) -> *mut window {
 }
 pub unsafe fn windows_insert(head: *mut windows, elm: *mut window) -> *mut window {
     let key = (*elm).id;
-    let map = (*head)
-        .storage
-        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
-        .as_mut();
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("window index already borrowed");
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
+            (*elm).entry.owner = Some(observer);
         }
     }
-    (*elm).entry.owner = map as *mut _;
     std::ptr::null_mut()
 }
 pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut window {
@@ -192,23 +199,32 @@ pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut windo
         return std::ptr::null_mut();
     }
     let key = (*elm).id;
-    let Some(map) = (*head).storage.as_deref_mut() else {
+    let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    if map.get(&key).copied() != Some(elm) {
-        return std::ptr::null_mut();
-    }
-    map.remove(&key);
-    (*elm).entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
+    let empty = {
+        let mut map = owner
+            .try_borrow_mut()
+            .expect("window index already borrowed");
+        if map.get(&key).copied() != Some(elm) {
+            return std::ptr::null_mut();
+        }
+        map.remove(&key);
+        map.is_empty()
+    };
+    (*elm).entry.owner = None;
+    if empty {
         (*head).storage = None;
     }
     elm
 }
 pub fn windows_minmax(head: &windows, direction: ::core::ffi::c_int) -> *mut window {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("window index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -217,8 +233,13 @@ pub fn windows_minmax(head: &windows, direction: ::core::ffi::c_int) -> *mut win
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn windows_next(elm: &window) -> *mut window {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("window index already borrowed"),
     };
     let key = elm.id;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
@@ -226,8 +247,13 @@ pub unsafe fn windows_next(elm: &window) -> *mut window {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn windows_prev(elm: &window) -> *mut window {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("window index already borrowed"),
     };
     let key = elm.id;
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
@@ -236,17 +262,23 @@ pub unsafe fn windows_prev(elm: &window) -> *mut window {
 }
 
 pub fn winlinks_find(head: &winlinks, elm: &winlink) -> *mut winlink {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
     let key = elm.idx;
     map.get(&key)
         .map_or(std::ptr::null_mut(), |owner| owner.as_ptr() as *mut winlink)
 }
 pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> *mut winlink {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
     let key = elm.idx;
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
@@ -255,9 +287,12 @@ pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> *mut winlink {
         })
 }
 pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> *mut winlink {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -268,8 +303,13 @@ pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> *mut w
     })
 }
 pub unsafe fn winlinks_next(elm: &winlink) -> *mut winlink {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("winlink index already borrowed"),
     };
     let key = elm.idx;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
@@ -279,8 +319,13 @@ pub unsafe fn winlinks_next(elm: &winlink) -> *mut winlink {
         })
 }
 pub unsafe fn winlinks_prev(elm: &winlink) -> *mut winlink {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("winlink index already borrowed"),
     };
     let key = elm.idx;
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
@@ -354,16 +399,18 @@ pub unsafe fn window_winlinks_remove(w: *mut window, wl: *mut winlink) {
 }
 
 pub fn window_pane_tree_find(head: &window_pane_tree, elm: &window_pane) -> *mut window_pane {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner.try_borrow_mut().expect("pane index already borrowed");
     let key = elm.id;
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub fn window_pane_tree_nfind(head: &window_pane_tree, elm: &window_pane) -> *mut window_pane {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner.try_borrow_mut().expect("pane index already borrowed");
     let key = elm.id;
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
@@ -374,17 +421,16 @@ pub unsafe fn window_pane_tree_insert(
     elm: *mut window_pane,
 ) -> *mut window_pane {
     let key = (*elm).id;
-    let map = (*head)
-        .storage
-        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
-        .as_mut();
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner.try_borrow_mut().expect("pane index already borrowed");
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
+            (*elm).tree_entry.owner = Some(observer);
         }
     }
-    (*elm).tree_entry.owner = map as *mut _;
     std::ptr::null_mut()
 }
 pub unsafe fn window_pane_tree_remove(
@@ -395,15 +441,19 @@ pub unsafe fn window_pane_tree_remove(
         return std::ptr::null_mut();
     }
     let key = (*elm).id;
-    let Some(map) = (*head).storage.as_deref_mut() else {
+    let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    if map.get(&key).copied() != Some(elm) {
-        return std::ptr::null_mut();
-    }
-    map.remove(&key);
-    (*elm).tree_entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
+    let empty = {
+        let mut map = owner.try_borrow_mut().expect("pane index already borrowed");
+        if map.get(&key).copied() != Some(elm) {
+            return std::ptr::null_mut();
+        }
+        map.remove(&key);
+        map.is_empty()
+    };
+    (*elm).tree_entry.owner = None;
+    if empty {
         (*head).storage = None;
     }
     elm
@@ -412,9 +462,10 @@ pub fn window_pane_tree_minmax(
     head: &window_pane_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut window_pane {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner.try_borrow_mut().expect("pane index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -423,8 +474,13 @@ pub fn window_pane_tree_minmax(
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn window_pane_tree_next(elm: &window_pane) -> *mut window_pane {
-    let Some(map) = elm.tree_entry.owner.as_ref() else {
+    let Some(owner) = elm.tree_entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("pane index already borrowed"),
     };
     let key = elm.id;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
@@ -432,8 +488,13 @@ pub unsafe fn window_pane_tree_next(elm: &window_pane) -> *mut window_pane {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn window_pane_tree_prev(elm: &window_pane) -> *mut window_pane {
-    let Some(map) = elm.tree_entry.owner.as_ref() else {
+    let Some(owner) = elm.tree_entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("pane index already borrowed"),
     };
     let key = elm.id;
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
@@ -710,9 +771,7 @@ pub unsafe extern "C" fn winlink_find_by_index(
         session: ::core::ptr::null_mut::<session>(),
         window: ::core::ptr::null_mut::<window>(),
         flags: 0,
-        entry: winlink_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: winlink_entry { owner: None },
     };
     if idx < 0 as ::core::ffi::c_int {
         fatalx(b"bad index\0" as *const u8 as *const ::core::ffi::c_char);
@@ -782,14 +841,19 @@ pub unsafe extern "C" fn winlink_add(
     } else if !winlink_find_by_index(wwl, idx).is_null() {
         return ::core::ptr::null_mut::<winlink>();
     }
-    let owner = refbox::RefBox::new(std::mem::zeroed::<winlink>());
-    owner
-        .try_access_mut(|link| link.idx = idx)
-        .expect("new winlink is not borrowed");
+    let owner = refbox::RefBox::new(winlink {
+        idx,
+        session: std::ptr::null_mut(),
+        window: std::ptr::null_mut(),
+        flags: 0,
+        entry: winlink_entry { owner: None },
+    });
     wl = owner.as_ptr() as *mut winlink;
-    let map = (*wwl)
-        .storage
-        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()));
+    let storage = (*wwl).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = storage.downgrade();
+    let mut map = storage
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
     match map.entry(idx) {
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(owner);
@@ -798,7 +862,7 @@ pub unsafe extern "C" fn winlink_add(
             unreachable!("winlink index was checked above")
         }
     }
-    (*wl).entry.owner = &mut **map;
+    (*wl).entry.owner = Some(observer);
     return wl;
 }
 #[no_mangle]
@@ -831,19 +895,25 @@ pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut win
         );
     }
     // Window teardown above may reenter; borrow the owning map only afterward.
-    let map = (*wwl)
-        .storage
-        .as_mut()
-        .expect("winlink index must be alive");
     let idx = (*wl).idx;
-    assert_eq!(
-        map.get(&idx).map(|owner| owner.as_ptr()),
-        Some(wl as *const winlink),
-        "removed winlink must belong to this index"
-    );
-    let owner = map.remove(&idx).expect("winlink must have an owner");
-    (*wl).entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
+    let (owner, empty) = {
+        let storage = (*wwl)
+            .storage
+            .as_ref()
+            .expect("winlink index must be alive");
+        let mut map = storage
+            .try_borrow_mut()
+            .expect("winlink index already borrowed");
+        assert_eq!(
+            map.get(&idx).map(|owner| owner.as_ptr()),
+            Some(wl as *const winlink),
+            "removed winlink must belong to this index"
+        );
+        let owner = map.remove(&idx).expect("winlink must have an owner");
+        (*wl).entry.owner = None;
+        (owner, map.is_empty())
+    };
+    if empty {
         (*wwl).storage = None;
     }
     drop(owner);
@@ -889,11 +959,14 @@ pub unsafe extern "C" fn winlink_previous_by_number(
 /// Borrow the owner through the existing window index. The raw pointer remains
 /// a compatibility view; neither it nor its address is a separate ownership key.
 unsafe fn winlink_weak(wl: *mut winlink) -> refbox::Weak<winlink> {
-    let map = (*wl)
+    let owner = (*wl)
         .entry
         .owner
         .as_ref()
         .expect("visited winlink index must be alive");
+    let map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
     let owner = map
         .get(&(*wl).idx)
         .expect("visited winlink must have an owner");
@@ -908,10 +981,13 @@ unsafe fn winlink_weak(wl: *mut winlink) -> refbox::Weak<winlink> {
 /// Move the owner between keys without invalidating the winlink or its observers.
 /// The caller must supply a live member of `head` and an unused destination index.
 pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: *mut winlink, idx: i32) {
-    let map = (*head)
+    let owner = (*head)
         .storage
-        .as_mut()
+        .as_ref()
         .expect("winlink index must be alive");
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
     let old_idx = (*wl).idx;
     assert_eq!(
         map.get(&old_idx).map(|owner| owner.as_ptr()),
@@ -1138,9 +1214,7 @@ pub unsafe extern "C" fn window_find_by_id(mut id: u_int) -> *mut window {
         options: ::core::ptr::null_mut::<options>(),
         references: 0,
         winlinks: window_winlinks { storage: None },
-        entry: window_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: window_entry { owner: None },
     };
     w.id = id;
     return windows_find(&*std::ptr::addr_of!(windows), &w);
@@ -1227,6 +1301,7 @@ pub unsafe extern "C" fn window_create(
     ) as ::core::ffi::c_int;
     (*w).references = 0 as u_int;
     (*w).winlinks.storage = None;
+    (*w).entry.owner = None;
     let fresh0 = next_window_id;
     next_window_id = next_window_id.wrapping_add(1);
     (*w).id = fresh0;
@@ -2638,9 +2713,7 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
             link: 0,
         },
         r: visible_ranges::default(),
-        tree_entry: window_pane_tree_entry {
-            owner: std::ptr::null_mut(),
-        },
+        tree_entry: window_pane_tree_entry { owner: None },
         searchstr_owner: None,
         shell_owner: None,
         cwd_owner: None,
@@ -4933,6 +5006,7 @@ mod name_tests {
                 old_layout: None,
                 name: CString::new("before").unwrap(),
             };
+            owner.node.entry.owner = None;
             let w = &raw mut owner.node;
             (*w).name = owner.name.as_ptr() as *mut _;
             (*w).references = 1;
@@ -4962,6 +5036,95 @@ mod name_tests {
             assert_eq!(CStr::from_ptr((*w).name), c"inner");
             assert_eq!(state.events.len(), 2);
             events_remove_sink(sink);
+        }
+    }
+}
+
+#[cfg(test)]
+mod collection_index_tests {
+    use super::*;
+
+    #[test]
+    fn winlink_index_keeps_order_and_weak_observers_across_moves() {
+        unsafe {
+            let mut head = winlinks { storage: None };
+            let first = winlink_add(&mut head, 1);
+            let second = winlink_add(&mut head, 3);
+            assert!(!first.is_null() && !second.is_null());
+            assert!(winlink_add(&mut head, 1).is_null());
+            winlinks_reindex(&mut head, second, 2);
+
+            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
+            let node_observer = winlink_weak(first);
+            let mut moved = head;
+            assert_eq!(winlinks_minmax(&moved, RB_NEGINF), first);
+            assert_eq!(winlinks_next(&*first), second);
+            assert_eq!((*second).idx, 2);
+
+            winlink_remove(&mut moved, first);
+            assert!(matches!(
+                node_observer.try_access_mut(|link| link.idx),
+                Err(refbox::BorrowError::Dropped)
+            ));
+            assert!(index_observer.try_borrow_mut().is_ok());
+            let second_observer = winlink_weak(second);
+            winlink_remove(&mut moved, second);
+            drop(moved);
+            assert!(matches!(
+                second_observer.try_access_mut(|link| link.idx),
+                Err(refbox::BorrowError::Dropped)
+            ));
+            assert!(matches!(
+                index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
+        }
+    }
+
+    #[test]
+    fn pane_index_observers_clear_on_removal_and_expire_with_the_owner() {
+        unsafe {
+            let mut head = window_pane_tree { storage: None };
+            let mut other = window_pane_tree { storage: None };
+            let first_owner = refbox::RefBox::new(window_pane::empty());
+            first_owner
+                .try_access_mut(|pane| pane.id = 1)
+                .expect("new pane is not borrowed");
+            let first = first_owner.as_ptr() as *mut window_pane;
+            let second_owner = refbox::RefBox::new(window_pane::empty());
+            second_owner
+                .try_access_mut(|pane| pane.id = 2)
+                .expect("new pane is not borrowed");
+            let second = second_owner.as_ptr() as *mut window_pane;
+            let duplicate_owner = refbox::RefBox::new(window_pane::empty());
+            duplicate_owner
+                .try_access_mut(|pane| pane.id = 1)
+                .expect("new pane is not borrowed");
+            let duplicate = duplicate_owner.as_ptr() as *mut window_pane;
+
+            assert!(window_pane_tree_insert(&mut head, first).is_null());
+            assert!(window_pane_tree_insert(&mut head, second).is_null());
+            let index_observer = (*first).tree_entry.owner.as_ref().unwrap().clone();
+            assert_eq!(window_pane_tree_insert(&mut head, duplicate), first);
+            assert!((*duplicate).tree_entry.owner.is_none());
+            assert!(window_pane_tree_remove(&mut other, first).is_null());
+            assert!((*first).tree_entry.owner.is_some());
+
+            let mut moved = head;
+            assert_eq!(window_pane_tree_next(&*first), second);
+            assert_eq!(window_pane_tree_remove(&mut moved, first), first);
+            assert!((*first).tree_entry.owner.is_none());
+            assert!(window_pane_tree_next(&*first).is_null());
+            assert_eq!(window_pane_tree_remove(&mut moved, second), second);
+
+            drop(first_owner);
+            drop(second_owner);
+            drop(duplicate_owner);
+            drop(moved);
+            assert!(matches!(
+                index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
         }
     }
 }

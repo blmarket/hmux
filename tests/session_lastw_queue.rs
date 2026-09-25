@@ -16,7 +16,15 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
         };
         let first = winlink_add(&raw mut links, 1);
         let second = winlink_add(&raw mut links, 2);
-        let old_second = links.storage.as_ref().unwrap().get(&2).unwrap().downgrade();
+        let old_second = links
+            .storage
+            .as_ref()
+            .unwrap()
+            .try_borrow_mut()
+            .unwrap()
+            .get(&2)
+            .unwrap()
+            .downgrade();
 
         winlink_stack_push(&raw mut stack, first);
         winlink_stack_push(&raw mut stack, second);
@@ -71,6 +79,8 @@ fn boxed_session_drops_its_winlink_owner() {
             .windows
             .storage
             .as_ref()
+            .unwrap()
+            .try_borrow_mut()
             .unwrap()
             .get(&9)
             .unwrap()

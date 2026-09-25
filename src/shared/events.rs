@@ -9,7 +9,6 @@ use super::session::session;
 use super::window::window;
 use std::collections::BTreeMap;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned by its creator until `event_payload_free`. `events_fire` lends
 /// this stable address to callbacks, then frees items and target references.
@@ -28,8 +27,8 @@ pub struct event_payload_item {
     pub name: Option<std::ffi::CString>,
     pub type_0: event_payload_type,
     pub c2rust_unnamed: event_payload_item_c2rust_unnamed,
-    /// Non-owning pointer used to find the next item in the ordered collection.
-    pub(crate) owner: *mut event_payload_tree,
+    /// Weak traversal handle into the payload's ordered item map.
+    pub(crate) owner: Option<refbox::Weak<event_payload_tree_storage>>,
     // The Copy payload union also stores borrowed object pointers and callbacks.
     // Its string variant borrows this allocation until this item is freed.
     pub(crate) string: Option<std::ffi::CString>,
@@ -41,7 +40,7 @@ impl event_payload_item {
             name: Default::default(),
             type_0: unsafe { ::core::mem::zeroed() },
             c2rust_unnamed: unsafe { ::core::mem::zeroed() },
-            owner: ::core::ptr::null_mut(),
+            owner: None,
             string: Default::default(),
         }
     }
@@ -76,10 +75,17 @@ pub type events_cb = Option<
     ) -> (),
 >;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct event_payload_tree {
-    pub entries: *mut event_payload_tree_storage,
+    pub entries: refbox::RefBox<event_payload_tree_storage>,
+}
+
+impl Default for event_payload_tree {
+    fn default() -> Self {
+        Self {
+            entries: refbox::RefBox::default(),
+        }
+    }
 }
 
 /// Rust-owned ordering storage for an event payload's Box-owned items.

@@ -44,7 +44,7 @@ pub struct args {
 impl args {
     pub fn empty() -> Self {
         Self {
-            tree: unsafe { ::core::mem::zeroed() },
+            tree: args_tree::default(),
             count: unsafe { ::core::mem::zeroed() },
             values: Vec::new(),
         }
@@ -145,10 +145,17 @@ pub struct args_value_entry {
     pub index: usize,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct args_tree {
-    pub entries: *mut args_tree_storage,
+    pub entries: RefBox<args_tree_storage>,
+}
+
+impl Default for args_tree {
+    fn default() -> Self {
+        Self {
+            entries: RefBox::default(),
+        }
+    }
 }
 
 /// Rust-owned ordering storage for an argument tree's C-allocated entries.
@@ -165,7 +172,7 @@ pub struct args_entry {
     pub count: u_int,
     pub flags: ::core::ffi::c_int,
     /// Non-owning pointer used to find the next item in the ordered collection.
-    pub(crate) owner: *mut args_tree_storage,
+    pub(crate) owner: Option<Weak<args_tree_storage>>,
 }
 
 #[repr(C)]

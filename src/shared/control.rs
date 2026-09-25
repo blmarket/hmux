@@ -24,8 +24,8 @@ pub struct control_state {
 impl control_state {
     pub fn empty() -> Self {
         Self {
-            panes: unsafe { ::core::mem::zeroed() },
-            windows: unsafe { ::core::mem::zeroed() },
+            panes: control_panes { storage: None },
+            windows: control_windows { storage: None },
             pending_count: unsafe { ::core::mem::zeroed() },
             queued_reply_bytes: unsafe { ::core::mem::zeroed() },
             read_event: unsafe { ::core::mem::zeroed() },
@@ -70,20 +70,17 @@ pub struct control_pane {
     pub entry: control_pane_entry,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct control_pane_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<u32, Box<control_pane>>,
+    /// Weak traversal handle into the pane ID index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, Box<control_pane>>>>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct control_windows {
-    pub storage: *mut std::collections::BTreeMap<u32, *mut control_window>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, *mut control_window>>>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned by the control client; the window-ID index borrows its address.
 /// Unlink before `control_clear_window_size` or `control_stop` consumes it.
@@ -94,16 +91,14 @@ pub struct control_window {
     pub entry: control_window_entry,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct control_window_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<u32, *mut control_window>,
+    /// Weak traversal handle into the window ID index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, *mut control_window>>>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct control_panes {
-    /// Points to a map that owns each stable pane box.
-    pub storage: *mut std::collections::BTreeMap<u32, Box<control_pane>>,
+    /// The index owns each stable pane box.
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, Box<control_pane>>>>,
 }

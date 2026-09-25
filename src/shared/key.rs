@@ -2202,25 +2202,29 @@ impl key_table {
         Self {
             name: Default::default(),
             activity_time: unsafe { ::core::mem::zeroed() },
-            key_bindings: unsafe { ::core::mem::zeroed() },
-            default_key_bindings: unsafe { ::core::mem::zeroed() },
+            key_bindings: key_bindings::default(),
+            default_key_bindings: key_bindings::default(),
             references: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            entry: key_table_entry { owner: None },
         }
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct key_table_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut key_table>,
+    /// Weak traversal handle into the key table index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, *mut key_table>>>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct key_bindings {
-    pub storage: *mut std::collections::BTreeMap<u64, *mut key_binding>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u64, *mut key_binding>>>,
+}
+
+impl Default for key_bindings {
+    fn default() -> Self {
+        Self { storage: None }
+    }
 }
 
 #[repr(C)]
@@ -2241,14 +2245,13 @@ impl key_binding {
             note: Default::default(),
             tablename: unsafe { ::core::mem::zeroed() },
             flags: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            entry: key_binding_entry { owner: None },
         }
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct key_binding_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<u64, *mut key_binding>,
+    /// Weak traversal handle into the key binding index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u64, *mut key_binding>>>,
 }

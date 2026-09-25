@@ -259,9 +259,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
         idx: 0,
         last: Default::default(),
         generation: 0,
-        entry: monitor_pane_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: monitor_pane_entry { owner: None },
     };
     wp = window_pane_find_by_id((*me).id);
     if wp.is_null() || (*wp).fd == -(1 as ::core::ffi::c_int) {
@@ -302,9 +300,7 @@ unsafe extern "C" fn monitor_check_all_panes_one(
         idx: 0,
         last: Default::default(),
         generation: 0,
-        entry: monitor_pane_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: monitor_pane_entry { owner: None },
     };
     let value = format_expand_cstring(ft, ((*me).format).as_ptr());
     find.pane = (*wp).id;
@@ -346,9 +342,7 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
         idx: 0,
         last: Default::default(),
         generation: 0,
-        entry: monitor_window_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: monitor_window_entry { owner: None },
     };
     w = window_find_by_id((*me).id);
     if w.is_null() {
@@ -396,9 +390,7 @@ unsafe extern "C" fn monitor_check_all_windows_one(
         idx: 0,
         last: Default::default(),
         generation: 0,
-        entry: monitor_window_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: monitor_window_entry { owner: None },
     };
     let value = format_expand_cstring(ft, ((*me).format).as_ptr());
     find.window = (*w).id;
@@ -624,12 +616,15 @@ unsafe extern "C" fn monitor_create(
     mut cb: monitor_cb,
     mut data: *mut ::core::ffi::c_void,
 ) -> *mut monitor_set {
-    let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
-    ms = Box::into_raw(Box::new(::core::mem::zeroed::<monitor_set>()));
-    (*ms).cb = cb;
-    (*ms).data = data;
-    (*ms).items.storage = std::ptr::null_mut();
-    return ms;
+    Box::into_raw(Box::new(monitor_set {
+        client: std::ptr::null_mut(),
+        session: std::ptr::null_mut(),
+        cb,
+        data,
+        items: monitor_items { storage: None },
+        timer: crate::src::shared::event::event::default(),
+        generation: 0,
+    }))
 }
 #[no_mangle]
 pub unsafe extern "C" fn monitor_create_client(
@@ -768,17 +763,11 @@ pub unsafe extern "C" fn monitor_add(
         id: 0,
         flags: 0,
         last: Default::default(),
-        panes: monitor_panes {
-            storage: std::ptr::null_mut(),
-        },
-        windows: monitor_windows {
-            storage: std::ptr::null_mut(),
-        },
+        panes: monitor_panes { storage: None },
+        windows: monitor_windows { storage: None },
         fire_count: 0,
         fire_time: 0,
-        entry: monitor_item_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: monitor_item_entry { owner: None },
     };
     let mut tv: timeval = timeval {
         tv_sec: 1 as __time_t,
@@ -799,8 +788,8 @@ pub unsafe extern "C" fn monitor_add(
     (*me).type_0 = type_0;
     (*me).id = id as u_int;
     (*me).flags = flags;
-    (*me).panes.storage = std::ptr::null_mut();
-    (*me).windows.storage = std::ptr::null_mut();
+    (*me).panes.storage = None;
+    (*me).windows.storage = None;
     monitor_items_insert(&raw mut (*ms).items, me);
     if event_initialized(&(*ms).timer) == 0 {
         event_set(
@@ -840,23 +829,17 @@ pub unsafe extern "C" fn monitor_remove(
         id: 0,
         flags: 0,
         last: Default::default(),
-        panes: monitor_panes {
-            storage: std::ptr::null_mut(),
-        },
-        windows: monitor_windows {
-            storage: std::ptr::null_mut(),
-        },
+        panes: monitor_panes { storage: None },
+        windows: monitor_windows { storage: None },
         fire_count: 0,
         fire_time: 0,
-        entry: monitor_item_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: monitor_item_entry { owner: None },
     };
     me = monitor_items_find(&(*ms).items, &find);
     if !me.is_null() {
         monitor_free_item(ms, me);
     }
-    if (*ms).items.storage.is_null() && event_initialized(&(*ms).timer) != 0 {
+    if (*ms).items.storage.is_none() && event_initialized(&(*ms).timer) != 0 {
         event_del(&raw mut (*ms).timer);
     }
 }
@@ -873,17 +856,11 @@ pub unsafe extern "C" fn monitor_get_fire_count(
         id: 0,
         flags: 0,
         last: Default::default(),
-        panes: monitor_panes {
-            storage: std::ptr::null_mut(),
-        },
-        windows: monitor_windows {
-            storage: std::ptr::null_mut(),
-        },
+        panes: monitor_panes { storage: None },
+        windows: monitor_windows { storage: None },
         fire_count: 0,
         fire_time: 0,
-        entry: monitor_item_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: monitor_item_entry { owner: None },
     };
     me = monitor_items_find(&(*ms).items, &find);
     if me.is_null() {
@@ -904,17 +881,11 @@ pub unsafe extern "C" fn monitor_get_fire_time(
         id: 0,
         flags: 0,
         last: Default::default(),
-        panes: monitor_panes {
-            storage: std::ptr::null_mut(),
-        },
-        windows: monitor_windows {
-            storage: std::ptr::null_mut(),
-        },
+        panes: monitor_panes { storage: None },
+        windows: monitor_windows { storage: None },
         fire_count: 0,
         fire_time: 0,
-        entry: monitor_item_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: monitor_item_entry { owner: None },
     };
     me = monitor_items_find(&(*ms).items, &find);
     if me.is_null() {
@@ -924,16 +895,22 @@ pub unsafe extern "C" fn monitor_get_fire_time(
 }
 
 pub unsafe fn monitor_items_find(head: &monitor_items, elm: &monitor_item) -> *mut monitor_item {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor item index already borrowed");
     let key = elm.name.as_c_str().to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_items_nfind(head: &monitor_items, elm: &monitor_item) -> *mut monitor_item {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor item index already borrowed");
     let key = elm.name.as_c_str().to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
         .next()
@@ -944,17 +921,18 @@ pub unsafe fn monitor_items_insert(
     elm: *mut monitor_item,
 ) -> *mut monitor_item {
     let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
-    if (*head).storage.is_null() {
-        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
-    }
-    let map = &mut *(*head).storage;
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("monitor item index already borrowed");
     match map.entry(key.to_vec()) {
         std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
+            (*elm).entry.owner = Some(observer);
         }
     }
-    (*elm).entry.owner = map as *mut _;
     std::ptr::null_mut()
 }
 pub unsafe fn monitor_items_remove(
@@ -965,17 +943,22 @@ pub unsafe fn monitor_items_remove(
         return std::ptr::null_mut();
     }
     let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
-    let Some(map) = (*head).storage.as_mut() else {
+    let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    if map.get(key).copied() != Some(elm) {
-        return std::ptr::null_mut();
-    }
-    map.remove(key);
-    (*elm).entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
-        drop(Box::from_raw((*head).storage));
-        (*head).storage = std::ptr::null_mut();
+    let empty = {
+        let mut map = owner
+            .try_borrow_mut()
+            .expect("monitor item index already borrowed");
+        if map.get(key).copied() != Some(elm) {
+            return std::ptr::null_mut();
+        }
+        map.remove(key);
+        map.is_empty()
+    };
+    (*elm).entry.owner = None;
+    if empty {
+        (*head).storage = None;
     }
     elm
 }
@@ -983,9 +966,12 @@ pub unsafe fn monitor_items_minmax(
     head: &monitor_items,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_item {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor item index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -994,8 +980,13 @@ pub unsafe fn monitor_items_minmax(
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_items_next(elm: &monitor_item) -> *mut monitor_item {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("monitor item index already borrowed"),
     };
     let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
@@ -1003,8 +994,13 @@ pub unsafe fn monitor_items_next(elm: &monitor_item) -> *mut monitor_item {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_items_prev(elm: &monitor_item) -> *mut monitor_item {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("monitor item index already borrowed"),
     };
     let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
@@ -1016,16 +1012,22 @@ fn monitor_panes_key(elm: &monitor_pane) -> (u32, u32) {
     (elm.pane, elm.idx)
 }
 pub unsafe fn monitor_panes_find(head: &monitor_panes, elm: &monitor_pane) -> *mut monitor_pane {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor pane index already borrowed");
     let key = monitor_panes_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_panes_nfind(head: &monitor_panes, elm: &monitor_pane) -> *mut monitor_pane {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor pane index already borrowed");
     let key = monitor_panes_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
@@ -1036,17 +1038,18 @@ pub unsafe fn monitor_panes_insert(
     elm: *mut monitor_pane,
 ) -> *mut monitor_pane {
     let key = monitor_panes_key(&*elm);
-    if (*head).storage.is_null() {
-        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
-    }
-    let map = &mut *(*head).storage;
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("monitor pane index already borrowed");
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
+            (*elm).entry.owner = Some(observer);
         }
     }
-    (*elm).entry.owner = map as *mut _;
     std::ptr::null_mut()
 }
 pub unsafe fn monitor_panes_remove(
@@ -1057,17 +1060,22 @@ pub unsafe fn monitor_panes_remove(
         return std::ptr::null_mut();
     }
     let key = monitor_panes_key(&*elm);
-    let Some(map) = (*head).storage.as_mut() else {
+    let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    if map.get(&key).copied() != Some(elm) {
-        return std::ptr::null_mut();
-    }
-    map.remove(&key);
-    (*elm).entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
-        drop(Box::from_raw((*head).storage));
-        (*head).storage = std::ptr::null_mut();
+    let empty = {
+        let mut map = owner
+            .try_borrow_mut()
+            .expect("monitor pane index already borrowed");
+        if map.get(&key).copied() != Some(elm) {
+            return std::ptr::null_mut();
+        }
+        map.remove(&key);
+        map.is_empty()
+    };
+    (*elm).entry.owner = None;
+    if empty {
+        (*head).storage = None;
     }
     elm
 }
@@ -1075,9 +1083,12 @@ pub unsafe fn monitor_panes_minmax(
     head: &monitor_panes,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_pane {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor pane index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -1086,8 +1097,13 @@ pub unsafe fn monitor_panes_minmax(
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_panes_next(elm: &monitor_pane) -> *mut monitor_pane {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("monitor pane index already borrowed"),
     };
     let key = monitor_panes_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
@@ -1095,8 +1111,13 @@ pub unsafe fn monitor_panes_next(elm: &monitor_pane) -> *mut monitor_pane {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_panes_prev(elm: &monitor_pane) -> *mut monitor_pane {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("monitor pane index already borrowed"),
     };
     let key = monitor_panes_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
@@ -1111,9 +1132,12 @@ pub unsafe fn monitor_windows_find(
     head: &monitor_windows,
     elm: &monitor_window,
 ) -> *mut monitor_window {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor window index already borrowed");
     let key = monitor_windows_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
@@ -1121,9 +1145,12 @@ pub unsafe fn monitor_windows_nfind(
     head: &monitor_windows,
     elm: &monitor_window,
 ) -> *mut monitor_window {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor window index already borrowed");
     let key = monitor_windows_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
@@ -1134,17 +1161,18 @@ pub unsafe fn monitor_windows_insert(
     elm: *mut monitor_window,
 ) -> *mut monitor_window {
     let key = monitor_windows_key(&*elm);
-    if (*head).storage.is_null() {
-        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
-    }
-    let map = &mut *(*head).storage;
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("monitor window index already borrowed");
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
+            (*elm).entry.owner = Some(observer);
         }
     }
-    (*elm).entry.owner = map as *mut _;
     std::ptr::null_mut()
 }
 pub unsafe fn monitor_windows_remove(
@@ -1155,17 +1183,22 @@ pub unsafe fn monitor_windows_remove(
         return std::ptr::null_mut();
     }
     let key = monitor_windows_key(&*elm);
-    let Some(map) = (*head).storage.as_mut() else {
+    let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    if map.get(&key).copied() != Some(elm) {
-        return std::ptr::null_mut();
-    }
-    map.remove(&key);
-    (*elm).entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
-        drop(Box::from_raw((*head).storage));
-        (*head).storage = std::ptr::null_mut();
+    let empty = {
+        let mut map = owner
+            .try_borrow_mut()
+            .expect("monitor window index already borrowed");
+        if map.get(&key).copied() != Some(elm) {
+            return std::ptr::null_mut();
+        }
+        map.remove(&key);
+        map.is_empty()
+    };
+    (*elm).entry.owner = None;
+    if empty {
+        (*head).storage = None;
     }
     elm
 }
@@ -1173,9 +1206,12 @@ pub unsafe fn monitor_windows_minmax(
     head: &monitor_windows,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_window {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("monitor window index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -1184,8 +1220,13 @@ pub unsafe fn monitor_windows_minmax(
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_windows_next(elm: &monitor_window) -> *mut monitor_window {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("monitor window index already borrowed"),
     };
     let key = monitor_windows_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
@@ -1193,8 +1234,13 @@ pub unsafe fn monitor_windows_next(elm: &monitor_window) -> *mut monitor_window 
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_windows_prev(elm: &monitor_window) -> *mut monitor_window {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("monitor window index already borrowed"),
     };
     let key = monitor_windows_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
@@ -1294,6 +1340,102 @@ mod last_owner_tests {
             assert_eq!(capture.name, b"reentrant-last");
             assert!(monitor_items_minmax(&(*set).items, RB_NEGINF).is_null());
             monitor_destroy(set);
+        }
+    }
+
+    #[test]
+    fn monitor_item_index_observers_follow_move_duplicate_and_removal() {
+        unsafe {
+            fn item(name: &str) -> *mut monitor_item {
+                let mut item = Box::new(monitor_item::empty());
+                item.name = CString::new(name).unwrap();
+                Box::into_raw(item)
+            }
+
+            let mut head = monitor_items { storage: None };
+            let mut other = monitor_items { storage: None };
+            let first = item("alpha");
+            let second = item("beta");
+            let duplicate = item("alpha");
+            assert!(monitor_items_insert(&mut head, first).is_null());
+            assert!(monitor_items_insert(&mut head, second).is_null());
+            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
+            assert_eq!(monitor_items_insert(&mut head, duplicate), first);
+            assert!((*duplicate).entry.owner.is_none());
+            assert!(monitor_items_remove(&mut other, first).is_null());
+            assert!((*first).entry.owner.is_some());
+
+            let mut moved = head;
+            assert_eq!(monitor_items_minmax(&moved, RB_NEGINF), first);
+            assert_eq!(monitor_items_next(&*first), second);
+            assert_eq!(monitor_items_remove(&mut moved, first), first);
+            assert!((*first).entry.owner.is_none());
+            drop(Box::from_raw(first));
+            assert_eq!(monitor_items_remove(&mut moved, second), second);
+            drop(Box::from_raw(second));
+            drop(Box::from_raw(duplicate));
+            drop(moved);
+            assert!(matches!(
+                index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
+        }
+    }
+
+    #[test]
+    fn monitor_child_indexes_clear_observers_and_keep_order() {
+        unsafe {
+            let mut panes = monitor_panes { storage: None };
+            let mut other_panes = monitor_panes { storage: None };
+            let mut pane1 = Box::new(monitor_pane::empty());
+            pane1.pane = 3;
+            pane1.idx = 1;
+            let pane1 = Box::into_raw(pane1);
+            let mut pane2 = Box::new(monitor_pane::empty());
+            pane2.pane = 3;
+            pane2.idx = 2;
+            let pane2 = Box::into_raw(pane2);
+            assert!(monitor_panes_insert(&mut panes, pane1).is_null());
+            assert!(monitor_panes_insert(&mut panes, pane2).is_null());
+            let pane_index_observer = (*pane1).entry.owner.as_ref().unwrap().clone();
+            assert!(monitor_panes_remove(&mut other_panes, pane1).is_null());
+            assert!((*pane1).entry.owner.is_some());
+            assert_eq!(monitor_panes_next(&*pane1), pane2);
+            assert_eq!(monitor_panes_remove(&mut panes, pane1), pane1);
+            assert!((*pane1).entry.owner.is_none());
+            drop(Box::from_raw(pane1));
+            assert_eq!(monitor_panes_remove(&mut panes, pane2), pane2);
+            drop(Box::from_raw(pane2));
+            assert!(matches!(
+                pane_index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
+
+            let mut windows = monitor_windows { storage: None };
+            let mut other_windows = monitor_windows { storage: None };
+            let mut window1 = Box::new(monitor_window::empty());
+            window1.window = 8;
+            window1.idx = 1;
+            let window1 = Box::into_raw(window1);
+            let mut window2 = Box::new(monitor_window::empty());
+            window2.window = 8;
+            window2.idx = 2;
+            let window2 = Box::into_raw(window2);
+            assert!(monitor_windows_insert(&mut windows, window1).is_null());
+            assert!(monitor_windows_insert(&mut windows, window2).is_null());
+            let window_index_observer = (*window1).entry.owner.as_ref().unwrap().clone();
+            assert!(monitor_windows_remove(&mut other_windows, window1).is_null());
+            assert!((*window1).entry.owner.is_some());
+            assert_eq!(monitor_windows_next(&*window1), window2);
+            assert_eq!(monitor_windows_remove(&mut windows, window1), window1);
+            assert!((*window1).entry.owner.is_none());
+            drop(Box::from_raw(window1));
+            assert_eq!(monitor_windows_remove(&mut windows, window2), window2);
+            drop(Box::from_raw(window2));
+            assert!(matches!(
+                window_index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
         }
     }
 }

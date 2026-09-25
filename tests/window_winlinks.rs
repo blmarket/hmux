@@ -22,6 +22,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         let mut owner = Box::new(session::empty());
         let mut first_window = Box::new(std::mem::zeroed::<window>());
         let mut second_window = Box::new(std::mem::zeroed::<window>());
+        first_window.entry.owner = None;
+        second_window.entry.owner = None;
         // These synthetic windows retain one external reference so moving the
         // test links never runs the global window destruction path.
         first_window.references = 1;
@@ -42,6 +44,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
             .storage
             .as_ref()
             .unwrap()
+            .try_borrow_mut()
+            .unwrap()
             .get(&12)
             .unwrap()
             .downgrade();
@@ -49,6 +53,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
             .windows
             .storage
             .as_ref()
+            .unwrap()
+            .try_borrow_mut()
             .unwrap()
             .get(&3)
             .unwrap()

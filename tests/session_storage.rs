@@ -22,7 +22,7 @@ fn byte_order_duplicates_neighbors_and_removal() {
         let mut duplicate = node(c"a");
         let a = &mut *nodes[2] as *mut session;
         assert_eq!(sessions_insert(&mut *head, &mut *duplicate), a);
-        assert!(duplicate.entry.owner.is_null());
+        assert!(duplicate.entry.owner.is_none());
         assert!(sessions_remove(&mut *head, &mut *duplicate).is_null());
         assert_eq!(sessions_find(&*head, &*duplicate), a);
         let mut missing = node(c"b");
@@ -48,7 +48,7 @@ fn byte_order_duplicates_neighbors_and_removal() {
         while !node.is_null() {
             let next = sessions_next(&*node);
             assert_eq!(sessions_remove(&mut *head, node), node);
-            assert!((*node).entry.owner.is_null());
+            assert!((*node).entry.owner.is_none());
             node = next;
         }
         assert!(head.storage.is_none());

@@ -9,15 +9,17 @@ fn window_ids_duplicates_neighbors_and_removal() {
         let mut nodes: Vec<window> = ids.iter().map(|_| std::mem::zeroed()).collect();
         for (node, id) in nodes.iter_mut().zip(ids) {
             node.id = id;
+            node.entry.owner = None;
             assert!(windows_insert(&mut head, node).is_null());
         }
         // Entry-only traversal must survive a moved tree head.
         let mut head = Box::new(head);
         let mut probe: window = std::mem::zeroed();
         probe.id = 42;
+        probe.entry.owner = None;
         let existing = &mut nodes[2] as *mut window;
         assert_eq!(windows_insert(&mut *head, &mut probe), existing);
-        assert!(probe.entry.owner.is_null());
+        assert!(probe.entry.owner.is_none());
         assert!(windows_remove(&mut *head, &mut probe).is_null());
         assert_eq!(windows_find(&*head, &probe), existing);
         assert_eq!(windows_nfind(&*head, &probe), existing);
@@ -40,7 +42,7 @@ fn window_ids_duplicates_neighbors_and_removal() {
         while !node.is_null() {
             let next = windows_next(&*node);
             assert_eq!(windows_remove(&mut *head, node), node);
-            assert!((*node).entry.owner.is_null());
+            assert!((*node).entry.owner.is_none());
             node = next;
         }
         assert!(head.storage.is_none());
@@ -58,6 +60,7 @@ fn global_lookup_preserves_window_identity() {
         assert!((*head).storage.is_none());
         let mut window: window = std::mem::zeroed();
         window.id = 123;
+        window.entry.owner = None;
         assert!(windows_insert(head, &mut window).is_null());
         assert_eq!(window_find_by_id(123), &mut window as *mut _);
         assert!(window_find_by_id(124).is_null());

@@ -24,7 +24,7 @@ fn window_resize_replacement_and_pane_reset_release_indexes() {
             control_clear_window_size(c, id);
             assert_eq!(control_get_window_size(c, id, &mut sx, &mut sy), 0);
         }
-        assert!((*state).windows.storage.is_null());
+        assert!((*state).windows.storage.is_none());
         for id in [u32::MAX, 2, 0] {
             let pane = Box::into_raw(Box::new(control_pane {
                 pane: id,
@@ -33,9 +33,7 @@ fn window_resize_replacement_and_pane_reset_release_indexes() {
                 flags: 0,
                 pending_flag: 0,
                 blocks: VecDeque::new(),
-                entry: control_pane_entry {
-                    owner: std::ptr::null_mut(),
-                },
+                entry: control_pane_entry { owner: None },
             }));
             assert!(control_panes_insert(&raw mut (*state).panes, pane).is_null());
         }
@@ -43,7 +41,7 @@ fn window_resize_replacement_and_pane_reset_release_indexes() {
         assert_eq!((*first).pane, 0);
         assert_eq!((*control_panes_next(&*first)).pane, 2);
         control_reset_offsets(c);
-        assert!((*state).panes.storage.is_null());
+        assert!((*state).panes.storage.is_none());
         control_reset_offsets(c);
         client.control_state = std::ptr::null_mut();
         control_state_free(state);

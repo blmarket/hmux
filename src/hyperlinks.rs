@@ -106,12 +106,8 @@ pub unsafe extern "C" fn hyperlinks_put(
         internal_id: Default::default(),
         external_id: Default::default(),
         uri: Default::default(),
-        by_inner_entry: hyperlink_inner_entry {
-            owner: std::ptr::null_mut(),
-        },
-        by_uri_entry: hyperlink_uri_entry {
-            owner: std::ptr::null_mut(),
-        },
+        by_inner_entry: hyperlink_inner_entry { owner: None },
+        by_uri_entry: hyperlink_uri_entry { owner: None },
     };
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     let internal_id_input = if internal_id_in.is_null() {
@@ -174,12 +170,8 @@ pub unsafe extern "C" fn hyperlinks_get(
         internal_id: Default::default(),
         external_id: Default::default(),
         uri: Default::default(),
-        by_inner_entry: hyperlink_inner_entry {
-            owner: std::ptr::null_mut(),
-        },
-        by_uri_entry: hyperlink_uri_entry {
-            owner: std::ptr::null_mut(),
-        },
+        by_inner_entry: hyperlink_inner_entry { owner: None },
+        by_uri_entry: hyperlink_uri_entry { owner: None },
     };
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     find.inner = inner;
@@ -198,13 +190,10 @@ pub unsafe extern "C" fn hyperlinks_get(
 }
 #[no_mangle]
 pub unsafe extern "C" fn hyperlinks_init() -> *mut hyperlinks {
-    let mut hl: *mut hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
-    hl = Box::into_raw(Box::new(::core::mem::zeroed::<hyperlinks>()));
-    (*hl).next_inner = 1 as u_int;
-    (*hl).by_uri.storage = std::ptr::null_mut();
-    (*hl).by_inner.storage = std::ptr::null_mut();
-    (*hl).references = 1 as u_int;
-    return hl;
+    let mut owner = Box::new(hyperlinks::empty());
+    owner.next_inner = 1;
+    owner.references = 1;
+    Box::into_raw(owner)
 }
 #[no_mangle]
 pub unsafe extern "C" fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperlinks {
@@ -239,9 +228,12 @@ pub unsafe fn hyperlinks_by_inner_tree_find(
     head: &hyperlinks_by_inner_tree,
     elm: &hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("hyperlink inner index already borrowed");
     let key = hyperlinks_by_inner_tree_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
@@ -249,9 +241,12 @@ pub unsafe fn hyperlinks_by_inner_tree_nfind(
     head: &hyperlinks_by_inner_tree,
     elm: &hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("hyperlink inner index already borrowed");
     let key = hyperlinks_by_inner_tree_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
@@ -262,17 +257,18 @@ pub unsafe fn hyperlinks_by_inner_tree_insert(
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
     let key = hyperlinks_by_inner_tree_key(&*elm);
-    if (*head).storage.is_null() {
-        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
-    }
-    let map = &mut *(*head).storage;
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("hyperlink inner index already borrowed");
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
+            (*elm).by_inner_entry.owner = Some(observer);
         }
     }
-    (*elm).by_inner_entry.owner = map as *mut _;
     std::ptr::null_mut()
 }
 pub unsafe fn hyperlinks_by_inner_tree_remove(
@@ -283,17 +279,22 @@ pub unsafe fn hyperlinks_by_inner_tree_remove(
         return std::ptr::null_mut();
     }
     let key = hyperlinks_by_inner_tree_key(&*elm);
-    let Some(map) = (*head).storage.as_mut() else {
+    let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    if map.get(&key).copied() != Some(elm) {
-        return std::ptr::null_mut();
-    }
-    map.remove(&key);
-    (*elm).by_inner_entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
-        drop(Box::from_raw((*head).storage));
-        (*head).storage = std::ptr::null_mut();
+    let empty = {
+        let mut map = owner
+            .try_borrow_mut()
+            .expect("hyperlink inner index already borrowed");
+        if map.get(&key).copied() != Some(elm) {
+            return std::ptr::null_mut();
+        }
+        map.remove(&key);
+        map.is_empty()
+    };
+    (*elm).by_inner_entry.owner = None;
+    if empty {
+        (*head).storage = None;
     }
     elm
 }
@@ -301,9 +302,12 @@ pub unsafe fn hyperlinks_by_inner_tree_minmax(
     head: &hyperlinks_by_inner_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("hyperlink inner index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -312,8 +316,13 @@ pub unsafe fn hyperlinks_by_inner_tree_minmax(
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_inner_tree_next(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {
-    let Some(map) = elm.by_inner_entry.owner.as_ref() else {
+    let Some(owner) = elm.by_inner_entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("hyperlink inner index already borrowed"),
     };
     let key = hyperlinks_by_inner_tree_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
@@ -321,8 +330,13 @@ pub unsafe fn hyperlinks_by_inner_tree_next(elm: &hyperlinks_uri) -> *mut hyperl
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_inner_tree_prev(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {
-    let Some(map) = elm.by_inner_entry.owner.as_ref() else {
+    let Some(owner) = elm.by_inner_entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("hyperlink inner index already borrowed"),
     };
     let key = hyperlinks_by_inner_tree_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
@@ -344,9 +358,12 @@ pub unsafe fn hyperlinks_by_uri_tree_find(
     head: &hyperlinks_by_uri_tree,
     elm: &hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("hyperlink URI index already borrowed");
     let key = hyperlinks_by_uri_tree_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
@@ -354,9 +371,12 @@ pub unsafe fn hyperlinks_by_uri_tree_nfind(
     head: &hyperlinks_by_uri_tree,
     elm: &hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("hyperlink URI index already borrowed");
     let key = hyperlinks_by_uri_tree_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
@@ -367,17 +387,18 @@ pub unsafe fn hyperlinks_by_uri_tree_insert(
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
     let key = hyperlinks_by_uri_tree_key(&*elm);
-    if (*head).storage.is_null() {
-        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
-    }
-    let map = &mut *(*head).storage;
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("hyperlink URI index already borrowed");
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
+            (*elm).by_uri_entry.owner = Some(observer);
         }
     }
-    (*elm).by_uri_entry.owner = map as *mut _;
     std::ptr::null_mut()
 }
 pub unsafe fn hyperlinks_by_uri_tree_remove(
@@ -388,17 +409,22 @@ pub unsafe fn hyperlinks_by_uri_tree_remove(
         return std::ptr::null_mut();
     }
     let key = hyperlinks_by_uri_tree_key(&*elm);
-    let Some(map) = (*head).storage.as_mut() else {
+    let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    if map.get(&key).copied() != Some(elm) {
-        return std::ptr::null_mut();
-    }
-    map.remove(&key);
-    (*elm).by_uri_entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
-        drop(Box::from_raw((*head).storage));
-        (*head).storage = std::ptr::null_mut();
+    let empty = {
+        let mut map = owner
+            .try_borrow_mut()
+            .expect("hyperlink URI index already borrowed");
+        if map.get(&key).copied() != Some(elm) {
+            return std::ptr::null_mut();
+        }
+        map.remove(&key);
+        map.is_empty()
+    };
+    (*elm).by_uri_entry.owner = None;
+    if empty {
+        (*head).storage = None;
     }
     elm
 }
@@ -406,9 +432,12 @@ pub unsafe fn hyperlinks_by_uri_tree_minmax(
     head: &hyperlinks_by_uri_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = head.storage.as_ref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("hyperlink URI index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -417,8 +446,13 @@ pub unsafe fn hyperlinks_by_uri_tree_minmax(
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_uri_tree_next(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {
-    let Some(map) = elm.by_uri_entry.owner.as_ref() else {
+    let Some(owner) = elm.by_uri_entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("hyperlink URI index already borrowed"),
     };
     let key = hyperlinks_by_uri_tree_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
@@ -426,11 +460,62 @@ pub unsafe fn hyperlinks_by_uri_tree_next(elm: &hyperlinks_uri) -> *mut hyperlin
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_uri_tree_prev(elm: &hyperlinks_uri) -> *mut hyperlinks_uri {
-    let Some(map) = elm.by_uri_entry.owner.as_ref() else {
+    let Some(owner) = elm.by_uri_entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("hyperlink URI index already borrowed"),
     };
     let key = hyperlinks_by_uri_tree_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
+}
+
+#[cfg(test)]
+mod hyperlink_index_tests {
+    use super::*;
+
+    #[test]
+    fn hyperlink_indexes_keep_order_and_weak_observers_expire_on_free() {
+        unsafe {
+            let table = hyperlinks_init();
+            let other = hyperlinks_init();
+            let first_id =
+                hyperlinks_put(table, c"https://example.test/a".as_ptr(), c"alpha".as_ptr());
+            let second_id =
+                hyperlinks_put(table, c"https://example.test/b".as_ptr(), c"beta".as_ptr());
+            assert_eq!(
+                hyperlinks_put(table, c"https://example.test/a".as_ptr(), c"alpha".as_ptr()),
+                first_id
+            );
+
+            let mut find = hyperlinks_uri::empty();
+            find.inner = first_id;
+            let first = hyperlinks_by_inner_tree_find(&(*table).by_inner, &find);
+            find.inner = second_id;
+            let second = hyperlinks_by_inner_tree_find(&(*table).by_inner, &find);
+            assert!(!first.is_null() && !second.is_null());
+            let inner_index_observer = (*first).by_inner_entry.owner.as_ref().unwrap().clone();
+            let uri_index_observer = (*first).by_uri_entry.owner.as_ref().unwrap().clone();
+
+            assert!(hyperlinks_by_inner_tree_remove(&mut (*other).by_inner, first).is_null());
+            assert!((*first).by_inner_entry.owner.is_some());
+            assert_eq!(hyperlinks_by_inner_tree_next(&*first), second);
+            assert_eq!(hyperlinks_by_uri_tree_next(&*first), second);
+
+            hyperlinks_free(table);
+            assert!(matches!(
+                inner_index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
+            assert!(matches!(
+                uri_index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
+            hyperlinks_free(other);
+        }
+    }
 }

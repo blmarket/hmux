@@ -48,10 +48,13 @@ unsafe fn event_payload_tree_find(
     head: *mut event_payload_tree,
     name: &CStr,
 ) -> *mut event_payload_item {
-    if head.is_null() || (*head).entries.is_null() {
+    if head.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
-    (*(*head).entries)
+    (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("event payload tree already borrowed")
         .entries
         .get(&event_payload_name_key(name))
         .copied()
@@ -65,10 +68,12 @@ unsafe fn event_payload_tree_insert(
     if head.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
-    if (*head).entries.is_null() {
-        (*head).entries = Box::into_raw(Box::new(event_payload_tree_storage::default()));
-    }
-    match (*(*head).entries).entries.entry(event_payload_name_key(
+    let observer = (*head).entries.downgrade();
+    let mut storage = (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("event payload tree already borrowed");
+    match storage.entries.entry(event_payload_name_key(
         (*elm)
             .name
             .as_deref()
@@ -76,8 +81,9 @@ unsafe fn event_payload_tree_insert(
     )) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            // event_payload_next receives only an item pointer, so retain its owner.
-            (*elm).owner = head;
+            // event_payload_next receives only an item pointer, so retain a
+            // weak handle to the storage that owns the ordering map.
+            (*elm).owner = Some(observer);
             entry.insert(elm);
             ::core::ptr::null_mut::<event_payload_item>()
         }
@@ -88,34 +94,42 @@ unsafe fn event_payload_tree_remove(
     head: *mut event_payload_tree,
     elm: *mut event_payload_item,
 ) -> *mut event_payload_item {
-    if head.is_null() || (*head).entries.is_null() || elm.is_null() {
+    if head.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
-    let removed = (*(*head).entries).entries.remove(&event_payload_name_key(
+    let key = event_payload_name_key(
         (*elm)
             .name
             .as_deref()
             .expect("event payload item has a name"),
-    ));
-    if let Some(removed) = removed {
-        (*removed).owner = ::core::ptr::null_mut();
-        removed
-    } else {
-        ::core::ptr::null_mut::<event_payload_item>()
+    );
+    let mut storage = (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("event payload tree already borrowed");
+    if storage.entries.get(&key).copied() != Some(elm) {
+        return ::core::ptr::null_mut();
     }
+    let removed = storage.entries.remove(&key).unwrap_or(std::ptr::null_mut());
+    (*elm).owner = None;
+    removed
 }
 
 unsafe fn event_payload_tree_minmax(
     head: *mut event_payload_tree,
     val: ::core::ffi::c_int,
 ) -> *mut event_payload_item {
-    if head.is_null() || (*head).entries.is_null() {
+    if head.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
+    let storage = (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("event payload tree already borrowed");
     let item = if val < 0 {
-        (*(*head).entries).entries.values().next()
+        storage.entries.values().next()
     } else {
-        (*(*head).entries).entries.values().next_back()
+        storage.entries.values().next_back()
     };
     item.copied()
         .unwrap_or(::core::ptr::null_mut::<event_payload_item>())
@@ -125,11 +139,15 @@ unsafe fn event_payload_tree_next(elm: *mut event_payload_item) -> *mut event_pa
     if elm.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
-    let head = (*elm).owner;
-    if head.is_null() || (*head).entries.is_null() {
+    let Some(owner) = (*elm).owner.as_ref() else {
         return ::core::ptr::null_mut::<event_payload_item>();
-    }
-    (*(*head).entries)
+    };
+    let storage = match owner.try_borrow_mut() {
+        Ok(storage) => storage,
+        Err(refbox::BorrowError::Dropped) => return ::core::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("event payload tree already borrowed"),
+    };
+    storage
         .entries
         .range((
             std::ops::Bound::Excluded(event_payload_name_key(
@@ -247,27 +265,28 @@ unsafe extern "C" fn event_payload_set_item(
 }
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_create() -> *mut event_payload {
-    let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
-    ep = Box::into_raw(Box::new(::core::mem::zeroed::<event_payload>()));
-    (*ep).items.entries = Box::into_raw(Box::new(event_payload_tree_storage::default()));
+    let ep = Box::into_raw(Box::new(event_payload {
+        items: event_payload_tree::default(),
+        target: ::core::mem::zeroed::<cmd_find_state>(),
+    }));
     cmd_find_clear_state(&raw mut (*ep).target, 0 as ::core::ffi::c_int);
     return ep;
 }
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_free(mut ep: *mut event_payload) {
     if !ep.is_null() {
-        let items: Vec<*mut event_payload_item> = if (*ep).items.entries.is_null() {
-            Vec::new()
-        } else {
-            (*(*ep).items.entries).entries.values().copied().collect()
-        };
+        let items: Vec<*mut event_payload_item> = (*ep)
+            .items
+            .entries
+            .try_borrow_mut()
+            .expect("event payload tree already borrowed")
+            .entries
+            .values()
+            .copied()
+            .collect();
         for epi in items {
             event_payload_tree_remove(&raw mut (*ep).items, epi);
             event_payload_free_item(epi);
-        }
-        if !(*ep).items.entries.is_null() {
-            drop(Box::from_raw((*ep).items.entries));
-            (*ep).items.entries = ::core::ptr::null_mut::<event_payload_tree_storage>();
         }
         event_payload_free_target(ep);
         drop(Box::from_raw(ep));
@@ -994,6 +1013,59 @@ mod tests {
             assert_eq!((*replacement).c2rust_unnamed.number, 42);
             assert_eq!(event_payload_next(replacement), ::core::ptr::null_mut());
             event_payload_free(ep);
+        }
+    }
+
+    #[test]
+    fn item_observers_follow_tree_moves_and_clear_on_removal() {
+        unsafe {
+            fn item(name: &str) -> *mut event_payload_item {
+                let mut item = Box::new(event_payload_item::empty());
+                item.name = Some(CString::new(name).unwrap());
+                Box::into_raw(item)
+            }
+
+            let mut payload = event_payload {
+                items: event_payload_tree::default(),
+                target: ::core::mem::zeroed(),
+            };
+            let mut other = event_payload_tree::default();
+            let first = item("alpha");
+            let second = item("beta");
+            let duplicate = item("alpha");
+            assert!(event_payload_tree_insert(&mut payload.items, first).is_null());
+            assert!(event_payload_tree_insert(&mut payload.items, second).is_null());
+            let storage_observer = (*first).owner.as_ref().unwrap().clone();
+            assert_eq!(
+                event_payload_tree_insert(&mut payload.items, duplicate),
+                first
+            );
+            assert!((*duplicate).owner.is_none());
+            assert!(event_payload_tree_remove(&mut other, first).is_null());
+            assert!((*first).owner.is_some());
+
+            let mut moved = payload;
+            assert_eq!(event_payload_tree_minmax(&raw mut moved.items, -1), first);
+            assert_eq!(event_payload_tree_next(first), second);
+            assert_eq!(
+                event_payload_tree_remove(&raw mut moved.items, first),
+                first
+            );
+            assert!((*first).owner.is_none());
+            assert!(event_payload_tree_next(first).is_null());
+            assert_eq!(
+                event_payload_tree_remove(&raw mut moved.items, second),
+                second
+            );
+
+            event_payload_free_item(first);
+            event_payload_free_item(second);
+            event_payload_free_item(duplicate);
+            drop(moved);
+            assert!(matches!(
+                storage_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
         }
     }
 }

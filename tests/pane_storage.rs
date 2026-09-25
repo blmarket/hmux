@@ -83,7 +83,7 @@ fn pane_ids_duplicates_neighbors_and_removal() {
         probe.id = 42;
         let existing = &mut nodes[2] as *mut window_pane;
         assert_eq!(window_pane_tree_insert(&mut *head, &mut probe), existing);
-        assert!(probe.tree_entry.owner.is_null());
+        assert!(probe.tree_entry.owner.is_none());
         assert!(window_pane_tree_remove(&mut *head, &mut probe).is_null());
         assert_eq!(window_pane_tree_find(&*head, &probe), existing);
         assert_eq!(window_pane_tree_nfind(&*head, &probe), existing);
@@ -106,7 +106,7 @@ fn pane_ids_duplicates_neighbors_and_removal() {
         while !node.is_null() {
             let next = window_pane_tree_next(&*node);
             assert_eq!(window_pane_tree_remove(&mut *head, node), node);
-            assert!((*node).tree_entry.owner.is_null());
+            assert!((*node).tree_entry.owner.is_none());
             node = next;
         }
         assert!(head.storage.is_none());

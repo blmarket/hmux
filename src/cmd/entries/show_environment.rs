@@ -186,7 +186,7 @@ mod tests {
                     .to_owned(),
             ),
             flags: 0,
-            owner: std::ptr::null_mut(),
+            owner: None,
         };
         let escaped = unsafe { cmd_show_environment_escape(&entry) };
         assert_eq!(escaped.as_bytes(), b"\xff\\$\\`\\\"\\\\");

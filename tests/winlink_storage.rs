@@ -12,12 +12,21 @@ fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
         // Entry-only traversal must survive a moved tree head.
         let mut head = Box::new(head);
         let existing = nodes[2];
-        let weak = head.storage.as_ref().unwrap().get(&42).unwrap().downgrade();
+        let weak = head
+            .storage
+            .as_ref()
+            .unwrap()
+            .try_borrow_mut()
+            .unwrap()
+            .get(&42)
+            .unwrap()
+            .downgrade();
         assert!(winlink_add(&mut *head, 42).is_null());
         assert_eq!(weak.as_ptr(), existing as *const winlink);
         assert!(weak.is_alive());
         let mut probe: winlink = std::mem::zeroed();
         probe.idx = 42;
+        probe.entry.owner = None;
         assert_eq!(winlinks_find(&*head, &probe), existing);
         assert_eq!(winlinks_nfind(&*head, &probe), existing);
         probe.idx = 8;
@@ -56,7 +65,15 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
     unsafe {
         let mut head = winlinks { storage: None };
         let first = winlink_add(&mut head, 0);
-        let weak = head.storage.as_ref().unwrap().get(&0).unwrap().downgrade();
+        let weak = head
+            .storage
+            .as_ref()
+            .unwrap()
+            .try_borrow_mut()
+            .unwrap()
+            .get(&0)
+            .unwrap()
+            .downgrade();
         let mut old = std::mem::replace(&mut head, winlinks { storage: None });
         let replacement = winlink_add(&mut head, 0);
         winlinks_reindex(&mut old, first, 5);
@@ -96,6 +113,8 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
             .windows
             .storage
             .as_ref()
+            .unwrap()
+            .try_borrow_mut()
             .unwrap()
             .get(&1)
             .unwrap()

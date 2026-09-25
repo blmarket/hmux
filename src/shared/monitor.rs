@@ -15,8 +15,7 @@ pub const MONITOR_SESSION: monitor_type = 0;
 pub const MONITOR_NOTIFY_TRUE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
-/// Box-owned by monitor_create; callback and owner pointers expire on destroy.
-#[derive(Copy, Clone)]
+/// Box-owned by monitor_create; callback data and weak observers expire on destroy.
 #[repr(C)]
 pub struct monitor_set {
     pub client: *mut client,
@@ -43,10 +42,9 @@ pub struct monitor_change {
 pub type monitor_cb =
     Option<unsafe extern "C" fn(*mut monitor_change, *mut ::core::ffi::c_void) -> ()>;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_items {
-    pub storage: *mut std::collections::BTreeMap<Vec<u8>, *mut monitor_item>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, *mut monitor_item>>>,
 }
 
 #[repr(C)]
@@ -73,26 +71,25 @@ impl monitor_item {
             id: unsafe { ::core::mem::zeroed() },
             flags: unsafe { ::core::mem::zeroed() },
             last: Default::default(),
-            panes: unsafe { ::core::mem::zeroed() },
-            windows: unsafe { ::core::mem::zeroed() },
+            panes: monitor_panes { storage: None },
+            windows: monitor_windows { storage: None },
             fire_count: unsafe { ::core::mem::zeroed() },
             fire_time: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            entry: monitor_item_entry { owner: None },
         }
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_item_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut monitor_item>,
+    /// Weak traversal handle into the monitor item index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, *mut monitor_item>>>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_windows {
-    pub storage: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_window>,
+    pub storage:
+        Option<refbox::RefBox<std::collections::BTreeMap<(u32, u32), *mut monitor_window>>>,
 }
 
 #[repr(C)]
@@ -111,22 +108,20 @@ impl monitor_window {
             idx: unsafe { ::core::mem::zeroed() },
             last: Default::default(),
             generation: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            entry: monitor_window_entry { owner: None },
         }
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_window_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_window>,
+    /// Weak traversal handle into the monitor window index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<(u32, u32), *mut monitor_window>>>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_panes {
-    pub storage: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_pane>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<(u32, u32), *mut monitor_pane>>>,
 }
 
 #[repr(C)]
@@ -145,14 +140,13 @@ impl monitor_pane {
             idx: unsafe { ::core::mem::zeroed() },
             last: Default::default(),
             generation: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            entry: monitor_pane_entry { owner: None },
         }
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_pane_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_pane>,
+    /// Weak traversal handle into the monitor pane index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<(u32, u32), *mut monitor_pane>>>,
 }

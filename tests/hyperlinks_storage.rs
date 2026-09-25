@@ -76,11 +76,11 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
             hyperlinks_get(shared, first, &mut uri, null_mut(), null_mut()),
             0
         );
-        assert!((*shared).by_inner.storage.is_null());
-        assert!((*shared).by_uri.storage.is_null());
+        assert!((*shared).by_inner.storage.is_none());
+        assert!((*shared).by_uri.storage.is_none());
         hyperlinks_reset(b);
-        assert!((*b).by_inner.storage.is_null());
-        assert!((*b).by_uri.storage.is_null());
+        assert!((*b).by_inner.storage.is_none());
+        assert!((*b).by_uri.storage.is_none());
         let again = hyperlinks_put(b, c"again".as_ptr(), c"id".as_ptr());
         assert_eq!(
             hyperlinks_get(b, again, &mut uri, null_mut(), &mut external_id),

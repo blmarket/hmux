@@ -1,21 +1,33 @@
 //! Authoritative hyperlinks declarations, shared by the C translation units.
 
 use super::abi::u_int;
-#[derive(Copy, Clone)]
 #[repr(C)]
 /// Box-owned from `hyperlinks_init` through the final `hyperlinks_free`.
-/// Copies retain the explicit reference count; URI nodes borrow this address.
+/// URI nodes borrow this address.
 pub struct hyperlinks {
     pub next_inner: u_int,
     pub by_inner: hyperlinks_by_inner_tree,
     pub by_uri: hyperlinks_by_uri_tree,
     pub references: u_int,
 }
-#[derive(Copy, Clone)]
+impl hyperlinks {
+    pub fn empty() -> Self {
+        Self {
+            next_inner: 0,
+            by_inner: hyperlinks_by_inner_tree { storage: None },
+            by_uri: hyperlinks_by_uri_tree { storage: None },
+            references: 0,
+        }
+    }
+}
+
 #[repr(C)]
 pub struct hyperlinks_by_uri_tree {
-    pub storage:
-        *mut std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
+    pub storage: Option<
+        refbox::RefBox<
+            std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
+        >,
+    >,
 }
 #[repr(C)]
 pub struct hyperlinks_uri {
@@ -36,25 +48,26 @@ impl hyperlinks_uri {
             internal_id: Default::default(),
             external_id: Default::default(),
             uri: Default::default(),
-            by_inner_entry: unsafe { ::core::mem::zeroed() },
-            by_uri_entry: unsafe { ::core::mem::zeroed() },
+            by_inner_entry: hyperlink_inner_entry { owner: None },
+            by_uri_entry: hyperlink_uri_entry { owner: None },
         }
     }
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlink_uri_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
+    /// Weak traversal handle into the URI index.
+    pub owner: Option<
+        refbox::Weak<
+            std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
+        >,
+    >,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlink_inner_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<u32, *mut hyperlinks_uri>,
+    /// Weak traversal handle into the inner-ID index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, *mut hyperlinks_uri>>>,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlinks_by_inner_tree {
-    pub storage: *mut std::collections::BTreeMap<u32, *mut hyperlinks_uri>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, *mut hyperlinks_uri>>>,
 }

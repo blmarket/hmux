@@ -43,8 +43,11 @@ impl session {
             last_activity_time: unsafe { ::core::mem::zeroed() },
             lock_timer: unsafe { ::core::mem::zeroed() },
             curw: unsafe { ::core::mem::zeroed() },
-            lastw: unsafe { ::core::mem::zeroed() },
-            windows: unsafe { ::core::mem::zeroed() },
+            lastw: winlink_stack {
+                storage: None,
+                reserved: std::ptr::null_mut(),
+            },
+            windows: winlinks { storage: None },
             statusat: unsafe { ::core::mem::zeroed() },
             statuslines: unsafe { ::core::mem::zeroed() },
             options: unsafe { ::core::mem::zeroed() },
@@ -53,21 +56,20 @@ impl session {
             tio: Default::default(),
             environ: unsafe { ::core::mem::zeroed() },
             references: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            entry: session_entry { owner: None },
         }
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut session>,
+    /// Weak traversal handle into the session index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, *mut session>>>,
 }
 
 #[repr(C)]
 pub struct sessions {
-    pub storage: Option<Box<std::collections::BTreeMap<Vec<u8>, *mut session>>>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, *mut session>>>,
 }
 
 #[repr(C)]
@@ -81,20 +83,19 @@ impl session_group {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            entry: unsafe { ::core::mem::zeroed() },
+            entry: session_group_entry { owner: None },
             members: Default::default(),
         }
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_group_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut std::collections::BTreeMap<Vec<u8>, Box<session_group>>,
+    /// Weak traversal handle into the session group index.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>>,
 }
 
 #[repr(C)]
 pub struct session_groups {
-    pub storage: Option<Box<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>>,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>>,
 }

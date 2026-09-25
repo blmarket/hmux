@@ -70,10 +70,13 @@ impl ArgumentValueError {
     }
 }
 unsafe fn args_tree_find(head: *mut args_tree, flag: u_char) -> *mut args_entry {
-    if head.is_null() || (*head).entries.is_null() {
+    if head.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
-    (*(*head).entries)
+    (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("argument tree already borrowed")
         .entries
         .get(&flag)
         .copied()
@@ -84,15 +87,16 @@ unsafe fn args_tree_insert(head: *mut args_tree, elm: *mut args_entry) -> *mut a
     if head.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
-    if (*head).entries.is_null() {
-        (*head).entries = Box::into_raw(Box::new(args_tree_storage::default()));
-    }
-    match (*(*head).entries).entries.entry((*elm).flag) {
+    let mut storage = (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("argument tree already borrowed");
+    match storage.entries.entry((*elm).flag) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            // args_next receives only an entry, so retain its storage owner;
-            // the BTreeMap is the sole source of ordering and membership.
-            (*elm).owner = (*head).entries;
+            // args_next receives only an entry, so retain a non-owning handle
+            // to the tree that owns the ordering map.
+            (*elm).owner = Some((*head).entries.downgrade());
             entry.insert(elm);
             ::core::ptr::null_mut::<args_entry>()
         }
@@ -100,29 +104,37 @@ unsafe fn args_tree_insert(head: *mut args_tree, elm: *mut args_entry) -> *mut a
 }
 
 unsafe fn args_tree_remove(head: *mut args_tree, elm: *mut args_entry) -> *mut args_entry {
-    if head.is_null() || (*head).entries.is_null() || elm.is_null() {
+    if head.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
+    let mut storage = (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("argument tree already borrowed");
     let key = (*elm).flag;
-    if (*(*head).entries).entries.get(&key).copied() != Some(elm) {
+    if storage.entries.get(&key).copied() != Some(elm) {
         return ::core::ptr::null_mut::<args_entry>();
     }
-    let removed = (*(*head).entries)
+    let removed = storage
         .entries
         .remove(&key)
         .unwrap_or(::core::ptr::null_mut::<args_entry>());
-    (*elm).owner = ::core::ptr::null_mut();
+    (*elm).owner = None;
     removed
 }
 
 unsafe fn args_tree_minmax(head: *mut args_tree, val: ::core::ffi::c_int) -> *mut args_entry {
-    if head.is_null() || (*head).entries.is_null() {
+    if head.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
+    let storage = (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("argument tree already borrowed");
     let entry = if val < 0 {
-        (*(*head).entries).entries.values().next()
+        storage.entries.values().next()
     } else {
-        (*(*head).entries).entries.values().next_back()
+        storage.entries.values().next_back()
     };
     entry
         .copied()
@@ -130,20 +142,24 @@ unsafe fn args_tree_minmax(head: *mut args_tree, val: ::core::ffi::c_int) -> *mu
 }
 
 unsafe fn args_tree_next(head: *mut args_tree, elm: *mut args_entry) -> *mut args_entry {
-    if head.is_null() || (*head).entries.is_null() || elm.is_null() {
+    if head.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
-    args_tree_next_storage((*head).entries, elm)
+    let storage = (*head)
+        .entries
+        .try_borrow_mut()
+        .expect("argument tree already borrowed");
+    args_tree_next_storage(&storage, elm)
 }
 
 unsafe fn args_tree_next_storage(
-    storage: *mut args_tree_storage,
+    storage: &args_tree_storage,
     elm: *mut args_entry,
 ) -> *mut args_entry {
-    if storage.is_null() || elm.is_null() {
+    if elm.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
-    (*storage)
+    storage
         .entries
         .range((
             std::ops::Bound::Excluded((*elm).flag),
@@ -158,7 +174,15 @@ unsafe fn args_tree_next_from_entry(elm: *mut args_entry) -> *mut args_entry {
     if elm.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
-    args_tree_next_storage((*elm).owner, elm)
+    let Some(owner) = (*elm).owner.as_ref() else {
+        return ::core::ptr::null_mut();
+    };
+    let storage = match owner.try_borrow_mut() {
+        Ok(storage) => storage,
+        Err(refbox::BorrowError::Dropped) => return ::core::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("argument tree already borrowed"),
+    };
+    args_tree_next_storage(&storage, elm)
 }
 
 #[cfg(test)]
@@ -175,7 +199,7 @@ mod args_tree_tests {
             },
             count: 0,
             flags: 0,
-            owner: ::core::ptr::null_mut(),
+            owner: None,
         }))
     }
 
@@ -185,9 +209,7 @@ mod args_tree_tests {
             // args_cmp compared u_char values after promotion to c_int, so the
             // Rust key must order 0..=255 rather than signed bytes.
             let flags = [0x80, 0, 0xff, 1];
-            let mut head = args_tree {
-                entries: Box::into_raw(Box::new(args_tree_storage::default())),
-            };
+            let mut head = args_tree::default();
             let mut items = Vec::new();
             for flag in flags {
                 let item = new_entry(flag);
@@ -223,8 +245,47 @@ mod args_tree_tests {
                     drop(Box::from_raw(item));
                 }
             }
-            drop(Box::from_raw(head.entries));
-            head.entries = ::core::ptr::null_mut::<args_tree_storage>();
+        }
+    }
+
+    #[test]
+    fn args_tree_observers_follow_moves_removal_and_owner_expiration() {
+        unsafe {
+            let mut head = args_tree::default();
+            let mut other = args_tree::default();
+            let first = new_entry(1);
+            let second = new_entry(2);
+            assert!(args_tree_insert(&mut head, first).is_null());
+            assert!(args_tree_insert(&mut head, second).is_null());
+
+            let duplicate = new_entry(1);
+            assert_eq!(args_tree_insert(&mut head, duplicate), first);
+            assert!((*duplicate).owner.is_none());
+            assert!(args_tree_next_from_entry(duplicate).is_null());
+            drop(Box::from_raw(duplicate));
+
+            let storage_observer = (*first).owner.as_ref().unwrap().clone();
+            assert!(args_tree_remove(&mut other, first).is_null());
+            assert_eq!(args_tree_next_from_entry(first), second);
+
+            // Moving the head preserves its RefBox allocation and observers.
+            let mut moved_head = head;
+            assert_eq!(args_tree_find(&mut moved_head, 1), first);
+            assert_eq!(args_tree_remove(&mut moved_head, first), first);
+            assert!((*first).owner.is_none());
+            assert!(args_tree_next_from_entry(first).is_null());
+            assert_eq!(args_tree_next_from_entry(second), std::ptr::null_mut());
+
+            assert_eq!(args_tree_remove(&mut moved_head, second), second);
+            assert!((*second).owner.is_none());
+
+            drop(Box::from_raw(first));
+            drop(Box::from_raw(second));
+            drop(moved_head);
+            assert!(matches!(
+                storage_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
         }
     }
 }
@@ -262,7 +323,11 @@ unsafe fn args_value_count(entry: *mut args_entry) -> usize {
 }
 
 unsafe fn args_last_value<'a>(args: &'a args, flag: u_char) -> Option<&'a args_value> {
-    let tree = args.tree.entries.as_ref()?;
+    let tree = args
+        .tree
+        .entries
+        .try_borrow_mut()
+        .expect("argument tree already borrowed");
     let entry = tree.entries.get(&flag)?.as_ref()?;
     let owner = entry
         .values
@@ -316,7 +381,7 @@ unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
 pub unsafe extern "C" fn args_create() -> *mut args {
     let owner = Box::new(args {
         tree: args_tree {
-            entries: Box::into_raw(Box::new(args_tree_storage::default())),
+            entries: refbox::RefBox::default(),
         },
         count: 0,
         values: Vec::new(),
@@ -704,10 +769,6 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         drop(Box::from_raw(entry));
         entry = entry1;
     }
-    if !(*args).tree.entries.is_null() {
-        drop(Box::from_raw((*args).tree.entries));
-        (*args).tree.entries = ::core::ptr::null_mut::<args_tree_storage>();
-    }
     drop(Box::from_raw(args));
 }
 pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
@@ -930,9 +991,10 @@ unsafe fn args_set_value(
             },
             count: 1,
             flags,
-            owner: ::core::ptr::null_mut(),
+            owner: None,
         }));
-        args_tree_insert(&raw mut (*args).tree, entry);
+        let duplicate = args_tree_insert(&raw mut (*args).tree, entry);
+        debug_assert!(duplicate.is_null());
     } else {
         (*entry).count = (*entry).count.wrapping_add(1);
     }

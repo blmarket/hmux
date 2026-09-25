@@ -86,7 +86,7 @@ fn byte_names_composite_keys_and_nested_cleanup() {
         for name in [c"a", c"\xff", c"z"] {
             monitor_remove(set, name.as_ptr());
         }
-        assert!((*set).items.storage.is_null());
+        assert!((*set).items.storage.is_none());
         monitor_remove(set, c"missing".as_ptr());
         monitor_destroy(set);
     }

@@ -4,10 +4,17 @@ use std::collections::BTreeMap;
 
 pub const ENVIRON_HIDDEN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct environ {
-    pub entries: *mut environ_storage,
+    pub entries: refbox::RefBox<environ_storage>,
+}
+
+impl Default for environ {
+    fn default() -> Self {
+        Self {
+            entries: refbox::RefBox::default(),
+        }
+    }
 }
 
 #[repr(C)]
@@ -15,7 +22,7 @@ pub struct environ_entry {
     pub name: std::ffi::CString,
     pub value: Option<std::ffi::CString>,
     pub flags: ::core::ffi::c_int,
-    pub owner: *mut environ,
+    pub owner: Option<refbox::Weak<environ_storage>>,
 }
 
 impl environ_entry {
@@ -24,7 +31,7 @@ impl environ_entry {
             name: Default::default(),
             value: Default::default(),
             flags: unsafe { ::core::mem::zeroed() },
-            owner: unsafe { ::core::mem::zeroed() },
+            owner: None,
         }
     }
 }

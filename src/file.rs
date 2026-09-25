@@ -370,9 +370,7 @@ pub unsafe extern "C" fn file_vprint(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -425,9 +423,7 @@ pub unsafe extern "C" fn file_print_buffer(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -480,9 +476,7 @@ pub unsafe extern "C" fn file_error(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1118,9 +1112,7 @@ pub unsafe extern "C" fn file_write_open(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1220,9 +1212,7 @@ pub unsafe extern "C" fn file_write_data(mut files: *mut client_files, mut imsg:
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1266,9 +1256,7 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1400,9 +1388,7 @@ pub unsafe extern "C" fn file_read_open(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1503,9 +1489,7 @@ pub unsafe extern "C" fn file_read_cancel(mut files: *mut client_files, mut imsg
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1548,9 +1532,7 @@ pub unsafe extern "C" fn file_write_ready(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1591,9 +1573,7 @@ pub unsafe extern "C" fn file_write_done(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1637,9 +1617,7 @@ pub unsafe extern "C" fn file_read_data(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1690,9 +1668,7 @@ pub unsafe extern "C" fn file_read_done(
         closed: 0,
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        entry: client_file_entry {
-            owner: std::ptr::null_mut(),
-        },
+        entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1717,16 +1693,22 @@ fn client_files_key(elm: &client_file) -> i32 {
     elm.stream
 }
 pub fn client_files_find(head: &client_files, elm: &client_file) -> *mut client_file {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("client file index already borrowed");
     let key = client_files_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub fn client_files_nfind(head: &client_files, elm: &client_file) -> *mut client_file {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("client file index already borrowed");
     let key = client_files_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
@@ -1737,17 +1719,18 @@ pub unsafe fn client_files_insert(
     elm: *mut client_file,
 ) -> *mut client_file {
     let key = client_files_key(&*elm);
-    let map = (*head)
-        .storage
-        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
-        .as_mut();
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("client file index already borrowed");
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
+            (*elm).entry.owner = Some(observer);
         }
     }
-    (*elm).entry.owner = map as *mut _;
     std::ptr::null_mut()
 }
 pub unsafe fn client_files_remove(
@@ -1758,23 +1741,32 @@ pub unsafe fn client_files_remove(
         return std::ptr::null_mut();
     }
     let key = client_files_key(&*elm);
-    let Some(map) = (*head).storage.as_deref_mut() else {
+    let Some(owner) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    if map.get(&key).copied() != Some(elm) {
-        return std::ptr::null_mut();
-    }
-    map.remove(&key);
-    (*elm).entry.owner = std::ptr::null_mut();
-    if map.is_empty() {
+    let empty = {
+        let mut map = owner
+            .try_borrow_mut()
+            .expect("client file index already borrowed");
+        if map.get(&key).copied() != Some(elm) {
+            return std::ptr::null_mut();
+        }
+        map.remove(&key);
+        map.is_empty()
+    };
+    (*elm).entry.owner = None;
+    if empty {
         (*head).storage = None;
     }
     elm
 }
 pub fn client_files_minmax(head: &client_files, direction: ::core::ffi::c_int) -> *mut client_file {
-    let Some(map) = head.storage.as_deref() else {
+    let Some(owner) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
+    let map = owner
+        .try_borrow_mut()
+        .expect("client file index already borrowed");
     let pair = if direction < 0 {
         map.first_key_value()
     } else {
@@ -1783,8 +1775,13 @@ pub fn client_files_minmax(head: &client_files, direction: ::core::ffi::c_int) -
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn client_files_next(elm: &client_file) -> *mut client_file {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("client file index already borrowed"),
     };
     let key = client_files_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
@@ -1792,11 +1789,63 @@ pub unsafe fn client_files_next(elm: &client_file) -> *mut client_file {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn client_files_prev(elm: &client_file) -> *mut client_file {
-    let Some(map) = elm.entry.owner.as_ref() else {
+    let Some(owner) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
+    };
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("client file index already borrowed"),
     };
     let key = client_files_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
+}
+
+#[cfg(test)]
+mod client_files_index_tests {
+    use super::*;
+
+    fn file(stream: i32) -> *mut client_file {
+        let mut file = Box::new(client_file::empty());
+        file.stream = stream;
+        Box::into_raw(file)
+    }
+
+    #[test]
+    fn client_file_index_observers_follow_move_duplicate_and_removal() {
+        unsafe {
+            let mut head = client_files { storage: None };
+            let mut other = client_files { storage: None };
+            let first = file(4);
+            let second = file(8);
+            let duplicate = file(4);
+
+            assert!(client_files_insert(&mut head, first).is_null());
+            assert!(client_files_insert(&mut head, second).is_null());
+            let index_observer = (*first).entry.owner.as_ref().unwrap().clone();
+            assert_eq!(client_files_insert(&mut head, duplicate), first);
+            assert!((*duplicate).entry.owner.is_none());
+            assert!(client_files_remove(&mut other, first).is_null());
+            assert!(unsafe { (*first).entry.owner.is_some() });
+
+            let mut moved = head;
+            assert_eq!(client_files_minmax(&moved, -1), first);
+            assert_eq!(client_files_next(&*first), second);
+            assert_eq!(client_files_remove(&mut moved, first), first);
+            assert!((*first).entry.owner.is_none());
+            assert!(client_files_next(&*first).is_null());
+            assert_eq!(client_files_remove(&mut moved, second), second);
+
+            drop(Box::from_raw(duplicate));
+            drop(Box::from_raw(first));
+            drop(Box::from_raw(second));
+            drop(moved);
+            assert!(matches!(
+                index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
+        }
+    }
 }

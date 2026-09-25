@@ -239,6 +239,8 @@ impl window_pane {
             ::core::ptr::addr_of_mut!((*pane).argv).write(Vec::new());
             ::core::ptr::addr_of_mut!((*pane).resize_queue).write(window_pane_resizes::default());
             ::core::ptr::addr_of_mut!((*pane).modes).write(window_pane_modes::default());
+            ::core::ptr::addr_of_mut!((*pane).tree_entry)
+                .write(window_pane_tree_entry { owner: None });
             ::core::ptr::addr_of_mut!((*pane).searchstr_owner).write(None);
             ::core::ptr::addr_of_mut!((*pane).shell_owner).write(None);
             ::core::ptr::addr_of_mut!((*pane).cwd_owner).write(None);
@@ -247,10 +249,9 @@ impl window_pane {
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_tree_entry {
-    pub owner: *mut std::collections::BTreeMap<u_int, *mut window_pane>,
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, *mut window_pane>>>,
 }
 
 /// Ordered mode stack owned by a pane. Each entry remains boxed so mode
@@ -505,7 +506,6 @@ impl window_pane_history {
 
 #[repr(C)]
 pub struct window_pane_tree {
-    /// The global pane index owns its allocation. Pane records keep only a
-    /// compatibility pointer in `tree_entry.owner` for traversal.
-    pub storage: Option<Box<std::collections::BTreeMap<u_int, *mut window_pane>>>,
+    /// The global pane index owns its map; the pane registry owns pane records.
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, *mut window_pane>>>,
 }

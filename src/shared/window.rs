@@ -42,11 +42,11 @@ pub const WINDOW_MODE_HIDE_SCROLLBARS: ::core::ffi::c_int = 0x8 as ::core::ffi::
 pub struct winlinks {
     /// The session owns the index allocation. The index itself owns the
     /// `RefBox` allocations for winlinks created by `winlink_add`.
-    pub storage:
-        Option<Box<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>>,
+    pub storage: Option<
+        refbox::RefBox<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
+    >,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlink {
     pub idx: ::core::ffi::c_int,
@@ -56,10 +56,11 @@ pub struct winlink {
     pub entry: winlink_entry,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlink_entry {
-    pub owner: *mut std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>,
+    pub owner: Option<
+        refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
+    >,
 }
 
 #[repr(C)]
@@ -113,11 +114,10 @@ pub struct window {
     pub entry: window_entry,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_entry {
-    /// Compatibility view of the owning boxed index; null after removal.
-    pub owner: *mut std::collections::BTreeMap<u_int, *mut window>,
+    /// Weak traversal handle into the index; cleared when this window is removed.
+    pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, *mut window>>>,
 }
 
 #[derive(Default)]
@@ -218,6 +218,6 @@ pub struct winlink_stack {
 
 #[repr(C)]
 pub struct windows {
-    /// The head owns the index allocation; window records remain externally owned.
-    pub storage: Option<Box<std::collections::BTreeMap<u_int, *mut window>>>,
+    /// The head owns the index; window records remain externally owned.
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, *mut window>>>,
 }

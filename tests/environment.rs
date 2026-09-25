@@ -56,11 +56,8 @@ fn borrowed_copy_and_entry_views_follow_their_owner() {
 
 #[test]
 fn owner_transfer_reclaims_the_same_c_tree_once() {
-    fn assert_copy<T: Copy>() {}
-
-    assert_copy::<environ>();
     assert!(std::mem::needs_drop::<EnvironOwner>());
-    assert!(!std::mem::needs_drop::<environ>());
+    assert!(std::mem::needs_drop::<environ>());
 
     let mut original = EnvironOwner::new();
     original.set(b"transferred", 0, b"owned").unwrap();
