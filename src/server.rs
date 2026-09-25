@@ -557,7 +557,7 @@ unsafe extern "C" fn server_send_exit() {
     }
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
-        let name = sessions_key(s);
+        let name = sessions_key(&*s);
         session_destroy(
             s,
             1 as ::core::ffi::c_int,

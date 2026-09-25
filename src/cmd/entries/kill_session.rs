@@ -161,7 +161,7 @@ unsafe extern "C" fn cmd_kill_session_all(
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
     sloop = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !sloop.is_null() {
-        let name = sessions_key(sloop);
+        let name = sessions_key(&*sloop);
         if !(sloop == s) {
             if !(cmd_kill_session_filter(item, sloop, filter) == 0) {
                 server_destroy_session(sloop);

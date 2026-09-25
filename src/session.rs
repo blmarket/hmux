@@ -132,10 +132,8 @@ pub unsafe extern "C" fn session_cmp(
         ((*s2).name).as_ptr().cast_mut(),
     );
 }
-pub(crate) unsafe fn sessions_key(elm: *mut session) -> Vec<u8> {
-    std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut())
-        .to_bytes()
-        .to_vec()
+pub(crate) fn sessions_key(elm: &session) -> Vec<u8> {
+    elm.name.as_bytes().to_vec()
 }
 pub unsafe fn sessions_find(head: *mut sessions, elm: *mut session) -> *mut session {
     let Some(map) = (*head).storage.as_deref() else {

@@ -364,7 +364,7 @@ pub unsafe extern "C" fn server_kill_window(mut w: *mut window, mut renumber: ::
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         // Destroying a group may remove both s and its next session.
-        let name = sessions_key(s);
+        let name = sessions_key(&*s);
         if !(session_has(s, w) == 0) {
             server_unzoom_window(w);
             loop {
@@ -766,7 +766,7 @@ pub unsafe extern "C" fn server_check_unattached() {
     let mut current_block_4: u64;
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
-        let name = sessions_key(s);
+        let name = sessions_key(&*s);
         if !((*s).attached != 0 as u_int) {
             match options_get_number(
                 (*s).options,
