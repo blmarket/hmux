@@ -17,11 +17,9 @@ use std::rc::{Rc, Weak};
 use std::time::Duration;
 pub use streams::*;
 
-#[repr(C)]
 pub struct event_base {
     _private: [u8; 0],
 }
-#[repr(C)]
 pub struct bufferevent_ops {
     _private: [u8; 0],
 }

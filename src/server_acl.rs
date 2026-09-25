@@ -12,7 +12,6 @@ use crate::src::shared::command::cmdq_item;
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
 use std::ffi::CString;
 
-#[repr(C)]
 pub struct server_acl_entry {
     pub id: id_t,
     pub flags: ::core::ffi::c_int,

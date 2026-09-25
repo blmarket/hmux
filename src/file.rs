@@ -34,6 +34,7 @@ use crate::src::tmux::find_home_cstr;
 use std::any::Any;
 use std::ffi::{CStr, CString};
 
+// These payloads are sent as raw bytes between clients and the server.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_read_open {

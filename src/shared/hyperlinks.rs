@@ -1,7 +1,6 @@
 //! Authoritative hyperlinks declarations, shared by the C translation units.
 
 use super::abi::u_int;
-#[repr(C)]
 /// Box-owned from `hyperlinks_init` through the final `hyperlinks_free`.
 /// URI nodes borrow this address.
 pub struct hyperlinks {
@@ -21,7 +20,6 @@ impl hyperlinks {
     }
 }
 
-#[repr(C)]
 pub struct hyperlinks_by_uri_tree {
     pub storage: Option<
         refbox::RefBox<
@@ -29,7 +27,6 @@ pub struct hyperlinks_by_uri_tree {
         >,
     >,
 }
-#[repr(C)]
 pub struct hyperlinks_uri {
     pub tree: *mut hyperlinks,
     pub inner: u_int,
@@ -53,7 +50,6 @@ impl hyperlinks_uri {
         }
     }
 }
-#[repr(C)]
 pub struct hyperlink_uri_entry {
     /// Weak traversal handle into the URI index.
     pub owner: Option<
@@ -62,12 +58,10 @@ pub struct hyperlink_uri_entry {
         >,
     >,
 }
-#[repr(C)]
 pub struct hyperlink_inner_entry {
     /// Weak traversal handle into the inner-ID index.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, *mut hyperlinks_uri>>>,
 }
-#[repr(C)]
 pub struct hyperlinks_by_inner_tree {
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, *mut hyperlinks_uri>>>,
 }

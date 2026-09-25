@@ -11,14 +11,12 @@ use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
 use std::ffi::CStr;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct tty_feature {
     pub name: &'static ::std::ffi::CStr,
     pub capabilities: *const *const ::core::ffi::c_char,
     pub flags: ::core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct C2RustUnnamed_35 {
     pub name: *const ::core::ffi::c_char,
     pub version: u_int,

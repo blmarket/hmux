@@ -64,7 +64,6 @@ unsafe fn prompt_trim_buffer(pr: &mut prompt) {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct prompt_layout {
     pub area_x: u_int,
     pub area_width: u_int,

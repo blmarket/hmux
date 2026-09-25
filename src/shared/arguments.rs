@@ -34,7 +34,6 @@ mod tests {
     }
 }
 
-#[repr(C)]
 pub struct args {
     pub tree: args_tree,
     pub count: u_int,
@@ -137,7 +136,6 @@ impl args_value {
 }
 
 #[derive(Clone)]
-#[repr(C)]
 pub struct args_value_entry {
     /// Owner collection used by args_next_value; this is not a neighbor link.
     pub owner: Option<Weak<args_values_storage>>,
@@ -145,7 +143,6 @@ pub struct args_value_entry {
     pub index: usize,
 }
 
-#[repr(C)]
 pub struct args_tree {
     pub entries: RefBox<args_tree_storage>,
 }
@@ -164,7 +161,6 @@ pub struct args_tree_storage {
     pub(crate) entries: BTreeMap<u_char, *mut args_entry>,
 }
 
-#[repr(C)]
 /// Box-owned by the enclosing args tree; dropping it also drops its values.
 pub struct args_entry {
     pub flag: u_char,
@@ -175,7 +171,6 @@ pub struct args_entry {
     pub(crate) owner: Option<Weak<args_tree_storage>>,
 }
 
-#[repr(C)]
 /// Rust-owned head for an argument entry's flag values. The first-element view
 /// remains a raw pointer for translated callers; storage is owned by RefBox.
 /// This internal layout is not a C ABI contract.
@@ -195,7 +190,6 @@ pub type args_parse_cb = Option<
 >;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct args_parse {
     pub template: *const ::core::ffi::c_char,
     pub lower: ::core::ffi::c_int,
@@ -203,7 +197,6 @@ pub struct args_parse {
     pub cb: args_parse_cb,
 }
 
-#[repr(C)]
 pub struct args_command_state {
     pub cmdlist: *mut cmd_list,
     pub cmd: Option<std::ffi::CString>,

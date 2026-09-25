@@ -2,7 +2,6 @@
 
 pub type __builtin_va_list = [__va_list_tag; 1];
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct __va_list_tag {
     pub gp_offset: ::core::ffi::c_uint,
     pub fp_offset: ::core::ffi::c_uint,

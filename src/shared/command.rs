@@ -145,7 +145,6 @@ mod tests {
     }
 }
 
-#[repr(C)]
 pub struct cmdq_item {
     pub name: Option<std::ffi::CString>,
     pub queue: *mut cmdq_list,
@@ -198,7 +197,6 @@ impl cmdq_item {
 
 pub type cmds = Vec<*mut cmd>;
 
-#[repr(C)]
 /// Box-owned by a client until `cmdq_free`; the lazy global queue lives for
 /// the process. The deque owns stable command item allocations.
 pub struct cmdq_list {
@@ -222,7 +220,6 @@ impl cmdq_list {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_find_state {
     pub flags: ::core::ffi::c_int,
     pub current: *mut cmd_find_state,
@@ -233,7 +230,6 @@ pub struct cmd_find_state {
     pub idx: ::core::ffi::c_int,
 }
 
-#[repr(C)]
 /// Box-owned from `cmd_list_new` until the last explicit reference is freed.
 pub struct cmd_list {
     pub references: ::core::ffi::c_int,
@@ -242,7 +238,6 @@ pub struct cmd_list {
     pub list: *mut Vec<*mut cmd>,
 }
 
-#[repr(C)]
 pub struct cmd {
     pub entry: *const cmd_entry,
     pub args: *mut args,
@@ -266,7 +261,6 @@ impl cmd {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_entry_flag {
     pub flag: ::core::ffi::c_char,
     pub type_0: cmd_find_type,
@@ -274,7 +268,6 @@ pub struct cmd_entry_flag {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_entry {
     pub name: *const ::core::ffi::c_char,
     pub alias: *const ::core::ffi::c_char,
@@ -286,7 +279,6 @@ pub struct cmd_entry {
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
 
-#[repr(C)]
 /// Box-owned while its explicit `references` count is nonzero; queue items
 /// and callers hold counted raw pointers released through `cmdq_free_state`.
 pub struct cmdq_state {
@@ -303,13 +295,11 @@ pub type cmdq_cb =
 pub type cmdq_type = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct wait_item {
     pub item: *mut cmdq_item,
 }
 
 #[derive(Clone)]
-#[repr(C)]
 pub struct cmd_parse_input {
     pub flags: ::core::ffi::c_int,
     pub file: Option<::std::ffi::CString>,

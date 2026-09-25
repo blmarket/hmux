@@ -11,7 +11,6 @@ use crate::src::text::utf8::{utf8_append, utf8_open, utf8_set};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct fuzzy_char {
     pub align: style_align,
     pub ud: utf8_data,
@@ -19,7 +18,6 @@ pub struct fuzzy_char {
     pub offset: u_int,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct fuzzy_term {
     pub inverse: ::core::ffi::c_int,
     pub exact: ::core::ffi::c_int,

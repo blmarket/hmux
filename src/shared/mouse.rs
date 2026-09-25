@@ -2,7 +2,6 @@
 
 use super::{abi::u_int, key::key_code};
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct mouse_event {
     pub valid: ::core::ffi::c_int,
     pub ignore: ::core::ffi::c_int,

@@ -8,13 +8,11 @@ use crate::src::shared::tty::*;
 use crate::src::tty_term::{tty_term_has, tty_term_number};
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct tty_acs_entry {
     pub key: u_char,
     pub string: &'static ::std::ffi::CStr,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct tty_acs_reverse_entry {
     pub string: &'static ::std::ffi::CStr,
     pub key: u_char,

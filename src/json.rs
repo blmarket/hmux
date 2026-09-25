@@ -49,14 +49,12 @@ pub const NODE_BOOLEAN: json_node_type = 2;
 pub const NODE_NUMBER: json_node_type = 1;
 pub const NODE_STRING: json_node_type = 0;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct json_parse_ctx {
     pub input: *const ::core::ffi::c_char,
     pub cause: *mut Option<CString>,
     pub depth: ::core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct json_token {
     pub type_0: json_token_type,
     pub offset: ::core::ffi::c_int,

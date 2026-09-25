@@ -2,7 +2,6 @@ use crate::src::ffi::libc::{getenv, strchr, strlen, strncmp, warnx};
 use crate::src::shared::abi::*;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct option {
     pub name: *const ::core::ffi::c_char,
     pub has_arg: ::core::ffi::c_int,

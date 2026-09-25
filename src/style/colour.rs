@@ -13,7 +13,6 @@ use crate::src::shared::options::{options, options_array_item, options_entry, op
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS, TTY_OPENED};
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct C2RustUnnamed_36 {
     pub name: *const ::core::ffi::c_char,
     pub dark_option: *const ::core::ffi::c_char,
@@ -21,7 +20,6 @@ pub struct C2RustUnnamed_36 {
     pub terminal_colour: ::core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct C2RustUnnamed_37 {
     pub name: *const ::core::ffi::c_char,
     pub c: ::core::ffi::c_int,

@@ -20,7 +20,6 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct C2RustUnnamed_35 {
     pub name: *const ::core::ffi::c_char,
     pub cb: events_cb,

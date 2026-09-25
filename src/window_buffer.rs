@@ -51,7 +51,6 @@ use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
 use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct window_buffer_modedata {
     pub wp: *mut window_pane,
     pub fs: cmd_find_state,
@@ -63,7 +62,6 @@ pub struct window_buffer_modedata {
     pub key_format: CString,
     item_list: Vec<Box<window_buffer_itemdata>>,
 }
-#[repr(C)]
 pub struct window_buffer_itemdata {
     pub name: std::ffi::CString,
     pub order: u_int,
@@ -83,7 +81,6 @@ impl window_buffer_itemdata {
 // The mode tree borrows `item` during callbacks. The box keeps its address
 // stable as the list grows, and owns the edit name for the callback lifetime.
 
-#[repr(C)]
 pub struct window_buffer_editdata {
     pub wp_id: u_int,
     pub name: Option<::std::ffi::CString>,

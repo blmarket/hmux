@@ -64,7 +64,6 @@ use crate::src::tty::tty_resize;
 use crate::src::tty_draw::tty_draw_line;
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct popup_data {
     pub c: *mut client,
     pub item: *mut cmdq_item,

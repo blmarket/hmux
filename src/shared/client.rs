@@ -117,7 +117,6 @@ mod tests {
     }
 }
 
-#[repr(C)]
 pub struct client {
     pub name: Option<std::ffi::CString>,
     pub peer: *mut tmuxpeer,
@@ -280,13 +279,11 @@ impl client {
     }
 }
 
-#[repr(C)]
 pub struct client_files {
     /// The client owns its stream index; file records remain externally owned.
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<i32, *mut client_file>>>,
 }
 
-#[repr(C)]
 pub struct client_file {
     pub c: *mut client,
     pub peer: *mut tmuxpeer,
@@ -335,7 +332,6 @@ impl client_file {
     }
 }
 
-#[repr(C)]
 pub struct client_file_entry {
     /// Weak traversal handle into the client file index.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<i32, *mut client_file>>>,

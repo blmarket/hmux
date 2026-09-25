@@ -4,7 +4,6 @@ use super::abi::*;
 use super::grid::*;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct style {
     pub gc: grid_cell,
     pub ignore: ::core::ffi::c_int,
@@ -53,14 +52,12 @@ pub const STYLE_ALIGN_LEFT: style_align = 1;
 pub const STYLE_ALIGN_DEFAULT: style_align = 0;
 
 #[derive(Clone)]
-#[repr(C)]
 pub struct style_line_entry {
     pub expanded: Option<::std::ffi::CString>,
     pub ranges: style_ranges,
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct style_ranges {
     /// Box-owned Vec storage; null means empty or uninitialized.
     pub ranges: *mut Vec<Box<style_range>>,
@@ -104,7 +101,6 @@ impl style_ranges {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct style_range {
     pub type_0: style_range_type,
     pub argument: u_int,

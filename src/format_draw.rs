@@ -22,7 +22,6 @@ use std::ffi::{CStr, CString};
 
 pub const TOTAL: C2RustUnnamed_39 = 8;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct format_range {
     pub index: u_int,
     pub s: *mut screen,

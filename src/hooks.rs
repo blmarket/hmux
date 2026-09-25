@@ -85,7 +85,6 @@ impl HooksEvents {
     }
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct hooks_data {
     pub name: *const ::core::ffi::c_char,
     pub fs: cmd_find_state,
@@ -94,7 +93,6 @@ pub struct hooks_data {
     pub client: *mut client,
     pub expand: ::core::ffi::c_int,
 }
-#[repr(C)]
 pub struct hooks_monitor {
     // options_entry.monitor_data owns the boxed record; callbacks only borrow it.
     pub oo: *mut options,

@@ -10,7 +10,6 @@ use super::{
 use std::collections::VecDeque;
 use std::ffi::CString;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct screen_sel {
     pub hidden: ::core::ffi::c_int,
     pub rectangle: ::core::ffi::c_int,
@@ -25,7 +24,6 @@ pub struct screen_sel {
 /// Kept as a compatibility name for translated modules that import the old
 /// history type. Screen history is now stored inline as owned C strings.
 pub type screen_titles = VecDeque<CString>;
-#[repr(C)]
 pub struct screen {
     pub title: CString,
     pub path: Option<CString>,

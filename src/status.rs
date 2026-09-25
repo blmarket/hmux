@@ -68,7 +68,6 @@ use crate::src::shared::tty::{TTY_FREEZE, TTY_NOCURSOR};
 use crate::src::shared::window::winlink;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct status_prompt_data {
     pub c: *mut client,
     pub inputcb: status_prompt_input_cb,

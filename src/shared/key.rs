@@ -2153,7 +2153,6 @@ pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 
 pub const MODEKEY_VI: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
-#[repr(C)]
 pub struct key_event {
     pub client: *mut client,
     pub key: key_code,
@@ -2187,7 +2186,6 @@ impl key_event {
     }
 }
 
-#[repr(C)]
 pub struct key_table {
     pub name: std::ffi::CString,
     pub activity_time: timeval,
@@ -2210,13 +2208,11 @@ impl key_table {
     }
 }
 
-#[repr(C)]
 pub struct key_table_entry {
     /// Weak traversal handle into the key table index.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, *mut key_table>>>,
 }
 
-#[repr(C)]
 pub struct key_bindings {
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u64, *mut key_binding>>>,
 }
@@ -2227,7 +2223,6 @@ impl Default for key_bindings {
     }
 }
 
-#[repr(C)]
 pub struct key_binding {
     pub key: key_code,
     pub cmdlist: *mut cmd_list,
@@ -2250,7 +2245,6 @@ impl key_binding {
     }
 }
 
-#[repr(C)]
 pub struct key_binding_entry {
     /// Weak traversal handle into the key binding index.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u64, *mut key_binding>>>,

@@ -90,7 +90,6 @@ use crate::src::xmalloc::xvasprintf_cstring;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct window_copy_mode_data {
     pub screen: screen,
     /// Owned boxed screen; callbacks borrow this pointer until refresh or mode teardown.
@@ -188,7 +187,6 @@ pub type window_copy_cmd_clear = ::core::ffi::c_uint;
 pub const WINDOW_COPY_CMD_CLEAR_EMACS_ONLY: window_copy_cmd_clear = 2;
 pub const WINDOW_COPY_CMD_CLEAR_ALWAYS: window_copy_cmd_clear = 0;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_copy_cmd_state {
     pub wme: *mut window_mode_entry,
     pub args: *mut args,
@@ -199,7 +197,6 @@ pub struct window_copy_cmd_state {
     pub wl: *mut winlink,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct C2RustUnnamed_46 {
     pub command: *const ::core::ffi::c_char,
     pub minargs: u_int,

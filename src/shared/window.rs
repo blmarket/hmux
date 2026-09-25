@@ -38,7 +38,6 @@ pub const WINDOW_MODE_HIDE_PANE_STATUS: ::core::ffi::c_int = 0x1 as ::core::ffi:
 pub const WINDOW_MODE_NO_STACK: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const WINDOW_MODE_HIDE_SCROLLBARS: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 
-#[repr(C)]
 pub struct winlinks {
     /// The session owns the index allocation. The index itself owns the
     /// `RefBox` allocations for winlinks created by `winlink_add`.
@@ -47,7 +46,6 @@ pub struct winlinks {
     >,
 }
 
-#[repr(C)]
 pub struct winlink {
     pub idx: ::core::ffi::c_int,
     pub session: *mut session,
@@ -56,14 +54,12 @@ pub struct winlink {
     pub entry: winlink_entry,
 }
 
-#[repr(C)]
 pub struct winlink_entry {
     pub owner: Option<
         refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
     >,
 }
 
-#[repr(C)]
 /// Box-owned window record; references remain managed by window_add_ref/remove_ref.
 pub struct window {
     pub id: u_int,
@@ -114,7 +110,6 @@ pub struct window {
     pub entry: window_entry,
 }
 
-#[repr(C)]
 pub struct window_entry {
     /// Weak traversal handle into the index; cleared when this window is removed.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, *mut window>>>,
@@ -126,13 +121,11 @@ pub struct WindowWinlinksStorage {
     pub(crate) positions: std::collections::HashMap<*mut winlink, usize>,
 }
 
-#[repr(C)]
 pub struct window_winlinks {
     /// Ordered non-owning handles; session BTreeMaps own the RefBox allocations.
     pub storage: Option<Box<WindowWinlinksStorage>>,
 }
 
-#[repr(C)]
 pub struct window_mode_entry {
     pub wp: *mut window_pane,
     pub swp: *mut window_pane,
@@ -144,7 +137,6 @@ pub struct window_mode_entry {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_mode {
     pub name: &'static ::std::ffi::CStr,
     pub default_format: *const ::core::ffi::c_char,
@@ -207,7 +199,6 @@ impl Default for window_mode {
     }
 }
 
-#[repr(C)]
 pub struct winlink_stack {
     /// Weak visit history; the session owns the deque and the ordered index
     /// owns each link.
@@ -216,7 +207,6 @@ pub struct winlink_stack {
     pub reserved: *mut ::core::ffi::c_void,
 }
 
-#[repr(C)]
 pub struct windows {
     /// The head owns the index; window records remain externally owned.
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, *mut window>>>,

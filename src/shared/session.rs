@@ -7,7 +7,6 @@ use super::options::options;
 use super::terminal::termios;
 use super::window::{winlink, winlink_stack, winlinks};
 
-#[repr(C)]
 pub struct session {
     pub id: u_int,
     pub name: std::ffi::CString,
@@ -61,18 +60,15 @@ impl session {
     }
 }
 
-#[repr(C)]
 pub struct session_entry {
     /// Weak traversal handle into the session index.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, *mut session>>>,
 }
 
-#[repr(C)]
 pub struct sessions {
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, *mut session>>>,
 }
 
-#[repr(C)]
 pub struct session_group {
     pub name: std::ffi::CString,
     pub entry: session_group_entry,
@@ -89,13 +85,11 @@ impl session_group {
     }
 }
 
-#[repr(C)]
 pub struct session_group_entry {
     /// Weak traversal handle into the session group index.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>>,
 }
 
-#[repr(C)]
 pub struct session_groups {
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>>,
 }

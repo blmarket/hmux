@@ -31,7 +31,6 @@ pub const PANE_LINES_SINGLE: pane_lines = 0;
 pub const PANE_LINES_SPACES: pane_lines = 5;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct layout_geometry {
     pub sx: u_int,
     pub sy: u_int,

@@ -49,7 +49,6 @@ use crate::src::style::style_apply;
 use crate::src::window::{window_pane_reset_mode, window_pane_stack_first};
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct window_client_modedata {
     pub wp: *mut window_pane,
     pub data: *mut mode_tree_data,

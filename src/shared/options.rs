@@ -65,7 +65,6 @@ mod tests {
 
 /// Box-owned by options_create; parent and entry back-pointers are borrowed.
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct options {
     pub tree: *mut options_storage,
     pub parent: *mut options,
@@ -73,14 +72,12 @@ pub struct options {
 
 /// Box-owned by options_array_new; returned key and value pointers expire when
 /// the item is removed.
-#[repr(C)]
 pub struct options_array_item {
     pub key: CString,
     pub value: options_value,
     pub owner: *mut options_entry,
 }
 
-#[repr(C)]
 pub struct options_entry {
     pub owner: *mut options,
     pub name: ::std::ffi::CString,
@@ -94,7 +91,6 @@ pub struct options_entry {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct options_array {
     pub storage: *mut options_array_storage,
 }
@@ -153,7 +149,6 @@ impl options_value {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct options_table_entry {
     pub name: *const ::core::ffi::c_char,
     pub alternative_name: *const ::core::ffi::c_char,
@@ -192,7 +187,6 @@ pub struct options_array_storage {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct options_name_map {
     pub from: &'static ::std::ffi::CStr,
     pub to: &'static ::std::ffi::CStr,

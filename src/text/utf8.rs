@@ -24,7 +24,6 @@ use crate::src::tmux::global_options;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 /// Dynamic entries are Box-owned while indexed; static defaults have
 /// `allocated == 0` and must never be passed to `Box::from_raw`.
 pub struct utf8_width_item {
@@ -37,7 +36,6 @@ pub struct utf8_width_cache {
     entries: std::collections::BTreeMap<wchar_t, *mut utf8_width_item>,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct utf8_item {
     pub index: u_int,
     pub data: [::core::ffi::c_char; 32],

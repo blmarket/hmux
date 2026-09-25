@@ -74,7 +74,6 @@ use crate::src::window::{
 };
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct window_tree_modedata {
     pub wp: *mut window_pane,
     pub dead: ::core::ffi::c_int,
@@ -105,7 +104,6 @@ pub const WINDOW_TREE_WINDOW: window_tree_type = 2;
 pub const WINDOW_TREE_SESSION: window_tree_type = 1;
 pub const WINDOW_TREE_NONE: window_tree_type = 0;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_tree_itemdata {
     pub type_0: window_tree_type,
     pub session: ::core::ffi::c_int,

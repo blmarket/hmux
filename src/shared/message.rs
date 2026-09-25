@@ -63,6 +63,7 @@ mod tests {
     }
 }
 
+// The header is written verbatim to the imsg stream and must match C peers.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct imsg_hdr {
@@ -78,7 +79,6 @@ pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 
 pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 
-#[repr(C)]
 pub struct ibuf {
     pub buf: *mut ::core::ffi::c_uchar,
     pub size: size_t,
@@ -108,19 +108,16 @@ impl Drop for ibuf {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct imsg {
     pub hdr: imsg_hdr,
     pub data: *mut ::core::ffi::c_void,
     pub buf: *mut ibuf,
 }
 
-#[repr(C)]
 pub struct ibufqueue {
     pub bufs: ibufqueue_bufs,
 }
 
-#[repr(C)]
 pub struct msgbuf {
     pub bufs: ibufqueue,
     pub rbufs: ibufqueue,
@@ -139,7 +136,6 @@ pub struct msgbuf {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct imsgbuf {
     pub w: *mut msgbuf,
     pub pid: pid_t,
@@ -212,6 +208,7 @@ impl ibufqueue {
     }
 }
 
+// This prefix is sent verbatim before command bytes and shares the C wire layout.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_command {

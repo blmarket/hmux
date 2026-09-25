@@ -3,7 +3,6 @@ use crate::src::shared::errno::{EINVAL, ERANGE};
 use crate::src::shared::limits::__LONG_LONG_MAX__;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct errval {
     pub errstr: *const ::core::ffi::c_char,
     pub err: ::core::ffi::c_int,

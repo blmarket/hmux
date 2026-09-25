@@ -19,7 +19,6 @@ use crate::src::shared::event::*;
 use crate::src::tty::tty_set_selection;
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct cmd_load_buffer_data {
     pub client: *mut client,
     pub item: *mut cmdq_item,

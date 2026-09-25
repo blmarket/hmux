@@ -114,7 +114,6 @@ pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 
 /// Box-owned by format_create; borrowed pointers are invalid after format_free.
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct format_tree {
     pub type_0: format_type,
     pub c: *mut client,
@@ -139,7 +138,6 @@ pub struct format_job_tree {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct format_entry_tree {
     pub entries: *mut format_entry_tree_storage,
 }
@@ -151,7 +149,6 @@ pub struct format_entry_tree_storage {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut format_entry>,
 }
 
-#[repr(C)]
 pub struct format_entry {
     pub key: std::ffi::CString,
     pub value: Option<std::ffi::CString>,
@@ -176,7 +173,6 @@ pub type format_cb = Option<unsafe extern "C" fn(*mut format_tree) -> *mut ::cor
 
 pub type format_type = ::core::ffi::c_uint;
 
-#[repr(C)]
 pub struct format_job {
     pub client: *mut client,
     pub tag: u_int,

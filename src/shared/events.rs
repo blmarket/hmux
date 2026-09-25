@@ -9,7 +9,6 @@ use super::session::session;
 use super::window::window;
 use std::collections::BTreeMap;
 
-#[repr(C)]
 /// Box-owned by its creator until `event_payload_free`. `events_fire` lends
 /// this stable address to callbacks, then frees items and target references.
 pub struct event_payload {
@@ -22,7 +21,6 @@ pub type event_payload_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c
 pub type event_payload_print_cb =
     Option<unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut evbuffer) -> ()>;
 
-#[repr(C)]
 pub struct event_payload_item {
     pub name: Option<std::ffi::CString>,
     pub type_0: event_payload_type,
@@ -46,7 +44,6 @@ impl event_payload_item {
     }
 }
 
-#[repr(C)]
 pub struct events_sink {
     pub name: std::ffi::CString,
     pub cb: events_cb,
@@ -75,7 +72,6 @@ pub type events_cb = Option<
     ) -> (),
 >;
 
-#[repr(C)]
 pub struct event_payload_tree {
     pub entries: refbox::RefBox<event_payload_tree_storage>,
 }
@@ -96,7 +92,6 @@ pub struct event_payload_tree_storage {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub union event_payload_item_c2rust_unnamed {
     pub string: *mut ::core::ffi::c_char,
     pub time: time_t,
@@ -110,7 +105,6 @@ pub union event_payload_item_c2rust_unnamed {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct event_payload_item_c2rust_unnamed_pointer {
     pub ptr: *mut ::core::ffi::c_void,
     pub free_cb: event_payload_free_cb,

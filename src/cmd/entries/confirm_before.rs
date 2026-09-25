@@ -20,7 +20,6 @@ use crate::src::status::status_prompt_set;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_confirm_before_data {
     pub item: *mut cmdq_item,
     pub cmdlist: *mut cmd_list,

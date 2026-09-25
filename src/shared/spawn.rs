@@ -22,7 +22,6 @@ pub const SPAWN_MODAL: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
 pub const SPAWN_FLOATOVERZOOM: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
 pub const SPAWN_NONOTIFY: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 
-#[repr(C)]
 pub struct spawn_editor_state {
     pub path: std::ffi::CString,
     pub pid: pid_t,
@@ -44,7 +43,6 @@ impl spawn_editor_state {
 /// Rust-only callback so the editor result can move as owned binary bytes.
 pub type spawn_finish_edit_cb = Option<unsafe fn(Option<Vec<u8>>, *mut ::core::ffi::c_void) -> ()>;
 
-#[repr(C)]
 pub struct spawn_context {
     pub item: *mut cmdq_item,
     pub s: *mut session,
