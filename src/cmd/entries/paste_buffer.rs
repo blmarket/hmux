@@ -97,9 +97,9 @@ pub static mut cmd_paste_buffer_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe fn cmd_paste_buffer_paste(wp: *mut window_pane, buf: &[u8]) {
+unsafe fn cmd_paste_buffer_paste(wp: &window_pane, buf: &[u8]) {
     let escaped = utf8_stravisx_bytes(buf, VIS_SAFE | VIS_NOSLASH);
-    bufferevent_write((*wp).event, escaped.as_ptr().cast(), escaped.len());
+    bufferevent_write(wp.event, escaped.as_ptr().cast(), escaped.len());
 }
 unsafe extern "C" fn cmd_paste_buffer_exec(
     mut self_0: *mut cmd,
@@ -176,7 +176,7 @@ unsafe extern "C" fn cmd_paste_buffer_exec(
                 bufferevent_write((*wp).event, bufdata as *const ::core::ffi::c_void, len);
             } else {
                 cmd_paste_buffer_paste(
-                    wp,
+                    &*wp,
                     std::slice::from_raw_parts(bufdata.cast::<u8>(), len),
                 );
             }
@@ -189,7 +189,7 @@ unsafe extern "C" fn cmd_paste_buffer_exec(
                 bufferevent_write((*wp).event, bufdata as *const ::core::ffi::c_void, len);
             } else {
                 cmd_paste_buffer_paste(
-                    wp,
+                    &*wp,
                     std::slice::from_raw_parts(bufdata.cast::<u8>(), len),
                 );
             }
