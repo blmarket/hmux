@@ -2999,9 +2999,8 @@ pub(crate) fn window_pane_set_cwd(wp: &mut window_pane, cwd: Option<CString>) {
 
 /// A prior `pane.r.ranges` element pointer is invalid after this function
 /// grows the vector. All callers consume the view before asking for new ranges.
-pub(crate) unsafe fn window_pane_ensure_visible_ranges(wp: *mut window_pane, n: u_int) {
-    let r = &mut (*wp).r;
-    r.ensure(n);
+pub(crate) fn window_pane_ensure_visible_ranges(wp: &mut window_pane, n: u_int) {
+    wp.r.ensure(n);
 }
 
 unsafe extern "C" fn window_pane_create(

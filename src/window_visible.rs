@@ -88,7 +88,7 @@ unsafe fn window_visible_ensure_ranges(wp: *mut window_pane, r: *mut visible_ran
         server_client_ensure_ranges(r, n);
         return;
     }
-    window_pane_ensure_visible_ranges(wp, n);
+    window_pane_ensure_visible_ranges(&mut *wp, n);
 }
 
 #[no_mangle]
