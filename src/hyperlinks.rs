@@ -336,12 +336,7 @@ fn hyperlinks_by_uri_tree_key(elm: &hyperlinks_uri) -> (bool, Vec<u8>, Vec<u8>, 
         if id.is_empty() {
             (true, Vec::new(), Vec::new(), elm.inner)
         } else {
-            (
-                false,
-                id.to_vec(),
-                elm.uri.as_bytes().to_vec(),
-                0,
-            )
+            (false, id.to_vec(), elm.uri.as_bytes().to_vec(), 0)
         }
     }
 }

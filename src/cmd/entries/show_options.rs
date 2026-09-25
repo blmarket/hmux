@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_print};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::format::{
     format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
     format_single_from_target_cstring,

@@ -1264,7 +1264,11 @@ pub unsafe extern "C" fn tty_term_apply_overrides(mut term: *mut tty_term) {
         offset = 0 as size_t;
         first = tty_term_override_next(s, &raw mut offset);
         if !first.is_null()
-            && fnmatch(first, ((*term).name).as_ptr().cast_mut(), 0 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int
+            && fnmatch(
+                first,
+                ((*term).name).as_ptr().cast_mut(),
+                0 as ::core::ffi::c_int,
+            ) == 0 as ::core::ffi::c_int
         {
             tty_term_apply(term, s.offset(offset as isize), 0 as ::core::ffi::c_int);
         }
@@ -1382,10 +1386,19 @@ pub unsafe fn tty_term_create(
         name,
     );
     // The global list and tty keep this address until tty_term_free.
-    let mut owner = Box::new(tty_term { name: CStr::from_ptr(name).to_owned(), tty: ::core::ptr::null_mut(), applied_features: 0, acs: [[0; 2]; 256], codes: ::core::ptr::null_mut(), flags: 0, entry: tty_term_entry {
-                le_next: ::core::ptr::null_mut(),
-                le_prev: ::core::ptr::null_mut(),
-            }, strings: vec![None; tty_term_ncodes() as usize] });
+    let mut owner = Box::new(tty_term {
+        name: CStr::from_ptr(name).to_owned(),
+        tty: ::core::ptr::null_mut(),
+        applied_features: 0,
+        acs: [[0; 2]; 256],
+        codes: ::core::ptr::null_mut(),
+        flags: 0,
+        entry: tty_term_entry {
+            le_next: ::core::ptr::null_mut(),
+            le_prev: ::core::ptr::null_mut(),
+        },
+        strings: vec![None; tty_term_ncodes() as usize],
+    });
 
     term = &raw mut *owner;
     let _ = Box::into_raw(owner);
@@ -1416,7 +1429,8 @@ pub unsafe fn tty_term_create(
                 if !(strncmp((*ent).name.as_ptr(), *caps.offset(i as isize), namelen)
                     != 0 as ::core::ffi::c_int)
                 {
-                    if !(*(*ent).name.as_ptr().offset(namelen as isize) as ::core::ffi::c_int != '\0' as i32)
+                    if !(*(*ent).name.as_ptr().offset(namelen as isize) as ::core::ffi::c_int
+                        != '\0' as i32)
                     {
                         code = (*term).codes.offset(j as isize) as *mut tty_code;
                         tty_term_replace_string(&mut *term, j as usize, None);
@@ -1473,7 +1487,11 @@ pub unsafe fn tty_term_create(
         offset = 0 as size_t;
         first = tty_term_override_next(s, &raw mut offset);
         if !first.is_null()
-            && fnmatch(first, ((*term).name).as_ptr().cast_mut(), 0 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int
+            && fnmatch(
+                first,
+                ((*term).name).as_ptr().cast_mut(),
+                0 as ::core::ffi::c_int,
+            ) == 0 as ::core::ffi::c_int
         {
             tty_parse_client_features(
                 c,
@@ -1491,15 +1509,23 @@ pub unsafe fn tty_term_create(
     if !envent.is_null() {
         log_debug(
             b"%s COLORTERM=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*envent).value)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         if strcasecmp(
-            ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*envent).value)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             b"truecolor\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
             || strcasecmp(
-                ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 b"24bit\0" as *const u8 as *const ::core::ffi::c_char,
             ) == 0 as ::core::ffi::c_int
         {
@@ -1509,7 +1535,9 @@ pub unsafe fn tty_term_create(
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );
         } else if !strstr(
-            ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*envent).value)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             b"256\0" as *const u8 as *const ::core::ffi::c_char,
         )
         .is_null()

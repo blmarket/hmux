@@ -1,9 +1,9 @@
 use crate::src::arguments::args_has;
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_target, cmdq_insert_hook,
 };
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::server_redraw_session;
 use crate::src::session::{session_last, session_next, session_previous, session_select};

@@ -1,6 +1,6 @@
 use crate::src::ffi::libc::memcpy;
-use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
 use crate::src::grid::view::grid_view_get_cell;
+use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
 use crate::src::log::{fatalx, log_debug, log_get_level};
 use crate::src::screen::screen_select_cell;
 use crate::src::shared::abi::*;
@@ -48,9 +48,7 @@ use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tty::TTY_NOCURSOR;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::{
-    tty, tty_code, tty_key, tty_style_ctx, tty_term, tty_term_entry,
-};
+use crate::src::shared::tty::{tty, tty_code, tty_key, tty_style_ctx, tty_term, tty_term_entry};
 use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,

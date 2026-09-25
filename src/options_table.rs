@@ -253,10 +253,7 @@ pub static mut options_other_names: [options_name_map; 8] = [
         from: c"pane-colors",
         to: c"pane-colours",
     },
-    options_name_map {
-        from: c"",
-        to: c"",
-    },
+    options_name_map { from: c"", to: c"" },
 ];
 #[no_mangle]
 pub static mut options_table: [options_table_entry; 273] = [options_table_entry {

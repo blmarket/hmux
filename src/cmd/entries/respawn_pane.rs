@@ -133,11 +133,7 @@ unsafe extern "C" fn cmd_respawn_pane_exec(
     sc.environ = environ_create();
     av = args_first_value(args, 'e' as i32 as u_char);
     while !av.is_null() {
-        environ_put(
-            sc.environ,
-            (*av).string_ptr(),
-            0 as ::core::ffi::c_int,
-        );
+        environ_put(sc.environ, (*av).string_ptr(), 0 as ::core::ffi::c_int);
         av = args_next_value(av);
     }
     sc.idx = -(1 as ::core::ffi::c_int);

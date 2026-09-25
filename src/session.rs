@@ -59,9 +59,7 @@ use crate::src::shared::redraw::redraw_scene;
 use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 use crate::src::shared::screen_write::screen_write_cline;
 use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::session::{
-    session_group, session_group_entry, session_groups, sessions,
-};
+use crate::src::shared::session::{session_group, session_group_entry, session_groups, sessions};
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::status::status_line;
@@ -258,9 +256,13 @@ pub unsafe fn session_groups_nfind(
 }
 impl session_group {
     pub fn new(name: &std::ffi::CStr) -> Box<Self> {
-        let mut owner = Box::new(session_group { name: name.to_owned(), entry: session_group_entry {
-                    owner: std::ptr::null_mut(),
-                }, members: Vec::new() });
+        let mut owner = Box::new(session_group {
+            name: name.to_owned(),
+            entry: session_group_entry {
+                owner: std::ptr::null_mut(),
+            },
+            members: Vec::new(),
+        });
 
         owner
     }
@@ -463,7 +465,10 @@ pub unsafe extern "C" fn session_create(
     (*s).options = oo;
     status_update_cache(s);
     if !name.is_null() {
-        drop(session_replace_name(&mut *s, CStr::from_ptr(name).to_owned()));
+        drop(session_replace_name(
+            &mut *s,
+            CStr::from_ptr(name).to_owned(),
+        ));
         let fresh0 = next_session_id;
         next_session_id = next_session_id.wrapping_add(1);
         (*s).id = fresh0;
@@ -1015,7 +1020,8 @@ pub unsafe extern "C" fn session_group_find(
         entry: session_group_entry {
             owner: std::ptr::null_mut(),
         },
-     ..session_group::empty() };
+        ..session_group::empty()
+    };
     sg.name = ::std::ffi::CStr::from_ptr(name).to_owned();
     return session_groups_find(&raw mut session_groups, &raw mut sg);
 }
@@ -1112,8 +1118,7 @@ pub unsafe fn session_group_members(sg: *mut session_group) -> Vec<*mut session>
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_group_count(mut sg: *mut session_group) -> u_int {
-    return u_int::try_from((*sg).members.len())
-        .expect("session group has too many members");
+    return u_int::try_from((*sg).members.len()).expect("session group has too many members");
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_group_attached_count(mut sg: *mut session_group) -> u_int {

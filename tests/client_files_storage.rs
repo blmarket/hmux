@@ -1,6 +1,6 @@
-use hmux2::src::shared::client::{client, client_file, client_files};
 use hmux2::src::file::*;
 use hmux2::src::reactor::{event_init, event_loop, shutdown_runtime};
+use hmux2::src::shared::client::{client, client_file, client_files};
 use std::ffi::{c_char, c_int, c_void};
 use std::ptr::null_mut;
 

@@ -1,8 +1,7 @@
 use crate::src::alerts::alerts_reset_all;
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::style::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
+use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{fnmatch, free, strcasecmp, strcmp, strncmp, strsep, strstr};
 use crate::src::format::format_expand_cstring;
@@ -28,13 +27,14 @@ use crate::src::session::{session_update_history, sessions_minmax, sessions_next
 use crate::src::shared::options::options_name_map;
 use crate::src::shared::pane::window_pane_tree;
 use crate::src::status::{status_timer_start_all, status_update_cache};
+use crate::src::style::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
 use crate::src::style::{
     style_parse, style_parse_colour, style_set, style_set_scrollbar_style_from_option,
 };
+use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::{checkshell, global_options, global_s_options, global_w_options};
 use crate::src::tty::tty_invalidate;
 use crate::src::tty_keys::tty_keys_build;
-use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::window::windows;
 use crate::src::window::{
     all_window_panes, window_pane_default_cursor, window_pane_scrollbar_hide,
@@ -268,9 +268,8 @@ unsafe fn options_value_to_cstring(
                     .to_owned()
                 }
             }
-            5 => {
-                CStr::from_ptr(*(*(*o).tableentry).choices.offset((*ov).number() as isize)).to_owned()
-            }
+            5 => CStr::from_ptr(*(*(*o).tableentry).choices.offset((*ov).number() as isize))
+                .to_owned(),
             _ => {
                 fatalx(b"not a number option type\0" as *const u8 as *const ::core::ffi::c_char);
             }
@@ -448,12 +447,7 @@ pub(crate) unsafe fn options_default_to_cstring(oe: &options_table_entry) -> CSt
             .expect("decimal option default contains no NUL"),
         2 => key_string_format(oe.default_num as key_code, false),
         3 => colour_format(oe.default_num as ::core::ffi::c_int),
-        4 => if oe.default_num != 0 {
-            c"on"
-        } else {
-            c"off"
-        }
-        .to_owned(),
+        4 => if oe.default_num != 0 { c"on" } else { c"off" }.to_owned(),
         5 => CStr::from_ptr(*oe.choices.offset(oe.default_num as isize)).to_owned(),
         _ => {
             fatalx(b"unknown option type\0" as *const u8 as *const ::core::ffi::c_char);
@@ -499,9 +493,7 @@ unsafe extern "C" fn options_remove(mut o: *mut options_entry) {
     if !(*o).monitor_data.is_null() {
         hooks_monitor_free((*o).monitor_data);
     }
-    (*(*oo).tree)
-        .entries
-        .remove((*o).name.as_bytes());
+    (*(*oo).tree).entries.remove((*o).name.as_bytes());
     drop(Box::from_raw(o));
 }
 #[no_mangle]
@@ -639,7 +631,8 @@ pub unsafe fn options_array_set(
     }
     let Some(new_key) = options_array_correct_key(CStr::from_ptr(key)) else {
         if !cause.is_null() {
-            format_options_cause!(cause,
+            format_options_cause!(
+                cause,
                 b"bad array key: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 key,
             );
@@ -657,7 +650,10 @@ pub unsafe fn options_array_set(
         && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        pr = cmd_parse_from_string(CStr::from_ptr(value), ::core::ptr::null_mut::<cmd_parse_input>());
+        pr = cmd_parse_from_string(
+            CStr::from_ptr(value),
+            ::core::ptr::null_mut::<cmd_parse_input>(),
+        );
         match pr.status as ::core::ffi::c_uint {
             0 => {
                 if !cause.is_null() {
@@ -703,7 +699,8 @@ pub unsafe fn options_array_set(
         number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1)
             as ::core::ffi::c_longlong;
         if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
-            format_options_cause!(cause,
+            format_options_cause!(
+                cause,
                 b"bad colour: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 value,
             );
@@ -955,10 +952,7 @@ pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMat
     let mut alias_count = 0usize;
     let mut map = &raw const options_other_names as *const options_name_map;
     while alias_count < aliases.len() && !(*map).from.to_bytes().is_empty() {
-        aliases[alias_count] = (
-            (*map).from.to_bytes(),
-            (*map).to.to_bytes(),
-        );
+        aliases[alias_count] = ((*map).from.to_bytes(), (*map).to.to_bytes());
         alias_count += 1;
         map = map.offset(1);
     }
@@ -1221,7 +1215,8 @@ pub unsafe fn options_scope_from_name(
         oe = oe.offset(1);
     }
     if (*oe).name.is_null() {
-        format_options_cause!(cause,
+        format_options_cause!(
+            cause,
             b"unknown option: %s\0" as *const u8 as *const ::core::ffi::c_char,
             name,
         );
@@ -1239,12 +1234,14 @@ pub unsafe fn options_scope_from_name(
                 *oo = global_s_options;
                 scope = OPTIONS_TABLE_SESSION;
             } else if s.is_null() && !target.is_null() {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no such session: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else if s.is_null() {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
@@ -1256,12 +1253,14 @@ pub unsafe fn options_scope_from_name(
         12 => {
             if args_has(args, 'p' as i32 as u_char) != 0 {
                 if wp.is_null() && !target.is_null() {
-                    format_options_cause!(cause,
+                    format_options_cause!(
+                        cause,
                         b"no such pane: %s\0" as *const u8 as *const ::core::ffi::c_char,
                         target,
                     );
                 } else if wp.is_null() {
-                    format_options_cause!(cause,
+                    format_options_cause!(
+                        cause,
                         b"no current pane\0" as *const u8 as *const ::core::ffi::c_char,
                     );
                 } else {
@@ -1286,12 +1285,14 @@ pub unsafe fn options_scope_from_name(
                 *oo = global_w_options;
                 scope = OPTIONS_TABLE_WINDOW;
             } else if wl.is_null() && !target.is_null() {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no such window: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else if wl.is_null() {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no current window\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
@@ -1321,12 +1322,14 @@ pub unsafe fn options_scope_from_flags(
     if args_has(args, 'p' as i32 as u_char) != 0 {
         if wp.is_null() {
             if !target.is_null() {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no such pane: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no current pane\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
@@ -1341,12 +1344,14 @@ pub unsafe fn options_scope_from_flags(
         }
         if wl.is_null() {
             if !target.is_null() {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no such window: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no current window\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
@@ -1361,12 +1366,14 @@ pub unsafe fn options_scope_from_flags(
         }
         if s.is_null() {
             if !target.is_null() {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no such session: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
             } else {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
@@ -1474,7 +1481,8 @@ unsafe fn options_from_string_check(
     ) == 0 as ::core::ffi::c_int
         && checkshell(value) == 0
     {
-        format_options_cause!(cause,
+        format_options_cause!(
+            cause,
             b"not a suitable shell: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1483,7 +1491,8 @@ unsafe fn options_from_string_check(
     if !(*oe).pattern.is_null()
         && fnmatch((*oe).pattern, value, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int
     {
-        format_options_cause!(cause,
+        format_options_cause!(
+            cause,
             b"value is invalid: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1493,7 +1502,8 @@ unsafe fn options_from_string_check(
         && strstr(value, b"#{\0" as *const u8 as *const ::core::ffi::c_char).is_null()
         && style_parse(&raw mut sy, &raw const grid_default_cell, value) != 0 as ::core::ffi::c_int
     {
-        format_options_cause!(cause,
+        format_options_cause!(
+            cause,
             b"invalid style: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1504,7 +1514,8 @@ unsafe fn options_from_string_check(
         && style_parse_colour(&raw mut sy, &raw const grid_default_cell, value)
             != 0 as ::core::ffi::c_int
     {
-        format_options_cause!(cause,
+        format_options_cause!(
+            cause,
             b"invalid colour: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1538,7 +1549,8 @@ unsafe fn options_from_string_flag(
     {
         flag = 0 as ::core::ffi::c_int;
     } else {
-        format_options_cause!(cause,
+        format_options_cause!(
+            cause,
             b"bad value: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1565,7 +1577,8 @@ pub unsafe fn options_find_choice(
         cp = cp.offset(1);
     }
     if choice == -(1 as ::core::ffi::c_int) {
-        format_options_cause!(cause,
+        format_options_cause!(
+            cause,
             b"unknown value: %s\0" as *const u8 as *const ::core::ffi::c_char,
             value,
         );
@@ -1616,7 +1629,8 @@ pub unsafe fn options_from_string(
             && (*oe).type_0 as ::core::ffi::c_uint
                 != OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            format_options_cause!(cause,
+            format_options_cause!(
+                cause,
                 b"empty value\0" as *const u8 as *const ::core::ffi::c_char,
             );
             return -(1 as ::core::ffi::c_int);
@@ -1624,7 +1638,8 @@ pub unsafe fn options_from_string(
         type_0 = (*oe).type_0;
     } else {
         if *name as ::core::ffi::c_int != '@' as i32 {
-            format_options_cause!(cause,
+            format_options_cause!(
+                cause,
                 b"bad option name\0" as *const u8 as *const ::core::ffi::c_char,
             );
             return -(1 as ::core::ffi::c_int);
@@ -1663,7 +1678,8 @@ pub unsafe fn options_from_string(
                 &raw mut errstr,
             );
             if !errstr.is_null() {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"value is %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     errstr,
                     value,
@@ -1676,7 +1692,8 @@ pub unsafe fn options_from_string(
         2 => {
             key = key_string_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(KEYC_UNKNOWN);
             if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"bad key: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     value,
                 );
@@ -1689,7 +1706,8 @@ pub unsafe fn options_from_string(
             number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1)
                 as ::core::ffi::c_longlong;
             if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
-                format_options_cause!(cause,
+                format_options_cause!(
+                    cause,
                     b"bad colour: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     value,
                 );
@@ -1701,7 +1719,10 @@ pub unsafe fn options_from_string(
         4 => return options_from_string_flag(oo, name, value, cause),
         5 => return options_from_string_choice(oe, oo, name, value, cause),
         6 => {
-            pr = cmd_parse_from_string(CStr::from_ptr(value), ::core::ptr::null_mut::<cmd_parse_input>());
+            pr = cmd_parse_from_string(
+                CStr::from_ptr(value),
+                ::core::ptr::null_mut::<cmd_parse_input>(),
+            );
             match pr.status as ::core::ffi::c_uint {
                 0 => {
                     if !cause.is_null() {

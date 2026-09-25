@@ -1,6 +1,6 @@
-use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
+use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::compat::stdio::CFile;
 use crate::src::compat::systemd::systemd_move_to_new_cgroup;
@@ -43,11 +43,10 @@ use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_add_pane, window_create, window_destroy_panes, window_pane_first, window_pane_index,
     window_pane_list_insert_front, window_pane_list_remove, window_pane_next,
-    window_pane_z_remove, window_pane_z_insert_back,
     window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
-    window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_remove_pane,
-    window_replace_name, window_set_active_pane, winlink_add, winlink_find_by_index,
-    winlink_remove, winlink_set_window, winlink_stack_remove,
+    window_pane_z_insert_back, window_pane_z_remove, window_pop_zoom, window_push_zoom,
+    window_redraw_active_switch, window_remove_pane, window_replace_name, window_set_active_pane,
+    winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::xsnprintf;
@@ -111,9 +110,7 @@ use crate::src::shared::redraw::redraw_scene;
 use crate::src::shared::screen::{screen, screen_sel, screen_titles, MODE_CRLF, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_cline;
 use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::signal::{
-    __sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK,
-};
+use crate::src::shared::signal::{__sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 use crate::src::shared::spawn::{
     SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FLOATOVERZOOM, SPAWN_KILL, SPAWN_MODAL,
@@ -368,7 +365,10 @@ pub unsafe fn spawn_window(
     if !(*sc).flags & SPAWN_RESPAWN != 0 && idx != -(1 as ::core::ffi::c_int) {
         wl = winlink_find_by_index(&raw mut (*s).windows, idx);
         if !wl.is_null() && !(*sc).flags & SPAWN_KILL != 0 {
-            set_spawn_cause(cause.as_mut(), &[b"index ", idx.to_string().as_bytes(), b" in use"]);
+            set_spawn_cause(
+                cause.as_mut(),
+                &[b"index ", idx.to_string().as_bytes(), b" in use"],
+            );
             return ::core::ptr::null_mut::<winlink>();
         }
         if !wl.is_null() {
@@ -1265,10 +1265,7 @@ mod tests {
                     ::libc::fcntl(fd, ::libc::F_GETFL) & ::libc::O_ACCMODE,
                     ::libc::O_RDWR
                 );
-                let file = spawn_editor_fdopen(
-                    fd_owner,
-                    c"not-a-stdio-mode",
-                );
+                let file = spawn_editor_fdopen(fd_owner, c"not-a-stdio-mode");
                 assert!(file.is_null(), "invalid fdopen mode unexpectedly succeeded");
                 assert_eq!(*__errno_location(), ::libc::EINVAL);
                 assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
@@ -1294,10 +1291,7 @@ mod tests {
                 assert!(flags >= 0);
                 assert_eq!(flags & ::libc::O_ACCMODE, ::libc::O_RDWR);
                 assert!(std::path::Path::new(path.to_str().unwrap()).exists());
-                let file = spawn_editor_fdopen(
-                    fd_owner,
-                    c"w",
-                );
+                let file = spawn_editor_fdopen(fd_owner, c"w");
                 assert!(!file.is_null());
                 assert_eq!(::libc::fcntl(fd, ::libc::F_GETFL), flags);
                 assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);

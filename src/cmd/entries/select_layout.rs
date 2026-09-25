@@ -1,9 +1,9 @@
 use crate::src::arguments::{args_count, args_has, args_string};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::events::events_fire_window;
-use crate::src::layout::layout_spread_out;
 use crate::src::layout::custom::{layout_dump_owned, layout_parse};
+use crate::src::layout::layout_spread_out;
 use crate::src::layout::set::{
     layout_set_lookup, layout_set_next, layout_set_previous, layout_set_select,
 };
@@ -231,7 +231,9 @@ unsafe extern "C" fn cmd_select_layout_exec(
                         cmdq_error(
                             item,
                             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                            cause.as_ref().map_or(::core::ptr::null(), |message| message.as_ptr()),
+                            cause
+                                .as_ref()
+                                .map_or(::core::ptr::null(), |message| message.as_ptr()),
                             layoutname,
                         );
                         drop(window_replace_old_layout(w, oldlayout.take()));

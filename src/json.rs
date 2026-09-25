@@ -130,10 +130,7 @@ unsafe fn json_fields_minmax(head: &json_fields, val: ::core::ffi::c_int) -> *mu
         .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
 
-unsafe fn json_fields_find(
-    head: &json_fields,
-    key: &CStr,
-) -> *mut json_node {
+unsafe fn json_fields_find(head: &json_fields, key: &CStr) -> *mut json_node {
     if head.entries.is_null() {
         return ::core::ptr::null_mut::<json_node>();
     }
@@ -202,11 +199,7 @@ pub unsafe fn json_parse(
         depth: 0,
     };
     if *input as ::core::ffi::c_int == '\0' as i32 {
-        json_error(
-            cause.as_mut(),
-            c"empty input",
-            None,
-        );
+        json_error(cause.as_mut(), c"empty input", None);
         return ::core::ptr::null_mut::<json_node>();
     }
     let tokens = match json_tokenize_input(input, cause) {
@@ -481,11 +474,7 @@ pub unsafe fn json_find_array(
     *out = field;
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn json_error(
-    cause: Option<&mut Option<CString>>,
-    reason: &CStr,
-    loc: Option<&CStr>,
-) {
+unsafe fn json_error(cause: Option<&mut Option<CString>>, reason: &CStr, loc: Option<&CStr>) {
     let Some(cause) = cause else {
         return;
     };
@@ -878,7 +867,9 @@ unsafe extern "C" fn json_parse_object(
         json_error(
             (*pctx).cause.as_mut(),
             c"parse depth exceeded",
-            Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+            Some(CStr::from_ptr(
+                (*pctx).input.offset((**tok).offset as isize),
+            )),
         );
         return ::core::ptr::null_mut::<json_node>();
     }
@@ -901,7 +892,9 @@ unsafe extern "C" fn json_parse_object(
             json_error(
                 (*pctx).cause.as_mut(),
                 c"duplicate key",
-                Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+                Some(CStr::from_ptr(
+                    (*pctx).input.offset((**tok).offset as isize),
+                )),
             );
             current_block = 7971653673408253115;
             break;
@@ -911,7 +904,9 @@ unsafe extern "C" fn json_parse_object(
             json_error(
                 (*pctx).cause.as_mut(),
                 c"missing colon",
-                Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+                Some(CStr::from_ptr(
+                    (*pctx).input.offset((**tok).offset as isize),
+                )),
             );
             current_block = 7971653673408253115;
             break;
@@ -952,7 +947,9 @@ unsafe extern "C" fn json_parse_object(
                     json_error(
                         (*pctx).cause.as_mut(),
                         c"unexpected value when parsing object",
-                        Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+                        Some(CStr::from_ptr(
+                            (*pctx).input.offset((**tok).offset as isize),
+                        )),
                     );
                     current_block = 7971653673408253115;
                     break;
@@ -972,7 +969,9 @@ unsafe extern "C" fn json_parse_object(
                     json_error(
                         (*pctx).cause.as_mut(),
                         c"invalid object",
-                        Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+                        Some(CStr::from_ptr(
+                            (*pctx).input.offset((**tok).offset as isize),
+                        )),
                     );
                     current_block = 7971653673408253115;
                     break;
@@ -985,7 +984,9 @@ unsafe extern "C" fn json_parse_object(
                 json_error(
                     (*pctx).cause.as_mut(),
                     c"invalid object",
-                    Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+                    Some(CStr::from_ptr(
+                        (*pctx).input.offset((**tok).offset as isize),
+                    )),
                 );
                 current_block = 7971653673408253115;
                 break;
@@ -1046,7 +1047,9 @@ unsafe extern "C" fn json_parse_array(
                         json_error(
                             (*pctx).cause.as_mut(),
                             c"invalid array",
-                            Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+                            Some(CStr::from_ptr(
+                                (*pctx).input.offset((**tok).offset as isize),
+                            )),
                         );
                         current_block = 15988181977378875837;
                         break;
@@ -1062,7 +1065,9 @@ unsafe extern "C" fn json_parse_array(
                     json_error(
                         (*pctx).cause.as_mut(),
                         c"invalid array",
-                        Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+                        Some(CStr::from_ptr(
+                            (*pctx).input.offset((**tok).offset as isize),
+                        )),
                     );
                     current_block = 15988181977378875837;
                     break;
@@ -1072,7 +1077,9 @@ unsafe extern "C" fn json_parse_array(
                 json_error(
                     (*pctx).cause.as_mut(),
                     c"invalid array member",
-                    Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
+                    Some(CStr::from_ptr(
+                        (*pctx).input.offset((**tok).offset as isize),
+                    )),
                 );
                 current_block = 15988181977378875837;
                 break;
@@ -1191,10 +1198,10 @@ unsafe extern "C" fn json_parse_boolean(
     {
         boolean = 0 as ::core::ffi::c_int;
     } else {
-    json_error(
-        (*pctx).cause.as_mut(),
-        c"invalid boolean",
-        Some(CStr::from_ptr(start)),
+        json_error(
+            (*pctx).cause.as_mut(),
+            c"invalid boolean",
+            Some(CStr::from_ptr(start)),
         );
         return ::core::ptr::null_mut::<json_node>();
     }
@@ -1253,7 +1260,9 @@ unsafe extern "C" fn json_string_append(mut buffer: *mut evbuffer, mut node: *mu
                 evbuffer_add_printf(
                     buffer,
                     b"\"%s\":\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*field).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*field).key)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
                 json_string_append(buffer, field);
                 comma = 1 as ::core::ffi::c_int;
@@ -1382,12 +1391,19 @@ mod json_fields_tests {
             assert_eq!(json_fields_find(&head, probe_key.as_c_str()), items[1]);
 
             assert_eq!(
-                CStr::from_ptr(((*json_fields_minmax(&mut head, RB_NEGINF)).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
+                CStr::from_ptr(
+                    ((*json_fields_minmax(&mut head, RB_NEGINF)).key)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
                 b"alpha"
             );
             assert_eq!(
                 CStr::from_ptr(
-                    ((*json_fields_minmax(&mut head, crate::src::shared::tree::RB_INF)).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                    ((*json_fields_minmax(&mut head, crate::src::shared::tree::RB_INF)).key)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
                 )
                 .to_bytes(),
                 b"\x80high"
@@ -1396,7 +1412,15 @@ mod json_fields_tests {
             let mut ordered = Vec::new();
             let mut item = json_fields_minmax(&head, RB_NEGINF);
             while !item.is_null() {
-                ordered.push(CStr::from_ptr(((*item).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes().to_vec());
+                ordered.push(
+                    CStr::from_ptr(
+                        ((*item).key)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )
+                    .to_bytes()
+                    .to_vec(),
+                );
                 item = json_fields_next(&head, &*item);
             }
             assert_eq!(

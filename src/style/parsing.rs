@@ -1,5 +1,3 @@
-use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
-use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{
     memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strlcpy, strncasecmp, strspn,
@@ -8,7 +6,6 @@ use crate::src::format::{format_create, format_free, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_debug};
-pub use crate::src::shared::options::options_table_entry;
 use crate::src::options::{options_get, options_get_string, options_string_to_style};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -40,6 +37,7 @@ pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
+pub use crate::src::shared::options::options_table_entry;
 use crate::src::shared::options::*;
 pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::{
@@ -64,6 +62,8 @@ pub use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
+use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
+use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::text::utf8::utf8_set;
 use crate::src::xmalloc::xsnprintf;
 

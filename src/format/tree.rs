@@ -166,7 +166,9 @@ pub unsafe extern "C" fn format_merge(mut ft: *mut format_tree, mut from: *mut f
                 ft,
                 ((*fe).key).as_ptr().cast_mut(),
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*fe).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*fe).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         fe = format_entry_tree_next(&raw mut (*from).tree, fe);
@@ -307,7 +309,13 @@ pub unsafe extern "C" fn format_each(
             );
         } else {
             format_entry_ensure_value(ft, fe);
-            cb.expect("non-null function pointer")(((*fe).key).as_ptr().cast_mut(), ((*fe).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), arg);
+            cb.expect("non-null function pointer")(
+                ((*fe).key).as_ptr().cast_mut(),
+                ((*fe).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                arg,
+            );
         }
         fe = format_entry_tree_next(&raw mut (*ft).tree, fe);
     }
@@ -501,7 +509,7 @@ mod tests {
             let first = b"first\xff\0".as_ptr() as *const ::core::ffi::c_char;
             format_add(ft, key, format, first);
             let mut probe = format_entry {
-        owned_cb: None,
+                owned_cb: None,
                 key: ::std::ffi::CStr::from_ptr(key as *mut _).to_owned(),
                 value: Default::default(),
                 time: 0,
@@ -670,18 +678,32 @@ mod tests {
             drop(Box::from_raw(probe));
 
             assert_eq!(
-                CStr::from_ptr(((*format_entry_tree_minmax(&mut head, RB_NEGINF)).key).as_ptr().cast_mut()).to_bytes(),
+                CStr::from_ptr(
+                    ((*format_entry_tree_minmax(&mut head, RB_NEGINF)).key)
+                        .as_ptr()
+                        .cast_mut()
+                )
+                .to_bytes(),
                 b"alpha"
             );
             assert_eq!(
-                CStr::from_ptr(((*format_entry_tree_minmax(&mut head, RB_INF)).key).as_ptr().cast_mut()).to_bytes(),
+                CStr::from_ptr(
+                    ((*format_entry_tree_minmax(&mut head, RB_INF)).key)
+                        .as_ptr()
+                        .cast_mut()
+                )
+                .to_bytes(),
                 b"\x80high"
             );
 
             let mut ordered = Vec::new();
             let mut item = format_entry_tree_minmax(&mut head, RB_NEGINF);
             while !item.is_null() {
-                ordered.push(CStr::from_ptr(((*item).key).as_ptr().cast_mut()).to_bytes().to_vec());
+                ordered.push(
+                    CStr::from_ptr(((*item).key).as_ptr().cast_mut())
+                        .to_bytes()
+                        .to_vec(),
+                );
                 item = format_entry_tree_next(&mut head, item);
             }
             assert_eq!(

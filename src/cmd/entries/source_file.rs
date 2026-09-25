@@ -1,10 +1,10 @@
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
-use crate::src::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::src::cmd::queue::{
     cmdq_continue, cmdq_error, cmdq_get_callback1, cmdq_get_client, cmdq_get_target,
     cmdq_insert_after, cmdq_set_cancel_data,
 };
+use crate::src::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
 use crate::src::ffi::libc::{__ctype_b_loc, strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;

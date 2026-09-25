@@ -50,9 +50,7 @@ use crate::src::shared::client::{
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_list, cmds,
-};
+use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_list, cmds};
 use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 use crate::src::shared::display::{visible_range, visible_ranges};
@@ -71,9 +69,7 @@ use crate::src::shared::layout::*;
 use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
 use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
-use crate::src::shared::mouse::{
-    mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
-};
+use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::{
     options, options_array, options_array_item, options_entry, options_value,
 };
@@ -737,11 +733,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
         ft,
     );
     if (*c).message_ignore_styles != 0 {
-        let msg = status_message_escape(
-            (*c).message_string
-                .as_deref()
-                .unwrap_or(c""),
-        );
+        let msg = status_message_escape((*c).message_string.as_deref().unwrap_or(c""));
         format_add(
             ft,
             b"message\0" as *const u8 as *const ::core::ffi::c_char,

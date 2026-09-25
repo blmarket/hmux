@@ -1,8 +1,6 @@
-use crate::src::ffi::libc::__ssize_t;
-use crate::src::ffi::libc::{
-    __errno_location, fgetc, fopen, fputc, fputs, strcmp, strerror,
-};
 use crate::src::compat::stdio::CFile;
+use crate::src::ffi::libc::__ssize_t;
+use crate::src::ffi::libc::{__errno_location, fgetc, fopen, fputc, fputs, strcmp, strerror};
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::prompt_type_string;

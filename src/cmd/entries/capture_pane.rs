@@ -1,7 +1,6 @@
 use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand_result};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
-use crate::src::style::colour::colour_format;
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::control::control_write;
 use crate::src::ffi::libc::{free, memcpy, snprintf, strcmp};
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
@@ -73,6 +72,7 @@ use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
+use crate::src::style::colour::colour_format;
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::window_pane_reset_mode_all;
 use std::ffi::{CStr, CString};

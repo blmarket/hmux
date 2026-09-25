@@ -10,7 +10,9 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
-use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data};
+use crate::src::text::utf8::{
+    utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data,
+};
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::key::key_code_enum as C2RustUnnamed_0;

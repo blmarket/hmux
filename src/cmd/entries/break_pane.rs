@@ -5,7 +5,6 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_current, cmdq_get_source, cmdq_get_target, cmdq_get_target_client,
     cmdq_print,
 };
-use crate::src::style::colour::colour_palette_from_option;
 use crate::src::events::events_fire_window;
 use crate::src::format::format_single_cstring;
 use crate::src::layout::{
@@ -77,6 +76,7 @@ use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
+use crate::src::style::colour::colour_palette_from_option;
 use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::{
     window_add_ref, window_count_panes, window_create, window_fire_pane_moved,
@@ -234,8 +234,7 @@ unsafe extern "C" fn cmd_break_pane_exec(
             idx,
             0 as ::core::ffi::c_int,
             (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
-        )
-        {
+        ) {
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,

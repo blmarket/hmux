@@ -156,14 +156,16 @@ fn wait_channel_key(name: &CStr) -> Vec<u8> {
 }
 
 fn wait_channels_find(head: &mut wait_channels, name: &CStr) -> *mut wait_channel {
-    head
-        .entries
+    head.entries
         .get_mut(&wait_channel_key(name))
         .map(|owner| &raw mut **owner)
         .unwrap_or(::core::ptr::null_mut::<wait_channel>())
 }
 
-fn wait_channels_insert(head: &mut wait_channels, mut owner: Box<wait_channel>) -> *mut wait_channel {
+fn wait_channels_insert(
+    head: &mut wait_channels,
+    mut owner: Box<wait_channel>,
+) -> *mut wait_channel {
     let key = wait_channel_key(owner.name.as_c_str());
     match head.entries.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
@@ -832,7 +834,13 @@ mod tests {
         let mut items = Vec::<Box<wait_event_item>>::new();
         let mut addresses = Vec::new();
         for _ in 0..128 {
-            let mut owner = Box::new(wait_event_item { item: ::core::ptr::null_mut(), sink: ::core::ptr::null_mut(), name: name.clone(), filter: None, verbose: 0 });
+            let mut owner = Box::new(wait_event_item {
+                item: ::core::ptr::null_mut(),
+                sink: ::core::ptr::null_mut(),
+                name: name.clone(),
+                filter: None,
+                verbose: 0,
+            });
 
             addresses.push(wait_event_item_ptr(&mut owner));
             items.push(owner);

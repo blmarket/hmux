@@ -41,11 +41,7 @@ fn compare_repeat_and_arithmetic_expand_split_operands() {
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
             let result = format_expand_cstring(tree, expression.as_ptr());
-            assert_eq!(
-                result.as_bytes(),
-                expected,
-                "{expression:?}"
-            );
+            assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
         format_free(tree);
         global_options = saved_options;

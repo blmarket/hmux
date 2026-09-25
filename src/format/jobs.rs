@@ -150,12 +150,7 @@ pub(super) unsafe fn format_job_get(
         (*(*ft).client).jobs = Box::into_raw(Box::new(format_job_tree::default()));
         jobs = (*(*ft).client).jobs;
     }
-    fj = format_job_find_or_insert(
-        &mut *jobs,
-        (*ft).client,
-        (*ft).tag,
-        CStr::from_ptr(cmd),
-    );
+    fj = format_job_find_or_insert(&mut *jobs, (*ft).client, (*ft).tag, CStr::from_ptr(cmd));
     format_copy_state(
         &raw mut next,
         es,

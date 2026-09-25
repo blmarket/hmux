@@ -1033,7 +1033,7 @@ pub unsafe fn layout_resize_floating_pane_to(
     mut wp: *mut window_pane,
     mut type_0: layout_type,
     mut size: u_int,
-)-> Result<(), std::ffi::CString> {
+) -> Result<(), std::ffi::CString> {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     if !(*lc).flags & LAYOUT_CELL_FLOATING != 0 {
         return Err(c"pane is not floating".to_owned());
@@ -1068,7 +1068,7 @@ pub unsafe fn layout_resize_floating_pane(
     mut type_0: layout_type,
     mut change: ::core::ffi::c_int,
     mut opposite: ::core::ffi::c_int,
-)-> Result<(), std::ffi::CString> {
+) -> Result<(), std::ffi::CString> {
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut size: u_int = 0;
     if !(*lc).flags & LAYOUT_CELL_FLOATING != 0 {

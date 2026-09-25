@@ -245,7 +245,9 @@ unsafe extern "C" fn cmd_display_message_exec(
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ref().map_or(::core::ptr::null(), |message| message.as_ptr()),
+                cause
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |message| message.as_ptr()),
             );
             drop(msg);
             format_free(ft);

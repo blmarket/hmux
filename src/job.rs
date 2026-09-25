@@ -1,6 +1,6 @@
 use crate::src::cfg::cfg_finished;
-use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::cmd::queue::cmdq_print;
+use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::environ::{
     environ_copy, environ_for_session, environ_push, environ_set, EnvironOwner,
@@ -216,7 +216,10 @@ pub unsafe fn job_run(
                 log_debug(
                     b"%s: cwd=%s, shell=%s\0" as *const u8 as *const ::core::ffi::c_char,
                     b"job_run\0" as *const u8 as *const ::core::ffi::c_char,
-                    cwd.map_or(b"\0" as *const u8 as *const ::core::ffi::c_char, CStr::as_ptr),
+                    cwd.map_or(
+                        b"\0" as *const u8 as *const ::core::ffi::c_char,
+                        CStr::as_ptr,
+                    ),
                     shell,
                 );
             } else {
@@ -224,7 +227,10 @@ pub unsafe fn job_run(
                     b"%s: cmd=%s, cwd=%s, shell=%s\0" as *const u8 as *const ::core::ffi::c_char,
                     b"job_run\0" as *const u8 as *const ::core::ffi::c_char,
                     cmd.unwrap().as_ptr(),
-                    cwd.map_or(b"\0" as *const u8 as *const ::core::ffi::c_char, CStr::as_ptr),
+                    cwd.map_or(
+                        b"\0" as *const u8 as *const ::core::ffi::c_char,
+                        CStr::as_ptr,
+                    ),
                     shell,
                 );
             }

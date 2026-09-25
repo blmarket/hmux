@@ -34,9 +34,9 @@ use crate::src::tmux::sig2name;
 use crate::src::tty::{tty_raw, tty_stop_tty};
 use crate::src::tty_term::tty_term_string;
 use crate::src::window::{
-    window_add_ref, window_count_panes, window_pane_first, window_pop_zoom, window_push_zoom, window_remove_pane,
-    window_remove_ref, window_unzoom, winlink_find_by_index, winlink_find_by_window,
-    winlink_remove, winlink_stack_remove,
+    window_add_ref, window_count_panes, window_pane_first, window_pop_zoom, window_push_zoom,
+    window_remove_pane, window_remove_ref, window_unzoom, winlink_find_by_index,
+    winlink_find_by_window, winlink_remove, winlink_stack_remove,
 };
 
 use crate::src::shared::abi::*;

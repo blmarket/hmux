@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use crate::src::events::events_fire;
 use crate::src::events_payload::{event_payload_create, event_payload_set_string};
 use crate::src::ffi::libc::{free, time};
@@ -6,13 +5,12 @@ use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::options::options;
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::text::utf8::utf8_strvis;
+use crate::src::tmux::{clean_name_cstring, global_options};
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 
 macro_rules! set_paste_cause {
@@ -24,11 +22,7 @@ macro_rules! set_paste_cause {
     }};
 }
 
-unsafe fn paste_name_cause(
-    cause: Option<&mut Option<CString>>,
-    prefix: &[u8],
-    name: &CStr,
-) {
+unsafe fn paste_name_cause(cause: Option<&mut Option<CString>>, prefix: &[u8], name: &CStr) {
     let Some(cause) = cause else {
         return;
     };
@@ -96,8 +90,7 @@ fn paste_name_key(name: &CStr) -> Vec<u8> {
 }
 
 fn paste_name_tree_find(head: &paste_name_tree, name: &CStr) -> *mut paste_buffer {
-    head
-        .entries
+    head.entries
         .get(&paste_name_key(name))
         .copied()
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
@@ -107,7 +100,10 @@ unsafe fn paste_name_tree_insert(
     head: *mut paste_name_tree,
     elm: *mut paste_buffer,
 ) -> *mut paste_buffer {
-    match (*head).entries.entry(paste_name_key((*elm).name.as_c_str())) {
+    match (*head)
+        .entries
+        .entry(paste_name_key((*elm).name.as_c_str()))
+    {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
@@ -117,8 +113,7 @@ unsafe fn paste_name_tree_insert(
 }
 
 fn paste_name_tree_remove(head: &mut paste_name_tree, elm: &paste_buffer) -> *mut paste_buffer {
-    head
-        .entries
+    head.entries
         .remove(&paste_name_key(elm.name.as_c_str()))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
@@ -154,8 +149,7 @@ fn paste_time_tree_minmax(head: &paste_time_tree, val: ::core::ffi::c_int) -> *m
 }
 
 fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
-    head
-        .entries
+    head.entries
         .range((
             std::ops::Bound::Excluded(paste_time_key(elm)),
             std::ops::Bound::Unbounded,
@@ -166,8 +160,7 @@ fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> *mut past
 }
 
 fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
-    head
-        .entries
+    head.entries
         .range((
             std::ops::Bound::Unbounded,
             std::ops::Bound::Excluded(paste_time_key(elm)),
@@ -178,8 +171,7 @@ fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> *mut past
 }
 
 fn paste_time_tree_remove(head: &mut paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
-    head
-        .entries
+    head.entries
         .remove(&paste_time_key(elm))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
@@ -462,7 +454,11 @@ pub unsafe fn paste_rename(
     }
     let Some(name) = clean_name_cstring(CStr::from_ptr(newname), 0) else {
         if !cause.is_null() {
-            paste_name_cause(cause.as_mut(), b"invalid buffer name: ", CStr::from_ptr(newname));
+            paste_name_cause(
+                cause.as_mut(),
+                b"invalid buffer name: ",
+                CStr::from_ptr(newname),
+            );
         }
         return -(1 as ::core::ffi::c_int);
     };
@@ -549,7 +545,11 @@ unsafe fn paste_set_inner(
     }
     let Some(newname) = clean_name_cstring(CStr::from_ptr(name), 0) else {
         if !cause.is_null() {
-            paste_name_cause(cause.as_mut(), b"invalid buffer name: ", CStr::from_ptr(name));
+            paste_name_cause(
+                cause.as_mut(),
+                b"invalid buffer name: ",
+                CStr::from_ptr(name),
+            );
         }
         return -(1 as ::core::ffi::c_int);
     };
@@ -599,11 +599,9 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
     let mut buffer = vec![0u8; len * 8 + 4];
     let used = utf8_strvis(
         buffer.as_mut_ptr().cast(),
-        pb.data
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| {
-                value.as_ptr().cast_mut().cast::<::core::ffi::c_char>()
-            }),
+        pb.data.as_ref().map_or(::core::ptr::null_mut(), |value| {
+            value.as_ptr().cast_mut().cast::<::core::ffi::c_char>()
+        }),
         len,
         flags,
     );
@@ -680,7 +678,11 @@ mod tests {
             let pb = paste_get_name(c"owner-rename-alias".as_ptr());
             assert!(!pb.is_null());
             assert_eq!(
-                paste_rename(((*pb).name).as_ptr().cast_mut(), c"owner-renamed".as_ptr(), &raw mut cause),
+                paste_rename(
+                    ((*pb).name).as_ptr().cast_mut(),
+                    c"owner-renamed".as_ptr(),
+                    &raw mut cause
+                ),
                 0
             );
             assert!(cause.is_none());
@@ -753,11 +755,7 @@ mod tests {
 
             cause = Some(c"stale".to_owned());
             assert_eq!(
-                paste_rename(
-                    ::core::ptr::null(),
-                    c"renamed".as_ptr(),
-                    &raw mut cause,
-                ),
+                paste_rename(::core::ptr::null(), c"renamed".as_ptr(), &raw mut cause,),
                 -1
             );
             assert_eq!(
@@ -894,15 +892,11 @@ mod tests {
                 ordered,
                 vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
             );
-            assert_eq!(
-                paste_name_tree_find(&tree, names[2].as_c_str()),
-                a_high
+            assert_eq!(paste_name_tree_find(&tree, names[2].as_c_str()), a_high);
+            assert!(
+                paste_name_tree_find(&tree, CStr::from_bytes_with_nul(b"missing\0").unwrap())
+                    .is_null()
             );
-            assert!(paste_name_tree_find(
-                &tree,
-                CStr::from_bytes_with_nul(b"missing\0").unwrap()
-            )
-            .is_null());
 
             assert_eq!(paste_name_tree_remove(&mut tree, &*a_high), a_high);
             assert!(paste_name_tree_find(&tree, names[2].as_c_str()).is_null());
@@ -936,10 +930,7 @@ mod tests {
             assert!(paste_time_tree_insert(&raw mut tree, middle).is_null());
             assert_eq!(paste_time_tree_insert(&raw mut tree, duplicate), middle);
 
-            assert_eq!(
-                (*paste_time_tree_minmax(&tree, RB_NEGINF)).order,
-                12
-            );
+            assert_eq!((*paste_time_tree_minmax(&tree, RB_NEGINF)).order, 12);
             assert_eq!((*paste_time_tree_next(&tree, &*newest)).order, 7);
             assert_eq!((*paste_time_tree_next(&tree, &*middle)).order, 4);
             assert!(paste_time_tree_next(&tree, &*oldest).is_null());

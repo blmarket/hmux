@@ -139,8 +139,14 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         std::fs::write(&path, b"command:one\0ignored\ncommand:two").unwrap();
         prompt_load_history();
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
-        assert_eq!(CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 0)), c"one");
-        assert_eq!(CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 1)), c"two");
+        assert_eq!(
+            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 0)),
+            c"one"
+        );
+        assert_eq!(
+            CStr::from_ptr(prompt_history_get(PROMPT_TYPE_COMMAND, 1)),
+            c"two"
+        );
 
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         prompt_history_clear(PROMPT_TYPE_SEARCH);

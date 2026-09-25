@@ -70,8 +70,7 @@ pub const WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX;
 // BTreeMap has the same ordering, while its entry API preserves the tree's
 // duplicate-insertion behavior of returning the existing item.
 fn utf8_width_cache_find(head: &utf8_width_cache, wc: wchar_t) -> *mut utf8_width_item {
-    head
-        .entries
+    head.entries
         .get(&wc)
         .copied()
         .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
@@ -108,8 +107,7 @@ unsafe fn utf8_width_cache_next(
     head: &utf8_width_cache,
     elm: &utf8_width_item,
 ) -> *mut utf8_width_item {
-    head
-        .entries
+    head.entries
         .range((
             std::ops::Bound::Excluded(elm.wc),
             std::ops::Bound::Unbounded,
@@ -952,10 +950,7 @@ unsafe fn utf8_data_key(item: &utf8_item) -> (u_char, Vec<u8>) {
     (size, data.to_vec())
 }
 
-unsafe fn utf8_data_tree_insert(
-    head: &mut utf8_data_tree,
-    elm: &mut utf8_item,
-) -> *mut utf8_item {
+unsafe fn utf8_data_tree_insert(head: &mut utf8_data_tree, elm: &mut utf8_item) -> *mut utf8_item {
     match head.entries.entry(utf8_data_key(elm)) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -966,8 +961,7 @@ unsafe fn utf8_data_tree_insert(
 }
 
 unsafe fn utf8_data_tree_find(head: &utf8_data_tree, item: &utf8_item) -> *mut utf8_item {
-    head
-        .entries
+    head.entries
         .get(&utf8_data_key(item))
         .copied()
         .unwrap_or(::core::ptr::null_mut::<utf8_item>())
@@ -994,8 +988,7 @@ unsafe fn utf8_index_tree_insert(
     }
 }
 fn utf8_index_tree_find(head: &utf8_index_tree, index: u_int) -> *mut utf8_item {
-    head
-        .entries
+    head.entries
         .get(&index)
         .map(|item| item.as_ref() as *const utf8_item as *mut utf8_item)
         .unwrap_or(::core::ptr::null_mut::<utf8_item>())
@@ -1724,7 +1717,8 @@ pub(crate) fn utf8_stravis_cstring(src: &CStr, flag: i32) -> CString {
         .and_then(|size| size.checked_add(1))
         .expect("escaped UTF-8 string is too large");
     let mut buffer = vec![0u8; capacity];
-    let escaped_len = unsafe { utf8_strvis(buffer.as_mut_ptr().cast(), src.as_ptr(), source_len, flag) };
+    let escaped_len =
+        unsafe { utf8_strvis(buffer.as_mut_ptr().cast(), src.as_ptr(), source_len, flag) };
     buffer.truncate(escaped_len + 1);
     CString::from_vec_with_nul(buffer).expect("utf8_strvis output has no interior NUL")
 }
@@ -2010,8 +2004,7 @@ pub(crate) fn utf8_cstrhas_impl(s: &CStr, ud: &utf8_data) -> bool {
             offset += 1;
         }
         let matches = {
-            cell.size == ud.size
-                && cell.data[..cell.size as usize] == ud.data[..ud.size as usize]
+            cell.size == ud.size && cell.data[..cell.size as usize] == ud.data[..ud.size as usize]
         };
         if matches {
             found = 1;
@@ -2096,7 +2089,8 @@ mod tests {
     fn owned_vis_helpers_preserve_multibyte_and_explicit_length_bytes() {
         unsafe {
             let input = CString::new(&b"a\xc3\xa9\xff"[..]).unwrap();
-            let escaped = utf8_stravis_cstring(input.as_c_str(), crate::src::shared::vis::VIS_OCTAL);
+            let escaped =
+                utf8_stravis_cstring(input.as_c_str(), crate::src::shared::vis::VIS_OCTAL);
             assert_eq!(escaped.as_bytes(), b"a\xc3\xa9\\377");
 
             let bytes = utf8_stravisx_bytes(b"a\0b", crate::src::shared::vis::VIS_OCTAL);

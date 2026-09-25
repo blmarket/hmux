@@ -1,5 +1,5 @@
-use crate::src::cmd::{cmd_mouse_pane, cmd_mouse_window};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_event};
+use crate::src::cmd::{cmd_mouse_pane, cmd_mouse_window};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::environ_find;
 use crate::src::ffi::libc::{fnmatch, free, memset, strchr, strcmp, strlcat, strlen, strncmp};
@@ -17,9 +17,8 @@ use crate::src::window::{
     window_pane_at_index, window_pane_find_by_id_str, window_pane_find_down, window_pane_find_left,
     window_pane_find_right, window_pane_find_up, window_pane_next_by_number,
     window_pane_previous_by_number, window_pane_stack_first, window_pane_tree_minmax,
-    window_pane_tree_next,
-    winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
-    winlinks_next,
+    window_pane_tree_next, winlink_find_by_index, winlink_next_by_number,
+    winlink_previous_by_number, winlinks_minmax, winlinks_next,
 };
 use std::ffi::{CStr, CString};
 
@@ -189,8 +188,12 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
     wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
     while !wp.is_null() {
         if (*wp).fd != -(1 as ::core::ffi::c_int)
-            && strcmp(&raw mut (*wp).tty as *mut ::core::ffi::c_char, ((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                == 0 as ::core::ffi::c_int
+            && strcmp(
+                &raw mut (*wp).tty as *mut ::core::ffi::c_char,
+                ((*c).ttyname)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ) == 0 as ::core::ffi::c_int
         {
             break;
         }
@@ -202,7 +205,11 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
             b"TMUX_PANE\0" as *const u8 as *const ::core::ffi::c_char,
         );
         if !envent.is_null() {
-            wp = window_pane_find_by_id_str(((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+            wp = window_pane_find_by_id_str(
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            );
         }
     }
     if !wp.is_null() {
@@ -442,7 +449,12 @@ unsafe extern "C" fn cmd_find_get_session(
     s = ::core::ptr::null_mut::<session>();
     s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s_loop.is_null() {
-        if strncmp(session, ((*s_loop).name).as_ptr().cast_mut(), strlen(session)) == 0 as ::core::ffi::c_int {
+        if strncmp(
+            session,
+            ((*s_loop).name).as_ptr().cast_mut(),
+            strlen(session),
+        ) == 0 as ::core::ffi::c_int
+        {
             if !s.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -457,7 +469,12 @@ unsafe extern "C" fn cmd_find_get_session(
     s = ::core::ptr::null_mut::<session>();
     s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s_loop.is_null() {
-        if fnmatch(session, ((*s_loop).name).as_ptr().cast_mut(), 0 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int {
+        if fnmatch(
+            session,
+            ((*s_loop).name).as_ptr().cast_mut(),
+            0 as ::core::ffi::c_int,
+        ) == 0 as ::core::ffi::c_int
+        {
             if !s.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -1765,15 +1782,29 @@ pub unsafe extern "C" fn cmd_find_client(
     c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null() {
-            if strcmp(copy_ptr, ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())) == 0 as ::core::ffi::c_int {
+            if strcmp(
+                copy_ptr,
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ) == 0 as ::core::ffi::c_int
+            {
                 break;
             }
             if !(*(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int == '\0' as i32) {
-                if strcmp(copy_ptr, ((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())) == 0 as ::core::ffi::c_int {
+                if strcmp(
+                    copy_ptr,
+                    ((*c).ttyname)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ) == 0 as ::core::ffi::c_int
+                {
                     break;
                 }
                 if !(strncmp(
-                    ((*c).ttyname).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*c).ttyname)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     _PATH_DEV.as_ptr(),
                     (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t)
                         .wrapping_sub(1 as size_t),
@@ -1781,7 +1812,10 @@ pub unsafe extern "C" fn cmd_find_client(
                 {
                     if strcmp(
                         copy_ptr,
-                        (*c).ttyname.as_ref().unwrap().as_ptr()
+                        (*c).ttyname
+                            .as_ref()
+                            .unwrap()
+                            .as_ptr()
                             .offset(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize
                                 as isize)
                             .offset(-(1 as ::core::ffi::c_int as isize)),

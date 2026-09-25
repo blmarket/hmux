@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_percentage_result, args_string};
-use crate::src::cmd::{cmd_get_args, cmd_mouse_pane, cmd_mouse_window};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_target};
+use crate::src::cmd::{cmd_get_args, cmd_mouse_pane, cmd_mouse_window};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::free;

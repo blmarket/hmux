@@ -144,82 +144,60 @@ fn hanguljamo_get_subclass(s: &[u_char; 3]) -> hanguljamo_subclass {
     match s[0] as ::core::ffi::c_int {
         225 => match s[1] as ::core::ffi::c_int {
             132 => {
-                if s[2] as ::core::ffi::c_int
-                    >= 0x80 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0x92 as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0x80 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0x92 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_CHOSEONG;
                 }
-                if s[2] as ::core::ffi::c_int
-                    >= 0x93 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0xbf as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0x93 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0xbf as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_CHOSEONG;
                 }
             }
             133 => {
-                if s[2] as ::core::ffi::c_int
-                    == 0x9f as ::core::ffi::c_int
-                {
+                if s[2] as ::core::ffi::c_int == 0x9f as ::core::ffi::c_int {
                     return HANGULJAMO_SUBCLASS_CHOSEONG_FILLER;
                 }
-                if s[2] as ::core::ffi::c_int
-                    == 0xa0 as ::core::ffi::c_int
-                {
+                if s[2] as ::core::ffi::c_int == 0xa0 as ::core::ffi::c_int {
                     return HANGULJAMO_SUBCLASS_JUNGSEONG_FILLER;
                 }
-                if s[2] as ::core::ffi::c_int
-                    >= 0x80 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0x9e as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0x80 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0x9e as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_CHOSEONG;
                 }
-                if s[2] as ::core::ffi::c_int
-                    >= 0xa1 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0xb5 as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0xa1 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0xb5 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_JUNGSEONG;
                 }
-                if s[2] as ::core::ffi::c_int
-                    >= 0xb6 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0xbf as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0xb6 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0xbf as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_JUNGSEONG;
                 }
             }
             134 => {
-                if s[2] as ::core::ffi::c_int
-                    >= 0x80 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0xa7 as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0x80 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0xa7 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_JUNGSEONG;
                 }
-                if s[2] as ::core::ffi::c_int
-                    >= 0xa8 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0xbf as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0xa8 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0xbf as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_JONGSEONG;
                 }
             }
             135 => {
-                if s[2] as ::core::ffi::c_int
-                    >= 0x80 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0x82 as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0x80 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0x82 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_JONGSEONG;
                 }
-                if s[2] as ::core::ffi::c_int
-                    >= 0x83 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0xbf as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0x83 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0xbf as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_JONGSEONG;
                 }
@@ -227,40 +205,28 @@ fn hanguljamo_get_subclass(s: &[u_char; 3]) -> hanguljamo_subclass {
             _ => {}
         },
         234 => {
-            if s[1] as ::core::ffi::c_int
-                == 0xa5 as ::core::ffi::c_int
-                && s[2] as ::core::ffi::c_int
-                    >= 0xa0 as ::core::ffi::c_int
-                && s[2] as ::core::ffi::c_int
-                    <= 0xbc as ::core::ffi::c_int
+            if s[1] as ::core::ffi::c_int == 0xa5 as ::core::ffi::c_int
+                && s[2] as ::core::ffi::c_int >= 0xa0 as ::core::ffi::c_int
+                && s[2] as ::core::ffi::c_int <= 0xbc as ::core::ffi::c_int
             {
                 return HANGULJAMO_SUBCLASS_EXTENDED_OLD_CHOSEONG;
             }
         }
         237 => {
-            if s[1] as ::core::ffi::c_int
-                == 0x9e as ::core::ffi::c_int
-                && s[2] as ::core::ffi::c_int
-                    >= 0xb0 as ::core::ffi::c_int
-                && s[2] as ::core::ffi::c_int
-                    <= 0xbf as ::core::ffi::c_int
+            if s[1] as ::core::ffi::c_int == 0x9e as ::core::ffi::c_int
+                && s[2] as ::core::ffi::c_int >= 0xb0 as ::core::ffi::c_int
+                && s[2] as ::core::ffi::c_int <= 0xbf as ::core::ffi::c_int
             {
                 return HANGULJAMO_SUBCLASS_EXTENDED_OLD_JUNGSEONG;
             }
-            if !(s[1] as ::core::ffi::c_int
-                != 0x9f as ::core::ffi::c_int)
-            {
-                if s[2] as ::core::ffi::c_int
-                    >= 0x80 as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0x86 as ::core::ffi::c_int
+            if !(s[1] as ::core::ffi::c_int != 0x9f as ::core::ffi::c_int) {
+                if s[2] as ::core::ffi::c_int >= 0x80 as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0x86 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_EXTENDED_OLD_JUNGSEONG;
                 }
-                if s[2] as ::core::ffi::c_int
-                    >= 0x8b as ::core::ffi::c_int
-                    && s[2] as ::core::ffi::c_int
-                        <= 0xbb as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int >= 0x8b as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int <= 0xbb as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_EXTENDED_OLD_JONGSEONG;
                 }

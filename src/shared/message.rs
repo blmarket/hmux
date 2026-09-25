@@ -160,7 +160,9 @@ impl ibufqueue_bufs {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = *mut ibuf> + '_ {
-        self.entries.iter().map(|buf| (&**buf as *const ibuf).cast_mut())
+        self.entries
+            .iter()
+            .map(|buf| (&**buf as *const ibuf).cast_mut())
     }
 
     pub fn len(&self) -> usize {
@@ -188,7 +190,9 @@ impl ibufqueue_bufs {
     }
 
     pub(crate) fn front(&self) -> Option<*mut ibuf> {
-        self.entries.front().map(|buf| (&**buf as *const ibuf).cast_mut())
+        self.entries
+            .front()
+            .map(|buf| (&**buf as *const ibuf).cast_mut())
     }
 
     pub(crate) fn append(&mut self, other: &mut Self) {

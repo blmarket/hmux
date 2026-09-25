@@ -40,11 +40,7 @@ fn conditionals_expand_true_false_fallback_and_nested_branches() {
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
             let result = format_expand_cstring(tree, expression.as_ptr());
-            assert_eq!(
-                result.as_bytes(),
-                expected,
-                "{expression:?}"
-            );
+            assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
 
         format_free(tree);

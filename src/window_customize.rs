@@ -2,9 +2,9 @@ use std::borrow::Cow;
 use std::ffi::{c_char, CStr, CString};
 
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
+use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::environ::{
     environ_clear, environ_find, environ_first, environ_next, environ_set, environ_unset,
 };
@@ -236,10 +236,7 @@ fn window_customize_set_name(item: &mut window_customize_itemdata, value: Option
     item.name = value.map(CStr::to_owned);
 }
 
-fn window_customize_set_item_array_key(
-    item: &mut window_customize_itemdata,
-    value: Option<&CStr>,
-) {
+fn window_customize_set_item_array_key(item: &mut window_customize_itemdata, value: Option<&CStr>) {
     item.array_key = value.map(CStr::to_owned);
 }
 
@@ -422,7 +419,8 @@ unsafe fn window_customize_get_tag(
     if oe.is_null() {
         return o as uint64_t;
     }
-    let offset = oe.offset_from((&raw const crate::src::options_table::options_table).cast()) as u64;
+    let offset =
+        oe.offset_from((&raw const crate::src::options_table::options_table).cast()) as u64;
     (2_u64 << 62) | (offset << 32) | 1
 }
 
@@ -543,8 +541,9 @@ unsafe fn window_customize_scope_text(
             bytes.extend_from_slice(CStr::from_ptr((*fs.s).name.as_ptr().cast_mut()).to_bytes());
             CString::new(bytes).expect("session name contains no NUL")
         }
-        6 => CString::new(format!("window {}", (*fs.wl).idx))
-            .expect("window index contains no NUL"),
+        6 => {
+            CString::new(format!("window {}", (*fs.wl).idx)).expect("window index contains no NUL")
+        }
         _ => CString::new(Vec::new()).expect("empty scope text"),
     }
 }
@@ -916,7 +915,10 @@ unsafe fn window_customize_set_command_value(
     if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    let pr = cmd_parse_from_string(CStr::from_ptr(s), ::core::ptr::null_mut::<cmd_parse_input>());
+    let pr = cmd_parse_from_string(
+        CStr::from_ptr(s),
+        ::core::ptr::null_mut::<cmd_parse_input>(),
+    );
     if pr.status == CMD_PARSE_ERROR {
         if !cause.is_null() {
             *cause = pr.error;
@@ -960,7 +962,9 @@ unsafe extern "C" fn window_customize_set_environment_value(
     }
     environ_set(
         (*item).environ,
-        ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         flags,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         s,
@@ -1486,7 +1490,9 @@ unsafe extern "C" fn window_customize_build_keys(
                     ft,
                     b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*bd).note)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
             }
             if !filter.is_null() {
@@ -1528,7 +1534,14 @@ unsafe extern "C" fn window_customize_build_keys(
             mode_tree_no_tag(mti);
             drop(text);
             let text = if !(*bd).note.is_none() {
-                window_customize_key_detail(CStr::from_ptr(((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes())
+                window_customize_key_detail(
+                    CStr::from_ptr(
+                        ((*bd).note)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )
+                    .to_bytes(),
+                )
             } else {
                 CString::new(Vec::new()).expect("empty key note")
             };
@@ -1649,12 +1662,21 @@ unsafe extern "C" fn window_customize_build_environment(
             ft,
             b"environment_removed\0" as *const u8 as *const ::core::ffi::c_char,
             b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*envent).value == if (NULL as *mut ::core::ffi::c_char).is_null() { None } else { Some(::std::ffi::CStr::from_ptr(NULL as *mut ::core::ffi::c_char).to_owned()) }) as ::core::ffi::c_int,
+            ((*envent).value
+                == if (NULL as *mut ::core::ffi::c_char).is_null() {
+                    None
+                } else {
+                    Some(::std::ffi::CStr::from_ptr(NULL as *mut ::core::ffi::c_char).to_owned())
+                }) as ::core::ffi::c_int,
         );
         let value = if (*envent).value.is_none() {
             CStr::from_bytes_with_nul(b"\0").expect("empty C string")
         } else {
-            CStr::from_ptr(((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+            CStr::from_ptr(
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )
         };
         format_add(
             ft,
@@ -2834,7 +2856,9 @@ unsafe extern "C" fn window_customize_draw_environment(
         0 as ::core::ffi::c_int,
         b"Variable value: \0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*envent).value)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     ) == 0
     {
         return;
@@ -2874,7 +2898,9 @@ unsafe extern "C" fn window_customize_draw_environment(
         0 as ::core::ffi::c_int,
         b"Global value: \0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*parent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*parent).value)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     ) == 0
     {
         return;
@@ -3182,7 +3208,11 @@ unsafe extern "C" fn window_customize_set_option_callback(
             {
                 hooks_add_event(name);
             }
-            options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+            options_push_changes(
+                ((*item).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            );
             mode_tree_build((*data).data);
             mode_tree_draw((*data).data);
             (*(*data).wp).flags |= PANE_REDRAW;
@@ -3220,7 +3250,9 @@ unsafe extern "C" fn window_customize_set_environment_callback(
     }
     environ_set(
         (*item).environ,
-        ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*item).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         flags,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
         s,
@@ -3299,10 +3331,7 @@ unsafe extern "C" fn window_customize_set_environment(
     (*new_item).scope = scope;
     (*new_item).environ = env;
     (*new_item).environ_flags = (*envent).flags;
-    window_customize_set_name(
-        &mut *new_item,
-        (*item).name.as_deref(),
-    );
+    window_customize_set_name(&mut *new_item, (*item).name.as_deref());
     (*data).references += 1;
     mode_tree_set_prompt(
         (*data).data,
@@ -3311,7 +3340,10 @@ unsafe extern "C" fn window_customize_set_environment(
         if (*envent).value.is_none() {
             b"\0" as *const u8 as *const ::core::ffi::c_char
         } else {
-            ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()) as *const ::core::ffi::c_char
+            ((*envent).value)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                as *const ::core::ffi::c_char
         },
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
@@ -3566,10 +3598,7 @@ unsafe extern "C" fn window_customize_add_environment(
         new_item as *mut ::core::ffi::c_void,
     );
 }
-unsafe fn window_customize_edit_close_cb(
-    buf: Option<Vec<u8>>,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_customize_edit_close_cb(buf: Option<Vec<u8>>, mut arg: *mut ::core::ffi::c_void) {
     let mut current_block: u64;
     let mut ed: *mut window_customize_editdata = arg as *mut window_customize_editdata;
     let mut item: *mut window_customize_itemdata = (*ed).item;
@@ -3676,13 +3705,20 @@ unsafe extern "C" fn window_customize_start_edit(
         if window_customize_option_editable(data, item) == 0 {
             return;
         }
-        o = options_get((*item).oo, ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+        o = options_get(
+            (*item).oo,
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
         if o.is_null() {
             return;
         }
         value = Cow::Owned(options_to_cstring(
             o,
-            ((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*item).array_key)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             0 as ::core::ffi::c_int,
         ));
         edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
@@ -3711,7 +3747,11 @@ unsafe extern "C" fn window_customize_start_edit(
             value = Cow::Borrowed(if (*bd).note.is_none() {
                 c""
             } else {
-                CStr::from_ptr(((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                CStr::from_ptr(
+                    ((*bd).note)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                )
             });
             edit_type = WINDOW_CUSTOMIZE_EDIT_KEY_NOTE;
         } else {
@@ -3723,11 +3763,20 @@ unsafe extern "C" fn window_customize_start_edit(
         if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
             return;
         }
-        envent = environ_find((*item).environ, ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+        envent = environ_find(
+            (*item).environ,
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
         if envent.is_null() || (*envent).value.is_none() {
             return;
         }
-        value = Cow::Borrowed(CStr::from_ptr(((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())));
+        value = Cow::Borrowed(CStr::from_ptr(
+            ((*envent).value)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ));
         edit_type = WINDOW_CUSTOMIZE_EDIT_ENVIRONMENT;
     } else {
         return;
@@ -4007,7 +4056,11 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
             0 as ::core::ffi::c_int,
             ::core::ptr::null_mut::<Option<CString>>(),
         );
-        options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+        options_push_changes(
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
         mode_tree_build((*data).data);
         mode_tree_draw((*data).data);
         (*(*data).wp).flags |= PANE_REDRAW;
@@ -4054,17 +4107,16 @@ unsafe extern "C" fn window_customize_set_array_key(
     (*new_item).option_type = (*item).option_type;
     (*new_item).scope = (*item).scope;
     (*new_item).oo = (*item).oo;
-    window_customize_set_name(
-        &mut *new_item,
-        (*item).name.as_deref(),
-    );
+    window_customize_set_name(&mut *new_item, (*item).name.as_deref());
     window_customize_set_item_array_key(&mut *new_item, (*item).array_key.as_deref());
     (*data).references += 1;
     mode_tree_set_prompt(
         (*data).data,
         c,
         prompt.as_ptr(),
-        ((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*item).array_key)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
         Some(
@@ -4138,7 +4190,9 @@ unsafe extern "C" fn window_customize_unset_option(
     }
     options_remove_or_default(
         o,
-        ((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*item).array_key)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ::core::ptr::null_mut::<Option<CString>>(),
     );
 }
@@ -4158,7 +4212,12 @@ unsafe extern "C" fn window_customize_reset_option(
     }
     oo = (*item).oo;
     while !oo.is_null() {
-        o = options_get_only(oo, ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+        o = options_get_only(
+            oo,
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
         if !o.is_null() {
             options_remove_or_default(
                 o,
@@ -4187,7 +4246,10 @@ unsafe extern "C" fn window_customize_set_command_callback(
     {
         return PROMPT_CLOSE;
     }
-    let mut pr = cmd_parse_from_string(CStr::from_ptr(s), ::core::ptr::null_mut::<cmd_parse_input>());
+    let mut pr = cmd_parse_from_string(
+        CStr::from_ptr(s),
+        ::core::ptr::null_mut::<cmd_parse_input>(),
+    );
     match pr.status as ::core::ffi::c_uint {
         0 => {
             cmd_parse_error_uppercase_first(&mut pr.error);
@@ -4198,7 +4260,9 @@ unsafe extern "C" fn window_customize_set_command_callback(
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                pr.error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
             );
             return PROMPT_CLOSE;
         }
@@ -4318,7 +4382,9 @@ unsafe extern "C" fn window_customize_set_key(
             if (*bd).note.is_none() {
                 b"\0" as *const u8 as *const ::core::ffi::c_char
             } else {
-                ((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                ((*bd).note)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
             },
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
@@ -4401,7 +4467,10 @@ unsafe extern "C" fn window_customize_add_key_callback(
         return PROMPT_CLOSE;
     }
     drop(keystr);
-    let mut pr = cmd_parse_from_string(CStr::from_ptr(command), ::core::ptr::null_mut::<cmd_parse_input>());
+    let mut pr = cmd_parse_from_string(
+        CStr::from_ptr(command),
+        ::core::ptr::null_mut::<cmd_parse_input>(),
+    );
     match pr.status as ::core::ffi::c_uint {
         0 => {
             cmd_parse_error_uppercase_first(&mut pr.error);
@@ -4412,13 +4481,17 @@ unsafe extern "C" fn window_customize_add_key_callback(
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                pr.error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
             );
             return PROMPT_CLOSE;
         }
         1 | _ => {
             key_bindings_add(
-                ((*item).table).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*item).table)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 key,
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 0 as ::core::ffi::c_int,
@@ -4517,7 +4590,14 @@ unsafe extern "C" fn window_customize_change_each(
     let name = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        Some(CStr::from_ptr(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned())
+        Some(
+            CStr::from_ptr(
+                ((*item).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )
+            .to_owned(),
+        )
     } else {
         None
     };
@@ -4602,7 +4682,14 @@ unsafe extern "C" fn window_customize_change_current_callback(
     let name = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        Some(CStr::from_ptr(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned())
+        Some(
+            CStr::from_ptr(
+                ((*item).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )
+            .to_owned(),
+        )
     } else {
         None
     };
@@ -4904,7 +4991,11 @@ unsafe extern "C" fn window_customize_key(
                             0 as ::core::ffi::c_int,
                             1 as ::core::ffi::c_int,
                         );
-                        options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+                        options_push_changes(
+                            ((*item).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                        );
                     }
                     mode_tree_build((*data).data);
                 }
@@ -4922,7 +5013,11 @@ unsafe extern "C" fn window_customize_key(
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+                    options_push_changes(
+                        ((*item).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    );
                     mode_tree_build((*data).data);
                 }
             }
@@ -4944,7 +5039,11 @@ unsafe extern "C" fn window_customize_key(
                             1 as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
                         );
-                        options_push_changes(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+                        options_push_changes(
+                            ((*item).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                        );
                     }
                     mode_tree_build((*data).data);
                 }
@@ -4960,7 +5059,14 @@ unsafe extern "C" fn window_customize_key(
                             as ::core::ffi::c_uint)
                 {
                     let mut prompt_bytes = b"Reset ".to_vec();
-                    prompt_bytes.extend_from_slice(CStr::from_ptr(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
+                    prompt_bytes.extend_from_slice(
+                        CStr::from_ptr(
+                            ((*item).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                        )
+                        .to_bytes(),
+                    );
                     prompt_bytes.extend_from_slice(b" to default? ");
                     let reset_prompt =
                         CString::new(prompt_bytes).expect("C string parts have no NUL");
@@ -5026,11 +5132,26 @@ unsafe extern "C" fn window_customize_key(
             117 => {
                 if !item.is_null() {
                     let mut prompt_bytes = b"Unset ".to_vec();
-                    prompt_bytes.extend_from_slice(CStr::from_ptr(((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
+                    prompt_bytes.extend_from_slice(
+                        CStr::from_ptr(
+                            ((*item).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                        )
+                        .to_bytes(),
+                    );
                     if !(*item).array_key.is_none() {
                         prompt_bytes.push(b'[');
-                        prompt_bytes
-                            .extend_from_slice(CStr::from_ptr(((*item).array_key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes());
+                        prompt_bytes.extend_from_slice(
+                            CStr::from_ptr(
+                                ((*item).array_key)
+                                    .as_ref()
+                                    .map_or(::core::ptr::null_mut(), |value| {
+                                        value.as_ptr().cast_mut()
+                                    }),
+                            )
+                            .to_bytes(),
+                        );
                         prompt_bytes.push(b']');
                     }
                     prompt_bytes.extend_from_slice(b"? ");

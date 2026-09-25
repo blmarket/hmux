@@ -175,7 +175,8 @@ mod tests {
         format: *const c_char,
         args: ...
     ) -> c_int {
-        let Some(mut formatted) = (unsafe { format_buffer(CStr::from_ptr(format), args.clone()) }) else {
+        let Some(mut formatted) = (unsafe { format_buffer(CStr::from_ptr(format), args.clone()) })
+        else {
             return -1;
         };
         let count = formatted.remaining();

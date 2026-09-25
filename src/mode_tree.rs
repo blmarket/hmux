@@ -1,10 +1,10 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_free_state, cmdq_get_callback1, cmdq_get_client, cmdq_new_state,
     cmdq_set_cancel_data,
 };
+use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::{
     __ctype_tolower_loc, __ctype_toupper_loc, free, memcpy, memset, strcasestr, strlen, strstr,
 };
@@ -72,9 +72,7 @@ use crate::src::shared::mode_tree::{
     mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
     mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
 };
-use crate::src::shared::mouse::{
-    mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
-};
+use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
@@ -356,8 +354,7 @@ unsafe extern "C" fn mode_tree_build_lines(
         (*mtd).lines.push(mode_tree_line {
             item: mti,
             depth,
-            last: (mti == (*mtl).last())
-                as ::core::ffi::c_int,
+            last: (mti == (*mtl).last()) as ::core::ffi::c_int,
             flat: 0,
         });
         (*mti).line = mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int);
@@ -763,7 +760,8 @@ pub unsafe extern "C" fn mode_tree_build(mut mtd: *mut mode_tree_data) {
         (*mtd).modedata,
         &raw mut (*mtd).sort_crit,
         &raw mut tag,
-        (*mtd).filter
+        (*mtd)
+            .filter
             .as_ref()
             .map_or(::core::ptr::null(), |filter| filter.as_ptr()),
     );
@@ -883,7 +881,11 @@ pub unsafe extern "C" fn mode_tree_view_name(
     mut mtd: *mut mode_tree_data,
     mut name: *const ::core::ffi::c_char,
 ) {
-    (*mtd).view_name = if name.is_null() { None } else { Some(CStr::from_ptr(name)) };
+    (*mtd).view_name = if name.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(name))
+    };
 }
 #[no_mangle]
 pub unsafe extern "C" fn mode_tree_draw_as_parent(mut mti: *mut mode_tree_item) {
@@ -1385,10 +1387,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 } else {
                     Some(CStr::from_ptr(order))
                 };
-                mode_tree_append_printf_string(
-                    &mut label_bytes,
-                    order,
-                );
+                mode_tree_append_printf_string(&mut label_bytes, order);
                 if (*mtd).sort_crit.reversed != 0 {
                     label_bytes.extend_from_slice(b", reversed");
                 }
@@ -1748,10 +1747,13 @@ unsafe extern "C" fn mode_tree_search_backward(
             break;
         }
         if (*mtd).searchcb.is_none() {
-            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null() {
+            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null()
+            {
                 return mti;
             }
-            if icase != 0 && !strcasestr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null() {
+            if icase != 0
+                && !strcasestr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null()
+            {
                 return mti;
             }
         } else if (*mtd).searchcb.expect("non-null function pointer")(
@@ -1806,10 +1808,13 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
             break;
         }
         if (*mtd).searchcb.is_none() {
-            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null() {
+            if icase == 0 && !strstr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null()
+            {
                 return mti;
             }
-            if icase != 0 && !strcasestr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null() {
+            if icase != 0
+                && !strcasestr(((*mti).name).as_ptr().cast_mut(), search.cast_mut()).is_null()
+            {
                 return mti;
             }
         } else if (*mtd).searchcb.expect("non-null function pointer")(
@@ -2634,7 +2639,9 @@ pub unsafe extern "C" fn mode_tree_run_command(
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                    error
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
                 );
             }
         }
@@ -2698,10 +2705,7 @@ mod mode_tree_tests {
             let last = (*mtd).children.last();
             mode_tree_remove(mtd, last);
             assert_eq!((*mtd).children.first(), tail);
-            assert!(
-                mode_tree_find_item(&raw mut (*mtd).children, 100)
-                    .is_null()
-            );
+            assert!(mode_tree_find_item(&raw mut (*mtd).children, 100).is_null());
             mode_tree_clear_lines(mtd);
             mode_tree_build_lines(mtd, &raw mut (*mtd).children, 0);
             assert_eq!((*mtd).lines.len(), 95);

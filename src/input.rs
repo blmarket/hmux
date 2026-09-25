@@ -1,9 +1,5 @@
 use crate::src::alerts::alerts_queue;
 use crate::src::cmd::find::cmd_find_from_pane;
-use crate::src::style::colour::{
-    colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
-    colour_palette_set, colour_parse_x11_logged, colour_split_rgb,
-};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_pane};
 use crate::src::events_payload::{
@@ -54,9 +50,13 @@ use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::src::session::session_has;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
+use crate::src::style::colour::{
+    colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
+    colour_palette_set, colour_parse_x11_logged, colour_split_rgb,
+};
+use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
 use crate::src::tmux::{get_timer, getversion, global_options, global_w_options};
 use crate::src::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selection};
-use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
 use crate::src::window::{
     window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client,
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
@@ -116,9 +116,7 @@ use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_ACTIVITY, PANE_CHANGED,
     PANE_CMDRUNNING, PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
 };
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::redraw::redraw_scene;
@@ -4553,9 +4551,9 @@ mod sgr_colon_tests {
             b"38:2:999999999999999:2:3\0".as_slice(),
             b"38:2:abc:2:3\0",
             b"38:2:1:2:3:4:5:6\0", // eighth populated token
-            b":::::::\0",      // eighth empty token
-            b"38:2:300:2:3\0", // parsed RGB outside the colour range
-            b"38:2:1:2\0",     // incomplete RGB
+            b":::::::\0",          // eighth empty token
+            b"38:2:300:2:3\0",     // parsed RGB outside the colour range
+            b"38:2:1:2\0",         // incomplete RGB
         ] {
             let cell = parse(source);
             assert_eq!((cell.fg, cell.bg, cell.us), (11, 12, 13), "{source:?}");

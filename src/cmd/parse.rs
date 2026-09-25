@@ -1,9 +1,9 @@
+use crate::src::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
+use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::cmd::{
     cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_free, cmd_list_move,
     cmd_list_new, cmd_list_print_cstring, cmd_parse,
 };
-use crate::src::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::environ::{environ_find, environ_put};
 use crate::src::ffi::libc::{
     __ctype_b_loc, getc, getpwnam, getpwuid, getuid, memset, sscanf, strchr, strcmp, strlen,
@@ -157,11 +157,7 @@ pub const ENDIF: ::core::ffi::c_int = 263 as ::core::ffi::c_int;
 pub const FORMAT: ::core::ffi::c_int = 264 as ::core::ffi::c_int;
 pub const TOKEN: ::core::ffi::c_int = 265 as ::core::ffi::c_int;
 pub const EQUALS: ::core::ffi::c_int = 266 as ::core::ffi::c_int;
-unsafe fn cmd_parse_get_error(
-    file: Option<&CStr>,
-    line: u_int,
-    error: &CStr,
-) -> CString {
+unsafe fn cmd_parse_get_error(file: Option<&CStr>, line: u_int, error: &CStr) -> CString {
     let Some(file) = file else {
         return error.to_owned();
     };
@@ -403,7 +399,10 @@ unsafe fn cmd_parse_run_parser() -> Result<*mut cmd_parse_commands, CString> {
         Ok(commands) => Ok(build_parser_commands(commands)),
         Err(_) => {
             yyerror(b"syntax error\0".as_ptr().cast());
-            Err(parse_state.error.take().expect("yyerror must retain parser error"))
+            Err(parse_state
+                .error
+                .take()
+                .expect("yyerror must retain parser error"))
         }
     }
 }
@@ -595,12 +594,14 @@ unsafe extern "C" fn cmd_parse_build_command(
         let value = values.as_mut_ptr().add(count as usize);
         match (*arg).type_0 as ::core::ffi::c_uint {
             0 => {
-                *value = args_value::borrowed_string((*arg)
-                    .string
-                    .as_ref()
-                    .expect("parser string argument owns its text")
-                    .as_ptr()
-                    .cast_mut());
+                *value = args_value::borrowed_string(
+                    (*arg)
+                        .string
+                        .as_ref()
+                        .expect("parser string argument owns its text")
+                        .as_ptr()
+                        .cast_mut(),
+                );
             }
             1 => {
                 cmd_parse_build_commands((*arg).commands as *mut cmd_parse_commands, pi, pr);
@@ -755,10 +756,7 @@ pub unsafe fn cmd_parse_from_file(
     cmd_parse_free_commands(cmds);
     return pr;
 }
-pub unsafe fn cmd_parse_from_string(
-    s: &CStr,
-    mut pi: *mut cmd_parse_input,
-) -> cmd_parse_result {
+pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -790,8 +788,7 @@ pub unsafe fn cmd_parse_and_insert(
     mut pi: *mut cmd_parse_input,
     mut after: *mut cmdq_item,
     mut state: *mut cmdq_state,
-)
-    -> Result<cmd_parse_status, Option<CString>> {
+) -> Result<cmd_parse_status, Option<CString>> {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut pr = cmd_parse_from_string(s, pi);
     if pr.status == CMD_PARSE_ERROR {
@@ -807,8 +804,7 @@ pub unsafe fn cmd_parse_and_append(
     mut pi: *mut cmd_parse_input,
     mut c: *mut client,
     mut state: *mut cmdq_state,
-)
-    -> Result<cmd_parse_status, Option<CString>> {
+) -> Result<cmd_parse_status, Option<CString>> {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut pr = cmd_parse_from_string(s, pi);
     if pr.status == CMD_PARSE_ERROR {
@@ -862,10 +858,7 @@ pub unsafe fn cmd_parse_from_buffer(
     return pr;
 }
 /// Parse argv while borrowing its strings for the duration of the parser call.
-pub unsafe fn cmd_parse_from_argv(
-    argv: &[CString],
-    pi: *mut cmd_parse_input,
-) -> cmd_parse_result {
+pub unsafe fn cmd_parse_from_argv(argv: &[CString], pi: *mut cmd_parse_input) -> cmd_parse_result {
     let mut values: Vec<args_value> = argv
         .iter()
         .map(|string| args_value::borrowed_string(string.as_ptr()))
@@ -1159,7 +1152,11 @@ unsafe fn yylex(lexed: &mut Option<CString>) -> ::core::ffi::c_int {
             } else {
                 if ch == '%' as i32 {
                     *lexed = Some(yylex_get_word('%' as i32));
-                    cp = lexed.as_mut().expect("percent token owns its text").as_ptr().cast_mut();
+                    cp = lexed
+                        .as_mut()
+                        .expect("percent token owns its text")
+                        .as_ptr()
+                        .cast_mut();
                     while *cp as ::core::ffi::c_int != '\0' as i32 {
                         if *cp as ::core::ffi::c_int != '%' as i32
                             && *(*__ctype_b_loc())

@@ -1,7 +1,3 @@
-use crate::src::style::colour::{
-    colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
-    colour_split_rgb,
-};
 use crate::src::ffi::libc::__useconds_t;
 use crate::src::ffi::libc::{
     __errno_location, abs, fcntl, getpid, ioctl, isatty, memcpy, memset, open, strcmp, strerror,
@@ -107,7 +103,12 @@ use crate::src::shared::window::{
     winlink_stack, winlinks,
 };
 use crate::src::status::status_line_size;
+use crate::src::style::colour::{
+    colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
+    colour_split_rgb,
+};
 use crate::src::style::style_add;
+use crate::src::text::utf8::utf8_set;
 use crate::src::tmux::{global_options, setblocking};
 use crate::src::tty_acs::{tty_acs_get, tty_acs_needed, tty_acs_reverse_get};
 use crate::src::tty_draw::tty_draw_line;
@@ -118,7 +119,6 @@ use crate::src::tty_term::{
     tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_iii,
     tty_term_string_s, tty_term_string_ss,
 };
-use crate::src::text::utf8::utf8_set;
 use crate::src::xmalloc::xsnprintf;
 
 use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
@@ -431,9 +431,7 @@ unsafe extern "C" fn tty_write_callback(
         event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
     }
 }
-pub unsafe fn tty_open(
-    mut tty: *mut tty,
-) -> Result<(), std::ffi::CString> {
+pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
     let mut c: *mut client = (*tty).client;
     // The synchronous terminfo constructor borrows these string pointers.
     let mut caps: Vec<_> = (*c)

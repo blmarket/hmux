@@ -2,11 +2,11 @@ use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_free,
     args_make_commands_get_command_cstring, args_make_commands_prepare,
 };
-use crate::src::cmd::{cmd_append_argv, cmd_get_args, cmd_list_free};
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
+use crate::src::cmd::{cmd_append_argv, cmd_get_args, cmd_list_free};
 use crate::src::prompt::prompt_type;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;

@@ -1,5 +1,4 @@
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
-use crate::src::style::colour::{colour_palette_free, colour_palette_from_option, colour_palette_init};
 use crate::src::ffi::libc::{free, memcpy};
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
@@ -85,6 +84,9 @@ pub use crate::src::shared::tty::{
 use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
+};
+use crate::src::style::colour::{
+    colour_palette_free, colour_palette_from_option, colour_palette_init,
 };
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::tmux::global_w_options;

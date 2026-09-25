@@ -15,11 +15,7 @@ fn boolean_operands_expand_in_order_and_preserve_bytes() {
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
             let result = format_expand_cstring(tree, expression.as_ptr());
-            assert_eq!(
-                result.as_bytes(),
-                expected,
-                "{expression:?}"
-            );
+            assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
         format_free(tree);
     }

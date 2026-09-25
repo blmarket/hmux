@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_string};
-use crate::src::cmd::{cmd_find, cmd_get_args, cmd_table};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::src::cmd::{cmd_find, cmd_get_args, cmd_table};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
 };
@@ -18,7 +18,6 @@ use crate::src::shared::command::{
     cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds,
 };
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_STARTSERVER};
-use std::ffi::CStr;
 use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 use crate::src::shared::display::{visible_range, visible_ranges};
@@ -59,6 +58,7 @@ use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
+use std::ffi::CStr;
 
 use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;

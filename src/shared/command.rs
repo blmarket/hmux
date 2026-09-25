@@ -210,9 +210,9 @@ pub struct cmdq_list {
 
 impl cmdq_list {
     pub fn first_ptr(&self) -> *mut cmdq_item {
-        self.list
-            .front()
-            .map_or(std::ptr::null_mut(), |item| std::ptr::from_ref(&**item).cast_mut())
+        self.list.front().map_or(std::ptr::null_mut(), |item| {
+            std::ptr::from_ref(&**item).cast_mut()
+        })
     }
 
     pub fn position(&self, item: *mut cmdq_item) -> usize {
@@ -323,7 +323,9 @@ pub struct cmd_parse_input {
 
 impl cmd_parse_input {
     pub fn file_ptr(&self) -> *const ::core::ffi::c_char {
-        self.file.as_ref().map_or(::core::ptr::null(), |file| file.as_ptr())
+        self.file
+            .as_ref()
+            .map_or(::core::ptr::null(), |file| file.as_ptr())
     }
 }
 

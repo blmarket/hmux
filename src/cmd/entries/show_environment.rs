@@ -95,7 +95,8 @@ pub static mut cmd_show_environment_entry: cmd_entry = unsafe {
 unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
     // The entry value is a C string: only bytes before its first NUL are visible.
     let value = CStr::from_ptr(
-        envent.value
+        envent
+            .value
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     )
@@ -127,7 +128,9 @@ unsafe extern "C" fn cmd_show_environment_print(
                 item,
                 b"%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
                 ((*envent).name).as_ptr().cast_mut(),
-                ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         } else {
             cmdq_print(
@@ -227,7 +230,11 @@ mod tests {
         let mut value = b"\xff$`\"\\\0ignored".to_vec();
         let entry = environ_entry {
             name: Default::default(),
-            value: Some(std::ffi::CStr::from_bytes_until_nul(&value).unwrap().to_owned()),
+            value: Some(
+                std::ffi::CStr::from_bytes_until_nul(&value)
+                    .unwrap()
+                    .to_owned(),
+            ),
             flags: 0,
             owner: std::ptr::null_mut(),
         };

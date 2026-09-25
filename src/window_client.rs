@@ -390,7 +390,9 @@ unsafe extern "C" fn window_client_build(
                     ::core::ptr::null_mut::<mode_tree_item>(),
                     item as *mut ::core::ffi::c_void,
                     c as uint64_t,
-                    ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     text.as_ptr(),
                     -(1 as ::core::ffi::c_int),
                 );

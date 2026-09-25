@@ -271,7 +271,12 @@ mod control_queue_tests {
             assert_eq!(control_first_block(cs), output);
             assert_eq!((*control_state_owner(cs)).block(1), reply);
             assert_eq!(
-                std::ffi::CStr::from_ptr(((*reply).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
+                std::ffi::CStr::from_ptr(
+                    ((*reply).line)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
                 b"reply-\xff"
             );
 
@@ -720,7 +725,9 @@ unsafe extern "C" fn control_check_reply_buffer(
     log_debug(
         b"%s: %s: %zu bytes of replies buffered\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_check_reply_buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         size,
     );
     if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {
@@ -742,7 +749,9 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
         log_debug(
             b"%s: %s: writing line: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_write_line\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             line.as_ptr(),
         );
         bufferevent_write(
@@ -764,8 +773,12 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
     log_debug(
         b"%s: %s: storing line: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_write_line\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ((*cb).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*cb).line)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     );
     bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
 }
@@ -846,7 +859,9 @@ pub unsafe extern "C" fn control_notify_write(
     log_debug(
         b"%s: %s: deferring notification: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_notify_write\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         line.as_ptr(),
     );
     (*control_state_owner(cs)).deferred.push_back(line);
@@ -871,7 +886,9 @@ unsafe extern "C" fn control_check_age(
     log_debug(
         b"%s: %s: %%%u is %llu behind\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_check_age\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*wp).id,
         age as ::core::ffi::c_ulonglong,
     );
@@ -933,7 +950,9 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
                 b"%s: %s: new output block of %zu for %%%u\0" as *const u8
                     as *const ::core::ffi::c_char,
                 b"control_write_output\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*cb).size,
                 (*wp).id,
             );
@@ -941,7 +960,9 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
                 log_debug(
                     b"%s: %s: %%%u now pending\0" as *const u8 as *const ::core::ffi::c_char,
                     b"control_write_output\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     (*wp).id,
                 );
                 (*control_state_owner(cs)).pending_panes.push_back(cp);
@@ -955,7 +976,9 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
     log_debug(
         b"%s: %s: ignoring pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_write_output\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         (*wp).id,
     );
     window_pane_update_used_data(wp, &raw mut (*cp).offset, SIZE_MAX as size_t);
@@ -1009,17 +1032,17 @@ unsafe extern "C" fn control_read_callback(
     let mut buffer: *mut evbuffer = (*(*cs).read_event).input;
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
     loop {
-        let Some(line) = evbuffer_readln(
-            buffer,
-            ::core::ptr::null_mut::<size_t>(),
-            EVBUFFER_EOL_LF,
-        ) else {
+        let Some(line) =
+            evbuffer_readln(buffer, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF)
+        else {
             break;
         };
         log_debug(
             b"%s: %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_read_callback\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             line.as_ptr().cast::<::core::ffi::c_char>(),
         );
         if line[0] == 0 {
@@ -1045,7 +1068,8 @@ unsafe extern "C" fn control_read_callback(
                                 as unsafe extern "C" fn(
                                     *mut cmdq_item,
                                     *mut ::core::ffi::c_void,
-                                ) -> cmd_retval,
+                                )
+                                    -> cmd_retval,
                         ),
                         Box::into_raw(Box::new(error)) as *mut ::core::ffi::c_void,
                     );
@@ -1064,7 +1088,8 @@ pub unsafe extern "C" fn control_all_done(mut c: *mut client) -> ::core::ffi::c_
     if !control_first_block(cs).is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    return (evbuffer_get_length(&*((*(*cs).write_event).output)) == 0 as size_t) as ::core::ffi::c_int;
+    return (evbuffer_get_length(&*((*(*cs).write_event).output)) == 0 as size_t)
+        as ::core::ffi::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn control_wait_exit(mut fd: ::core::ffi::c_int) {
@@ -1080,11 +1105,8 @@ pub unsafe extern "C" fn control_wait_exit(mut fd: ::core::ffi::c_int) {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     loop {
-        if let Some(line) = evbuffer_readln(
-            evb,
-            ::core::ptr::null_mut::<size_t>(),
-            EVBUFFER_EOL_LF,
-        ) {
+        if let Some(line) = evbuffer_readln(evb, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF)
+        {
             if line[0] == 0 {
                 break;
             }
@@ -1126,13 +1148,24 @@ unsafe extern "C" fn control_flush_all_blocks(mut c: *mut client) {
         log_debug(
             b"%s: %s: flushing line: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_flush_all_blocks\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ((*cb).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*cb).line)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         bufferevent_write(
             (*cs).write_event,
-            ((*cb).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()) as *const ::core::ffi::c_void,
-            strlen(((*cb).line).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())),
+            ((*cb).line)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                as *const ::core::ffi::c_void,
+            strlen(
+                ((*cb).line)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ),
         );
         bufferevent_write(
             (*cs).write_event,
@@ -1219,7 +1252,9 @@ unsafe extern "C" fn control_write_data(mut c: *mut client, mut message: *mut ev
     log_debug(
         b"%s: %s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_write_data\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         evbuffer_get_length(&*(message)) as ::core::ffi::c_int,
         evbuffer_pullup(message, -(1 as ::core::ffi::c_int) as ssize_t),
     );
@@ -1270,7 +1305,9 @@ unsafe extern "C" fn control_write_pending(
                 b"%s: %s: output block %zu (age %llu) for %%%u (used %zu/%zu)\0" as *const u8
                     as *const ::core::ffi::c_char,
                 b"control_write_pending\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*cb).size,
                 age as ::core::ffi::c_ulonglong,
                 (*cp).pane,
@@ -1321,7 +1358,9 @@ unsafe extern "C" fn control_write_callback(
         log_debug(
             b"%s: %s: %zu bytes available, %u panes\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_write_callback\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             space,
             (*cs).pending_count,
         );

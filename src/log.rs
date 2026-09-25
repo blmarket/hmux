@@ -1,8 +1,8 @@
-use crate::src::compat::vis::strvis;
 use crate::src::compat::stdio::CFile;
+use crate::src::compat::vis::strvis;
 use crate::src::ffi::libc::{
-    __errno_location, exit, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf,
-    snprintf, strerror,
+    __errno_location, exit, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf, snprintf,
+    strerror,
 };
 use crate::src::reactor::event_log_cb;
 use crate::src::reactor::event_set_log_callback;

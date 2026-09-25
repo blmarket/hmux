@@ -184,11 +184,7 @@ unsafe extern "C" fn hooks_insert_one(
     }
     return cmdq_append(::core::ptr::null_mut::<client>(), new_item);
 }
-unsafe fn hooks_parse(
-    hd: &hooks_data,
-    fs: &cmd_find_state,
-    value: &CStr,
-) -> cmd_parse_result {
+unsafe fn hooks_parse(hd: &hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_parse_result {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     if hd.expand == 0 {
         return cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
@@ -205,7 +201,10 @@ unsafe fn hooks_parse(
     }
     let expanded = format_expand_cstring(ft, value.as_ptr());
     format_free(ft);
-    let pr = cmd_parse_from_string(expanded.as_c_str(), ::core::ptr::null_mut::<cmd_parse_input>());
+    let pr = cmd_parse_from_string(
+        expanded.as_c_str(),
+        ::core::ptr::null_mut::<cmd_parse_input>(),
+    );
     return pr;
 }
 unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
@@ -284,7 +283,9 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
                     b"%s: can't parse hook %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     b"hooks_insert\0" as *const u8 as *const ::core::ffi::c_char,
                     (*hd).name,
-                    pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                    pr.error
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
                 );
             }
             1 => {

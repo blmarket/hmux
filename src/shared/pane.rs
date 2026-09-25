@@ -342,40 +342,70 @@ impl window_panes {
     }
 
     pub unsafe fn position(&self, pane: *mut window_pane) -> Option<usize> {
-        self.storage.as_deref()?.iter().position(|weak| {
-            checked_window_pane_ptr(weak) == pane
-        })
+        self.storage
+            .as_deref()?
+            .iter()
+            .position(|weak| checked_window_pane_ptr(weak) == pane)
     }
 
     pub fn push_front(&mut self, pane: refbox::Weak<window_pane>) {
-        unsafe { self.remove_ptr(checked_window_pane_ptr(&pane)); }
-        self.storage.get_or_insert_with(|| Box::new(Vec::new())).insert(0, pane);
+        unsafe {
+            self.remove_ptr(checked_window_pane_ptr(&pane));
+        }
+        self.storage
+            .get_or_insert_with(|| Box::new(Vec::new()))
+            .insert(0, pane);
     }
 
     pub fn push_back(&mut self, pane: refbox::Weak<window_pane>) {
-        unsafe { self.remove_ptr(checked_window_pane_ptr(&pane)); }
-        self.storage.get_or_insert_with(|| Box::new(Vec::new())).push(pane);
+        unsafe {
+            self.remove_ptr(checked_window_pane_ptr(&pane));
+        }
+        self.storage
+            .get_or_insert_with(|| Box::new(Vec::new()))
+            .push(pane);
     }
 
-    pub unsafe fn insert_before(&mut self, before: *mut window_pane, pane: refbox::Weak<window_pane>) {
+    pub unsafe fn insert_before(
+        &mut self,
+        before: *mut window_pane,
+        pane: refbox::Weak<window_pane>,
+    ) {
         let pointer = checked_window_pane_ptr(&pane);
         self.remove_ptr(pointer);
-        let position = self.position(before).expect("insertion point is not in pane collection");
-        self.storage.as_mut().expect("pane collection is present").insert(position, pane);
+        let position = self
+            .position(before)
+            .expect("insertion point is not in pane collection");
+        self.storage
+            .as_mut()
+            .expect("pane collection is present")
+            .insert(position, pane);
     }
 
-    pub unsafe fn insert_after(&mut self, after: *mut window_pane, pane: refbox::Weak<window_pane>) {
+    pub unsafe fn insert_after(
+        &mut self,
+        after: *mut window_pane,
+        pane: refbox::Weak<window_pane>,
+    ) {
         let pointer = checked_window_pane_ptr(&pane);
         self.remove_ptr(pointer);
-        let position = self.position(after).expect("insertion point is not in pane collection");
-        self.storage.as_mut().expect("pane collection is present").insert(position + 1, pane);
+        let position = self
+            .position(after)
+            .expect("insertion point is not in pane collection");
+        self.storage
+            .as_mut()
+            .expect("pane collection is present")
+            .insert(position + 1, pane);
     }
 
     pub unsafe fn remove_ptr(&mut self, pane: *mut window_pane) -> bool {
         let Some(storage) = self.storage.as_mut() else {
             return false;
         };
-        let Some(position) = storage.iter().position(|weak| checked_window_pane_ptr(weak) == pane) else {
+        let Some(position) = storage
+            .iter()
+            .position(|weak| checked_window_pane_ptr(weak) == pane)
+        else {
             return false;
         };
         storage.remove(position);
@@ -390,8 +420,12 @@ impl window_panes {
     }
 
     pub unsafe fn swap_ptrs(&mut self, first: *mut window_pane, second: *mut window_pane) {
-        let first_position = self.position(first).expect("first pane is not in collection");
-        let second_position = self.position(second).expect("second pane is not in collection");
+        let first_position = self
+            .position(first)
+            .expect("first pane is not in collection");
+        let second_position = self
+            .position(second)
+            .expect("second pane is not in collection");
         self.storage
             .as_mut()
             .expect("pane collection is present")
@@ -400,11 +434,17 @@ impl window_panes {
 
     pub unsafe fn remove_at(&mut self, pane: *mut window_pane) -> refbox::Weak<window_pane> {
         let position = self.position(pane).expect("pane is not in collection");
-        self.storage.as_mut().expect("pane collection is present").remove(position)
+        self.storage
+            .as_mut()
+            .expect("pane collection is present")
+            .remove(position)
     }
 
     pub unsafe fn insert_at(&mut self, position: usize, pane: refbox::Weak<window_pane>) {
-        self.storage.as_mut().expect("pane collection is present").insert(position, pane);
+        self.storage
+            .as_mut()
+            .expect("pane collection is present")
+            .insert(position, pane);
     }
 }
 
@@ -455,8 +495,12 @@ impl window_pane_history {
 
     pub fn push_front(&mut self, pane: refbox::Weak<window_pane>) {
         let pointer = checked_window_pane_ptr(&pane);
-        unsafe { self.remove_ptr(pointer); }
-        self.storage.get_or_insert_with(|| Box::new(VecDeque::new())).push_front(pane);
+        unsafe {
+            self.remove_ptr(pointer);
+        }
+        self.storage
+            .get_or_insert_with(|| Box::new(VecDeque::new()))
+            .push_front(pane);
     }
 }
 

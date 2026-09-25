@@ -3895,10 +3895,7 @@ mod owned_callback_tests {
                 .windows(2)
                 .all(|pair| pair[0].key < pair[1].key));
             for entry in &FORMAT_TABLE {
-            assert!(std::ptr::eq(
-                    format_table_get(entry.key).unwrap(),
-                    entry
-                ));
+                assert!(std::ptr::eq(format_table_get(entry.key).unwrap(), entry));
             }
             assert!(format_table_get(c"not_a_builtin").is_none());
             let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);

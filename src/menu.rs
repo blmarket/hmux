@@ -157,7 +157,8 @@ pub unsafe extern "C" fn menu_add_item(
     }
     if line != 0
         && (*(*menu)
-            .items.as_mut_ptr()
+            .items
+            .as_mut_ptr()
             .offset((*menu).count.wrapping_sub(1 as u_int) as isize))
         .name
         .is_null()
@@ -328,8 +329,13 @@ unsafe extern "C" fn menu_reapply_styles(mut md: *mut menu_data) {
     );
     if !(*md).style.is_none() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
-        if style_parse(&raw mut sytmp, &raw mut (*md).style_gc, ((*md).style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-            == 0 as ::core::ffi::c_int
+        if style_parse(
+            &raw mut sytmp,
+            &raw mut (*md).style_gc,
+            ((*md).style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ) == 0 as ::core::ffi::c_int
         {
             (*md).style_gc.fg = sytmp.gc.fg;
             (*md).style_gc.bg = sytmp.gc.bg;
@@ -351,7 +357,9 @@ unsafe extern "C" fn menu_reapply_styles(mut md: *mut menu_data) {
         if style_parse(
             &raw mut sytmp,
             &raw mut (*md).selected_style_gc,
-            ((*md).selected_style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*md).selected_style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) == 0 as ::core::ffi::c_int
         {
             (*md).selected_style_gc.fg = sytmp.gc.fg;
@@ -374,7 +382,9 @@ unsafe extern "C" fn menu_reapply_styles(mut md: *mut menu_data) {
         if style_parse(
             &raw mut sytmp,
             &raw mut (*md).border_style_gc,
-            ((*md).border_style).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*md).border_style)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) == 0 as ::core::ffi::c_int
         {
             (*md).border_style_gc.fg = sytmp.gc.fg;
@@ -595,7 +605,8 @@ pub unsafe extern "C" fn menu_key(
             if !(name.is_null() || *name as ::core::ffi::c_int == '-' as i32) {
                 key = ((*event).key as ::core::ffi::c_ulonglong & !KEYC_MASK_FLAGS) as key_code;
                 if key
-                    == (*(*menu).items.as_mut_ptr().offset(i as isize)).key as ::core::ffi::c_ulonglong
+                    == (*(*menu).items.as_mut_ptr().offset(i as isize)).key
+                        as ::core::ffi::c_ulonglong
                         & !KEYC_MASK_FLAGS
                 {
                     (*md).choice = i as ::core::ffi::c_int;
@@ -618,7 +629,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -626,12 +638,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -646,7 +661,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -658,7 +674,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -701,7 +719,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -718,7 +737,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -740,7 +760,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -762,7 +783,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -770,12 +792,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -790,7 +815,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -802,7 +828,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -845,7 +873,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -862,7 +891,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -884,7 +914,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -906,7 +937,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -914,12 +946,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -934,7 +969,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -946,7 +982,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -989,7 +1027,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1006,7 +1045,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1028,7 +1068,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1050,7 +1091,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1058,12 +1100,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1078,7 +1123,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1090,7 +1136,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1133,7 +1181,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1150,7 +1199,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1172,7 +1222,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1194,7 +1245,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1202,12 +1254,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1222,7 +1277,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1234,7 +1290,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1277,7 +1335,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1294,7 +1353,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1316,7 +1376,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1338,7 +1399,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1346,12 +1408,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1366,7 +1431,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1378,7 +1444,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1421,7 +1489,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1438,7 +1507,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1460,7 +1530,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1482,7 +1553,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1490,12 +1562,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1510,7 +1585,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1522,7 +1598,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1565,7 +1643,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1582,7 +1661,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1604,7 +1684,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1626,7 +1707,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1634,12 +1716,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1654,7 +1739,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1666,7 +1752,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1709,7 +1797,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1726,7 +1815,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1748,7 +1838,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1771,7 +1862,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1779,12 +1871,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1799,7 +1894,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1811,7 +1907,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1854,7 +1952,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1871,7 +1970,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1893,7 +1993,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -1915,7 +2016,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != n - 1 as ::core::ffi::c_int
                             {
                                 (*md).choice += 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1923,12 +2025,15 @@ pub unsafe extern "C" fn menu_key(
                         5459197107747055838 => {
                             if (*md).choice > n - 6 as ::core::ffi::c_int {
                                 (*md).choice = n - 1 as ::core::ffi::c_int;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             } else {
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice += 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != n - 1 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1943,7 +2048,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -1955,7 +2061,9 @@ pub unsafe extern "C" fn menu_key(
                                 i = 5 as u_int;
                                 while i > 0 as u_int {
                                     (*md).choice -= 1;
-                                    name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                    name =
+                                        (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                            .name;
                                     if (*md).choice != 0 as ::core::ffi::c_int
                                         && (!name.is_null()
                                             && *name as ::core::ffi::c_int != '-' as i32)
@@ -1998,7 +2106,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice -= 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -2015,7 +2124,8 @@ pub unsafe extern "C" fn menu_key(
                                 && (*md).choice != 0 as ::core::ffi::c_int
                             {
                                 (*md).choice -= 1;
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                             }
                             server_redraw_window_menu((*md).w);
                             current_block = 12369290732426379360;
@@ -2037,7 +2147,8 @@ pub unsafe extern "C" fn menu_key(
                                 } else {
                                     (*md).choice += 1;
                                 }
-                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize)).name;
+                                name = (*(*menu).items.as_mut_ptr().offset((*md).choice as isize))
+                                    .name;
                                 if !((name.is_null() || *name as ::core::ffi::c_int == '-' as i32)
                                     && (*md).choice != old)
                                 {
@@ -2088,7 +2199,11 @@ pub unsafe extern "C" fn menu_key(
     ) {
         cmdq_append(
             c,
-            cmdq_get_error(error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr())),
+            cmdq_get_error(
+                error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+            ),
         );
     }
     cmdq_free_state(state);
@@ -2221,7 +2336,8 @@ pub unsafe extern "C" fn menu_display(
             choice = starting_choice + 1 as ::core::ffi::c_int;
             loop {
                 name = (*(*menu)
-                    .items.as_mut_ptr()
+                    .items
+                    .as_mut_ptr()
                     .offset((choice - 1 as ::core::ffi::c_int) as isize))
                 .name;
                 if !name.is_null() && *name as ::core::ffi::c_int != '-' as i32 {

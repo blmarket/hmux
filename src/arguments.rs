@@ -1,10 +1,10 @@
+use crate::src::cmd::find::cmd_find_copy_state;
+use crate::src::cmd::parse::cmd_parse_from_string;
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::cmd::{
     cmd_get_args, cmd_get_entry, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_list_free,
     cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
-use crate::src::cmd::find::cmd_find_copy_state;
-use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn};
 use crate::src::format::format_single_from_target_cstring;
@@ -422,7 +422,8 @@ unsafe fn args_parse_flag_argument(
             values.add(*i as usize)
         };
         if !argument.is_null()
-            && (*argument).type_0() as ::core::ffi::c_uint != ARGS_STRING as ::core::ffi::c_int as u32
+            && (*argument).type_0() as ::core::ffi::c_uint
+                != ARGS_STRING as ::core::ffi::c_int as u32
         {
             return Err(parse_flag_error(
                 b"-",
@@ -700,8 +701,7 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
             if argv.is_empty() {
                 return args_value::string(source.to_owned());
             }
-            let mut expanded =
-                cmd_template_replace_cstring(source, argv[0].as_c_str(), 1);
+            let mut expanded = cmd_template_replace_cstring(source, argv[0].as_c_str(), 1);
             for i in 1..argv.len() {
                 expanded = cmd_template_replace_cstring(
                     expanded.as_c_str(),
@@ -711,9 +711,7 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
             }
             args_value::string(expanded)
         }
-        2 => args_value::commands(
-            cmd_list_copy(&*from.cmdlist(), argv) as *mut cmd_list
-        ),
+        2 => args_value::commands(cmd_list_copy(&*from.cmdlist(), argv) as *mut cmd_list),
         0 | _ => args_value::empty(),
     }
 }
@@ -794,8 +792,7 @@ pub unsafe fn args_to_vector(args: *mut args) -> Vec<CString> {
                 argv.push(CStr::from_ptr(value.string_ptr()).to_owned());
             }
             2 => {
-                let printed =
-                    cmd_list_print_cstring(&*value.cmdlist(), 0 as ::core::ffi::c_int);
+                let printed = cmd_list_print_cstring(&*value.cmdlist(), 0 as ::core::ffi::c_int);
                 argv.push(printed);
             }
             _ => {}
@@ -1476,12 +1473,7 @@ pub unsafe fn args_percentage_result(
     {
         return Err(ArgumentValueError::Missing);
     }
-    parse_percentage(
-        CStr::from_ptr(value.string_ptr()),
-        minval,
-        maxval,
-        curval,
-    )
+    parse_percentage(CStr::from_ptr(value.string_ptr()), minval, maxval, curval)
 }
 
 /// Converts the last stored string after format expansion as an integer or percentage.
@@ -1524,7 +1516,12 @@ pub fn args_string_percentage_result(
     maxval: ::core::ffi::c_longlong,
     curval: ::core::ffi::c_longlong,
 ) -> Result<i64, ArgumentValueError> {
-    parse_percentage(value.ok_or(ArgumentValueError::Missing)?, minval, maxval, curval)
+    parse_percentage(
+        value.ok_or(ArgumentValueError::Missing)?,
+        minval,
+        maxval,
+        curval,
+    )
 }
 
 /// Converts an optional C string after format expansion as an integer or percentage.

@@ -1,6 +1,4 @@
-use crate::src::ffi::libc::{
-    calloc, free, vasprintf, vsnprintf,
-};
+use crate::src::ffi::libc::{calloc, free, vasprintf, vsnprintf};
 use crate::src::log::{fatal, fatalx};
 use crate::src::shared::abi::*;
 use crate::src::shared::limits::{__INT_MAX__, INT_MAX, SIZE_MAX};

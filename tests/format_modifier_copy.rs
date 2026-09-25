@@ -18,11 +18,7 @@ fn modifier_key_survives_nested_expansion_and_failure_cleanup() {
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
             let result = format_expand_cstring(tree, expression.as_ptr());
-            assert_eq!(
-                result.as_bytes(),
-                expected,
-                "{expression:?}"
-            );
+            assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
 
         // Force the modifier Vec to grow while parsing, then use saved

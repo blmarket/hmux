@@ -7,13 +7,13 @@ use hmux2::src::arguments::{
     args_push_positional_commands, args_push_positional_string, args_set_flag,
     args_set_owned_commands, args_set_owned_string, args_string,
     args_string_percentage_and_expand_result, args_string_percentage_result,
-    args_strtonum_and_expand_result,
-    args_strtonum_result, parse_number, parse_percentage, ArgumentValueError,
+    args_strtonum_and_expand_result, args_strtonum_result, parse_number, parse_percentage,
+    ArgumentValueError,
 };
-use hmux2::src::cmd::{cmd_list_free, cmd_list_new, cmd_list_print};
 use hmux2::src::cmd::queue::{
     cmdq_free_detached, cmdq_get_callback1, cmdq_get_error, cmdq_get_name,
 };
+use hmux2::src::cmd::{cmd_list_free, cmd_list_new, cmd_list_print};
 use hmux2::src::ffi::libc::snprintf;
 use hmux2::src::shared::arguments::{
     args, args_parse, args_value, ARGS_COMMANDS, ARGS_PARSE_COMMANDS, ARGS_STRING,
@@ -159,13 +159,7 @@ fn expanded_helpers_convert_formatted_values_and_keep_errors_typed() {
         args_free(args);
 
         assert_eq!(
-            args_string_percentage_and_expand_result(
-                Some(percentage.as_c_str()),
-                0,
-                1000,
-                1,
-                item,
-            ),
+            args_string_percentage_and_expand_result(Some(percentage.as_c_str()), 0, 1000, 1, item,),
             Ok(10)
         );
         assert_eq!(
@@ -227,14 +221,8 @@ fn repeated_flags_keep_order_and_numeric_helpers_use_the_last_value() {
         assert_eq!(args_has(args, b'v'), 2);
         let first = args_first_value(args, b'v');
         let second = args_next_value(first);
-        assert_eq!(
-            CStr::from_ptr((*first).string_ptr()).to_bytes(),
-            b"12"
-        );
-        assert_eq!(
-            CStr::from_ptr((*second).string_ptr()).to_bytes(),
-            b"34"
-        );
+        assert_eq!(CStr::from_ptr((*first).string_ptr()).to_bytes(), b"12");
+        assert_eq!(CStr::from_ptr((*second).string_ptr()).to_bytes(), b"34");
         assert_eq!(args_strtonum_result(args, b'v', 0, 100), Ok(34));
         assert_eq!(args_percentage_result(args, b'v', 0, 100, 100), Ok(34));
         args_free(args);
@@ -255,10 +243,7 @@ fn flag_value_collection_keeps_addresses_stable_and_returns_the_last_value() {
         }
 
         assert_eq!(args_first_value(args, b'n'), first);
-        assert_eq!(
-            CStr::from_ptr((*first).string_ptr()).to_bytes(),
-            b"first"
-        );
+        assert_eq!(CStr::from_ptr((*first).string_ptr()).to_bytes(), b"first");
 
         let mut value = first;
         for _ in 0..512 {
@@ -429,10 +414,7 @@ fn copied_argument_templates_own_intermediate_and_final_strings() {
         let copied = args_copy(source, &argv);
         let source_named = args_first_value(source, b'n');
         let copied_named = args_first_value(copied, b'n');
-        assert_ne!(
-            (*source_named).string_ptr(),
-            (*copied_named).string_ptr()
-        );
+        assert_ne!((*source_named).string_ptr(), (*copied_named).string_ptr());
         args_free(source);
 
         assert_eq!(

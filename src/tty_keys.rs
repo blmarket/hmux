@@ -1,7 +1,6 @@
 use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
-use crate::src::style::colour::{colour_format, colour_parse_x11_logged};
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{
     __ctype_b_loc, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol, strtoul,
@@ -97,11 +96,12 @@ use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
+use crate::src::style::colour::{colour_format, colour_parse_x11_logged};
+use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::src::tmux::global_options;
 use crate::src::tty::{tty_invalidate, tty_set_size, tty_update_features};
 use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
 use crate::src::tty_term::tty_term_string;
-use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::src::window::window_update_focus;
 use std::ffi::CStr;
 
@@ -1516,7 +1516,9 @@ unsafe extern "C" fn tty_keys_next1(
     let mut i: u_int = 0;
     log_debug(
         b"%s: next key is %zu (%.*s) (expired=%d)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         len,
         len as ::core::ffi::c_int,
         buf,
@@ -1528,7 +1530,9 @@ unsafe extern "C" fn tty_keys_next1(
         loop {
             log_debug(
                 b"%s: keys in list: %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*tk1).key,
             );
             tk1 = (*tk1).next;
@@ -1567,7 +1571,9 @@ unsafe extern "C" fn tty_keys_next1(
         *key = uc as key_code;
         log_debug(
             b"%s: UTF-8 key %.*s %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             ud.size as ::core::ffi::c_int,
             &raw mut ud.data as *mut u_char,
             *key,
@@ -1672,7 +1678,9 @@ unsafe extern "C" fn tty_keys_winsz(
     }
     log_debug(
         b"%s: unrecognized window size sequence: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         &raw mut tmp as *mut ::core::ffi::c_char,
     );
     return -(1 as ::core::ffi::c_int);
@@ -1723,7 +1731,9 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
     }
     log_debug(
         b"%s: keys are %zu (%.*s)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         len,
         len as ::core::ffi::c_int,
         buf,
@@ -2076,7 +2086,9 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     if key == bspace as key_code {
                         log_debug(
                             b"%s: key %#llx is BSpace\0" as *const u8 as *const ::core::ffi::c_char,
-                            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                            ((*c).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                             key,
                         );
                         key = KEYC_BSPACE as ::core::ffi::c_ulong as key_code;
@@ -2085,7 +2097,9 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                         log_debug(
                             b"%s: key %#llx is M-BSpace\0" as *const u8
                                 as *const ::core::ffi::c_char,
-                            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                            ((*c).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                             key,
                         );
                         key = (KEYC_BSPACE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -2112,7 +2126,9 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
             5025795842197473417 => {
                 log_debug(
                     b"%s: complete key %.*s %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     size as ::core::ffi::c_int,
                     buf,
                     key,
@@ -2160,7 +2176,9 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
             _ => {
                 log_debug(
                     b"%s: partial key %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     len as ::core::ffi::c_int,
                     buf,
                 );
@@ -2198,7 +2216,9 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                         log_debug(
                             b"%s: increasing delay (partial paste end)\0" as *const u8
                                 as *const ::core::ffi::c_char,
-                            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                            ((*c).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                         );
                         if delay < 500 as ::core::ffi::c_int {
                             delay = 500 as ::core::ffi::c_int;
@@ -2212,7 +2232,9 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                         log_debug(
                             b"%s: increasing delay (active query)\0" as *const u8
                                 as *const ::core::ffi::c_char,
-                            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                            ((*c).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                         );
                         if delay < 500 as ::core::ffi::c_int {
                             delay = 500 as ::core::ffi::c_int;
@@ -2398,7 +2420,9 @@ unsafe extern "C" fn tty_keys_extended_key(
         let key_string = key_string_format(nkey, true);
         log_debug(
             b"%s: extended key %.*s is %llx (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             *size as ::core::ffi::c_int,
             buf,
             nkey,
@@ -2462,7 +2486,9 @@ unsafe extern "C" fn tty_keys_mouse(
         }
         log_debug(
             b"%s: mouse input: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             *size as ::core::ffi::c_int,
             buf,
         );
@@ -2530,7 +2556,9 @@ unsafe extern "C" fn tty_keys_mouse(
         }
         log_debug(
             b"%s: mouse input (SGR): %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             *size as ::core::ffi::c_int,
             buf,
         );
@@ -2812,7 +2840,9 @@ unsafe extern "C" fn tty_keys_device_attributes(
             while i < n {
                 log_debug(
                     b"%s: DA feature: %d\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     p[i as usize] as ::core::ffi::c_int,
                 );
                 if p[i as usize] as ::core::ffi::c_int == 4 as ::core::ffi::c_int {
@@ -2850,7 +2880,9 @@ unsafe extern "C" fn tty_keys_device_attributes(
     }
     log_debug(
         b"%s: received primary DA %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         *size as ::core::ffi::c_int,
         buf,
     );
@@ -2926,7 +2958,9 @@ unsafe extern "C" fn tty_keys_sync(
     }
     log_debug(
         b"%s: received DECRPM %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         *size as ::core::ffi::c_int,
         buf,
     );
@@ -3072,7 +3106,9 @@ unsafe extern "C" fn tty_keys_device_attributes2(
     }
     log_debug(
         b"%s: received secondary DA %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         *size as ::core::ffi::c_int,
         buf,
     );
@@ -3236,7 +3272,9 @@ unsafe extern "C" fn tty_keys_extended_device_attributes(
     }
     log_debug(
         b"%s: received extended DA %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        ((*c).name)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         *size as ::core::ffi::c_int,
         buf,
     );
@@ -3338,7 +3376,9 @@ pub unsafe extern "C" fn tty_keys_colours(
         if !c.is_null() {
             log_debug(
                 b"%s fg is %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 colour_format(n).as_ptr(),
             );
         } else {
@@ -3353,7 +3393,9 @@ pub unsafe extern "C" fn tty_keys_colours(
         if !c.is_null() {
             log_debug(
                 b"%s bg is %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 colour_format(n).as_ptr(),
             );
         } else {

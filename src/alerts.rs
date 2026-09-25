@@ -5,9 +5,7 @@ use crate::src::reactor::{event_add, event_del, event_initialized, event_once, e
 use crate::src::server::clients;
 use crate::src::server_fn::server_status_session;
 use crate::src::shared::abi::*;
-use crate::src::shared::alerts::{
-    ALERT_ANY, ALERT_CURRENT, ALERT_OTHER, VISUAL_BOTH, VISUAL_OFF,
-};
+use crate::src::shared::alerts::{ALERT_ANY, ALERT_CURRENT, ALERT_OTHER, VISUAL_BOTH, VISUAL_OFF};
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::*;

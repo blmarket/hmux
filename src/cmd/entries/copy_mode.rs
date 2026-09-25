@@ -1,6 +1,6 @@
 use crate::src::arguments::args_has;
-use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_event, cmdq_get_source, cmdq_get_target};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse, args_parse_cb};

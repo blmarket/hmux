@@ -657,15 +657,18 @@ pub unsafe extern "C" fn ibuf_from_buffer(
     mut data: *mut ::core::ffi::c_void,
     mut len: size_t,
 ) {
-    ::core::ptr::write(buf, ibuf {
-        buf: data as *mut ::core::ffi::c_uchar,
-        size: len,
-        max: 0,
-        wpos: len,
-        rpos: 0,
-        fd: IBUF_FD_MARK_ON_STACK,
-        storage: None,
-    });
+    ::core::ptr::write(
+        buf,
+        ibuf {
+            buf: data as *mut ::core::ffi::c_uchar,
+            size: len,
+            max: 0,
+            wpos: len,
+            rpos: 0,
+            fd: IBUF_FD_MARK_ON_STACK,
+            storage: None,
+        },
+    );
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibuf_from_ibuf(mut buf: *mut ibuf, mut from: *const ibuf) {
@@ -798,7 +801,10 @@ pub unsafe fn ibuf_get_string(buf: *mut ibuf, len: size_t) -> Option<CString> {
     } else {
         std::slice::from_raw_parts(ibuf_data(buf) as *const u8, len)
     };
-    let string_len = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+    let string_len = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
     let Some(allocation_len) = string_len.checked_add(1) else {
         *__errno_location() = ENOMEM;
         return None;
@@ -1138,7 +1144,9 @@ unsafe extern "C" fn ibuf_read_process(
             let header = std::slice::from_raw_parts(scratch.add(cursor), (*msgbuf).hdrsize);
             let mut view = IbufView::new(header);
             (*msgbuf).rpmsg = (*msgbuf).readhdr.expect("non-null function pointer")(
-                view.as_ibuf_ptr(), (*msgbuf).rarg, &raw mut fd,
+                view.as_ibuf_ptr(),
+                (*msgbuf).rarg,
+                &raw mut fd,
             );
             if (*msgbuf).rpmsg.is_null() {
                 failed = true;
@@ -1153,10 +1161,7 @@ unsafe extern "C" fn ibuf_read_process(
         }
         let copy_len = sz as size_t;
         let chunk = {
-            let input = std::slice::from_raw_parts(
-                scratch.add(cursor),
-                available,
-            );
+            let input = std::slice::from_raw_parts(scratch.add(cursor), available);
             let mut view = IbufView::new(input);
             match view.take(copy_len) {
                 Some(chunk) => chunk,
@@ -1192,10 +1197,8 @@ unsafe extern "C" fn ibuf_read_process(
     }
     let remaining = read_len.wrapping_sub(cursor);
     if remaining > 0 {
-        let scratch = std::slice::from_raw_parts_mut(
-            (*msgbuf).rbuf as *mut u8,
-            IBUF_READ_SIZE as usize,
-        );
+        let scratch =
+            std::slice::from_raw_parts_mut((*msgbuf).rbuf as *mut u8, IBUF_READ_SIZE as usize);
         scratch.copy_within(cursor..read_len, 0);
     }
     (*msgbuf).roff = remaining;

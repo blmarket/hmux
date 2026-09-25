@@ -1,8 +1,8 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{cmdq_free_state, cmdq_new_state};
+use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::{__ctype_toupper_loc, free, memset, qsort};
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::format_draw;
@@ -52,9 +52,7 @@ use crate::src::shared::layout::*;
 use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
 use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
-use crate::src::shared::mouse::{
-    mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
-};
+use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
@@ -788,7 +786,9 @@ unsafe extern "C" fn window_switch_run_command(
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                    error
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
                 );
             }
         }

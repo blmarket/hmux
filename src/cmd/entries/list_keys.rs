@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has, args_string};
-use crate::src::cmd::{cmd_get_args, cmd_list_print_cstring};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
+use crate::src::cmd::{cmd_get_args, cmd_list_print_cstring};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
 };
@@ -71,8 +71,8 @@ use crate::src::sort::{
     sort_get_key_bindings, sort_get_key_bindings_table, sort_order_from_string,
 };
 use crate::src::status::status_message_set;
-use crate::src::tmux::global_s_options;
 use crate::src::text::utf8::utf8_cstrwidth;
+use crate::src::tmux::global_s_options;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -144,7 +144,12 @@ unsafe fn cmd_list_keys_get_width(bindings: &[*mut key_binding]) -> u_int {
 unsafe fn cmd_list_keys_get_table_width(bindings: &[*mut key_binding]) -> u_int {
     bindings
         .iter()
-        .map(|&bd| (*bd).tablename.as_ref().map_or(0, |s| utf8_cstrwidth(s.as_ptr())))
+        .map(|&bd| {
+            (*bd)
+                .tablename
+                .as_ref()
+                .map_or(0, |s| utf8_cstrwidth(s.as_ptr()))
+        })
         .max()
         .unwrap_or(0)
 }
@@ -197,7 +202,9 @@ unsafe fn cmd_list_keys_format_add_key_binding(
             ft,
             b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            bd.note.as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            bd.note
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     } else {
         format_add(
@@ -219,7 +226,9 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         ft,
         b"key_table\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        bd.tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
+        bd.tablename
+            .as_ref()
+            .map_or(::core::ptr::null(), |s| s.as_ptr()),
     );
     format_add(
         ft,

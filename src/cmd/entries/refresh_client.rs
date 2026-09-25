@@ -167,7 +167,9 @@ unsafe extern "C" fn cmd_refresh_client_control_client_size(
         log_debug(
             b"%s: client %s window @%u: size %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmd_refresh_client_control_client_size\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*tc).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*tc).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             w,
             x,
             y,
@@ -187,7 +189,9 @@ unsafe extern "C" fn cmd_refresh_client_control_client_size(
         log_debug(
             b"%s: client %s window @%u: no size\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmd_refresh_client_control_client_size\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*tc).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*tc).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             w,
         );
         control_clear_window_size(tc, w);

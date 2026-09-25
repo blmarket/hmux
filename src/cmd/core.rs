@@ -628,10 +628,7 @@ pub unsafe extern "C" fn cmd_list_free(mut cmdlist: *mut cmd_list) {
     drop(Box::from_raw((*cmdlist).list));
     drop(Box::from_raw(cmdlist));
 }
-pub unsafe fn cmd_list_copy(
-    cmdlist: &cmd_list,
-    argv: &Vec<CString>,
-) -> *mut cmd_list {
+pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd_list {
     let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut group: u_int = cmdlist.group;
@@ -844,11 +841,7 @@ pub unsafe extern "C" fn cmd_mouse_pane(
     }
     return wp;
 }
-pub unsafe fn cmd_template_replace(
-    template: &CStr,
-    s: &CStr,
-    idx: ::core::ffi::c_int,
-) -> CString {
+pub unsafe fn cmd_template_replace(template: &CStr, s: &CStr, idx: ::core::ffi::c_int) -> CString {
     cmd_template_replace_cstring(template, s, idx)
 }
 

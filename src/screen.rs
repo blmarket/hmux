@@ -1,9 +1,9 @@
 use crate::src::ffi::libc::{memcpy, snprintf, strlcat, strlen};
+use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
     grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_destroy,
     grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
-use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::hyperlinks::{hyperlinks_free, hyperlinks_init, hyperlinks_reset};
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::options_get_number;
@@ -65,9 +65,9 @@ use crate::src::shared::window::{
     winlink_stack, winlinks,
 };
 use crate::src::style::style_apply;
+use crate::src::text::utf8::{utf8_copy, utf8_to_data};
 use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::tty_acs::tty_acs_get;
-use crate::src::text::utf8::{utf8_copy, utf8_to_data};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 

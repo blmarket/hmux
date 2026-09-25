@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::ffi::libc::free;
 use crate::src::options::options_get_number;
 use crate::src::resize::recalculate_sizes;
@@ -189,14 +189,8 @@ unsafe extern "C" fn cmd_move_window_exec(
             return CMD_RETURN_ERROR;
         }
     }
-    if let Err(cause) = server_link_window(
-        src,
-        wl,
-        dst,
-        idx,
-        kflag,
-        (dflag == 0) as ::core::ffi::c_int,
-    )
+    if let Err(cause) =
+        server_link_window(src, wl, dst, idx, kflag, (dflag == 0) as ::core::ffi::c_int)
     {
         cmdq_error(
             item,

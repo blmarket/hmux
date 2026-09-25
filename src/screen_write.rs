@@ -1,13 +1,13 @@
 use crate::src::ffi::libc::{memcpy, memset, strlen};
 use crate::src::format_draw::format_draw;
-use crate::src::grid::{
-    grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
-};
 use crate::src::grid::view::{
     grid_view_clear, grid_view_clear_history, grid_view_delete_cells, grid_view_delete_lines,
     grid_view_delete_lines_region, grid_view_get_cell, grid_view_insert_cells,
     grid_view_insert_lines, grid_view_insert_lines_region, grid_view_scroll_region_down,
     grid_view_scroll_region_up, grid_view_set_cell, grid_view_set_cells, grid_view_set_padding,
+};
+use crate::src::grid::{
+    grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
 };
 use crate::src::layout::layout_fix_panes;
 use crate::src::log::{fatal, fatalx, log_debug, log_get_level};
@@ -100,6 +100,11 @@ use crate::src::shared::window::{
     winlink_stack, winlinks,
 };
 use crate::src::status::{status_at_line, status_line_size};
+use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};
+use crate::src::text::utf8_combined::{
+    hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
+    utf8_should_combine,
+};
 use crate::src::tmux::global_options;
 use crate::src::tty::{
     tty_cmd_alignmenttest, tty_cmd_cell, tty_cmd_cells, tty_cmd_clearcharacter,
@@ -110,11 +115,6 @@ use crate::src::tty::{
     tty_update_window_offset, tty_window_offset, tty_write,
 };
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
-use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};
-use crate::src::text::utf8_combined::{
-    hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
-    utf8_should_combine,
-};
 use crate::src::window::{
     window_pane_clear_resizes, window_pane_is_floating, window_pane_scrollbar_overlay_visible,
     window_pane_scrollbar_redraw, window_pane_send_resize, window_pane_z_previous,

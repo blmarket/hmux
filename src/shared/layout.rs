@@ -117,7 +117,9 @@ pub unsafe fn layout_cell_next(cell: *mut layout_cell) -> *mut layout_cell {
     let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
         Some(index)
     } else {
-        children.iter().position(|child| layout_cell_ptr(child) == cell)
+        children
+            .iter()
+            .position(|child| layout_cell_ptr(child) == cell)
     };
     index
         .and_then(|index| children.get(index + 1).map(layout_cell_ptr))
@@ -134,7 +136,9 @@ pub unsafe fn layout_cell_prev(cell: *mut layout_cell) -> *mut layout_cell {
     let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
         Some(index)
     } else {
-        children.iter().position(|child| layout_cell_ptr(child) == cell)
+        children
+            .iter()
+            .position(|child| layout_cell_ptr(child) == cell)
     };
     index
         .and_then(|index| {
@@ -152,7 +156,9 @@ pub unsafe fn layout_cells_remove(parent: *mut layout_cell, child: *mut layout_c
     let index = if children.get(hinted).map(layout_cell_ptr) == Some(child) {
         Some(hinted)
     } else {
-        children.iter().position(|item| layout_cell_ptr(item) == child)
+        children
+            .iter()
+            .position(|item| layout_cell_ptr(item) == child)
     };
     if let Some(index) = index {
         let boxed = children.remove(index);

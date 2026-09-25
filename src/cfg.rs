@@ -236,7 +236,9 @@ pub unsafe extern "C" fn load_cfg(
     {
         cfg_add_cause(
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+            pr.error
+                .as_ref()
+                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
         );
         return -(1 as ::core::ffi::c_int);
     }
@@ -257,7 +259,9 @@ pub unsafe extern "C" fn load_cfg(
         state,
         b"current_file\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        pi.file.as_ref().map_or(::core::ptr::null(), |file| file.as_ptr()),
+        pi.file
+            .as_ref()
+            .map_or(::core::ptr::null(), |file| file.as_ptr()),
     );
     new_item0 = cmdq_get_command(pr.cmdlist, state);
     if !item.is_null() {
@@ -320,7 +324,9 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
     {
         cfg_add_cause(
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+            pr.error
+                .as_ref()
+                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
         );
         return -(1 as ::core::ffi::c_int);
     }
@@ -341,7 +347,9 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
         state,
         b"current_file\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        pi.file.as_ref().map_or(::core::ptr::null(), |file| file.as_ptr()),
+        pi.file
+            .as_ref()
+            .map_or(::core::ptr::null(), |file| file.as_ptr()),
     );
     new_item0 = cmdq_get_command(pr.cmdlist, state);
     if !item.is_null() {

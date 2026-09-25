@@ -171,10 +171,7 @@ unsafe extern "C" fn fuzzy_decode_one(
     utf8_set(ud, *cp as u_char);
     return cp.offset(1 as ::core::ffi::c_int as isize);
 }
-unsafe fn fuzzy_scan(
-    text: &CStr,
-    widths: &mut [u_int; 5],
-) -> Vec<fuzzy_char> {
+unsafe fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
     let mut cs = Vec::new();
     let mut n: u_int = 0;
     let mut leading: u_int = 0;
@@ -210,8 +207,7 @@ unsafe fn fuzzy_scan(
         link: 0,
     };
     let mut cp: *const ::core::ffi::c_char = text.as_ptr();
-    let mut textend: *const ::core::ffi::c_char =
-        text.as_ptr().add(text.to_bytes().len());
+    let mut textend: *const ::core::ffi::c_char = text.as_ptr().add(text.to_bytes().len());
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -924,12 +920,7 @@ mod tests {
             assert_eq!(mask.unwrap()[0], 1 << 1);
 
             let incomplete = c"L#[align=right R";
-            let mask = fuzzy_match_owned(
-                pattern,
-                incomplete,
-                8,
-                None,
-            );
+            let mask = fuzzy_match_owned(pattern, incomplete, 8, None);
             assert!(mask.is_none());
         }
     }
@@ -937,25 +928,13 @@ mod tests {
     #[test]
     fn fuzzy_match_backtracks_and_resets_between_alternatives() {
         unsafe {
-            let mask = fuzzy_match_owned(
-                c"q|abc",
-                c"aabcbc",
-                6,
-                None,
-            );
+            let mask = fuzzy_match_owned(c"q|abc", c"aabcbc", 6, None);
             assert_eq!(mask.unwrap()[0], 0b001110);
 
-            let mask = fuzzy_match_owned(
-                c"abc|q",
-                c"aabcbc",
-                6,
-                None,
-            );
+            let mask = fuzzy_match_owned(c"abc|q", c"aabcbc", 6, None);
             assert_eq!(mask.unwrap()[0], 0b001110);
 
-            assert!(
-                fuzzy_match_owned(c"abc", c"abx", 3, None).is_none()
-            );
+            assert!(fuzzy_match_owned(c"abc", c"abx", 3, None).is_none());
         }
     }
 
@@ -964,25 +943,11 @@ mod tests {
         let text = format!("{}zy\0q", "a".repeat(63));
         let text = CStr::from_bytes_until_nul(text.as_bytes()).unwrap();
         unsafe {
-            let mask = fuzzy_match_owned(
-                c"zy",
-                text,
-                65,
-                None,
-            );
+            let mask = fuzzy_match_owned(c"zy", text, 65, None);
             let mask = mask.unwrap();
-            assert_eq!(
-                mask.as_slice(),
-                &[0, 0, 0, 0, 0, 0, 0, 0x80, 1]
-            );
+            assert_eq!(mask.as_slice(), &[0, 0, 0, 0, 0, 0, 0, 0x80, 1]);
 
-            assert!(fuzzy_match_owned(
-                c"q",
-                text,
-                65,
-                None
-            )
-            .is_none());
+            assert!(fuzzy_match_owned(c"q", text, 65, None).is_none());
         }
     }
 }

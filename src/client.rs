@@ -1,5 +1,5 @@
-use crate::src::cmd::{cmd_list_any_have, cmd_list_free, cmd_pack_argv};
 use crate::src::cmd::parse::cmd_parse_from_argv;
+use crate::src::cmd::{cmd_list_any_have, cmd_list_free, cmd_pack_argv};
 use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
 use crate::src::environ::environ_free;

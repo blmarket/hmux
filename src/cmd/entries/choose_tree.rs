@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::paste::paste_is_empty;
 use crate::src::server_client::server_client_how_many;
 use crate::src::shared::abi::*;

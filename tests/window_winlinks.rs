@@ -1,8 +1,8 @@
 use hmux2::src::shared::session::session;
 use hmux2::src::shared::window::window;
 use hmux2::src::window::{
-    winlink_add, winlink_remove, winlink_set_window, winlinks_reindex, window_winlinks_first,
-    window_winlinks_next,
+    window_winlinks_first, window_winlinks_next, winlink_add, winlink_remove, winlink_set_window,
+    winlinks_reindex,
 };
 use refbox::BorrowError;
 

@@ -1809,10 +1809,7 @@ pub unsafe extern "C" fn format_width(mut expanded: *const ::core::ffi::c_char) 
     }
     return width;
 }
-pub(crate) unsafe fn format_trim_left_bytes(
-    expanded: &CStr,
-    mut limit: u_int,
-) -> Vec<u8> {
+pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
     let mut cp: *const ::core::ffi::c_char = expanded.as_ptr();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1897,10 +1894,7 @@ pub(crate) unsafe fn format_trim_left_bytes(
     }
     out
 }
-pub(crate) unsafe fn format_trim_right_bytes(
-    expanded: &CStr,
-    mut limit: u_int,
-) -> Vec<u8> {
+pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
     let mut cp: *const ::core::ffi::c_char = expanded.as_ptr();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1995,4 +1989,3 @@ pub(crate) unsafe fn format_trim_right_bytes(
     }
     out
 }
-

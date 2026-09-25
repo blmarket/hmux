@@ -2,13 +2,13 @@ use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_free,
     args_make_commands_prepare, args_string,
 };
-use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::cmd::find::cmd_find_from_nothing;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
+use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::{__ctype_toupper_loc, strtod};
 use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_free,
@@ -216,11 +216,7 @@ unsafe extern "C" fn cmd_run_shell_print(mut job: *mut job, mut msg: *const ::co
     );
 }
 
-fn cmd_run_shell_status_message(
-    cmd: &CStr,
-    suffix: &[u8],
-    code: ::core::ffi::c_int,
-) -> CString {
+fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_int) -> CString {
     let cmd = cmd.to_bytes();
     let code = code.to_string();
     let mut message = Vec::with_capacity(1 + cmd.len() + suffix.len() + code.len());

@@ -7,16 +7,15 @@ use crate::src::json::{
 };
 use crate::src::layout::{
     layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
-    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_free_cell,
-    layout_make_leaf, layout_print_cell, layout_replace_with_node, layout_set_size,
+    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_free_cell, layout_make_leaf,
+    layout_print_cell, layout_replace_with_node, layout_set_size,
 };
 use crate::src::resize::recalculate_sizes;
 use crate::src::window::{
     window_count_panes, window_pane_first, window_pane_index, window_pane_is_floating,
     window_pane_last_index, window_pane_next, window_pane_stack_first, window_pane_stack_push,
-    window_pane_stack_remove,
-    window_pane_z_first, window_pane_z_next, window_pane_z_remove, window_pane_z_insert_front,
-    window_pane_zindex, window_resize, window_set_active_pane,
+    window_pane_stack_remove, window_pane_z_first, window_pane_z_insert_front, window_pane_z_next,
+    window_pane_z_remove, window_pane_zindex, window_resize, window_set_active_pane,
 };
 use crate::src::xmalloc::xvasprintf_cstring;
 use std::ffi::{CStr, CString};
@@ -99,8 +98,8 @@ use crate::src::shared::window::{
     winlink_stack, winlinks,
 };
 
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
+use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
 /// A temporary NUL-terminated serializer buffer.
 ///
@@ -655,21 +654,12 @@ pub unsafe fn layout_parse(
     with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
     npanes = window_count_panes(w, with_floating);
     if npanes == 0 as u_int {
-        layout_format_cause!(
-            cause,
-            "window @{} has no panes",
-            (*w).id,
-        );
+        layout_format_cause!(cause, "window @{} has no panes", (*w).id,);
     } else {
         loop {
             ncells = layout_count_cells(pctx.root, with_floating);
             if npanes > ncells {
-                layout_format_cause!(
-                    cause,
-                    "have {} panes but need {}",
-                    npanes,
-                    ncells,
-                );
+                layout_format_cause!(cause, "have {} panes but need {}", npanes, ncells,);
                 current_block = 4277046812173491162;
                 break;
             } else {

@@ -3,18 +3,18 @@
 pub mod alerts;
 pub mod arguments;
 pub mod bracketed_paste;
-pub mod ffi;
 pub mod cfg;
 pub mod client;
 pub mod cmd;
+pub mod ffi;
 pub mod compat {
     pub mod fdforkpty;
     pub mod freezero;
-    pub mod glob;
     pub mod getdtablecount;
     pub mod getopt_long;
     pub mod getpeereid;
     pub mod getprogname;
+    pub mod glob;
     pub mod htonll;
     pub mod imsg;
     pub mod imsg_buffer;

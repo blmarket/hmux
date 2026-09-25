@@ -4,8 +4,8 @@ use crate::src::format::{
     format_expand_time_cstring, format_free,
 };
 use crate::src::format_draw::format_draw;
-use crate::src::grid::{grid_compare, grid_default_cell};
 use crate::src::grid::view::grid_view_get_cell;
+use crate::src::grid::{grid_compare, grid_default_cell};
 use crate::src::options::options_get_string;
 use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_redraw::redraw_get_status_border_cell_type;
@@ -71,8 +71,8 @@ use crate::src::shared::window::{
     winlink_stack, winlinks,
 };
 use crate::src::style::{style_apply, style_ranges_clear};
-use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::text::utf8::{utf8_copy, utf8_set};
+use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::window::{
     window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_index,
 };

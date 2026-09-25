@@ -157,13 +157,7 @@ unsafe extern "C" fn cmd_bind_key_exec(
         && (*value).type_0() as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        key_bindings_add(
-            tablename,
-            key,
-            note,
-            repeat,
-            (*value).cmdlist(),
-        );
+        key_bindings_add(tablename, key, note, repeat, (*value).cmdlist());
         (*(*value).cmdlist()).references += 1;
         return CMD_RETURN_NORMAL;
     }
@@ -184,7 +178,9 @@ unsafe extern "C" fn cmd_bind_key_exec(
             cmdq_error(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                pr.error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
             );
             return CMD_RETURN_ERROR;
         }

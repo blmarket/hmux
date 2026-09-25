@@ -1,6 +1,8 @@
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client};
+use crate::src::cmd::queue::{
+    cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client,
+};
 use crate::src::ffi::libc::{
     __errno_location, _exit, close, closefrom, dup2, execl, fork, memcpy, open, setpgid,
     sigfillset, sigprocmask, socketpair, strerror,

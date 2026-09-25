@@ -1,10 +1,9 @@
 use crate::src::arguments::{args_get, args_has, args_percentage_and_expand_result};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_event, cmdq_get_source, cmdq_get_target,
 };
-use crate::src::style::colour::colour_palette_from_option;
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::{free, strcmp};
@@ -80,6 +79,7 @@ use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
+use crate::src::style::colour::colour_palette_from_option;
 use crate::src::window::{
     window_count_panes, window_fire_pane_moved, window_lost_pane, window_pane_get_pane_lines,
     window_pane_is_floating, window_pane_list_insert_after, window_pane_list_insert_before,

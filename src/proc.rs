@@ -14,9 +14,7 @@ use crate::src::reactor::{
     event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{
-    __clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t,
-};
+use crate::src::shared::abi::{__clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t};
 use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::message::*;
 use crate::src::shared::message::{ibuf, imsg, imsgbuf, msgbuf};

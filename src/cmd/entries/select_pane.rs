@@ -1,9 +1,11 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
-use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_winlink, cmd_find_from_winlink_pane};
+use crate::src::cmd::find::{
+    cmd_find_from_pane, cmd_find_from_winlink, cmd_find_from_winlink_pane,
+};
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_current, cmdq_get_target, cmdq_insert_hook, cmdq_print,
 };
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
@@ -26,8 +28,7 @@ use crate::src::window::{
     window_count_panes, window_pane_find_down, window_pane_find_left, window_pane_find_right,
     window_pane_find_up, window_pane_is_floating, window_pane_is_visible, window_pane_next,
     window_pane_previous, window_pane_stack_first, window_pop_zoom, window_push_zoom,
-    window_redraw_active_switch,
-    window_set_active_pane,
+    window_redraw_active_switch, window_set_active_pane,
 };
 
 use crate::src::shared::abi::*;

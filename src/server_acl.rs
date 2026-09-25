@@ -91,8 +91,7 @@ fn server_acl_entry_find(
     id: id_t,
     flags: ::core::ffi::c_int,
 ) -> *mut server_acl_entry {
-    head
-        .entries
+    head.entries
         .get(&server_acl_key(id, flags))
         .map(|entry| entry.as_ref() as *const server_acl_entry as *mut server_acl_entry)
         .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
@@ -117,8 +116,7 @@ fn server_acl_entries_next(
     entry: &server_acl_entry,
 ) -> *mut server_acl_entry {
     let key = server_acl_entry_key(entry);
-    head
-        .entries
+    head.entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map(|(_, entry)| entry.as_ref() as *const server_acl_entry as *mut server_acl_entry)
@@ -180,7 +178,10 @@ unsafe extern "C" fn server_acl_update() {
     while !c.is_null() {
         entry = server_acl_check(c);
         if entry.is_null() {
-            server_client_set_exit_message(&mut *c, Some(CString::new("access not allowed").unwrap()));
+            server_client_set_exit_message(
+                &mut *c,
+                Some(CString::new("access not allowed").unwrap()),
+            );
             (*c).flags |= CLIENT_EXIT as uint64_t;
         } else if (*entry).flags & SERVER_ACL_READONLY != 0 {
             (*c).flags |= CLIENT_READONLY as uint64_t;
@@ -298,7 +299,7 @@ pub unsafe extern "C" fn server_acl_allow_write(mut id: id_t, mut flags: ::core:
 #[no_mangle]
 pub unsafe extern "C" fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-            entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if entry.is_null() {
         return;
     }
@@ -350,10 +351,7 @@ mod tests {
             );
 
             assert_eq!(server_acl_entries_minmax(&tree, -1), second_ptr);
-            assert_eq!(
-                server_acl_entries_next(&tree, &*second_ptr),
-                first_ptr
-            );
+            assert_eq!(server_acl_entries_next(&tree, &*second_ptr), first_ptr);
             assert_eq!(server_acl_entries_next(&tree, &*first_ptr), group_ptr);
             assert!(server_acl_entries_next(&tree, &*group_ptr).is_null());
             assert_eq!(server_acl_entries_minmax(&tree, 1), group_ptr);

@@ -67,8 +67,8 @@ use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
-use crate::src::tmux::global_options;
 use crate::src::text::utf8::{utf8_to_data, utf8_towc};
+use crate::src::tmux::global_options;
 use crate::src::window::window_pane_is_visible;
 use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
@@ -101,8 +101,7 @@ pub const MOTION_MOUSE_MODES: ::core::ffi::c_int = MODE_MOUSE_BUTTON | MODE_MOUS
 // therefore preserves exact lookup, duplicate insertion, and in-order
 // traversal semantics without storing links in each input_key_entry.
 fn input_key_tree_find(head: &input_key_tree, key: key_code) -> *mut input_key_entry {
-    head
-        .entries
+    head.entries
         .get(&key)
         .copied()
         .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
@@ -166,8 +165,7 @@ unsafe fn input_key_tree_next(
     head: &input_key_tree,
     elm: &input_key_entry,
 ) -> *mut input_key_entry {
-    head
-        .entries
+    head.entries
         .range((
             std::ops::Bound::Excluded(elm.key),
             std::ops::Bound::Unbounded,
@@ -1203,10 +1201,7 @@ mod tests {
     fn generated_entries_keep_stable_data_and_first_duplicate() {
         unsafe {
             let mut tree = input_key_tree::default();
-            input_key_tree_insert_generated(
-                &mut tree,
-                input_key_generated(c"\x1b[1;_A", 7, 2),
-            );
+            input_key_tree_insert_generated(&mut tree, input_key_generated(c"\x1b[1;_A", 7, 2));
             let first = input_key_tree_find(&tree, 7);
             assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
 
@@ -1216,10 +1211,7 @@ mod tests {
                     input_key_generated(c"\x1b[1;_B", key, 3),
                 );
             }
-            input_key_tree_insert_generated(
-                &mut tree,
-                input_key_generated(c"\x1b[1;_C", 7, 4),
-            );
+            input_key_tree_insert_generated(&mut tree, input_key_generated(c"\x1b[1;_C", 7, 4));
             assert_eq!(tree.generated.len(), 101);
             assert_eq!(input_key_tree_find(&tree, 7), first);
             assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");

@@ -114,15 +114,12 @@ unsafe fn event_payload_tree_insert(
     if (*head).entries.is_null() {
         (*head).entries = Box::into_raw(Box::new(event_payload_tree_storage::default()));
     }
-    match (*(*head).entries)
-        .entries
-        .entry(event_payload_name_key(
-            (*elm)
-                .name
-                .as_deref()
-                .expect("event payload item has a name"),
-        ))
-    {
+    match (*(*head).entries).entries.entry(event_payload_name_key(
+        (*elm)
+            .name
+            .as_deref()
+            .expect("event payload item has a name"),
+    )) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             // Keep the owner in the legacy slot for event_payload_next, whose
@@ -141,14 +138,12 @@ unsafe fn event_payload_tree_remove(
     if head.is_null() || (*head).entries.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
-    let removed = (*(*head).entries)
-        .entries
-        .remove(&event_payload_name_key(
-            (*elm)
-                .name
-                .as_deref()
-                .expect("event payload item has a name"),
-        ));
+    let removed = (*(*head).entries).entries.remove(&event_payload_name_key(
+        (*elm)
+            .name
+            .as_deref()
+            .expect("event payload item has a name"),
+    ));
     if let Some(removed) = removed {
         (*removed).entry.rbe_parent = ::core::ptr::null_mut::<event_payload_item>();
         removed
@@ -623,7 +618,9 @@ unsafe extern "C" fn event_payload_add_item(
             evbuffer_add_printf(
                 evb,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*(*epi).c2rust_unnamed.client).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*(*epi).c2rust_unnamed.client).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         5 => {
@@ -800,7 +797,9 @@ pub unsafe extern "C" fn event_payload_log(
             evbuffer_add_printf(
                 evb,
                 b"%s=\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*epi).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*epi).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
             event_payload_add_item(epi, evb);
             epi = event_payload_tree_next(epi);
@@ -1057,7 +1056,8 @@ mod tests {
                 rbe_parent: ::core::ptr::null_mut::<event_payload_item>(),
                 rbe_color: 0,
             },
-         ..event_payload_item::empty() })
+            ..event_payload_item::empty()
+        })
     }
 
     #[test]

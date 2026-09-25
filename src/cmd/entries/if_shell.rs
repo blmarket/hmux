@@ -2,12 +2,12 @@ use crate::src::arguments::{
     args_count, args_has, args_make_commands, args_make_commands_free, args_make_commands_now,
     args_make_commands_prepare, args_string,
 };
-use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
+use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::{job_get_data, job_get_status, job_run};

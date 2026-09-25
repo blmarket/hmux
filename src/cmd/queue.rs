@@ -3,13 +3,13 @@ use crate::src::arguments::{
     args_print_cstring, args_string,
 };
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
-use crate::src::cmd::{
-    cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_list_first, cmd_list_free,
-    cmd_list_next, cmd_print_cstring,
-};
 use crate::src::cmd::find::{
     cmd_find_clear_state, cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
     cmd_find_target, cmd_find_valid_state,
+};
+use crate::src::cmd::{
+    cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_list_first, cmd_list_free,
+    cmd_list_next, cmd_print_cstring,
 };
 use crate::src::control::{control_write, control_write_guard};
 use crate::src::events::events_fire;
@@ -54,9 +54,7 @@ use crate::src::shared::display::*;
 use crate::src::shared::display::{visible_range, visible_ranges};
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
-use crate::src::shared::events::{
-    event_payload, event_payload_free_cb, event_payload_print_cb,
-};
+use crate::src::shared::events::{event_payload, event_payload_free_cb, event_payload_print_cb};
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
@@ -214,7 +212,9 @@ unsafe extern "C" fn cmdq_name(mut c: *mut client) -> *const ::core::ffi::c_char
             &raw mut s as *mut ::core::ffi::c_char,
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
             b"<%s>\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     } else {
         xsnprintf(
@@ -426,7 +426,9 @@ pub unsafe extern "C" fn cmdq_append(
             b"%s %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_append\0" as *const u8 as *const ::core::ffi::c_char,
             cmdq_name(c),
-            ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         item = next;
         if item.is_null() {
@@ -460,8 +462,12 @@ pub unsafe extern "C" fn cmdq_insert_after(
             b"%s %s: %s after %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_insert_after\0" as *const u8 as *const ::core::ffi::c_char,
             cmdq_name(c),
-            ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ((*after).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*after).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         after = item;
         item = next;
@@ -662,7 +668,9 @@ pub unsafe extern "C" fn cmdq_get_command(
         log_debug(
             b"%s: %s group %u\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_get_command\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*item).group,
         );
         if first.is_null() {
@@ -725,7 +733,9 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
             let key = key_string_format((*state).event.key, false);
             server_add_message(
                 b"%s%s key %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 user.as_ptr(),
                 key.as_ptr(),
                 tmp.as_ptr(),
@@ -733,7 +743,9 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
         } else {
             server_add_message(
                 b"%s%s command: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 user.as_ptr(),
                 tmp.as_ptr(),
             );
@@ -996,7 +1008,9 @@ pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {
             b"%s %s: %s (%d), flags %x\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
             name,
-            ((*item).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*item).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*item).type_0 as ::core::ffi::c_uint,
             (*item).flags,
         );
@@ -1148,7 +1162,9 @@ pub unsafe extern "C" fn cmdq_error(
     } else if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         server_add_message(
             b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             msg.as_ptr(),
         );
         if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {

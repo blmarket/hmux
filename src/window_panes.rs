@@ -2,11 +2,11 @@ use crate::src::arguments::{
     args_has, args_make_commands, args_make_commands_free, args_make_commands_prepare,
     args_strtonum_result,
 };
-use crate::src::cmd::{cmd_list_free, cmd_mouse_at};
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error, cmdq_get_source,
     cmdq_get_target,
 };
+use crate::src::cmd::{cmd_list_free, cmd_mouse_at};
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::{format_create_defaults, format_free, format_single_cstring};
 use crate::src::format_draw::format_draw;

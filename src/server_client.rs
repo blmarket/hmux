@@ -1,15 +1,12 @@
 use crate::src::alerts::alerts_check_session;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
-use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::queue::{
     cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback1, cmdq_get_client,
     cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_set_cancel_data,
 };
-use crate::src::style::colour::{
-    colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
-};
+use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
 use crate::src::compat::imsg::imsg_get_fd;
 use crate::src::control::{
     control_all_done, control_discard, control_discard_all, control_pane_offset, control_ready,
@@ -72,6 +69,10 @@ use crate::src::status::{
     status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
     status_timer_start,
 };
+use crate::src::style::colour::{
+    colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
+};
+use crate::src::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
 use crate::src::tmux::{checkshell, find_home_cstr, global_options, global_s_options, setblocking};
 use crate::src::tty::{
     tty_close, tty_cursor, tty_free, tty_init, tty_invalidate, tty_margin_off, tty_open,
@@ -81,20 +82,19 @@ use crate::src::tty::{
 };
 use crate::src::tty_features::tty_get_features;
 use crate::src::tty_term::tty_term_has;
-use crate::src::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
 use crate::src::window::windows;
 use crate::src::window::{
     all_window_panes, window_get_active_at, window_pane_clear_resizes, window_pane_contains,
-    window_pane_find_by_id, window_pane_get_new_data, window_pane_get_pane_lines,
-    window_pane_get_pane_status, window_pane_has_prompt, window_pane_is_floating,
-    window_pane_is_visible, window_pane_key, window_pane_paste, window_pane_prompt_key,
-    window_pane_scrollbar_overlay, window_pane_scrollbar_overlay_visible,
-    window_pane_scrollbar_reserve, window_pane_scrollbar_show, window_pane_scrollbar_start_timer,
-    window_pane_scrollbar_visible, window_pane_send_resize, window_pane_send_theme_update,
-    window_pane_first, window_pane_next,
-    window_pane_set_mode, window_pane_status_get_range, window_pane_tree_minmax,
-    window_pane_tree_next, window_redraw_active_switch, window_set_active_pane,
-    window_update_focus, window_winlinks_first, window_winlinks_next, windows_minmax, windows_next,
+    window_pane_find_by_id, window_pane_first, window_pane_get_new_data,
+    window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_has_prompt,
+    window_pane_is_floating, window_pane_is_visible, window_pane_key, window_pane_next,
+    window_pane_paste, window_pane_prompt_key, window_pane_scrollbar_overlay,
+    window_pane_scrollbar_overlay_visible, window_pane_scrollbar_reserve,
+    window_pane_scrollbar_show, window_pane_scrollbar_start_timer, window_pane_scrollbar_visible,
+    window_pane_send_resize, window_pane_send_theme_update, window_pane_set_mode,
+    window_pane_status_get_range, window_pane_tree_minmax, window_pane_tree_next,
+    window_redraw_active_switch, window_set_active_pane, window_update_focus,
+    window_winlinks_first, window_winlinks_next, windows_minmax, windows_next,
     winlink_find_by_index,
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
@@ -105,9 +105,7 @@ use std::ffi::{CStr, CString};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
 use crate::src::shared::arguments::*;
-use crate::src::shared::arguments::{
-    args, args_value, args_value_entry,
-};
+use crate::src::shared::arguments::{args, args_value, args_value_entry};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
     client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
@@ -409,7 +407,10 @@ mod client_message_owner_tests {
                 b"unknown"
             );
 
-            server_client_set_term_name(&mut *c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
+            server_client_set_term_name(
+                &mut *c,
+                Some(CString::new(b"term-\xff".to_vec()).unwrap()),
+            );
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).term_name)
@@ -483,7 +484,10 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).term_type.is_none());
 
-            server_client_set_term_type(&mut *c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
+            server_client_set_term_type(
+                &mut *c,
+                Some(CString::new(b"term-\xff".to_vec()).unwrap()),
+            );
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).term_type)
@@ -520,7 +524,10 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).title.is_none());
 
-            server_client_replace_title(&mut *c, Some(CString::new(b"title-\xff".to_vec()).unwrap()));
+            server_client_replace_title(
+                &mut *c,
+                Some(CString::new(b"title-\xff".to_vec()).unwrap()),
+            );
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).title)
@@ -674,7 +681,10 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).name.is_none());
 
-            server_client_set_name(&mut *c, Some(CString::new(b"/dev/pts/\xff".to_vec()).unwrap()));
+            server_client_set_name(
+                &mut *c,
+                Some(CString::new(b"/dev/pts/\xff".to_vec()).unwrap()),
+            );
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).name)
@@ -711,7 +721,10 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).exit_message.is_none());
 
-            server_client_set_exit_message(&mut *c, Some(CString::new(b"error-\xff".to_vec()).unwrap()));
+            server_client_set_exit_message(
+                &mut *c,
+                Some(CString::new(b"error-\xff".to_vec()).unwrap()),
+            );
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).exit_message)
@@ -4307,7 +4320,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
                 );
                 redraw_pane_scrollbar(c, wp);
             }
-                wp = window_pane_next(wp);
+            wp = window_pane_next(wp);
         }
     }
     if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
@@ -5484,7 +5497,10 @@ mod key_event_owner_tests {
             let mut client = Box::new(client::empty());
             let pointer = &raw mut *client;
             let mouse = std::mem::zeroed();
-            assert_eq!(server_client_handle_key(pointer, key_event::new(1, mouse, Some(vec![1]))), 0);
+            assert_eq!(
+                server_client_handle_key(pointer, key_event::new(1, mouse, Some(vec![1]))),
+                0
+            );
 
             client.references = 2;
             let mut queued = key_event::new(2, mouse, Some(vec![2]));

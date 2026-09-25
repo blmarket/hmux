@@ -308,7 +308,14 @@ pub(super) unsafe fn format_find(
                     t = (*fe).time;
                 } else {
                     format_entry_ensure_value(ft, fe);
-                    found = Some(CStr::from_ptr(((*fe).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
+                    found = Some(
+                        CStr::from_ptr(
+                            ((*fe).value)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                        )
+                        .to_owned(),
+                    );
                 }
             } else {
                 if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
@@ -320,7 +327,16 @@ pub(super) unsafe fn format_find(
                         envent = environ_find(global_environ, key);
                     }
                     if !envent.is_null() && !(*envent).value.is_none() {
-                        found = Some(CStr::from_ptr(((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned());
+                        found = Some(
+                            CStr::from_ptr(
+                                ((*envent).value)
+                                    .as_ref()
+                                    .map_or(::core::ptr::null_mut(), |value| {
+                                        value.as_ptr().cast_mut()
+                                    }),
+                            )
+                            .to_owned(),
+                        );
                         current_block = 11739001764845178280;
                     } else {
                         current_block = 1836292691772056875;
@@ -1822,7 +1838,9 @@ pub(super) unsafe fn format_loop_environ(
                 nft,
                 b"environ_value\0" as *const u8 as *const ::core::ffi::c_char,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         if (*envent).flags & ENVIRON_HIDDEN != 0 {
@@ -1842,7 +1860,12 @@ pub(super) unsafe fn format_loop_environ(
             nft,
             b"environ_removed\0" as *const u8 as *const ::core::ffi::c_char,
             b"%d\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*envent).value == if (NULL_0 as *mut ::core::ffi::c_char).is_null() { None } else { Some(::std::ffi::CStr::from_ptr(NULL_0 as *mut ::core::ffi::c_char).to_owned()) }) as ::core::ffi::c_int,
+            ((*envent).value
+                == if (NULL_0 as *mut ::core::ffi::c_char).is_null() {
+                    None
+                } else {
+                    Some(::std::ffi::CStr::from_ptr(NULL_0 as *mut ::core::ffi::c_char).to_owned())
+                }) as ::core::ffi::c_int,
         );
         if environ_next(envent).is_null() {
             format_add(
@@ -1916,7 +1939,9 @@ pub(super) unsafe fn format_loop_clients(
             es,
             b"format_loop_clients\0" as *const u8 as *const ::core::ffi::c_char,
             b"client loop: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         nft = format_create(c, item, 0 as ::core::ffi::c_int, (*ft).flags);
         format_add(
@@ -2725,7 +2750,12 @@ pub(super) unsafe fn format_replace(
             if modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0 {
                 envent = environ_find((*(*ft).c).environ, copy);
                 if !envent.is_null() && !(*envent).value.is_none() {
-                    value = CStr::from_ptr(((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned();
+                    value = CStr::from_ptr(
+                        ((*envent).value)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )
+                    .to_owned();
                 } else {
                     value = c"".to_owned();
                 }

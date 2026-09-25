@@ -2,13 +2,13 @@ use crate::src::arguments::{
     args_count, args_first_value, args_get, args_has, args_next_value, args_to_vector,
 };
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags, cmdq_get_target,
     cmdq_insert_hook, cmdq_print,
 };
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
@@ -91,8 +91,8 @@ use crate::src::shared::window::{
     winlink_stack, winlinks,
 };
 use crate::src::spawn::spawn_window;
-use crate::src::tmux::{check_name, clean_name_cstring, global_s_options};
 use crate::src::text::utf8::utf8_stravis_cstring;
+use crate::src::tmux::{check_name, clean_name_cstring, global_s_options};
 use crate::src::window::winlinks_minmax;
 use std::ffi::{CStr, CString};
 

@@ -1,29 +1,26 @@
 use crate::src::arguments::args_escape_cstring;
 use crate::src::cfg::cfg_files;
-use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv_cstring};
 use crate::src::cmd::queue::{
     cmdq_get_client, cmdq_get_event, cmdq_get_target, cmdq_get_target_client, cmdq_merge_formats,
     cmdq_print,
 };
-use crate::src::style::colour::{
-    colour_force_rgb, colour_format, colour_format_escape_for_client, colour_parse_cstr,
-};
+use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv_cstring};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_find, environ_first, environ_next};
 use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, ctime_r, dirname, fnmatch, free, gethostname, getpid, getpwuid,
-    getuid, localtime_r, memcmp, memcpy, memset, regcomp, regexec, strcasecmp, strchr,
-    strcmp, strcspn, strftime, strlcat, strlen, strstr, strtod, time,
+    getuid, localtime_r, memcmp, memcpy, memset, regcomp, regexec, strcasecmp, strchr, strcmp,
+    strcspn, strftime, strlcat, strlen, strstr, strtod, time,
 };
 use crate::src::ffi::libm::{fabs, fmod};
 use crate::src::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
 use crate::src::fuzzy::fuzzy_match_owned;
-use crate::src::grid::{grid_get_cell, grid_get_line, grid_line_length, grid_peek_line};
 use crate::src::grid::view::grid_view_get_cell;
+use crate::src::grid::{grid_get_cell, grid_get_line, grid_line_length, grid_peek_line};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::job::{job_free, job_get_data, job_get_event, job_run};
-use crate::src::layout::layout_add_horizontal_border;
 use crate::src::layout::custom::layout_dump_owned;
+use crate::src::layout::layout_add_horizontal_border;
 use crate::src::log::{fatalx, log_debug, log_get_level};
 use crate::src::names::parse_window_name_cstring;
 use crate::src::options::options_table_entry;
@@ -61,6 +58,10 @@ use crate::src::sort::{
     sort_get_clients, sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
 };
 use crate::src::status::status_get_range;
+use crate::src::style::colour::{
+    colour_force_rgb, colour_format, colour_format_escape_for_client, colour_parse_cstr,
+};
+use crate::src::text::utf8::{utf8_cstrhas_impl, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::tmux::{
     get_timer, getversion, global_environ, global_options, global_s_options, global_w_options,
     sig2name, socket_path, start_time,
@@ -68,7 +69,6 @@ use crate::src::tmux::{
 use crate::src::tty::{tty_default_colours, tty_window_offset};
 use crate::src::tty_features::{tty_feature_present, tty_get_features};
 use crate::src::tty_term::{tty_term_has_name, tty_term_number};
-use crate::src::text::utf8::{utf8_cstrhas_impl, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::window::{
     window_count_panes, window_get_pane_status, window_pane_get_pane_status, window_pane_index,
     window_pane_is_floating, window_pane_mode, window_pane_printable_flags,
@@ -154,9 +154,7 @@ use crate::src::shared::pane::{
     PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUSDRAWN, PANE_STATUSREADY, PANE_STATUS_BOTTOM,
     PANE_STATUS_TOP, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::prompt::prompt;
@@ -221,14 +219,14 @@ pub use jobs::{format_lost_client, format_tidy_jobs};
 mod callbacks;
 use callbacks::*;
 mod expression;
-use expression::*;
-pub use expression::{format_skip, format_true};
-pub(crate) use expression::format_pretty_time_cstring;
 pub use expression::format_expand_cstring;
+pub(crate) use expression::format_pretty_time_cstring;
+use expression::*;
 pub(crate) use expression::{
-    format_expand_time_cstring, format_single_cstring,
-    format_single_from_state_cstring, format_single_from_target_cstring,
+    format_expand_time_cstring, format_single_cstring, format_single_from_state_cstring,
+    format_single_from_target_cstring,
 };
+pub use expression::{format_skip, format_true};
 
 pub struct format_modifier {
     pub modifier: [::core::ffi::c_char; 3],
@@ -447,7 +445,9 @@ pub unsafe extern "C" fn format_defaults(
         log_debug(
             b"%s: c=%s\0" as *const u8 as *const ::core::ffi::c_char,
             b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     } else {
         log_debug(

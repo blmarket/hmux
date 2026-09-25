@@ -1,5 +1,5 @@
-use hmux2::src::shared::session::{session, sessions};
 use hmux2::src::session::*;
+use hmux2::src::shared::session::{session, sessions};
 use std::ffi::CStr;
 
 fn node(name: &CStr) -> Box<session> {

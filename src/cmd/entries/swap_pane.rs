@@ -1,7 +1,6 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
-use crate::src::style::colour::colour_palette_from_option;
 use crate::src::events::events_fire_window;
 use crate::src::layout::{layout_cell_is_tiled, layout_fix_panes};
 use crate::src::options::options_set_parent;
@@ -62,6 +61,7 @@ use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
+use crate::src::style::colour::colour_palette_from_option;
 use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_fire_pane_moved, window_pane_first, window_pane_is_floating, window_pane_last,

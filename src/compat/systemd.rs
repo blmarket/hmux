@@ -14,9 +14,7 @@ use crate::src::ffi::systemd::{
 };
 use crate::src::server::server_create_socket;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{
-    __socklen_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t,
-};
+use crate::src::shared::abi::{__socklen_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t};
 use crate::src::shared::errno::E2BIG;
 use crate::src::shared::socket::{
     __socket_type, in6_addr, in6_addr___in6_u, in_addr, in_addr_t, in_port_t, sa_family_t,
@@ -456,12 +454,15 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                         strerror(-r),
                                                     );
                                                 } else {
-                                                    let mut unit =
-                                                        ::core::ptr::null_mut::<::core::ffi::c_char>();
+                                                    let mut unit = ::core::ptr::null_mut::<
+                                                        ::core::ffi::c_char,
+                                                    >(
+                                                    );
                                                     let mut have_unit = sd_pid_get_user_unit(
                                                         parent_pid,
                                                         &raw mut unit,
-                                                    ) == 0 as ::core::ffi::c_int;
+                                                    ) == 0
+                                                        as ::core::ffi::c_int;
                                                     if !have_unit {
                                                         free(unit as *mut ::core::ffi::c_void);
                                                         unit = ::core::ptr::null_mut();
@@ -577,7 +578,12 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                             );
                                                                         } else {
                                                                             if !job_path.is_null() {
-                                                                                watch.path = Some(CStr::from_ptr(job_path).to_owned());
+                                                                                watch.path = Some(
+                                                                                    CStr::from_ptr(
+                                                                                        job_path,
+                                                                                    )
+                                                                                    .to_owned(),
+                                                                                );
                                                                             }
                                                                             while watch.done == 0 {
                                                                                 r = sd_bus_process(

@@ -1,9 +1,10 @@
 use hmux2::src::compat::imsg::{imsgbuf_clear, imsgbuf_init};
 use hmux2::src::compat::imsg_buffer::{
     ibuf_add, ibuf_data, ibuf_dynamic, ibuf_fd_get, ibuf_fd_set, ibuf_free, ibuf_from_buffer,
-    ibuf_from_ibuf, ibuf_get, ibuf_get_string, ibuf_open, ibuf_read, ibuf_reserve, ibuf_size, ibuf_write, ibufq_concat, ibufq_flush,
-    ibufq_free, ibufq_new, ibufq_pop, ibufq_push, ibufq_queuelen, ibufqueue, msgbuf_clear,
-    msgbuf_free, msgbuf_new, msgbuf_new_reader, msgbuf_write, EINVAL,
+    ibuf_from_ibuf, ibuf_get, ibuf_get_string, ibuf_open, ibuf_read, ibuf_reserve, ibuf_size,
+    ibuf_write, ibufq_concat, ibufq_flush, ibufq_free, ibufq_new, ibufq_pop, ibufq_push,
+    ibufq_queuelen, ibufqueue, msgbuf_clear, msgbuf_free, msgbuf_new, msgbuf_new_reader,
+    msgbuf_write, EINVAL,
 };
 use std::io::Read;
 use std::mem::MaybeUninit;

@@ -52,8 +52,8 @@ use crate::src::shared::stdio::{
 };
 use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::tty_features::tty_parse_features;
 use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
+use crate::src::tty_features::tty_parse_features;
 use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
@@ -543,8 +543,8 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
     if path_bytes.first() == Some(&b'$') {
         let slash = path_bytes.iter().position(|byte| *byte == b'/');
         let name_end = slash.unwrap_or(path_bytes.len());
-        let name = CString::new(&path_bytes[1..name_end])
-            .expect("variable name comes from a C string");
+        let name =
+            CString::new(&path_bytes[1..name_end]).expect("variable name comes from a C string");
         value = environ_find(global_environ, name.as_ptr());
         if value.is_null() {
             return None;
@@ -712,10 +712,7 @@ unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
         return Ok(CString::new(path).expect("socket label path contains no NUL"));
     }
 }
-pub(crate) unsafe fn shell_argv0_cstring(
-    shell: &CStr,
-    is_login: bool,
-) -> CString {
+pub(crate) unsafe fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CString {
     let shell = shell.to_bytes();
     let name = match shell.iter().rposition(|&byte| byte == b'/') {
         Some(slash) if slash + 1 < shell.len() => &shell[slash + 1..],
@@ -1124,20 +1121,18 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
         }
     }
     if path.is_none() {
-        path = Some(
-            match make_label(label.as_deref()) {
-                Ok(path) => path,
-                Err(cause) => {
-                    fprintf(
-                        stderr,
-                        b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause.as_ptr(),
-                    );
-                    drop(cause);
-                    exit(1 as ::core::ffi::c_int);
-                }
-            },
-        );
+        path = Some(match make_label(label.as_deref()) {
+            Ok(path) => path,
+            Err(cause) => {
+                fprintf(
+                    stderr,
+                    b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
+                    cause.as_ptr(),
+                );
+                drop(cause);
+                exit(1 as ::core::ffi::c_int);
+            }
+        });
         flags |= CLIENT_DEFAULTSOCKET as uint64_t;
     }
     // The global pointer borrows this owner through client_main, including

@@ -414,7 +414,9 @@ pub unsafe extern "C" fn environ_copy(mut srcenv: *mut environ, mut dstenv: *mut
                 ((*envent).name).as_ptr().cast_mut(),
                 (*envent).flags,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         envent = environ_next(envent);
@@ -448,7 +450,6 @@ pub unsafe extern "C" fn environ_set(
     if let Some(owned) = entries.get_mut(CStr::from_ptr(name).to_bytes()) {
         owned.flags = flags;
         owned.value = Some(value);
-
     } else {
         environ_insert(env, CStr::from_ptr(name).to_owned(), flags, Some(value));
     };
@@ -461,7 +462,6 @@ pub unsafe extern "C" fn environ_clear(
     let entries = &mut (*(*env).entries).entries;
     if let Some(owned) = entries.get_mut(CStr::from_ptr(name).to_bytes()) {
         owned.value = None;
-
     } else {
         environ_insert(env, CStr::from_ptr(name).to_owned(), 0, None);
     };
@@ -524,15 +524,20 @@ pub unsafe extern "C" fn environ_update(
             envent1 = environ_next(envent);
             1 as ::core::ffi::c_int != 0
         } {
-            if fnmatch((*ov).string_ptr(), ((*envent).name).as_ptr().cast_mut(), 0 as ::core::ffi::c_int)
-                == 0 as ::core::ffi::c_int
+            if fnmatch(
+                (*ov).string_ptr(),
+                ((*envent).name).as_ptr().cast_mut(),
+                0 as ::core::ffi::c_int,
+            ) == 0 as ::core::ffi::c_int
             {
                 environ_set(
                     dst,
                     ((*envent).name).as_ptr().cast_mut(),
                     0 as ::core::ffi::c_int,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    ((*envent).value)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
                 found = 1 as ::core::ffi::c_int;
             }
@@ -559,7 +564,13 @@ pub unsafe extern "C" fn environ_push(mut env: *mut environ) {
             && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
             && !(*envent).flags & ENVIRON_HIDDEN != 0
         {
-            setenv(((*envent).name).as_ptr().cast_mut(), ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), 1 as ::core::ffi::c_int);
+            setenv(
+                ((*envent).name).as_ptr().cast_mut(),
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                1 as ::core::ffi::c_int,
+            );
         }
         envent = environ_next(envent);
     }
@@ -577,12 +588,16 @@ pub unsafe extern "C" fn environ_log(
     let prefix = xvasprintf_cstring(fmt, ap);
     envent = environ_first(env);
     while !envent.is_null() {
-        if !(*envent).value.is_none() && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
+        if !(*envent).value.is_none()
+            && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
+        {
             log_debug(
                 b"%s%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
                 prefix.as_ptr(),
                 ((*envent).name).as_ptr().cast_mut(),
-                ((*envent).value).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
         envent = environ_next(envent);

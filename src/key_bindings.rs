@@ -1,9 +1,9 @@
-use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_list_print_cstring};
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_callback1, cmdq_get_command,
     cmdq_insert_after, cmdq_new_state,
 };
+use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_list_print_cstring};
 use crate::src::ffi::libc::{free, strcmp};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_debug};
@@ -418,15 +418,14 @@ unsafe extern "C" fn key_bindings_init_done(
         bd = key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
         while !bd.is_null() {
             (*(*bd).cmdlist).references += 1;
-            new_bd =
-                key_bindings_add_default(
-                    table,
-                    (*bd).key,
-                    (*bd).cmdlist,
-                    (*bd).note.as_deref(),
-                    (*bd).flags,
-                );
-                bd = key_bindings_index_next(&*bd);
+            new_bd = key_bindings_add_default(
+                table,
+                (*bd).key,
+                (*bd).cmdlist,
+                (*bd).note.as_deref(),
+                (*bd).flags,
+            );
+            bd = key_bindings_index_next(&*bd);
         }
         table = key_tables_next(&*table);
     }
@@ -1068,7 +1067,9 @@ pub unsafe extern "C" fn key_bindings_init() {
         {
             log_debug(
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                pr.error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+                pr.error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
             );
             fatalx(
                 b"bad default key: %s\0" as *const u8 as *const ::core::ffi::c_char,

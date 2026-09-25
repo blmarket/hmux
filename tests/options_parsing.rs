@@ -1,8 +1,6 @@
 //! Isolated option-name regressions for set-option/show-options parsing.
 
-use hmux2::src::options::{
-    options_match_owned, options_parse_owned, OptionMatchFailure,
-};
+use hmux2::src::options::{options_match_owned, options_parse_owned, OptionMatchFailure};
 use std::ffi::CString;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -13,7 +11,10 @@ struct MatchOutcome {
 }
 
 fn cstring_until_nul(input: &[u8]) -> CString {
-    let end = input.iter().position(|&byte| byte == 0).unwrap_or(input.len());
+    let end = input
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(input.len());
     CString::new(&input[..end]).expect("test input prefix has no NUL")
 }
 

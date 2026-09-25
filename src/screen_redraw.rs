@@ -93,13 +93,13 @@ use crate::src::status::{
     status_line_size, status_message_redraw, status_prompt_redraw, status_redraw,
 };
 use crate::src::style::style_add;
+use crate::src::text::utf8::utf8_set;
 use crate::src::tty::{
     tty_cell, tty_check_overlay_range, tty_cursor, tty_default_colours, tty_puts, tty_reset,
     tty_sync_start, tty_update_mode, tty_window_offset,
 };
 use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_term::tty_term_has;
-use crate::src::text::utf8::utf8_set;
 use crate::src::window::windows;
 use crate::src::window::{
     window_pane_first, window_pane_get_pane_lines, window_pane_get_pane_status,
@@ -2633,7 +2633,7 @@ unsafe extern "C" fn redraw_draw(
                 if window_pane_is_visible(loop_0) != 0 {
                     redraw_draw_pane_prompt(&raw mut dctx, loop_0);
                 }
-            loop_0 = window_pane_next(loop_0);
+                loop_0 = window_pane_next(loop_0);
             }
         }
     }

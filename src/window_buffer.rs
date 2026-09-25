@@ -64,9 +64,7 @@ use crate::src::shared::pane::{
 use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_REDRAW,
 };
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::redraw::redraw_scene;
@@ -932,10 +930,7 @@ unsafe extern "C" fn window_buffer_draw_waiting(mut data: *mut window_buffer_mod
     );
     screen_write_stop(&raw mut ctx);
 }
-unsafe fn window_buffer_edit_close_cb(
-    buf: Option<Vec<u8>>,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut arg: *mut ::core::ffi::c_void) {
     let mut ed: *mut window_buffer_editdata = arg as *mut window_buffer_editdata;
     let mut oldlen: size_t = 0;
     let mut oldbuf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -963,7 +958,12 @@ unsafe fn window_buffer_edit_close_cb(
         window_buffer_finish_edit(ed);
         return;
     }
-    pb = paste_get_name((*ed).name.as_ref().map_or(::core::ptr::null_mut(), |name| name.as_ptr().cast_mut()));
+    pb = paste_get_name(
+        (*ed)
+            .name
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |name| name.as_ptr().cast_mut()),
+    );
     if pb.is_null() || pb != (*ed).pb {
         window_buffer_finish_edit(ed);
         return;

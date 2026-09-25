@@ -1,6 +1,6 @@
 use crate::src::arguments::args_get;
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::queue::{cmdq_error, cmdq_print};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::prompt::{prompt_type, prompt_type_string};
 use crate::src::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
 use crate::src::shared::abi::*;

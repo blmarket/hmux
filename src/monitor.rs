@@ -326,15 +326,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
                 (*mp).idx = (*wl).idx as u_int;
                 monitor_panes_insert(&raw mut (*me).panes, mp);
             }
-            monitor_check_value(
-                ms,
-                me,
-                s,
-                wl,
-                wp,
-                &value,
-                &raw mut (*mp).last,
-            );
+            monitor_check_value(ms, me, s, wl, wp, &value, &raw mut (*mp).last);
         }
         wl = window_winlinks_next(w, wl);
     }
@@ -368,15 +360,7 @@ unsafe extern "C" fn monitor_check_all_panes_one(
         monitor_panes_insert(&raw mut (*me).panes, mp);
     }
     (*mp).generation = (*ms).generation;
-    monitor_check_value(
-        ms,
-        me,
-        s,
-        wl,
-        wp,
-        &value,
-        &raw mut (*mp).last,
-    );
+    monitor_check_value(ms, me, s, wl, wp, &value, &raw mut (*mp).last);
 }
 unsafe extern "C" fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_int) {
     let mut mp: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
@@ -798,8 +782,7 @@ unsafe fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
         name: CString::new(&value_bytes[..first_colon]).expect("monitor name contains no NUL"),
         type_0,
         id,
-        format: CString::new(&value_bytes[format_start..])
-            .expect("monitor format contains no NUL"),
+        format: CString::new(&value_bytes[format_start..]).expect("monitor format contains no NUL"),
     })
 }
 
@@ -821,7 +804,8 @@ pub unsafe extern "C" fn monitor_add(
     let owned_name = CStr::from_ptr(name).to_owned();
     let owned_format = CStr::from_ptr(format).to_owned();
     let mut find: monitor_item = monitor_item {
-        name: ::std::ffi::CStr::from_ptr(owned_name.as_ptr() as *mut ::core::ffi::c_char).to_owned(),
+        name: ::std::ffi::CStr::from_ptr(owned_name.as_ptr() as *mut ::core::ffi::c_char)
+            .to_owned(),
         format: Default::default(),
         type_0: MONITOR_SESSION,
         id: 0,
@@ -1331,7 +1315,12 @@ mod last_owner_tests {
                 &raw mut (*owner).last,
             );
             assert_eq!(
-                CStr::from_ptr(((*item).last).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
+                CStr::from_ptr(
+                    ((*item).last)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                )
+                .to_bytes(),
                 first.to_bytes()
             );
             monitor_check_value(

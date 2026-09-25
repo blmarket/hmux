@@ -19,9 +19,7 @@ use crate::src::shared::client::{
     client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
     overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
-use crate::src::shared::client::{
-    CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK,
-};
+use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
 use crate::src::shared::colour::*;
 use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
 use crate::src::shared::control::control_state;
@@ -321,7 +319,9 @@ unsafe extern "C" fn file_fire_done_cb(
     if !dead && (*cf).cb.is_some() {
         (*cf).cb.expect("non-null function pointer")(
             c,
-            ((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*cf).path)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*cf).error,
             1 as ::core::ffi::c_int,
             (*cf).buffer,
@@ -365,7 +365,9 @@ pub unsafe extern "C" fn file_fire_read(mut cf: *mut client_file) {
     if !dead && (*cf).cb.is_some() {
         (*cf).cb.expect("non-null function pointer")(
             (*cf).c,
-            ((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ((*cf).path)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             (*cf).error,
             0 as ::core::ffi::c_int,
             (*cf).buffer,
@@ -417,7 +419,8 @@ pub unsafe extern "C" fn file_vprint(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -471,7 +474,8 @@ pub unsafe extern "C" fn file_print_buffer(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -525,7 +529,8 @@ pub unsafe extern "C" fn file_error(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -641,13 +646,18 @@ unsafe fn file_write_impl(
             } else {
                 mode = b"wb\0" as *const u8 as *const ::core::ffi::c_char;
             }
-            f = fopen(((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), mode) as *mut FILE;
+            f = fopen(
+                ((*cf).path)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                mode,
+            ) as *mut FILE;
             if f.is_null() {
                 (*cf).error = *__errno_location();
             } else {
                 let file = CFile::from_raw(f).expect("fopen returned a non-null stream");
-                let write_failed = fwrite(bdata, 1 as size_t, bsize, file.as_ptr()) as size_t
-                    != bsize;
+                let write_failed =
+                    fwrite(bdata, 1 as size_t, bsize, file.as_ptr()) as size_t != bsize;
                 drop(file);
                 if write_failed {
                     (*cf).error = EIO;
@@ -661,9 +671,13 @@ unsafe fn file_write_impl(
     match current_block {
         8821498768635335055 => {
             evbuffer_add((*cf).buffer, bdata, bsize);
-            msglen = strlen(((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                .wrapping_add(1 as size_t)
-                .wrapping_add(::core::mem::size_of::<msg_write_open>() as size_t);
+            msglen = strlen(
+                ((*cf).path)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )
+            .wrapping_add(1 as size_t)
+            .wrapping_add(::core::mem::size_of::<msg_write_open>() as size_t);
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
                 (*cf).error = E2BIG;
             } else {
@@ -682,7 +696,10 @@ unsafe fn file_write_impl(
                     msg.as_mut_ptr()
                         .add(::core::mem::size_of::<msg_write_open>())
                         .cast(),
-                    ((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()) as *const ::core::ffi::c_void,
+                    ((*cf).path)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                        as *const ::core::ffi::c_void,
                     msglen.wrapping_sub(::core::mem::size_of::<msg_write_open>() as size_t),
                 );
                 if proc_send(
@@ -786,14 +803,18 @@ unsafe fn file_read_impl(
         file_set_path(&mut *cf, file_get_path(c, CStr::from_ptr(path)));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
             f = fopen(
-                ((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*cf).path)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 b"rb\0" as *const u8 as *const ::core::ffi::c_char,
             ) as *mut FILE;
             if f.is_null() {
                 (*cf).error = *__errno_location();
             } else {
                 file_owner = CFile::from_raw(f);
-                let file = file_owner.as_ref().expect("fopen returned a non-null stream");
+                let file = file_owner
+                    .as_ref()
+                    .expect("fopen returned a non-null stream");
                 loop {
                     size = fread(
                         &raw mut buffer as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
@@ -836,7 +857,12 @@ unsafe fn file_read_impl(
     }
     match current_block {
         17710118112003399050 => {
-            let path = CStr::from_ptr(((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes_with_nul();
+            let path = CStr::from_ptr(
+                ((*cf).path)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )
+            .to_bytes_with_nul();
             let header_len = ::core::mem::size_of::<msg_read_open>();
             let msglen = header_len + path.len();
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
@@ -1141,7 +1167,8 @@ pub unsafe extern "C" fn file_write_open(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let flags: ::core::ffi::c_int = O_NONBLOCK | O_WRONLY | O_CREAT;
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1242,7 +1269,8 @@ pub unsafe extern "C" fn file_write_data(mut files: *mut client_files, mut imsg:
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut size: size_t = msglen.wrapping_sub(::core::mem::size_of::<msg_write_data>() as size_t);
     if msglen < ::core::mem::size_of::<msg_write_data>() as usize {
@@ -1287,7 +1315,8 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if msglen != ::core::mem::size_of::<msg_write_close>() as usize {
         fatalx(b"bad MSG_WRITE_CLOSE size\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1423,7 +1452,8 @@ pub unsafe extern "C" fn file_read_open(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let flags: ::core::ffi::c_int = O_NONBLOCK | O_RDONLY;
     let mut error: ::core::ffi::c_int = 0;
@@ -1525,7 +1555,8 @@ pub unsafe extern "C" fn file_read_cancel(mut files: *mut client_files, mut imsg
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if msglen != ::core::mem::size_of::<msg_read_cancel>() as usize {
         fatalx(b"bad MSG_READ_CANCEL size\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1569,7 +1600,8 @@ pub unsafe extern "C" fn file_write_ready(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if msglen != ::core::mem::size_of::<msg_write_ready>() as usize {
         return -(1 as ::core::ffi::c_int);
@@ -1611,7 +1643,8 @@ pub unsafe extern "C" fn file_write_done(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if msglen != ::core::mem::size_of::<msg_write_done>() as usize {
         return -(1 as ::core::ffi::c_int);
@@ -1656,7 +1689,8 @@ pub unsafe extern "C" fn file_read_data(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut bdata: *mut ::core::ffi::c_void =
         msg.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_void;
@@ -1708,7 +1742,8 @@ pub unsafe extern "C" fn file_read_done(
         entry: client_file_entry {
             owner: std::ptr::null_mut(),
         },
-     ..client_file::empty() };
+        ..client_file::empty()
+    };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if msglen != ::core::mem::size_of::<msg_read_done>() as usize {
         return -(1 as ::core::ffi::c_int);

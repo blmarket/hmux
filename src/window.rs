@@ -3,10 +3,6 @@ use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_window};
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
-use crate::src::style::colour::{
-    colour_palette_free, colour_palette_from_option, colour_palette_get, colour_palette_init,
-    colour_totheme,
-};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::control::control_write_output;
 use crate::src::events::{events_fire, events_fire_pane, events_fire_window};
@@ -58,6 +54,10 @@ use crate::src::shared::pane::window_pane_tree;
 use crate::src::shared::prompt::prompt_create_data;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::status::status_at_line;
+use crate::src::style::colour::{
+    colour_palette_free, colour_palette_from_option, colour_palette_get, colour_palette_init,
+    colour_totheme,
+};
 use crate::src::style::{
     style_ranges_free, style_ranges_get_range, style_ranges_init,
     style_set_scrollbar_style_from_option,
@@ -106,9 +106,7 @@ use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
 use crate::src::shared::limits::{__INT_MAX__, INT_MAX, UINT_MAX};
 use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
-use crate::src::shared::mouse::{
-    mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
-};
+use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
     window_pane, window_pane_history, window_pane_modes, window_pane_prompt,
@@ -185,8 +183,9 @@ pub static mut all_window_panes: window_pane_tree = window_pane_tree { storage: 
 /// Owns every pane allocation until the manual reference protocol reaches its
 /// existing final release point. `all_window_panes` remains a live index and
 /// is intentionally removed earlier during pane destruction.
-static mut window_pane_owners:
-    Option<std::collections::BTreeMap<usize, refbox::RefBox<window_pane>>> = None;
+static mut window_pane_owners: Option<
+    std::collections::BTreeMap<usize, refbox::RefBox<window_pane>>,
+> = None;
 static mut next_window_pane_id: u_int = 0;
 static mut next_window_id: u_int = 0;
 static mut next_active_point: u_int = 0;
@@ -2703,43 +2702,83 @@ pub(crate) unsafe fn window_pane_weak(wp: *mut window_pane) -> refbox::Weak<wind
 }
 
 pub unsafe fn window_pane_first(w: *mut window) -> *mut window_pane {
-    if w.is_null() { std::ptr::null_mut() } else { (*w).panes.first() }
+    if w.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*w).panes.first()
+    }
 }
 
 pub unsafe fn window_pane_last(w: *mut window) -> *mut window_pane {
-    if w.is_null() { std::ptr::null_mut() } else { (*w).panes.last() }
+    if w.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*w).panes.last()
+    }
 }
 
 pub unsafe fn window_pane_next(wp: *mut window_pane) -> *mut window_pane {
-    if wp.is_null() { std::ptr::null_mut() } else { (*(*wp).window).panes.next(wp) }
+    if wp.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*(*wp).window).panes.next(wp)
+    }
 }
 
 pub unsafe fn window_pane_previous(wp: *mut window_pane) -> *mut window_pane {
-    if wp.is_null() { std::ptr::null_mut() } else { (*(*wp).window).panes.previous(wp) }
+    if wp.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*(*wp).window).panes.previous(wp)
+    }
 }
 
 pub unsafe fn window_pane_z_first(w: *mut window) -> *mut window_pane {
-    if w.is_null() { std::ptr::null_mut() } else { (*w).z_index.first() }
+    if w.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*w).z_index.first()
+    }
 }
 
 pub unsafe fn window_pane_z_last(w: *mut window) -> *mut window_pane {
-    if w.is_null() { std::ptr::null_mut() } else { (*w).z_index.last() }
+    if w.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*w).z_index.last()
+    }
 }
 
 pub unsafe fn window_pane_z_next(wp: *mut window_pane) -> *mut window_pane {
-    if wp.is_null() { std::ptr::null_mut() } else { (*(*wp).window).z_index.next(wp) }
+    if wp.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*(*wp).window).z_index.next(wp)
+    }
 }
 
 pub unsafe fn window_pane_z_previous(wp: *mut window_pane) -> *mut window_pane {
-    if wp.is_null() { std::ptr::null_mut() } else { (*(*wp).window).z_index.previous(wp) }
+    if wp.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*(*wp).window).z_index.previous(wp)
+    }
 }
 
 pub unsafe fn window_pane_stack_first(w: *mut window) -> *mut window_pane {
-    if w.is_null() { std::ptr::null_mut() } else { (*w).last_panes.first() }
+    if w.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*w).last_panes.first()
+    }
 }
 
 pub unsafe fn window_pane_stack_next(w: *mut window, wp: *mut window_pane) -> *mut window_pane {
-    if w.is_null() { std::ptr::null_mut() } else { (*w).last_panes.next(wp) }
+    if w.is_null() {
+        std::ptr::null_mut()
+    } else {
+        (*w).last_panes.next(wp)
+    }
 }
 
 pub unsafe fn window_pane_list_remove(w: *mut window, wp: *mut window_pane) {
@@ -2749,7 +2788,10 @@ pub unsafe fn window_pane_list_remove(w: *mut window, wp: *mut window_pane) {
 
 pub unsafe fn window_pane_z_remove(w: *mut window, wp: *mut window_pane) {
     assert!(!w.is_null() && !wp.is_null());
-    assert!((*w).z_index.remove_ptr(wp), "pane is not in its stacking order");
+    assert!(
+        (*w).z_index.remove_ptr(wp),
+        "pane is not in its stacking order"
+    );
 }
 
 pub unsafe fn window_pane_list_insert_front(w: *mut window, wp: *mut window_pane) {
@@ -2810,12 +2852,20 @@ pub unsafe fn window_pane_swap_order(
         (*first_window).panes.swap_ptrs(first, second);
         return;
     }
-    let first_position = (*first_window).panes.position(first).expect("first pane is not in order");
-    let second_position = (*second_window).panes.position(second).expect("second pane is not in order");
+    let first_position = (*first_window)
+        .panes
+        .position(first)
+        .expect("first pane is not in order");
+    let second_position = (*second_window)
+        .panes
+        .position(second)
+        .expect("second pane is not in order");
     let first_weak = (*first_window).panes.remove_at(first);
     let second_weak = (*second_window).panes.remove_at(second);
     (*first_window).panes.insert_at(first_position, second_weak);
-    (*second_window).panes.insert_at(second_position, first_weak);
+    (*second_window)
+        .panes
+        .insert_at(second_position, first_weak);
 }
 
 pub unsafe fn window_pane_z_swap_order(
@@ -2828,12 +2878,22 @@ pub unsafe fn window_pane_z_swap_order(
         (*first_window).z_index.swap_ptrs(first, second);
         return;
     }
-    let first_position = (*first_window).z_index.position(first).expect("first pane is not in stacking order");
-    let second_position = (*second_window).z_index.position(second).expect("second pane is not in stacking order");
+    let first_position = (*first_window)
+        .z_index
+        .position(first)
+        .expect("first pane is not in stacking order");
+    let second_position = (*second_window)
+        .z_index
+        .position(second)
+        .expect("second pane is not in stacking order");
     let first_weak = (*first_window).z_index.remove_at(first);
     let second_weak = (*second_window).z_index.remove_at(second);
-    (*first_window).z_index.insert_at(first_position, second_weak);
-    (*second_window).z_index.insert_at(second_position, first_weak);
+    (*first_window)
+        .z_index
+        .insert_at(first_position, second_weak);
+    (*second_window)
+        .z_index
+        .insert_at(second_position, first_weak);
 }
 
 /// Return the next mode in a pane's stack. Entries are boxed individually,

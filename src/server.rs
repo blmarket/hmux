@@ -1,6 +1,6 @@
+use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
 use crate::src::cmd::queue::cmdq_next;
-use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
 use crate::src::compat::systemd::systemd_create_socket;
 use crate::src::control_notify::control_build_events;
 use crate::src::ffi::libc::{
@@ -32,13 +32,13 @@ use crate::src::session::{
 };
 use crate::src::shared::status::{message_entry, message_list};
 use crate::src::spawn::spawn_editor_finish;
+use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::{get_timer, global_options, setblocking, socket_path, start_time};
 use crate::src::tty::tty_create_log;
-use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::window::windows;
 use crate::src::window::{
-    all_window_panes, window_pane_destroy_ready, window_pane_wait_finish, windows_minmax,
-    window_pane_first, window_pane_next, windows_next,
+    all_window_panes, window_pane_destroy_ready, window_pane_first, window_pane_next,
+    window_pane_wait_finish, windows_minmax, windows_next,
 };
 use crate::src::xmalloc::xvasprintf_cstring;
 
@@ -95,9 +95,7 @@ use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_EXITED, PANE_STATUSREADY,
 };
 use crate::src::shared::posix_io::stat;
-use crate::src::shared::posix_io::{
-    __S_IEXEC, __S_IREAD, __S_IWRITE, S_IRWXU, WAIT_ANY, WNOHANG,
-};
+use crate::src::shared::posix_io::{__S_IEXEC, __S_IREAD, __S_IWRITE, S_IRWXU, WAIT_ANY, WNOHANG};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::redraw::redraw_scene;
@@ -223,9 +221,7 @@ pub unsafe extern "C" fn server_is_marked(
 pub unsafe extern "C" fn server_check_marked() -> ::core::ffi::c_int {
     return cmd_find_valid_state(&raw mut marked_pane);
 }
-pub unsafe fn server_create_socket(
-    mut flags: uint64_t,
-) -> Result<::core::ffi::c_int, CString> {
+pub unsafe fn server_create_socket(mut flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
     let mut sa: sockaddr_un = sockaddr_un {
         sun_family: 0,
         sun_path: [0; 108],

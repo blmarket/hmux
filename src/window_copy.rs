@@ -12,17 +12,17 @@ use crate::src::format::{
     format_get_pane, format_grid_hyperlink_cstring, format_single_cstring,
 };
 use crate::src::format_draw::format_draw;
-use crate::src::grid::{
-    grid_default_cell, grid_duplicate_lines, grid_free_lines, grid_get_cell, grid_get_line,
-    grid_in_set, grid_line_length, grid_line_limit, grid_line_time, grid_peek_line,
-    grid_unwrap_position, grid_wrap_position,
-};
 use crate::src::grid::reader::{
     grid_reader_cursor_back_to_indentation, grid_reader_cursor_end_of_line,
     grid_reader_cursor_jump, grid_reader_cursor_jump_back, grid_reader_cursor_left,
     grid_reader_cursor_next_word, grid_reader_cursor_next_word_end,
     grid_reader_cursor_previous_word, grid_reader_cursor_right, grid_reader_cursor_start_of_line,
     grid_reader_get_cursor, grid_reader_in_set, grid_reader_start,
+};
+use crate::src::grid::{
+    grid_default_cell, grid_duplicate_lines, grid_free_lines, grid_get_cell, grid_get_line,
+    grid_in_set, grid_line_length, grid_line_limit, grid_line_time, grid_peek_line,
+    grid_unwrap_position, grid_wrap_position,
 };
 use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
@@ -89,9 +89,7 @@ use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_REDRAW, PANE_REDRAWSCROLLBAR,
     PANE_UNSEENCHANGES,
 };
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::redraw::redraw_scene;
@@ -119,10 +117,10 @@ pub use crate::src::shared::window::{
 };
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
+use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
 use crate::src::tmux::{get_timer, global_options, global_w_options};
 use crate::src::tty::tty_window_offset;
 use crate::src::tty_acs::tty_acs_get;
-use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
 use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
     window_pane_scrollbar_show, window_pane_set_searchstr, window_set_active_pane,
@@ -197,8 +195,7 @@ pub struct window_copy_mode_data {
 }
 
 fn window_copy_searchstr(data: &window_copy_mode_data) -> *const ::core::ffi::c_char {
-    data
-        .searchstr
+    data.searchstr
         .as_ref()
         .map_or(::core::ptr::null(), |value| value.as_ptr())
 }

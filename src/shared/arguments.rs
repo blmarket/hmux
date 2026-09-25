@@ -80,7 +80,10 @@ impl args_value {
         Self {
             payload,
             cached: None,
-            entry: args_value_entry { owner: ::core::ptr::null_mut(), index: 0 },
+            entry: args_value_entry {
+                owner: ::core::ptr::null_mut(),
+                index: 0,
+            },
         }
     }
 

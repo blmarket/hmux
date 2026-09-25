@@ -1,7 +1,6 @@
 use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and_expand_result};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
-use crate::src::style::colour::colour_palette_clear;
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::ffi::libc::strtol;
 use crate::src::input::input_reset;
 use crate::src::key_bindings::{
@@ -70,6 +69,7 @@ use crate::src::shared::window::{
     window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
     winlink_stack, winlinks,
 };
+use crate::src::style::colour::colour_palette_clear;
 use crate::src::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use crate::src::window::window_pane_key;
 

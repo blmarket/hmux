@@ -43,9 +43,7 @@ use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::redraw::redraw_scene;
@@ -438,14 +436,26 @@ unsafe extern "C" fn sort_key_binding_cmp(
                 as ::core::ffi::c_int;
         }
         4 => {
-            result = (strcasecmp((*a).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()), (*b).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr())) == 0 as ::core::ffi::c_int)
-                as ::core::ffi::c_int;
+            result = (strcasecmp(
+                (*a).tablename
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |s| s.as_ptr()),
+                (*b).tablename
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |s| s.as_ptr()),
+            ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
         }
         0 | 1 | 5 | 6 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = (strcasecmp((*a).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()), (*b).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr())) == 0 as ::core::ffi::c_int)
-            as ::core::ffi::c_int;
+        result = (strcasecmp(
+            (*a).tablename
+                .as_ref()
+                .map_or(::core::ptr::null(), |s| s.as_ptr()),
+            (*b).tablename
+                .as_ref()
+                .map_or(::core::ptr::null(), |s| s.as_ptr()),
+        ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     }
     if (*sort_crit).reversed != 0 {
         result = -result;

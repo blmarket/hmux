@@ -1,6 +1,6 @@
 use hmux2::src::shared::pane::window_pane_tree;
-use hmux2::src::window::*;
 use hmux2::src::shared::pane::{window_pane, window_pane_history, window_panes};
+use hmux2::src::window::*;
 use refbox::{BorrowError, RefBox};
 
 #[test]
@@ -27,9 +27,8 @@ fn removing_from_another_history_preserves_membership_and_cleanup() {
 
 #[test]
 fn pane_order_and_visit_history_preserve_stable_weak_entries() {
-    let owners: Vec<RefBox<window_pane>> = (0..4)
-        .map(|_| RefBox::new(window_pane::empty()))
-        .collect();
+    let owners: Vec<RefBox<window_pane>> =
+        (0..4).map(|_| RefBox::new(window_pane::empty())).collect();
     let panes: Vec<*mut window_pane> = owners
         .iter()
         .map(|owner| owner.as_ptr() as *mut window_pane)

@@ -127,7 +127,9 @@ unsafe extern "C" fn cmd_show_messages_terminals(
                 b"Terminal %u: %s for %s, flags=0x%x:\0" as *const u8 as *const ::core::ffi::c_char,
                 n,
                 ((*term).name).as_ptr().cast_mut(),
-                ((*(*(*term).tty).client).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*(*(*term).tty).client).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 (*term).flags,
             );
             n = n.wrapping_add(1);
@@ -187,7 +189,11 @@ unsafe extern "C" fn cmd_show_messages_exec(
             &raw mut msg_time,
         );
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
-        cmdq_print(item, b"%s\0" as *const u8 as *const ::core::ffi::c_char, s.as_ptr());
+        cmdq_print(
+            item,
+            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+            s.as_ptr(),
+        );
     }
     format_free(ft);
     return CMD_RETURN_NORMAL;

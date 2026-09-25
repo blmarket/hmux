@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::paste::{
     paste_buffer_data, paste_buffer_name, paste_free, paste_get_name, paste_get_top, paste_rename,
     paste_set_owned,
@@ -45,9 +45,7 @@ use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::redraw::redraw_scene;

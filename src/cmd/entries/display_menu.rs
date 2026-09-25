@@ -2,8 +2,8 @@ use crate::src::arguments::{
     args_count, args_first_value, args_get, args_has, args_next_value, args_percentage_result,
     args_string, args_strtonum_result, args_to_vector,
 };
-use crate::src::cmd::{cmd_append_argv, cmd_get_args};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
+use crate::src::cmd::{cmd_append_argv, cmd_get_args};
 use crate::src::environ::{environ_create, environ_free, environ_put};
 use crate::src::ffi::libc::{free, strcmp, strtol};
 use crate::src::format::{
@@ -1381,10 +1381,7 @@ unsafe extern "C" fn cmd_display_popup_exec(
                                 if checkshell(shell) == 0 {
                                     shell = _PATH_BSHELL.as_ptr();
                                 }
-                                cmd_append_argv(
-                                    &mut argv_owner,
-                                    std::ffi::CStr::from_ptr(shell),
-                                );
+                                cmd_append_argv(&mut argv_owner, std::ffi::CStr::from_ptr(shell));
                             } else {
                                 argv_owner = args_to_vector(args);
                             }
@@ -1392,11 +1389,7 @@ unsafe extern "C" fn cmd_display_popup_exec(
                                 env = environ_create();
                                 av = args_first_value(args, 'e' as i32 as u_char);
                                 while !av.is_null() {
-                                    environ_put(
-                                        env,
-                                        (*av).string_ptr(),
-                                        0 as ::core::ffi::c_int,
-                                    );
+                                    environ_put(env, (*av).string_ptr(), 0 as ::core::ffi::c_int);
                                     av = args_next_value(av);
                                 }
                             }

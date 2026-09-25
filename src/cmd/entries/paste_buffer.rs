@@ -43,9 +43,7 @@ use crate::src::shared::pane::{
 use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_INPUTOFF,
 };
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::redraw::redraw_scene;
@@ -175,10 +173,7 @@ unsafe extern "C" fn cmd_paste_buffer_exec(
             if args_has(args, 'S' as i32 as u_char) != 0 {
                 bufferevent_write((*wp).event, bufdata as *const ::core::ffi::c_void, len);
             } else {
-                cmd_paste_buffer_paste(
-                    &*wp,
-                    std::slice::from_raw_parts(bufdata.cast::<u8>(), len),
-                );
+                cmd_paste_buffer_paste(&*wp, std::slice::from_raw_parts(bufdata.cast::<u8>(), len));
             }
             bufferevent_write((*wp).event, sepstr as *const ::core::ffi::c_void, seplen);
             bufdata = line.offset(1 as ::core::ffi::c_int as isize);
@@ -188,10 +183,7 @@ unsafe extern "C" fn cmd_paste_buffer_exec(
             if args_has(args, 'S' as i32 as u_char) != 0 {
                 bufferevent_write((*wp).event, bufdata as *const ::core::ffi::c_void, len);
             } else {
-                cmd_paste_buffer_paste(
-                    &*wp,
-                    std::slice::from_raw_parts(bufdata.cast::<u8>(), len),
-                );
+                cmd_paste_buffer_paste(&*wp, std::slice::from_raw_parts(bufdata.cast::<u8>(), len));
             }
         }
         if bracket != 0 && (*(*wp).screen).mode & MODE_BRACKETPASTE != 0 {

@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has, args_string};
-use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print_data};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::ffi::libc::strerror;
 use crate::src::file::file_write_with_cmdq_wait;
 use crate::src::format::format_single_from_target_cstring;
@@ -46,9 +46,7 @@ use crate::src::shared::pane::{
     window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
 };
 use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-use crate::src::shared::paste::{
-    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
-};
+use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
 use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::prompt::prompt;
