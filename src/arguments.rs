@@ -14,8 +14,8 @@ use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_entry, args_entry_entry, args_parse, args_parse_cb, args_tree, args_tree_storage,
-    args_value, args_values, args_values_storage,
+    args, args_entry, args_parse, args_parse_cb, args_tree, args_tree_storage, args_value,
+    args_values, args_values_storage,
 };
 use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item};
@@ -90,10 +90,9 @@ unsafe fn args_tree_insert(head: *mut args_tree, elm: *mut args_entry) -> *mut a
     match (*(*head).entries).entries.entry((*elm).flag) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            // Preserve the C ABI of args_next, which receives only an entry.
-            // The legacy parent slot is now a non-owning storage back-pointer;
+            // args_next receives only an entry, so retain its storage owner;
             // the BTreeMap is the sole source of ordering and membership.
-            (*elm).entry.rbe_parent = (*head).entries as *mut args_entry;
+            (*elm).owner = (*head).entries;
             entry.insert(elm);
             ::core::ptr::null_mut::<args_entry>()
         }
@@ -112,7 +111,7 @@ unsafe fn args_tree_remove(head: *mut args_tree, elm: *mut args_entry) -> *mut a
         .entries
         .remove(&key)
         .unwrap_or(::core::ptr::null_mut::<args_entry>());
-    (*elm).entry.rbe_parent = ::core::ptr::null_mut::<args_entry>();
+    (*elm).owner = ::core::ptr::null_mut();
     removed
 }
 
@@ -159,7 +158,7 @@ unsafe fn args_tree_next_from_entry(elm: *mut args_entry) -> *mut args_entry {
     if elm.is_null() {
         return ::core::ptr::null_mut::<args_entry>();
     }
-    args_tree_next_storage((*elm).entry.rbe_parent as *mut args_tree_storage, elm)
+    args_tree_next_storage((*elm).owner, elm)
 }
 
 #[cfg(test)]
@@ -176,12 +175,7 @@ mod args_tree_tests {
             },
             count: 0,
             flags: 0,
-            entry: args_entry_entry {
-                rbe_left: ::core::ptr::null_mut::<args_entry>(),
-                rbe_right: ::core::ptr::null_mut::<args_entry>(),
-                rbe_parent: ::core::ptr::null_mut::<args_entry>(),
-                rbe_color: 0,
-            },
+            owner: ::core::ptr::null_mut(),
         }))
     }
 

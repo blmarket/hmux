@@ -618,7 +618,6 @@ mod tests {
     use crate::src::options::{
         options_create, options_default, options_free, options_search, options_set_number,
     };
-    use crate::src::shared::paste::{paste_buffer_name_entry, paste_buffer_time_entry};
     use crate::src::tmux::global_options;
     use std::ffi::CString;
 
@@ -833,18 +832,6 @@ mod tests {
             created: 0,
             automatic: 0,
             order: 0,
-            name_entry: paste_buffer_name_entry {
-                rbe_left: ::core::ptr::null_mut::<paste_buffer>(),
-                rbe_right: ::core::ptr::null_mut::<paste_buffer>(),
-                rbe_parent: ::core::ptr::null_mut::<paste_buffer>(),
-                rbe_color: 0,
-            },
-            time_entry: paste_buffer_time_entry {
-                rbe_left: ::core::ptr::null_mut::<paste_buffer>(),
-                rbe_right: ::core::ptr::null_mut::<paste_buffer>(),
-                rbe_parent: ::core::ptr::null_mut::<paste_buffer>(),
-                rbe_color: 0,
-            },
         })
     }
 

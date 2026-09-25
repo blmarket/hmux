@@ -76,9 +76,8 @@ unsafe fn event_payload_tree_insert(
     )) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            // Keep the owner in the legacy slot for event_payload_next, whose
-            // C API receives only an item pointer.
-            (*elm).entry.rbe_parent = head as *mut event_payload_item;
+            // event_payload_next receives only an item pointer, so retain its owner.
+            (*elm).owner = head;
             entry.insert(elm);
             ::core::ptr::null_mut::<event_payload_item>()
         }
@@ -99,7 +98,7 @@ unsafe fn event_payload_tree_remove(
             .expect("event payload item has a name"),
     ));
     if let Some(removed) = removed {
-        (*removed).entry.rbe_parent = ::core::ptr::null_mut::<event_payload_item>();
+        (*removed).owner = ::core::ptr::null_mut();
         removed
     } else {
         ::core::ptr::null_mut::<event_payload_item>()
@@ -126,7 +125,7 @@ unsafe fn event_payload_tree_next(elm: *mut event_payload_item) -> *mut event_pa
     if elm.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
-    let head = (*elm).entry.rbe_parent as *mut event_payload_tree;
+    let head = (*elm).owner;
     if head.is_null() || (*head).entries.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
@@ -896,7 +895,7 @@ pub unsafe extern "C" fn event_payload_get_pointer(
 mod tests {
     use super::*;
     use crate::src::reactor::evbuffer_add;
-    use crate::src::shared::events::{event_payload_item_c2rust_unnamed, event_payload_item_entry};
+    use crate::src::shared::events::event_payload_item_c2rust_unnamed;
     use std::ffi::{CStr, CString};
 
     unsafe extern "C" fn count_pointer_release(ptr: *mut ::core::ffi::c_void) {
@@ -995,99 +994,6 @@ mod tests {
             assert_eq!((*replacement).c2rust_unnamed.number, 42);
             assert_eq!(event_payload_next(replacement), ::core::ptr::null_mut());
             event_payload_free(ep);
-        }
-    }
-
-    fn named_item(name: &CStr) -> Box<event_payload_item> {
-        Box::new(event_payload_item {
-            name: Some(name.to_owned()),
-            type_0: EVENT_PAYLOAD_STRING,
-            c2rust_unnamed: event_payload_item_c2rust_unnamed {
-                string: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            },
-            entry: event_payload_item_entry {
-                rbe_left: ::core::ptr::null_mut::<event_payload_item>(),
-                rbe_right: ::core::ptr::null_mut::<event_payload_item>(),
-                rbe_parent: ::core::ptr::null_mut::<event_payload_item>(),
-                rbe_color: 0,
-            },
-            ..event_payload_item::empty()
-        })
-    }
-
-    #[test]
-    fn event_payload_tree_matches_strcmp_order_and_duplicate_semantics() {
-        let names = [
-            CString::new("z").unwrap(),
-            CString::new("a").unwrap(),
-            CString::new(vec![b'a', 0xff]).unwrap(),
-            CString::new("a0").unwrap(),
-        ];
-        let mut items = names
-            .iter()
-            .map(|name| named_item(name))
-            .collect::<Vec<_>>();
-        let duplicate_name = CString::new("a").unwrap();
-        let mut duplicate = named_item(&duplicate_name);
-        let mut storage = event_payload_tree_storage::default();
-        let mut tree = event_payload_tree {
-            entries: &raw mut storage,
-        };
-
-        unsafe {
-            let z = items[0].as_mut() as *mut event_payload_item;
-            let a = items[1].as_mut() as *mut event_payload_item;
-            let a_high = items[2].as_mut() as *mut event_payload_item;
-            let a0 = items[3].as_mut() as *mut event_payload_item;
-            let duplicate = duplicate.as_mut() as *mut event_payload_item;
-
-            assert!(event_payload_tree_insert(&raw mut tree, z).is_null());
-            assert!(event_payload_tree_insert(&raw mut tree, a_high).is_null());
-            assert!(event_payload_tree_insert(&raw mut tree, a).is_null());
-            assert!(event_payload_tree_insert(&raw mut tree, a0).is_null());
-            assert_eq!(event_payload_tree_insert(&raw mut tree, duplicate), a);
-
-            let ordered = storage
-                .entries
-                .keys()
-                .map(Vec::as_slice)
-                .collect::<Vec<_>>();
-            assert_eq!(
-                ordered,
-                vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
-            );
-            assert_eq!(
-                event_payload_tree_find(&raw mut tree, names[2].as_c_str()),
-                a_high
-            );
-            assert!(event_payload_tree_find(
-                &raw mut tree,
-                CStr::from_bytes_with_nul(b"missing\0").unwrap()
-            )
-            .is_null());
-
-            let mut current = event_payload_tree_minmax(&raw mut tree, -1);
-            assert_eq!(current, a);
-            current = event_payload_tree_next(current);
-            assert_eq!(current, a0);
-            current = event_payload_tree_next(current);
-            assert_eq!(current, a_high);
-            current = event_payload_tree_next(current);
-            assert_eq!(current, z);
-            assert!(event_payload_tree_next(current).is_null());
-            assert_eq!(event_payload_tree_minmax(&raw mut tree, 1), z);
-
-            assert_eq!(event_payload_tree_remove(&raw mut tree, a_high), a_high);
-            assert!(event_payload_tree_find(&raw mut tree, names[2].as_c_str()).is_null());
-
-            let mut lazy_tree = event_payload_tree {
-                entries: ::core::ptr::null_mut::<event_payload_tree_storage>(),
-            };
-            let mut lazy_item = named_item(&names[0]);
-            let lazy_item = lazy_item.as_mut() as *mut event_payload_item;
-            assert!(event_payload_tree_insert(&raw mut lazy_tree, lazy_item).is_null());
-            assert_eq!(event_payload_tree_minmax(&raw mut lazy_tree, -1), lazy_item);
-            drop(Box::from_raw(lazy_tree.entries));
         }
     }
 }

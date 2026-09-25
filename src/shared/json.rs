@@ -10,7 +10,6 @@ pub struct json_node {
     pub key: Option<std::ffi::CString>,
     pub parent: *mut json_node,
     pub c2rust_unnamed: json_node_c2rust_unnamed,
-    pub oentry: json_node_oentry,
     // The tagged union is still Copy and zero-initialized by parser code.
     // It borrows this string and the array storage below until node teardown;
     // move these into the variants when migrating the union itself.
@@ -25,20 +24,10 @@ impl json_node {
             key: Default::default(),
             parent: unsafe { ::core::mem::zeroed() },
             c2rust_unnamed: unsafe { ::core::mem::zeroed() },
-            oentry: unsafe { ::core::mem::zeroed() },
             string: Default::default(),
             members: Default::default(),
         }
     }
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct json_node_oentry {
-    pub rbe_left: *mut json_node,
-    pub rbe_right: *mut json_node,
-    pub rbe_parent: *mut json_node,
-    pub rbe_color: ::core::ffi::c_int,
 }
 
 #[derive(Copy, Clone)]

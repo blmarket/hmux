@@ -241,12 +241,6 @@ pub(super) unsafe fn format_find(
         value: Default::default(),
         time: 0,
         cb: None,
-        entry: format_entry_entry {
-            rbe_left: ::core::ptr::null_mut::<format_entry>(),
-            rbe_right: ::core::ptr::null_mut::<format_entry>(),
-            rbe_parent: ::core::ptr::null_mut::<format_entry>(),
-            rbe_color: 0,
-        },
     };
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();

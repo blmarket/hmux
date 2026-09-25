@@ -165,16 +165,8 @@ pub struct args_entry {
     pub values: args_values,
     pub count: u_int,
     pub flags: ::core::ffi::c_int,
-    pub entry: args_entry_entry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct args_entry_entry {
-    pub rbe_left: *mut args_entry,
-    pub rbe_right: *mut args_entry,
-    pub rbe_parent: *mut args_entry,
-    pub rbe_color: ::core::ffi::c_int,
+    /// Non-owning pointer used to find the next item in the ordered collection.
+    pub(crate) owner: *mut args_tree_storage,
 }
 
 #[derive(Copy, Clone)]

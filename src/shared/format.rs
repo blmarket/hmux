@@ -157,7 +157,6 @@ pub struct format_entry {
     pub value: Option<std::ffi::CString>,
     pub time: time_t,
     pub cb: format_cb,
-    pub entry: format_entry_entry,
     pub(crate) owned_cb: Option<unsafe fn(*mut format_tree) -> Option<std::ffi::CString>>,
 }
 
@@ -168,19 +167,9 @@ impl format_entry {
             value: Default::default(),
             time: unsafe { ::core::mem::zeroed() },
             cb: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
             owned_cb: Default::default(),
         }
     }
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_entry_entry {
-    pub rbe_left: *mut format_entry,
-    pub rbe_right: *mut format_entry,
-    pub rbe_parent: *mut format_entry,
-    pub rbe_color: ::core::ffi::c_int,
 }
 
 pub type format_cb = Option<unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void>;

@@ -13,12 +13,6 @@ fn format_entry_new(key: &CStr) -> *mut format_entry {
         value: Default::default(),
         time: 0,
         cb: None,
-        entry: format_entry_entry {
-            rbe_left: ::core::ptr::null_mut(),
-            rbe_right: ::core::ptr::null_mut(),
-            rbe_parent: ::core::ptr::null_mut(),
-            rbe_color: 0,
-        },
     };
     let owner = Box::new(format_entry {
         key: key,
@@ -514,12 +508,6 @@ mod tests {
                 value: Default::default(),
                 time: 0,
                 cb: None,
-                entry: format_entry_entry {
-                    rbe_left: ::core::ptr::null_mut(),
-                    rbe_right: ::core::ptr::null_mut(),
-                    rbe_parent: ::core::ptr::null_mut(),
-                    rbe_color: 0,
-                },
             };
             let entry = format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe);
             assert!(!entry.is_null());
@@ -626,12 +614,6 @@ mod tests {
             value: Default::default(),
             time: 0,
             cb: None,
-            entry: format_entry_entry {
-                rbe_left: ::core::ptr::null_mut::<format_entry>(),
-                rbe_right: ::core::ptr::null_mut::<format_entry>(),
-                rbe_parent: ::core::ptr::null_mut::<format_entry>(),
-                rbe_color: 0,
-            },
         }))
     }
 

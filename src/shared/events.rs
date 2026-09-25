@@ -28,7 +28,8 @@ pub struct event_payload_item {
     pub name: Option<std::ffi::CString>,
     pub type_0: event_payload_type,
     pub c2rust_unnamed: event_payload_item_c2rust_unnamed,
-    pub entry: event_payload_item_entry,
+    /// Non-owning pointer used to find the next item in the ordered collection.
+    pub(crate) owner: *mut event_payload_tree,
     // The Copy payload union also stores borrowed object pointers and callbacks.
     // Its string variant borrows this allocation until this item is freed.
     pub(crate) string: Option<std::ffi::CString>,
@@ -40,7 +41,7 @@ impl event_payload_item {
             name: Default::default(),
             type_0: unsafe { ::core::mem::zeroed() },
             c2rust_unnamed: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            owner: ::core::ptr::null_mut(),
             string: Default::default(),
         }
     }
@@ -79,15 +80,6 @@ pub type events_cb = Option<
 #[repr(C)]
 pub struct event_payload_tree {
     pub entries: *mut event_payload_tree_storage,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct event_payload_item_entry {
-    pub rbe_left: *mut event_payload_item,
-    pub rbe_right: *mut event_payload_item,
-    pub rbe_parent: *mut event_payload_item,
-    pub rbe_color: ::core::ffi::c_int,
 }
 
 /// Rust-owned ordering storage for an event payload's Box-owned items.
