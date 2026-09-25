@@ -610,14 +610,14 @@ pub(crate) unsafe fn paste_replace_owned(pb: *mut paste_buffer, data: Box<[u8]>)
         ((*pb).name).as_ptr().cast_mut(),
     );
 }
-pub(crate) unsafe fn paste_make_sample_cstring(pb: *mut paste_buffer) -> CString {
+pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
     let flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
     let width = 200;
-    let len = (*pb).size.min(width);
+    let len = pb.size.min(width);
     let mut buffer = vec![0u8; len * 8 + 4];
     let used = utf8_strvis(
         buffer.as_mut_ptr().cast(),
-        ((*pb).data)
+        pb.data
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| {
                 value.as_ptr().cast_mut().cast::<::core::ffi::c_char>()
@@ -625,7 +625,7 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: *mut paste_buffer) -> CString
         len,
         flags,
     );
-    if (*pb).size > width || used > width {
+    if pb.size > width || used > width {
         buffer[width..width + 4].copy_from_slice(b"...\0");
     }
     let length = CStr::from_ptr(buffer.as_ptr().cast())

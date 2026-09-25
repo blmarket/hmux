@@ -1025,7 +1025,7 @@ unsafe fn format_cb_buffer_name(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_buffer_sample(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).pb.is_null() {
-        return Some(paste_make_sample_cstring((*ft).pb));
+        return Some(paste_make_sample_cstring(&*(*ft).pb));
     }
     return None;
 }
