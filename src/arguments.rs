@@ -693,10 +693,10 @@ pub unsafe fn args_parse(
     }
     return Ok(args);
 }
-unsafe fn args_copy_copy_value(from: *mut args_value, argv: &Vec<CString>) -> args_value {
-    match (*from).type_0() as ::core::ffi::c_uint {
+unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
+    match from.type_0() as ::core::ffi::c_uint {
         1 => {
-            let source = CStr::from_ptr((*from).string_ptr());
+            let source = CStr::from_ptr(from.string_ptr());
             if argv.is_empty() {
                 return args_value::string(source.to_owned());
             }
@@ -711,7 +711,7 @@ unsafe fn args_copy_copy_value(from: *mut args_value, argv: &Vec<CString>) -> ar
             args_value::string(expanded)
         }
         2 => args_value::commands(
-            cmd_list_copy((*from).cmdlist(), argv) as *mut cmd_list
+            cmd_list_copy(from.cmdlist(), argv) as *mut cmd_list
         ),
         0 | _ => args_value::empty(),
     }
@@ -737,7 +737,7 @@ pub unsafe fn args_copy(mut args: *mut args, argv: &Vec<CString>) -> *mut args {
                 args_set_value(
                     new_args,
                     (*entry).flag,
-                    Some(args_copy_copy_value(value, argv)),
+                    Some(args_copy_copy_value(&*value, argv)),
                     0,
                 );
                 value = args_next_value(value);
@@ -752,7 +752,7 @@ pub unsafe fn args_copy(mut args: *mut args, argv: &Vec<CString>) -> *mut args {
     while i < (*args).count {
         args_push_positional_owned(
             new_args,
-            args_copy_copy_value((*args).values.as_mut_ptr().add(i as usize), argv),
+            args_copy_copy_value(&*(*args).values.as_mut_ptr().add(i as usize), argv),
         );
         i = i.wrapping_add(1);
     }
