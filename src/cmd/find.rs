@@ -185,7 +185,7 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
     if c.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+    wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
     while !wp.is_null() {
         if (*wp).fd != -(1 as ::core::ffi::c_int)
             && strcmp(
@@ -197,7 +197,7 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
         {
             break;
         }
-        wp = window_pane_tree_next(wp);
+        wp = window_pane_tree_next(&*wp);
     }
     if wp.is_null() {
         envent = environ_find(

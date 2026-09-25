@@ -1795,10 +1795,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
         while !wp.is_null() {
             window_pane_default_cursor(wp);
-            wp = window_pane_tree_next(wp);
+            wp = window_pane_tree_next(&*wp);
         }
     }
     if strcmp(
@@ -1806,10 +1806,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
         while !wp.is_null() {
             window_pane_default_cursor(wp);
-            wp = window_pane_tree_next(wp);
+            wp = window_pane_tree_next(&*wp);
         }
     }
     if strcmp(
@@ -1909,17 +1909,17 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
             b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
         while !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-            wp = window_pane_tree_next(wp);
+            wp = window_pane_tree_next(&*wp);
         }
     }
     if *name as ::core::ffi::c_int == '@' as i32 {
-        wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
         while !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
-            wp = window_pane_tree_next(wp);
+            wp = window_pane_tree_next(&*wp);
         }
     }
     if strcmp(
@@ -1927,10 +1927,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"pane-colours\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
         while !wp.is_null() {
             colour_palette_from_option(&raw mut (*wp).palette, (*wp).options);
-            wp = window_pane_tree_next(wp);
+            wp = window_pane_tree_next(&*wp);
         }
     }
     if strcmp(
@@ -1965,10 +1965,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
         while !wp.is_null() {
             window_pane_scrollbar_hide(wp);
-            wp = window_pane_tree_next(wp);
+            wp = window_pane_tree_next(&*wp);
         }
     }
     if strcmp(
@@ -1976,10 +1976,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+        wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
         while !wp.is_null() {
             style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, (*wp).options);
-            wp = window_pane_tree_next(wp);
+            wp = window_pane_tree_next(&*wp);
         }
         w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
         while !w.is_null() {

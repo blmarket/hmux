@@ -1064,7 +1064,7 @@ pub unsafe extern "C" fn server_client_check_nested(mut c: *mut client) -> ::cor
     {
         return 0 as ::core::ffi::c_int;
     }
-    wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+    wp = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes), RB_NEGINF);
     while !wp.is_null() {
         if strcmp(
             &raw mut (*wp).tty as *mut ::core::ffi::c_char,
@@ -1075,7 +1075,7 @@ pub unsafe extern "C" fn server_client_check_nested(mut c: *mut client) -> ::cor
         {
             return 1 as ::core::ffi::c_int;
         }
-        wp = window_pane_tree_next(wp);
+        wp = window_pane_tree_next(&*wp);
     }
     return 0 as ::core::ffi::c_int;
 }

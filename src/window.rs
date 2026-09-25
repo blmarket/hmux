@@ -386,24 +386,24 @@ pub unsafe fn window_winlinks_remove(w: *mut window, wl: *mut winlink) {
     }
 }
 
-pub unsafe fn window_pane_tree_find(
-    head: *mut window_pane_tree,
-    elm: *mut window_pane,
+pub fn window_pane_tree_find(
+    head: &window_pane_tree,
+    elm: &window_pane,
 ) -> *mut window_pane {
-    let Some(map) = (*head).storage.as_deref() else {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).id;
+    let key = elm.id;
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn window_pane_tree_nfind(
-    head: *mut window_pane_tree,
-    elm: *mut window_pane,
+pub fn window_pane_tree_nfind(
+    head: &window_pane_tree,
+    elm: &window_pane,
 ) -> *mut window_pane {
-    let Some(map) = (*head).storage.as_deref() else {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).id;
+    let key = elm.id;
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -447,11 +447,11 @@ pub unsafe fn window_pane_tree_remove(
     }
     elm
 }
-pub unsafe fn window_pane_tree_minmax(
-    head: *mut window_pane_tree,
+pub fn window_pane_tree_minmax(
+    head: &window_pane_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut window_pane {
-    let Some(map) = (*head).storage.as_deref() else {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -461,20 +461,20 @@ pub unsafe fn window_pane_tree_minmax(
     };
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn window_pane_tree_next(elm: *mut window_pane) -> *mut window_pane {
-    let Some(map) = (*elm).tree_entry.owner.as_ref() else {
+pub unsafe fn window_pane_tree_next(elm: &window_pane) -> *mut window_pane {
+    let Some(map) = elm.tree_entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).id;
+    let key = elm.id;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn window_pane_tree_prev(elm: *mut window_pane) -> *mut window_pane {
-    let Some(map) = (*elm).tree_entry.owner.as_ref() else {
+pub unsafe fn window_pane_tree_prev(elm: &window_pane) -> *mut window_pane {
+    let Some(map) = elm.tree_entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).id;
+    let key = elm.id;
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -2688,7 +2688,7 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
         cwd_owner: None,
     };
     wp.id = id;
-    return window_pane_tree_find(&raw mut all_window_panes, &raw mut wp);
+    return window_pane_tree_find(&*std::ptr::addr_of!(all_window_panes), &wp);
 }
 pub(crate) unsafe fn window_pane_weak(wp: *mut window_pane) -> refbox::Weak<window_pane> {
     let owners = window_pane_owners

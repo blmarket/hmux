@@ -70,7 +70,7 @@ fn pane_order_and_visit_history_preserve_stable_weak_entries() {
 fn pane_ids_duplicates_neighbors_and_removal() {
     unsafe {
         let mut head = window_pane_tree { storage: None };
-        assert!(window_pane_tree_minmax(&mut head, -1).is_null());
+        assert!(window_pane_tree_minmax(&head, -1).is_null());
         let ids = [u32::MAX, 0, 42, 0x8000_0000];
         let mut nodes: Vec<window_pane> = ids.iter().map(|_| window_pane::empty()).collect();
         for (node, id) in nodes.iter_mut().zip(ids) {
@@ -85,32 +85,32 @@ fn pane_ids_duplicates_neighbors_and_removal() {
         assert_eq!(window_pane_tree_insert(&mut *head, &mut probe), existing);
         assert!(probe.tree_entry.owner.is_null());
         assert!(window_pane_tree_remove(&mut *head, &mut probe).is_null());
-        assert_eq!(window_pane_tree_find(&mut *head, &mut probe), existing);
-        assert_eq!(window_pane_tree_nfind(&mut *head, &mut probe), existing);
+        assert_eq!(window_pane_tree_find(&*head, &probe), existing);
+        assert_eq!(window_pane_tree_nfind(&*head, &probe), existing);
         probe.id = 1;
-        assert!(window_pane_tree_find(&mut *head, &mut probe).is_null());
-        assert_eq!(window_pane_tree_nfind(&mut *head, &mut probe), existing);
-        let mut node = window_pane_tree_minmax(&mut *head, -1);
+        assert!(window_pane_tree_find(&*head, &probe).is_null());
+        assert_eq!(window_pane_tree_nfind(&*head, &probe), existing);
+        let mut node = window_pane_tree_minmax(&*head, -1);
         for id in [0, 42, 0x8000_0000, u32::MAX] {
             assert_eq!((*node).id, id);
-            node = window_pane_tree_next(node);
+            node = window_pane_tree_next(&*node);
         }
         assert!(node.is_null());
-        node = window_pane_tree_minmax(&mut *head, 1);
+        node = window_pane_tree_minmax(&*head, 1);
         for id in [u32::MAX, 0x8000_0000, 42, 0] {
             assert_eq!((*node).id, id);
-            node = window_pane_tree_prev(node);
+            node = window_pane_tree_prev(&*node);
         }
         assert!(node.is_null());
-        node = window_pane_tree_minmax(&mut *head, -1);
+        node = window_pane_tree_minmax(&*head, -1);
         while !node.is_null() {
-            let next = window_pane_tree_next(node);
+            let next = window_pane_tree_next(&*node);
             assert_eq!(window_pane_tree_remove(&mut *head, node), node);
             assert!((*node).tree_entry.owner.is_null());
             node = next;
         }
         assert!(head.storage.is_none());
-        assert!(window_pane_tree_nfind(&mut *head, &mut probe).is_null());
+        assert!(window_pane_tree_nfind(&*head, &probe).is_null());
         assert!(window_pane_tree_insert(&mut *head, existing).is_null());
         assert_eq!(window_pane_tree_remove(&mut *head, existing), existing);
         assert!(head.storage.is_none());
