@@ -86,12 +86,12 @@ pub static mut server_acl_entries: server_acl_entries = server_acl_entries {
     entries: std::collections::BTreeMap::new(),
 };
 
-unsafe fn server_acl_entry_find(
-    head: *mut server_acl_entries,
+fn server_acl_entry_find(
+    head: &server_acl_entries,
     id: id_t,
     flags: ::core::ffi::c_int,
 ) -> *mut server_acl_entry {
-    (*head)
+    head
         .entries
         .get(&server_acl_key(id, flags))
         .map(|entry| entry.as_ref() as *const server_acl_entry as *mut server_acl_entry)
@@ -159,7 +159,7 @@ unsafe extern "C" fn server_acl_check(mut c: *mut client) -> *mut server_acl_ent
     if uid == -(1 as ::core::ffi::c_int) as uid_t {
         return ::core::ptr::null_mut::<server_acl_entry>();
     }
-    entry = server_acl_entry_find(&raw mut server_acl_entries, uid as id_t, 0);
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), uid as id_t, 0);
     if !entry.is_null() {
         return entry;
     }
@@ -168,7 +168,7 @@ unsafe extern "C" fn server_acl_check(mut c: *mut client) -> *mut server_acl_ent
         return ::core::ptr::null_mut::<server_acl_entry>();
     }
     return server_acl_entry_find(
-        &raw mut server_acl_entries,
+        &*(&raw mut server_acl_entries),
         gid as id_t,
         SERVER_ACL_IS_GROUP,
     );
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn server_acl_find(
     mut id: id_t,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    return (server_acl_entry_find(&raw mut server_acl_entries, id, flags)
+    return (server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags)
         != NULL as *mut server_acl_entry) as ::core::ffi::c_int;
 }
 #[no_mangle]
@@ -265,7 +265,7 @@ pub unsafe extern "C" fn server_acl_display(mut item: *mut cmdq_item) {
 #[no_mangle]
 pub unsafe extern "C" fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_entry_find(&raw mut server_acl_entries, id, flags);
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if entry.is_null() {
         server_acl_entries_insert(
             &raw mut server_acl_entries,
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::
 #[no_mangle]
 pub unsafe extern "C" fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_entry_find(&raw mut server_acl_entries, id, flags);
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if !entry.is_null() {
         server_acl_entries_remove(&raw mut server_acl_entries, entry);
         server_acl_update();
@@ -288,7 +288,7 @@ pub unsafe extern "C" fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c
 #[no_mangle]
 pub unsafe extern "C" fn server_acl_allow_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_entry_find(&raw mut server_acl_entries, id, flags);
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if entry.is_null() {
         return;
     }
@@ -298,7 +298,7 @@ pub unsafe extern "C" fn server_acl_allow_write(mut id: id_t, mut flags: ::core:
 #[no_mangle]
 pub unsafe extern "C" fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_entry_find(&raw mut server_acl_entries, id, flags);
+            entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if entry.is_null() {
         return;
     }
@@ -358,7 +358,7 @@ mod tests {
             assert!(server_acl_entries_next(&raw mut tree, group_ptr).is_null());
             assert_eq!(server_acl_entries_minmax(&raw mut tree, 1), group_ptr);
             assert_eq!(
-                server_acl_entry_find(&raw mut tree, 1, SERVER_ACL_IS_GROUP | SERVER_ACL_READONLY),
+                server_acl_entry_find(&tree, 1, SERVER_ACL_IS_GROUP | SERVER_ACL_READONLY),
                 group_ptr,
             );
             let removed = server_acl_entries_remove(&raw mut tree, first_ptr).unwrap();
@@ -366,7 +366,7 @@ mod tests {
                 removed.as_ref() as *const server_acl_entry as *mut server_acl_entry,
                 first_ptr
             );
-            assert!(server_acl_entry_find(&raw mut tree, 9, 0).is_null());
+            assert!(server_acl_entry_find(&tree, 9, 0).is_null());
             server_acl_entries_clear(&mut tree);
             assert!(server_acl_entries_minmax(&raw mut tree, -1).is_null());
         }
