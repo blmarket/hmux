@@ -5302,11 +5302,12 @@ pub unsafe extern "C" fn server_client_print(
     let mut empty: ::core::ffi::c_char = '\0' as i32 as ::core::ffi::c_char;
     let mut escaped = Vec::new();
     if parse == 0 {
-        escaped = utf8_stravisx_bytes(
-            data as *const ::core::ffi::c_char,
-            size,
-            VIS_OCTAL | VIS_CSTYLE | VIS_NOSLASH,
-        );
+        let input = if size == 0 {
+            &[][..]
+        } else {
+            std::slice::from_raw_parts(data.cast::<u8>(), size)
+        };
+        escaped = utf8_stravisx_bytes(input, VIS_OCTAL | VIS_CSTYLE | VIS_NOSLASH);
         escaped.push(0);
         msg = escaped.as_mut_ptr().cast();
     } else if size == 0 as size_t {

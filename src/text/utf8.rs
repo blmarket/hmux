@@ -1729,20 +1729,24 @@ pub(crate) fn utf8_stravis_cstring(src: &CStr, flag: i32) -> CString {
 }
 
 /// Escape an explicit byte length without losing bytes after an input NUL.
-pub(crate) unsafe fn utf8_stravisx_bytes(
-    src: *const ::core::ffi::c_char,
-    srclen: size_t,
-    flag: ::core::ffi::c_int,
-) -> Vec<u8> {
-    if srclen == 0 {
+pub(crate) fn utf8_stravisx_bytes(src: &[u8], flag: ::core::ffi::c_int) -> Vec<u8> {
+    if src.is_empty() {
         return Vec::new();
     }
-    let capacity = srclen
+    let capacity = src
+        .len()
         .checked_mul(4)
         .and_then(|size| size.checked_add(1))
         .expect("escaped UTF-8 bytes are too large");
     let mut buffer = vec![0u8; capacity];
-    let escaped_len = utf8_strvis(buffer.as_mut_ptr().cast(), src, srclen, flag);
+    let escaped_len = unsafe {
+        utf8_strvis(
+            buffer.as_mut_ptr().cast(),
+            src.as_ptr().cast(),
+            src.len(),
+            flag,
+        )
+    };
     buffer.truncate(escaped_len);
     buffer
 }
@@ -2098,11 +2102,7 @@ mod tests {
             let escaped = utf8_stravis_cstring(input.as_c_str(), crate::src::shared::vis::VIS_OCTAL);
             assert_eq!(escaped.as_bytes(), b"a\xc3\xa9\\377");
 
-            let bytes = utf8_stravisx_bytes(
-                b"a\0b".as_ptr().cast(),
-                3,
-                crate::src::shared::vis::VIS_OCTAL,
-            );
+            let bytes = utf8_stravisx_bytes(b"a\0b", crate::src::shared::vis::VIS_OCTAL);
             assert_eq!(bytes, b"a\\000b");
         }
     }

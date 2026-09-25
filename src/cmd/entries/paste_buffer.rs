@@ -97,12 +97,8 @@ pub static mut cmd_paste_buffer_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_paste_buffer_paste(
-    mut wp: *mut window_pane,
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-) {
-    let escaped = utf8_stravisx_bytes(buf, len, VIS_SAFE | VIS_NOSLASH);
+unsafe fn cmd_paste_buffer_paste(wp: *mut window_pane, buf: &[u8]) {
+    let escaped = utf8_stravisx_bytes(buf, VIS_SAFE | VIS_NOSLASH);
     bufferevent_write((*wp).event, escaped.as_ptr().cast(), escaped.len());
 }
 unsafe extern "C" fn cmd_paste_buffer_exec(
@@ -179,7 +175,10 @@ unsafe extern "C" fn cmd_paste_buffer_exec(
             if args_has(args, 'S' as i32 as u_char) != 0 {
                 bufferevent_write((*wp).event, bufdata as *const ::core::ffi::c_void, len);
             } else {
-                cmd_paste_buffer_paste(wp, bufdata, len);
+                cmd_paste_buffer_paste(
+                    wp,
+                    std::slice::from_raw_parts(bufdata.cast::<u8>(), len),
+                );
             }
             bufferevent_write((*wp).event, sepstr as *const ::core::ffi::c_void, seplen);
             bufdata = line.offset(1 as ::core::ffi::c_int as isize);
@@ -189,7 +188,10 @@ unsafe extern "C" fn cmd_paste_buffer_exec(
             if args_has(args, 'S' as i32 as u_char) != 0 {
                 bufferevent_write((*wp).event, bufdata as *const ::core::ffi::c_void, len);
             } else {
-                cmd_paste_buffer_paste(wp, bufdata, len);
+                cmd_paste_buffer_paste(
+                    wp,
+                    std::slice::from_raw_parts(bufdata.cast::<u8>(), len),
+                );
             }
         }
         if bracket != 0 && (*(*wp).screen).mode & MODE_BRACKETPASTE != 0 {
