@@ -125,11 +125,11 @@ fn server_acl_entries_next(
         .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
 
-unsafe fn server_acl_entries_insert(
-    head: *mut server_acl_entries,
+fn server_acl_entries_insert(
+    head: &mut server_acl_entries,
     entry: Box<server_acl_entry>,
 ) -> *mut server_acl_entry {
-    match (*head).entries.entry(server_acl_key(entry.id, entry.flags)) {
+    match head.entries.entry(server_acl_key(entry.id, entry.flags)) {
         std::collections::btree_map::Entry::Occupied(existing) => {
             existing.get().as_ref() as *const server_acl_entry as *mut server_acl_entry
         }
@@ -268,7 +268,7 @@ pub unsafe extern "C" fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::
     entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
     if entry.is_null() {
         server_acl_entries_insert(
-            &raw mut server_acl_entries,
+            &mut *(&raw mut server_acl_entries),
             Box::new(server_acl_entry {
                 id,
                 flags: flags & SERVER_ACL_IS_GROUP,
@@ -340,11 +340,11 @@ mod tests {
             let second_ptr = second.as_ref() as *const server_acl_entry as *mut server_acl_entry;
             let group_ptr = group.as_ref() as *const server_acl_entry as *mut server_acl_entry;
 
-            assert!(server_acl_entries_insert(&raw mut tree, first).is_null());
-            assert!(server_acl_entries_insert(&raw mut tree, second).is_null());
-            assert!(server_acl_entries_insert(&raw mut tree, group).is_null());
+            assert!(server_acl_entries_insert(&mut tree, first).is_null());
+            assert!(server_acl_entries_insert(&mut tree, second).is_null());
+            assert!(server_acl_entries_insert(&mut tree, group).is_null());
             assert_eq!(
-                server_acl_entries_insert(&raw mut tree, duplicate),
+                server_acl_entries_insert(&mut tree, duplicate),
                 group_ptr,
                 "duplicate keys keep the original item"
             );
