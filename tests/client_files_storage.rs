@@ -56,12 +56,12 @@ fn stream_lookup_order_reference_release_and_double_removal() {
         }
         let mut probe: client_file = client_file::empty();
         probe.stream = 1;
-        assert_eq!((*client_files_nfind(&mut files, &mut probe)).stream, 42);
-        assert!(client_files_find(&mut files, &mut probe).is_null());
+        assert_eq!((*client_files_nfind(&files, &probe)).stream, 42);
+        assert!(client_files_find(&files, &probe).is_null());
         probe.stream = 42;
-        assert_eq!(client_files_find(&mut files, &mut probe), nodes[2]);
+        assert_eq!(client_files_find(&files, &probe), nodes[2]);
         assert_eq!((*client_files_prev(&*nodes[2])).stream, 0);
-        let mut node = client_files_minmax(&mut files, -1);
+        let mut node = client_files_minmax(&files, -1);
         for stream in [i32::MIN, -1, 0, 42, i32::MAX] {
             assert_eq!((*node).stream, stream);
             node = client_files_next(&*node);
@@ -69,7 +69,7 @@ fn stream_lookup_order_reference_release_and_double_removal() {
         assert!(node.is_null());
         (*nodes[2]).references += 1;
         file_free(nodes[2]);
-        assert_eq!(client_files_find(&mut files, &mut probe), nodes[2]);
+        assert_eq!(client_files_find(&files, &probe), nodes[2]);
         // Read completion removes from the index before file_free does so again.
         client_files_remove(&mut files, nodes[2]);
         file_free(nodes[2]);

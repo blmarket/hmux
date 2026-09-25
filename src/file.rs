@@ -431,7 +431,7 @@ pub unsafe extern "C" fn file_vprint(
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    cf = client_files_find(&raw mut (*c).files, &raw mut find);
+    cf = client_files_find(&(*c).files, &find);
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
         file_set_path(&mut *cf, CString::new("-").unwrap());
@@ -486,7 +486,7 @@ pub unsafe extern "C" fn file_print_buffer(
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    cf = client_files_find(&raw mut (*c).files, &raw mut find);
+    cf = client_files_find(&(*c).files, &find);
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
         file_set_path(&mut *cf, CString::new("-").unwrap());
@@ -543,7 +543,7 @@ pub unsafe extern "C" fn file_error(
     }
     ap = args.clone();
     find.stream = 2 as ::core::ffi::c_int;
-    cf = client_files_find(&raw mut (*c).files, &raw mut find);
+    cf = client_files_find(&(*c).files, &find);
     if cf.is_null() {
         cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None, NULL);
         file_set_path(&mut *cf, CString::new("-").unwrap());
@@ -1021,7 +1021,7 @@ pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    cf = client_files_minmax(files, RB_NEGINF);
+    cf = client_files_minmax(&*files, RB_NEGINF);
     while !cf.is_null() {
         if !(*cf).event.is_null() {
             left = evbuffer_get_length(&*((*(*cf).event).output));
@@ -1186,7 +1186,7 @@ pub unsafe extern "C" fn file_write_open(
         path,
     );
     find.stream = (*msg).stream;
-    if !client_files_find(files, &raw mut find).is_null() {
+    if !client_files_find(&*files, &find).is_null() {
         error = EBADF;
     } else {
         cf = file_create_with_peer(peer, files, (*msg).stream, cb, cbdata);
@@ -1277,7 +1277,7 @@ pub unsafe extern "C" fn file_write_data(mut files: *mut client_files, mut imsg:
         fatalx(b"bad MSG_WRITE size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     find.stream = (*msg).stream;
-    cf = client_files_find(files, &raw mut find);
+    cf = client_files_find(&*files, &find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -1322,7 +1322,7 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         fatalx(b"bad MSG_WRITE_CLOSE size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     find.stream = (*msg).stream;
-    cf = client_files_find(files, &raw mut find);
+    cf = client_files_find(&*files, &find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -1471,7 +1471,7 @@ pub unsafe extern "C" fn file_read_open(
         path,
     );
     find.stream = (*msg).stream;
-    if !client_files_find(files, &raw mut find).is_null() {
+    if !client_files_find(&*files, &find).is_null() {
         error = EBADF;
     } else {
         cf = file_create_with_peer(peer, files, (*msg).stream, cb, cbdata);
@@ -1562,7 +1562,7 @@ pub unsafe extern "C" fn file_read_cancel(mut files: *mut client_files, mut imsg
         fatalx(b"bad MSG_READ_CANCEL size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     find.stream = (*msg).stream;
-    cf = client_files_find(files, &raw mut find);
+    cf = client_files_find(&*files, &find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -1607,7 +1607,7 @@ pub unsafe extern "C" fn file_write_ready(
         return -(1 as ::core::ffi::c_int);
     }
     find.stream = (*msg).stream;
-    cf = client_files_find(files, &raw mut find);
+    cf = client_files_find(&*files, &find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -1650,7 +1650,7 @@ pub unsafe extern "C" fn file_write_done(
         return -(1 as ::core::ffi::c_int);
     }
     find.stream = (*msg).stream;
-    cf = client_files_find(files, &raw mut find);
+    cf = client_files_find(&*files, &find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -1699,7 +1699,7 @@ pub unsafe extern "C" fn file_read_data(
         return -(1 as ::core::ffi::c_int);
     }
     find.stream = (*msg).stream;
-    cf = client_files_find(files, &raw mut find);
+    cf = client_files_find(&*files, &find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -1749,7 +1749,7 @@ pub unsafe extern "C" fn file_read_done(
         return -(1 as ::core::ffi::c_int);
     }
     find.stream = (*msg).stream;
-    cf = client_files_find(files, &raw mut find);
+    cf = client_files_find(&*files, &find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -1765,24 +1765,18 @@ pub unsafe extern "C" fn file_read_done(
 fn client_files_key(elm: &client_file) -> i32 {
     elm.stream
 }
-pub unsafe fn client_files_find(
-    head: *mut client_files,
-    elm: *mut client_file,
-) -> *mut client_file {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn client_files_find(head: &client_files, elm: &client_file) -> *mut client_file {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = client_files_key(&*elm);
+    let key = client_files_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn client_files_nfind(
-    head: *mut client_files,
-    elm: *mut client_file,
-) -> *mut client_file {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn client_files_nfind(head: &client_files, elm: &client_file) -> *mut client_file {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = client_files_key(&*elm);
+    let key = client_files_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1826,11 +1820,8 @@ pub unsafe fn client_files_remove(
     }
     elm
 }
-pub unsafe fn client_files_minmax(
-    head: *mut client_files,
-    direction: ::core::ffi::c_int,
-) -> *mut client_file {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn client_files_minmax(head: &client_files, direction: ::core::ffi::c_int) -> *mut client_file {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {

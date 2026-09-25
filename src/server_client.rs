@@ -1526,7 +1526,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     status_prompt_clear(c);
     status_message_clear(c);
     cmdq_abort_file_wait(c);
-    cf = client_files_minmax(&raw mut (*c).files, RB_NEGINF);
+    cf = client_files_minmax(&(*c).files, RB_NEGINF);
     while !cf.is_null() && {
         cf1 = client_files_next(&*cf);
         1 as ::core::ffi::c_int != 0
@@ -4075,7 +4075,7 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
         }
     }
     if force == 0 {
-        cf = client_files_minmax(&raw mut (*c).files, RB_NEGINF);
+        cf = client_files_minmax(&(*c).files, RB_NEGINF);
         while !cf.is_null() {
             if evbuffer_get_length(&*((*cf).buffer)) != 0 as size_t {
                 server_client_start_exit_timer(c);
