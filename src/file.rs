@@ -101,7 +101,7 @@ unsafe fn file_create_owner() -> *mut client_file {
         path: None,
         wait_item: std::ptr::null_mut(),
         wait_client: std::ptr::null_mut(),
-        cancel_cb: None,
+        cancel_data: None,
         terminal_scheduled: false,
         ..client_file::empty()
     }))
@@ -123,7 +123,7 @@ unsafe fn file_set_cmdq_wait(
     assert!(owner.wait_item.is_null());
     owner.wait_item = item;
     owner.wait_client = (*item).client;
-    owner.cancel_cb = cancel_cb;
+    owner.cancel_data = cancel_cb;
     cmdq_set_wait_file(&mut *item, cf);
 }
 
@@ -138,7 +138,7 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(cf: *mut client_file) {
     owner.wait_item = std::ptr::null_mut();
     owner.wait_client = std::ptr::null_mut();
     (*cf).cb = None;
-    let cancel_cb = owner.cancel_cb.take();
+    let cancel_cb = owner.cancel_data.take();
     if let Some(cancel_cb) = cancel_cb {
         cancel_cb();
     }
@@ -254,7 +254,7 @@ unsafe fn file_fire_done_cb(
             cmdq_clear_wait_file(&mut *owner.wait_item, cf);
             owner.wait_item = std::ptr::null_mut();
             owner.wait_client = std::ptr::null_mut();
-            owner.cancel_cb = None;
+            owner.cancel_data = None;
         }
     }
     let mut callback = (*cf).cb.take();

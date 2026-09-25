@@ -303,7 +303,7 @@ pub struct client_file {
     pub entry: client_file_entry,
     pub(crate) wait_item: *mut super::command::cmdq_item,
     pub(crate) wait_client: *mut client,
-    pub(crate) cancel_cb: Option<Box<dyn FnOnce()>>,
+    pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(crate) terminal_scheduled: bool,
 }
 
@@ -333,7 +333,7 @@ impl client_file {
             entry: client_file_entry { owner: None },
             wait_item: Default::default(),
             wait_client: Default::default(),
-            cancel_cb: Default::default(),
+            cancel_data: Default::default(),
             terminal_scheduled: Default::default(),
         }
     }

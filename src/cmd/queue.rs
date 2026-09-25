@@ -61,7 +61,7 @@ pub const CMDQ_COMMAND: cmdq_type = 0;
 unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
     let mut owner = Box::new(cmdq_item {
         name: None,
-        cancel_cb: None,
+        cancel_data: None,
         wait_file: ::core::ptr::null_mut(),
         ..cmdq_item::empty()
     });
@@ -84,17 +84,17 @@ unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
 pub(crate) fn cmdq_set_cancel_callback(item: &mut cmdq_item, cancel: Box<dyn FnOnce()>) {
     assert_eq!(item.type_0, CMDQ_CALLBACK);
     assert!(
-        item.cancel_cb.is_none(),
+        item.cancel_data.is_none(),
         "callback cancel hook already set"
     );
-    item.cancel_cb = Some(cancel);
+    item.cancel_data = Some(cancel);
 }
 
 unsafe fn cmdq_cancel_unfired_data(item: &mut cmdq_item) {
     if item.flags & CMDQ_FIRED != 0 {
         return;
     }
-    if let Some(cancel) = item.cancel_cb.take() {
+    if let Some(cancel) = item.cancel_data.take() {
         cancel();
     }
 }

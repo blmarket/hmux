@@ -163,7 +163,7 @@ pub struct cmdq_item {
     pub cmd: *mut cmd,
     pub cb: cmdq_cb,
     pub data: *mut ::core::ffi::c_void,
-    pub(crate) cancel_cb: Option<Box<dyn FnOnce()>>,
+    pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(crate) wait_file: *mut super::client::client_file,
 }
 
@@ -187,7 +187,7 @@ impl cmdq_item {
             cmd: Default::default(),
             cb: Default::default(),
             data: Default::default(),
-            cancel_cb: Default::default(),
+            cancel_data: Default::default(),
             wait_file: Default::default(),
         }
     }
