@@ -224,13 +224,13 @@ pub(crate) fn server_client_set_message(c: &mut client, message: Option<CString>
     c.message_string = message;
 }
 
-pub(crate) unsafe fn server_client_set_status_expanded(
-    c: *mut client,
+pub(crate) fn server_client_set_status_expanded(
+    c: &mut client,
     index: usize,
     expanded: Option<CString>,
 ) {
-    assert!(index < (*c).status.entries.len());
-    (*c).status.entries[index].expanded = expanded;
+    assert!(index < c.status.entries.len());
+    c.status.entries[index].expanded = expanded;
 }
 
 fn server_client_set_ttyname(c: &mut client, ttyname: Option<CString>) {

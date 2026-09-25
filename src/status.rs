@@ -323,7 +323,7 @@ pub unsafe extern "C" fn status_free(mut c: *mut client) {
         style_ranges_free(
             &raw mut (*(&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)).ranges,
         );
-        server_client_set_status_expanded(c, i as usize, None);
+        server_client_set_status_expanded(&mut *c, i as usize, None);
         i = i.wrapping_add(1);
     }
     if event_initialized(&raw mut (*sl).timer) != 0 {
@@ -487,7 +487,7 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
                         &raw mut (*sle).ranges,
                         0 as ::core::ffi::c_int,
                     );
-                    server_client_set_status_expanded(c, i as usize, Some(expanded));
+                    server_client_set_status_expanded(&mut *c, i as usize, Some(expanded));
                 }
             }
             i = i.wrapping_add(1);
