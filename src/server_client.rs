@@ -3751,7 +3751,7 @@ unsafe extern "C" fn server_client_reset_state(mut c: *mut client) {
                 (*c).overlay_mode = Some(overlay_mode);
             }
             if let Some((overlay_screen, overlay_cx, overlay_cy)) = result {
-                s = overlay_screen;
+                s = overlay_screen.as_ptr();
                 cx = overlay_cx;
                 cy = overlay_cy;
             }

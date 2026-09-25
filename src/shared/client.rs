@@ -356,7 +356,7 @@ pub type overlay_key_cb = Option<Box<dyn FnMut(&mut client, &mut key_event) -> i
 pub type overlay_draw_cb = Option<Box<dyn FnMut(&mut client)>>;
 
 pub type overlay_mode_cb =
-    Option<Box<dyn FnMut(&mut client) -> Option<(*mut screen, u_int, u_int)>>>;
+    Option<Box<dyn FnMut(&mut client) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)>>>;
 
 pub type overlay_check_cb =
     Option<Box<dyn FnMut(&mut client, u_int, u_int, u_int) -> visible_ranges>>;

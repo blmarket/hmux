@@ -305,16 +305,18 @@ unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: *mut tty_ctx) {
         popup_set_client(pd, ttyctx, c as *mut client)
     }));
 }
-unsafe fn popup_mode(pd: *mut popup_data) -> Option<(*mut screen, u_int, u_int)> {
+unsafe fn popup_mode(
+    pd: *mut popup_data,
+) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)> {
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         Some((
-            &raw mut (*pd).s,
+            std::ptr::NonNull::from(&mut (*pd).s),
             (*pd).px.wrapping_add((*pd).s.cx),
             (*pd).py.wrapping_add((*pd).s.cy),
         ))
     } else {
         Some((
-            &raw mut (*pd).s,
+            std::ptr::NonNull::from(&mut (*pd).s),
             (*pd).px.wrapping_add(1).wrapping_add((*pd).s.cx),
             (*pd).py.wrapping_add(1).wrapping_add((*pd).s.cy),
         ))
