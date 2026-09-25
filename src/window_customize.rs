@@ -978,9 +978,9 @@ unsafe extern "C" fn window_customize_set_note_value(
         return -(1 as ::core::ffi::c_int);
     }
     if *s as ::core::ffi::c_int == '\0' as i32 {
-        key_bindings_set_note(bd, ::core::ptr::null());
+        key_bindings_set_note(bd, None);
     } else {
-        key_bindings_set_note(bd, s);
+        key_bindings_set_note(bd, Some(CStr::from_ptr(s)));
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -4274,7 +4274,7 @@ unsafe extern "C" fn window_customize_set_note_callback(
     {
         return PROMPT_CLOSE;
     }
-    key_bindings_set_note(bd, s);
+    key_bindings_set_note(bd, Some(CStr::from_ptr(s)));
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
     (*(*data).wp).flags |= PANE_REDRAW;

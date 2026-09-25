@@ -89,13 +89,9 @@ unsafe fn key_bindings_new() -> *mut key_binding {
     .cast()
 }
 
-pub(crate) unsafe fn key_bindings_set_note(bd: *mut key_binding, note: *const ::core::ffi::c_char) {
+pub(crate) unsafe fn key_bindings_set_note(bd: *mut key_binding, note: Option<&CStr>) {
     // Copy before replacing: a caller may pass the binding's current note.
-    let next = if note.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(note).to_owned())
-    };
+    let next = note.map(CStr::to_owned);
     let owner = &mut *bd;
     owner.note = Default::default();
     owner.note = next;
@@ -263,7 +259,7 @@ pub unsafe extern "C" fn key_bindings_add(
     if cmdlist.is_null() {
         if !bd.is_null() {
             if !note.is_null() {
-                key_bindings_set_note(bd, note);
+                key_bindings_set_note(bd, Some(CStr::from_ptr(note)));
             }
             if repeat != 0 {
                 (*bd).flags |= KEY_BINDING_REPEAT;
@@ -279,7 +275,7 @@ pub unsafe extern "C" fn key_bindings_add(
     (*bd).key = (key as ::core::ffi::c_ulonglong & !KEYC_MASK_FLAGS) as key_code;
     (*bd).tablename = Some((*table).name.clone());
     if !note.is_null() {
-        key_bindings_set_note(bd, note);
+        key_bindings_set_note(bd, Some(CStr::from_ptr(note)));
     }
     key_bindings_index_insert(&raw mut (*table).key_bindings, bd);
     if repeat != 0 {
@@ -349,12 +345,7 @@ pub unsafe extern "C" fn key_bindings_reset(
     cmd_list_free((*bd).cmdlist);
     (*bd).cmdlist = (*dd).cmdlist;
     (*(*bd).cmdlist).references += 1;
-    key_bindings_set_note(
-        bd,
-        ((*dd).note)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    key_bindings_set_note(bd, (*dd).note.as_deref());
     (*bd).flags = (*dd).flags;
 }
 #[no_mangle]
@@ -404,7 +395,7 @@ pub unsafe fn key_bindings_add_default(
     table: *mut key_table,
     key: key_code,
     cmdlist: *mut cmd_list,
-    note: *const ::core::ffi::c_char,
+    note: Option<&CStr>,
     flags: ::core::ffi::c_int,
 ) -> *mut key_binding {
     let bd = key_bindings_new();
@@ -428,7 +419,13 @@ unsafe extern "C" fn key_bindings_init_done(
         while !bd.is_null() {
             (*(*bd).cmdlist).references += 1;
             new_bd =
-                key_bindings_add_default(table, (*bd).key, (*bd).cmdlist, ((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()), (*bd).flags);
+                key_bindings_add_default(
+                    table,
+                    (*bd).key,
+                    (*bd).cmdlist,
+                    (*bd).note.as_deref(),
+                    (*bd).flags,
+                );
             bd = key_bindings_index_next(bd);
         }
         table = key_tables_next(table);
