@@ -528,7 +528,7 @@ unsafe extern "C" fn cmd_parse_expand_alias(
         .expect("alias command owns its name")
         .as_ptr()
         .cast_mut();
-    let Some(alias) = cmd_get_alias(name) else {
+    let Some(alias) = cmd_get_alias(CStr::from_ptr(name)) else {
         return 0 as ::core::ffi::c_int;
     };
     log_debug(

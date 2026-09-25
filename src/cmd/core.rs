@@ -353,7 +353,7 @@ pub unsafe extern "C" fn cmd_get_source(
 pub unsafe extern "C" fn cmd_get_parse_flags(mut cmd: *mut cmd) -> ::core::ffi::c_int {
     return (*cmd).parse_flags;
 }
-pub unsafe fn cmd_get_alias(name: *const ::core::ffi::c_char) -> Option<CString> {
+pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
@@ -367,14 +367,16 @@ pub unsafe fn cmd_get_alias(name: *const ::core::ffi::c_char) -> Option<CString>
     if o.is_null() {
         return None;
     }
-    wanted = strlen(name);
+    wanted = name.to_bytes().len();
     a = options_array_first(o);
     while !a.is_null() {
         ov = options_array_item_value(a);
         equals = strchr((*ov).string_ptr(), '=' as i32);
         if !equals.is_null() {
             n = equals.offset_from((*ov).string_ptr()) as ::core::ffi::c_long as size_t;
-            if n == wanted && strncmp(name, (*ov).string_ptr(), n) == 0 as ::core::ffi::c_int {
+            if n == wanted
+                && strncmp(name.as_ptr(), (*ov).string_ptr(), n) == 0 as ::core::ffi::c_int
+            {
                 return Some(
                     CStr::from_ptr(equals.offset(1 as ::core::ffi::c_int as isize)).to_owned(),
                 );
