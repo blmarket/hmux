@@ -1286,7 +1286,7 @@ unsafe fn format_cb_client_user(mut ft: *mut format_tree) -> Option<CString> {
             !pw.is_null()
         } {
             server_client_set_user(
-                (*ft).c,
+                &mut *(*ft).c,
                 Some(std::ffi::CStr::from_ptr((*pw).pw_name).to_owned()),
             );
             return Some(

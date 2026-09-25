@@ -257,8 +257,8 @@ fn server_client_set_exit_session(c: &mut client, exit_session: Option<CString>)
     c.exit_session = exit_session;
 }
 
-pub(crate) unsafe fn server_client_set_user(c: *mut client, user: Option<CString>) {
-    (*c).user = user;
+pub(crate) fn server_client_set_user(c: &mut client, user: Option<CString>) {
+    c.user = user;
 }
 
 fn server_client_set_name(c: &mut client, name: Option<CString>) {
@@ -639,7 +639,7 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).user.is_none());
 
-            server_client_set_user(c, Some(CString::new(b"user-\xff".to_vec()).unwrap()));
+            server_client_set_user(&mut *c, Some(CString::new(b"user-\xff".to_vec()).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).user)
@@ -651,7 +651,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_set_user(c, Some(CString::new("").unwrap()));
+            server_client_set_user(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).user.is_none());
             assert_eq!(
                 CStr::from_ptr(
@@ -663,7 +663,7 @@ mod client_message_owner_tests {
                 b""
             );
 
-            server_client_set_user(c, None);
+            server_client_set_user(&mut *c, None);
             assert!((*c).user.is_none());
             assert!(owner.user.is_none());
         }
@@ -1631,7 +1631,7 @@ unsafe extern "C" fn server_client_free(
     cmdq_free((*c).queue);
     if (*c).references == 0 as ::core::ffi::c_int {
         server_client_set_name(&mut *c, None);
-        server_client_set_user(c, None);
+        server_client_set_user(&mut *c, None);
         assert!(
             (*c).files.storage.is_none(),
             "client file index still contains live records at client teardown"
