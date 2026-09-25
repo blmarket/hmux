@@ -1669,7 +1669,7 @@ unsafe extern "C" fn window_customize_build_environment(
         envent = environ_next(envent);
     }
 }
-unsafe extern "C" fn window_customize_build(
+unsafe fn window_customize_build(
     mut modedata: *mut ::core::ffi::c_void,
     _sort_crit: *mut sort_criteria,
     _tag: *mut uint64_t,
@@ -2877,7 +2877,7 @@ unsafe fn window_customize_draw(
         window_customize_draw_option(data, item, ctx, sx, sy);
     };
 }
-unsafe extern "C" fn window_customize_menu(
+unsafe fn window_customize_menu(
     mut modedata: *mut ::core::ffi::c_void,
     mut c: *mut client,
     mut key: key_code,
@@ -2964,7 +2964,7 @@ unsafe extern "C" fn window_customize_init(
         args,
         Some(
             window_customize_build
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut sort_criteria,
                     *mut uint64_t,
@@ -2984,7 +2984,7 @@ unsafe extern "C" fn window_customize_init(
         None,
         Some(
             window_customize_menu
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
+                as unsafe fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
         ),
         Some(
             window_customize_height

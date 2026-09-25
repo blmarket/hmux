@@ -280,7 +280,7 @@ mod tests {
         assert_eq!(items[0].ttyname.as_bytes(), b"replacement");
     }
 }
-unsafe extern "C" fn window_client_build(
+unsafe fn window_client_build(
     mut modedata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
     _tag: *mut uint64_t,
@@ -591,7 +591,7 @@ unsafe fn window_client_draw(
         lines,
     );
 }
-unsafe extern "C" fn window_client_menu(
+unsafe fn window_client_menu(
     mut modedata: *mut ::core::ffi::c_void,
     mut c: *mut client,
     mut key: key_code,
@@ -718,7 +718,7 @@ unsafe extern "C" fn window_client_init(
         args,
         Some(
             window_client_build
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut sort_criteria,
                     *mut uint64_t,
@@ -738,7 +738,7 @@ unsafe extern "C" fn window_client_init(
         None,
         Some(
             window_client_menu
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
+                as unsafe fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
         ),
         None,
         Some(

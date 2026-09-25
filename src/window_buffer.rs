@@ -236,7 +236,7 @@ fn window_buffer_clear_items(items: &mut Vec<Box<window_buffer_itemdata>>) {
         drop(item);
     }
 }
-unsafe extern "C" fn window_buffer_build(
+unsafe fn window_buffer_build(
     mut modedata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
     _tag: *mut uint64_t,
@@ -496,7 +496,7 @@ unsafe fn window_buffer_search(
         );
     };
 }
-unsafe extern "C" fn window_buffer_menu(
+unsafe fn window_buffer_menu(
     mut modedata: *mut ::core::ffi::c_void,
     mut c: *mut client,
     mut key: key_code,
@@ -634,7 +634,7 @@ unsafe extern "C" fn window_buffer_init(
         args,
         Some(
             window_buffer_build
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut sort_criteria,
                     *mut uint64_t,
@@ -662,7 +662,7 @@ unsafe extern "C" fn window_buffer_init(
         ),
         Some(
             window_buffer_menu
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
+                as unsafe fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
         ),
         None,
         Some(

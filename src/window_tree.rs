@@ -570,7 +570,7 @@ unsafe extern "C" fn window_tree_build_session(
         window_tree_remove_last_item(data, item, mti);
     }
 }
-unsafe extern "C" fn window_tree_build(
+unsafe fn window_tree_build(
     mut modedata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
     tag: *mut uint64_t,
@@ -1556,7 +1556,7 @@ unsafe fn window_tree_search(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_tree_menu(
+unsafe fn window_tree_menu(
     mut modedata: *mut ::core::ffi::c_void,
     mut c: *mut client,
     mut key: key_code,
@@ -1799,7 +1799,7 @@ unsafe extern "C" fn window_tree_init(
         args,
         Some(
             window_tree_build
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut sort_criteria,
                     *mut uint64_t,
@@ -1827,7 +1827,7 @@ unsafe extern "C" fn window_tree_init(
         ),
         Some(
             window_tree_menu
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
+                as unsafe fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
         ),
         None,
         Some(
