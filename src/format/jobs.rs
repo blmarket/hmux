@@ -16,13 +16,13 @@ fn format_job_set_out(fj: &mut format_job, value: CString) {
 }
 
 // Match C-string visibility while keeping the line's Rust allocation local.
-unsafe fn format_job_set_out_from_line(fj: *mut format_job, value: &[u8]) {
+fn format_job_set_out_from_line(fj: &mut format_job, value: &[u8]) {
     let visible = value
         .iter()
         .position(|&byte| byte == 0)
         .unwrap_or(value.len());
     let owned = CString::new(&value[..visible]).expect("visible job output contains no NUL");
-    format_job_set_out(&mut *fj, owned);
+    format_job_set_out(fj, owned);
 }
 
 fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
@@ -52,7 +52,7 @@ pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
         return;
     };
     (*fj).updated = 1 as ::core::ffi::c_int;
-    format_job_set_out_from_line(fj, &line);
+    format_job_set_out_from_line(&mut *fj, &line);
     log_debug(
         b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"format_job_update\0" as *const u8 as *const ::core::ffi::c_char,
@@ -424,7 +424,7 @@ mod tests {
             let mut cache = format_job_tree::default();
             let cmd = CString::new(b"printf '\xff'".to_vec()).unwrap();
             let fj = format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_ptr());
-            format_job_set_out_from_line(fj, b"first\0ignored");
+            format_job_set_out_from_line(&mut *fj, b"first\0ignored");
             assert_eq!(
                 CStr::from_ptr(
                     ((*fj).out)
