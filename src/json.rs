@@ -79,11 +79,10 @@ pub const TOK_OPENOBJECT: json_token_type = 0;
 pub const ERROR_CTX_LEN: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 pub const PARSE_DEPTH_MAX: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
 
-unsafe fn json_set_string(node: *mut json_node, string: CString) {
-    let owner = &mut *node;
-    owner.c2rust_unnamed.str_0 = ::core::ptr::null_mut();
-    owner.string = Some(string);
-    owner.c2rust_unnamed.str_0 = owner.string.as_ref().unwrap().as_ptr().cast_mut();
+fn json_set_string(node: &mut json_node, string: CString) {
+    node.c2rust_unnamed.str_0 = ::core::ptr::null_mut();
+    node.string = Some(string);
+    node.c2rust_unnamed.str_0 = node.string.as_ref().unwrap().as_ptr().cast_mut();
 }
 
 unsafe fn json_fields_insert(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
@@ -774,7 +773,7 @@ unsafe extern "C" fn json_assign_value(
     let mut child: *mut json_node = val as *mut json_node;
     match (*node).type_0 as ::core::ffi::c_uint {
         0 => {
-            json_set_string(node, CStr::from_ptr(val.cast()).to_owned());
+            json_set_string(&mut *node, CStr::from_ptr(val.cast()).to_owned());
         }
         1 => {
             (*node).c2rust_unnamed.num = *(val as *mut int64_t);
@@ -1133,7 +1132,7 @@ unsafe extern "C" fn json_parse_string(
                 let bytes = ::core::slice::from_raw_parts(loc.cast::<u8>(), len as usize);
                 let string = CString::new(bytes).expect("JSON token contains no NUL");
                 let node = json_create_node(parent, NODE_STRING, key, ::core::ptr::null_mut());
-                json_set_string(node, string);
+                json_set_string(&mut *node, string);
                 return node;
             }
         }
