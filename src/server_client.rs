@@ -1515,7 +1515,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     cmdq_abort_file_wait(c);
     cf = client_files_minmax(&raw mut (*c).files, RB_NEGINF);
     while !cf.is_null() && {
-        cf1 = client_files_next(cf);
+        cf1 = client_files_next(&*cf);
         1 as ::core::ffi::c_int != 0
     } {
         (*cf).error = EINTR;
@@ -4068,7 +4068,7 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
                 server_client_start_exit_timer(c);
                 return;
             }
-            cf = client_files_next(cf);
+            cf = client_files_next(&*cf);
         }
     }
     (*c).flags |= CLIENT_EXITED as uint64_t;

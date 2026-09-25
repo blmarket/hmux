@@ -1008,7 +1008,7 @@ pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core
                 );
             }
         }
-        cf = client_files_next(cf);
+        cf = client_files_next(&*cf);
     }
     return (waiting != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
@@ -1805,20 +1805,20 @@ pub unsafe fn client_files_minmax(
     };
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn client_files_next(elm: *mut client_file) -> *mut client_file {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn client_files_next(elm: &client_file) -> *mut client_file {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = client_files_key(&*elm);
+    let key = client_files_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn client_files_prev(elm: *mut client_file) -> *mut client_file {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn client_files_prev(elm: &client_file) -> *mut client_file {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = client_files_key(&*elm);
+    let key = client_files_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)

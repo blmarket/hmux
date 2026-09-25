@@ -60,11 +60,11 @@ fn stream_lookup_order_reference_release_and_double_removal() {
         assert!(client_files_find(&mut files, &mut probe).is_null());
         probe.stream = 42;
         assert_eq!(client_files_find(&mut files, &mut probe), nodes[2]);
-        assert_eq!((*client_files_prev(nodes[2])).stream, 0);
+        assert_eq!((*client_files_prev(&*nodes[2])).stream, 0);
         let mut node = client_files_minmax(&mut files, -1);
         for stream in [i32::MIN, -1, 0, 42, i32::MAX] {
             assert_eq!((*node).stream, stream);
-            node = client_files_next(node);
+            node = client_files_next(&*node);
         }
         assert!(node.is_null());
         (*nodes[2]).references += 1;
