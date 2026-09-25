@@ -68,7 +68,7 @@ use crate::src::tmux::{
 use crate::src::tty::{tty_default_colours, tty_window_offset};
 use crate::src::tty_features::{tty_feature_present, tty_get_features};
 use crate::src::tty_term::{tty_term_has_name, tty_term_number};
-use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
+use crate::src::text::utf8::{utf8_cstrhas_impl, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::window::{
     window_count_panes, window_get_pane_status, window_pane_get_pane_status, window_pane_index,
     window_pane_is_floating, window_pane_mode, window_pane_printable_flags,
@@ -570,19 +570,14 @@ pub unsafe extern "C" fn format_defaults_paste_buffer(
 ) {
     (*ft).pb = pb;
 }
-unsafe extern "C" fn format_is_word_separator(
-    mut ws: *const ::core::ffi::c_char,
-    mut gc: *const grid_cell,
-) -> ::core::ffi::c_int {
-    if utf8_cstrhas(ws, &raw const (*gc).data) != 0 {
-        return 1 as ::core::ffi::c_int;
+fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {
+    if utf8_cstrhas_impl(ws, &gc.data) {
+        return true;
     }
-    if (*gc).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-        return 1 as ::core::ffi::c_int;
+    if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
+        return true;
     }
-    return ((*gc).data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
-        && *(&raw const (*gc).data.data as *const u_char) as ::core::ffi::c_int == ' ' as i32)
-        as ::core::ffi::c_int;
+    gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int && gc.data.data[0] == b' '
 }
 pub unsafe fn format_grid_word(gd: *mut grid, x: u_int, y: u_int) -> Option<CString> {
     format_grid_word_cstring(gd, x, y)
@@ -607,19 +602,19 @@ pub(crate) unsafe fn format_grid_word_cstring(
         us: 0,
         link: 0,
     };
-    let mut ws: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let ws: &CStr;
     let mut ud: Vec<utf8_data> = Vec::new();
     let mut end: u_int = 0;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut s = None;
-    ws = options_get_string(
+    ws = CStr::from_ptr(options_get_string(
         global_s_options,
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    ));
     loop {
         grid_get_cell(gd, x, y, &raw mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
-            && format_is_word_separator(ws, &raw mut gc) != 0
+            && format_is_word_separator(ws, &gc)
         {
             found = 1 as ::core::ffi::c_int;
             break;
@@ -663,7 +658,7 @@ pub(crate) unsafe fn format_grid_word_cstring(
         if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
             continue;
         }
-        if format_is_word_separator(ws, &raw mut gc) != 0 {
+        if format_is_word_separator(ws, &gc) {
             break;
         }
         ud.push(gc.data);

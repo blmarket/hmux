@@ -1978,7 +1978,10 @@ pub unsafe extern "C" fn utf8_cstrhas(
     s: *const ::core::ffi::c_char,
     ud: *const utf8_data,
 ) -> ::core::ffi::c_int {
-    let bytes = CStr::from_ptr(s).to_bytes();
+    utf8_cstrhas_impl(CStr::from_ptr(s), &*ud) as ::core::ffi::c_int
+}
+pub(crate) fn utf8_cstrhas_impl(s: &CStr, ud: &utf8_data) -> bool {
+    let bytes = s.to_bytes();
     let mut offset = 0;
     let mut found = 0;
     while offset < bytes.len() {
@@ -1988,12 +1991,12 @@ pub unsafe extern "C" fn utf8_cstrhas(
             size: 0,
             width: 0,
         };
-        let mut more = utf8_open(&raw mut cell, bytes[offset]);
+        let mut more = unsafe { utf8_open(&raw mut cell, bytes[offset]) };
         if more == UTF8_MORE {
             let start = offset;
             offset += 1;
             while offset < bytes.len() && more == UTF8_MORE {
-                more = utf8_append(&raw mut cell, bytes[offset]);
+                more = unsafe { utf8_append(&raw mut cell, bytes[offset]) };
                 offset += 1;
             }
             if more != UTF8_DONE {
@@ -2003,19 +2006,18 @@ pub unsafe extern "C" fn utf8_cstrhas(
             }
         }
         if more != UTF8_DONE {
-            utf8_set(&raw mut cell, bytes[offset]);
+            unsafe { utf8_set(&raw mut cell, bytes[offset]) };
             offset += 1;
         }
         let matches = {
-            let target = &*ud;
-            cell.size == target.size
-                && cell.data[..cell.size as usize] == target.data[..target.size as usize]
+            cell.size == ud.size
+                && cell.data[..cell.size as usize] == ud.data[..ud.size as usize]
         };
         if matches {
             found = 1;
         }
     }
-    found
+    found != 0
 }
 
 pub const __WCHAR_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
