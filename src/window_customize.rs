@@ -236,11 +236,11 @@ unsafe fn window_customize_set_name(item: *mut window_customize_itemdata, value:
     (*item).name = value.map(CStr::to_owned);
 }
 
-unsafe fn window_customize_set_item_array_key(
-    item: *mut window_customize_itemdata,
+fn window_customize_set_item_array_key(
+    item: &mut window_customize_itemdata,
     value: Option<&CStr>,
 ) {
-    (*item).array_key = value.map(CStr::to_owned);
+    item.array_key = value.map(CStr::to_owned);
 }
 
 fn window_customize_new_item() -> *mut window_customize_itemdata {
@@ -689,7 +689,7 @@ unsafe extern "C" fn window_customize_copy_item(
     (*new_item).environ_flags = (*item).environ_flags;
     window_customize_set_table(new_item, (*item).table.as_deref());
     window_customize_set_name(new_item, (*item).name.as_deref());
-    window_customize_set_item_array_key(new_item, (*item).array_key.as_deref());
+    window_customize_set_item_array_key(&mut *new_item, (*item).array_key.as_deref());
     return new_item;
 }
 unsafe extern "C" fn window_customize_finish_edit(mut ed: *mut window_customize_editdata) {
@@ -1106,7 +1106,7 @@ unsafe extern "C" fn window_customize_build_array(
             (*item).oo = oo;
             window_customize_set_name(item, Some(CStr::from_ptr(options_name(o))));
             window_customize_set_item_array_key(
-                item,
+                &mut *item,
                 if array_key.is_null() {
                     None
                 } else {
@@ -3912,7 +3912,7 @@ unsafe extern "C" fn window_customize_set_option(
         (*new_item).oo = oo;
         window_customize_set_name(new_item, Some(CStr::from_ptr(name)));
         if !array_key.is_null() {
-            window_customize_set_item_array_key(new_item, Some(CStr::from_ptr(array_key)));
+            window_customize_set_item_array_key(&mut *new_item, Some(CStr::from_ptr(array_key)));
         }
         (*data).references += 1;
         mode_tree_set_prompt(
@@ -4058,7 +4058,7 @@ unsafe extern "C" fn window_customize_set_array_key(
         new_item,
         (*item).name.as_deref(),
     );
-    window_customize_set_item_array_key(new_item, (*item).array_key.as_deref());
+    window_customize_set_item_array_key(&mut *new_item, (*item).array_key.as_deref());
     (*data).references += 1;
     mode_tree_set_prompt(
         (*data).data,
@@ -5142,7 +5142,7 @@ mod item_owner_tests {
             let table = CString::new(b"\xfftable".to_vec()).unwrap();
             window_customize_set_table(item, Some(table.as_c_str()));
             window_customize_set_name(item, Some(c"first"));
-            window_customize_set_item_array_key(item, Some(c""));
+            window_customize_set_item_array_key(&mut *item, Some(c""));
             let copy = window_customize_copy_item(item);
 
             window_customize_set_table(item, Some(c"changed"));
