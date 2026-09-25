@@ -97,13 +97,10 @@ fn paste_name_tree_find(head: &paste_name_tree, name: &CStr) -> *mut paste_buffe
 }
 
 unsafe fn paste_name_tree_insert(
-    head: *mut paste_name_tree,
+    head: &mut paste_name_tree,
     elm: *mut paste_buffer,
 ) -> *mut paste_buffer {
-    match (*head)
-        .entries
-        .entry(paste_name_key((*elm).name.as_c_str()))
-    {
+    match head.entries.entry(paste_name_key((*elm).name.as_c_str())) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
@@ -877,12 +874,12 @@ mod tests {
             let a0 = items[3].as_mut() as *mut paste_buffer;
             let duplicate = duplicate.as_mut() as *mut paste_buffer;
 
-            assert!(paste_name_tree_insert(&raw mut tree, z).is_null());
-            assert!(paste_name_tree_insert(&raw mut tree, a_high).is_null());
-            assert!(paste_name_tree_insert(&raw mut tree, a).is_null());
-            assert!(paste_name_tree_insert(&raw mut tree, a0).is_null());
+            assert!(paste_name_tree_insert(&mut tree, z).is_null());
+            assert!(paste_name_tree_insert(&mut tree, a_high).is_null());
+            assert!(paste_name_tree_insert(&mut tree, a).is_null());
+            assert!(paste_name_tree_insert(&mut tree, a0).is_null());
             assert_eq!(
-                paste_name_tree_insert(&raw mut tree, duplicate),
+                paste_name_tree_insert(&mut tree, duplicate),
                 a,
                 "duplicate names keep the original item"
             );
