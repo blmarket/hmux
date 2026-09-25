@@ -1695,14 +1695,14 @@ unsafe extern "C" fn window_tree_swap(
     recalculate_sizes();
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_tree_sort(mut sort_crit: *mut sort_criteria) {
-    (*sort_crit).order_seq = &raw mut window_tree_order_seq as *mut sort_order;
-    if (*sort_crit).order as ::core::ffi::c_uint
+fn window_tree_sort(sort_crit: &mut sort_criteria) {
+    unsafe {
+        sort_crit.order_seq = &raw mut window_tree_order_seq as *mut sort_order;
+        if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        (*sort_crit).order = *(*sort_crit)
-            .order_seq
-            .offset(0 as ::core::ffi::c_int as isize);
+        {
+            sort_crit.order = *sort_crit.order_seq;
+        }
     }
 }
 static window_tree_help_lines: &[&'static CStr] = &[
@@ -1846,7 +1846,7 @@ unsafe extern "C" fn window_tree_init(
                     *mut sort_criteria,
                 ) -> ::core::ffi::c_int,
         ),
-        Some(window_tree_sort as unsafe extern "C" fn(*mut sort_criteria) -> ()),
+        Some(window_tree_sort),
         Some(window_tree_help),
         data as *mut ::core::ffi::c_void,
         &raw const window_tree_menu_items as *const menu_item,

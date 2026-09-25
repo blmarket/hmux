@@ -230,7 +230,7 @@ impl mode_tree_list {
 
 pub type mode_tree_help_cb = Option<fn() -> mode_tree_help_info>;
 
-pub type mode_tree_sort_cb = Option<unsafe extern "C" fn(*mut sort_criteria) -> ()>;
+pub type mode_tree_sort_cb = Option<fn(&mut sort_criteria)>;
 
 pub type mode_tree_swap_cb = Option<
     unsafe extern "C" fn(

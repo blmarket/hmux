@@ -565,14 +565,14 @@ unsafe extern "C" fn window_buffer_get_key(
     format_free(ft);
     return key;
 }
-unsafe extern "C" fn window_buffer_sort(mut sort_crit: *mut sort_criteria) {
-    (*sort_crit).order_seq = &raw mut window_buffer_order_seq as *mut sort_order;
-    if (*sort_crit).order as ::core::ffi::c_uint
+fn window_buffer_sort(sort_crit: &mut sort_criteria) {
+    unsafe {
+        sort_crit.order_seq = &raw mut window_buffer_order_seq as *mut sort_order;
+        if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        (*sort_crit).order = *(*sort_crit)
-            .order_seq
-            .offset(0 as ::core::ffi::c_int as isize);
+        {
+            sort_crit.order = *sort_crit.order_seq;
+        }
     }
 }
 static window_buffer_help_lines: &[&'static CStr] = &[
@@ -674,7 +674,7 @@ unsafe extern "C" fn window_buffer_init(
                 ) -> key_code,
         ),
         None,
-        Some(window_buffer_sort as unsafe extern "C" fn(*mut sort_criteria) -> ()),
+        Some(window_buffer_sort),
         Some(window_buffer_help),
         data as *mut ::core::ffi::c_void,
         &raw const window_buffer_menu_items as *const menu_item,

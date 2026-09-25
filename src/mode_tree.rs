@@ -662,7 +662,7 @@ pub unsafe extern "C" fn mode_tree_build(mut mtd: *mut mode_tree_data) {
     }
     (*mtd).saved.items.append(&mut (*mtd).children.items);
     if (*mtd).sortcb.is_some() {
-        (*mtd).sortcb.expect("non-null function pointer")(&raw mut (*mtd).sort_crit);
+        (*mtd).sortcb.expect("non-null sort callback")(&mut (*mtd).sort_crit);
     }
     (*mtd).buildcb.expect("non-null function pointer")(
         (*mtd).modedata,
