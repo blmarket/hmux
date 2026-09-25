@@ -208,15 +208,15 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
     }
 }
 
-pub(crate) unsafe fn default_window_name_cstring(w: *mut window) -> CString {
-    if (*w).active.is_null() {
+pub(crate) unsafe fn default_window_name_cstring(w: &window) -> CString {
+    if w.active.is_null() {
         return c"".to_owned();
     }
-    let cmd = cmd_stringify_argv_cstring(&(*(*w).active).argv);
+    let cmd = cmd_stringify_argv_cstring(&(*w.active).argv);
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         parse_window_name_cstring(cmd)
     } else {
-        parse_window_name_cstring(CStr::from_ptr((*(*w).active).shell))
+        parse_window_name_cstring(CStr::from_ptr((*w.active).shell))
     }
 }
 unsafe fn format_window_name(w: *mut window) -> CString {
@@ -302,7 +302,7 @@ mod owned_name_tests {
             // Only the active field is read; keep the fixture out of WindowOwned.
             let w = std::mem::MaybeUninit::<window>::zeroed();
             let w = w.as_ptr().cast_mut();
-            assert_eq!(default_window_name_cstring(w), c"");
+            assert_eq!(default_window_name_cstring(&*w), c"");
         }
     }
 }

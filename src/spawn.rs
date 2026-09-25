@@ -439,7 +439,7 @@ pub unsafe fn spawn_window(
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 {
         if (*sc).name.is_null() {
-            drop(window_replace_name(w, default_window_name_cstring(w)));
+            drop(window_replace_name(w, default_window_name_cstring(&*w)));
         } else {
             drop(window_replace_name(
                 w,

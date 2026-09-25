@@ -287,7 +287,7 @@ unsafe extern "C" fn cmd_break_pane_exec(
         (*w).active = wp;
         (*w).latest = tc as *mut ::core::ffi::c_void;
         if name.is_null() {
-            drop(window_replace_name(w, default_window_name_cstring(w)));
+            drop(window_replace_name(w, default_window_name_cstring(&*w)));
         } else {
             let cleaned = clean_name_cstring(std::ffi::CStr::from_ptr(name), 0)
                 .expect("check_name validated the explicit window name");
