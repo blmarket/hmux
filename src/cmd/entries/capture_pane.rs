@@ -147,9 +147,9 @@ fn cmd_capture_pane_colour(value: ::core::ffi::c_int) -> CString {
     bytes.extend_from_slice(format!("[{:x}]", value as u32).as_bytes());
     CString::new(bytes).expect("colour text and hexadecimal suffix contain no NUL")
 }
-unsafe fn cmd_capture_pane_cell(s: *mut screen, xx: u_int, yy: u_int) -> CString {
-    let mut gd: *mut grid = (*s).grid;
-    let mut hl: *mut hyperlinks = (*s).hyperlinks;
+unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
+    let mut gd: *mut grid = s.grid;
+    let mut hl: *mut hyperlinks = s.hyperlinks;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -306,7 +306,7 @@ unsafe fn cmd_capture_pane_grid(wp: *mut window_pane) -> Vec<u8> {
         cmd_capture_pane_append(&mut buf, &row);
         xx = 0 as u_int;
         while xx < (*gd).sx {
-            let cell = cmd_capture_pane_cell(s, xx, yy);
+            let cell = cmd_capture_pane_cell(&*s, xx, yy);
             cmd_capture_pane_append(&mut buf, cell.as_bytes());
             xx = xx.wrapping_add(1);
         }
