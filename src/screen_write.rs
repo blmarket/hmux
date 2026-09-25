@@ -404,7 +404,7 @@ unsafe extern "C" fn screen_write_initctx(
             }
         }
         tty_write(
-            Some(tty_cmd_syncstart as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_syncstart as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             ttyctx,
         );
         (*ctx).flags |= SCREEN_WRITE_SYNC;
@@ -973,7 +973,7 @@ pub unsafe extern "C" fn screen_write_fast_copy(
             ttyctx.cell = &raw mut gc;
             ttyctx.flags &= TTY_CTX_OVERLAY_SYNC | TTY_CTX_SYNC;
             tty_write(
-                Some(tty_cmd_cell as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+                Some(tty_cmd_cell as unsafe fn(*mut tty, *const tty_ctx) -> ()),
                 &raw mut ttyctx,
             );
             ttyctx.ocx = ttyctx.ocx.wrapping_add(1);
@@ -1758,7 +1758,7 @@ unsafe extern "C" fn screen_write_redraw_line(
                         tty_write(
                             Some(
                                 tty_cmd_redrawline
-                                    as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> (),
+                                    as unsafe fn(*mut tty, *const tty_ctx) -> (),
                             ),
                             ttyctx,
                         );
@@ -1768,7 +1768,7 @@ unsafe extern "C" fn screen_write_redraw_line(
                             tty_write(
                                 Some(
                                     tty_cmd_redrawline
-                                        as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> (),
+                                        as unsafe fn(*mut tty, *const tty_ctx) -> (),
                                 ),
                                 ttyctx,
                             );
@@ -1782,7 +1782,7 @@ unsafe extern "C" fn screen_write_redraw_line(
                             tty_write(
                                 Some(
                                     tty_cmd_cell
-                                        as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> (),
+                                        as unsafe fn(*mut tty, *const tty_ctx) -> (),
                                 ),
                                 ttyctx,
                             );
@@ -1998,7 +1998,7 @@ pub unsafe extern "C" fn screen_write_alignmenttest(mut ctx: *mut screen_write_c
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
         tty_write(
-            Some(tty_cmd_alignmenttest as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_alignmenttest as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -2086,7 +2086,7 @@ pub unsafe extern "C" fn screen_write_insertcharacter(
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
         tty_write(
-            Some(tty_cmd_insertcharacter as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_insertcharacter as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -2174,7 +2174,7 @@ pub unsafe extern "C" fn screen_write_deletecharacter(
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
         tty_write(
-            Some(tty_cmd_deletecharacter as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_deletecharacter as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -2262,7 +2262,7 @@ pub unsafe extern "C" fn screen_write_clearcharacter(
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
         tty_write(
-            Some(tty_cmd_clearcharacter as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_clearcharacter as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -2350,7 +2350,7 @@ pub unsafe extern "C" fn screen_write_insertline(
         }
         if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
             tty_write(
-                Some(tty_cmd_insertline as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+                Some(tty_cmd_insertline as unsafe fn(*mut tty, *const tty_ctx) -> ()),
                 &raw mut ttyctx,
             );
             return;
@@ -2392,7 +2392,7 @@ pub unsafe extern "C" fn screen_write_insertline(
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
         tty_write(
-            Some(tty_cmd_insertline as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_insertline as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -2485,7 +2485,7 @@ pub unsafe extern "C" fn screen_write_deleteline(
         }
         if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
             tty_write(
-                Some(tty_cmd_deleteline as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+                Some(tty_cmd_deleteline as unsafe fn(*mut tty, *const tty_ctx) -> ()),
                 &raw mut ttyctx,
             );
             return;
@@ -2523,7 +2523,7 @@ pub unsafe extern "C" fn screen_write_deleteline(
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
         tty_write(
-            Some(tty_cmd_deleteline as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_deleteline as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -2748,7 +2748,7 @@ pub unsafe extern "C" fn screen_write_reverseindex(mut ctx: *mut screen_write_ct
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
         tty_write(
-            Some(tty_cmd_reverseindex as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_reverseindex as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -2956,7 +2956,7 @@ pub unsafe extern "C" fn screen_write_scrolldown(
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || (*ctx).wp.is_null() {
         tty_write(
-            Some(tty_cmd_scrolldown as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_scrolldown as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -3079,7 +3079,7 @@ pub unsafe extern "C" fn screen_write_clearendofscreen(
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
         tty_write(
-            Some(tty_cmd_clearendofscreen as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_clearendofscreen as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -3224,7 +3224,7 @@ pub unsafe extern "C" fn screen_write_clearstartofscreen(
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
         tty_write(
             Some(
-                tty_cmd_clearstartofscreen as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> (),
+                tty_cmd_clearstartofscreen as unsafe fn(*mut tty, *const tty_ctx) -> (),
             ),
             &raw mut ttyctx,
         );
@@ -3357,7 +3357,7 @@ pub unsafe extern "C" fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
         tty_write(
-            Some(tty_cmd_clearscreen as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_clearscreen as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -3653,7 +3653,7 @@ unsafe extern "C" fn screen_write_collect_flush_scrolled(
     ttyctx.c2rust_unnamed.n = (*ctx).scrolled;
     ttyctx.bg = (*ctx).bg;
     tty_write(
-        Some(tty_cmd_scrollup as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+        Some(tty_cmd_scrollup as unsafe fn(*mut tty, *const tty_ctx) -> ()),
         &raw mut ttyctx,
     );
     if !wp.is_null() {
@@ -3811,7 +3811,7 @@ unsafe extern "C" fn screen_write_collect_flush_line(
                                 tty_write(
                                     Some(
                                         tty_cmd_clearcharacter
-                                            as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> (),
+                                            as unsafe fn(*mut tty, *const tty_ctx) -> (),
                                     ),
                                     &raw mut ttyctx,
                                 );
@@ -3832,7 +3832,7 @@ unsafe extern "C" fn screen_write_collect_flush_line(
                                 tty_write(
                                     Some(
                                         tty_cmd_cells
-                                            as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> (),
+                                            as unsafe fn(*mut tty, *const tty_ctx) -> (),
                                     ),
                                     &raw mut ttyctx,
                                 );
@@ -4478,7 +4478,7 @@ pub unsafe extern "C" fn screen_write_cell(
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
             tty_write(
                 Some(
-                    tty_cmd_insertcharacter as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> (),
+                    tty_cmd_insertcharacter as unsafe fn(*mut tty, *const tty_ctx) -> (),
                 ),
                 &raw mut ttyctx,
             );
@@ -4510,7 +4510,7 @@ pub unsafe extern "C" fn screen_write_cell(
     if vis >= width {
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
             tty_write(
-                Some(tty_cmd_cell as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+                Some(tty_cmd_cell as unsafe fn(*mut tty, *const tty_ctx) -> ()),
                 &raw mut ttyctx,
             );
         }
@@ -4529,7 +4529,7 @@ pub unsafe extern "C" fn screen_write_cell(
                 ttyctx.ocx =
                     ((*ri).px as ::core::ffi::c_int - xoff + n as ::core::ffi::c_int) as u_int;
                 tty_write(
-                    Some(tty_cmd_cell as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+                    Some(tty_cmd_cell as unsafe fn(*mut tty, *const tty_ctx) -> ()),
                     &raw mut ttyctx,
                 );
                 n = n.wrapping_add(1);
@@ -4748,7 +4748,7 @@ unsafe extern "C" fn screen_write_combine(
     }
     if screen_write_should_draw_line(ctx, cy) != 0 {
         tty_write(
-            Some(tty_cmd_cell as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+            Some(tty_cmd_cell as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
     }
@@ -4892,7 +4892,7 @@ pub unsafe extern "C" fn screen_write_setselection(
     ttyctx.c2rust_unnamed.sel.data = str as *const ::core::ffi::c_char;
     ttyctx.c2rust_unnamed.sel.size = len as size_t;
     tty_write(
-        Some(tty_cmd_setselection as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+        Some(tty_cmd_setselection as unsafe fn(*mut tty, *const tty_ctx) -> ()),
         &raw mut ttyctx,
     );
 }
@@ -4958,7 +4958,7 @@ pub unsafe extern "C" fn screen_write_rawstring(
     ttyctx.c2rust_unnamed.data.data = str as *const ::core::ffi::c_char;
     ttyctx.c2rust_unnamed.data.size = len as size_t;
     tty_write(
-        Some(tty_cmd_rawstring as unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()),
+        Some(tty_cmd_rawstring as unsafe fn(*mut tty, *const tty_ctx) -> ()),
         &raw mut ttyctx,
     );
 }
