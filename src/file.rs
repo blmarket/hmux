@@ -174,7 +174,7 @@ unsafe fn file_set_cmdq_wait(
     owner.wait_item = item;
     owner.wait_client = (*item).client;
     owner.cancel_data = cancel_data;
-    cmdq_set_wait_file(item, cf);
+    cmdq_set_wait_file(&mut *item, cf);
 }
 
 /// Stop a file-backed command wait without delivering its file callback.

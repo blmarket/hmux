@@ -154,14 +154,13 @@ unsafe fn cmdq_cancel_unfired_data(item: *mut cmdq_item) {
 /// The file remains live until its terminal event, including when a local
 /// file operation schedules immediate completion. The queue item only borrows
 /// it while the command is waiting.
-pub(crate) unsafe fn cmdq_set_wait_file(item: *mut cmdq_item, cf: *mut client_file) {
+pub(crate) fn cmdq_set_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
     assert!(!cf.is_null());
-    let owner = &mut *item;
     assert!(
-        owner.wait_file.is_null(),
+        item.wait_file.is_null(),
         "queue item already owns a file wait"
     );
-    owner.wait_file = cf;
+    item.wait_file = cf;
 }
 
 pub(crate) unsafe fn cmdq_clear_wait_file(item: *mut cmdq_item, cf: *mut client_file) {
