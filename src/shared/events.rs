@@ -19,7 +19,7 @@ pub struct event_payload {
 
 pub type event_payload_free_cb = Option<Box<dyn FnOnce()>>;
 
-pub type event_payload_print_cb = Option<Box<dyn FnMut(*mut evbuffer)>>;
+pub type event_payload_print_cb = Option<Box<dyn FnMut() -> Vec<u8>>>;
 
 pub struct event_payload_item {
     pub name: Option<std::ffi::CString>,
@@ -107,10 +107,39 @@ impl Default for event_payload_item_c2rust_unnamed {
     }
 }
 
-pub struct event_payload_item_c2rust_unnamed_pointer {
-    pub ptr: *mut ::core::ffi::c_void,
-    pub free_cb: event_payload_free_cb,
-    pub print_cb: event_payload_print_cb,
+pub enum event_payload_item_c2rust_unnamed_pointer {
+    Raw(*mut ::core::ffi::c_void),
+    Owned {
+        ptr: *mut ::core::ffi::c_void,
+        free_cb: event_payload_free_cb,
+        print_cb: event_payload_print_cb,
+    },
+}
+
+impl event_payload_item_c2rust_unnamed_pointer {
+    pub fn ptr(&self) -> *mut ::core::ffi::c_void {
+        match self {
+            Self::Raw(ptr) | Self::Owned { ptr, .. } => *ptr,
+        }
+    }
+
+    pub fn print(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Self::Raw(_) => None,
+            Self::Owned { print_cb, .. } => print_cb.as_mut().map(|callback| callback()),
+        }
+    }
+
+    pub fn free(self) {
+        if let Self::Owned {
+            mut free_cb, ..
+        } = self
+        {
+            if let Some(callback) = free_cb.take() {
+                callback();
+            }
+        }
+    }
 }
 
 pub type event_payload_type = ::core::ffi::c_uint;

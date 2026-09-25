@@ -6,7 +6,8 @@ use crate::src::cmd::find::{
 use crate::src::format::format_add;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::reactor::{
-    evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+    evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
+    evbuffer_pullup,
 };
 use crate::src::server_client::server_client_unref;
 use crate::src::session::{session_add_ref, session_alive, session_remove_ref};
@@ -219,12 +220,10 @@ unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) 
             );
         }
         8 => {
-            let mut pointer = std::mem::ManuallyDrop::take(
+            let pointer = std::mem::ManuallyDrop::take(
                 &mut (*epi).c2rust_unnamed.pointer,
             );
-            if let Some(free) = pointer.free_cb.take() {
-                free();
-            }
+            pointer.free();
         }
         2 | 3 | 1 | _ => {}
     };
@@ -529,13 +528,16 @@ pub unsafe fn event_payload_set_pointer(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_POINTER;
-    (*epi).c2rust_unnamed.pointer = std::mem::ManuallyDrop::new(
-        crate::src::shared::events::event_payload_item_c2rust_unnamed_pointer {
+    let pointer = if free_cb.is_none() && print_cb.is_none() {
+        crate::src::shared::events::event_payload_item_c2rust_unnamed_pointer::Raw(ptr)
+    } else {
+        crate::src::shared::events::event_payload_item_c2rust_unnamed_pointer::Owned {
             ptr,
-        free_cb,
-        print_cb,
-        },
-    );
+            free_cb,
+            print_cb,
+        }
+    };
+    (*epi).c2rust_unnamed.pointer = std::mem::ManuallyDrop::new(pointer);
     event_payload_set_item(ep, name, epi);
 }
 #[no_mangle]
@@ -618,14 +620,15 @@ unsafe extern "C" fn event_payload_add_item(
         }
         8 => {
             let pointer = &mut (*epi).c2rust_unnamed.pointer;
-            let callback = pointer.print_cb.as_mut();
-            if let Some(callback) = callback {
-                callback(evb);
+            if let Some(bytes) = pointer.print() {
+                if !bytes.is_empty() {
+                    evbuffer_add(evb, bytes.as_ptr().cast(), bytes.len());
+                }
             } else {
                 evbuffer_add_printf(
                     evb,
                     b"%p\0" as *const u8 as *const ::core::ffi::c_char,
-                    pointer.ptr,
+                    pointer.ptr(),
                 );
             }
         }
@@ -904,7 +907,7 @@ pub unsafe extern "C" fn event_payload_get_pointer(
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     let pointer = std::ops::Deref::deref(&(*epi).c2rust_unnamed.pointer);
-    return pointer.ptr;
+    return pointer.ptr();
 }
 
 #[cfg(test)]
@@ -923,10 +926,7 @@ mod tests {
                 c"binary".as_ptr(),
                 ::core::ptr::null_mut(),
                 None,
-                Some(Box::new(|evb| {
-                    let bytes = b"A\0B";
-                    unsafe { evbuffer_add(evb, bytes.as_ptr().cast(), bytes.len()) };
-                })),
+                Some(Box::new(|| b"A\0B".to_vec())),
             );
             let item = event_payload_first(ep);
             assert_eq!(event_payload_item_print_owned(item), b"A\0B\0");
