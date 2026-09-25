@@ -700,7 +700,7 @@ pub unsafe extern "C" fn event_payload_add_formats(
             } else if (*epi).type_0 as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                Some((*(*epi).c2rust_unnamed.window).name)
+                Some((*(*epi).c2rust_unnamed.window).name.as_ptr().cast_mut())
             } else {
                 None
             };

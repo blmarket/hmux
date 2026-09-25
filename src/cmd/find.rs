@@ -606,7 +606,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strcmp(window, (*(*wl).window).name) == 0 as ::core::ffi::c_int {
+        if strcmp(window, (*(*wl).window).name.as_ptr()) == 0 as ::core::ffi::c_int {
             if !(*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -625,7 +625,12 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strncmp(window, (*(*wl).window).name, strlen(window)) == 0 as ::core::ffi::c_int {
+        if strncmp(
+            window,
+            (*(*wl).window).name.as_ptr(),
+            strlen(window),
+        ) == 0 as ::core::ffi::c_int
+        {
             if !(*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -641,7 +646,11 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if fnmatch(window, (*(*wl).window).name, 0 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int
+        if fnmatch(
+            window,
+            (*(*wl).window).name.as_ptr(),
+            0 as ::core::ffi::c_int,
+        ) == 0 as ::core::ffi::c_int
         {
             if !(*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
@@ -905,7 +914,7 @@ unsafe extern "C" fn cmd_find_log_state(
             (*(*fs).wl).idx,
             ((*(*fs).wl).window == (*fs).w) as ::core::ffi::c_int,
             (*(*fs).w).id,
-            (*(*fs).w).name,
+            (*(*fs).w).name.as_ptr(),
         );
     } else {
         log_debug(

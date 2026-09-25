@@ -353,7 +353,7 @@ unsafe extern "C" fn sort_winlink_cmp(
             }
         }
         4 => {
-            result = strcmp((*wa).name, (*wb).name);
+            result = strcmp((*wa).name.as_ptr(), (*wb).name.as_ptr());
         }
         6 => {
             result = (*wa)
@@ -365,7 +365,7 @@ unsafe extern "C" fn sort_winlink_cmp(
         3 | 5 | 7 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp((*wa).name, (*wb).name);
+        result = strcmp((*wa).name.as_ptr(), (*wb).name.as_ptr());
     }
     if (*sort_crit).reversed != 0 {
         result = -result;

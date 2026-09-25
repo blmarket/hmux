@@ -541,7 +541,7 @@ unsafe extern "C" fn window_fire_renamed(
         ep,
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).name,
+        (*w).name.as_ptr().cast_mut(),
     );
     events_fire(
         b"window-renamed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1132,90 +1132,8 @@ pub unsafe extern "C" fn window_find_by_id_str(mut s: *const ::core::ffi::c_char
     return window_find_by_id(id);
 }
 #[no_mangle]
-pub unsafe extern "C" fn window_find_by_id(mut id: u_int) -> *mut window {
-    let mut w: window = window {
-        id: 0,
-        latest: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        name: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        name_event: event::default(),
-        name_time: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        alerts_timer: event::default(),
-        offset_timer: event::default(),
-        activity_time: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        creation_time: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        active: ::core::ptr::null_mut::<window_pane>(),
-        modal: ::core::ptr::null_mut::<window_pane>(),
-        modal_last: ::core::ptr::null_mut::<window_pane>(),
-        was_zoomed: ::core::ptr::null_mut::<window_pane>(),
-        last_panes: window_pane_history::default(),
-        z_index: window_panes::default(),
-        panes: window_panes::default(),
-        lastlayout: 0,
-        layout_root: ::core::ptr::null_mut::<layout_cell>(),
-        saved_layout_root: ::core::ptr::null_mut::<layout_cell>(),
-        old_layout: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        sx: 0,
-        sy: 0,
-        manual_sx: 0,
-        manual_sy: 0,
-        xpixel: 0,
-        ypixel: 0,
-        new_sx: 0,
-        new_sy: 0,
-        new_xpixel: 0,
-        new_ypixel: 0,
-        redraw_scene_generation: 0,
-        menu: ::core::ptr::null_mut::<menu_data>(),
-        menu_last_px: 0,
-        menu_last_py: 0,
-        last_new_pane_x: 0,
-        last_new_pane_y: 0,
-        sb: 0,
-        sb_pos: 0,
-        inside_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        outside_cell: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        flags: 0,
-        alerts_queued: 0,
-        options: ::core::ptr::null_mut::<options>(),
-        references: 0,
-        winlinks: window_winlinks { storage: None },
-        entry: window_entry { owner: None },
-    };
+pub unsafe extern "C" fn window_find_by_id(id: u_int) -> *mut window {
+    let mut w = window::default();
     w.id = id;
     return windows_find(&*std::ptr::addr_of!(windows), &w);
 }
@@ -1225,36 +1143,17 @@ pub unsafe extern "C" fn window_update_activity(mut w: *mut window) {
     alerts_queue(w, WINDOW_ACTIVITY);
 }
 
-/// The public window stays at offset zero; its previous layout string borrows
-/// storage from this containing owner until replacement or destruction.
-#[repr(C)]
-struct WindowOwned {
-    node: window,
-    old_layout: Option<CString>,
-    name: CString,
-}
-
-const _: () = assert!(::core::mem::offset_of!(WindowOwned, node) == 0);
-
 pub(crate) unsafe fn window_replace_old_layout(
     w: *mut window,
     layout: Option<CString>,
 ) -> Option<CString> {
-    let owner = w.cast::<WindowOwned>();
-    let previous = ::core::mem::replace(&mut (*owner).old_layout, layout);
-    (*w).old_layout = (*owner)
-        .old_layout
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr() as *mut _);
-    previous
+    ::core::mem::replace(&mut (*w).old_layout, layout)
 }
 
-/// `window.name` borrows the current CString until the next replacement.
+/// Replace the window's owned name, returning the previous value for callers
+/// that need to keep it alive across synchronous callbacks.
 pub(crate) unsafe fn window_replace_name(w: *mut window, name: CString) -> CString {
-    let owner = w.cast::<WindowOwned>();
-    let previous = ::core::mem::replace(&mut (*owner).name, name);
-    (*w).name = (*owner).name.as_ptr() as *mut _;
-    previous
+    ::core::mem::replace(&mut (*w).name, name)
 }
 
 #[no_mangle]
@@ -1271,12 +1170,7 @@ pub unsafe extern "C" fn window_create(
     if ypixel == 0 as u_int {
         ypixel = DEFAULT_YPIXEL as u_int;
     }
-    w = Box::into_raw(Box::new(WindowOwned {
-        node: ::core::mem::zeroed::<window>(),
-        old_layout: None,
-        name: CString::new("").expect("empty window name has no NUL"),
-    })) as *mut window;
-    (*w).name = (*w.cast::<WindowOwned>()).name.as_ptr() as *mut _;
+    w = Box::into_raw(Box::new(window::default()));
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
     (*w).z_index = window_panes::default();
@@ -1344,7 +1238,7 @@ unsafe extern "C" fn window_destroy(mut w: *mut window) {
         event_del(&raw mut (*w).offset_timer);
     }
     options_free((*w).options);
-    drop(Box::from_raw(w.cast::<WindowOwned>()));
+    drop(Box::from_raw(w));
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
@@ -4999,16 +4893,12 @@ mod name_tests {
     #[test]
     fn rename_keeps_old_name_through_reentrant_notification() {
         unsafe {
-            // Only the rename owner is relevant here; an extra reference
+            // Only the window's owned name matters here; an extra reference
             // prevents the sessionless fixture from reaching window_destroy.
-            let mut owner = WindowOwned {
-                node: std::mem::zeroed(),
-                old_layout: None,
-                name: CString::new("before").unwrap(),
-            };
-            owner.node.entry.owner = None;
-            let w = &raw mut owner.node;
-            (*w).name = owner.name.as_ptr() as *mut _;
+            let mut node = window::default();
+            node.entry.owner = None;
+            node.name = CString::new("before").unwrap();
+            let w = &raw mut node;
             (*w).references = 1;
             let mut state = RenameState {
                 window: w,
@@ -5029,11 +4919,11 @@ mod name_tests {
                     (b"outer".to_vec(), b"inner".to_vec()),
                 ]
             );
-            assert_eq!(CStr::from_ptr((*w).name), c"inner");
+            assert_eq!(CStr::from_ptr((*w).name.as_ptr()), c"inner");
             assert_eq!((*w).references, 1);
 
             window_set_name(w, c"\xff".as_ptr(), 0);
-            assert_eq!(CStr::from_ptr((*w).name), c"inner");
+            assert_eq!(CStr::from_ptr((*w).name.as_ptr()), c"inner");
             assert_eq!(state.events.len(), 2);
             events_remove_sink(sink);
         }

@@ -253,7 +253,7 @@ unsafe extern "C" fn control_window_renamed_cb(
                     c,
                     b"%%window-renamed @%u %s\0" as *const u8 as *const ::core::ffi::c_char,
                     (*w).id,
-                    (*w).name,
+                    (*w).name.as_ptr(),
                 );
             } else {
                 control_notify_write(
@@ -261,7 +261,7 @@ unsafe extern "C" fn control_window_renamed_cb(
                     b"%%unlinked-window-renamed @%u %s\0" as *const u8
                         as *const ::core::ffi::c_char,
                     (*w).id,
-                    (*w).name,
+                    (*w).name.as_ptr(),
                 );
             }
         }

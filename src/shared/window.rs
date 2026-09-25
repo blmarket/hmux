@@ -68,7 +68,7 @@ pub struct winlink_entry {
 pub struct window {
     pub id: u_int,
     pub latest: *mut ::core::ffi::c_void,
-    pub name: *mut ::core::ffi::c_char,
+    pub name: std::ffi::CString,
     pub name_event: event,
     pub name_time: timeval,
     pub alerts_timer: event,
@@ -85,7 +85,7 @@ pub struct window {
     pub lastlayout: ::core::ffi::c_int,
     pub layout_root: *mut layout_cell,
     pub saved_layout_root: *mut layout_cell,
-    pub old_layout: *mut ::core::ffi::c_char,
+    pub old_layout: Option<std::ffi::CString>,
     pub sx: u_int,
     pub sy: u_int,
     pub manual_sx: u_int,
@@ -112,6 +112,29 @@ pub struct window {
     pub references: u_int,
     pub winlinks: window_winlinks,
     pub entry: window_entry,
+}
+
+impl Default for window {
+    fn default() -> Self {
+        let mut value = ::core::mem::MaybeUninit::<Self>::zeroed();
+        let ptr = value.as_mut_ptr();
+        // SAFETY: Remaining C-style fields accept zeroed bytes. Initialize
+        // Rust-owned fields before assuming the value is fully initialized.
+        unsafe {
+            ::core::ptr::addr_of_mut!((*ptr).name).write(std::ffi::CString::default());
+            ::core::ptr::addr_of_mut!((*ptr).name_event).write(event::default());
+            ::core::ptr::addr_of_mut!((*ptr).alerts_timer).write(event::default());
+            ::core::ptr::addr_of_mut!((*ptr).offset_timer).write(event::default());
+            ::core::ptr::addr_of_mut!((*ptr).last_panes)
+                .write(window_pane_history::default());
+            ::core::ptr::addr_of_mut!((*ptr).z_index).write(window_panes::default());
+            ::core::ptr::addr_of_mut!((*ptr).panes).write(window_panes::default());
+            ::core::ptr::addr_of_mut!((*ptr).old_layout).write(None);
+            ::core::ptr::addr_of_mut!((*ptr).winlinks).write(window_winlinks { storage: None });
+            ::core::ptr::addr_of_mut!((*ptr).entry).write(window_entry { owner: None });
+            value.assume_init()
+        }
+    }
 }
 
 #[repr(C)]

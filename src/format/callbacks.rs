@@ -2783,7 +2783,7 @@ unsafe fn format_cb_window_modal_pane(mut ft: *mut format_tree) -> Option<CStrin
 }
 unsafe fn format_cb_window_name(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).w.is_null() {
-        return Some(CStr::from_ptr((*(*ft).w).name).to_owned());
+        return Some(CStr::from_ptr((*(*ft).w).name.as_ptr()).to_owned());
     }
     return None;
 }

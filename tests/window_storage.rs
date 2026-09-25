@@ -6,7 +6,7 @@ fn window_ids_duplicates_neighbors_and_removal() {
         let mut head = windows { storage: None };
         assert!(windows_minmax(&head, -1).is_null());
         let ids = [u32::MAX, 0, 42, 0x8000_0000];
-        let mut nodes: Vec<window> = ids.iter().map(|_| std::mem::zeroed()).collect();
+        let mut nodes: Vec<window> = ids.iter().map(|_| window::default()).collect();
         for (node, id) in nodes.iter_mut().zip(ids) {
             node.id = id;
             node.entry.owner = None;
@@ -14,7 +14,7 @@ fn window_ids_duplicates_neighbors_and_removal() {
         }
         // Entry-only traversal must survive a moved tree head.
         let mut head = Box::new(head);
-        let mut probe: window = std::mem::zeroed();
+        let mut probe = window::default();
         probe.id = 42;
         probe.entry.owner = None;
         let existing = &mut nodes[2] as *mut window;
@@ -58,7 +58,7 @@ fn global_lookup_preserves_window_identity() {
     unsafe {
         let head = &raw mut windows;
         assert!((*head).storage.is_none());
-        let mut window: window = std::mem::zeroed();
+        let mut window = window::default();
         window.id = 123;
         window.entry.owner = None;
         assert!(windows_insert(head, &mut window).is_null());

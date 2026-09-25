@@ -1108,7 +1108,7 @@ pub(super) unsafe fn format_window_name(
     let name = format_expand1_cstring(es, fmt);
     wl = winlinks_minmax(&(*(*ft).s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strcmp((*(*wl).window).name, name.as_ptr()) == 0 as ::core::ffi::c_int {
+        if strcmp((*(*wl).window).name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
             return Some(c"1".to_owned());
         }
         wl = winlinks_next(&*wl);

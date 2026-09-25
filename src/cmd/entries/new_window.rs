@@ -168,7 +168,11 @@ unsafe extern "C" fn cmd_new_window_exec(
             );
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
             while !wl.is_null() {
-                if !(strcmp((*(*wl).window).name, expanded.as_ptr()) != 0 as ::core::ffi::c_int) {
+                if !(strcmp(
+                    (*(*wl).window).name.as_ptr(),
+                    expanded.as_ptr(),
+                ) != 0 as ::core::ffi::c_int)
+                {
                     if new_wl.is_null() {
                         new_wl = wl;
                     } else {

@@ -140,12 +140,14 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
     }
     (*(*w).active).flags &= !PANE_CHANGED;
     let name = format_window_name(w);
-    if strcmp(name.as_ptr().cast_mut(), (*w).name) != 0 as ::core::ffi::c_int {
+    if strcmp(name.as_ptr().cast_mut(), (*w).name.as_ptr().cast_mut())
+        != 0 as ::core::ffi::c_int
+    {
         log_debug(
             b"@%u new name %s (was %s)\0" as *const u8 as *const ::core::ffi::c_char,
             (*w).id,
             name.as_ptr(),
-            (*w).name,
+            (*w).name.as_ptr(),
         );
         window_set_name(w, name.as_ptr().cast_mut(), 1 as ::core::ffi::c_int);
         server_redraw_window_borders(w);
@@ -154,7 +156,7 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
         log_debug(
             b"@%u name not changed (still %s)\0" as *const u8 as *const ::core::ffi::c_char,
             (*w).id,
-            (*w).name,
+            (*w).name.as_ptr(),
         );
     }
 }
@@ -250,9 +252,9 @@ mod owned_name_tests {
     #[test]
     fn window_without_active_pane_has_empty_owned_and_c_names() {
         unsafe {
-            // Only the active field is read; keep the fixture out of WindowOwned.
-            let w = std::mem::MaybeUninit::<window>::zeroed();
-            let w = w.as_ptr().cast_mut();
+            // Only the active field is read; other fields need valid defaults.
+            let mut w = window::default();
+            let w = &raw mut w;
             assert_eq!(default_window_name_cstring(&*w), c"");
         }
     }

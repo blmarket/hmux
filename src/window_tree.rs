@@ -1525,10 +1525,12 @@ unsafe extern "C" fn window_tree_search(
                 return 0 as ::core::ffi::c_int;
             }
             if icase != 0 {
-                return (strcasestr((*(*wl).window).name, ss) != NULL as *mut ::core::ffi::c_char)
+                return (strcasestr((*(*wl).window).name.as_ptr().cast_mut(), ss)
+                    != NULL as *mut ::core::ffi::c_char)
                     as ::core::ffi::c_int;
             }
-            return (strstr((*(*wl).window).name, ss) != NULL as *mut ::core::ffi::c_char)
+            return (strstr((*(*wl).window).name.as_ptr().cast_mut(), ss)
+                != NULL as *mut ::core::ffi::c_char)
                 as ::core::ffi::c_int;
         }
         3 => {
