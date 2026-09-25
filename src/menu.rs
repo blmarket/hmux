@@ -356,7 +356,6 @@ pub unsafe extern "C" fn menu_update(mut md: *mut menu_data) {
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,

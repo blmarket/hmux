@@ -294,8 +294,7 @@ unsafe extern "C" fn popup_set_client_cb(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn popup_init_ctx_cb(mut ctx: *mut screen_write_ctx, mut ttyctx: *mut tty_ctx) {
-    let mut pd: *mut popup_data = (*ctx).arg as *mut popup_data;
+unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: *mut tty_ctx) {
     memcpy(
         &raw mut (*ttyctx).defaults as *mut ::core::ffi::c_void,
         &raw mut (*pd).defaults as *const ::core::ffi::c_void,
@@ -349,7 +348,6 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -776,8 +774,7 @@ unsafe fn popup_job_update_cb(mut job: *mut job, mut pd: *mut popup_data) {
     input_parse_screen(
         (*pd).ictx,
         s,
-        Some(popup_init_ctx_cb as unsafe extern "C" fn(*mut screen_write_ctx, *mut tty_ctx) -> ()),
-        pd as *mut ::core::ffi::c_void,
+        Some(Box::new(move |ttyctx| unsafe { popup_init_ctx(pd, ttyctx) })),
         data as *const u_char,
         size,
     );

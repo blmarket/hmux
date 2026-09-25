@@ -643,7 +643,6 @@ unsafe extern "C" fn window_copy_init(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -751,7 +750,6 @@ pub unsafe extern "C" fn window_copy_add(
     ap = args.clone();
     window_copy_vadd(wp, parse, fmt, ap);
 }
-unsafe extern "C" fn window_copy_init_ctx_cb(_ctx: *mut screen_write_ctx, _ttyctx: *mut tty_ctx) {}
 #[no_mangle]
 pub unsafe extern "C" fn window_copy_vadd(
     mut wp: *mut window_pane,
@@ -767,7 +765,6 @@ pub unsafe extern "C" fn window_copy_vadd(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -777,7 +774,6 @@ pub unsafe extern "C" fn window_copy_vadd(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -812,11 +808,7 @@ pub unsafe extern "C" fn window_copy_vadd(
         input_parse_screen(
             (*data).ictx,
             backing,
-            Some(
-                window_copy_init_ctx_cb
-                    as unsafe extern "C" fn(*mut screen_write_ctx, *mut tty_ctx) -> (),
-            ),
-            data as *mut ::core::ffi::c_void,
+            Some(Box::new(|_| {})),
             text.as_ptr() as *const u_char,
             text.as_bytes().len(),
         );
@@ -1437,7 +1429,6 @@ unsafe extern "C" fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -6275,7 +6266,6 @@ unsafe extern "C" fn window_copy_search(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -6571,7 +6561,6 @@ unsafe extern "C" fn window_copy_search_marks(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -7589,7 +7578,6 @@ unsafe extern "C" fn window_copy_redraw_lines(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -7746,7 +7734,6 @@ unsafe extern "C" fn window_copy_update_cursor(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -8222,7 +8209,6 @@ unsafe fn window_copy_copy_buffer(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -8336,7 +8322,6 @@ unsafe extern "C" fn window_copy_append_selection(mut wme: *mut window_mode_entr
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -9319,7 +9304,6 @@ unsafe extern "C" fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut 
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
@@ -9430,7 +9414,6 @@ unsafe extern "C" fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mu
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,

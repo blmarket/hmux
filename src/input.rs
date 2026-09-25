@@ -122,7 +122,6 @@ impl input_ctx {
                 s: ::core::ptr::null_mut(),
                 flags: 0,
                 init_ctx_cb: None,
-                arg: ::core::ptr::null_mut(),
                 item: None,
                 scrolled: 0,
                 bg: 0,
@@ -2570,11 +2569,10 @@ pub unsafe extern "C" fn input_parse_buffer(
     screen_write_stop(sctx);
 }
 #[no_mangle]
-pub unsafe extern "C" fn input_parse_screen(
+pub unsafe fn input_parse_screen(
     mut ictx: *mut input_ctx,
     mut s: *mut screen,
     mut cb: screen_write_init_ctx_cb,
-    mut arg: *mut ::core::ffi::c_void,
     mut buf: *const u_char,
     mut len: size_t,
 ) {
@@ -2582,7 +2580,7 @@ pub unsafe extern "C" fn input_parse_screen(
     if len == 0 as size_t {
         return;
     }
-    screen_write_start_callback(sctx, s, cb, arg);
+    screen_write_start_callback(sctx, s, cb);
     input_parse(ictx, buf, len);
     screen_write_stop(sctx);
 }
@@ -5854,7 +5852,6 @@ unsafe extern "C" fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,

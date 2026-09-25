@@ -2351,7 +2351,6 @@ unsafe extern "C" fn redraw_draw_pane_prompt(
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,

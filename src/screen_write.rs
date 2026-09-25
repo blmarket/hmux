@@ -364,8 +364,8 @@ unsafe extern "C" fn screen_write_initctx(
     );
     (*ttyctx).style_ctx.defaults = &raw mut (*ttyctx).defaults;
     (*ttyctx).style_ctx.hyperlinks = (*(*ctx).s).hyperlinks;
-    if (*ctx).init_ctx_cb.is_some() {
-        (*ctx).init_ctx_cb.expect("non-null function pointer")(ctx, ttyctx);
+    if let Some(callback) = (*ctx).init_ctx_cb.as_mut() {
+        callback(&mut *ttyctx);
         if !(*ttyctx).style_ctx.palette.is_null() {
             palette = (*ttyctx).style_ctx.palette;
             if (*ttyctx).defaults.fg == 8 as ::core::ffi::c_int {
@@ -476,15 +476,13 @@ pub unsafe extern "C" fn screen_write_start_pane(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn screen_write_start_callback(
+pub unsafe fn screen_write_start_callback(
     mut ctx: *mut screen_write_ctx,
     mut s: *mut screen,
     mut cb: screen_write_init_ctx_cb,
-    mut arg: *mut ::core::ffi::c_void,
 ) {
     screen_write_init(ctx, s);
     (*ctx).init_ctx_cb = cb;
-    (*ctx).arg = arg;
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(
             b"%s: size %ux%u, with callback\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1807,7 +1805,6 @@ unsafe extern "C" fn screen_write_flush_dirty(mut wp: *mut window_pane) {
         s: ::core::ptr::null_mut::<screen>(),
         flags: 0,
         init_ctx_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         item: None,
         scrolled: 0,
         bg: 0,
