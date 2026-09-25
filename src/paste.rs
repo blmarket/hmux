@@ -87,11 +87,8 @@ fn paste_store_data(pb: &mut paste_buffer, data: Option<Box<[u8]>>) {
     pb.size = size;
 }
 
-unsafe fn paste_replace_name(pb: *mut paste_buffer, name: CString) -> CString {
-    let owner = pb;
-    let previous = std::mem::replace(&mut (*owner).name, name);
-
-    previous
+fn paste_replace_name(pb: &mut paste_buffer, name: CString) -> CString {
+    std::mem::replace(&mut pb.name, name)
 }
 
 fn paste_name_key(name: &CStr) -> Vec<u8> {
@@ -502,7 +499,7 @@ pub unsafe fn paste_rename(
         paste_free(pb_new);
     }
     paste_name_tree_remove_local(pb);
-    let previous = paste_replace_name(pb, name);
+    let previous = paste_replace_name(&mut *pb, name);
     if (*pb).automatic != 0 {
         paste_automatic_count_decrement();
     }
