@@ -1686,8 +1686,8 @@ pub unsafe fn control_panes_prev(elm: *mut control_pane) -> *mut control_pane {
         })
 }
 
-unsafe fn control_windows_key(elm: *mut control_window) -> u32 {
-    (*elm).window
+fn control_windows_key(elm: &control_window) -> u32 {
+    elm.window
 }
 pub unsafe fn control_windows_find(
     head: *mut control_windows,
@@ -1696,7 +1696,7 @@ pub unsafe fn control_windows_find(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_windows_key(elm);
+    let key = control_windows_key(&*elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn control_windows_nfind(
@@ -1706,7 +1706,7 @@ pub unsafe fn control_windows_nfind(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_windows_key(elm);
+    let key = control_windows_key(&*elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1715,7 +1715,7 @@ pub unsafe fn control_windows_insert(
     head: *mut control_windows,
     elm: *mut control_window,
 ) -> *mut control_window {
-    let key = control_windows_key(elm);
+    let key = control_windows_key(&*elm);
     if (*head).storage.is_null() {
         (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
@@ -1736,7 +1736,7 @@ pub unsafe fn control_windows_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = control_windows_key(elm);
+    let key = control_windows_key(&*elm);
     let Some(map) = (*head).storage.as_mut() else {
         return std::ptr::null_mut();
     };
@@ -1769,7 +1769,7 @@ pub unsafe fn control_windows_next(elm: *mut control_window) -> *mut control_win
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_windows_key(elm);
+    let key = control_windows_key(&*elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1778,7 +1778,7 @@ pub unsafe fn control_windows_prev(elm: *mut control_window) -> *mut control_win
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_windows_key(elm);
+    let key = control_windows_key(&*elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
