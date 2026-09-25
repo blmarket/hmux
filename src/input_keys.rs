@@ -100,8 +100,8 @@ pub const MOTION_MOUSE_MODES: ::core::ffi::c_int = MODE_MOUSE_BUTTON | MODE_MOUS
 // The old RB comparator ordered entries by their unsigned key value. The map
 // therefore preserves exact lookup, duplicate insertion, and in-order
 // traversal semantics without storing links in each input_key_entry.
-unsafe fn input_key_tree_find(head: *mut input_key_tree, key: key_code) -> *mut input_key_entry {
-    (*head)
+fn input_key_tree_find(head: &input_key_tree, key: key_code) -> *mut input_key_entry {
+    head
         .entries
         .get(&key)
         .copied()
@@ -109,25 +109,25 @@ unsafe fn input_key_tree_find(head: *mut input_key_tree, key: key_code) -> *mut 
 }
 
 unsafe fn input_key_tree_insert(
-    head: *mut input_key_tree,
-    elm: *mut input_key_entry,
+    head: &mut input_key_tree,
+    elm: &mut input_key_entry,
 ) -> *mut input_key_entry {
-    match (*head).entries.entry((*elm).key) {
+    match head.entries.entry(elm.key) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
+            entry.insert(&raw mut *elm);
             ::core::ptr::null_mut::<input_key_entry>()
         }
     }
 }
 
 unsafe fn input_key_tree_insert_generated(
-    head: *mut input_key_tree,
+    head: &mut input_key_tree,
     mut generated: Box<InputKeyGenerated>,
 ) {
     let entry = &raw mut generated.entry;
-    if input_key_tree_insert(head, entry).is_null() {
-        (*head).generated.push(generated);
+    if input_key_tree_insert(head, &mut *entry).is_null() {
+        head.generated.push(generated);
     }
 }
 
@@ -149,13 +149,13 @@ fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<InputKey
 }
 
 unsafe fn input_key_tree_minmax(
-    head: *mut input_key_tree,
+    head: &input_key_tree,
     val: ::core::ffi::c_int,
 ) -> *mut input_key_entry {
     let entry = if val < 0 {
-        (*head).entries.iter().next()
+        head.entries.iter().next()
     } else {
-        (*head).entries.iter().next_back()
+        head.entries.iter().next_back()
     };
     entry
         .map(|(_, entry)| *entry)
@@ -163,13 +163,13 @@ unsafe fn input_key_tree_minmax(
 }
 
 unsafe fn input_key_tree_next(
-    head: *mut input_key_tree,
-    elm: *mut input_key_entry,
+    head: &input_key_tree,
+    elm: &input_key_entry,
 ) -> *mut input_key_entry {
-    (*head)
+    head
         .entries
         .range((
-            std::ops::Bound::Excluded((*elm).key),
+            std::ops::Bound::Excluded(elm.key),
             std::ops::Bound::Unbounded,
         ))
         .next()
@@ -537,7 +537,7 @@ static mut input_key_modifiers: [key_code; 9] = [
     KEYC_SHIFT | KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
 ];
 unsafe extern "C" fn input_key_get(mut key: key_code) -> *mut input_key_entry {
-    return input_key_tree_find(&raw mut input_key_tree, key);
+    return input_key_tree_find(&*(&raw const input_key_tree), key);
 }
 unsafe extern "C" fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
     if c > 0x7f as u_int {
@@ -564,7 +564,7 @@ pub unsafe extern "C" fn input_key_build() {
         ike = (&raw mut input_key_defaults as *mut input_key_entry).offset(i as isize)
             as *mut input_key_entry;
         if !((*ike).key as ::core::ffi::c_ulonglong) & KEYC_BUILD_MODIFIERS != 0 {
-            input_key_tree_insert(&raw mut input_key_tree, ike);
+            input_key_tree_insert(&mut *(&raw mut input_key_tree), &mut *ike);
         } else {
             j = 2 as u_int;
             while (j as usize)
@@ -577,13 +577,13 @@ pub unsafe extern "C" fn input_key_build() {
                     key | input_key_modifiers[j as usize],
                     j,
                 );
-                input_key_tree_insert_generated(&raw mut input_key_tree, generated);
+                input_key_tree_insert_generated(&mut *(&raw mut input_key_tree), generated);
                 j = j.wrapping_add(1);
             }
         }
         i = i.wrapping_add(1);
     }
-    ike = input_key_tree_minmax(&raw mut input_key_tree, -1);
+    ike = input_key_tree_minmax(&*(&raw const input_key_tree), -1);
     while !ike.is_null() {
         let key_string = key_string_format((*ike).key, true);
         log_debug(
@@ -593,7 +593,7 @@ pub unsafe extern "C" fn input_key_build() {
             key_string.as_ptr(),
             (*ike).data,
         );
-        ike = input_key_tree_next(&raw mut input_key_tree, ike);
+        ike = input_key_tree_next(&*(&raw const input_key_tree), &*ike);
     }
 }
 #[no_mangle]
@@ -1204,24 +1204,24 @@ mod tests {
         unsafe {
             let mut tree = input_key_tree::default();
             input_key_tree_insert_generated(
-                &raw mut tree,
+                &mut tree,
                 input_key_generated(c"\x1b[1;_A", 7, 2),
             );
-            let first = input_key_tree_find(&raw mut tree, 7);
+            let first = input_key_tree_find(&tree, 7);
             assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
 
             for key in 10..110 {
                 input_key_tree_insert_generated(
-                    &raw mut tree,
+                    &mut tree,
                     input_key_generated(c"\x1b[1;_B", key, 3),
                 );
             }
             input_key_tree_insert_generated(
-                &raw mut tree,
+                &mut tree,
                 input_key_generated(c"\x1b[1;_C", 7, 4),
             );
             assert_eq!(tree.generated.len(), 101);
-            assert_eq!(input_key_tree_find(&raw mut tree, 7), first);
+            assert_eq!(input_key_tree_find(&tree, 7), first);
             assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
         }
     }
@@ -1251,31 +1251,31 @@ mod tests {
             let first = &mut items[0] as *mut input_key_entry;
             let duplicate = &mut items[3] as *mut input_key_entry;
 
-            assert!(input_key_tree_insert(&raw mut tree, first).is_null());
-            assert!(input_key_tree_insert(&raw mut tree, &mut items[1]).is_null());
-            assert!(input_key_tree_insert(&raw mut tree, &mut items[2]).is_null());
+            assert!(input_key_tree_insert(&mut tree, &mut *first).is_null());
+            assert!(input_key_tree_insert(&mut tree, &mut items[1]).is_null());
+            assert!(input_key_tree_insert(&mut tree, &mut items[2]).is_null());
             assert_eq!(
-                input_key_tree_insert(&raw mut tree, duplicate),
+                input_key_tree_insert(&mut tree, &mut *duplicate),
                 first,
                 "duplicate keys keep the original item"
             );
 
             assert_eq!(
-                input_key_tree_minmax(&raw mut tree, -1),
+                input_key_tree_minmax(&tree, -1),
                 &mut items[1] as *mut input_key_entry
             );
-            assert_eq!(input_key_tree_next(&raw mut tree, &mut items[1]), first);
+            assert_eq!(input_key_tree_next(&tree, &items[1]), first);
             assert_eq!(
-                input_key_tree_next(&raw mut tree, first),
+                input_key_tree_next(&tree, &*first),
                 &mut items[2] as *mut input_key_entry
             );
-            assert!(input_key_tree_next(&raw mut tree, &mut items[2]).is_null());
+            assert!(input_key_tree_next(&tree, &items[2]).is_null());
             assert_eq!(
-                input_key_tree_minmax(&raw mut tree, 1),
+                input_key_tree_minmax(&tree, 1),
                 &mut items[2] as *mut input_key_entry
             );
-            assert_eq!(input_key_tree_find(&raw mut tree, 7), first);
-            assert!(input_key_tree_find(&raw mut tree, 8).is_null());
+            assert_eq!(input_key_tree_find(&tree, 7), first);
+            assert!(input_key_tree_find(&tree, 8).is_null());
         }
     }
 }
