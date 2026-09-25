@@ -47,17 +47,33 @@ pub struct bufferevent {
     pub readcb: bufferevent_data_cb,
     pub writecb: bufferevent_data_cb,
     pub errorcb: bufferevent_event_cb,
-    pub cbarg: *mut ::core::ffi::c_void,
     pub timeout_read: timeval,
     pub timeout_write: timeval,
     pub enabled: ::core::ffi::c_short,
 }
 
 pub type bufferevent_event_cb = Option<
-    unsafe extern "C" fn(*mut bufferevent, ::core::ffi::c_short, *mut ::core::ffi::c_void) -> (),
+    std::rc::Rc<
+        std::cell::RefCell<
+            Box<dyn FnMut(*mut bufferevent, ::core::ffi::c_short)>,
+        >,
+    >,
 >;
-pub type bufferevent_data_cb =
-    Option<unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> ()>;
+pub type bufferevent_data_cb = Option<
+    std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(*mut bufferevent)>>>,
+>;
+
+pub fn bufferevent_data_callback(
+    callback: impl FnMut(*mut bufferevent) + 'static,
+) -> bufferevent_data_cb {
+    Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(callback))))
+}
+
+pub fn bufferevent_event_callback(
+    callback: impl FnMut(*mut bufferevent, ::core::ffi::c_short) + 'static,
+) -> bufferevent_event_cb {
+    Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(callback))))
+}
 
 #[derive(Copy, Clone, Default)]
 #[repr(C)]

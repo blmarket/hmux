@@ -136,10 +136,10 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                         let n = super::evbuffer_read((*stream).input, s.fd, count as c_int);
                         if n > 0 {
                             if (*(*stream).input).remaining() >= (*stream).wm_read.low {
-                                let cb = (*stream).readcb;
-                                let arg = (*stream).cbarg;
+                                let cb = (*stream).readcb.clone();
                                 if let Some(cb) = cb {
-                                    cb(stream, arg);
+                                    let mut cb = cb.borrow_mut();
+                                    (*cb)(stream);
                                 }
                             }
                         } else if n == 0
@@ -147,10 +147,10 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                                 && libc::EINTR != *libc::__errno_location())
                         {
                             (*stream).enabled &= !2;
-                            let cb = (*stream).errorcb;
-                            let arg = (*stream).cbarg;
+                            let cb = (*stream).errorcb.clone();
                             if let Some(cb) = cb {
-                                cb(stream, 1 | if n == 0 { 0x10 } else { 0x20 }, arg);
+                                let mut cb = cb.borrow_mut();
+                                (*cb)(stream, 1 | if n == 0 { 0x10 } else { 0x20 });
                             }
                         }
                     }
@@ -168,10 +168,10 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     };
                     if n > 0 || (empty && requested) {
                         if (*(*stream).output).remaining() <= (*stream).wm_write.low {
-                            let cb = (*stream).writecb;
-                            let arg = (*stream).cbarg;
+                            let cb = (*stream).writecb.clone();
                             if let Some(cb) = cb {
-                                cb(stream, arg);
+                                let mut cb = cb.borrow_mut();
+                                (*cb)(stream);
                             }
                         }
                     } else if n < 0
@@ -179,10 +179,10 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                         && libc::EINTR != *libc::__errno_location()
                     {
                         (*stream).enabled &= !4;
-                        let cb = (*stream).errorcb;
-                        let arg = (*stream).cbarg;
+                        let cb = (*stream).errorcb.clone();
                         if let Some(cb) = cb {
-                            cb(stream, 2 | 0x20, arg);
+                            let mut cb = cb.borrow_mut();
+                            (*cb)(stream, 2 | 0x20);
                         }
                     }
                 }
@@ -201,7 +201,6 @@ pub unsafe fn bufferevent_new(
     readcb: bufferevent_data_cb,
     writecb: bufferevent_data_cb,
     errorcb: bufferevent_event_cb,
-    cbarg: *mut c_void,
 ) -> *mut bufferevent {
     super::ensure_runtime();
     let original_flags = if fd == -1 {
@@ -219,7 +218,6 @@ pub unsafe fn bufferevent_new(
         readcb,
         writecb,
         errorcb,
-        cbarg,
         enabled: 4,
         ..Default::default()
     }));

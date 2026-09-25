@@ -6,7 +6,7 @@ use std::ffi::c_char;
 
 fn reply(buf: *const c_char, len: usize, end: &'static [u8], clip: c_char) -> Vec<u8> {
     unsafe {
-        let bev = bufferevent_new(-1, None, None, None, std::ptr::null_mut());
+        let bev = bufferevent_new(-1, None, None, None);
         assert!(!bev.is_null());
         input_reply_clipboard(bev, buf, len, end.as_ptr().cast(), clip);
         let output = (*bev).output;

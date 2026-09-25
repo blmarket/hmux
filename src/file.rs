@@ -954,7 +954,7 @@ unsafe extern "C" fn file_write_finished(mut cf: *mut client_file) {
     }
     file_free(cf);
 }
-unsafe extern "C" fn file_write_error_callback(
+unsafe fn file_write_error_callback(
     _bev: *mut bufferevent,
     mut what: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -990,7 +990,7 @@ unsafe extern "C" fn file_write_error_callback(
         });
     }
 }
-unsafe extern "C" fn file_write_callback(
+unsafe fn file_write_callback(
     _bev: *mut bufferevent,
     mut arg: *mut ::core::ffi::c_void,
 ) {
@@ -1087,22 +1087,12 @@ pub unsafe fn file_write_open(
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
                     None,
-                    Some(
-                        file_write_callback
-                            as unsafe extern "C" fn(
-                                *mut bufferevent,
-                                *mut ::core::ffi::c_void,
-                            ) -> (),
-                    ),
-                    Some(
-                        file_write_error_callback
-                            as unsafe extern "C" fn(
-                                *mut bufferevent,
-                                ::core::ffi::c_short,
-                                *mut ::core::ffi::c_void,
-                            ) -> (),
-                    ),
-                    cf as *mut ::core::ffi::c_void,
+                    bufferevent_data_callback(move |stream| {
+                        unsafe { file_write_callback(stream, cf as *mut ::core::ffi::c_void) }
+                    }),
+                    bufferevent_event_callback(move |stream, flags| {
+                        unsafe { file_write_error_callback(stream, flags, cf as *mut ::core::ffi::c_void) }
+                    }),
                 );
                 if (*cf).event.is_null() {
                     fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1202,7 +1192,7 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         file_write_finished(cf);
     }
 }
-unsafe extern "C" fn file_read_error_callback(
+unsafe fn file_read_error_callback(
     _bev: *mut bufferevent,
     mut what: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -1234,7 +1224,7 @@ unsafe extern "C" fn file_read_error_callback(
     client_files_remove((*cf).tree as *mut client_files, cf);
     file_free(cf);
 }
-unsafe extern "C" fn file_read_callback(_bev: *mut bufferevent, mut arg: *mut ::core::ffi::c_void) {
+unsafe fn file_read_callback(_bev: *mut bufferevent, mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
     let mut bdata: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut bsize: size_t = 0;
@@ -1357,23 +1347,13 @@ pub unsafe fn file_read_open(
             } else {
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
-                    Some(
-                        file_read_callback
-                            as unsafe extern "C" fn(
-                                *mut bufferevent,
-                                *mut ::core::ffi::c_void,
-                            ) -> (),
-                    ),
+                    bufferevent_data_callback(move |stream| {
+                        unsafe { file_read_callback(stream, cf as *mut ::core::ffi::c_void) }
+                    }),
                     None,
-                    Some(
-                        file_read_error_callback
-                            as unsafe extern "C" fn(
-                                *mut bufferevent,
-                                ::core::ffi::c_short,
-                                *mut ::core::ffi::c_void,
-                            ) -> (),
-                    ),
-                    cf as *mut ::core::ffi::c_void,
+                    bufferevent_event_callback(move |stream, flags| {
+                        unsafe { file_read_error_callback(stream, flags, cf as *mut ::core::ffi::c_void) }
+                    }),
                 );
                 if (*cf).event.is_null() {
                     fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);

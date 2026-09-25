@@ -997,7 +997,7 @@ unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd
     );
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn control_error_callback(
+unsafe fn control_error_callback(
     _bufev: *mut bufferevent,
     _what: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -1005,7 +1005,7 @@ unsafe extern "C" fn control_error_callback(
     let mut c: *mut client = data as *mut client;
     (*c).flags |= CLIENT_EXIT as uint64_t;
 }
-unsafe extern "C" fn control_read_callback(
+unsafe fn control_read_callback(
     _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -1316,7 +1316,7 @@ unsafe extern "C" fn control_write_pending(
     }
     return !(*cp).blocks.is_empty() as ::core::ffi::c_int;
 }
-unsafe extern "C" fn control_write_callback(
+unsafe fn control_write_callback(
     _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -1433,23 +1433,15 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
     ) as *mut monitor_set;
     (*cs).read_event = bufferevent_new(
         (*c).fd,
-        Some(
-            control_read_callback
-                as unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> (),
-        ),
-        Some(
-            control_write_callback
-                as unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> (),
-        ),
-        Some(
-            control_error_callback
-                as unsafe extern "C" fn(
-                    *mut bufferevent,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        c as *mut ::core::ffi::c_void,
+        bufferevent_data_callback(move |stream| {
+            unsafe { control_read_callback(stream, c as *mut ::core::ffi::c_void) }
+        }),
+        bufferevent_data_callback(move |stream| {
+            unsafe { control_write_callback(stream, c as *mut ::core::ffi::c_void) }
+        }),
+        bufferevent_event_callback(move |stream, flags| {
+            unsafe { control_error_callback(stream, flags, c as *mut ::core::ffi::c_void) }
+        }),
     );
     if (*cs).read_event.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1460,19 +1452,12 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
         (*cs).write_event = bufferevent_new(
             (*c).out_fd,
             None,
-            Some(
-                control_write_callback
-                    as unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> (),
-            ),
-            Some(
-                control_error_callback
-                    as unsafe extern "C" fn(
-                        *mut bufferevent,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            c as *mut ::core::ffi::c_void,
+            bufferevent_data_callback(move |stream| {
+                unsafe { control_write_callback(stream, c as *mut ::core::ffi::c_void) }
+            }),
+            bufferevent_event_callback(move |stream, flags| {
+                unsafe { control_error_callback(stream, flags, c as *mut ::core::ffi::c_void) }
+            }),
         );
         if (*cs).write_event.is_null() {
             fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);

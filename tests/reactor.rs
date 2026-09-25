@@ -2,7 +2,7 @@
 use hmux2::src::reactor::*;
 use hmux2::src::shared::{
     abi::timeval,
-    event::{bufferevent, event},
+    event::{bufferevent, bufferevent_data_callback, bufferevent_event_callback, event},
 };
 use std::ffi::{c_int, c_short, c_void};
 use std::io::{Read, Write};
@@ -112,7 +112,7 @@ struct Observations {
     errors: Vec<c_short>,
     free_on_read: bool,
 }
-unsafe extern "C" fn read_cb(stream: *mut bufferevent, arg: *mut c_void) {
+unsafe fn read_cb(stream: *mut bufferevent, arg: *mut c_void) {
     let state = unsafe { &mut *(arg as *mut Observations) };
     state.reads += 1;
     if state.free_on_read {
@@ -121,12 +121,12 @@ unsafe extern "C" fn read_cb(stream: *mut bufferevent, arg: *mut c_void) {
         }
     }
 }
-unsafe extern "C" fn write_cb(_: *mut bufferevent, arg: *mut c_void) {
+unsafe fn write_cb(_: *mut bufferevent, arg: *mut c_void) {
     unsafe {
         (*(arg as *mut Observations)).writes += 1;
     }
 }
-unsafe extern "C" fn error_cb(_: *mut bufferevent, flags: c_short, arg: *mut c_void) {
+unsafe fn error_cb(_: *mut bufferevent, flags: c_short, arg: *mut c_void) {
     unsafe {
         (*(arg as *mut Observations)).errors.push(flags);
     }
@@ -141,13 +141,19 @@ fn pair() -> (UnixStream, UnixStream) {
 fn descriptorless_stream_keeps_buffers_without_io_callbacks() {
     let rt = Runtime::new();
     let mut observations = Observations::default();
+    let observations_ptr = &mut observations as *mut Observations;
     unsafe {
         let stream = bufferevent_new(
             -1,
-            Some(read_cb),
-            Some(write_cb),
-            Some(error_cb),
-            (&mut observations as *mut Observations).cast(),
+            bufferevent_data_callback(move |stream| {
+                read_cb(stream, observations_ptr.cast())
+            }),
+            bufferevent_data_callback(move |stream| {
+                write_cb(stream, observations_ptr.cast())
+            }),
+            bufferevent_event_callback(move |stream, flags| {
+                error_cb(stream, flags, observations_ptr.cast())
+            }),
         );
         assert!(!stream.is_null());
         assert_eq!(bufferevent_enable(stream, 6), 0);
@@ -180,13 +186,19 @@ fn stream_watermarks_drain_reenable_and_direct_output_append() {
     let rt = Runtime::new();
     let (mut peer, fd) = pair();
     let mut observations = Observations::default();
+    let observations_ptr = &mut observations as *mut Observations;
     unsafe {
         let stream = bufferevent_new(
             fd.as_raw_fd(),
-            Some(read_cb),
-            Some(write_cb),
-            Some(error_cb),
-            (&mut observations as *mut Observations).cast(),
+            bufferevent_data_callback(move |stream| {
+                read_cb(stream, observations_ptr.cast())
+            }),
+            bufferevent_data_callback(move |stream| {
+                write_cb(stream, observations_ptr.cast())
+            }),
+            bufferevent_event_callback(move |stream, flags| {
+                error_cb(stream, flags, observations_ptr.cast())
+            }),
         );
         assert!(!stream.is_null());
         bufferevent_setwatermark(stream, 2, 3, 4);
@@ -226,13 +238,19 @@ fn stream_callback_can_free_owner_with_both_directions_ready() {
         free_on_read: true,
         ..Default::default()
     };
+    let observations_ptr = &mut observations as *mut Observations;
     unsafe {
         let stream = bufferevent_new(
             fd.as_raw_fd(),
-            Some(read_cb),
-            Some(write_cb),
-            Some(error_cb),
-            (&mut observations as *mut Observations).cast(),
+            bufferevent_data_callback(move |stream| {
+                read_cb(stream, observations_ptr.cast())
+            }),
+            bufferevent_data_callback(move |stream| {
+                write_cb(stream, observations_ptr.cast())
+            }),
+            bufferevent_event_callback(move |stream, flags| {
+                error_cb(stream, flags, observations_ptr.cast())
+            }),
         );
         bufferevent_enable(stream, 2);
         bufferevent_write(stream, b"not sent".as_ptr().cast(), 8);
@@ -248,13 +266,19 @@ fn partial_writes_resume_after_backpressure_and_deliver_eof_once() {
     let rt = Runtime::new();
     let (mut peer, fd) = pair();
     let mut observations = Observations::default();
+    let observations_ptr = &mut observations as *mut Observations;
     unsafe {
         let stream = bufferevent_new(
             fd.as_raw_fd(),
-            Some(read_cb),
-            Some(write_cb),
-            Some(error_cb),
-            (&mut observations as *mut Observations).cast(),
+            bufferevent_data_callback(move |stream| {
+                read_cb(stream, observations_ptr.cast())
+            }),
+            bufferevent_data_callback(move |stream| {
+                write_cb(stream, observations_ptr.cast())
+            }),
+            bufferevent_event_callback(move |stream, flags| {
+                error_cb(stream, flags, observations_ptr.cast())
+            }),
         );
         let payload = (0..2_000_000).map(|i| (i % 251) as u8).collect::<Vec<_>>();
         bufferevent_write(stream, payload.as_ptr().cast(), payload.len());
@@ -291,7 +315,7 @@ fn stream_temporarily_sets_and_restores_blocking_flags() {
     let (_peer, fd) = UnixStream::pair().unwrap();
     unsafe {
         let before = libc::fcntl(fd.as_raw_fd(), libc::F_GETFL);
-        let stream = bufferevent_new(fd.as_raw_fd(), None, None, None, std::ptr::null_mut());
+        let stream = bufferevent_new(fd.as_raw_fd(), None, None, None);
         assert!(!stream.is_null());
         assert_ne!(
             libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) & libc::O_NONBLOCK,
@@ -307,13 +331,15 @@ fn enabling_an_empty_writer_requests_one_callback_without_busy_polling() {
     let rt = Runtime::new();
     let (_peer, fd) = pair();
     let mut observations = Observations::default();
+    let observations_ptr = &mut observations as *mut Observations;
     unsafe {
         let stream = bufferevent_new(
             fd.as_raw_fd(),
             None,
-            Some(write_cb),
+            bufferevent_data_callback(move |stream| {
+                write_cb(stream, observations_ptr.cast())
+            }),
             None,
-            (&mut observations as *mut Observations).cast(),
         );
         rt.tick();
         assert_eq!(observations.writes, 0);

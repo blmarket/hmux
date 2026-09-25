@@ -223,23 +223,15 @@ unsafe fn cmd_pipe_pane_exec(
             setblocking((*wp).pipe_fd, 0 as ::core::ffi::c_int);
             (*wp).pipe_event = bufferevent_new(
                 (*wp).pipe_fd,
-                Some(
-                    cmd_pipe_pane_read_callback
-                        as unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> (),
-                ),
-                Some(
-                    cmd_pipe_pane_write_callback
-                        as unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> (),
-                ),
-                Some(
-                    cmd_pipe_pane_error_callback
-                        as unsafe extern "C" fn(
-                            *mut bufferevent,
-                            ::core::ffi::c_short,
-                            *mut ::core::ffi::c_void,
-                        ) -> (),
-                ),
-                wp as *mut ::core::ffi::c_void,
+                bufferevent_data_callback(move |stream| {
+                    unsafe { cmd_pipe_pane_read_callback(stream, wp as *mut ::core::ffi::c_void) }
+                }),
+                bufferevent_data_callback(move |stream| {
+                    unsafe { cmd_pipe_pane_write_callback(stream, wp as *mut ::core::ffi::c_void) }
+                }),
+                bufferevent_event_callback(move |stream, flags| {
+                    unsafe { cmd_pipe_pane_error_callback(stream, flags, wp as *mut ::core::ffi::c_void) }
+                }),
             );
             if (*wp).pipe_event.is_null() {
                 fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -254,7 +246,7 @@ unsafe fn cmd_pipe_pane_exec(
         }
     };
 }
-unsafe extern "C" fn cmd_pipe_pane_read_callback(
+unsafe fn cmd_pipe_pane_read_callback(
     _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -281,7 +273,7 @@ unsafe extern "C" fn cmd_pipe_pane_read_callback(
         server_destroy_pane(wp, 1 as ::core::ffi::c_int);
     }
 }
-unsafe extern "C" fn cmd_pipe_pane_write_callback(
+unsafe fn cmd_pipe_pane_write_callback(
     _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -294,7 +286,7 @@ unsafe extern "C" fn cmd_pipe_pane_write_callback(
         server_destroy_pane(wp, 1 as ::core::ffi::c_int);
     }
 }
-unsafe extern "C" fn cmd_pipe_pane_error_callback(
+unsafe fn cmd_pipe_pane_error_callback(
     _bufev: *mut bufferevent,
     _what: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,

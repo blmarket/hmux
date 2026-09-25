@@ -3189,7 +3189,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
         .expect("final pane release must have an owner");
     drop(owner);
 }
-unsafe extern "C" fn window_pane_read_callback(
+unsafe fn window_pane_read_callback(
     _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -3226,7 +3226,7 @@ unsafe extern "C" fn window_pane_read_callback(
     input_parse_pane(wp);
     bufferevent_disable((*wp).event, EV_READ as ::core::ffi::c_short);
 }
-unsafe extern "C" fn window_pane_error_callback(
+unsafe fn window_pane_error_callback(
     _bufev: *mut bufferevent,
     _what: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -3246,20 +3246,13 @@ pub unsafe extern "C" fn window_pane_set_event(mut wp: *mut window_pane) {
     setblocking((*wp).fd, 0 as ::core::ffi::c_int);
     (*wp).event = bufferevent_new(
         (*wp).fd,
-        Some(
-            window_pane_read_callback
-                as unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> (),
-        ),
+        bufferevent_data_callback(move |stream| {
+            unsafe { window_pane_read_callback(stream, wp as *mut ::core::ffi::c_void) }
+        }),
         None,
-        Some(
-            window_pane_error_callback
-                as unsafe extern "C" fn(
-                    *mut bufferevent,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        wp as *mut ::core::ffi::c_void,
+        bufferevent_event_callback(move |stream, flags| {
+            unsafe { window_pane_error_callback(stream, flags, wp as *mut ::core::ffi::c_void) }
+        }),
     );
     if (*wp).event.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);

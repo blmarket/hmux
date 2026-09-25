@@ -355,29 +355,15 @@ pub unsafe fn job_run(
                     setblocking((*job).fd, 0 as ::core::ffi::c_int);
                     (*job).event = bufferevent_new(
                         (*job).fd,
-                        Some(
-                            job_read_callback
-                                as unsafe extern "C" fn(
-                                    *mut bufferevent,
-                                    *mut ::core::ffi::c_void,
-                                ) -> (),
-                        ),
-                        Some(
-                            job_write_callback
-                                as unsafe extern "C" fn(
-                                    *mut bufferevent,
-                                    *mut ::core::ffi::c_void,
-                                ) -> (),
-                        ),
-                        Some(
-                            job_error_callback
-                                as unsafe extern "C" fn(
-                                    *mut bufferevent,
-                                    ::core::ffi::c_short,
-                                    *mut ::core::ffi::c_void,
-                                ) -> (),
-                        ),
-                        job as *mut ::core::ffi::c_void,
+                        bufferevent_data_callback(move |stream| {
+                            unsafe { job_read_callback(stream, job as *mut ::core::ffi::c_void) }
+                        }),
+                        bufferevent_data_callback(move |stream| {
+                            unsafe { job_write_callback(stream, job as *mut ::core::ffi::c_void) }
+                        }),
+                        bufferevent_event_callback(move |stream, flags| {
+                            unsafe { job_error_callback(stream, flags, job as *mut ::core::ffi::c_void) }
+                        }),
                     );
                     if (*job).event.is_null() {
                         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -498,7 +484,7 @@ pub unsafe extern "C" fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_
         fatal(b"ioctl failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
 }
-unsafe extern "C" fn job_read_callback(
+unsafe fn job_read_callback(
     _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -511,7 +497,7 @@ unsafe extern "C" fn job_read_callback(
         }
     }
 }
-unsafe extern "C" fn job_write_callback(
+unsafe fn job_write_callback(
     _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -531,7 +517,7 @@ unsafe extern "C" fn job_write_callback(
         bufferevent_disable((*job).event, EV_WRITE as ::core::ffi::c_short);
     }
 }
-unsafe extern "C" fn job_error_callback(
+unsafe fn job_error_callback(
     _bufev: *mut bufferevent,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
