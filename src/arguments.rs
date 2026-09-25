@@ -388,20 +388,19 @@ pub unsafe extern "C" fn args_create() -> *mut args {
     });
     Box::into_raw(owner).cast::<args>()
 }
-unsafe fn args_push_positional_owned(args: *mut args, value: args_value) {
-    let owner = &mut *args;
-    owner.values.push(value);
-    owner.count = owner.values.len() as u_int;
+fn args_push_positional_owned(args: &mut args, value: args_value) {
+    args.values.push(value);
+    args.count = args.values.len() as u_int;
 }
 
 /// Append a positional string and transfer its storage into `args`.
 pub unsafe fn args_push_positional_string(args: *mut args, value: CString) {
-    args_push_positional_owned(args, args_value::string(value));
+    args_push_positional_owned(&mut *args, args_value::string(value));
 }
 
 /// Append a positional command list and transfer its reference into `args`.
 pub unsafe fn args_push_positional_commands(args: *mut args, cmdlist: *mut cmd_list) {
-    args_push_positional_owned(args, args_value::commands(cmdlist));
+    args_push_positional_owned(&mut *args, args_value::commands(cmdlist));
 }
 
 unsafe fn args_parse_flag_argument(
@@ -672,7 +671,7 @@ pub unsafe fn args_parse(
                 }
                 _ => args_value::empty(),
             };
-            args_push_positional_owned(args, copied);
+            args_push_positional_owned(&mut *args, copied);
             i = i.wrapping_add(1);
         }
     }
@@ -750,7 +749,7 @@ pub unsafe fn args_copy(mut args: *mut args, argv: &Vec<CString>) -> *mut args {
     i = 0 as u_int;
     while i < (*args).count {
         args_push_positional_owned(
-            new_args,
+            &mut *new_args,
             args_copy_copy_value(&*(*args).values.as_mut_ptr().add(i as usize), argv),
         );
         i = i.wrapping_add(1);
