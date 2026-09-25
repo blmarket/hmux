@@ -28,6 +28,7 @@ use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct input_key_entry {
     pub key: key_code,
     pub data: *const ::core::ffi::c_char,

@@ -75,6 +75,7 @@ pub const MODE_TREE_SEARCH_BACKWARD: mode_tree_search_dir = 1;
 pub const MODE_TREE_SEARCH_FORWARD: mode_tree_search_dir = 0;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct mode_tree_menu {
     pub data: *mut mode_tree_data,
     pub c: *mut client,

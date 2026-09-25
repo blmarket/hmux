@@ -36,6 +36,7 @@ pub type screen_write_item_type = ::core::ffi::c_uint;
 pub const CLEAR: screen_write_item_type = 1;
 pub const TEXT: screen_write_item_type = 0;
 
+#[repr(C)]
 pub struct screen_write_ctx {
     pub wp: *mut window_pane,
     pub s: *mut screen,

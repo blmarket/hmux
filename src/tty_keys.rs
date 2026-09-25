@@ -55,16 +55,19 @@ use crate::src::window::window_update_focus;
 use std::ffi::CStr;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_default_key_code {
     pub code: tty_code_code,
     pub key: key_code,
 }
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_default_key_raw {
     pub string: &'static ::std::ffi::CStr,
     pub key: key_code,
 }
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_default_key_xterm {
     pub template: &'static ::std::ffi::CStr,
     pub key: key_code,

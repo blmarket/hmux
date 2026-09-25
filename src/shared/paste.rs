@@ -2,6 +2,7 @@
 
 use super::abi::{size_t, time_t, u_int};
 
+#[repr(C)]
 pub struct paste_buffer {
     pub data: Option<Box<[u8]>>,
     pub size: size_t,

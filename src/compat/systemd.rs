@@ -89,6 +89,7 @@ mod systemd_message_tests {
 }
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct systemd_job_watch {
     pub path: Option<::std::ffi::CString>,
     pub done: ::core::ffi::c_int,

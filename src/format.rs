@@ -209,6 +209,7 @@ impl format_modifier {
     }
 }
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct format_expand_state {
     pub ft: *mut format_tree,
     pub loop_0: u_int,
@@ -220,6 +221,7 @@ pub struct format_expand_state {
 pub type format_table_type = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct C2RustUnnamed_43 {
     pub mode: ::core::ffi::c_int,
     pub number: ::core::ffi::c_int,

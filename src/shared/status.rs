@@ -10,6 +10,7 @@ use super::style::style_line_entry;
 use std::collections::VecDeque;
 use std::ffi::CString;
 
+#[repr(C)]
 pub struct status_line {
     pub timer: event,
     pub screen: screen,

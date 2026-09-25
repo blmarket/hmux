@@ -301,6 +301,7 @@ mod tests {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_key {
     pub ch: ::core::ffi::c_char,
     pub key: key_code,
@@ -310,11 +311,13 @@ pub struct tty_key {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_code {
     pub type_0: tty_code_type,
     pub value: tty_code_value,
 }
 
+#[repr(C)]
 pub struct tty {
     pub client: *mut client,
     pub start_timer: event,
@@ -380,6 +383,7 @@ impl tty {
     }
 }
 
+#[repr(C)]
 pub struct tty_term {
     pub name: std::ffi::CString,
     pub tty: *mut tty,
@@ -410,12 +414,14 @@ impl tty_term {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_term_entry {
     pub le_next: *mut tty_term,
     pub le_prev: *mut *mut tty_term,
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_ctx {
     pub s: *mut screen,
     pub redraw_cb: tty_ctx_redraw_cb,
@@ -444,6 +450,7 @@ pub struct tty_ctx {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_style_ctx {
     pub defaults: *const grid_cell,
     pub palette: *mut colour_palette,
@@ -452,6 +459,7 @@ pub struct tty_style_ctx {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub union tty_ctx_c2rust_unnamed {
     pub n: u_int,
     pub data: tty_ctx_c2rust_unnamed_data,
@@ -459,6 +467,7 @@ pub union tty_ctx_c2rust_unnamed {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_ctx_c2rust_unnamed_sel {
     pub clip: *const ::core::ffi::c_char,
     pub data: *const ::core::ffi::c_char,
@@ -466,6 +475,7 @@ pub struct tty_ctx_c2rust_unnamed_sel {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_ctx_c2rust_unnamed_data {
     pub data: *const ::core::ffi::c_char,
     pub size: size_t,
@@ -477,6 +487,7 @@ pub type tty_ctx_set_client_cb =
 pub type tty_ctx_redraw_cb = Option<unsafe extern "C" fn(*const tty_ctx) -> ()>;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub union tty_code_value {
     pub string: *mut ::core::ffi::c_char,
     pub number: ::core::ffi::c_int,
@@ -486,6 +497,7 @@ pub union tty_code_value {
 pub type tty_code_type = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_terms {
     pub lh_first: *mut tty_term,
 }

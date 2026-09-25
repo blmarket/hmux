@@ -3,6 +3,7 @@
 use super::abi::*;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct utf8_data {
     pub data: [u_char; 32],
     pub have: u_char,
@@ -11,6 +12,7 @@ pub struct utf8_data {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct grid_cell {
     pub data: utf8_data,
     pub attr: u_short,
@@ -72,6 +74,7 @@ impl<T> GridArray<T> {
     }
 }
 
+#[repr(C)]
 /// Owns its lines and their cell allocations. Screens and temporary reflow
 /// operations keep this record in a Box; raw grid pointers are scoped borrows.
 pub struct grid {
@@ -88,6 +91,7 @@ pub struct grid {
 }
 
 #[derive(Clone, Default)]
+#[repr(C)]
 pub struct grid_line {
     pub celldata: GridArray<grid_cell_entry>,
     pub extddata: GridArray<grid_extd_entry>,
@@ -100,6 +104,7 @@ pub struct grid_line {
 }
 
 #[derive(Copy, Clone, Default)]
+#[repr(C)]
 pub struct osc133_data {
     pub prompt_col: u_short,
     pub cmd_col: u_short,
@@ -125,12 +130,14 @@ pub type utf8_char = u_int;
 // The C definition contains an anonymous union.  These names describe the
 // verified layout without conflating any unrelated C2RustUnnamed type.
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub union grid_cell_entry_storage {
     pub offset: u_int,
     pub data: grid_cell_entry_data,
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct grid_cell_entry_data {
     pub attr: u_char,
     pub fg: u_char,
@@ -197,6 +204,7 @@ pub const GRID_STRING_EMPTY_CELLS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_i
 pub const GRID_HISTORY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct grid_reader {
     pub gd: *mut grid,
     pub cx: u_int,

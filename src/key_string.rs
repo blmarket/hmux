@@ -15,6 +15,7 @@ use crate::src::text::utf8::{
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct C2RustUnnamed_1 {
     pub string: *const ::core::ffi::c_char,
     pub key: key_code,

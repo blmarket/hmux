@@ -55,6 +55,7 @@ use crate::src::style::style_apply;
 use crate::src::window::{window_pane_reset_mode, window_zoom, winlink_find_by_index};
 use std::ffi::{CStr, CString};
 
+#[repr(C)]
 pub struct window_switch_modedata {
     pub wp: *mut window_pane,
     pub screen: screen,
@@ -71,6 +72,7 @@ pub struct window_switch_modedata {
     pub current: u_int,
     pub offset: u_int,
 }
+#[repr(C)]
 pub struct window_switch_itemdata {
     pub type_0: window_switch_type,
     pub session: ::core::ffi::c_int,

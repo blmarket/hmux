@@ -24,6 +24,7 @@ use crate::src::shared::key::{
 use crate::src::shared::tree::RB_NEGINF;
 use std::ffi::CStr;
 
+#[repr(C)]
 pub struct key_tables {
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, *mut key_table>>>,
 }

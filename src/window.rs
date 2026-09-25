@@ -1225,23 +1225,35 @@ pub unsafe extern "C" fn window_update_activity(mut w: *mut window) {
     alerts_queue(w, WINDOW_ACTIVITY);
 }
 
+/// The public window stays at offset zero; its previous layout string borrows
+/// storage from this containing owner until replacement or destruction.
+#[repr(C)]
+struct WindowOwned {
+    node: window,
+    old_layout: Option<CString>,
+    name: CString,
+}
+
+const _: () = assert!(::core::mem::offset_of!(WindowOwned, node) == 0);
+
 pub(crate) unsafe fn window_replace_old_layout(
     w: *mut window,
     layout: Option<CString>,
 ) -> Option<CString> {
-    let previous = (*w).old_layout;
-    (*w).old_layout = layout.map_or(::core::ptr::null_mut(), CString::into_raw);
-    if previous.is_null() {
-        None
-    } else {
-        Some(CString::from_raw(previous))
-    }
+    let owner = w.cast::<WindowOwned>();
+    let previous = ::core::mem::replace(&mut (*owner).old_layout, layout);
+    (*w).old_layout = (*owner)
+        .old_layout
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+    previous
 }
 
-/// `window.name` owns its CString allocation through the raw pointer.
+/// `window.name` borrows the current CString until the next replacement.
 pub(crate) unsafe fn window_replace_name(w: *mut window, name: CString) -> CString {
-    let previous = CString::from_raw((*w).name);
-    (*w).name = name.into_raw();
+    let owner = w.cast::<WindowOwned>();
+    let previous = ::core::mem::replace(&mut (*owner).name, name);
+    (*w).name = (*owner).name.as_ptr() as *mut _;
     previous
 }
 
@@ -1259,10 +1271,12 @@ pub unsafe extern "C" fn window_create(
     if ypixel == 0 as u_int {
         ypixel = DEFAULT_YPIXEL as u_int;
     }
-    w = Box::into_raw(Box::new(::core::mem::zeroed::<window>()));
-    (*w).name = CString::new("")
-        .expect("empty window name has no NUL")
-        .into_raw();
+    w = Box::into_raw(Box::new(WindowOwned {
+        node: ::core::mem::zeroed::<window>(),
+        old_layout: None,
+        name: CString::new("").expect("empty window name has no NUL"),
+    })) as *mut window;
+    (*w).name = (*w.cast::<WindowOwned>()).name.as_ptr() as *mut _;
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
     (*w).z_index = window_panes::default();
@@ -1330,8 +1344,7 @@ unsafe extern "C" fn window_destroy(mut w: *mut window) {
         event_del(&raw mut (*w).offset_timer);
     }
     options_free((*w).options);
-    drop(CString::from_raw((*w).name));
-    drop(Box::from_raw(w));
+    drop(Box::from_raw(w.cast::<WindowOwned>()));
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
@@ -4986,12 +4999,16 @@ mod name_tests {
     #[test]
     fn rename_keeps_old_name_through_reentrant_notification() {
         unsafe {
-            // Only the window's name storage matters here; an extra reference
+            // Only the rename owner is relevant here; an extra reference
             // prevents the sessionless fixture from reaching window_destroy.
-            let mut node: window = std::mem::zeroed();
-            node.entry.owner = None;
-            node.name = CString::new("before").unwrap().into_raw();
-            let w = &raw mut node;
+            let mut owner = WindowOwned {
+                node: std::mem::zeroed(),
+                old_layout: None,
+                name: CString::new("before").unwrap(),
+            };
+            owner.node.entry.owner = None;
+            let w = &raw mut owner.node;
+            (*w).name = owner.name.as_ptr() as *mut _;
             (*w).references = 1;
             let mut state = RenameState {
                 window: w,
@@ -5019,7 +5036,6 @@ mod name_tests {
             assert_eq!(CStr::from_ptr((*w).name), c"inner");
             assert_eq!(state.events.len(), 2);
             events_remove_sink(sink);
-            drop(CString::from_raw((*w).name));
         }
     }
 }

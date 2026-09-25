@@ -2,8 +2,8 @@
 //!
 //! The ordered map owns each link. The current link and visit history only hold
 //! weak references. This is a Rust model of the three fields, not a replacement
-//! for the current `session` record yet: its raw-pointer call sites and
-//! allocation/free protocol must move together.
+//! for the translated `#[repr(C)]` session yet: its raw-pointer call sites and
+//! C allocation/free protocol must move together.
 
 use std::collections::{BTreeMap, VecDeque};
 

@@ -50,6 +50,7 @@ pub const TTYCODE_STRING: tty_code_type = 1;
 pub const TTYCODE_NONE: tty_code_type = 0;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct tty_term_code_entry {
     pub type_0: tty_code_type,
     pub name: &'static ::std::ffi::CStr,

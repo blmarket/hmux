@@ -51,6 +51,7 @@ pub const JOB_CLOSED: job_state = 2;
 pub const JOB_DEAD: job_state = 1;
 pub const JOB_RUNNING: job_state = 0;
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct joblist {
     pub lh_first: *mut job,
 }

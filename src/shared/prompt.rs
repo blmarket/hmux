@@ -70,6 +70,7 @@ pub struct prompt_completion {
     pub display: Option<CString>,
 }
 
+#[repr(C)]
 pub struct prompt {
     pub string: CString,
     pub buffer: Vec<utf8_data>,
@@ -101,6 +102,7 @@ pub struct prompt {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct prompt_create_data {
     pub fs: *mut cmd_find_state,
     pub prompt: *const ::core::ffi::c_char,
@@ -126,6 +128,7 @@ pub struct prompt_create_data {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct prompt_draw_data {
     pub ctx: *mut screen_write_ctx,
     pub cursor_x: *mut u_int,

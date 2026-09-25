@@ -16,6 +16,7 @@ use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct C2RustUnnamed_1 {
     pub mask: u_int,
     pub code: u_int,

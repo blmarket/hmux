@@ -9,11 +9,13 @@ use super::mouse::mouse_event;
 use super::screen::screen;
 use super::window::window;
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct menu_item {
     pub name: *const ::core::ffi::c_char,
     pub key: key_code,
     pub command: *const ::core::ffi::c_char,
 }
+#[repr(C)]
 pub struct menu {
     pub title: std::ffi::CString,
     pub items: Vec<menu_item>,
@@ -39,6 +41,7 @@ pub const MENU_NOMOUSE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const MENU_STAYOPEN: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const MENU_TAB: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 
+#[repr(C)]
 pub struct menu_data {
     pub w: *mut window,
     pub flags: ::core::ffi::c_int,

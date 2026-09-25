@@ -4,6 +4,7 @@ use super::abi::int64_t;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
+#[repr(C)]
 pub struct json_node {
     pub type_0: json_node_type,
     pub key: Option<std::ffi::CString>,
@@ -30,6 +31,7 @@ impl json_node {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub union json_node_c2rust_unnamed {
     pub str_0: *mut ::core::ffi::c_char,
     pub num: int64_t,
@@ -39,6 +41,7 @@ pub union json_node_c2rust_unnamed {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 /// Handle to array ordering storage owned by the array node.
 pub struct json_members {
     pub storage: *mut json_members_storage,
@@ -52,6 +55,7 @@ pub struct json_members_storage {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct json_fields {
     pub entries: *mut json_fields_storage,
 }

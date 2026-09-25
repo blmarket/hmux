@@ -10,6 +10,7 @@ use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
 
+#[repr(C)]
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
     pub references: u_int,
@@ -54,6 +55,7 @@ pub struct mode_tree_data {
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct mode_tree_prompt {
     pub mtd: *mut mode_tree_data,
     pub c: *mut client,
@@ -72,6 +74,7 @@ pub type mode_tree_prompt_input_cb = Option<
 >;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct mode_tree_line {
     pub item: *mut mode_tree_item,
     pub depth: u_int,
@@ -79,6 +82,7 @@ pub struct mode_tree_line {
     pub flat: ::core::ffi::c_int,
 }
 
+#[repr(C)]
 pub struct mode_tree_item {
     pub parent: *mut mode_tree_item,
     pub itemdata: *mut ::core::ffi::c_void,

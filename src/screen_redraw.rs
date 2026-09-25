@@ -80,6 +80,7 @@ pub const REDRAW_SPAN_OUTSIDE: redraw_span_type = 1;
 pub const REDRAW_SPAN_PANE: redraw_span_type = 0;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_draw_ctx {
     pub scene: *mut redraw_scene,
     pub active: *mut window_pane,
@@ -90,10 +91,12 @@ pub struct redraw_draw_ctx {
     pub flags: ::core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_build_cell {
     pub data: redraw_span_data,
 }
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_build_ctx {
     pub c: *mut client,
     pub w: *mut window,

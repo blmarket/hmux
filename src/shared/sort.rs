@@ -12,6 +12,7 @@ pub const SORT_CREATION: sort_order = 1;
 pub const SORT_ACTIVITY: sort_order = 0;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct sort_criteria {
     pub order: sort_order,
     pub reversed: ::core::ffi::c_int,

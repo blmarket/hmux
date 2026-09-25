@@ -27,6 +27,7 @@ use crate::src::shared::job::job;
 use crate::src::shared::session::session;
 use crate::src::status::status_message_set;
 
+#[repr(C)]
 pub struct cmd_if_shell_data {
     pub cmd_if: *mut args_command_state,
     pub cmd_else: *mut args_command_state,

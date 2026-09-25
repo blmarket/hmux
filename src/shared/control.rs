@@ -6,6 +6,7 @@ use super::monitor::monitor_set;
 use super::pane::window_pane_offset;
 use std::collections::VecDeque;
 
+#[repr(C)]
 pub struct control_state {
     pub panes: control_panes,
     pub windows: control_windows,
@@ -38,6 +39,7 @@ impl control_state {
     }
 }
 
+#[repr(C)]
 pub struct control_block {
     pub size: size_t,
     pub line: Option<std::ffi::CString>,
@@ -54,6 +56,7 @@ impl control_block {
     }
 }
 
+#[repr(C)]
 /// Owned by the pane-ID index until `control_reset_offsets` removes it.
 /// The pending queue borrows its stable address.
 pub struct control_pane {
@@ -67,15 +70,18 @@ pub struct control_pane {
     pub entry: control_pane_entry,
 }
 
+#[repr(C)]
 pub struct control_pane_entry {
     /// Weak traversal handle into the pane ID index.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, Box<control_pane>>>>,
 }
 
+#[repr(C)]
 pub struct control_windows {
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, *mut control_window>>>,
 }
 
+#[repr(C)]
 /// Box-owned by the control client; the window-ID index borrows its address.
 /// Unlink before `control_clear_window_size` or `control_stop` consumes it.
 pub struct control_window {
@@ -85,11 +91,13 @@ pub struct control_window {
     pub entry: control_window_entry,
 }
 
+#[repr(C)]
 pub struct control_window_entry {
     /// Weak traversal handle into the window ID index.
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u32, *mut control_window>>>,
 }
 
+#[repr(C)]
 pub struct control_panes {
     /// The index owns each stable pane box.
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u32, Box<control_pane>>>>,

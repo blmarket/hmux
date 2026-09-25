@@ -1,6 +1,7 @@
 //! Authoritative screen display state and cursor domains.
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct progress_bar {
     pub state: progress_bar_state,
     pub progress: ::core::ffi::c_int,
@@ -54,6 +55,7 @@ impl visible_ranges {
 }
 
 #[derive(Copy, Clone, Default)]
+#[repr(C)]
 pub struct visible_range {
     pub px: u_int,
     pub nx: u_int,

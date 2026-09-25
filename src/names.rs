@@ -250,7 +250,7 @@ mod owned_name_tests {
     #[test]
     fn window_without_active_pane_has_empty_owned_and_c_names() {
         unsafe {
-            // Only the active field is read in this fixture.
+            // Only the active field is read; keep the fixture out of WindowOwned.
             let w = std::mem::MaybeUninit::<window>::zeroed();
             let w = w.as_ptr().cast_mut();
             assert_eq!(default_window_name_cstring(&*w), c"");

@@ -17,6 +17,7 @@ use crate::src::shared::window::window;
 use crate::src::window::{window_count_panes, window_pane_first, window_pane_next, window_resize};
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct C2RustUnnamed_35 {
     pub name: *const ::core::ffi::c_char,
     pub arrange: Option<unsafe extern "C" fn(*mut window) -> ()>,

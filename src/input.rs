@@ -398,6 +398,7 @@ pub const INPUT_ESC_NEL: input_esc_type = 7;
 pub const INPUT_ESC_IND: input_esc_type = 6;
 pub const INPUT_ESC_RIS: input_esc_type = 9;
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct input_table_entry {
     pub ch: ::core::ffi::c_int,
     pub interm: &'static ::std::ffi::CStr,

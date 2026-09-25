@@ -20,6 +20,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use std::ffi::CStr;
 
+#[repr(C)]
 pub struct wait_channel {
     pub name: std::ffi::CString,
     pub locked: ::core::ffi::c_int,
@@ -45,6 +46,7 @@ pub struct wait_channels {
 // The map owns each channel and its queues through this stable C-shaped
 // prefix. The name stays alive until the channel is removed.
 
+#[repr(C)]
 pub struct wait_event_item {
     pub item: *mut cmdq_item,
     pub sink: *mut events_sink,

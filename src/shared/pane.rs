@@ -20,9 +20,11 @@ use super::status::status_prompt_input_cb;
 use super::style::{style, style_line_entry};
 use super::window::{window, window_mode_entry};
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct window_pane_offset {
     pub used: size_t,
 }
+#[repr(C)]
 pub struct window_pane_resizes {
     /// The queue owner is optional so an empty queue has no heap allocation.
     /// Keep the reserved ABI slot until the containing pane is fully migrated.
@@ -83,6 +85,7 @@ impl window_pane_resizes {
     }
 }
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct window_pane_resize {
     pub sx: u_int,
     pub sy: u_int,
@@ -132,6 +135,7 @@ pub const PANE_DESTROYED: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
 pub const PANE_STATUS_TOP_FLOATING: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 
+#[repr(C)]
 pub struct window_pane_prompt {
     pub wp_id: u_int,
     pub c: *mut client,
@@ -141,6 +145,7 @@ pub struct window_pane_prompt {
     pub type_0: prompt_type,
 }
 
+#[repr(C)]
 pub struct window_pane {
     pub id: u_int,
     pub references: ::core::ffi::c_int,
@@ -244,6 +249,7 @@ impl window_pane {
     }
 }
 
+#[repr(C)]
 pub struct window_pane_tree_entry {
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, *mut window_pane>>>,
 }
@@ -255,6 +261,7 @@ pub struct WindowPaneModesStorage {
     pub(crate) entries: Vec<Box<window_mode_entry>>,
 }
 
+#[repr(C)]
 pub struct window_pane_modes {
     /// Compatibility view of the top mode; the storage owns every entry.
     pub active: *mut window_mode_entry,
@@ -497,6 +504,7 @@ impl window_pane_history {
     }
 }
 
+#[repr(C)]
 pub struct window_pane_tree {
     /// The global pane index owns its map; the pane registry owns pane records.
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, *mut window_pane>>>,

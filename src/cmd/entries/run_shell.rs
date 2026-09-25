@@ -46,6 +46,7 @@ use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
+#[repr(C)]
 pub struct cmd_run_shell_data {
     pub client: *mut client,
     pub cmd: Option<CString>,

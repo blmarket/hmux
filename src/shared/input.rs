@@ -20,6 +20,7 @@ pub const INPUT_BUF_DEFAULT_SIZE: ::core::ffi::c_int = 1048576 as ::core::ffi::c
 
 pub type input_request_type = ::core::ffi::c_uint;
 
+#[repr(C)]
 pub struct input_ctx {
     pub wp: *mut window_pane,
     pub event: *mut bufferevent,
@@ -53,6 +54,7 @@ pub struct input_ctx {
     pub ground_timer: event,
 }
 
+#[repr(C)]
 pub struct input_request {
     pub c: *mut client,
     pub ictx: *mut input_ctx,
@@ -65,6 +67,7 @@ pub struct input_request {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct input_requests {
     /// Points at the observer collection held by the client owner.
     pub collection: *mut ::core::ffi::c_void,
@@ -75,6 +78,7 @@ pub struct input_requests {
 pub type input_end_type = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct input_state {
     pub name: &'static ::std::ffi::CStr,
     pub enter: Option<unsafe extern "C" fn(*mut input_ctx) -> ()>,
@@ -83,6 +87,7 @@ pub struct input_state {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct input_transition {
     pub first: ::core::ffi::c_int,
     pub last: ::core::ffi::c_int,
@@ -101,6 +106,7 @@ pub enum input_param {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct input_cell {
     pub cell: grid_cell,
     pub set: ::core::ffi::c_int,
@@ -109,12 +115,14 @@ pub struct input_cell {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct input_request_palette_data {
     pub idx: ::core::ffi::c_int,
     pub c: ::core::ffi::c_int,
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct input_request_clipboard_data {
     pub buf: *mut ::core::ffi::c_char,
     pub len: size_t,

@@ -61,6 +61,7 @@ use crate::src::window_clock::window_clock_table;
 use crate::src::xmalloc::xsnprintf;
 use std::ffi::CString;
 
+#[repr(C)]
 pub struct window_panes_modedata {
     pub wp: *mut window_pane,
     pub session: *mut session,
@@ -76,6 +77,7 @@ pub struct window_panes_modedata {
     areas: Vec<window_panes_area>,
 }
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct window_panes_area {
     pub id: u_int,
     pub x: u_int,

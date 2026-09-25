@@ -7,6 +7,7 @@ use super::menu::menu_data;
 use super::pane::window_pane;
 use super::window::window;
 
+#[repr(C)]
 pub struct redraw_scene {
     pub c: *mut client,
     pub w: *mut window,
@@ -44,6 +45,7 @@ impl redraw_spans {
     }
 }
 
+#[repr(C)]
 pub struct redraw_span {
     pub x: u_int,
     pub width: u_int,
@@ -51,12 +53,14 @@ pub struct redraw_span {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_span_data {
     pub type_0: redraw_span_type,
     pub c2rust_unnamed: redraw_span_data_c2rust_unnamed,
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub union redraw_span_data_c2rust_unnamed {
     pub p: redraw_span_data_c2rust_unnamed_p,
     pub b: redraw_span_data_c2rust_unnamed_b,
@@ -66,6 +70,7 @@ pub union redraw_span_data_c2rust_unnamed {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_span_data_c2rust_unnamed_m {
     pub md: *mut menu_data,
     pub px: u_int,
@@ -73,6 +78,7 @@ pub struct redraw_span_data_c2rust_unnamed_m {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_span_data_c2rust_unnamed_sb {
     pub wp: *mut window_pane,
     pub y: u_int,
@@ -81,6 +87,7 @@ pub struct redraw_span_data_c2rust_unnamed_sb {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_span_data_c2rust_unnamed_st {
     pub wp: *mut window_pane,
     pub offset: u_int,
@@ -88,6 +95,7 @@ pub struct redraw_span_data_c2rust_unnamed_st {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_span_data_c2rust_unnamed_b {
     pub top_wp: *mut window_pane,
     pub bottom_wp: *mut window_pane,
@@ -104,6 +112,7 @@ pub struct redraw_span_data_c2rust_unnamed_b {
 }
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct redraw_span_data_c2rust_unnamed_p {
     pub wp: *mut window_pane,
     pub px: u_int,

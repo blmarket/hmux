@@ -30,6 +30,7 @@ use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink
 use crate::src::style::style_apply;
 use crate::src::window::window_pane_reset_mode;
 
+#[repr(C)]
 pub struct window_clock_mode_data {
     pub screen: screen,
     pub tim: time_t,

@@ -102,6 +102,7 @@ fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
     }
 }
 
+#[repr(C)]
 pub struct window_customize_modedata {
     pub wp: *mut window_pane,
     pub dead: ::core::ffi::c_int,
@@ -120,6 +121,7 @@ pub struct window_customize_modedata {
 pub type window_customize_change = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_RESET: window_customize_change = 1;
 pub const WINDOW_CUSTOMIZE_UNSET: window_customize_change = 0;
+#[repr(C)]
 pub struct window_customize_itemdata {
     pub data: *mut window_customize_modedata,
     pub type_0: window_customize_item_type,
@@ -205,6 +207,7 @@ pub type window_customize_item_type = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT: window_customize_item_type = 2;
 pub const WINDOW_CUSTOMIZE_ITEM_KEY: window_customize_item_type = 1;
 pub const WINDOW_CUSTOMIZE_ITEM_OPTION: window_customize_item_type = 0;
+#[repr(C)]
 pub struct window_customize_editdata {
     pub wp_id: u_int,
     pub edit_type: window_customize_edit_type,

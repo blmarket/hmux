@@ -79,6 +79,7 @@ impl LayoutString {
         self.bytes.push(0);
     }
 }
+#[repr(C)]
 pub struct layout_parse_ctx {
     pub version: int64_t,
     pub num_active: ::core::ffi::c_int,
@@ -87,6 +88,7 @@ pub struct layout_parse_ctx {
     pub cctxs: Vec<layout_parse_cell_ctx>,
 }
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct layout_parse_cell_ctx {
     pub lc: *mut layout_cell,
     pub active: ::core::ffi::c_int,
