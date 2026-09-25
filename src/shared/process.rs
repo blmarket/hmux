@@ -33,7 +33,7 @@ impl Default for tmuxpeer {
 pub struct tmuxproc {
     pub name: std::ffi::CString,
     pub exit: ::core::ffi::c_int,
-    pub signalcb: Option<Box<dyn FnMut(::core::ffi::c_int)>>,
+    pub signalcb: Option<Box<dyn FnMut(super::signal::ProcessSignal)>>,
     pub ev_sigint: event,
     pub ev_sighup: event,
     pub ev_sigchld: event,

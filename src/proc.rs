@@ -20,6 +20,7 @@ use crate::src::shared::message::*;
 use crate::src::shared::message::{ibuf, imsg, imsgbuf};
 use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
+use crate::src::shared::signal::ProcessSignal;
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, SA_RESTART, SIGCHLD,
     SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH,
@@ -127,7 +128,7 @@ unsafe fn proc_signal_cb(
     (*tp)
         .signalcb
         .as_mut()
-        .expect("signal callback is installed")(signo);
+        .expect("signal callback is installed")(ProcessSignal::from_raw(signo));
 }
 unsafe extern "C" fn peer_check_version(
     mut peer: *mut tmuxpeer,
@@ -310,7 +311,7 @@ pub unsafe extern "C" fn proc_exit(mut tp: *mut tmuxproc) {
 }
 pub unsafe fn proc_set_signals(
     mut tp: *mut tmuxproc,
-    mut signalcb: Option<Box<dyn FnMut(::core::ffi::c_int)>>,
+    mut signalcb: Option<Box<dyn FnMut(ProcessSignal)>>,
 ) {
     let mut sa: sigaction = sigaction {
         __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },

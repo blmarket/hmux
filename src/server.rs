@@ -67,8 +67,8 @@ use crate::src::shared::posix_io::{__S_IEXEC, __S_IREAD, S_IRWXU, WAIT_ANY, WNOH
 use crate::src::shared::process::tmuxproc;
 use crate::src::shared::session::session;
 use crate::src::shared::signal::{
-    __sigset_t, sigset_t, SIGCHLD, SIGCONT, SIGINT, SIGTERM, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2,
-    SIG_BLOCK, SIG_SETMASK,
+    __sigset_t, sigset_t, ProcessSignal, SIGCHLD, SIGCONT, SIGINT, SIGTERM, SIGTTIN, SIGTTOU,
+    SIGUSR1, SIGUSR2, SIG_BLOCK, SIG_SETMASK,
 };
 use crate::src::shared::socket::{
     sa_family_t, sockaddr, sockaddr_un, __CONST_SOCKADDR_ARG, __SOCKADDR_ARG, AF_UNIX, SOCK_STREAM,
@@ -639,22 +639,22 @@ pub unsafe extern "C" fn server_add_accept(mut timeout: ::core::ffi::c_int) {
         event_add(&raw mut server_ev_accept, &raw mut tv);
     };
 }
-unsafe fn server_signal(mut sig: ::core::ffi::c_int) {
+unsafe fn server_signal(sig: ProcessSignal) {
     let _fd: ::core::ffi::c_int = 0;
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"server_signal\0" as *const u8 as *const ::core::ffi::c_char,
-        strsignal(sig),
+        strsignal(sig.as_raw()),
     );
     match sig {
-        SIGINT | SIGTERM => {
+        ProcessSignal::Interrupt | ProcessSignal::Terminate => {
             server_exit = 1 as ::core::ffi::c_int;
             server_send_exit();
         }
-        SIGCHLD => {
+        ProcessSignal::Child => {
             server_child_signal();
         }
-        SIGUSR1 => {
+        ProcessSignal::User1 => {
             event_del(&raw mut server_ev_accept);
             if let Ok(fd) = server_create_socket(server_client_flags) {
                 close(server_fd);
@@ -663,7 +663,7 @@ unsafe fn server_signal(mut sig: ::core::ffi::c_int) {
             }
             server_add_accept(0 as ::core::ffi::c_int);
         }
-        SIGUSR2 => {
+        ProcessSignal::User2 => {
             proc_toggle_log(server_proc);
         }
         _ => {}

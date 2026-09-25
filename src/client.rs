@@ -44,8 +44,8 @@ use crate::src::shared::posix_io::{
 use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{
-    __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, siginfo_t, SA_RESTART,
-    SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
+    __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, siginfo_t,
+    ProcessSignal, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
 };
 use crate::src::shared::socket::{
     sa_family_t, sockaddr, sockaddr_un, __CONST_SOCKADDR_ARG, AF_UNIX, SOCK_STREAM,
@@ -723,7 +723,7 @@ unsafe extern "C" fn client_exec(
     );
     fatal(b"execl failed\0" as *const u8 as *const ::core::ffi::c_char);
 }
-unsafe fn client_signal(mut sig: ::core::ffi::c_int) {
+unsafe fn client_signal(sig: ProcessSignal) {
     let mut sigact: sigaction = sigaction {
         __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },
@@ -735,9 +735,9 @@ unsafe fn client_signal(mut sig: ::core::ffi::c_int) {
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"client_signal\0" as *const u8 as *const ::core::ffi::c_char,
-        strsignal(sig),
+        strsignal(sig.as_raw()),
     );
-    if sig == SIGCHLD {
+    if sig == ProcessSignal::Child {
         loop {
             pid = waitpid(WAIT_ANY, &raw mut status, WNOHANG) as pid_t;
             if pid == 0 as ::core::ffi::c_int {
@@ -755,12 +755,12 @@ unsafe fn client_signal(mut sig: ::core::ffi::c_int) {
             );
         }
     } else if client_attached == 0 {
-        if sig == SIGTERM || sig == SIGHUP {
+        if sig == ProcessSignal::Terminate || sig == ProcessSignal::Hangup {
             proc_exit(client_proc);
         }
     } else {
         match sig {
-            SIGHUP => {
+            ProcessSignal::Hangup => {
                 client_exitreason = CLIENT_EXIT_LOST_TTY;
                 client_exitval = 1 as ::core::ffi::c_int;
                 proc_send(
@@ -771,7 +771,7 @@ unsafe fn client_signal(mut sig: ::core::ffi::c_int) {
                     0 as size_t,
                 );
             }
-            SIGTERM => {
+            ProcessSignal::Terminate => {
                 if client_suspended == 0 {
                     client_exitreason = CLIENT_EXIT_TERMINATED;
                 }
@@ -784,7 +784,7 @@ unsafe fn client_signal(mut sig: ::core::ffi::c_int) {
                     0 as size_t,
                 );
             }
-            SIGWINCH => {
+            ProcessSignal::WindowChange => {
                 proc_send(
                     client_peer,
                     MSG_RESIZE,
@@ -793,7 +793,7 @@ unsafe fn client_signal(mut sig: ::core::ffi::c_int) {
                     0 as size_t,
                 );
             }
-            SIGCONT => {
+            ProcessSignal::Continue => {
                 memset(
                     &raw mut sigact as *mut ::core::ffi::c_void,
                     0 as ::core::ffi::c_int,
