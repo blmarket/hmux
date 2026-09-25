@@ -145,14 +145,11 @@ unsafe fn paste_time_tree_insert(
     }
 }
 
-unsafe fn paste_time_tree_minmax(
-    head: *mut paste_time_tree,
-    val: ::core::ffi::c_int,
-) -> *mut paste_buffer {
+fn paste_time_tree_minmax(head: &paste_time_tree, val: ::core::ffi::c_int) -> *mut paste_buffer {
     let entry = if val < 0 {
-        (*head).entries.values().next()
+        head.entries.values().next()
     } else {
-        (*head).entries.values().next_back()
+        head.entries.values().next_back()
     };
     entry
         .copied()
@@ -229,8 +226,8 @@ unsafe fn paste_time_tree_insert_local(elm: *mut paste_buffer) -> *mut paste_buf
 
 unsafe fn paste_time_tree_minmax_local(val: ::core::ffi::c_int) -> *mut paste_buffer {
     paste_by_time.with(|head| {
-        let mut head = head.borrow_mut();
-        paste_time_tree_minmax(&mut *head, val)
+        let head = head.borrow();
+        paste_time_tree_minmax(&head, val)
     })
 }
 
@@ -952,14 +949,14 @@ mod tests {
             assert_eq!(paste_time_tree_insert(&raw mut tree, duplicate), middle);
 
             assert_eq!(
-                (*paste_time_tree_minmax(&raw mut tree, RB_NEGINF)).order,
+                (*paste_time_tree_minmax(&tree, RB_NEGINF)).order,
                 12
             );
             assert_eq!((*paste_time_tree_next(&raw mut tree, newest)).order, 7);
             assert_eq!((*paste_time_tree_next(&raw mut tree, middle)).order, 4);
             assert!(paste_time_tree_next(&raw mut tree, oldest).is_null());
 
-            assert_eq!((*paste_time_tree_minmax(&raw mut tree, RB_INF)).order, 4);
+            assert_eq!((*paste_time_tree_minmax(&tree, RB_INF)).order, 4);
             assert_eq!((*paste_time_tree_prev(&raw mut tree, oldest)).order, 7);
             assert_eq!((*paste_time_tree_prev(&raw mut tree, middle)).order, 12);
             assert!(paste_time_tree_prev(&raw mut tree, newest).is_null());
