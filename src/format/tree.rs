@@ -66,10 +66,8 @@ pub(super) unsafe fn format_entry_ensure_value(ft: *mut format_tree, fe: *mut fo
     }
 }
 
-unsafe fn format_entry_tree_key(elm: *mut format_entry) -> Vec<u8> {
-    std::ffi::CStr::from_ptr(((*elm).key).as_ptr().cast_mut())
-        .to_bytes()
-        .to_vec()
+fn format_entry_tree_key(elm: &format_entry) -> Vec<u8> {
+    elm.key.as_bytes().to_vec()
 }
 
 pub(super) unsafe fn format_entry_tree_find(
@@ -81,7 +79,7 @@ pub(super) unsafe fn format_entry_tree_find(
     }
     (*(*head).entries)
         .entries
-        .get(&format_entry_tree_key(elm))
+        .get(&format_entry_tree_key(&*elm))
         .copied()
         .unwrap_or(::core::ptr::null_mut::<format_entry>())
 }
@@ -96,7 +94,10 @@ unsafe fn format_entry_tree_insert(
     if (*head).entries.is_null() {
         (*head).entries = Box::into_raw(Box::new(format_entry_tree_storage::default()));
     }
-    match (*(*head).entries).entries.entry(format_entry_tree_key(elm)) {
+    match (*(*head).entries)
+        .entries
+        .entry(format_entry_tree_key(&*elm))
+    {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
@@ -112,7 +113,7 @@ unsafe fn format_entry_tree_remove(
     if head.is_null() || (*head).entries.is_null() || elm.is_null() || false {
         return ::core::ptr::null_mut::<format_entry>();
     }
-    let key = format_entry_tree_key(elm);
+    let key = format_entry_tree_key(&*elm);
     if (*(*head).entries).entries.get(&key).copied() != Some(elm) {
         return ::core::ptr::null_mut::<format_entry>();
     }
@@ -148,7 +149,7 @@ unsafe fn format_entry_tree_next(
     (*(*head).entries)
         .entries
         .range((
-            std::ops::Bound::Excluded(format_entry_tree_key(elm)),
+            std::ops::Bound::Excluded(format_entry_tree_key(&*elm)),
             std::ops::Bound::Unbounded,
         ))
         .next()
