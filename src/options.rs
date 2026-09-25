@@ -230,37 +230,38 @@ unsafe extern "C" fn options_value_free(_o: *mut options_entry, ov: *mut options
     *ov = options_value::Empty;
 }
 unsafe fn options_value_to_cstring(
-    o: *mut options_entry,
-    ov: *mut options_value,
+    o: &options_entry,
+    ov: &options_value,
     numeric: ::core::ffi::c_int,
 ) -> CString {
-    if !(*o).tableentry.is_null()
-        && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
+    let tableentry = o.tableentry;
+    if !tableentry.is_null()
+        && (*tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return cmd_list_print_cstring(&*(*ov).cmdlist(), 0);
+        return cmd_list_print_cstring(&*ov.cmdlist(), 0);
     }
-    if !(*o).tableentry.is_null()
-        && ((*(*o).tableentry).type_0 as ::core::ffi::c_uint
+    if !tableentry.is_null()
+        && ((*tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_NUMBER as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
+            || (*tableentry).type_0 as ::core::ffi::c_uint
                 == OPTIONS_TABLE_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
+            || (*tableentry).type_0 as ::core::ffi::c_uint
                 == OPTIONS_TABLE_COLOUR as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
+            || (*tableentry).type_0 as ::core::ffi::c_uint
                 == OPTIONS_TABLE_FLAG as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
+            || (*tableentry).type_0 as ::core::ffi::c_uint
                 == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint)
     {
-        return match (*(*o).tableentry).type_0 as ::core::ffi::c_uint {
-            1 => CString::new((*ov).number().to_string()).expect("decimal number has no NUL"),
-            2 => key_string_format((*ov).number() as key_code, false),
-            3 => colour_format((*ov).number() as ::core::ffi::c_int),
+        return match (*tableentry).type_0 as ::core::ffi::c_uint {
+            1 => CString::new(ov.number().to_string()).expect("decimal number has no NUL"),
+            2 => key_string_format(ov.number() as key_code, false),
+            3 => colour_format(ov.number() as ::core::ffi::c_int),
             4 => {
                 if numeric != 0 {
-                    CString::new((*ov).number().to_string()).expect("decimal number has no NUL")
+                    CString::new(ov.number().to_string()).expect("decimal number has no NUL")
                 } else {
-                    CStr::from_ptr(if (*ov).number() != 0 {
+                    CStr::from_ptr(if ov.number() != 0 {
                         b"on\0" as *const u8 as *const ::core::ffi::c_char
                     } else {
                         b"off\0" as *const u8 as *const ::core::ffi::c_char
@@ -268,18 +269,18 @@ unsafe fn options_value_to_cstring(
                     .to_owned()
                 }
             }
-            5 => CStr::from_ptr(*(*(*o).tableentry).choices.offset((*ov).number() as isize))
+            5 => CStr::from_ptr(*(*tableentry).choices.offset(ov.number() as isize))
                 .to_owned(),
             _ => {
                 fatalx(b"not a number option type\0" as *const u8 as *const ::core::ffi::c_char);
             }
         };
     }
-    if (*o).tableentry.is_null()
-        || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
+    if tableentry.is_null()
+        || (*tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return CStr::from_ptr((*ov).string_ptr()).to_owned();
+        return CStr::from_ptr(ov.string_ptr()).to_owned();
     }
     c"".to_owned()
 }
@@ -868,7 +869,7 @@ pub unsafe fn options_to_cstring(
             let mut a = options_array_first(o);
             let mut first = true;
             while !a.is_null() {
-                let value = options_value_to_cstring(o, &raw mut (*a).value, numeric);
+                let value = options_value_to_cstring(&*o, &(*a).value, numeric);
                 if !first {
                     result.push(b' ');
                 }
@@ -885,9 +886,9 @@ pub unsafe fn options_to_cstring(
         if a.is_null() {
             return c"".to_owned();
         }
-        return options_value_to_cstring(o, &raw mut (*a).value, numeric);
+        return options_value_to_cstring(&*o, &(*a).value, numeric);
     }
-    options_value_to_cstring(o, &raw mut (*o).value, numeric)
+    options_value_to_cstring(&*o, &(*o).value, numeric)
 }
 /// Name and normalized array key owned through the command's synchronous use.
 pub struct OwnedOptionName {
