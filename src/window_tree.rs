@@ -1933,14 +1933,12 @@ unsafe fn window_tree_get_target(
     }
     target
 }
-unsafe extern "C" fn window_tree_command_each(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+unsafe fn window_tree_command_each(
+    mut data: *mut window_tree_modedata,
+    mut item: *mut window_tree_itemdata,
     mut c: *mut client,
     _key: key_code,
 ) {
-    let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
-    let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -2006,15 +2004,9 @@ unsafe fn window_tree_command_callback(
     (*data).entered = Some(s.to_owned());
     mode_tree_each_tagged(
         (*data).data,
-        Some(
-            window_tree_command_each
-                as unsafe extern "C" fn(
-                    *mut ::core::ffi::c_void,
-                    *mut ::core::ffi::c_void,
-                    *mut client,
-                    key_code,
-                ) -> (),
-        ),
+        |row, c, key| unsafe {
+            window_tree_command_each(data, (*row).itemdata.cast(), c, key)
+        },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
@@ -2026,13 +2018,11 @@ unsafe fn window_tree_command_callback(
 unsafe fn window_tree_command_free(mut data: *mut window_tree_modedata) {
     window_tree_destroy(data);
 }
-unsafe extern "C" fn window_tree_kill_each(
-    _modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+unsafe fn window_tree_kill_each(
+    mut item: *mut window_tree_itemdata,
     _c: *mut client,
     _key: key_code,
 ) {
-    let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -2103,8 +2093,7 @@ unsafe fn window_tree_kill_current_callback(
         return PROMPT_CLOSE;
     }
     window_tree_kill_each(
-        data as *mut ::core::ffi::c_void,
-        mode_tree_get_current(mtd),
+        mode_tree_get_current(mtd) as *mut window_tree_itemdata,
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
     );
@@ -2155,15 +2144,9 @@ unsafe fn window_tree_kill_tagged_callback(
     }
     mode_tree_each_tagged(
         mtd,
-        Some(
-            window_tree_kill_each
-                as unsafe extern "C" fn(
-                    *mut ::core::ffi::c_void,
-                    *mut ::core::ffi::c_void,
-                    *mut client,
-                    key_code,
-                ) -> (),
-        ),
+        |row, c, key| unsafe {
+            window_tree_kill_each((*row).itemdata.cast(), c, key)
+        },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,

@@ -4433,14 +4433,12 @@ unsafe extern "C" fn window_customize_reset_key(
     }
     key_bindings_reset(((*kt).name).as_ptr().cast_mut(), (*bd).key);
 }
-unsafe extern "C" fn window_customize_change_each(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+unsafe fn window_customize_change_each(
+    mut data: *mut window_customize_modedata,
+    mut item: *mut window_customize_itemdata,
     _c: *mut client,
     _key: key_code,
 ) {
-    let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut type_0: window_customize_item_type = (*item).type_0;
     let name = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -4624,15 +4622,9 @@ unsafe fn window_customize_change_tagged_callback(
     }
     mode_tree_each_tagged(
         (*data).data,
-        Some(
-            window_customize_change_each
-                as unsafe extern "C" fn(
-                    *mut ::core::ffi::c_void,
-                    *mut ::core::ffi::c_void,
-                    *mut client,
-                    key_code,
-                ) -> (),
-        ),
+        |row, c, key| unsafe {
+            window_customize_change_each(data, (*row).itemdata.cast(), c, key)
+        },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         0 as ::core::ffi::c_int,

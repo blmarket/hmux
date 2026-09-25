@@ -713,14 +713,12 @@ unsafe extern "C" fn window_buffer_update(mut wme: *mut window_mode_entry) {
     window_buffer_draw_waiting(data);
     (*(*data).wp).flags |= PANE_REDRAW;
 }
-unsafe extern "C" fn window_buffer_do_delete(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+unsafe fn window_buffer_do_delete(
+    mut data: *mut window_buffer_modedata,
+    mut item: *mut window_buffer_itemdata,
     _c: *mut client,
     _key: key_code,
 ) {
-    let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
-    let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if item == mode_tree_get_current((*data).data) as *mut window_buffer_itemdata
         && mode_tree_down((*data).data, 0 as ::core::ffi::c_int) == 0
@@ -732,14 +730,12 @@ unsafe extern "C" fn window_buffer_do_delete(
         paste_free(pb);
     }
 }
-unsafe extern "C" fn window_buffer_do_paste(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+unsafe fn window_buffer_do_paste(
+    mut data: *mut window_buffer_modedata,
+    mut item: *mut window_buffer_itemdata,
     mut c: *mut client,
     _key: key_code,
 ) {
-    let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
-    let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
     if !paste_get_name(((*item).name).as_ptr().cast_mut()).is_null() {
         mode_tree_run_command(
             c,
@@ -1010,8 +1006,8 @@ unsafe extern "C" fn window_buffer_key(
             100 => {
                 item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
                 window_buffer_do_delete(
-                    data as *mut ::core::ffi::c_void,
-                    item as *mut ::core::ffi::c_void,
+                    data,
+                    item,
                     c,
                     key,
                 );
@@ -1020,15 +1016,9 @@ unsafe extern "C" fn window_buffer_key(
             68 => {
                 mode_tree_each_tagged(
                     mtd,
-                    Some(
-                        window_buffer_do_delete
-                            as unsafe extern "C" fn(
-                                *mut ::core::ffi::c_void,
-                                *mut ::core::ffi::c_void,
-                                *mut client,
-                                key_code,
-                            ) -> (),
-                    ),
+                    |row, c, key| unsafe {
+                        window_buffer_do_delete(data, (*row).itemdata.cast(), c, key)
+                    },
                     c,
                     key,
                     0 as ::core::ffi::c_int,
@@ -1038,15 +1028,9 @@ unsafe extern "C" fn window_buffer_key(
             80 => {
                 mode_tree_each_tagged(
                     mtd,
-                    Some(
-                        window_buffer_do_paste
-                            as unsafe extern "C" fn(
-                                *mut ::core::ffi::c_void,
-                                *mut ::core::ffi::c_void,
-                                *mut client,
-                                key_code,
-                            ) -> (),
-                    ),
+                    |row, c, key| unsafe {
+                        window_buffer_do_paste(data, (*row).itemdata.cast(), c, key)
+                    },
                     c,
                     key,
                     0 as ::core::ffi::c_int,
@@ -1056,8 +1040,8 @@ unsafe extern "C" fn window_buffer_key(
             112 | 13 => {
                 item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
                 window_buffer_do_paste(
-                    data as *mut ::core::ffi::c_void,
-                    item as *mut ::core::ffi::c_void,
+                    data,
+                    item,
                     c,
                     key,
                 );

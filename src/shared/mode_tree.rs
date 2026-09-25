@@ -269,12 +269,3 @@ pub type mode_tree_build_cb = Option<
         *const ::core::ffi::c_char,
     ) -> (),
 >;
-
-pub type mode_tree_each_cb = Option<
-    unsafe extern "C" fn(
-        *mut ::core::ffi::c_void,
-        *mut ::core::ffi::c_void,
-        *mut client,
-        key_code,
-    ) -> (),
->;

@@ -42,7 +42,7 @@ use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::{menu, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
-    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_each_cb, mode_tree_height_cb,
+    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb,
     mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line,
     mode_tree_list, mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb,
     mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
@@ -524,10 +524,9 @@ pub unsafe extern "C" fn mode_tree_count_tagged(mut mtd: *mut mode_tree_data) ->
     }
     return tagged;
 }
-#[no_mangle]
-pub unsafe extern "C" fn mode_tree_each_tagged(
+pub unsafe fn mode_tree_each_tagged(
     mut mtd: *mut mode_tree_data,
-    mut cb: mode_tree_each_cb,
+    mut cb: impl FnMut(*mut mode_tree_item, *mut client, key_code),
     mut c: *mut client,
     mut key: key_code,
     mut current: ::core::ffi::c_int,
@@ -541,13 +540,13 @@ pub unsafe extern "C" fn mode_tree_each_tagged(
         mti = (*(*mtd).lines.as_mut_ptr().offset(i as isize)).item;
         if (*mti).tagged != 0 {
             fired = 1 as ::core::ffi::c_int;
-            cb.expect("non-null function pointer")((*mtd).modedata, (*mti).itemdata, c, key);
+            cb(mti, c, key);
         }
         i = i.wrapping_add(1);
     }
     if fired == 0 && current != 0 {
         mti = (*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item;
-        cb.expect("non-null function pointer")((*mtd).modedata, (*mti).itemdata, c, key);
+        cb(mti, c, key);
     }
 }
 #[no_mangle]

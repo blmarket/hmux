@@ -795,14 +795,12 @@ unsafe extern "C" fn window_client_update(mut wme: *mut window_mode_entry) {
     mode_tree_draw((*data).data);
     (*(*data).wp).flags |= PANE_REDRAW;
 }
-unsafe extern "C" fn window_client_do_detach(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+unsafe fn window_client_do_detach(
+    mut data: *mut window_client_modedata,
+    mut item: *mut window_client_itemdata,
     _c: *mut client,
     mut key: key_code,
 ) {
-    let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
-    let mut item: *mut window_client_itemdata = itemdata as *mut window_client_itemdata;
     if item == mode_tree_get_current((*data).data) as *mut window_client_itemdata {
         mode_tree_down((*data).data, 0 as ::core::ffi::c_int);
     }
@@ -839,8 +837,8 @@ unsafe extern "C" fn window_client_key(
         100 | 120 | 122 => {
             item = mode_tree_get_current(mtd) as *mut window_client_itemdata;
             window_client_do_detach(
-                data as *mut ::core::ffi::c_void,
-                item as *mut ::core::ffi::c_void,
+                data,
+                item,
                 c,
                 key,
             );
@@ -849,15 +847,9 @@ unsafe extern "C" fn window_client_key(
         68 | 88 | 90 => {
             mode_tree_each_tagged(
                 mtd,
-                Some(
-                    window_client_do_detach
-                        as unsafe extern "C" fn(
-                            *mut ::core::ffi::c_void,
-                            *mut ::core::ffi::c_void,
-                            *mut client,
-                            key_code,
-                        ) -> (),
-                ),
+                |row, c, key| unsafe {
+                    window_client_do_detach(data, (*row).itemdata.cast(), c, key)
+                },
                 c,
                 key,
                 0 as ::core::ffi::c_int,
