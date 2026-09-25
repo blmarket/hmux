@@ -6,7 +6,8 @@ use hmux2::src::arguments::{
     args_next_value, args_parse as parse_args, args_percentage_result, args_print,
     args_push_positional_commands, args_push_positional_string, args_set_flag,
     args_set_owned_commands, args_set_owned_string, args_string,
-    args_string_percentage_and_expand_result, args_strtonum_and_expand_result,
+    args_string_percentage_and_expand_result, args_string_percentage_result,
+    args_strtonum_and_expand_result,
     args_strtonum_result, parse_number, parse_percentage, ArgumentValueError,
 };
 use hmux2::src::cmd::{cmd_list_free, cmd_list_new, cmd_list_print};
@@ -123,6 +124,14 @@ fn percentage_helper_preserves_literal_and_computed_bounds() {
         parse_percentage(empty.as_c_str(), 0, 100, 100),
         Err(ArgumentValueError::Empty)
     );
+    assert_eq!(
+        args_string_percentage_result(None, 0, 100, 80),
+        Err(ArgumentValueError::Missing)
+    );
+    assert_eq!(
+        args_string_percentage_result(Some(zero.as_c_str()), 0, 100, 80),
+        Ok(0)
+    );
     assert_eq!(error_message(ArgumentValueError::Empty), b"empty");
 }
 
@@ -150,11 +159,17 @@ fn expanded_helpers_convert_formatted_values_and_keep_errors_typed() {
         args_free(args);
 
         assert_eq!(
-            args_string_percentage_and_expand_result(percentage.as_ptr(), 0, 1000, 1, item),
+            args_string_percentage_and_expand_result(
+                Some(percentage.as_c_str()),
+                0,
+                1000,
+                1,
+                item,
+            ),
             Ok(10)
         );
         assert_eq!(
-            args_string_percentage_and_expand_result(empty.as_ptr(), 0, 1000, 1, item),
+            args_string_percentage_and_expand_result(Some(empty.as_c_str()), 0, 1000, 1, item),
             Err(ArgumentValueError::Invalid)
         );
         cmdq_free_detached(item);

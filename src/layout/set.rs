@@ -336,7 +336,7 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
         b"main-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
     );
     mainh = match args_string_percentage_result(
-        s,
+        (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
         0 as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
@@ -357,7 +357,7 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
             b"other-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
         );
         otherh = match args_string_percentage_result(
-            s,
+            (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
             0 as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
@@ -494,7 +494,7 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
         b"main-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
     );
     mainh = match args_string_percentage_result(
-        s,
+        (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
         0 as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
@@ -515,7 +515,7 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
             b"other-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
         );
         otherh = match args_string_percentage_result(
-            s,
+            (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
             0 as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
@@ -652,7 +652,7 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
         b"main-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
     );
     mainw = match args_string_percentage_result(
-        s,
+        (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
         0 as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
@@ -673,7 +673,7 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
             b"other-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
         );
         otherw = match args_string_percentage_result(
-            s,
+            (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
             0 as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
@@ -810,7 +810,7 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
         b"main-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
     );
     mainw = match args_string_percentage_result(
-        s,
+        (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
         0 as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
@@ -831,7 +831,7 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
             b"other-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
         );
         otherw = match args_string_percentage_result(
-            s,
+            (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
             0 as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,

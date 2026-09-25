@@ -1516,36 +1516,32 @@ pub unsafe fn args_percentage_and_expand_result(
     )
 }
 
-/// Converts a C string as an integer or percentage.
-///
-/// # Safety
-/// If non-null, `value` must point to a valid NUL-terminated C string.
-pub unsafe fn args_string_percentage_result(
-    value: *const ::core::ffi::c_char,
+/// Converts an optional C string as an integer or percentage.
+pub fn args_string_percentage_result(
+    value: Option<&CStr>,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
     curval: ::core::ffi::c_longlong,
 ) -> Result<i64, ArgumentValueError> {
-    if value.is_null() {
-        return Err(ArgumentValueError::Missing);
-    }
-    parse_percentage(CStr::from_ptr(value), minval, maxval, curval)
+    parse_percentage(value.ok_or(ArgumentValueError::Missing)?, minval, maxval, curval)
 }
 
-/// Converts a C string after format expansion as an integer or percentage.
+/// Converts an optional C string after format expansion as an integer or percentage.
 ///
 /// # Safety
-/// If non-null, `value` must point to a valid NUL-terminated C string and
 /// `item` must be valid for format expansion.
 pub unsafe fn args_string_percentage_and_expand_result(
-    value: *const ::core::ffi::c_char,
+    value: Option<&CStr>,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
     curval: ::core::ffi::c_longlong,
     item: *mut cmdq_item,
 ) -> Result<i64, ArgumentValueError> {
-    if value.is_null() {
-        return Err(ArgumentValueError::Missing);
-    }
-    parse_percentage_and_expand(CStr::from_ptr(value), minval, maxval, curval, item)
+    parse_percentage_and_expand(
+        value.ok_or(ArgumentValueError::Missing)?,
+        minval,
+        maxval,
+        curval,
+        item,
+    )
 }
