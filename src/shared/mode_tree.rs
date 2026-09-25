@@ -225,55 +225,18 @@ pub type mode_tree_swap_cb = Option<
     Box<dyn FnMut(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, &mut sort_criteria) -> bool>,
 >;
 
-pub type mode_tree_swap_fn = Option<
-    unsafe fn(
-        *mut ::core::ffi::c_void,
-        *mut ::core::ffi::c_void,
-        *mut sort_criteria,
-    ) -> ::core::ffi::c_int,
->;
-
 pub type mode_tree_key_cb =
     Option<Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>>;
 
-pub type mode_tree_key_fn = Option<
-    unsafe fn(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, u_int) -> key_code,
->;
-
 pub type mode_tree_height_cb = Option<Box<dyn FnMut(u_int) -> u_int>>;
 
-pub type mode_tree_height_fn =
-    Option<unsafe fn(*mut ::core::ffi::c_void, u_int) -> u_int>;
-
 pub type mode_tree_menu_cb = Option<Box<dyn FnMut(*mut client, key_code)>>;
-
-pub type mode_tree_menu_fn =
-    Option<unsafe fn(*mut ::core::ffi::c_void, *mut client, key_code) -> ()>;
 
 pub type mode_tree_search_cb =
     Option<Box<dyn FnMut(*mut ::core::ffi::c_void, &std::ffi::CStr, bool) -> bool>>;
 
-pub type mode_tree_search_fn = Option<
-    unsafe fn(
-        *mut ::core::ffi::c_void,
-        *mut ::core::ffi::c_void,
-        *const ::core::ffi::c_char,
-        ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int,
->;
-
 pub type mode_tree_draw_cb = Option<
     Box<dyn FnMut(*mut ::core::ffi::c_void, &mut screen_write_ctx, u_int, u_int)>,
->;
-
-pub type mode_tree_draw_fn = Option<
-    unsafe fn(
-        *mut ::core::ffi::c_void,
-        *mut ::core::ffi::c_void,
-        *mut screen_write_ctx,
-        u_int,
-        u_int,
-    ) -> (),
 >;
 
 pub type mode_tree_build_cb = Option<
@@ -284,13 +247,4 @@ pub type mode_tree_build_cb = Option<
             Option<&std::ffi::CStr>,
         ) -> Option<uint64_t>,
     >,
->;
-
-pub type mode_tree_build_fn = Option<
-    unsafe fn(
-        *mut ::core::ffi::c_void,
-        *mut sort_criteria,
-        *mut uint64_t,
-        *const ::core::ffi::c_char,
-    ) -> (),
 >;

@@ -42,15 +42,10 @@ use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::{menu, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
-    mode_tree_build_cb, mode_tree_build_fn, mode_tree_data, mode_tree_draw_cb,
-    mode_tree_draw_fn,
-    mode_tree_height_cb, mode_tree_height_fn,
-    mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_key_fn,
-    mode_tree_line,
-    mode_tree_list, mode_tree_menu_cb, mode_tree_menu_fn, mode_tree_prompt,
-    mode_tree_prompt_input_cb,
-    mode_tree_search_cb, mode_tree_search_dir, mode_tree_search_fn, mode_tree_sort_cb,
-    mode_tree_swap_cb, mode_tree_swap_fn,
+    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
+    mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
+    mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
+    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
@@ -556,20 +551,19 @@ pub unsafe fn mode_tree_each_tagged(
     }
 }
 pub unsafe fn mode_tree_start(
-    mut wp: *mut window_pane,
-    mut args: *mut args,
-    mut buildcb: mode_tree_build_fn,
-    mut drawcb: mode_tree_draw_fn,
-    mut searchcb: mode_tree_search_fn,
-    mut menucb: mode_tree_menu_fn,
-    mut heightcb: mode_tree_height_fn,
-    mut keycb: mode_tree_key_fn,
-    mut swapcb: mode_tree_swap_fn,
-    mut sortcb: mode_tree_sort_cb,
-    mut helpcb: mode_tree_help_cb,
-    mut modedata: *mut ::core::ffi::c_void,
-    mut menu: *const menu_item,
-    mut s: *mut *mut screen,
+    wp: *mut window_pane,
+    args: *mut args,
+    buildcb: mode_tree_build_cb,
+    drawcb: mode_tree_draw_cb,
+    searchcb: mode_tree_search_cb,
+    menucb: mode_tree_menu_cb,
+    heightcb: mode_tree_height_cb,
+    keycb: mode_tree_key_cb,
+    swapcb: mode_tree_swap_cb,
+    sortcb: mode_tree_sort_cb,
+    helpcb: mode_tree_help_cb,
+    menu: *const menu_item,
+    s: *mut *mut screen,
 ) -> *mut mode_tree_data {
     let mut mtd: *mut mode_tree_data = ::core::ptr::null_mut::<mode_tree_data>();
     mtd = mode_tree_alloc_data();
@@ -591,55 +585,13 @@ pub unsafe fn mode_tree_start(
     } else {
         (*mtd).filter = None;
     }
-    (*mtd).buildcb = buildcb.map(|mut callback| {
-        let data = modedata;
-        Box::new(move |sort: &mut sort_criteria, tag: Option<uint64_t>, filter: Option<&CStr>| {
-            let mut selected = tag.unwrap_or(UINT64_MAX as uint64_t);
-            callback(
-                data,
-                sort,
-                &mut selected,
-                filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
-            );
-            (selected != UINT64_MAX as uint64_t).then_some(selected)
-        }) as Box<
-            dyn FnMut(&mut sort_criteria, Option<uint64_t>, Option<&CStr>) -> Option<uint64_t>,
-        >
-    });
-    (*mtd).drawcb = drawcb.map(|mut callback| {
-        let data = modedata;
-        Box::new(move |itemdata, ctx: &mut screen_write_ctx, sx, sy| {
-            callback(data, itemdata, ctx, sx, sy)
-        }) as Box<dyn FnMut(*mut ::core::ffi::c_void, &mut screen_write_ctx, u_int, u_int)>
-    });
-    (*mtd).searchcb = searchcb.map(|mut callback| {
-        let data = modedata;
-        Box::new(move |itemdata: *mut ::core::ffi::c_void, search: &CStr, icase: bool| {
-            callback(data, itemdata, search.as_ptr(), icase as ::core::ffi::c_int) != 0
-        }) as Box<dyn FnMut(*mut ::core::ffi::c_void, &CStr, bool) -> bool>
-    });
-    (*mtd).menucb = menucb.map(|mut callback| {
-        let data = modedata;
-        Box::new(move |client, key| callback(data, client, key))
-            as Box<dyn FnMut(*mut client, key_code)>
-    });
-    (*mtd).heightcb = heightcb.map(|mut callback| {
-        let data = modedata;
-        Box::new(move |height| callback(data, height))
-            as Box<dyn FnMut(u_int) -> u_int>
-    });
-    (*mtd).keycb = keycb.map(|mut callback| {
-        let data = modedata;
-        Box::new(move |itemdata, line| callback(data, itemdata, line))
-            as Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>
-    });
-    (*mtd).swapcb = swapcb.map(|mut callback| {
-        Box::new(move |current, other, sort: &mut sort_criteria| {
-            callback(current, other, sort) != 0
-        }) as Box<
-            dyn FnMut(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, &mut sort_criteria) -> bool,
-        >
-    });
+    (*mtd).buildcb = buildcb;
+    (*mtd).drawcb = drawcb;
+    (*mtd).searchcb = searchcb;
+    (*mtd).menucb = menucb;
+    (*mtd).heightcb = heightcb;
+    (*mtd).keycb = keycb;
+    (*mtd).swapcb = swapcb;
     (*mtd).sortcb = sortcb;
     (*mtd).helpcb = helpcb;
     *s = &raw mut (*mtd).screen;

@@ -1797,58 +1797,49 @@ unsafe fn window_tree_init(
     (*data).data = mode_tree_start(
         wp,
         args,
-        Some(
-            window_tree_build
-                as unsafe fn(
-                    *mut ::core::ffi::c_void,
-                    *mut sort_criteria,
-                    *mut uint64_t,
-                    *const ::core::ffi::c_char,
-                ) -> (),
-        ),
-        Some(
-            window_tree_draw
-                as unsafe fn(
-                    *mut ::core::ffi::c_void,
-                    *mut ::core::ffi::c_void,
-                    *mut screen_write_ctx,
-                    u_int,
-                    u_int,
-                ) -> (),
-        ),
-        Some(
-            window_tree_search
-                as unsafe fn(
-                    *mut ::core::ffi::c_void,
-                    *mut ::core::ffi::c_void,
-                    *const ::core::ffi::c_char,
-                    ::core::ffi::c_int,
-                ) -> ::core::ffi::c_int,
-        ),
-        Some(
-            window_tree_menu
-                as unsafe fn(*mut ::core::ffi::c_void, *mut client, key_code) -> (),
-        ),
+        Some(Box::new(move |sort, tag, filter| {
+            let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
+            window_tree_build(
+                data as *mut ::core::ffi::c_void,
+                sort as *mut sort_criteria,
+                &mut selected,
+                filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
+            );
+            (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
+        })),
+        Some(Box::new(move |itemdata, ctx, sx, sy| {
+            window_tree_draw(
+                data as *mut ::core::ffi::c_void,
+                itemdata,
+                ctx as *mut screen_write_ctx,
+                sx,
+                sy,
+            )
+        })),
+        Some(Box::new(move |itemdata, search, icase| {
+            window_tree_search(
+                data as *mut ::core::ffi::c_void,
+                itemdata,
+                search.as_ptr(),
+                icase as ::core::ffi::c_int,
+            ) != 0
+        })),
+        Some(Box::new(move |client, key| {
+            window_tree_menu(data as *mut ::core::ffi::c_void, client, key)
+        })),
         None,
-        Some(
-            window_tree_get_key
-                as unsafe fn(
-                    *mut ::core::ffi::c_void,
-                    *mut ::core::ffi::c_void,
-                    u_int,
-                ) -> key_code,
-        ),
-        Some(
-            window_tree_swap
-                as unsafe fn(
-                    *mut ::core::ffi::c_void,
-                    *mut ::core::ffi::c_void,
-                    *mut sort_criteria,
-                ) -> ::core::ffi::c_int,
-        ),
+        Some(Box::new(move |itemdata, line| {
+            window_tree_get_key(data as *mut ::core::ffi::c_void, itemdata, line)
+        })),
+        Some(Box::new(move |current, other, sort| {
+            window_tree_swap(
+                current,
+                other,
+                sort as *mut sort_criteria,
+            ) != 0
+        })),
         Some(window_tree_sort),
         Some(window_tree_help),
-        data as *mut ::core::ffi::c_void,
         &raw const window_tree_menu_items as *const menu_item,
         &raw mut s,
     );
