@@ -2085,7 +2085,8 @@ pub unsafe extern "C" fn tty_check_overlay_range(
     if (*c).overlay_check.is_none() {
         (*c).overlay_check = Some(overlay_check);
     }
-    return ranges;
+    (*tty).r = ranges;
+    return &raw mut (*tty).r;
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_sync_start(mut tty: *mut tty) {

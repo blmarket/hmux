@@ -79,7 +79,6 @@ pub struct popup_data {
     pub s: screen,
     pub defaults: grid_cell,
     pub palette: colour_palette,
-    pub r: visible_ranges,
     pub job: *mut job,
     pub ictx: *mut input_ctx,
     pub status: ::core::ffi::c_int,
@@ -115,7 +114,6 @@ impl popup_data {
             s: screen::empty(),
             defaults: Default::default(),
             palette: Default::default(),
-            r: visible_ranges::default(),
             job: Default::default(),
             ictx: Default::default(),
             status: Default::default(),
@@ -322,10 +320,19 @@ unsafe fn popup_mode(pd: *mut popup_data) -> Option<(*mut screen, u_int, u_int)>
         ))
     }
 }
-unsafe fn popup_check(pd: *mut popup_data, px: u_int, py: u_int, nx: u_int) -> *mut visible_ranges {
-    let mut r: *mut visible_ranges = &raw mut (*pd).r;
-    server_client_overlay_range((*pd).px, (*pd).py, (*pd).sx, (*pd).sy, px, py, nx, r);
-    return r;
+unsafe fn popup_check(pd: *mut popup_data, px: u_int, py: u_int, nx: u_int) -> visible_ranges {
+    let mut ranges = visible_ranges::default();
+    server_client_overlay_range(
+        (*pd).px,
+        (*pd).py,
+        (*pd).sx,
+        (*pd).sy,
+        px,
+        py,
+        nx,
+        &mut ranges,
+    );
+    ranges
 }
 unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
     let mut tty: *mut tty = &raw mut (*c).tty;

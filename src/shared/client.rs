@@ -359,4 +359,4 @@ pub type overlay_mode_cb =
     Option<Box<dyn FnMut(&mut client) -> Option<(*mut screen, u_int, u_int)>>>;
 
 pub type overlay_check_cb =
-    Option<Box<dyn FnMut(&mut client, u_int, u_int, u_int) -> *mut visible_ranges>>;
+    Option<Box<dyn FnMut(&mut client, u_int, u_int, u_int) -> visible_ranges>>;
