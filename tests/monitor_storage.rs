@@ -1,5 +1,5 @@
 use hmux2::src::monitor::*;
-use hmux2::src::shared::monitor::{monitor_item, monitor_set, MONITOR_SESSION};
+use hmux2::src::shared::monitor::{monitor_callback, monitor_item, monitor_set, MONITOR_SESSION};
 use std::{ffi::CStr, ptr::null_mut};
 
 unsafe fn find_item(set: *mut monitor_set, name: &CStr) -> *mut monitor_item {
@@ -11,7 +11,7 @@ unsafe fn find_item(set: *mut monitor_set, name: &CStr) -> *mut monitor_item {
 #[test]
 fn byte_names_composite_keys_and_nested_cleanup() {
     unsafe {
-        let set = monitor_create_client(null_mut(), None, null_mut());
+        let set = monitor_create_client(null_mut(), monitor_callback(|_| {}));
         for (name, format) in [(c"z", c"\xfeZ"), (c"\xff", c"\xffF"), (c"a", c"A\xfe")] {
             let mut input_name = name.to_bytes_with_nul().to_vec();
             let mut input_format = format.to_bytes_with_nul().to_vec();

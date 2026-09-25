@@ -34,7 +34,7 @@ use crate::src::shared::event::*;
 use crate::src::shared::event::{EVBUFFER_EOL_LF, EV_READ, EV_WRITE};
 use crate::src::shared::key::key_event;
 use crate::src::shared::limits::SIZE_MAX;
-use crate::src::shared::monitor::{monitor_change, monitor_set};
+use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
 use crate::src::shared::monitor::{monitor_type, MONITOR_NOTIFY_INITIAL};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::window_pane_offset;
@@ -1389,14 +1389,11 @@ unsafe extern "C" fn control_write_callback(
         bufferevent_disable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
     }
 }
-unsafe extern "C" fn control_sub_change(
-    mut change: *mut monitor_change,
-    _data: *mut ::core::ffi::c_void,
-) {
-    let mut c: *mut client = (*change).c;
-    let mut s: *mut session = (*change).s;
-    let mut wl: *mut winlink = (*change).wl;
-    let mut wp: *mut window_pane = (*change).wp;
+unsafe fn control_sub_change(change: &monitor_change) {
+    let c = change.c;
+    let s = change.s;
+    let wl = change.wl;
+    let wp = change.wp;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     if !wp.is_null() {
         w = (*wp).window as *mut window;
@@ -1404,12 +1401,12 @@ unsafe extern "C" fn control_sub_change(
             c,
             b"%%subscription-changed %s $%u @%u %u %%%u : %s\0" as *const u8
                 as *const ::core::ffi::c_char,
-            (*change).name,
+            change.name,
             (*s).id,
             (*w).id,
             (*wl).idx,
             (*wp).id,
-            (*change).value,
+            change.value,
         );
     } else if !wl.is_null() {
         w = (*wl).window;
@@ -1417,20 +1414,20 @@ unsafe extern "C" fn control_sub_change(
             c,
             b"%%subscription-changed %s $%u @%u %u - : %s\0" as *const u8
                 as *const ::core::ffi::c_char,
-            (*change).name,
+            change.name,
             (*s).id,
             (*w).id,
             (*wl).idx,
-            (*change).value,
+            change.value,
         );
     } else {
         control_notify_write(
             c,
             b"%%subscription-changed %s $%u - - - : %s\0" as *const u8
                 as *const ::core::ffi::c_char,
-            (*change).name,
+            change.name,
             (*s).id,
-            (*change).value,
+            change.value,
         );
     };
 }
@@ -1450,11 +1447,7 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
     (*cs).windows.storage = None;
     (*cs).subs = monitor_create_client(
         c,
-        Some(
-            control_sub_change
-                as unsafe extern "C" fn(*mut monitor_change, *mut ::core::ffi::c_void) -> (),
-        ),
-        NULL,
+        monitor_callback(|change| unsafe { control_sub_change(change) }),
     ) as *mut monitor_set;
     (*cs).read_event = bufferevent_new(
         (*c).fd,

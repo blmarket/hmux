@@ -314,11 +314,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
 
 #[test]
 fn borrowed_parser_command_retains_only_while_stored() {
-    unsafe extern "C" fn commands(
-        _: *mut args,
-        _: core::ffi::c_uint,
-        _: *mut *mut core::ffi::c_char,
-    ) -> core::ffi::c_uint {
+    fn commands(_: &mut args, _: core::ffi::c_uint) -> core::ffi::c_uint {
         ARGS_PARSE_COMMANDS
     }
 
@@ -348,13 +344,9 @@ fn borrowed_parser_command_retains_only_while_stored() {
 
 #[test]
 fn positional_command_cache_survives_array_growth_and_copy() {
-    unsafe extern "C" fn command_argument(
-        args: *mut args,
-        count: core::ffi::c_uint,
-        _: *mut *mut core::ffi::c_char,
-    ) -> core::ffi::c_uint {
+    fn command_argument(args: &mut args, count: core::ffi::c_uint) -> core::ffi::c_uint {
         if count == 1 {
-            args_string(args, 0);
+            unsafe { args_string(args, 0) };
         }
         ARGS_PARSE_COMMANDS
     }

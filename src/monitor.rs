@@ -189,7 +189,9 @@ unsafe extern "C" fn monitor_report(
     change.s = s;
     change.wl = wl;
     change.wp = wp;
-    (*ms).cb.expect("non-null function pointer")(&raw mut change, (*ms).data);
+    // The callback may destroy the monitor set while it is running.
+    let callback = (*ms).cb.clone();
+    callback(&change);
 }
 unsafe fn monitor_check_value(
     mut ms: *mut monitor_set,
@@ -612,39 +614,31 @@ unsafe extern "C" fn monitor_timer(
         monitor_check_all_windows(ms);
     }
 }
-unsafe extern "C" fn monitor_create(
-    mut cb: monitor_cb,
-    mut data: *mut ::core::ffi::c_void,
-) -> *mut monitor_set {
+unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
     Box::into_raw(Box::new(monitor_set {
         client: std::ptr::null_mut(),
         session: std::ptr::null_mut(),
         cb,
-        data,
         items: monitor_items { storage: None },
         timer: crate::src::shared::event::event::default(),
         generation: 0,
     }))
 }
-#[no_mangle]
-pub unsafe extern "C" fn monitor_create_client(
+pub unsafe fn monitor_create_client(
     mut c: *mut client,
-    mut cb: monitor_cb,
-    mut data: *mut ::core::ffi::c_void,
+    cb: monitor_cb,
 ) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
-    ms = monitor_create(cb, data);
+    ms = monitor_create(cb);
     (*ms).client = c;
     return ms as *mut monitor_set;
 }
-#[no_mangle]
-pub unsafe extern "C" fn monitor_create_session(
+pub unsafe fn monitor_create_session(
     mut s: *mut session,
-    mut cb: monitor_cb,
-    mut data: *mut ::core::ffi::c_void,
+    cb: monitor_cb,
 ) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
-    ms = monitor_create(cb, data);
+    ms = monitor_create(cb);
     (*ms).session = s;
     if !s.is_null() {
         session_add_ref(
@@ -1259,32 +1253,27 @@ mod last_owner_tests {
         last: Vec<u8>,
     }
 
-    unsafe extern "C" fn remove_during_report(
-        change: *mut monitor_change,
-        data: *mut ::core::ffi::c_void,
-    ) {
-        let capture = &mut *data.cast::<Capture>();
-        capture.value = CStr::from_ptr((*change).value).to_bytes().to_vec();
-        capture.last = CStr::from_ptr((*change).last).to_bytes().to_vec();
-        monitor_remove(capture.set, (*change).name);
-        capture.name = CStr::from_ptr((*change).name).to_bytes().to_vec();
-    }
-
     #[test]
     fn changed_value_survives_reentrant_item_removal() {
         unsafe {
-            let mut capture = Box::new(Capture {
+            let capture = std::rc::Rc::new(std::cell::RefCell::new(Capture {
                 set: ::core::ptr::null_mut(),
                 name: Vec::new(),
                 value: Vec::new(),
                 last: Vec::new(),
-            });
+            }));
+            let callback_capture = capture.clone();
             let set = monitor_create_client(
                 ::core::ptr::null_mut(),
-                Some(remove_during_report),
-                (&raw mut *capture).cast(),
+                crate::src::shared::monitor::monitor_callback(move |change| unsafe {
+                    let mut capture = callback_capture.borrow_mut();
+                    capture.value = CStr::from_ptr(change.value).to_bytes().to_vec();
+                    capture.last = CStr::from_ptr(change.last).to_bytes().to_vec();
+                    monitor_remove(capture.set, change.name);
+                    capture.name = CStr::from_ptr(change.name).to_bytes().to_vec();
+                }),
             );
-            capture.set = set;
+            capture.borrow_mut().set = set;
             monitor_add(
                 set,
                 c"reentrant-last".as_ptr(),
@@ -1323,7 +1312,7 @@ mod last_owner_tests {
                 &first,
                 &raw mut (*owner).last,
             );
-            assert!(capture.value.is_empty());
+            assert!(capture.borrow().value.is_empty());
 
             let second = CString::from_vec_with_nul(b"\xfeneW\0".to_vec()).unwrap();
             monitor_check_value(
@@ -1335,9 +1324,9 @@ mod last_owner_tests {
                 &second,
                 &raw mut (*owner).last,
             );
-            assert_eq!(capture.value, second.to_bytes());
-            assert_eq!(capture.last, first.to_bytes());
-            assert_eq!(capture.name, b"reentrant-last");
+            assert_eq!(capture.borrow().value.as_slice(), second.to_bytes());
+            assert_eq!(capture.borrow().last.as_slice(), first.to_bytes());
+            assert_eq!(capture.borrow().name.as_slice(), b"reentrant-last");
             assert!(monitor_items_minmax(&(*set).items, RB_NEGINF).is_null());
             monitor_destroy(set);
         }

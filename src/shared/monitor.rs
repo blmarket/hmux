@@ -15,13 +15,12 @@ pub const MONITOR_SESSION: monitor_type = 0;
 pub const MONITOR_NOTIFY_TRUE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
-/// Box-owned by monitor_create; callback data and weak observers expire on destroy.
+/// Box-owned by monitor_create; its callback and weak observers expire on destroy.
 #[repr(C)]
 pub struct monitor_set {
     pub client: *mut client,
     pub session: *mut session,
     pub cb: monitor_cb,
-    pub data: *mut ::core::ffi::c_void,
     pub items: monitor_items,
     pub timer: event,
     pub generation: u_int,
@@ -39,8 +38,11 @@ pub struct monitor_change {
     pub wp: *mut window_pane,
 }
 
-pub type monitor_cb =
-    Option<unsafe extern "C" fn(*mut monitor_change, *mut ::core::ffi::c_void) -> ()>;
+pub type monitor_cb = std::rc::Rc<dyn Fn(&monitor_change)>;
+
+pub fn monitor_callback(callback: impl Fn(&monitor_change) + 'static) -> monitor_cb {
+    std::rc::Rc::new(callback)
+}
 
 #[repr(C)]
 pub struct monitor_items {

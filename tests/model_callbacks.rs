@@ -1,11 +1,10 @@
-//! C callbacks retain their signatures and can cross former translation-unit boundaries.
+//! Shared declarations retain their types across former translation-unit boundaries.
 use hmux2::src::{arguments, client, screen, tty, window};
 use std::ptr::null_mut;
 
-unsafe extern "C" fn parse(
-    _: *mut arguments::args,
+fn parse(
+    _: &mut arguments::args,
     index: hmux2::src::shared::abi::u_int,
-    _: *mut *mut core::ffi::c_char,
 ) -> hmux2::src::shared::arguments::args_parse_type {
     if index == 7 {
         hmux2::src::shared::arguments::ARGS_PARSE_STRING
@@ -43,11 +42,12 @@ fn callbacks_cross_original_module_paths_without_conversion() {
     assert!(mode.get_screen.is_none());
     mode.get_screen = Some(mode_screen);
     let copy_mode: hmux2::src::window_copy::window_mode = mode;
+    let mut parsed_args = arguments::args::empty();
+    assert_eq!(
+        parser_callback.unwrap()(&mut parsed_args, 7),
+        hmux2::src::shared::arguments::ARGS_PARSE_STRING
+    );
     unsafe {
-        assert_eq!(
-            parser_callback.unwrap()(null_mut(), 7, null_mut()),
-            hmux2::src::shared::arguments::ARGS_PARSE_STRING
-        );
         assert_eq!(draw_callback.unwrap()(null_mut(), null_mut()), 17);
         assert!(server_callback.unwrap()(null_mut(), null_mut(), null_mut(), null_mut()).is_null());
         assert!(copy_mode.get_screen.unwrap()(null_mut()).is_null());

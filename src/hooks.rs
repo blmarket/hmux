@@ -44,7 +44,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::key_event;
 use crate::src::shared::monitor::monitor_type;
-use crate::src::shared::monitor::{monitor_change, monitor_set};
+use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
 use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::options::{
     options, options_array_item, options_entry, options_table_entry,
@@ -508,14 +508,10 @@ unsafe extern "C" fn hooks_monitor_hook_cb(
         );
     }
 }
-unsafe extern "C" fn hooks_monitor_cb(
-    mut change: *mut monitor_change,
-    mut data: *mut ::core::ffi::c_void,
-) {
-    let mut hm: *mut hooks_monitor = data as *mut hooks_monitor;
+unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
-    let mut wl: *mut winlink = (*change).wl;
-    let mut wp: *mut window_pane = (*change).wp;
+    let wl = change.wl;
+    let wp = change.wp;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -529,7 +525,7 @@ unsafe extern "C" fn hooks_monitor_cb(
     event_payload_set_pointer(
         ep,
         b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
-        data,
+        hm.cast(),
         None,
         None,
     );
@@ -540,18 +536,18 @@ unsafe extern "C" fn hooks_monitor_cb(
         cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
     } else if !wp.is_null() {
         cmd_find_from_pane(&raw mut fs, wp, 0 as ::core::ffi::c_int);
-    } else if !(*change).s.is_null() {
-        cmd_find_from_session(&raw mut fs, (*change).s, 0 as ::core::ffi::c_int);
+    } else if !change.s.is_null() {
+        cmd_find_from_session(&raw mut fs, change.s, 0 as ::core::ffi::c_int);
     } else {
         cmd_find_copy_state(&raw mut fs, &raw mut (*hm).fs);
     }
     event_payload_set_target(ep, &raw mut fs);
-    if !(*change).value.is_null() {
+    if !change.value.is_null() {
         event_payload_set_string(
             ep,
             b"value\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*change).value,
+            change.value,
         );
     } else {
         event_payload_set_string(
@@ -561,12 +557,12 @@ unsafe extern "C" fn hooks_monitor_cb(
             b"\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    if !(*change).last.is_null() {
+    if !change.last.is_null() {
         event_payload_set_string(
             ep,
             b"last\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*change).last,
+            change.last,
         );
     } else {
         event_payload_set_string(
@@ -576,22 +572,22 @@ unsafe extern "C" fn hooks_monitor_cb(
             b"\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    if !(*change).c.is_null() {
+    if !change.c.is_null() {
         event_payload_set_client(
             ep,
             b"client\0" as *const u8 as *const ::core::ffi::c_char,
-            (*change).c,
+            change.c,
         );
     }
-    if !(*change).s.is_null() {
+    if !change.s.is_null() {
         event_payload_set_session(
             ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*change).s,
+            change.s,
         );
     }
     if !wl.is_null() {
-        if (*change).s.is_null() {
+        if change.s.is_null() {
             event_payload_set_session(
                 ep,
                 b"session\0" as *const u8 as *const ::core::ffi::c_char,
@@ -619,7 +615,7 @@ unsafe extern "C" fn hooks_monitor_cb(
             );
         }
     }
-    events_fire((*change).name, ep);
+    events_fire(change.name, ep);
 }
 #[no_mangle]
 pub unsafe extern "C" fn hooks_monitor_add(
@@ -666,11 +662,7 @@ pub unsafe extern "C" fn hooks_monitor_add(
     cmd_find_copy_state(&raw mut (*hm).fs, fs);
     (*hm).set = monitor_create_session(
         s,
-        Some(
-            hooks_monitor_cb
-                as unsafe extern "C" fn(*mut monitor_change, *mut ::core::ffi::c_void) -> (),
-        ),
-        hm as *mut ::core::ffi::c_void,
+        monitor_callback(move |change| unsafe { hooks_monitor_cb(change, hm) }),
     );
     (*hm).sink = events_add_sink(
         name,
