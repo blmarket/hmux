@@ -127,7 +127,7 @@ pub unsafe extern "C" fn hyperlinks_put(
     if !internal_id.as_bytes().is_empty() {
         find.uri = ::std::ffi::CStr::from_ptr(uri.as_ptr()).to_owned();
         find.internal_id = ::std::ffi::CStr::from_ptr(internal_id.as_ptr()).to_owned();
-        hlu = hyperlinks_by_uri_tree_find(&raw mut (*hl).by_uri, &raw mut find);
+        hlu = hyperlinks_by_uri_tree_find(&(*hl).by_uri, &find);
         if !hlu.is_null() {
             return (*hlu).inner;
         }
@@ -183,7 +183,7 @@ pub unsafe extern "C" fn hyperlinks_get(
     };
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     find.inner = inner;
-    hlu = hyperlinks_by_inner_tree_find(&raw mut (*hl).by_inner, &raw mut find);
+    hlu = hyperlinks_by_inner_tree_find(&(*hl).by_inner, &find);
     if hlu.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperl
 pub unsafe extern "C" fn hyperlinks_reset(mut hl: *mut hyperlinks) {
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     let mut hlu1: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    hlu = hyperlinks_by_inner_tree_minmax(&raw mut (*hl).by_inner, RB_NEGINF);
+    hlu = hyperlinks_by_inner_tree_minmax(&(*hl).by_inner, RB_NEGINF);
     while !hlu.is_null() && {
         hlu1 = hyperlinks_by_inner_tree_next(&*hlu);
         1 as ::core::ffi::c_int != 0
@@ -236,23 +236,23 @@ fn hyperlinks_by_inner_tree_key(elm: &hyperlinks_uri) -> u32 {
     elm.inner
 }
 pub unsafe fn hyperlinks_by_inner_tree_find(
-    head: *mut hyperlinks_by_inner_tree,
-    elm: *mut hyperlinks_uri,
+    head: &hyperlinks_by_inner_tree,
+    elm: &hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = hyperlinks_by_inner_tree_key(&*elm);
+    let key = hyperlinks_by_inner_tree_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn hyperlinks_by_inner_tree_nfind(
-    head: *mut hyperlinks_by_inner_tree,
-    elm: *mut hyperlinks_uri,
+    head: &hyperlinks_by_inner_tree,
+    elm: &hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = hyperlinks_by_inner_tree_key(&*elm);
+    let key = hyperlinks_by_inner_tree_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -298,10 +298,10 @@ pub unsafe fn hyperlinks_by_inner_tree_remove(
     elm
 }
 pub unsafe fn hyperlinks_by_inner_tree_minmax(
-    head: *mut hyperlinks_by_inner_tree,
+    head: &hyperlinks_by_inner_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -341,23 +341,23 @@ fn hyperlinks_by_uri_tree_key(elm: &hyperlinks_uri) -> (bool, Vec<u8>, Vec<u8>, 
     }
 }
 pub unsafe fn hyperlinks_by_uri_tree_find(
-    head: *mut hyperlinks_by_uri_tree,
-    elm: *mut hyperlinks_uri,
+    head: &hyperlinks_by_uri_tree,
+    elm: &hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = hyperlinks_by_uri_tree_key(&*elm);
+    let key = hyperlinks_by_uri_tree_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn hyperlinks_by_uri_tree_nfind(
-    head: *mut hyperlinks_by_uri_tree,
-    elm: *mut hyperlinks_uri,
+    head: &hyperlinks_by_uri_tree,
+    elm: &hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = hyperlinks_by_uri_tree_key(&*elm);
+    let key = hyperlinks_by_uri_tree_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -403,10 +403,10 @@ pub unsafe fn hyperlinks_by_uri_tree_remove(
     elm
 }
 pub unsafe fn hyperlinks_by_uri_tree_minmax(
-    head: *mut hyperlinks_by_uri_tree,
+    head: &hyperlinks_by_uri_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut hyperlinks_uri {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
