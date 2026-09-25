@@ -2920,10 +2920,10 @@ pub(crate) unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut 
 }
 
 unsafe fn window_pane_mode_insert_front(
-    wp: *mut window_pane,
+    wp: &mut window_pane,
     entry: Box<window_mode_entry>,
 ) -> *mut window_mode_entry {
-    let modes = &mut (*wp).modes;
+    let modes = &mut wp.modes;
     let storage = modes.storage.get_or_insert_with(Default::default);
     let wme = (&*entry) as *const window_mode_entry as *mut window_mode_entry;
     storage.entries.insert(0, entry);
@@ -2966,7 +2966,7 @@ unsafe fn window_pane_mode_promote(wp: *mut window_pane, wme: *mut window_mode_e
     let Some(entry) = window_pane_mode_remove(wp, wme) else {
         return;
     };
-    window_pane_mode_insert_front(wp, entry);
+    window_pane_mode_insert_front(&mut *wp, entry);
 }
 
 #[cfg(test)]
@@ -2993,9 +2993,9 @@ mod window_mode_collection_tests {
             let wp = Box::into_raw(Box::new(window_pane::empty()));
             (*wp).modes = window_pane_modes::default();
 
-            let a = window_pane_mode_insert_front(wp, boxed_mode(wp));
-            let b = window_pane_mode_insert_front(wp, boxed_mode(wp));
-            let c = window_pane_mode_insert_front(wp, boxed_mode(wp));
+            let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
+            let b = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
+            let c = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
             assert_eq!((*wp).modes.active, c);
             assert_eq!(window_pane_mode_next(c), b);
             assert_eq!(window_pane_mode_next(b), a);
@@ -3014,7 +3014,7 @@ mod window_mode_collection_tests {
 
             // Force Vec growth after callbacks already hold `a` and `b`.
             for _ in 0..64 {
-                window_pane_mode_insert_front(wp, boxed_mode(wp));
+                window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
             }
             assert_eq!(window_pane_mode_next(a), b);
             assert!(window_pane_mode_next(b).is_null());
@@ -3486,7 +3486,7 @@ pub unsafe extern "C" fn window_pane_set_mode(
             prefix: 1,
             kill: 0,
         });
-        wme = window_pane_mode_insert_front(wp, entry);
+        wme = window_pane_mode_insert_front(&mut *wp, entry);
         (*wme).screen =
             (*(*wme).mode).init.expect("non-null function pointer")(wme, item, fs, args);
         if (*wme).screen.is_null() {
