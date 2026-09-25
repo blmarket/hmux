@@ -978,7 +978,7 @@ unsafe fn window_buffer_edit_close_cb(
     }
     if len != 0 as size_t {
         buf.truncate(len);
-        paste_replace_owned(pb, buf.into_boxed_slice());
+        paste_replace_owned(&mut *pb, buf.into_boxed_slice());
     }
     wp = window_pane_find_by_id((*ed).wp_id);
     if !wp.is_null() {
