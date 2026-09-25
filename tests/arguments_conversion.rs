@@ -314,8 +314,11 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
 
 #[test]
 fn borrowed_parser_command_retains_only_while_stored() {
-    fn commands(_: &mut args, _: core::ffi::c_uint) -> core::ffi::c_uint {
-        ARGS_PARSE_COMMANDS
+    fn commands(
+        _: &mut args,
+        _: core::ffi::c_uint,
+    ) -> Result<core::ffi::c_uint, hmux2::src::shared::arguments::ArgsParseError> {
+        Ok(ARGS_PARSE_COMMANDS)
     }
 
     unsafe {
@@ -344,11 +347,14 @@ fn borrowed_parser_command_retains_only_while_stored() {
 
 #[test]
 fn positional_command_cache_survives_array_growth_and_copy() {
-    fn command_argument(args: &mut args, count: core::ffi::c_uint) -> core::ffi::c_uint {
+    fn command_argument(
+        args: &mut args,
+        count: core::ffi::c_uint,
+    ) -> Result<core::ffi::c_uint, hmux2::src::shared::arguments::ArgsParseError> {
         if count == 1 {
             unsafe { args_string(args, 0) };
         }
-        ARGS_PARSE_COMMANDS
+        Ok(ARGS_PARSE_COMMANDS)
     }
 
     unsafe {

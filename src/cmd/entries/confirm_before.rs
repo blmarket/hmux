@@ -56,8 +56,8 @@ pub static mut cmd_confirm_before_entry: cmd_entry = unsafe {
         ),
     }
 };
-fn cmd_confirm_before_args_parse(_args: &mut args, _idx: u_int) -> args_parse_type {
-    return ARGS_PARSE_COMMANDS_OR_STRING;
+fn cmd_confirm_before_args_parse(_args: &mut args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
+    Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 unsafe fn cmd_confirm_before_exec(
     mut self_0: *mut cmd,

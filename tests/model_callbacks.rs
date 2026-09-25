@@ -5,11 +5,14 @@ use std::ptr::null_mut;
 fn parse(
     _: &mut arguments::args,
     index: hmux2::src::shared::abi::u_int,
-) -> hmux2::src::shared::arguments::args_parse_type {
+) -> Result<
+    hmux2::src::shared::arguments::args_parse_type,
+    hmux2::src::shared::arguments::ArgsParseError,
+> {
     if index == 7 {
-        hmux2::src::shared::arguments::ARGS_PARSE_STRING
+        Ok(hmux2::src::shared::arguments::ARGS_PARSE_STRING)
     } else {
-        hmux2::src::shared::arguments::ARGS_PARSE_INVALID
+        Err(hmux2::src::shared::arguments::ArgsParseError::Usage)
     }
 }
 
@@ -31,7 +34,7 @@ fn callbacks_cross_original_module_paths_without_conversion() {
     let copy_mode: hmux2::src::window_copy::window_mode = mode;
     let mut parsed_args = arguments::args::empty();
     assert_eq!(
-        parser_callback.unwrap()(&mut parsed_args, 7),
+        parser_callback.unwrap()(&mut parsed_args, 7).unwrap(),
         hmux2::src::shared::arguments::ARGS_PARSE_STRING
     );
     assert!(draw_callback.is_some());

@@ -122,14 +122,14 @@ pub static mut cmd_set_hook_entry: cmd_entry = unsafe {
         ),
     }
 };
-fn cmd_set_option_args_parse(args: &mut args, idx: u_int) -> args_parse_type {
+fn cmd_set_option_args_parse(args: &mut args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     if unsafe { args_has(args as *mut args, 'B' as i32 as u_char) } != 0 {
-        return ARGS_PARSE_COMMANDS_OR_STRING;
+        return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
     if idx == 1 as u_int {
-        return ARGS_PARSE_COMMANDS_OR_STRING;
+        return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
-    return ARGS_PARSE_STRING;
+    Ok(ARGS_PARSE_STRING)
 }
 unsafe extern "C" fn cmd_set_hook_event_exec(
     mut self_0: *mut cmd,

@@ -16,6 +16,12 @@ pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
 pub const ARGS_PARSE_STRING: args_parse_type = 1;
 pub const ARGS_PARSE_INVALID: args_parse_type = 0;
 
+#[derive(Debug)]
+pub enum ArgsParseError {
+    Usage,
+    Message(std::ffi::CString),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,7 +196,7 @@ pub struct args_values_storage {
     pub(crate) values: Vec<Box<args_value>>,
 }
 
-pub type args_parse_cb = Option<fn(&mut args, u_int) -> args_parse_type>;
+pub type args_parse_cb = Option<fn(&mut args, u_int) -> Result<args_parse_type, ArgsParseError>>;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

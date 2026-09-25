@@ -71,11 +71,11 @@ pub static mut cmd_if_shell_entry: cmd_entry = unsafe {
         ),
     }
 };
-fn cmd_if_shell_args_parse(_args: &mut args, idx: u_int) -> args_parse_type {
+fn cmd_if_shell_args_parse(_args: &mut args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     if idx == 1 as u_int || idx == 2 as u_int {
-        return ARGS_PARSE_COMMANDS_OR_STRING;
+        return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
-    return ARGS_PARSE_STRING;
+    Ok(ARGS_PARSE_STRING)
 }
 unsafe fn cmd_if_shell_exec(
     mut self_0: *mut cmd,

@@ -110,7 +110,7 @@ pub static mut cmd_display_popup_entry: cmd_entry = unsafe {
         ),
     }
 };
-fn cmd_display_menu_args_parse(args: &mut args, idx: u_int) -> args_parse_type {
+fn cmd_display_menu_args_parse(args: &mut args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     let mut i: u_int = 0 as u_int;
     let mut type_0: args_parse_type = ARGS_PARSE_STRING;
     loop {
@@ -136,7 +136,7 @@ fn cmd_display_menu_args_parse(args: &mut args, idx: u_int) -> args_parse_type {
             break;
         }
     }
-    return type_0;
+    Ok(type_0)
 }
 unsafe extern "C" fn cmd_display_menu_get_popup_pos(
     mut tc: *mut client,

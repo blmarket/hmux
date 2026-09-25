@@ -99,11 +99,11 @@ pub static mut cmd_run_shell_entry: cmd_entry = unsafe {
         ),
     }
 };
-fn cmd_run_shell_args_parse(args: &mut args, _idx: u_int) -> args_parse_type {
+fn cmd_run_shell_args_parse(args: &mut args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     if unsafe { args_has(args as *mut args, 'C' as i32 as u_char) } != 0 {
-        return ARGS_PARSE_COMMANDS_OR_STRING;
+        return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
-    return ARGS_PARSE_STRING;
+    Ok(ARGS_PARSE_STRING)
 }
 unsafe fn cmd_run_shell_print(
     mut job: *mut job,

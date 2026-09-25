@@ -38,11 +38,7 @@ pub enum ArgumentValueError {
     TooLarge,
 }
 
-#[derive(Debug)]
-pub enum ArgsParseError {
-    Usage,
-    Message(CString),
-}
+pub use crate::src::shared::arguments::ArgsParseError;
 
 fn parse_flag_error(prefix: &[u8], flag: u_char, suffix: &[u8]) -> CString {
     let mut bytes = Vec::with_capacity(prefix.len() + 1 + suffix.len());
@@ -614,7 +610,13 @@ pub unsafe fn args_parse(
             );
             if (*parse).cb.is_some() {
                 let idx = (*args).count;
-                type_0 = (*parse).cb.expect("non-null function pointer")(&mut *args, idx);
+                type_0 = match (*parse).cb.expect("non-null function pointer")(&mut *args, idx) {
+                    Ok(type_0) => type_0,
+                    Err(error) => {
+                        args_free(args);
+                        return Err(error);
+                    }
+                };
                 if type_0 as ::core::ffi::c_uint
                     == ARGS_PARSE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
