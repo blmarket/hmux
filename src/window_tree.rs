@@ -1461,7 +1461,7 @@ unsafe extern "C" fn window_tree_draw_info(
     }
     format_free(ft);
 }
-unsafe extern "C" fn window_tree_draw(
+unsafe fn window_tree_draw(
     mut modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
@@ -1496,7 +1496,7 @@ unsafe extern "C" fn window_tree_draw(
         0 | _ => {}
     };
 }
-unsafe extern "C" fn window_tree_search(
+unsafe fn window_tree_search(
     _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ss: *const ::core::ffi::c_char,
@@ -1630,7 +1630,7 @@ unsafe fn window_tree_get_key(
     format_free(ft);
     return key;
 }
-unsafe extern "C" fn window_tree_swap(
+unsafe fn window_tree_swap(
     mut cur_itemdata: *mut ::core::ffi::c_void,
     mut other_itemdata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
@@ -1808,7 +1808,7 @@ unsafe extern "C" fn window_tree_init(
         ),
         Some(
             window_tree_draw
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut ::core::ffi::c_void,
                     *mut screen_write_ctx,
@@ -1818,7 +1818,7 @@ unsafe extern "C" fn window_tree_init(
         ),
         Some(
             window_tree_search
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut ::core::ffi::c_void,
                     *const ::core::ffi::c_char,
@@ -1840,7 +1840,7 @@ unsafe extern "C" fn window_tree_init(
         ),
         Some(
             window_tree_swap
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut ::core::ffi::c_void,
                     *mut sort_criteria,

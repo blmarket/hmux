@@ -460,7 +460,7 @@ unsafe extern "C" fn window_client_draw_info(
     }
     format_free(ft);
 }
-unsafe extern "C" fn window_client_draw(
+unsafe fn window_client_draw(
     mut modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
@@ -727,7 +727,7 @@ unsafe extern "C" fn window_client_init(
         ),
         Some(
             window_client_draw
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut ::core::ffi::c_void,
                     *mut screen_write_ctx,

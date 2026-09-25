@@ -2853,7 +2853,7 @@ unsafe extern "C" fn window_customize_draw_environment(
         return;
     }
 }
-unsafe extern "C" fn window_customize_draw(
+unsafe fn window_customize_draw(
     mut modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
@@ -2973,7 +2973,7 @@ unsafe extern "C" fn window_customize_init(
         ),
         Some(
             window_customize_draw
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut ::core::ffi::c_void,
                     *mut screen_write_ctx,

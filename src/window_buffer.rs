@@ -311,7 +311,7 @@ unsafe extern "C" fn window_buffer_build(
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn window_buffer_draw(
+unsafe fn window_buffer_draw(
     _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
@@ -456,7 +456,7 @@ unsafe extern "C" fn window_buffer_find(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_buffer_search(
+unsafe fn window_buffer_search(
     _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ss: *const ::core::ffi::c_char,
@@ -643,7 +643,7 @@ unsafe extern "C" fn window_buffer_init(
         ),
         Some(
             window_buffer_draw
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut ::core::ffi::c_void,
                     *mut screen_write_ctx,
@@ -653,7 +653,7 @@ unsafe extern "C" fn window_buffer_init(
         ),
         Some(
             window_buffer_search
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut ::core::ffi::c_void,
                     *const ::core::ffi::c_char,

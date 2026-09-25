@@ -22,7 +22,6 @@ pub struct mode_tree_data {
     pub references: u_int,
     pub zoomed: ::core::ffi::c_int,
     pub wp: *mut window_pane,
-    pub modedata: *mut ::core::ffi::c_void,
     pub menu: *const menu_item,
     pub sort_crit: sort_criteria,
     pub view_name: Option<&'static ::std::ffi::CStr>,
@@ -65,7 +64,6 @@ impl Default for mode_tree_data {
             references: 0,
             zoomed: 0,
             wp: std::ptr::null_mut(),
-            modedata: std::ptr::null_mut(),
             menu: std::ptr::null(),
             sort_crit: sort_criteria {
                 order: 0,
@@ -224,7 +222,11 @@ pub type mode_tree_help_cb = Option<fn() -> mode_tree_help_info>;
 pub type mode_tree_sort_cb = Option<fn(&mut sort_criteria)>;
 
 pub type mode_tree_swap_cb = Option<
-    unsafe extern "C" fn(
+    Box<dyn FnMut(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, &mut sort_criteria) -> bool>,
+>;
+
+pub type mode_tree_swap_fn = Option<
+    unsafe fn(
         *mut ::core::ffi::c_void,
         *mut ::core::ffi::c_void,
         *mut sort_criteria,
@@ -248,8 +250,11 @@ pub type mode_tree_menu_cb = Option<Box<dyn FnMut(*mut client, key_code)>>;
 pub type mode_tree_menu_fn =
     Option<unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut client, key_code) -> ()>;
 
-pub type mode_tree_search_cb = Option<
-    unsafe extern "C" fn(
+pub type mode_tree_search_cb =
+    Option<Box<dyn FnMut(*mut ::core::ffi::c_void, &std::ffi::CStr, bool) -> bool>>;
+
+pub type mode_tree_search_fn = Option<
+    unsafe fn(
         *mut ::core::ffi::c_void,
         *mut ::core::ffi::c_void,
         *const ::core::ffi::c_char,
@@ -258,7 +263,11 @@ pub type mode_tree_search_cb = Option<
 >;
 
 pub type mode_tree_draw_cb = Option<
-    unsafe extern "C" fn(
+    Box<dyn FnMut(*mut ::core::ffi::c_void, &mut screen_write_ctx, u_int, u_int)>,
+>;
+
+pub type mode_tree_draw_fn = Option<
+    unsafe fn(
         *mut ::core::ffi::c_void,
         *mut ::core::ffi::c_void,
         *mut screen_write_ctx,

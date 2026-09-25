@@ -43,12 +43,14 @@ use crate::src::shared::layout::*;
 use crate::src::shared::menu::{menu, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_build_fn, mode_tree_data, mode_tree_draw_cb,
+    mode_tree_draw_fn,
     mode_tree_height_cb, mode_tree_height_fn,
     mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_key_fn,
     mode_tree_line,
     mode_tree_list, mode_tree_menu_cb, mode_tree_menu_fn, mode_tree_prompt,
     mode_tree_prompt_input_cb,
-    mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
+    mode_tree_search_cb, mode_tree_search_dir, mode_tree_search_fn, mode_tree_sort_cb,
+    mode_tree_swap_cb, mode_tree_swap_fn,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
@@ -398,12 +400,13 @@ unsafe extern "C" fn mode_tree_swap(
     if swap_with_depth != current_depth {
         return;
     }
-    if (*mtd).swapcb.expect("non-null function pointer")(
-        (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).itemdata,
-        (*(*(*mtd).lines.as_mut_ptr().offset(swap_with as isize)).item).itemdata,
-        &raw mut (*mtd).sort_crit,
-    ) != 0
-    {
+    let current = (*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item;
+    let other = (*(*mtd).lines.as_mut_ptr().offset(swap_with as isize)).item;
+    if (*mtd).swapcb.as_mut().expect("non-null swap callback")(
+        (*current).itemdata,
+        (*other).itemdata,
+        &mut (*mtd).sort_crit,
+    ) {
         (*mtd).current = swap_with;
         mode_tree_build(mtd);
     }
@@ -552,17 +555,16 @@ pub unsafe fn mode_tree_each_tagged(
         cb(mti, c, key);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn mode_tree_start(
+pub unsafe fn mode_tree_start(
     mut wp: *mut window_pane,
     mut args: *mut args,
     mut buildcb: mode_tree_build_fn,
-    mut drawcb: mode_tree_draw_cb,
-    mut searchcb: mode_tree_search_cb,
+    mut drawcb: mode_tree_draw_fn,
+    mut searchcb: mode_tree_search_fn,
     mut menucb: mode_tree_menu_fn,
     mut heightcb: mode_tree_height_fn,
     mut keycb: mode_tree_key_fn,
-    mut swapcb: mode_tree_swap_cb,
+    mut swapcb: mode_tree_swap_fn,
     mut sortcb: mode_tree_sort_cb,
     mut helpcb: mode_tree_help_cb,
     mut modedata: *mut ::core::ffi::c_void,
@@ -572,7 +574,6 @@ pub unsafe extern "C" fn mode_tree_start(
     let mut mtd: *mut mode_tree_data = ::core::ptr::null_mut::<mode_tree_data>();
     mtd = mode_tree_alloc_data();
     (*mtd).wp = wp;
-    (*mtd).modedata = modedata;
     (*mtd).menu = menu;
     if drawcb.is_none() {
         (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
@@ -605,8 +606,18 @@ pub unsafe extern "C" fn mode_tree_start(
             dyn FnMut(&mut sort_criteria, Option<uint64_t>, Option<&CStr>) -> Option<uint64_t>,
         >
     });
-    (*mtd).drawcb = drawcb;
-    (*mtd).searchcb = searchcb;
+    (*mtd).drawcb = drawcb.map(|mut callback| {
+        let data = modedata;
+        Box::new(move |itemdata, ctx: &mut screen_write_ctx, sx, sy| {
+            callback(data, itemdata, ctx, sx, sy)
+        }) as Box<dyn FnMut(*mut ::core::ffi::c_void, &mut screen_write_ctx, u_int, u_int)>
+    });
+    (*mtd).searchcb = searchcb.map(|mut callback| {
+        let data = modedata;
+        Box::new(move |itemdata: *mut ::core::ffi::c_void, search: &CStr, icase: bool| {
+            callback(data, itemdata, search.as_ptr(), icase as ::core::ffi::c_int) != 0
+        }) as Box<dyn FnMut(*mut ::core::ffi::c_void, &CStr, bool) -> bool>
+    });
     (*mtd).menucb = menucb.map(|mut callback| {
         let data = modedata;
         Box::new(move |client, key| callback(data, client, key))
@@ -622,7 +633,13 @@ pub unsafe extern "C" fn mode_tree_start(
         Box::new(move |itemdata, line| callback(data, itemdata, line))
             as Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>
     });
-    (*mtd).swapcb = swapcb;
+    (*mtd).swapcb = swapcb.map(|mut callback| {
+        Box::new(move |current, other, sort: &mut sort_criteria| {
+            callback(current, other, sort) != 0
+        }) as Box<
+            dyn FnMut(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, &mut sort_criteria) -> bool,
+        >
+    });
     (*mtd).sortcb = sortcb;
     (*mtd).helpcb = helpcb;
     *s = &raw mut (*mtd).screen;
@@ -1397,13 +1414,10 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     h.wrapping_add(1 as u_int) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                (*mtd).drawcb.expect("non-null function pointer")(
-                    (*mtd).modedata,
-                    (*mti).itemdata,
-                    &raw mut ctx,
-                    box_x,
-                    box_y,
-                );
+                (*mtd)
+                    .drawcb
+                    .as_mut()
+                    .expect("non-null draw callback")((*mti).itemdata, &mut ctx, box_x, box_y);
             }
         }
     }
@@ -1624,12 +1638,10 @@ unsafe extern "C" fn mode_tree_search_backward(
             {
                 return mti;
             }
-        } else if (*mtd).searchcb.expect("non-null function pointer")(
-            (*mtd).modedata,
-            (*mti).itemdata,
-            search,
-            icase,
-        ) != 0
+        } else if (*mtd)
+            .searchcb
+            .as_mut()
+            .expect("non-null search callback")((*mti).itemdata, CStr::from_ptr(search), icase != 0)
         {
             return mti;
         }
@@ -1685,12 +1697,10 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
             {
                 return mti;
             }
-        } else if (*mtd).searchcb.expect("non-null function pointer")(
-            (*mtd).modedata,
-            (*mti).itemdata,
-            search,
-            icase,
-        ) != 0
+        } else if (*mtd)
+            .searchcb
+            .as_mut()
+            .expect("non-null search callback")((*mti).itemdata, CStr::from_ptr(search), icase != 0)
         {
             return mti;
         }
