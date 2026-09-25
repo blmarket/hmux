@@ -118,7 +118,6 @@ mod tests {
     }
 }
 
-#[repr(C)]
 pub struct client {
     pub name: Option<std::ffi::CString>,
     pub peer: *mut tmuxpeer,
@@ -188,7 +187,7 @@ pub struct client {
     pub overlay_key: overlay_key_cb,
     pub overlay_free: overlay_free_cb,
     pub overlay_resize: overlay_resize_cb,
-    pub overlay_data: *mut ::core::ffi::c_void,
+    pub overlay_data: Option<Box<dyn std::any::Any>>,
     pub overlay_timer: event,
     pub files: client_files,
     pub source_file_depth: u_int,
@@ -270,7 +269,7 @@ impl client {
             overlay_key: Default::default(),
             overlay_free: Default::default(),
             overlay_resize: Default::default(),
-            overlay_data: Default::default(),
+            overlay_data: None,
             overlay_timer: Default::default(),
             files: Default::default(),
             source_file_depth: Default::default(),
@@ -348,38 +347,16 @@ pub struct client_file_entry {
 
 pub type client_file_cb = Option<Box<dyn for<'a> FnMut(client_file_event<'a>)>>;
 
-pub type overlay_resize_cb =
-    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
+pub type overlay_resize_cb = Option<Box<dyn FnMut(&mut client)>>;
 
-pub type overlay_free_cb =
-    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
+pub type overlay_free_cb = Option<Box<dyn FnOnce(&mut client)>>;
 
-pub type overlay_key_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *mut ::core::ffi::c_void,
-        *mut key_event,
-    ) -> ::core::ffi::c_int,
->;
+pub type overlay_key_cb = Option<Box<dyn FnMut(&mut client, &mut key_event) -> i32>>;
 
-pub type overlay_draw_cb =
-    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
+pub type overlay_draw_cb = Option<Box<dyn FnMut(&mut client)>>;
 
-pub type overlay_mode_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *mut ::core::ffi::c_void,
-        *mut u_int,
-        *mut u_int,
-    ) -> *mut screen,
->;
+pub type overlay_mode_cb =
+    Option<Box<dyn FnMut(&mut client) -> Option<(*mut screen, u_int, u_int)>>>;
 
-pub type overlay_check_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *mut ::core::ffi::c_void,
-        u_int,
-        u_int,
-        u_int,
-    ) -> *mut visible_ranges,
->;
+pub type overlay_check_cb =
+    Option<Box<dyn FnMut(&mut client, u_int, u_int, u_int) -> *mut visible_ranges>>;

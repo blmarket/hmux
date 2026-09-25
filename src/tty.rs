@@ -2118,13 +2118,15 @@ pub unsafe extern "C" fn tty_check_overlay_range(
         (*tty).r.used = 1 as u_int;
         return &raw mut (*tty).r;
     }
-    return (*c).overlay_check.expect("non-null function pointer")(
-        c,
-        (*c).overlay_data,
-        px,
-        py,
-        nx,
-    );
+    let mut overlay_check = (*c)
+        .overlay_check
+        .take()
+        .expect("non-null overlay check callback");
+    let ranges = overlay_check(&mut *c, px, py, nx);
+    if (*c).overlay_check.is_none() {
+        (*c).overlay_check = Some(overlay_check);
+    }
+    return ranges;
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_sync_start(mut tty: *mut tty) {

@@ -2625,8 +2625,13 @@ unsafe extern "C" fn redraw_draw(
             i = i.wrapping_add(1);
         }
     }
-    if (*c).overlay_draw.is_some() && flags & REDRAW_OVERLAY != 0 {
-        (*c).overlay_draw.expect("non-null function pointer")(c, (*c).overlay_data);
+    if flags & REDRAW_OVERLAY != 0 {
+        if let Some(mut overlay_draw) = (*c).overlay_draw.take() {
+            overlay_draw(&mut *c);
+            if (*c).overlay_draw.is_none() {
+                (*c).overlay_draw = Some(overlay_draw);
+            }
+        }
     }
     tty_reset(tty);
     log_debug(

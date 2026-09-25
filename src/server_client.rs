@@ -864,8 +864,7 @@ unsafe extern "C" fn server_client_overlay_timer(
 ) {
     server_client_clear_overlay(data as *mut client);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_set_overlay(
+pub unsafe fn server_client_set_overlay(
     mut c: *mut client,
     mut delay: u_int,
     mut checkcb: overlay_check_cb,
@@ -874,7 +873,7 @@ pub unsafe extern "C" fn server_client_set_overlay(
     mut keycb: overlay_key_cb,
     mut freecb: overlay_free_cb,
     mut resizecb: overlay_resize_cb,
-    mut data: *mut ::core::ffi::c_void,
+    data: Box<dyn std::any::Any>,
 ) {
     let mut tv: timeval = timeval {
         tv_sec: 0,
@@ -912,7 +911,7 @@ pub unsafe extern "C" fn server_client_set_overlay(
     (*c).overlay_key = keycb;
     (*c).overlay_free = freecb;
     (*c).overlay_resize = resizecb;
-    (*c).overlay_data = data;
+    (*c).overlay_data = Some(data);
     if (*c).overlay_check.is_none() {
         (*c).tty.flags |= TTY_FREEZE;
     }
@@ -922,24 +921,25 @@ pub unsafe extern "C" fn server_client_set_overlay(
     window_update_focus((*(*(*c).session).curw).window);
     server_redraw_client(c);
 }
-#[no_mangle]
-pub unsafe extern "C" fn server_client_clear_overlay(mut c: *mut client) {
+pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
     if (*c).overlay_draw.is_none() {
         return;
     }
     if event_initialized(&(*c).overlay_timer) != 0 {
         event_del(&raw mut (*c).overlay_timer);
     }
-    if (*c).overlay_free.is_some() {
-        (*c).overlay_free.expect("non-null function pointer")(c, (*c).overlay_data);
+    let overlay_check = (*c).overlay_check.take();
+    let overlay_mode = (*c).overlay_mode.take();
+    let overlay_draw = (*c).overlay_draw.take();
+    let overlay_key = (*c).overlay_key.take();
+    let overlay_free = (*c).overlay_free.take();
+    let overlay_resize = (*c).overlay_resize.take();
+    let overlay_data = (*c).overlay_data.take();
+    if let Some(free) = overlay_free {
+        free(&mut *c);
     }
-    (*c).overlay_check = None;
-    (*c).overlay_mode = None;
-    (*c).overlay_draw = None;
-    (*c).overlay_key = None;
-    (*c).overlay_free = None;
-    (*c).overlay_resize = None;
-    (*c).overlay_data = NULL;
+    drop((overlay_check, overlay_mode, overlay_draw, overlay_key, overlay_resize));
+    drop(overlay_data);
     (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
     if !(*c).session.is_null() {
         window_update_focus((*(*(*c).session).curw).window);
@@ -3292,9 +3292,12 @@ unsafe fn server_client_handle_key0(
             }
             status_message_clear(c);
         }
-        if (*c).overlay_key.is_some() {
-            match (*c).overlay_key.expect("non-null function pointer")(c, (*c).overlay_data, event)
-            {
+        if let Some(mut overlay_key) = (*c).overlay_key.take() {
+            let result = overlay_key(&mut *c, &mut *event);
+            if (*c).overlay_key.is_none() {
+                (*c).overlay_key = Some(overlay_key);
+            }
+            match result {
                 0 => return 0 as ::core::ffi::c_int,
                 1 => {
                     server_client_clear_overlay(c);
@@ -3791,13 +3794,16 @@ unsafe extern "C" fn server_client_reset_state(mut c: *mut client) {
     flags = (*tty).flags & TTY_BLOCK;
     (*tty).flags &= !TTY_BLOCK;
     if (*c).overlay_draw.is_some() {
-        if (*c).overlay_mode.is_some() {
-            s = (*c).overlay_mode.expect("non-null function pointer")(
-                c,
-                (*c).overlay_data,
-                &raw mut cx,
-                &raw mut cy,
-            );
+        if let Some(mut overlay_mode) = (*c).overlay_mode.take() {
+            let result = overlay_mode(&mut *c);
+            if (*c).overlay_mode.is_none() {
+                (*c).overlay_mode = Some(overlay_mode);
+            }
+            if let Some((overlay_screen, overlay_cx, overlay_cy)) = result {
+                s = overlay_screen;
+                cx = overlay_cx;
+                cy = overlay_cy;
+            }
         }
     } else if !(*w).menu.is_null() {
         menu_get_cursor((*w).menu, &raw mut cx, &raw mut cy);
@@ -4419,7 +4425,12 @@ unsafe fn server_client_dispatch(mut c: *mut client, mut imsg: *mut imsg) {
                 if (*c).overlay_resize.is_none() {
                     server_client_clear_overlay(c);
                 } else {
-                    (*c).overlay_resize.expect("non-null function pointer")(c, (*c).overlay_data);
+                    if let Some(mut overlay_resize) = (*c).overlay_resize.take() {
+                        overlay_resize(&mut *c);
+                        if (*c).overlay_resize.is_none() {
+                            (*c).overlay_resize = Some(overlay_resize);
+                        }
+                    }
                 }
                 server_redraw_client(c);
                 if !(*c).session.is_null() {

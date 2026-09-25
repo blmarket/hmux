@@ -23,7 +23,10 @@ use crate::src::server_fn::server_redraw_client;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_REDRAWOVERLAY;
-use crate::src::shared::client::{client, overlay_check_cb};
+use crate::src::shared::client::{
+    client, overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
+    overlay_resize_cb,
+};
 use crate::src::shared::colour::*;
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::display::visible_ranges;
@@ -64,7 +67,6 @@ use crate::src::tty::tty_resize;
 use crate::src::tty_draw::tty_draw_line;
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct popup_data {
     pub c: *mut client,
     pub item: *mut cmdq_item,
@@ -151,7 +153,7 @@ pub const TOP: C2RustUnnamed_40 = 3;
 pub const RIGHT: C2RustUnnamed_40 = 2;
 pub const LEFT: C2RustUnnamed_40 = 1;
 
-unsafe extern "C" fn popup_free(mut pd: *mut popup_data) {
+unsafe fn popup_free_resources(pd: *mut popup_data) {
     server_client_unref((*pd).c);
     if !(*pd).job.is_null() {
         job_free((*pd).job);
@@ -161,6 +163,9 @@ unsafe extern "C" fn popup_free(mut pd: *mut popup_data) {
     }
     screen_free(&raw mut (*pd).s);
     colour_palette_free(&raw mut (*pd).palette);
+}
+unsafe fn popup_free(mut pd: *mut popup_data) {
+    popup_free_resources(pd);
     drop(Box::from_raw(pd));
 }
 unsafe extern "C" fn popup_reapply_styles(mut pd: *mut popup_data) {
@@ -302,36 +307,27 @@ unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: *mut tty_ctx) {
         popup_set_client(pd, ttyctx, c as *mut client)
     }));
 }
-unsafe extern "C" fn popup_mode_cb(
-    _c: *mut client,
-    mut data: *mut ::core::ffi::c_void,
-    mut cx: *mut u_int,
-    mut cy: *mut u_int,
-) -> *mut screen {
-    let mut pd: *mut popup_data = data as *mut popup_data;
+unsafe fn popup_mode(pd: *mut popup_data) -> Option<(*mut screen, u_int, u_int)> {
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
-        *cx = (*pd).px.wrapping_add((*pd).s.cx);
-        *cy = (*pd).py.wrapping_add((*pd).s.cy);
+        Some((
+            &raw mut (*pd).s,
+            (*pd).px.wrapping_add((*pd).s.cx),
+            (*pd).py.wrapping_add((*pd).s.cy),
+        ))
     } else {
-        *cx = (*pd).px.wrapping_add(1 as u_int).wrapping_add((*pd).s.cx);
-        *cy = (*pd).py.wrapping_add(1 as u_int).wrapping_add((*pd).s.cy);
+        Some((
+            &raw mut (*pd).s,
+            (*pd).px.wrapping_add(1).wrapping_add((*pd).s.cx),
+            (*pd).py.wrapping_add(1).wrapping_add((*pd).s.cy),
+        ))
     }
-    return &raw mut (*pd).s;
 }
-unsafe extern "C" fn popup_check_cb(
-    _c: *mut client,
-    mut data: *mut ::core::ffi::c_void,
-    mut px: u_int,
-    mut py: u_int,
-    mut nx: u_int,
-) -> *mut visible_ranges {
-    let mut pd: *mut popup_data = data as *mut popup_data;
+unsafe fn popup_check(pd: *mut popup_data, px: u_int, py: u_int, nx: u_int) -> *mut visible_ranges {
     let mut r: *mut visible_ranges = &raw mut (*pd).r;
     server_client_overlay_range((*pd).px, (*pd).py, (*pd).sx, (*pd).sy, px, py, nx, r);
     return r;
 }
-unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ffi::c_void) {
-    let mut pd: *mut popup_data = data as *mut popup_data;
+unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -431,7 +427,6 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
     style_ctx.dim = 0 as u_int;
     style_ctx.hyperlinks = s.hyperlinks;
     (*c).overlay_check = None;
-    (*c).overlay_data = NULL;
     i = 0 as u_int;
     while i < (*pd).sy {
         tty_draw_line(
@@ -447,20 +442,12 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
         i = i.wrapping_add(1);
     }
     screen_free(&raw mut s);
-    (*c).overlay_check = Some(
-        popup_check_cb
-            as unsafe extern "C" fn(
-                *mut client,
-                *mut ::core::ffi::c_void,
-                u_int,
-                u_int,
-                u_int,
-            ) -> *mut visible_ranges,
-    ) as overlay_check_cb;
-    (*c).overlay_data = pd as *mut ::core::ffi::c_void;
+    let pd = std::ptr::NonNull::new(pd).expect("live popup");
+    (*c).overlay_check = Some(Box::new(move |_c, px, py, nx| unsafe {
+        popup_check(pd.as_ptr(), px, py, nx)
+    }));
 }
-unsafe extern "C" fn popup_free_cb(_c: *mut client, mut data: *mut ::core::ffi::c_void) {
-    let mut pd: *mut popup_data = data as *mut popup_data;
+unsafe fn popup_free_callback(pd: *mut popup_data, _c: &mut client) {
     let mut item: *mut cmdq_item = (*pd).item;
     if let Some(callback) = (*pd).cb.take() {
         callback((*pd).status);
@@ -471,10 +458,9 @@ unsafe extern "C" fn popup_free_cb(_c: *mut client, mut data: *mut ::core::ffi::
         }
         cmdq_continue(item);
     }
-    popup_free(pd);
+    popup_free_resources(pd);
 }
-unsafe extern "C" fn popup_resize_cb(mut c: *mut client, mut data: *mut ::core::ffi::c_void) {
-    let mut pd: *mut popup_data = data as *mut popup_data;
+unsafe fn popup_resize(c: *mut client, pd: *mut popup_data) {
     let mut tty: *mut tty = &raw mut (*c).tty;
     if pd.is_null() {
         return;
@@ -608,13 +594,8 @@ unsafe extern "C" fn popup_handle_drag(
         server_redraw_client(c);
     }
 }
-unsafe extern "C" fn popup_key_cb(
-    mut c: *mut client,
-    mut data: *mut ::core::ffi::c_void,
-    mut event: *mut key_event,
-) -> ::core::ffi::c_int {
+unsafe fn popup_key(c: *mut client, pd: *mut popup_data, event: *mut key_event) -> i32 {
     let mut current_block: u64;
-    let mut pd: *mut popup_data = data as *mut popup_data;
     let mut m: *mut mouse_event = &raw mut (*event).m;
     let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut len: size_t = 0;
@@ -761,7 +742,6 @@ unsafe fn popup_job_update_cb(mut job: *mut job, mut pd: *mut popup_data) {
         return;
     }
     (*c).overlay_check = None;
-    (*c).overlay_data = NULL;
     input_parse_screen(
         (*pd).ictx,
         s,
@@ -769,17 +749,10 @@ unsafe fn popup_job_update_cb(mut job: *mut job, mut pd: *mut popup_data) {
         data as *const u_char,
         size,
     );
-    (*c).overlay_check = Some(
-        popup_check_cb
-            as unsafe extern "C" fn(
-                *mut client,
-                *mut ::core::ffi::c_void,
-                u_int,
-                u_int,
-                u_int,
-            ) -> *mut visible_ranges,
-    ) as overlay_check_cb;
-    (*c).overlay_data = pd as *mut ::core::ffi::c_void;
+    let pd = std::ptr::NonNull::new(pd).expect("live popup");
+    (*c).overlay_check = Some(Box::new(move |_c, px, py, nx| unsafe {
+        popup_check(pd.as_ptr(), px, py, nx)
+    }));
     evbuffer_drain(evb, size);
 }
 unsafe fn popup_job_complete_cb(mut job: *mut job, mut pd: *mut popup_data) {
@@ -805,9 +778,10 @@ unsafe fn popup_job_complete_cb(mut job: *mut job, mut pd: *mut popup_data) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn popup_present(mut c: *mut client) -> ::core::ffi::c_int {
-    return ((*c).overlay_draw
-        == Some(popup_draw_cb as unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()))
-        as ::core::ffi::c_int;
+    return (*c)
+        .overlay_data
+        .as_ref()
+        .is_some_and(|data| data.is::<popup_data>()) as ::core::ffi::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn popup_modify(
@@ -818,7 +792,14 @@ pub unsafe extern "C" fn popup_modify(
     mut lines: box_lines,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut pd: *mut popup_data = (*c).overlay_data as *mut popup_data;
+    let mut pd: *mut popup_data = (*c)
+        .overlay_data
+        .as_deref_mut()
+        .and_then(|data| data.downcast_mut::<popup_data>())
+        .map_or(::core::ptr::null_mut(), |data| data as *mut popup_data);
+    if pd.is_null() {
+        return -(1 as ::core::ffi::c_int);
+    }
     let mut sytmp: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -1120,40 +1101,34 @@ pub unsafe fn popup_display(
         &raw mut (*pd).palette,
         c,
     );
+    let pd_handle = std::ptr::NonNull::new(pd).expect("live popup");
+    let overlay_state = Box::from_raw(pd);
+    let check_cb: overlay_check_cb = Some(Box::new(move |_c, px, py, nx| unsafe {
+        popup_check(pd_handle.as_ptr(), px, py, nx)
+    }));
+    let mode_cb: overlay_mode_cb =
+        Some(Box::new(move |_c| unsafe { popup_mode(pd_handle.as_ptr()) }));
+    let draw_cb: overlay_draw_cb = Some(Box::new(move |c| unsafe {
+        popup_draw(c as *mut client, pd_handle.as_ptr())
+    }));
+    let key_cb: overlay_key_cb = Some(Box::new(move |c, event| unsafe {
+        popup_key(c as *mut client, pd_handle.as_ptr(), event as *mut key_event)
+    }));
+    let free_cb: overlay_free_cb =
+        Some(Box::new(move |c| unsafe { popup_free_callback(pd_handle.as_ptr(), c) }));
+    let resize_cb: overlay_resize_cb = Some(Box::new(move |c| unsafe {
+        popup_resize(c as *mut client, pd_handle.as_ptr())
+    }));
     server_client_set_overlay(
         c,
         0 as u_int,
-        Some(
-            popup_check_cb
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    u_int,
-                    u_int,
-                    u_int,
-                ) -> *mut visible_ranges,
-        ),
-        Some(
-            popup_mode_cb
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    *mut u_int,
-                    *mut u_int,
-                ) -> *mut screen,
-        ),
-        Some(popup_draw_cb as unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()),
-        Some(
-            popup_key_cb
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    *mut key_event,
-                ) -> ::core::ffi::c_int,
-        ),
-        Some(popup_free_cb as unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()),
-        Some(popup_resize_cb as unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()),
-        pd as *mut ::core::ffi::c_void,
+        check_cb,
+        mode_cb,
+        draw_cb,
+        key_cb,
+        free_cb,
+        resize_cb,
+        overlay_state,
     );
     return 0 as ::core::ffi::c_int;
 }

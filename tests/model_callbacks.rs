@@ -13,15 +13,6 @@ fn parse(
     }
 }
 
-unsafe extern "C" fn overlay(
-    _: *mut client::client,
-    _: *mut core::ffi::c_void,
-    _: *mut hmux2::src::shared::abi::u_int,
-    _: *mut hmux2::src::shared::abi::u_int,
-) -> *mut screen::screen {
-    null_mut()
-}
-
 unsafe extern "C" fn mode_screen(_: *mut window::window_mode_entry) -> *mut screen::screen {
     null_mut()
 }
@@ -32,7 +23,7 @@ fn callbacks_cross_original_module_paths_without_conversion() {
     let parser_callback: hmux2::src::shared::arguments::args_parse_cb = parse_callback;
     let tty_callback: tty::tty_ctx_set_client_cb = Some(Box::new(|_, _| 17));
     let draw_callback: hmux2::src::popup::tty_ctx_set_client_cb = tty_callback;
-    let overlay_callback: client::overlay_mode_cb = Some(overlay);
+    let overlay_callback: client::overlay_mode_cb = Some(Box::new(|_| None));
     let server_callback: hmux2::src::server_client::overlay_mode_cb = overlay_callback;
     let mut mode = window::window_mode::default();
     assert!(mode.get_screen.is_none());
@@ -44,8 +35,8 @@ fn callbacks_cross_original_module_paths_without_conversion() {
         hmux2::src::shared::arguments::ARGS_PARSE_STRING
     );
     assert!(draw_callback.is_some());
+    assert!(server_callback.is_some());
     unsafe {
-        assert!(server_callback.unwrap()(null_mut(), null_mut(), null_mut(), null_mut()).is_null());
         assert!(copy_mode.get_screen.unwrap()(null_mut()).is_null());
     }
 }
