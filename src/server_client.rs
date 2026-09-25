@@ -273,9 +273,9 @@ pub(crate) fn server_client_set_term_type(c: &mut client, term_type: Option<CStr
     c.term_type = term_type;
 }
 
-unsafe fn server_client_ensure_term_name(c: *mut client) {
-    if (*c).term_name.is_none() || *(*c).term_name.as_ref().unwrap().as_ptr() == 0 {
-        server_client_set_term_name(&mut *c, Some(CString::new("unknown").unwrap()));
+unsafe fn server_client_ensure_term_name(c: &mut client) {
+    if c.term_name.is_none() || *c.term_name.as_ref().unwrap().as_ptr() == 0 {
+        server_client_set_term_name(c, Some(CString::new("unknown").unwrap()));
     }
 }
 
@@ -400,7 +400,7 @@ mod client_message_owner_tests {
         unsafe {
             let mut owner = Box::new(client::empty());
             let c = &raw mut *owner;
-            server_client_ensure_term_name(c);
+            server_client_ensure_term_name(&mut *c);
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).term_name)
@@ -424,7 +424,7 @@ mod client_message_owner_tests {
             assert_eq!(c, &raw mut *owner);
 
             server_client_set_term_name(&mut *c, Some(CString::new("").unwrap()));
-            server_client_ensure_term_name(c);
+            server_client_ensure_term_name(&mut *c);
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).term_name)
@@ -4927,7 +4927,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
         return 0 as ::core::ffi::c_int;
     }
     (*c).flags |= CLIENT_IDENTIFIED as uint64_t;
-    server_client_ensure_term_name(c);
+    server_client_ensure_term_name(&mut *c);
     if !(*c).ttyname.is_none()
         && *(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int != '\0' as i32
     {
