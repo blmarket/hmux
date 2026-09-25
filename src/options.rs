@@ -1780,14 +1780,14 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&raw mut windows, RB_NEGINF);
+        w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
         while !w.is_null() {
             if !(*w).active.is_null() {
                 if options_get_number((*w).options, name) != 0 {
                     (*(*w).active).flags |= PANE_CHANGED;
                 }
             }
-            w = windows_next(w);
+            w = windows_next(&*w);
         }
     }
     if strcmp(
@@ -1817,10 +1817,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"fill-character\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&raw mut windows, RB_NEGINF);
+        w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
         while !w.is_null() {
             window_set_fill_cells(w);
-            w = windows_next(w);
+            w = windows_next(&*w);
         }
     }
     if strcmp(
@@ -1946,7 +1946,7 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
             b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
     {
-        w = windows_minmax(&raw mut windows, RB_NEGINF);
+        w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
         while !w.is_null() {
             (*w).sb = options_get_number(
                 (*w).options,
@@ -1957,7 +1957,7 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
                 b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
             ) as ::core::ffi::c_int;
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-            w = windows_next(w);
+            w = windows_next(&*w);
         }
     }
     if strcmp(
@@ -1981,10 +1981,10 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
             style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, (*wp).options);
             wp = window_pane_tree_next(wp);
         }
-        w = windows_minmax(&raw mut windows, RB_NEGINF);
+        w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
         while !w.is_null() {
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-            w = windows_next(w);
+            w = windows_next(&*w);
         }
     }
     if strcmp(

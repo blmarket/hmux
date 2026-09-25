@@ -781,9 +781,9 @@ unsafe extern "C" fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut w1: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() && {
-        w1 = windows_next(w);
+        w1 = windows_next(&*w);
         1 as ::core::ffi::c_int != 0
     } {
         wp = window_pane_first(w);
@@ -818,7 +818,7 @@ unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ff
     {
         return;
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         wp = window_pane_first(w);
         while !wp.is_null() {
@@ -829,7 +829,7 @@ unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ff
             }
             wp = window_pane_next(wp);
         }
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
     job_check_died(pid, status);
 }

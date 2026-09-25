@@ -189,18 +189,18 @@ static mut window_pane_owners: Option<
 static mut next_window_pane_id: u_int = 0;
 static mut next_window_id: u_int = 0;
 static mut next_active_point: u_int = 0;
-pub unsafe fn windows_find(head: *mut windows, elm: *mut window) -> *mut window {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn windows_find(head: &windows, elm: &window) -> *mut window {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).id;
+    let key = elm.id;
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn windows_nfind(head: *mut windows, elm: *mut window) -> *mut window {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn windows_nfind(head: &windows, elm: &window) -> *mut window {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).id;
+    let key = elm.id;
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -238,8 +238,8 @@ pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut windo
     }
     elm
 }
-pub unsafe fn windows_minmax(head: *mut windows, direction: ::core::ffi::c_int) -> *mut window {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn windows_minmax(head: &windows, direction: ::core::ffi::c_int) -> *mut window {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -249,20 +249,20 @@ pub unsafe fn windows_minmax(head: *mut windows, direction: ::core::ffi::c_int) 
     };
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn windows_next(elm: *mut window) -> *mut window {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn windows_next(elm: &window) -> *mut window {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).id;
+    let key = elm.id;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn windows_prev(elm: *mut window) -> *mut window {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn windows_prev(elm: &window) -> *mut window {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).id;
+    let key = elm.id;
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1185,7 +1185,7 @@ pub unsafe extern "C" fn window_find_by_id(mut id: u_int) -> *mut window {
         },
     };
     w.id = id;
-    return windows_find(&raw mut windows, &raw mut w);
+    return windows_find(&*std::ptr::addr_of!(windows), &w);
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_update_activity(mut w: *mut window) {

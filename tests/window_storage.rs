@@ -4,7 +4,7 @@ use hmux2::src::window::*;
 fn window_ids_duplicates_neighbors_and_removal() {
     unsafe {
         let mut head = windows { storage: None };
-        assert!(windows_minmax(&mut head, -1).is_null());
+        assert!(windows_minmax(&head, -1).is_null());
         let ids = [u32::MAX, 0, 42, 0x8000_0000];
         let mut nodes: Vec<window> = ids.iter().map(|_| std::mem::zeroed()).collect();
         for (node, id) in nodes.iter_mut().zip(ids) {
@@ -19,32 +19,32 @@ fn window_ids_duplicates_neighbors_and_removal() {
         assert_eq!(windows_insert(&mut *head, &mut probe), existing);
         assert!(probe.entry.owner.is_null());
         assert!(windows_remove(&mut *head, &mut probe).is_null());
-        assert_eq!(windows_find(&mut *head, &mut probe), existing);
-        assert_eq!(windows_nfind(&mut *head, &mut probe), existing);
+        assert_eq!(windows_find(&*head, &probe), existing);
+        assert_eq!(windows_nfind(&*head, &probe), existing);
         probe.id = 1;
-        assert!(windows_find(&mut *head, &mut probe).is_null());
-        assert_eq!(windows_nfind(&mut *head, &mut probe), existing);
-        let mut node = windows_minmax(&mut *head, -1);
+        assert!(windows_find(&*head, &probe).is_null());
+        assert_eq!(windows_nfind(&*head, &probe), existing);
+        let mut node = windows_minmax(&*head, -1);
         for id in [0, 42, 0x8000_0000, u32::MAX] {
             assert_eq!((*node).id, id);
-            node = windows_next(node);
+            node = windows_next(&*node);
         }
         assert!(node.is_null());
-        node = windows_minmax(&mut *head, 1);
+        node = windows_minmax(&*head, 1);
         for id in [u32::MAX, 0x8000_0000, 42, 0] {
             assert_eq!((*node).id, id);
-            node = windows_prev(node);
+            node = windows_prev(&*node);
         }
         assert!(node.is_null());
-        node = windows_minmax(&mut *head, -1);
+        node = windows_minmax(&*head, -1);
         while !node.is_null() {
-            let next = windows_next(node);
+            let next = windows_next(&*node);
             assert_eq!(windows_remove(&mut *head, node), node);
             assert!((*node).entry.owner.is_null());
             node = next;
         }
         assert!(head.storage.is_none());
-        assert!(windows_nfind(&mut *head, &mut probe).is_null());
+        assert!(windows_nfind(&*head, &probe).is_null());
         assert!(windows_insert(&mut *head, existing).is_null());
         assert_eq!(windows_remove(&mut *head, existing), existing);
         assert!(head.storage.is_none());

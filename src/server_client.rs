@@ -1303,7 +1303,7 @@ unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
         b"lost attached client %p\0" as *const u8 as *const ::core::ffi::c_char,
         c,
     );
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         if !((*w).latest != c as *mut ::core::ffi::c_void) {
             found = ::core::ptr::null_mut::<client>();
@@ -1329,7 +1329,7 @@ unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
                 server_client_update_latest(found);
             }
         }
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
 }
 unsafe extern "C" fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut session) {
@@ -3467,12 +3467,12 @@ pub unsafe extern "C" fn server_client_loop() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         server_client_check_window_resize(w);
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         wp = window_pane_first(w);
         while !wp.is_null() {
@@ -3486,7 +3486,7 @@ pub unsafe extern "C" fn server_client_loop() {
             }
             wp = window_pane_next(wp);
         }
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
     c = clients.first();
     while !c.is_null() {
@@ -3498,7 +3498,7 @@ pub unsafe extern "C" fn server_client_loop() {
         }
         c = clients.next(c);
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         wp = window_pane_first(w);
         while !wp.is_null() {
@@ -3510,16 +3510,16 @@ pub unsafe extern "C" fn server_client_loop() {
             wp = window_pane_next(wp);
         }
         check_window_name(w);
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         wp = window_pane_first(w);
         while !wp.is_null() {
             window_pane_send_theme_update(wp);
             wp = window_pane_next(wp);
         }
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
 }
 unsafe extern "C" fn server_client_check_window_resize(mut w: *mut window) {

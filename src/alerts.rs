@@ -205,10 +205,10 @@ unsafe extern "C" fn alerts_enabled(
 #[no_mangle]
 pub unsafe extern "C" fn alerts_reset_all() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         alerts_reset(w);
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
 }
 unsafe extern "C" fn alerts_reset(mut w: *mut window) {

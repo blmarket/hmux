@@ -1268,10 +1268,10 @@ pub unsafe extern "C" fn redraw_invalidate_scene(mut w: *mut window) {
 #[no_mangle]
 pub unsafe extern "C" fn redraw_invalidate_all_scenes() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         redraw_invalidate_scene(w);
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
 }
 unsafe extern "C" fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {

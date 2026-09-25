@@ -700,9 +700,9 @@ pub unsafe extern "C" fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         }
         c = clients.next(c);
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&*std::ptr::addr_of!(windows), RB_NEGINF);
     while !w.is_null() {
         recalculate_size(w, now);
-        w = windows_next(w);
+        w = windows_next(&*w);
     }
 }
