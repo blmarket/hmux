@@ -198,8 +198,8 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(cf: *mut client_file) {
     }
 }
 
-unsafe fn file_get_path(c: *mut client, file: *const ::core::ffi::c_char) -> CString {
-    let file = CStr::from_ptr(file).to_bytes();
+unsafe fn file_get_path(c: *mut client, file: &CStr) -> CString {
+    let file = file.to_bytes();
     let path = if file.starts_with(b"~/") {
         let home = find_home_cstr().map_or(&[][..], CStr::to_bytes);
         [home, &file[1..]].concat()
@@ -635,7 +635,7 @@ unsafe fn file_write_impl(
         if let Some((item, cancel_data)) = wait {
             file_set_cmdq_wait(cf, item, cancel_data);
         }
-        file_set_path(cf, file_get_path(c, path));
+        file_set_path(cf, file_get_path(c, CStr::from_ptr(path)));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
             if flags & O_APPEND != 0 {
                 mode = b"ab\0" as *const u8 as *const ::core::ffi::c_char;
@@ -784,7 +784,7 @@ unsafe fn file_read_impl(
             current_block = 17710118112003399050;
         }
     } else {
-        file_set_path(cf, file_get_path(c, path));
+        file_set_path(cf, file_get_path(c, CStr::from_ptr(path)));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
             f = fopen(
                 ((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
