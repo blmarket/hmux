@@ -232,8 +232,8 @@ fn window_customize_set_table(item: &mut window_customize_itemdata, value: Optio
     item.table = value.map(CStr::to_owned);
 }
 
-unsafe fn window_customize_set_name(item: *mut window_customize_itemdata, value: Option<&CStr>) {
-    (*item).name = value.map(CStr::to_owned);
+fn window_customize_set_name(item: &mut window_customize_itemdata, value: Option<&CStr>) {
+    item.name = value.map(CStr::to_owned);
 }
 
 fn window_customize_set_item_array_key(
@@ -688,7 +688,7 @@ unsafe extern "C" fn window_customize_copy_item(
     (*new_item).environ = (*item).environ;
     (*new_item).environ_flags = (*item).environ_flags;
     window_customize_set_table(&mut *new_item, (*item).table.as_deref());
-    window_customize_set_name(new_item, (*item).name.as_deref());
+    window_customize_set_name(&mut *new_item, (*item).name.as_deref());
     window_customize_set_item_array_key(&mut *new_item, (*item).array_key.as_deref());
     return new_item;
 }
@@ -1104,7 +1104,7 @@ unsafe extern "C" fn window_customize_build_array(
             }
             (*item).scope = scope;
             (*item).oo = oo;
-            window_customize_set_name(item, Some(CStr::from_ptr(options_name(o))));
+            window_customize_set_name(&mut *item, Some(CStr::from_ptr(options_name(o))));
             window_customize_set_item_array_key(
                 &mut *item,
                 if array_key.is_null() {
@@ -1295,7 +1295,7 @@ unsafe extern "C" fn window_customize_build_option(
     (*item).option_type = type_0;
     (*item).oo = oo;
     (*item).scope = scope;
-    window_customize_set_name(item, Some(CStr::from_ptr(name)));
+    window_customize_set_name(&mut *item, Some(CStr::from_ptr(name)));
     let text = (array == 0).then(|| format_expand_cstring(ft, (*data).format.as_ptr()));
     top = mode_tree_add(
         (*data).data,
@@ -1502,7 +1502,7 @@ unsafe extern "C" fn window_customize_build_keys(
             window_customize_set_table(&mut *item, Some((*kt).name.as_c_str()));
             (*item).key = (*bd).key;
             let key_string = key_string_format((*item).key, false);
-            window_customize_set_name(item, Some(key_string.as_c_str()));
+            window_customize_set_name(&mut *item, Some(key_string.as_c_str()));
             let expanded = format_expand_cstring(ft, (*data).format.as_ptr());
             child = mode_tree_add(
                 (*data).data,
@@ -1674,7 +1674,7 @@ unsafe extern "C" fn window_customize_build_environment(
         (*item).scope = scope;
         (*item).environ = env;
         (*item).environ_flags = (*envent).flags;
-        window_customize_set_name(item, Some((*envent).name.as_c_str()));
+        window_customize_set_name(&mut *item, Some((*envent).name.as_c_str()));
         let text;
         let name: Cow<'_, CStr> = if (*envent).value.is_none() {
             let entry_name = CStr::from_ptr(((*envent).name).as_ptr().cast_mut());
@@ -3300,7 +3300,7 @@ unsafe extern "C" fn window_customize_set_environment(
     (*new_item).environ = env;
     (*new_item).environ_flags = (*envent).flags;
     window_customize_set_name(
-        new_item,
+        &mut *new_item,
         (*item).name.as_deref(),
     );
     (*data).references += 1;
@@ -3910,7 +3910,7 @@ unsafe extern "C" fn window_customize_set_option(
         (*new_item).option_type = (*item).option_type;
         (*new_item).scope = scope;
         (*new_item).oo = oo;
-        window_customize_set_name(new_item, Some(CStr::from_ptr(name)));
+        window_customize_set_name(&mut *new_item, Some(CStr::from_ptr(name)));
         if !array_key.is_null() {
             window_customize_set_item_array_key(&mut *new_item, Some(CStr::from_ptr(array_key)));
         }
@@ -4055,7 +4055,7 @@ unsafe extern "C" fn window_customize_set_array_key(
     (*new_item).scope = (*item).scope;
     (*new_item).oo = (*item).oo;
     window_customize_set_name(
-        new_item,
+        &mut *new_item,
         (*item).name.as_deref(),
     );
     window_customize_set_item_array_key(&mut *new_item, (*item).array_key.as_deref());
@@ -5141,12 +5141,12 @@ mod item_owner_tests {
             let item = window_customize_new_item();
             let table = CString::new(b"\xfftable".to_vec()).unwrap();
             window_customize_set_table(&mut *item, Some(table.as_c_str()));
-            window_customize_set_name(item, Some(c"first"));
+            window_customize_set_name(&mut *item, Some(c"first"));
             window_customize_set_item_array_key(&mut *item, Some(c""));
             let copy = window_customize_copy_item(item);
 
             window_customize_set_table(&mut *item, Some(c"changed"));
-            window_customize_set_name(item, Some(c"second"));
+            window_customize_set_name(&mut *item, Some(c"second"));
             window_customize_free_item(item);
 
             assert_eq!(
@@ -5208,7 +5208,7 @@ mod item_owner_tests {
             }));
             let first = window_customize_add_item(data);
             (*first).data = data;
-            window_customize_set_name(first, Some(c"stable"));
+            window_customize_set_name(&mut *first, Some(c"stable"));
             for _ in 0..128 {
                 window_customize_add_item(data);
             }
