@@ -10,10 +10,9 @@ fn format_job_set_expanded(fj: &mut format_job, value: CString) {
     fj.expanded = Some(value);
 }
 
-unsafe fn format_job_set_out(fj: *mut format_job, value: CString) {
-    let owner = &mut *fj;
-    owner.out = Default::default();
-    owner.out = Some(value);
+fn format_job_set_out(fj: &mut format_job, value: CString) {
+    fj.out = Default::default();
+    fj.out = Some(value);
 }
 
 // Match C-string visibility while keeping the line's Rust allocation local.
@@ -23,7 +22,7 @@ unsafe fn format_job_set_out_from_line(fj: *mut format_job, value: &[u8]) {
         .position(|&byte| byte == 0)
         .unwrap_or(value.len());
     let owned = CString::new(&value[..visible]).expect("visible job output contains no NUL");
-    format_job_set_out(fj, owned);
+    format_job_set_out(&mut *fj, owned);
 }
 
 fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
@@ -105,7 +104,7 @@ pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
         output.as_ptr(),
     );
     if !output.as_bytes().is_empty() || (*fj).updated == 0 {
-        format_job_set_out(fj, output);
+        format_job_set_out(&mut *fj, output);
     }
     if (*fj).status != 0 {
         if !(*fj).client.is_null() {
@@ -195,12 +194,14 @@ pub(super) unsafe fn format_job_get(
             -(1 as ::core::ffi::c_int),
         );
         if (*fj).job.is_null() {
-            format_job_set_out(fj, format_job_message(&*fj, b"' didn't start>"));
+            let message = format_job_message(&*fj, b"' didn't start>");
+            format_job_set_out(&mut *fj, message);
         }
         (*fj).last = t;
         (*fj).updated = 0 as ::core::ffi::c_int;
     } else if !(*fj).job.is_null() && t - (*fj).last > 1 as time_t && (*fj).out.is_none() {
-        format_job_set_out(fj, format_job_message(&*fj, b"' not ready>"));
+        let message = format_job_message(&*fj, b"' not ready>");
+        format_job_set_out(&mut *fj, message);
     }
     if (*ft).flags & FORMAT_STATUS != 0 {
         (*fj).status = 1 as ::core::ffi::c_int;
@@ -392,7 +393,7 @@ mod tests {
                 let fj = format_job_find_or_insert(&mut cache, null_mut(), 0, cmd.as_ptr());
                 (*fj).last = last;
                 format_job_set_expanded(&mut *fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
-                format_job_set_out(fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
+                format_job_set_out(&mut *fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
                 if last > now || now - last < 3600 {
                     survivors.push((cmd, fj));
                 }
@@ -434,7 +435,8 @@ mod tests {
                 b"first"
             );
             format_job_set_expanded(&mut *fj, CString::new(b"expanded\xff".to_vec()).unwrap());
-            format_job_set_out(fj, format_job_message(&*fj, b"' not ready>"));
+            let message = format_job_message(&*fj, b"' not ready>");
+            format_job_set_out(&mut *fj, message);
             assert_eq!(
                 CStr::from_ptr(
                     ((*fj).out)
