@@ -150,7 +150,12 @@ pub(super) unsafe fn format_job_get(
         (*(*ft).client).jobs = Box::into_raw(Box::new(format_job_tree::default()));
         jobs = (*(*ft).client).jobs;
     }
-    fj = format_job_find_or_insert(jobs, (*ft).client, (*ft).tag, cmd);
+    fj = format_job_find_or_insert(
+        &mut *jobs,
+        (*ft).client,
+        (*ft).tag,
+        CStr::from_ptr(cmd),
+    );
     format_copy_state(
         &raw mut next,
         es,
@@ -218,14 +223,14 @@ pub(super) unsafe fn format_job_get(
 }
 // Do not retain a map borrow across format expansion or process callbacks.
 unsafe fn format_job_find_or_insert(
-    jobs: *mut format_job_tree,
+    jobs: &mut format_job_tree,
     client: *mut client,
     tag: u_int,
-    cmd: *const ::core::ffi::c_char,
+    cmd: &CStr,
 ) -> *mut format_job {
-    let key = (tag, std::ffi::CStr::from_ptr(cmd).to_bytes().to_vec());
-    *(*jobs).entries.entry(key).or_insert_with(|| {
-        let command = CStr::from_ptr(cmd).to_owned();
+    let key = (tag, cmd.to_bytes().to_vec());
+    *jobs.entries.entry(key).or_insert_with(|| {
+        let command = cmd.to_owned();
         let node = format_job {
             client,
             tag,
@@ -317,32 +322,32 @@ mod tests {
             let mut cache = format_job_tree::default();
             let mut other = format_job_tree::default();
             let command = CString::new(b"cmd\xff".to_vec()).unwrap();
-            let original = format_job_find_or_insert(&mut cache, null_mut(), 7, command.as_ptr());
+            let original = format_job_find_or_insert(&mut cache, null_mut(), 7, command.as_c_str());
             (*original).updated = 42;
             let duplicate = CString::new(command.as_bytes()).unwrap();
             assert_eq!(
                 original,
-                format_job_find_or_insert(&mut cache, null_mut(), 7, duplicate.as_ptr())
+                format_job_find_or_insert(&mut cache, null_mut(), 7, duplicate.as_c_str())
             );
             assert_ne!(
                 original,
-                format_job_find_or_insert(&mut other, null_mut(), 7, duplicate.as_ptr())
+                format_job_find_or_insert(&mut other, null_mut(), 7, duplicate.as_c_str())
             );
             assert_ne!(
                 original,
-                format_job_find_or_insert(&mut cache, null_mut(), 8, duplicate.as_ptr())
+                format_job_find_or_insert(&mut cache, null_mut(), 8, duplicate.as_c_str())
             );
 
             // Force tree growth with unsigned tags and non-UTF-8 command bytes.
             for tag in [0, 7, 8, u_int::MAX] {
                 for byte in 1..=255u8 {
                     let cmd = CString::new(vec![byte]).unwrap();
-                    format_job_find_or_insert(&mut cache, null_mut(), tag, cmd.as_ptr());
+                    format_job_find_or_insert(&mut cache, null_mut(), tag, cmd.as_c_str());
                 }
             }
             assert_eq!(
                 original,
-                format_job_find_or_insert(&mut cache, null_mut(), 7, command.as_ptr())
+                format_job_find_or_insert(&mut cache, null_mut(), 7, command.as_c_str())
             );
             assert_eq!((*original).updated, 42);
             let jobs: Vec<_> = cache.entries.values().copied().collect();
@@ -370,7 +375,7 @@ mod tests {
             let mut c: client = client::empty();
             c.jobs = Box::into_raw(Box::new(format_job_tree::default()));
             let cmd = CString::new("job").unwrap();
-            let fj = format_job_find_or_insert(c.jobs, &mut c, 0, cmd.as_ptr());
+            let fj = format_job_find_or_insert(&mut *c.jobs, &mut c, 0, cmd.as_c_str());
             (*fj).last = time(std::ptr::null_mut()) + 3600;
             format_lost_client(&mut c);
             assert!(c.jobs.is_null());
@@ -390,7 +395,7 @@ mod tests {
                 .enumerate()
             {
                 let cmd = CString::new(format!("job-{index}")).unwrap();
-                let fj = format_job_find_or_insert(&mut cache, null_mut(), 0, cmd.as_ptr());
+                let fj = format_job_find_or_insert(&mut cache, null_mut(), 0, cmd.as_c_str());
                 (*fj).last = last;
                 format_job_set_expanded(&mut *fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
                 format_job_set_out(&mut *fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
@@ -423,7 +428,7 @@ mod tests {
         unsafe {
             let mut cache = format_job_tree::default();
             let cmd = CString::new(b"printf '\xff'".to_vec()).unwrap();
-            let fj = format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_ptr());
+            let fj = format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_c_str());
             format_job_set_out_from_line(&mut *fj, b"first\0ignored");
             assert_eq!(
                 CStr::from_ptr(
@@ -457,7 +462,7 @@ mod tests {
             );
             assert_eq!(
                 fj,
-                format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_ptr())
+                format_job_find_or_insert(&mut cache, null_mut(), 1, cmd.as_c_str())
             );
             format_job_tidy_at(&mut cache, 1, 0);
             assert!(cache.entries.is_empty());
