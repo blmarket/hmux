@@ -349,7 +349,7 @@ unsafe extern "C" fn cmd_command_prompt_callback(
             if (*cdata).flags & PROMPT_INCREMENTAL != 0 {
                 current_block = 11745758271394821990;
             } else {
-                cmd_append_argv(&mut (*cdata).argv, s);
+                cmd_append_argv(&mut (*cdata).argv, CStr::from_ptr(s));
                 (*cdata).current = (*cdata).current.wrapping_add(1);
                 if ((*cdata).current as usize) != (*cdata).prompts.len() {
                     let (prompt_ptr, input_ptr) =
@@ -373,7 +373,7 @@ unsafe extern "C" fn cmd_command_prompt_callback(
                 if key as ::core::ffi::c_uint
                     != PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    cmd_append_argv(&mut argv_owner, s);
+                    cmd_append_argv(&mut argv_owner, CStr::from_ptr(s));
                 } else {
                     (*cdata).argv = argv_owner.clone();
                 }

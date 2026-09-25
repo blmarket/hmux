@@ -273,8 +273,8 @@ pub unsafe fn cmd_log_argv(argv: &Vec<CString>, prefix: &CStr) {
         );
     }
 }
-pub(crate) unsafe fn cmd_append_argv(argv: &mut Vec<CString>, arg: *const ::core::ffi::c_char) {
-    argv.push(CStr::from_ptr(arg).to_owned());
+pub(crate) fn cmd_append_argv(argv: &mut Vec<CString>, arg: &CStr) {
+    argv.push(arg.to_owned());
 }
 pub unsafe fn cmd_pack_argv(
     argv: &Vec<CString>,

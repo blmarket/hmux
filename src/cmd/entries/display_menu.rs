@@ -1381,7 +1381,10 @@ unsafe extern "C" fn cmd_display_popup_exec(
                                 if checkshell(shell) == 0 {
                                     shell = _PATH_BSHELL.as_ptr();
                                 }
-                                cmd_append_argv(&mut argv_owner, shell);
+                                cmd_append_argv(
+                                    &mut argv_owner,
+                                    std::ffi::CStr::from_ptr(shell),
+                                );
                             } else {
                                 argv_owner = args_to_vector(args);
                             }
