@@ -116,7 +116,10 @@ unsafe extern "C" fn proc_signal_cb(
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut tp: *mut tmuxproc = arg as *mut tmuxproc;
-    (*tp).signalcb.expect("non-null function pointer")(signo);
+    (*tp)
+        .signalcb
+        .as_mut()
+        .expect("signal callback is installed")(signo);
 }
 unsafe extern "C" fn peer_check_version(
     mut peer: *mut tmuxpeer,
@@ -278,10 +281,9 @@ pub unsafe extern "C" fn proc_start(mut name: *const ::core::ffi::c_char) -> *mu
     }));
     return tp;
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_loop(
+pub unsafe fn proc_loop(
     mut tp: *mut tmuxproc,
-    mut loopcb: Option<unsafe extern "C" fn() -> ::core::ffi::c_int>,
+    mut loopcb: Option<&mut dyn FnMut() -> bool>,
 ) {
     log_debug(
         b"%s loop enter\0" as *const u8 as *const ::core::ffi::c_char,
@@ -289,9 +291,7 @@ pub unsafe extern "C" fn proc_loop(
     );
     loop {
         event_loop(EVLOOP_ONCE);
-        if !((*tp).exit == 0
-            && (loopcb.is_none() || loopcb.expect("non-null function pointer")() == 0))
-        {
+        if (*tp).exit != 0 || loopcb.as_mut().is_some_and(|callback| !callback()) {
             break;
         }
     }
@@ -308,10 +308,9 @@ pub unsafe extern "C" fn proc_exit(mut tp: *mut tmuxproc) {
     }
     (*tp).exit = 1 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_set_signals(
+pub unsafe fn proc_set_signals(
     mut tp: *mut tmuxproc,
-    mut signalcb: Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>,
+    mut signalcb: Option<Box<dyn FnMut(::core::ffi::c_int)>>,
 ) {
     let mut sa: sigaction = sigaction {
         __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },

@@ -349,7 +349,7 @@ pub unsafe fn client_main(
     client_proc = proc_start(b"client\0" as *const u8 as *const ::core::ffi::c_char);
     proc_set_signals(
         client_proc,
-        Some(client_signal as unsafe extern "C" fn(::core::ffi::c_int) -> ()),
+        Some(Box::new(|sig| unsafe { client_signal(sig) })),
     );
     client_flags = (flags as ::core::ffi::c_ulonglong | CLIENT_WRITE_ACK) as uint64_t;
     log_debug(
@@ -724,7 +724,7 @@ unsafe extern "C" fn client_exec(
     );
     fatal(b"execl failed\0" as *const u8 as *const ::core::ffi::c_char);
 }
-unsafe extern "C" fn client_signal(mut sig: ::core::ffi::c_int) {
+unsafe fn client_signal(mut sig: ::core::ffi::c_int) {
     let mut sigact: sigaction = sigaction {
         __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },

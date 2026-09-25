@@ -338,7 +338,7 @@ unsafe fn server_start_inner(
     server_proc = proc_start(b"server\0" as *const u8 as *const ::core::ffi::c_char);
     proc_set_signals(
         server_proc,
-        Some(server_signal as unsafe extern "C" fn(::core::ffi::c_int) -> ()),
+        Some(Box::new(|sig| unsafe { server_signal(sig) })),
     );
     sigprocmask(
         SIG_SETMASK,
@@ -417,16 +417,14 @@ unsafe fn server_start_inner(
     event_add(&raw mut server_ev_tidy, &raw mut tv);
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);
-    proc_loop(
-        server_proc,
-        Some(server_loop as unsafe extern "C" fn() -> ::core::ffi::c_int),
-    );
+    let mut loop_callback = || unsafe { server_loop() == 0 };
+    proc_loop(server_proc, Some(&mut loop_callback));
     job_kill_all();
     prompt_save_history();
     server_clear_messages();
     exit(0 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn server_loop() -> ::core::ffi::c_int {
+unsafe fn server_loop() -> ::core::ffi::c_int {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut items: u_int = 0;
     current_time = time(::core::ptr::null_mut::<time_t>());
@@ -665,7 +663,7 @@ pub unsafe extern "C" fn server_add_accept(mut timeout: ::core::ffi::c_int) {
         event_add(&raw mut server_ev_accept, &raw mut tv);
     };
 }
-unsafe extern "C" fn server_signal(mut sig: ::core::ffi::c_int) {
+unsafe fn server_signal(mut sig: ::core::ffi::c_int) {
     let _fd: ::core::ffi::c_int = 0;
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
