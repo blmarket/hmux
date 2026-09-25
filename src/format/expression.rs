@@ -3217,7 +3217,7 @@ pub(super) unsafe fn format_replace(
         );
     }
     if width != 0 {
-        value = utf8_pad_cstring(value.as_ptr(), width.unsigned_abs(), width < 0);
+        value = utf8_pad_cstring(value.as_c_str(), width.unsigned_abs(), width < 0);
         format_log1(
             es,
             c"format_replace".as_ptr(),

@@ -1959,13 +1959,9 @@ pub unsafe extern "C" fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_
     }
     return width;
 }
-pub(crate) unsafe fn utf8_pad_cstring(
-    s: *const ::core::ffi::c_char,
-    width: u_int,
-    left: bool,
-) -> CString {
-    let bytes = CStr::from_ptr(s).to_bytes();
-    let padding = width.saturating_sub(utf8_cstrwidth(s)) as usize;
+pub(crate) fn utf8_pad_cstring(s: &CStr, width: u_int, left: bool) -> CString {
+    let bytes = s.to_bytes();
+    let padding = width.saturating_sub(unsafe { utf8_cstrwidth(s.as_ptr()) }) as usize;
     let mut output = Vec::with_capacity(bytes.len() + padding);
     if left {
         output.resize(padding, b' ');
