@@ -530,20 +530,20 @@ unsafe extern "C" fn window_customize_get_key(
 }
 unsafe fn window_customize_scope_text(
     scope: window_customize_scope,
-    fs: *mut cmd_find_state,
+    fs: &cmd_find_state,
 ) -> CString {
     let mut idx: u_int = 0;
     match scope as ::core::ffi::c_uint {
         7 => {
-            window_pane_index((*fs).wp, &raw mut idx);
+            window_pane_index(fs.wp, &raw mut idx);
             CString::new(format!("pane {idx}")).expect("pane index contains no NUL")
         }
         4 | 9 => {
             let mut bytes = b"session ".to_vec();
-            bytes.extend_from_slice(CStr::from_ptr(((*(*fs).s).name).as_ptr().cast_mut()).to_bytes());
+            bytes.extend_from_slice(CStr::from_ptr((*fs.s).name.as_ptr().cast_mut()).to_bytes());
             CString::new(bytes).expect("session name contains no NUL")
         }
-        6 => CString::new(format!("window {}", (*(*fs).wl).idx))
+        6 => CString::new(format!("window {}", (*fs.wl).idx))
             .expect("window index contains no NUL"),
         _ => CString::new(Vec::new()).expect("empty scope text"),
     }
@@ -1224,7 +1224,7 @@ unsafe extern "C" fn window_customize_build_option(
         b"%d\0" as *const u8 as *const ::core::ffi::c_char,
         is_monitor,
     );
-    let scope_text = window_customize_scope_text(scope, fs);
+    let scope_text = window_customize_scope_text(scope, &*fs);
     format_add(
         ft,
         b"option_scope\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1623,7 +1623,7 @@ unsafe extern "C" fn window_customize_build_environment(
         b"%d\0" as *const u8 as *const ::core::ffi::c_char,
         global,
     );
-    let scope_text = window_customize_scope_text(scope, fs);
+    let scope_text = window_customize_scope_text(scope, &*fs);
     format_add(
         ft,
         b"environment_scope\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3270,7 +3270,7 @@ unsafe extern "C" fn window_customize_set_environment(
         scope = (*item).scope;
         env = (*item).environ;
     }
-    let scope_text = window_customize_scope_text(scope, &raw mut fs);
+    let scope_text = window_customize_scope_text(scope, &fs);
     if !scope_text.as_bytes().is_empty() {
         space = b", for \0" as *const u8 as *const ::core::ffi::c_char;
     } else if scope as ::core::ffi::c_uint
@@ -3878,7 +3878,7 @@ unsafe extern "C" fn window_customize_set_option(
         }
         options_set_number(oo, name, choice as ::core::ffi::c_longlong);
     } else {
-        let scope_text = window_customize_scope_text(scope, &raw mut fs);
+        let scope_text = window_customize_scope_text(scope, &fs);
         if !scope_text.as_bytes().is_empty() {
             space = b", for \0" as *const u8 as *const ::core::ffi::c_char;
         } else if scope as ::core::ffi::c_uint
