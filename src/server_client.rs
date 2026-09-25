@@ -279,11 +279,10 @@ unsafe fn server_client_ensure_term_name(c: &mut client) {
     }
 }
 
-pub(crate) unsafe fn server_client_set_saved_status_screen(c: *mut client, screen: Box<screen>) {
-    let owner = c as *mut client;
-    assert!((*owner).saved_status_screen.is_none());
-    (*owner).saved_status_screen = Some(screen);
-    (*c).status.active = (*owner).saved_status_screen.as_deref_mut().unwrap();
+pub(crate) fn server_client_set_saved_status_screen(c: &mut client, screen: Box<screen>) {
+    assert!(c.saved_status_screen.is_none());
+    c.saved_status_screen = Some(screen);
+    c.status.active = c.saved_status_screen.as_deref_mut().unwrap();
 }
 
 pub(crate) unsafe fn server_client_clear_saved_status_screen(c: *mut client) {

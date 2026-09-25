@@ -281,7 +281,7 @@ pub unsafe extern "C" fn status_get_range(
 unsafe extern "C" fn status_push_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;
     if (*sl).active == &raw mut (*sl).screen {
-        server_client_set_saved_status_screen(c, Box::new(screen::empty()));
+        server_client_set_saved_status_screen(&mut *c, Box::new(screen::empty()));
         screen_init((*sl).active, (*c).tty.sx, status_line_size(c), 0 as u_int);
     }
     (*sl).references += 1;
