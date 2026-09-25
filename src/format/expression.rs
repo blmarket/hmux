@@ -2776,7 +2776,7 @@ pub(super) unsafe fn format_replace(
                     value = c"".to_owned();
                 } else {
                     let escape = colour_format_escape_for_client(
-                        (*ft).c,
+                        (*ft).c.as_ref(),
                         c,
                         modifiers & FORMAT_COLOUR_ESC_BG as uint64_t != 0,
                     );

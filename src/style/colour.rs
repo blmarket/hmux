@@ -537,22 +537,23 @@ fn colour_format_escape_resolved(
 
 /// Resolve raw client state and return owned SGR text without shared scratch storage.
 /// # Safety
-/// A non-null client and its open terminal must be readable for this call.
+/// A supplied client's non-null terminal pointer must be readable when it is open.
 pub unsafe fn colour_format_escape_for_client(
-    c: *const client,
+    c: Option<&client>,
     mut colour: i32,
     background: bool,
 ) -> Option<std::ffi::CString> {
     let mut flags = TERM_256COLOURS | TERM_RGBCOLOURS;
-    if !c.is_null() && (*c).tty.flags & TTY_OPENED != 0 && !(*c).tty.term.is_null() {
-        flags = (*(*c).tty.term).flags;
+    if let Some(client) = c {
+        if client.tty.flags & TTY_OPENED != 0 && !client.tty.term.is_null() {
+            flags = (*client.tty.term).flags;
+        }
     }
     if colour & COLOUR_FLAG_THEME != 0 {
         let n = (colour & 0xff) as usize;
-        colour = if !c.is_null() && n < COLOUR_THEME_COUNT as usize {
-            (*c).theme_colours[n]
-        } else {
-            colour_theme_terminal_colour(n as u32)
+        colour = match c {
+            Some(client) if n < COLOUR_THEME_COUNT as usize => client.theme_colours[n],
+            _ => colour_theme_terminal_colour(n as u32),
         };
     }
     colour_format_escape_resolved(colour, background, flags)
@@ -572,7 +573,7 @@ pub unsafe extern "C" fn colour_toescape(
         static BUFFER: std::cell::RefCell<std::ffi::CString> =
             std::cell::RefCell::new(std::ffi::CString::default());
     }
-    let Some(text) = colour_format_escape_for_client(c, colour, bg != 0) else {
+    let Some(text) = colour_format_escape_for_client(c.as_ref(), colour, bg != 0) else {
         return std::ptr::null();
     };
     BUFFER.with(|buffer| {
