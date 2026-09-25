@@ -332,16 +332,14 @@ unsafe fn args_value_count(entry: *mut args_entry) -> usize {
     }
 }
 
-unsafe fn args_last_value(args: *mut args, flag: u_char) -> Option<*mut args_value> {
-    let entry = args_find(args, flag);
-    if entry.is_null() {
-        return None;
-    }
-    let count = args_value_count(entry);
-    (count != 0).then(|| args_value_at(entry, count - 1))
+unsafe fn args_last_value<'a>(args: &'a args, flag: u_char) -> Option<&'a args_value> {
+    let tree = args.tree.entries.as_ref()?;
+    let entry = tree.entries.get(&flag)?.as_ref()?;
+    let owner = entry.values.storage.as_ref()?;
+    owner.values.last().map(|value| value.as_ref())
 }
 
-unsafe fn args_last_string(args: *mut args, flag: u_char) -> Option<*const ::core::ffi::c_char> {
+unsafe fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
     let value = args_last_value(args, flag)?;
     if (*value).type_0() as ::core::ffi::c_uint
         != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -349,7 +347,7 @@ unsafe fn args_last_string(args: *mut args, flag: u_char) -> Option<*const ::cor
     {
         return None;
     }
-    Some((*value).string_ptr())
+    Some(CStr::from_ptr(value.string_ptr()))
 }
 unsafe fn args_copy_value(from: *mut args_value) -> args_value {
     match (*from).type_0() as ::core::ffi::c_uint {
@@ -1057,11 +1055,11 @@ pub unsafe extern "C" fn args_get(
     if entry.is_null() {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    let value = args_last_value(args, flag);
+    let value = args_last_value(&*args, flag);
     if value.is_none() {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    return (*value.unwrap()).string_ptr();
+    return value.unwrap().string_ptr();
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_first(
@@ -1434,8 +1432,8 @@ pub unsafe fn args_strtonum_result(
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
 ) -> Result<i64, ArgumentValueError> {
-    let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
-    parse_number(CStr::from_ptr(value), minval, maxval)
+    let value = args_last_string(&*args, flag).ok_or(ArgumentValueError::Missing)?;
+    parse_number(value, minval, maxval)
 }
 
 /// Converts the last string value after format expansion to a bounded integer.
@@ -1450,8 +1448,7 @@ pub unsafe fn args_strtonum_and_expand_result(
     maxval: ::core::ffi::c_longlong,
     item: *mut cmdq_item,
 ) -> Result<i64, ArgumentValueError> {
-    let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
-    let value = CStr::from_ptr(value);
+    let value = args_last_string(&*args, flag).ok_or(ArgumentValueError::Missing)?;
     let formatted = format_single_from_target_cstring(item, value.as_ptr());
     parse_number(formatted.as_c_str(), minval, maxval)
 }
@@ -1471,15 +1468,15 @@ pub unsafe fn args_percentage_result(
     if entry.is_null() {
         return Err(ArgumentValueError::Missing);
     }
-    let value = args_last_value(args, flag).ok_or(ArgumentValueError::Empty)?;
-    if (*value).type_0() as ::core::ffi::c_uint
+    let value = args_last_value(&*args, flag).ok_or(ArgumentValueError::Empty)?;
+    if value.type_0() as ::core::ffi::c_uint
         != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || (*value).string_ptr().is_null()
+        || value.string_ptr().is_null()
     {
         return Err(ArgumentValueError::Missing);
     }
     parse_percentage(
-        CStr::from_ptr((*value).string_ptr()),
+        CStr::from_ptr(value.string_ptr()),
         minval,
         maxval,
         curval,
@@ -1503,15 +1500,15 @@ pub unsafe fn args_percentage_and_expand_result(
     if entry.is_null() {
         return Err(ArgumentValueError::Missing);
     }
-    let value = args_last_value(args, flag).ok_or(ArgumentValueError::Empty)?;
-    if (*value).type_0() as ::core::ffi::c_uint
+    let value = args_last_value(&*args, flag).ok_or(ArgumentValueError::Empty)?;
+    if value.type_0() as ::core::ffi::c_uint
         != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || (*value).string_ptr().is_null()
+        || value.string_ptr().is_null()
     {
         return Err(ArgumentValueError::Missing);
     }
     parse_percentage_and_expand(
-        CStr::from_ptr((*value).string_ptr()),
+        CStr::from_ptr(value.string_ptr()),
         minval,
         maxval,
         curval,
