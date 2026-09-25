@@ -135,15 +135,15 @@ unsafe fn paste_name_tree_remove(
 // The original comparator puts larger order values first and treats equal
 // orders as duplicates. Reverse gives BTreeMap the same ordering and Entry
 // preserves RB_INSERT's existing-item result for duplicate keys.
-unsafe fn paste_time_key(pb: *const paste_buffer) -> std::cmp::Reverse<u_int> {
-    std::cmp::Reverse((*pb).order)
+fn paste_time_key(pb: &paste_buffer) -> std::cmp::Reverse<u_int> {
+    std::cmp::Reverse(pb.order)
 }
 
 unsafe fn paste_time_tree_insert(
     head: *mut paste_time_tree,
     elm: *mut paste_buffer,
 ) -> *mut paste_buffer {
-    match (*head).entries.entry(paste_time_key(elm)) {
+    match (*head).entries.entry(paste_time_key(&*elm)) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
@@ -173,7 +173,7 @@ unsafe fn paste_time_tree_next(
     (*head)
         .entries
         .range((
-            std::ops::Bound::Excluded(paste_time_key(elm)),
+            std::ops::Bound::Excluded(paste_time_key(&*elm)),
             std::ops::Bound::Unbounded,
         ))
         .next()
@@ -189,7 +189,7 @@ unsafe fn paste_time_tree_prev(
         .entries
         .range((
             std::ops::Bound::Unbounded,
-            std::ops::Bound::Excluded(paste_time_key(elm)),
+            std::ops::Bound::Excluded(paste_time_key(&*elm)),
         ))
         .next_back()
         .map(|(_, entry)| *entry)
@@ -202,7 +202,7 @@ unsafe fn paste_time_tree_remove(
 ) -> *mut paste_buffer {
     (*head)
         .entries
-        .remove(&paste_time_key(elm))
+        .remove(&paste_time_key(&*elm))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 
