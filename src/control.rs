@@ -393,12 +393,12 @@ mod control_queue_tests {
             let second = pane(9);
             assert!(control_panes_insert(&raw mut index, first).is_null());
             assert!(control_panes_insert(&raw mut index, second).is_null());
-            assert_eq!(control_panes_find(&raw mut index, first), first);
+            assert_eq!(control_panes_find(&index, &*first), first);
             assert_eq!(control_panes_next(&*first), second);
             assert_eq!(control_panes_prev(&*second), first);
 
             drop(control_panes_remove(&raw mut index, first));
-            assert_eq!(control_panes_minmax(&raw mut index, RB_NEGINF), second);
+            assert_eq!(control_panes_minmax(&index, RB_NEGINF), second);
             drop(control_panes_remove(&raw mut index, second));
             assert!(index.storage.is_null());
         }
@@ -438,7 +438,7 @@ unsafe extern "C" fn control_get_pane(
             owner: std::ptr::null_mut(),
         },
     };
-    return control_panes_find(&raw mut (*cs).panes, &raw mut cp);
+    return control_panes_find(&(*cs).panes, &cp);
 }
 unsafe extern "C" fn control_add_pane(
     mut c: *mut client,
@@ -494,7 +494,7 @@ unsafe extern "C" fn control_get_window(
     if cs.is_null() {
         return ::core::ptr::null_mut::<control_window>();
     }
-    return control_windows_find(&raw mut (*cs).windows, &raw mut cw);
+    return control_windows_find(&(*cs).windows, &cw);
 }
 #[no_mangle]
 pub unsafe extern "C" fn control_set_window_size(
@@ -576,7 +576,7 @@ pub unsafe extern "C" fn control_reset_offsets(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     let mut cp1: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_panes_minmax(&raw mut (*cs).panes, RB_NEGINF);
+    cp = control_panes_minmax(&(*cs).panes, RB_NEGINF);
     while !cp.is_null() && {
         cp1 = control_panes_next(&*cp);
         1 as ::core::ffi::c_int != 0
@@ -1536,7 +1536,7 @@ pub unsafe extern "C" fn control_ready(mut c: *mut client) {
 pub unsafe extern "C" fn control_discard(mut c: *mut client) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    cp = control_panes_minmax(&raw mut (*cs).panes, RB_NEGINF);
+    cp = control_panes_minmax(&(*cs).panes, RB_NEGINF);
     while !cp.is_null() {
         control_discard_pane(c, cp);
         cp = control_panes_next(&*cp);
@@ -1571,7 +1571,7 @@ pub unsafe extern "C" fn control_stop(mut c: *mut client) {
     }
     bufferevent_free((*cs).read_event);
     control_reset_offsets(c);
-    cw = control_windows_minmax(&raw mut (*cs).windows, RB_NEGINF);
+    cw = control_windows_minmax(&(*cs).windows, RB_NEGINF);
     while !cw.is_null() && {
         cw1 = control_windows_next(&*cw);
         1 as ::core::ffi::c_int != 0
@@ -1614,25 +1614,25 @@ fn control_panes_key(elm: &control_pane) -> u32 {
     elm.pane
 }
 pub unsafe fn control_panes_find(
-    head: *mut control_panes,
-    elm: *mut control_pane,
+    head: &control_panes,
+    elm: &control_pane,
 ) -> *mut control_pane {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_panes_key(&*elm);
+    let key = control_panes_key(elm);
     map.get(&key).map_or(std::ptr::null_mut(), |node| {
         &**node as *const control_pane as *mut control_pane
     })
 }
 pub unsafe fn control_panes_nfind(
-    head: *mut control_panes,
-    elm: *mut control_pane,
+    head: &control_panes,
+    elm: &control_pane,
 ) -> *mut control_pane {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_panes_key(&*elm);
+    let key = control_panes_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| {
@@ -1687,10 +1687,10 @@ pub unsafe fn control_panes_remove(
     owner
 }
 pub unsafe fn control_panes_minmax(
-    head: *mut control_panes,
+    head: &control_panes,
     direction: ::core::ffi::c_int,
 ) -> *mut control_pane {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -1729,23 +1729,23 @@ fn control_windows_key(elm: &control_window) -> u32 {
     elm.window
 }
 pub unsafe fn control_windows_find(
-    head: *mut control_windows,
-    elm: *mut control_window,
+    head: &control_windows,
+    elm: &control_window,
 ) -> *mut control_window {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_windows_key(&*elm);
+    let key = control_windows_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn control_windows_nfind(
-    head: *mut control_windows,
-    elm: *mut control_window,
+    head: &control_windows,
+    elm: &control_window,
 ) -> *mut control_window {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_windows_key(&*elm);
+    let key = control_windows_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1791,10 +1791,10 @@ pub unsafe fn control_windows_remove(
     elm
 }
 pub unsafe fn control_windows_minmax(
-    head: *mut control_windows,
+    head: &control_windows,
     direction: ::core::ffi::c_int,
 ) -> *mut control_window {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
