@@ -682,8 +682,8 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> C
     CString::new(buf).expect("command list contains no interior NUL")
 }
 
-pub unsafe fn cmd_list_print(cmdlist: *const cmd_list, flags: ::core::ffi::c_int) -> CString {
-    cmd_list_print_cstring(&*cmdlist, flags)
+pub unsafe fn cmd_list_print(cmdlist: &cmd_list, flags: ::core::ffi::c_int) -> CString {
+    cmd_list_print_cstring(cmdlist, flags)
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_first(mut cmdlist: *mut cmd_list) -> *mut cmd {

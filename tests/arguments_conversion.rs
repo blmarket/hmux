@@ -316,7 +316,7 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
             Err(ArgumentValueError::Missing)
         );
 
-        let rendered = cmd_list_print((*value).cmdlist(), 0);
+        let rendered = cmd_list_print(&*(*value).cmdlist(), 0);
         assert_eq!(rendered.as_bytes(), b"");
         args_free(args);
 

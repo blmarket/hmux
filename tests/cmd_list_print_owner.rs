@@ -28,7 +28,7 @@ fn command_printer_keeps_exported_c_buffer_and_empty_arguments() {
 fn list_printer_preserves_empty_and_group_separator_bytes() {
     unsafe {
         let list = cmd_list_new();
-        let empty = cmd_list_print(list, 0);
+        let empty = cmd_list_print(&*list, 0);
         assert_eq!(empty.as_bytes(), b"");
 
         for _ in 0..3 {
@@ -65,7 +65,7 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             expected.extend_from_slice(name);
             expected.extend_from_slice(separator2);
             expected.extend_from_slice(name);
-            let printed = cmd_list_print(list, flags);
+            let printed = cmd_list_print(&*list, flags);
             assert_eq!(printed.as_bytes(), expected);
         }
         let args = args_create();
@@ -119,7 +119,7 @@ fn list_splice_copy_and_refcount_keep_command_pointers_stable() {
         assert_ne!(copied_second, second);
         assert_ne!(copied_third, third);
         assert!(cmd_list_next(copied_third).is_null());
-        let printed = cmd_list_print(copied, 0);
+        let printed = cmd_list_print(&*copied, 0);
         assert_eq!(
             printed.as_bytes(),
             b"display-message ; display-message ;; display-message"
