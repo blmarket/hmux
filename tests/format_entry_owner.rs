@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static CALLBACK_CALLS: AtomicUsize = AtomicUsize::new(0);
 
-fn callback(_ft: *mut format_tree) -> Option<std::ffi::CString> {
+fn callback(_ft: std::ptr::NonNull<format_tree>) -> Option<std::ffi::CString> {
     CALLBACK_CALLS.fetch_add(1, Ordering::SeqCst);
     Some(std::ffi::CString::new(b"cached\xff".to_vec()).unwrap())
 }

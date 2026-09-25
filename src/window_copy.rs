@@ -1387,18 +1387,18 @@ unsafe fn window_copy_formats(
         );
     }
     format_add_owned_cb(ft, c"search_match", |ft| unsafe {
-        window_copy_search_match_cb(ft)
+        window_copy_search_match_cb(ft.as_ptr())
     });
     format_add_owned_cb(ft, c"copy_cursor_word", |ft| unsafe {
-        window_copy_cursor_word_cb(ft)
+        window_copy_cursor_word_cb(ft.as_ptr())
     });
     format_add_owned_cb(ft, c"copy_cursor_line", |ft| unsafe {
-        window_copy_cursor_line_cb(ft)
+        window_copy_cursor_line_cb(ft.as_ptr())
     });
     format_add_owned_cb(
         ft,
         c"copy_cursor_hyperlink",
-        |ft| unsafe { window_copy_cursor_hyperlink_cb(ft) },
+        |ft| unsafe { window_copy_cursor_hyperlink_cb(ft.as_ptr()) },
     );
 }
 unsafe fn window_copy_get_screen(mut wme: *mut window_mode_entry) -> *mut screen {
