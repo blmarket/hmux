@@ -256,7 +256,7 @@ unsafe extern "C" fn cmd_new_window_exec(
     sc.s = s;
     sc.tc = tc;
     sc.name = wname;
-    argv_owner = args_to_vector(args);
+    argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = environ_create();
     av = args_first_value(args, 'e' as i32 as u_char);

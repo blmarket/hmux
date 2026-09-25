@@ -128,7 +128,7 @@ unsafe extern "C" fn cmd_respawn_pane_exec(
     sc.s = s;
     sc.wl = wl;
     sc.wp0 = wp;
-    argv_owner = args_to_vector(args);
+    argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = environ_create();
     av = args_first_value(args, 'e' as i32 as u_char);

@@ -1383,7 +1383,7 @@ unsafe extern "C" fn cmd_display_popup_exec(
                                 }
                                 cmd_append_argv(&mut argv_owner, std::ffi::CStr::from_ptr(shell));
                             } else {
-                                argv_owner = args_to_vector(args);
+                                argv_owner = args_to_vector(&*args);
                             }
                             if args_has(args, 'e' as i32 as u_char) >= 1 as ::core::ffi::c_int {
                                 env = environ_create();

@@ -643,7 +643,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                             sc.tc = c;
                                                         }
                                                         sc.name = wname;
-                                                        argv_owner = args_to_vector(args);
+                                                        argv_owner = args_to_vector(&*args);
                                                         sc.argv = argv_owner;
                                                         sc.idx = -(1 as ::core::ffi::c_int);
                                                         sc.cwd =

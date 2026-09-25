@@ -354,7 +354,7 @@ unsafe extern "C" fn cmd_split_window_exec(
     sc.wl = wl;
     sc.wp0 = wp;
     sc.lc = lc;
-    argv_owner = args_to_vector(args);
+    argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = environ_create();
     av = args_first_value(args, 'e' as i32 as u_char);

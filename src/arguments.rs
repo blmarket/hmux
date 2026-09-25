@@ -779,9 +779,9 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
     }
     drop(Box::from_raw(args));
 }
-pub unsafe fn args_to_vector(args: *mut args) -> Vec<CString> {
+pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
     let mut argv = Vec::new();
-    for value in (*args).values.iter() {
+    for value in args.values.iter() {
         match value.type_0() as ::core::ffi::c_uint {
             1 => {
                 assert!(
