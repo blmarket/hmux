@@ -1009,7 +1009,7 @@ unsafe extern "C" fn window_customize_option_is_changed(
         ::core::ptr::null::<::core::ffi::c_char>(),
         0 as ::core::ffi::c_int,
     );
-    let default_value = options_default_to_cstring(oe);
+    let default_value = options_default_to_cstring(&*oe);
     changed = (strcmp(value.as_ptr(), default_value.as_ptr()) != 0 as ::core::ffi::c_int)
         as ::core::ffi::c_int;
     drop(value);
@@ -2298,7 +2298,7 @@ unsafe extern "C" fn window_customize_draw_option(
                                         ));
                                         value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                         if !oe.is_null() && array_key.is_null() {
-                                            let rendered = options_default_to_cstring(oe);
+                                            let rendered = options_default_to_cstring(&*oe);
                                             if strcmp(rendered.as_ptr(), value)
                                                 != 0 as ::core::ffi::c_int
                                             {

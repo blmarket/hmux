@@ -441,20 +441,20 @@ pub unsafe extern "C" fn options_default(
 }
 /// Format a built-in default for Rust callers. The exported C API keeps its
 /// libc-owned return value below.
-pub(crate) unsafe fn options_default_to_cstring(oe: *const options_table_entry) -> CString {
-    match (*oe).type_0 as ::core::ffi::c_uint {
-        0 | 6 => CStr::from_ptr((*oe).default_str).to_owned(),
-        1 => CString::new((*oe).default_num.to_string())
+pub(crate) unsafe fn options_default_to_cstring(oe: &options_table_entry) -> CString {
+    match oe.type_0 as ::core::ffi::c_uint {
+        0 | 6 => CStr::from_ptr(oe.default_str).to_owned(),
+        1 => CString::new(oe.default_num.to_string())
             .expect("decimal option default contains no NUL"),
-        2 => key_string_format((*oe).default_num as key_code, false),
-        3 => colour_format((*oe).default_num as ::core::ffi::c_int),
-        4 => if (*oe).default_num != 0 {
+        2 => key_string_format(oe.default_num as key_code, false),
+        3 => colour_format(oe.default_num as ::core::ffi::c_int),
+        4 => if oe.default_num != 0 {
             c"on"
         } else {
             c"off"
         }
         .to_owned(),
-        5 => CStr::from_ptr(*(*oe).choices.offset((*oe).default_num as isize)).to_owned(),
+        5 => CStr::from_ptr(*oe.choices.offset(oe.default_num as isize)).to_owned(),
         _ => {
             fatalx(b"unknown option type\0" as *const u8 as *const ::core::ffi::c_char);
         }
