@@ -20,7 +20,7 @@ use crate::src::window::{window_count_panes, window_pane_first, window_pane_next
 #[repr(C)]
 pub struct C2RustUnnamed_35 {
     pub name: *const ::core::ffi::c_char,
-    pub arrange: Option<unsafe fn(&mut window)>,
+    pub arrange: Option<fn(&mut window)>,
 }
 static mut layout_sets: [C2RustUnnamed_35; 7] = unsafe {
     [
@@ -261,26 +261,26 @@ unsafe fn layout_set_even_h(mut w: *mut window) {
 unsafe fn layout_set_even_v(mut w: *mut window) {
     layout_set_even(w, LAYOUT_TOPBOTTOM);
 }
-unsafe fn layout_set_even_h_callback(w: &mut window) {
-    layout_set_even_h(w as *mut window);
+fn layout_set_even_h_callback(w: &mut window) {
+    unsafe { layout_set_even_h(w as *mut window) };
 }
-unsafe fn layout_set_even_v_callback(w: &mut window) {
-    layout_set_even_v(w as *mut window);
+fn layout_set_even_v_callback(w: &mut window) {
+    unsafe { layout_set_even_v(w as *mut window) };
 }
-unsafe fn layout_set_main_h_callback(w: &mut window) {
-    layout_set_main_h(w as *mut window);
+fn layout_set_main_h_callback(w: &mut window) {
+    unsafe { layout_set_main_h(w as *mut window) };
 }
-unsafe fn layout_set_main_h_mirrored_callback(w: &mut window) {
-    layout_set_main_h_mirrored(w as *mut window);
+fn layout_set_main_h_mirrored_callback(w: &mut window) {
+    unsafe { layout_set_main_h_mirrored(w as *mut window) };
 }
-unsafe fn layout_set_main_v_callback(w: &mut window) {
-    layout_set_main_v(w as *mut window);
+fn layout_set_main_v_callback(w: &mut window) {
+    unsafe { layout_set_main_v(w as *mut window) };
 }
-unsafe fn layout_set_main_v_mirrored_callback(w: &mut window) {
-    layout_set_main_v_mirrored(w as *mut window);
+fn layout_set_main_v_mirrored_callback(w: &mut window) {
+    unsafe { layout_set_main_v_mirrored(w as *mut window) };
 }
-unsafe fn layout_set_tiled_callback(w: &mut window) {
-    layout_set_tiled(w as *mut window);
+fn layout_set_tiled_callback(w: &mut window) {
+    unsafe { layout_set_tiled(w as *mut window) };
 }
 unsafe fn layout_set_main_h(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
