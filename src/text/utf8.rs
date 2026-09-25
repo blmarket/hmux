@@ -947,24 +947,27 @@ static mut utf8_default_width_cache: [utf8_width_item; 162] = [
 // The old comparator ordered entries by size first and then by memcmp over exactly
 // that many bytes. This key has the same ordering while the map preserves
 // duplicate insertion behavior by retaining the first item for each key.
-unsafe fn utf8_data_key(item: *const utf8_item) -> (u_char, Vec<u8>) {
-    let size = (*item).size;
-    let data = std::slice::from_raw_parts((*item).data.as_ptr().cast::<u8>(), size as usize);
+unsafe fn utf8_data_key(item: &utf8_item) -> (u_char, Vec<u8>) {
+    let size = item.size;
+    let data = std::slice::from_raw_parts(item.data.as_ptr().cast::<u8>(), size as usize);
     (size, data.to_vec())
 }
 
-unsafe fn utf8_data_tree_insert(head: *mut utf8_data_tree, elm: *mut utf8_item) -> *mut utf8_item {
-    match (*head).entries.entry(utf8_data_key(elm)) {
+unsafe fn utf8_data_tree_insert(
+    head: &mut utf8_data_tree,
+    elm: &mut utf8_item,
+) -> *mut utf8_item {
+    match head.entries.entry(utf8_data_key(elm)) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
+            entry.insert(&raw mut *elm);
             ::core::ptr::null_mut::<utf8_item>()
         }
     }
 }
 
-unsafe fn utf8_data_tree_find(head: *mut utf8_data_tree, item: *const utf8_item) -> *mut utf8_item {
-    (*head)
+unsafe fn utf8_data_tree_find(head: &utf8_data_tree, item: &utf8_item) -> *mut utf8_item {
+    head
         .entries
         .get(&utf8_data_key(item))
         .copied()
@@ -978,10 +981,10 @@ static mut utf8_data_tree: utf8_data_tree = utf8_data_tree {
 // key ordering is identical, and its entry API retains RB_INSERT's behavior of
 // returning the existing item without replacing it on duplicate keys.
 unsafe fn utf8_index_tree_insert(
-    head: *mut utf8_index_tree,
+    head: &mut utf8_index_tree,
     elm: Box<utf8_item>,
 ) -> *mut utf8_item {
-    match (*head).entries.entry(elm.index) {
+    match head.entries.entry(elm.index) {
         std::collections::btree_map::Entry::Occupied(mut entry) => {
             entry.get_mut().as_mut() as *mut utf8_item
         }
@@ -991,11 +994,11 @@ unsafe fn utf8_index_tree_insert(
         }
     }
 }
-unsafe fn utf8_index_tree_find(head: *mut utf8_index_tree, index: u_int) -> *mut utf8_item {
-    (*head)
+fn utf8_index_tree_find(head: &utf8_index_tree, index: u_int) -> *mut utf8_item {
+    head
         .entries
-        .get_mut(&index)
-        .map(|item| item.as_mut() as *mut utf8_item)
+        .get(&index)
+        .map(|item| item.as_ref() as *const utf8_item as *mut utf8_item)
         .unwrap_or(::core::ptr::null_mut::<utf8_item>())
 }
 static mut utf8_index_tree: utf8_index_tree = utf8_index_tree {
@@ -1018,7 +1021,7 @@ unsafe extern "C" fn utf8_item_by_data(
         size,
     );
     ui.size = size as u_char;
-    return utf8_data_tree_find(&raw mut utf8_data_tree, &ui);
+    return utf8_data_tree_find(&*(&raw const utf8_data_tree), &ui);
 }
 unsafe extern "C" fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
     let mut ui: utf8_item = utf8_item {
@@ -1027,7 +1030,7 @@ unsafe extern "C" fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
         size: 0,
     };
     ui.index = index;
-    return utf8_index_tree_find(&raw mut utf8_index_tree, ui.index);
+    return utf8_index_tree_find(&*(&raw const utf8_index_tree), ui.index);
 }
 unsafe extern "C" fn utf8_find_in_width_cache(mut wc: wchar_t) -> *mut utf8_width_item {
     return utf8_width_cache_find(&raw mut utf8_width_cache, wc);
@@ -1256,10 +1259,10 @@ unsafe extern "C" fn utf8_put_item(
     owned.size = size as u_char;
     ui = owned.as_mut() as *mut utf8_item;
     assert!(
-        utf8_index_tree_insert(&raw mut utf8_index_tree, owned).is_null(),
+        utf8_index_tree_insert(&mut *(&raw mut utf8_index_tree), owned).is_null(),
         "fresh UTF-8 index must be unique"
     );
-    utf8_data_tree_insert(&raw mut utf8_data_tree, ui);
+    utf8_data_tree_insert(&mut *(&raw mut utf8_data_tree), &mut *ui);
     *index = (*ui).index;
     log_debug(
         b"%s: added %.*s = %u\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2110,18 +2113,18 @@ mod tests {
             let mut first_item = Box::new(std::mem::zeroed::<utf8_item>());
             first_item.index = 7;
             let first = first_item.as_mut() as *mut utf8_item;
-            assert!(utf8_index_tree_insert(&raw mut tree, first_item).is_null());
+            assert!(utf8_index_tree_insert(&mut tree, first_item).is_null());
 
             let mut zero = Box::new(std::mem::zeroed::<utf8_item>());
             zero.index = 0;
-            assert!(utf8_index_tree_insert(&raw mut tree, zero).is_null());
+            assert!(utf8_index_tree_insert(&mut tree, zero).is_null());
             let mut maximum = Box::new(std::mem::zeroed::<utf8_item>());
             maximum.index = u_int::MAX;
-            assert!(utf8_index_tree_insert(&raw mut tree, maximum).is_null());
+            assert!(utf8_index_tree_insert(&mut tree, maximum).is_null());
             let mut duplicate = Box::new(std::mem::zeroed::<utf8_item>());
             duplicate.index = 7;
             assert_eq!(
-                utf8_index_tree_insert(&raw mut tree, duplicate),
+                utf8_index_tree_insert(&mut tree, duplicate),
                 first,
                 "duplicate indexes keep the original item"
             );
@@ -2130,8 +2133,8 @@ mod tests {
                 tree.entries.keys().copied().collect::<Vec<_>>(),
                 vec![0, 7, u_int::MAX]
             );
-            assert_eq!(utf8_index_tree_find(&raw mut tree, 7), first);
-            assert!(utf8_index_tree_find(&raw mut tree, 8).is_null());
+            assert_eq!(utf8_index_tree_find(&tree, 7), first);
+            assert!(utf8_index_tree_find(&tree, 8).is_null());
         }
     }
 
@@ -2155,11 +2158,11 @@ mod tests {
 
             let first = &mut items[0] as *mut utf8_item;
             let duplicate = &mut items[3] as *mut utf8_item;
-            assert!(utf8_data_tree_insert(&raw mut tree, first).is_null());
-            assert!(utf8_data_tree_insert(&raw mut tree, &mut items[1]).is_null());
-            assert!(utf8_data_tree_insert(&raw mut tree, &mut items[2]).is_null());
+            assert!(utf8_data_tree_insert(&mut tree, &mut *first).is_null());
+            assert!(utf8_data_tree_insert(&mut tree, &mut items[1]).is_null());
+            assert!(utf8_data_tree_insert(&mut tree, &mut items[2]).is_null());
             assert_eq!(
-                utf8_data_tree_insert(&raw mut tree, duplicate),
+                utf8_data_tree_insert(&mut tree, &mut *duplicate),
                 first,
                 "duplicate data keeps the original item"
             );
@@ -2168,10 +2171,10 @@ mod tests {
                 tree.entries.keys().cloned().collect::<Vec<_>>(),
                 vec![(1, vec![0x80]), (1, vec![0xff]), (2, vec![0x00, 0x00])]
             );
-            assert_eq!(utf8_data_tree_find(&raw mut tree, duplicate), first);
+            assert_eq!(utf8_data_tree_find(&tree, &*duplicate), first);
             let mut missing = items[0];
             set_data(&mut missing, &[0x81]);
-            assert!(utf8_data_tree_find(&raw mut tree, &missing).is_null());
+            assert!(utf8_data_tree_find(&tree, &missing).is_null());
         }
     }
 
