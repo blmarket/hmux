@@ -100,9 +100,8 @@ pub static mut next_session_id: u_int = 0;
 pub static mut session_groups: session_groups = session_groups { storage: None };
 
 /// `session.cwd` borrows this value until replacement or early destruction.
-pub(crate) unsafe fn session_set_cwd(s: *mut session, cwd: Option<CString>) {
-    let owner = s;
-    (*owner).cwd = cwd;
+pub(crate) fn session_set_cwd(s: &mut session, cwd: Option<CString>) {
+    s.cwd = cwd;
 }
 
 /// C producers return libc-owned strings, not CString-owned allocations.
@@ -112,7 +111,7 @@ pub(crate) unsafe fn session_set_cwd_from_c_owned(
 ) {
     let cwd = CStr::from_ptr(raw_cwd).to_owned();
     free(raw_cwd.cast());
-    session_set_cwd(s, Some(cwd));
+    session_set_cwd(&mut *s, Some(cwd));
 }
 
 /// Replace the borrowed public name after callers remove the old map key.
@@ -612,7 +611,7 @@ pub unsafe extern "C" fn session_destroy(
         );
         winlink_remove(&raw mut (*s).windows, wl);
     }
-    session_set_cwd(s, None);
+    session_set_cwd(&mut *s, None);
     session_remove_ref(
         s,
         b"session_destroy\0" as *const u8 as *const ::core::ffi::c_char,

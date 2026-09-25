@@ -186,7 +186,7 @@ pub unsafe extern "C" fn cmd_attach_session(
         }
     }
     if !cflag.is_null() {
-        session_set_cwd(s, Some(format_single_cstring(item, cflag, c, s, wl, wp)));
+        session_set_cwd(&mut *s, Some(format_single_cstring(item, cflag, c, s, wl, wp)));
     }
     if !fflag.is_null() {
         server_client_set_flags(c, fflag);
