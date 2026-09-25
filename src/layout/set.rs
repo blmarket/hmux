@@ -20,37 +20,37 @@ use crate::src::window::{window_count_panes, window_pane_first, window_pane_next
 #[repr(C)]
 pub struct C2RustUnnamed_35 {
     pub name: *const ::core::ffi::c_char,
-    pub arrange: Option<unsafe extern "C" fn(*mut window) -> ()>,
+    pub arrange: Option<unsafe fn(*mut window)>,
 }
 static mut layout_sets: [C2RustUnnamed_35; 7] = unsafe {
     [
         C2RustUnnamed_35 {
             name: b"even-horizontal\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_even_h as unsafe extern "C" fn(*mut window) -> ()),
+            arrange: Some(layout_set_even_h),
         },
         C2RustUnnamed_35 {
             name: b"even-vertical\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_even_v as unsafe extern "C" fn(*mut window) -> ()),
+            arrange: Some(layout_set_even_v),
         },
         C2RustUnnamed_35 {
             name: b"main-horizontal\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_main_h as unsafe extern "C" fn(*mut window) -> ()),
+            arrange: Some(layout_set_main_h),
         },
         C2RustUnnamed_35 {
             name: b"main-horizontal-mirrored\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_main_h_mirrored as unsafe extern "C" fn(*mut window) -> ()),
+            arrange: Some(layout_set_main_h_mirrored),
         },
         C2RustUnnamed_35 {
             name: b"main-vertical\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_main_v as unsafe extern "C" fn(*mut window) -> ()),
+            arrange: Some(layout_set_main_v),
         },
         C2RustUnnamed_35 {
             name: b"main-vertical-mirrored\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_main_v_mirrored as unsafe extern "C" fn(*mut window) -> ()),
+            arrange: Some(layout_set_main_v_mirrored),
         },
         C2RustUnnamed_35 {
             name: b"tiled\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_tiled as unsafe extern "C" fn(*mut window) -> ()),
+            arrange: Some(layout_set_tiled),
         },
     ]
 };
@@ -255,13 +255,13 @@ unsafe extern "C" fn layout_set_even(mut w: *mut window, mut type_0: layout_type
     );
     server_redraw_window(w);
 }
-unsafe extern "C" fn layout_set_even_h(mut w: *mut window) {
+unsafe fn layout_set_even_h(mut w: *mut window) {
     layout_set_even(w, LAYOUT_LEFTRIGHT);
 }
-unsafe extern "C" fn layout_set_even_v(mut w: *mut window) {
+unsafe fn layout_set_even_v(mut w: *mut window) {
     layout_set_even(w, LAYOUT_TOPBOTTOM);
 }
-unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
+unsafe fn layout_set_main_h(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpmain: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -419,7 +419,7 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
     );
     server_redraw_window(w);
 }
-unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
+unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpmain: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -577,7 +577,7 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
     );
     server_redraw_window(w);
 }
-unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
+unsafe fn layout_set_main_v(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpmain: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -735,7 +735,7 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
     );
     server_redraw_window(w);
 }
-unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
+unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wpmain: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -893,7 +893,7 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
     );
     server_redraw_window(w);
 }
-unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
+unsafe fn layout_set_tiled(mut w: *mut window) {
     let mut oo: *mut options = (*w).options;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();

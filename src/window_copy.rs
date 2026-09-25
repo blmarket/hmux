@@ -270,7 +270,7 @@ pub struct C2RustUnnamed_46 {
     pub args: args_parse,
     pub flags: ::core::ffi::c_int,
     pub clear: window_copy_cmd_clear,
-    pub f: Option<unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action>,
+    pub f: Option<unsafe fn(*mut window_copy_cmd_state) -> window_copy_cmd_action>,
 }
 pub const WINDOW_COPY_REL_POS_ON_SCREEN: C2RustUnnamed_50 = 1;
 pub const WINDOW_COPY_REL_POS_BELOW: C2RustUnnamed_50 = 2;
@@ -1543,7 +1543,7 @@ unsafe extern "C" fn window_copy_expand_search_string(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_copy_cmd_append_selection(
+unsafe fn window_copy_cmd_append_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1554,7 +1554,7 @@ unsafe extern "C" fn window_copy_cmd_append_selection(
     window_copy_clear_selection(wme);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_append_selection_and_cancel(
+unsafe fn window_copy_cmd_append_selection_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1565,14 +1565,14 @@ unsafe extern "C" fn window_copy_cmd_append_selection_and_cancel(
     window_copy_clear_selection(wme);
     return WINDOW_COPY_CMD_CANCEL;
 }
-unsafe extern "C" fn window_copy_cmd_back_to_indentation(
+unsafe fn window_copy_cmd_back_to_indentation(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     window_copy_cursor_back_to_indentation(wme);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_begin_selection(
+unsafe fn window_copy_cmd_begin_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1588,7 +1588,7 @@ unsafe extern "C" fn window_copy_cmd_begin_selection(
     window_copy_start_selection(wme);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_stop_selection(
+unsafe fn window_copy_cmd_stop_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1598,7 +1598,7 @@ unsafe extern "C" fn window_copy_cmd_stop_selection(
     (*data).selflag = SEL_CHAR;
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_bottom_line(
+unsafe fn window_copy_cmd_bottom_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1608,12 +1608,12 @@ unsafe extern "C" fn window_copy_cmd_bottom_line(
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_cancel(
+unsafe fn window_copy_cmd_cancel(
     _cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return WINDOW_COPY_CMD_CANCEL;
 }
-unsafe extern "C" fn window_copy_cmd_clear_selection(
+unsafe fn window_copy_cmd_clear_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1718,22 +1718,22 @@ unsafe extern "C" fn window_copy_do_copy_end_of_line(
     (*data).oy = ooy;
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_copy_end_of_line(
+unsafe fn window_copy_cmd_copy_end_of_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_do_copy_end_of_line(cs, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn window_copy_cmd_copy_end_of_line_and_cancel(
+unsafe fn window_copy_cmd_copy_end_of_line_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_do_copy_end_of_line(cs, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn window_copy_cmd_copy_pipe_end_of_line(
+unsafe fn window_copy_cmd_copy_pipe_end_of_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_do_copy_end_of_line(cs, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn window_copy_cmd_copy_pipe_end_of_line_and_cancel(
+unsafe fn window_copy_cmd_copy_pipe_end_of_line_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_do_copy_end_of_line(cs, 1 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
@@ -1838,27 +1838,27 @@ unsafe extern "C" fn window_copy_do_copy_line(
     (*data).oy = ooy;
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_copy_line(
+unsafe fn window_copy_cmd_copy_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_do_copy_line(cs, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn window_copy_cmd_copy_line_and_cancel(
+unsafe fn window_copy_cmd_copy_line_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_do_copy_line(cs, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn window_copy_cmd_copy_pipe_line(
+unsafe fn window_copy_cmd_copy_pipe_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_do_copy_line(cs, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn window_copy_cmd_copy_pipe_line_and_cancel(
+unsafe fn window_copy_cmd_copy_pipe_line_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_do_copy_line(cs, 1 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
 }
-unsafe extern "C" fn window_copy_cmd_copy_selection_no_clear(
+unsafe fn window_copy_cmd_copy_selection_no_clear(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1894,7 +1894,7 @@ unsafe extern "C" fn window_copy_cmd_copy_selection_no_clear(
     }
     return WINDOW_COPY_CMD_NOTHING;
 }
-unsafe extern "C" fn window_copy_cmd_copy_selection(
+unsafe fn window_copy_cmd_copy_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1902,7 +1902,7 @@ unsafe extern "C" fn window_copy_cmd_copy_selection(
     window_copy_clear_selection(wme);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_copy_selection_and_cancel(
+unsafe fn window_copy_cmd_copy_selection_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1910,7 +1910,7 @@ unsafe extern "C" fn window_copy_cmd_copy_selection_and_cancel(
     window_copy_clear_selection(wme);
     return WINDOW_COPY_CMD_CANCEL;
 }
-unsafe extern "C" fn window_copy_cmd_cursor_down(
+unsafe fn window_copy_cmd_cursor_down(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1921,7 +1921,7 @@ unsafe extern "C" fn window_copy_cmd_cursor_down(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_cursor_down_and_cancel(
+unsafe fn window_copy_cmd_cursor_down_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1938,7 +1938,7 @@ unsafe extern "C" fn window_copy_cmd_cursor_down_and_cancel(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_cursor_left(
+unsafe fn window_copy_cmd_cursor_left(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1949,7 +1949,7 @@ unsafe extern "C" fn window_copy_cmd_cursor_left(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_cursor_right(
+unsafe fn window_copy_cmd_cursor_right(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -1986,7 +1986,7 @@ unsafe extern "C" fn window_copy_cmd_scroll_to(
     window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_scroll_bottom(
+unsafe fn window_copy_cmd_scroll_bottom(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut data: *mut window_copy_mode_data = (*(*cs).wme).data as *mut window_copy_mode_data;
@@ -1994,7 +1994,7 @@ unsafe extern "C" fn window_copy_cmd_scroll_bottom(
     bottom = (*(*data).screen.grid).sy.wrapping_sub(1 as u_int);
     return window_copy_cmd_scroll_to(cs, bottom);
 }
-unsafe extern "C" fn window_copy_cmd_scroll_middle(
+unsafe fn window_copy_cmd_scroll_middle(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut data: *mut window_copy_mode_data = (*(*cs).wme).data as *mut window_copy_mode_data;
@@ -2005,7 +2005,7 @@ unsafe extern "C" fn window_copy_cmd_scroll_middle(
         .wrapping_div(2 as u_int);
     return window_copy_cmd_scroll_to(cs, mid_value);
 }
-unsafe extern "C" fn window_copy_cmd_scroll_to_mouse(
+unsafe fn window_copy_cmd_scroll_to_mouse(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2027,12 +2027,12 @@ unsafe extern "C" fn window_copy_cmd_scroll_to_mouse(
     window_copy_scroll(wp, (*c).tty.mouse_slider_mpos, (*m).y, tty_oy, scroll_exit);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_scroll_top(
+unsafe fn window_copy_cmd_scroll_top(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return window_copy_cmd_scroll_to(cs, 0 as u_int);
 }
-unsafe extern "C" fn window_copy_cmd_cursor_up(
+unsafe fn window_copy_cmd_cursor_up(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2043,7 +2043,7 @@ unsafe extern "C" fn window_copy_cmd_cursor_up(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_centre_vertical(
+unsafe fn window_copy_cmd_centre_vertical(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2052,7 +2052,7 @@ unsafe extern "C" fn window_copy_cmd_centre_vertical(
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_centre_horizontal(
+unsafe fn window_copy_cmd_centre_horizontal(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2061,14 +2061,14 @@ unsafe extern "C" fn window_copy_cmd_centre_horizontal(
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_end_of_line(
+unsafe fn window_copy_cmd_end_of_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     window_copy_cursor_end_of_line(wme);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_halfpage_down(
+unsafe fn window_copy_cmd_halfpage_down(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2082,7 +2082,7 @@ unsafe extern "C" fn window_copy_cmd_halfpage_down(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_halfpage_down_and_cancel(
+unsafe fn window_copy_cmd_halfpage_down_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2095,7 +2095,7 @@ unsafe extern "C" fn window_copy_cmd_halfpage_down_and_cancel(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_halfpage_up(
+unsafe fn window_copy_cmd_halfpage_up(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2106,7 +2106,7 @@ unsafe extern "C" fn window_copy_cmd_halfpage_up(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_toggle_position(
+unsafe fn window_copy_cmd_toggle_position(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2114,7 +2114,7 @@ unsafe extern "C" fn window_copy_cmd_toggle_position(
     (*data).hide_position = ((*data).hide_position == 0) as ::core::ffi::c_int;
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_history_bottom(
+unsafe fn window_copy_cmd_history_bottom(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2153,7 +2153,7 @@ unsafe extern "C" fn window_copy_cmd_history_bottom(
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_history_top(
+unsafe fn window_copy_cmd_history_top(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2187,7 +2187,7 @@ unsafe extern "C" fn window_copy_cmd_history_top(
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_jump_again(
+unsafe fn window_copy_cmd_jump_again(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2222,7 +2222,7 @@ unsafe extern "C" fn window_copy_cmd_jump_again(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_jump_reverse(
+unsafe fn window_copy_cmd_jump_reverse(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2257,7 +2257,7 @@ unsafe extern "C" fn window_copy_cmd_jump_reverse(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_middle_line(
+unsafe fn window_copy_cmd_middle_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2270,7 +2270,7 @@ unsafe extern "C" fn window_copy_cmd_middle_line(
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_previous_matching_bracket(
+unsafe fn window_copy_cmd_previous_matching_bracket(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2399,7 +2399,7 @@ unsafe extern "C" fn window_copy_cmd_previous_matching_bracket(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_next_matching_bracket(
+unsafe fn window_copy_cmd_next_matching_bracket(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2572,7 +2572,7 @@ unsafe extern "C" fn window_copy_cmd_next_matching_bracket(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_next_paragraph(
+unsafe fn window_copy_cmd_next_paragraph(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2583,7 +2583,7 @@ unsafe extern "C" fn window_copy_cmd_next_paragraph(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_next_space(
+unsafe fn window_copy_cmd_next_space(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2594,7 +2594,7 @@ unsafe extern "C" fn window_copy_cmd_next_space(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_next_space_end(
+unsafe fn window_copy_cmd_next_space_end(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2609,7 +2609,7 @@ unsafe extern "C" fn window_copy_cmd_next_space_end(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_next_word(
+unsafe fn window_copy_cmd_next_word(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2625,7 +2625,7 @@ unsafe extern "C" fn window_copy_cmd_next_word(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_next_word_end(
+unsafe fn window_copy_cmd_next_word_end(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2641,7 +2641,7 @@ unsafe extern "C" fn window_copy_cmd_next_word_end(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_other_end(
+unsafe fn window_copy_cmd_other_end(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2653,7 +2653,7 @@ unsafe extern "C" fn window_copy_cmd_other_end(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_selection_mode(
+unsafe fn window_copy_cmd_selection_mode(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2772,7 +2772,7 @@ unsafe extern "C" fn window_copy_cmd_selection_mode(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_page_down(
+unsafe fn window_copy_cmd_page_down(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2786,7 +2786,7 @@ unsafe extern "C" fn window_copy_cmd_page_down(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_page_down_and_cancel(
+unsafe fn window_copy_cmd_page_down_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2799,7 +2799,7 @@ unsafe extern "C" fn window_copy_cmd_page_down_and_cancel(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_page_up(
+unsafe fn window_copy_cmd_page_up(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2810,7 +2810,7 @@ unsafe extern "C" fn window_copy_cmd_page_up(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_previous_paragraph(
+unsafe fn window_copy_cmd_previous_paragraph(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2821,7 +2821,7 @@ unsafe extern "C" fn window_copy_cmd_previous_paragraph(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_previous_space(
+unsafe fn window_copy_cmd_previous_space(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2836,7 +2836,7 @@ unsafe extern "C" fn window_copy_cmd_previous_space(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_previous_word(
+unsafe fn window_copy_cmd_previous_word(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2852,7 +2852,7 @@ unsafe extern "C" fn window_copy_cmd_previous_word(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_rectangle_on(
+unsafe fn window_copy_cmd_rectangle_on(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2861,7 +2861,7 @@ unsafe extern "C" fn window_copy_cmd_rectangle_on(
     window_copy_rectangle_set(wme, 1 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_rectangle_off(
+unsafe fn window_copy_cmd_rectangle_off(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2870,7 +2870,7 @@ unsafe extern "C" fn window_copy_cmd_rectangle_off(
     window_copy_rectangle_set(wme, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_rectangle_toggle(
+unsafe fn window_copy_cmd_rectangle_toggle(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2879,28 +2879,28 @@ unsafe extern "C" fn window_copy_cmd_rectangle_toggle(
     window_copy_rectangle_set(wme, ((*data).rectflag == 0) as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_scroll_exit_on(
+unsafe fn window_copy_cmd_scroll_exit_on(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut data: *mut window_copy_mode_data = (*(*cs).wme).data as *mut window_copy_mode_data;
     (*data).scroll_exit = 1 as ::core::ffi::c_int;
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_scroll_exit_off(
+unsafe fn window_copy_cmd_scroll_exit_off(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut data: *mut window_copy_mode_data = (*(*cs).wme).data as *mut window_copy_mode_data;
     (*data).scroll_exit = 0 as ::core::ffi::c_int;
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_scroll_exit_toggle(
+unsafe fn window_copy_cmd_scroll_exit_toggle(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut data: *mut window_copy_mode_data = (*(*cs).wme).data as *mut window_copy_mode_data;
     (*data).scroll_exit = ((*data).scroll_exit == 0) as ::core::ffi::c_int;
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_scroll_down(
+unsafe fn window_copy_cmd_scroll_down(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2930,7 +2930,7 @@ unsafe extern "C" fn window_copy_cmd_scroll_down(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_scroll_down_and_cancel(
+unsafe fn window_copy_cmd_scroll_down_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2954,7 +2954,7 @@ unsafe extern "C" fn window_copy_cmd_scroll_down_and_cancel(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_scroll_up(
+unsafe fn window_copy_cmd_scroll_up(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2978,7 +2978,7 @@ unsafe extern "C" fn window_copy_cmd_scroll_up(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_search_again(
+unsafe fn window_copy_cmd_search_again(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -2997,7 +2997,7 @@ unsafe extern "C" fn window_copy_cmd_search_again(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_search_reverse(
+unsafe fn window_copy_cmd_search_reverse(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3016,7 +3016,7 @@ unsafe extern "C" fn window_copy_cmd_search_reverse(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_select_line(
+unsafe fn window_copy_cmd_select_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3051,7 +3051,7 @@ unsafe extern "C" fn window_copy_cmd_select_line(
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_select_word(
+unsafe fn window_copy_cmd_select_word(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3116,7 +3116,7 @@ unsafe extern "C" fn window_copy_cmd_select_word(
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_set_mark(
+unsafe fn window_copy_cmd_set_mark(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut data: *mut window_copy_mode_data = (*(*cs).wme).data as *mut window_copy_mode_data;
@@ -3128,14 +3128,14 @@ unsafe extern "C" fn window_copy_cmd_set_mark(
     (*data).showmark = 1 as ::core::ffi::c_int;
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_start_of_line(
+unsafe fn window_copy_cmd_start_of_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     window_copy_cursor_start_of_line(wme);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_top_line(
+unsafe fn window_copy_cmd_top_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3145,7 +3145,7 @@ unsafe extern "C" fn window_copy_cmd_top_line(
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_copy_pipe_no_clear(
+unsafe fn window_copy_cmd_copy_pipe_no_clear(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3195,7 +3195,7 @@ unsafe extern "C" fn window_copy_cmd_copy_pipe_no_clear(
     );
     return WINDOW_COPY_CMD_NOTHING;
 }
-unsafe extern "C" fn window_copy_cmd_copy_pipe(
+unsafe fn window_copy_cmd_copy_pipe(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3203,7 +3203,7 @@ unsafe extern "C" fn window_copy_cmd_copy_pipe(
     window_copy_clear_selection(wme);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_copy_pipe_and_cancel(
+unsafe fn window_copy_cmd_copy_pipe_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3211,7 +3211,7 @@ unsafe extern "C" fn window_copy_cmd_copy_pipe_and_cancel(
     window_copy_clear_selection(wme);
     return WINDOW_COPY_CMD_CANCEL;
 }
-unsafe extern "C" fn window_copy_cmd_pipe_no_clear(
+unsafe fn window_copy_cmd_pipe_no_clear(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3240,7 +3240,7 @@ unsafe extern "C" fn window_copy_cmd_pipe_no_clear(
     );
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_pipe(
+unsafe fn window_copy_cmd_pipe(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3248,7 +3248,7 @@ unsafe extern "C" fn window_copy_cmd_pipe(
     window_copy_clear_selection(wme);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_pipe_and_cancel(
+unsafe fn window_copy_cmd_pipe_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3256,7 +3256,7 @@ unsafe extern "C" fn window_copy_cmd_pipe_and_cancel(
     window_copy_clear_selection(wme);
     return WINDOW_COPY_CMD_CANCEL;
 }
-unsafe extern "C" fn window_copy_cmd_goto_line(
+unsafe fn window_copy_cmd_goto_line(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3266,7 +3266,7 @@ unsafe extern "C" fn window_copy_cmd_goto_line(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_jump_backward(
+unsafe fn window_copy_cmd_jump_backward(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3283,7 +3283,7 @@ unsafe extern "C" fn window_copy_cmd_jump_backward(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_jump_forward(
+unsafe fn window_copy_cmd_jump_forward(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3300,7 +3300,7 @@ unsafe extern "C" fn window_copy_cmd_jump_forward(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_jump_to_backward(
+unsafe fn window_copy_cmd_jump_to_backward(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3317,7 +3317,7 @@ unsafe extern "C" fn window_copy_cmd_jump_to_backward(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_jump_to_forward(
+unsafe fn window_copy_cmd_jump_to_forward(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3334,14 +3334,14 @@ unsafe extern "C" fn window_copy_cmd_jump_to_forward(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_jump_to_mark(
+unsafe fn window_copy_cmd_jump_to_mark(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
     window_copy_jump_to_mark(wme);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_next_prompt(
+unsafe fn window_copy_cmd_next_prompt(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3352,7 +3352,7 @@ unsafe extern "C" fn window_copy_cmd_next_prompt(
     );
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_previous_prompt(
+unsafe fn window_copy_cmd_previous_prompt(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3363,7 +3363,7 @@ unsafe extern "C" fn window_copy_cmd_previous_prompt(
     );
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_search_backward(
+unsafe fn window_copy_cmd_search_backward(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3383,7 +3383,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_search_backward_text(
+unsafe fn window_copy_cmd_search_backward_text(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3403,7 +3403,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward_text(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_search_forward(
+unsafe fn window_copy_cmd_search_forward(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3423,7 +3423,7 @@ unsafe extern "C" fn window_copy_cmd_search_forward(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_search_forward_text(
+unsafe fn window_copy_cmd_search_forward_text(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3443,7 +3443,7 @@ unsafe extern "C" fn window_copy_cmd_search_forward_text(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_search_backward_incremental(
+unsafe fn window_copy_cmd_search_backward_incremental(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3508,7 +3508,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward_incremental(
     }
     return action;
 }
-unsafe extern "C" fn window_copy_cmd_search_forward_incremental(
+unsafe fn window_copy_cmd_search_forward_incremental(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3671,7 +3671,7 @@ unsafe extern "C" fn window_copy_refresh_stop(mut wme: *mut window_mode_entry) {
     (*data).refresh_active = 0 as ::core::ffi::c_int;
     event_del(&raw mut (*data).refresh_timer);
 }
-unsafe extern "C" fn window_copy_cmd_refresh_now(
+unsafe fn window_copy_cmd_refresh_now(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3688,19 +3688,19 @@ unsafe extern "C" fn window_copy_cmd_refresh_now(
     (*wp).flags &= !PANE_UNSEENCHANGES;
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_refresh_on(
+unsafe fn window_copy_cmd_refresh_on(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     window_copy_refresh_start((*cs).wme);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_refresh_off(
+unsafe fn window_copy_cmd_refresh_off(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     window_copy_refresh_stop((*cs).wme);
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_refresh_toggle(
+unsafe fn window_copy_cmd_refresh_toggle(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut data: *mut window_copy_mode_data = (*(*cs).wme).data as *mut window_copy_mode_data;
@@ -3711,7 +3711,7 @@ unsafe extern "C" fn window_copy_cmd_refresh_toggle(
     }
     return WINDOW_COPY_CMD_MOVE;
 }
-unsafe extern "C" fn window_copy_cmd_recentre_top_bottom(
+unsafe fn window_copy_cmd_recentre_top_bottom(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
@@ -3769,19 +3769,19 @@ unsafe extern "C" fn window_copy_cmd_recentre_top_bottom(
     window_copy_update_selection_view(wme, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
-unsafe extern "C" fn window_copy_cmd_line_numbers_on(
+unsafe fn window_copy_cmd_line_numbers_on(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     window_copy_set_line_numbers1((*cs).wme, 1 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_NOTHING;
 }
-unsafe extern "C" fn window_copy_cmd_line_numbers_off(
+unsafe fn window_copy_cmd_line_numbers_off(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     window_copy_set_line_numbers1((*cs).wme, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_NOTHING;
 }
-unsafe extern "C" fn window_copy_cmd_line_numbers_toggle(
+unsafe fn window_copy_cmd_line_numbers_toggle(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     window_copy_set_line_numbers1(
@@ -3805,10 +3805,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_append_selection
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_append_selection),
         },
         C2RustUnnamed_46 {
             command: b"append-selection-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3822,10 +3819,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_append_selection_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_append_selection_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"back-to-indentation\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3839,10 +3833,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_back_to_indentation
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_back_to_indentation),
         },
         C2RustUnnamed_46 {
             command: b"begin-selection\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3856,10 +3847,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_begin_selection
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_begin_selection),
         },
         C2RustUnnamed_46 {
             command: b"bottom-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3873,10 +3861,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_bottom_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_bottom_line),
         },
         C2RustUnnamed_46 {
             command: b"cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3890,10 +3875,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_cancel),
         },
         C2RustUnnamed_46 {
             command: b"clear-selection\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3907,10 +3889,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_clear_selection
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_clear_selection),
         },
         C2RustUnnamed_46 {
             command: b"copy-end-of-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3924,10 +3903,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_end_of_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_end_of_line),
         },
         C2RustUnnamed_46 {
             command: b"copy-end-of-line-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3941,10 +3917,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_end_of_line_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_end_of_line_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"copy-pipe-end-of-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3958,10 +3931,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_pipe_end_of_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_pipe_end_of_line),
         },
         C2RustUnnamed_46 {
             command: b"copy-pipe-end-of-line-and-cancel\0" as *const u8
@@ -3976,10 +3946,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_pipe_end_of_line_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_pipe_end_of_line_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"copy-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3993,10 +3960,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_line),
         },
         C2RustUnnamed_46 {
             command: b"copy-line-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4010,10 +3974,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_line_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_line_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"copy-pipe-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4027,10 +3988,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_pipe_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_pipe_line),
         },
         C2RustUnnamed_46 {
             command: b"copy-pipe-line-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4044,10 +4002,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_pipe_line_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_pipe_line_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"copy-pipe-no-clear\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4061,10 +4016,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_copy_pipe_no_clear
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_pipe_no_clear),
         },
         C2RustUnnamed_46 {
             command: b"copy-pipe\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4078,10 +4030,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_pipe
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_pipe),
         },
         C2RustUnnamed_46 {
             command: b"copy-pipe-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4095,10 +4044,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_pipe_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_pipe_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"copy-selection-no-clear\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4112,10 +4058,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_copy_selection_no_clear
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_selection_no_clear),
         },
         C2RustUnnamed_46 {
             command: b"copy-selection\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4129,10 +4072,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_selection
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_selection),
         },
         C2RustUnnamed_46 {
             command: b"copy-selection-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4146,10 +4086,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_copy_selection_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_copy_selection_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"cursor-down\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4163,10 +4100,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_cursor_down
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_cursor_down),
         },
         C2RustUnnamed_46 {
             command: b"cursor-down-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4180,10 +4114,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_cursor_down_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_cursor_down_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"cursor-left\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4197,10 +4128,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_cursor_left
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_cursor_left),
         },
         C2RustUnnamed_46 {
             command: b"cursor-right\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4214,10 +4142,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_cursor_right
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_cursor_right),
         },
         C2RustUnnamed_46 {
             command: b"cursor-up\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4231,10 +4156,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_cursor_up
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_cursor_up),
         },
         C2RustUnnamed_46 {
             command: b"cursor-centre-vertical\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4248,10 +4170,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_centre_vertical
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_centre_vertical),
         },
         C2RustUnnamed_46 {
             command: b"cursor-centre-horizontal\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4265,10 +4184,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_centre_horizontal
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_centre_horizontal),
         },
         C2RustUnnamed_46 {
             command: b"end-of-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4282,10 +4198,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_end_of_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_end_of_line),
         },
         C2RustUnnamed_46 {
             command: b"goto-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4299,10 +4212,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_goto_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_goto_line),
         },
         C2RustUnnamed_46 {
             command: b"halfpage-down\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4316,10 +4226,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_halfpage_down
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_halfpage_down),
         },
         C2RustUnnamed_46 {
             command: b"halfpage-down-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4333,10 +4240,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_halfpage_down_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_halfpage_down_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"halfpage-up\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4350,10 +4254,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_halfpage_up
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_halfpage_up),
         },
         C2RustUnnamed_46 {
             command: b"history-bottom\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4367,10 +4268,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_history_bottom
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_history_bottom),
         },
         C2RustUnnamed_46 {
             command: b"history-top\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4384,10 +4282,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_history_top
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_history_top),
         },
         C2RustUnnamed_46 {
             command: b"jump-again\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4401,10 +4296,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_jump_again
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_jump_again),
         },
         C2RustUnnamed_46 {
             command: b"jump-backward\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4418,10 +4310,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_jump_backward
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_jump_backward),
         },
         C2RustUnnamed_46 {
             command: b"jump-forward\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4435,10 +4324,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_jump_forward
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_jump_forward),
         },
         C2RustUnnamed_46 {
             command: b"jump-reverse\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4452,10 +4338,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_jump_reverse
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_jump_reverse),
         },
         C2RustUnnamed_46 {
             command: b"jump-to-backward\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4469,10 +4352,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_jump_to_backward
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_jump_to_backward),
         },
         C2RustUnnamed_46 {
             command: b"jump-to-forward\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4486,10 +4366,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_jump_to_forward
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_jump_to_forward),
         },
         C2RustUnnamed_46 {
             command: b"jump-to-mark\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4503,10 +4380,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_jump_to_mark
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_jump_to_mark),
         },
         C2RustUnnamed_46 {
             command: b"line-numbers-on\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4520,10 +4394,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_line_numbers_on
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_line_numbers_on),
         },
         C2RustUnnamed_46 {
             command: b"line-numbers-off\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4537,10 +4408,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_line_numbers_off
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_line_numbers_off),
         },
         C2RustUnnamed_46 {
             command: b"line-numbers-toggle\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4554,10 +4422,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_line_numbers_toggle
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_line_numbers_toggle),
         },
         C2RustUnnamed_46 {
             command: b"next-prompt\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4571,10 +4436,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_next_prompt
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_next_prompt),
         },
         C2RustUnnamed_46 {
             command: b"previous-prompt\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4588,10 +4450,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_previous_prompt
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_previous_prompt),
         },
         C2RustUnnamed_46 {
             command: b"middle-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4605,10 +4464,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_middle_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_middle_line),
         },
         C2RustUnnamed_46 {
             command: b"next-matching-bracket\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4622,10 +4478,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_next_matching_bracket
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_next_matching_bracket),
         },
         C2RustUnnamed_46 {
             command: b"next-paragraph\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4639,10 +4492,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_next_paragraph
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_next_paragraph),
         },
         C2RustUnnamed_46 {
             command: b"next-space\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4656,10 +4506,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_next_space
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_next_space),
         },
         C2RustUnnamed_46 {
             command: b"next-space-end\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4673,10 +4520,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_next_space_end
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_next_space_end),
         },
         C2RustUnnamed_46 {
             command: b"next-word\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4690,10 +4534,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_next_word
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_next_word),
         },
         C2RustUnnamed_46 {
             command: b"next-word-end\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4707,10 +4548,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_next_word_end
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_next_word_end),
         },
         C2RustUnnamed_46 {
             command: b"other-end\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4724,10 +4562,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_other_end
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_other_end),
         },
         C2RustUnnamed_46 {
             command: b"page-down\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4741,10 +4576,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_page_down
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_page_down),
         },
         C2RustUnnamed_46 {
             command: b"page-down-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4758,10 +4590,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_page_down_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_page_down_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"page-up\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4775,10 +4604,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_page_up
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_page_up),
         },
         C2RustUnnamed_46 {
             command: b"pipe-no-clear\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4792,10 +4618,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_pipe_no_clear
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_pipe_no_clear),
         },
         C2RustUnnamed_46 {
             command: b"pipe\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4809,10 +4632,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_pipe
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_pipe),
         },
         C2RustUnnamed_46 {
             command: b"pipe-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4826,10 +4646,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_pipe_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_pipe_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"previous-matching-bracket\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4843,10 +4660,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_previous_matching_bracket
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_previous_matching_bracket),
         },
         C2RustUnnamed_46 {
             command: b"previous-paragraph\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4860,10 +4674,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_previous_paragraph
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_previous_paragraph),
         },
         C2RustUnnamed_46 {
             command: b"previous-space\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4877,10 +4688,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_previous_space
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_previous_space),
         },
         C2RustUnnamed_46 {
             command: b"previous-word\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4894,10 +4702,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_previous_word
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_previous_word),
         },
         C2RustUnnamed_46 {
             command: b"recentre-top-bottom\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4911,10 +4716,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_recentre_top_bottom
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_recentre_top_bottom),
         },
         C2RustUnnamed_46 {
             command: b"rectangle-on\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4928,10 +4730,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_rectangle_on
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_rectangle_on),
         },
         C2RustUnnamed_46 {
             command: b"rectangle-off\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4945,10 +4744,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_rectangle_off
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_rectangle_off),
         },
         C2RustUnnamed_46 {
             command: b"rectangle-toggle\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4962,10 +4758,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_rectangle_toggle
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_rectangle_toggle),
         },
         C2RustUnnamed_46 {
             command: b"refresh-on\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4979,10 +4772,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_refresh_on
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_refresh_on),
         },
         C2RustUnnamed_46 {
             command: b"refresh-off\0" as *const u8 as *const ::core::ffi::c_char,
@@ -4996,10 +4786,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_refresh_off
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_refresh_off),
         },
         C2RustUnnamed_46 {
             command: b"refresh-now\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5013,10 +4800,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_refresh_now
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_refresh_now),
         },
         C2RustUnnamed_46 {
             command: b"refresh-toggle\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5030,10 +4814,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_refresh_toggle
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_refresh_toggle),
         },
         C2RustUnnamed_46 {
             command: b"scroll-bottom\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5047,10 +4828,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_scroll_bottom
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_bottom),
         },
         C2RustUnnamed_46 {
             command: b"scroll-down\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5064,10 +4842,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_scroll_down
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_down),
         },
         C2RustUnnamed_46 {
             command: b"scroll-down-and-cancel\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5081,10 +4856,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_scroll_down_and_cancel
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_down_and_cancel),
         },
         C2RustUnnamed_46 {
             command: b"scroll-exit-on\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5098,10 +4870,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_scroll_exit_on
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_exit_on),
         },
         C2RustUnnamed_46 {
             command: b"scroll-exit-off\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5115,10 +4884,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_scroll_exit_off
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_exit_off),
         },
         C2RustUnnamed_46 {
             command: b"scroll-exit-toggle\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5132,10 +4898,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_scroll_exit_toggle
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_exit_toggle),
         },
         C2RustUnnamed_46 {
             command: b"scroll-middle\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5149,10 +4912,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_scroll_middle
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_middle),
         },
         C2RustUnnamed_46 {
             command: b"scroll-to-mouse\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5166,10 +4926,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_scroll_to_mouse
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_to_mouse),
         },
         C2RustUnnamed_46 {
             command: b"scroll-top\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5183,10 +4940,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_scroll_top
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_top),
         },
         C2RustUnnamed_46 {
             command: b"scroll-up\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5200,10 +4954,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_scroll_up
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_scroll_up),
         },
         C2RustUnnamed_46 {
             command: b"search-again\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5217,10 +4968,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_search_again
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_search_again),
         },
         C2RustUnnamed_46 {
             command: b"search-backward\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5234,10 +4982,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_search_backward
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_search_backward),
         },
         C2RustUnnamed_46 {
             command: b"search-backward-text\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5251,10 +4996,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_search_backward_text
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_search_backward_text),
         },
         C2RustUnnamed_46 {
             command: b"search-backward-incremental\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5268,10 +5010,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_search_backward_incremental
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_search_backward_incremental),
         },
         C2RustUnnamed_46 {
             command: b"search-forward\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5285,10 +5024,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_search_forward
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_search_forward),
         },
         C2RustUnnamed_46 {
             command: b"search-forward-text\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5302,10 +5038,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_search_forward_text
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_search_forward_text),
         },
         C2RustUnnamed_46 {
             command: b"search-forward-incremental\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5319,10 +5052,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_search_forward_incremental
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_search_forward_incremental),
         },
         C2RustUnnamed_46 {
             command: b"search-reverse\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5336,10 +5066,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_search_reverse
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_search_reverse),
         },
         C2RustUnnamed_46 {
             command: b"select-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5353,10 +5080,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_select_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_select_line),
         },
         C2RustUnnamed_46 {
             command: b"select-word\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5370,10 +5094,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_select_word
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_select_word),
         },
         C2RustUnnamed_46 {
             command: b"selection-mode\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5387,10 +5108,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_selection_mode
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_selection_mode),
         },
         C2RustUnnamed_46 {
             command: b"set-mark\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5404,10 +5122,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_set_mark
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_set_mark),
         },
         C2RustUnnamed_46 {
             command: b"start-of-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5421,10 +5136,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_start_of_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_start_of_line),
         },
         C2RustUnnamed_46 {
             command: b"stop-selection\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5438,10 +5150,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: 0 as ::core::ffi::c_int,
             clear: WINDOW_COPY_CMD_CLEAR_ALWAYS,
-            f: Some(
-                window_copy_cmd_stop_selection
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_stop_selection),
         },
         C2RustUnnamed_46 {
             command: b"toggle-position\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5455,10 +5164,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_NEVER,
-            f: Some(
-                window_copy_cmd_toggle_position
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_toggle_position),
         },
         C2RustUnnamed_46 {
             command: b"top-line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5472,10 +5178,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
             },
             flags: WINDOW_COPY_CMD_FLAG_READONLY,
             clear: WINDOW_COPY_CMD_CLEAR_EMACS_ONLY,
-            f: Some(
-                window_copy_cmd_top_line
-                    as unsafe extern "C" fn(*mut window_copy_cmd_state) -> window_copy_cmd_action,
-            ),
+            f: Some(window_copy_cmd_top_line),
         },
     ]
 };
