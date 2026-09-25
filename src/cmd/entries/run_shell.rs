@@ -216,12 +216,12 @@ unsafe extern "C" fn cmd_run_shell_print(mut job: *mut job, mut msg: *const ::co
     );
 }
 
-unsafe fn cmd_run_shell_status_message(
-    cmd: *const ::core::ffi::c_char,
+fn cmd_run_shell_status_message(
+    cmd: &CStr,
     suffix: &[u8],
     code: ::core::ffi::c_int,
 ) -> CString {
-    let cmd = CStr::from_ptr(cmd).to_bytes();
+    let cmd = cmd.to_bytes();
     let code = code.to_string();
     let mut message = Vec::with_capacity(1 + cmd.len() + suffix.len() + code.len());
     message.push(b'\'');
@@ -482,7 +482,8 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
     let cmd = (*cdata)
         .cmd
         .as_ref()
-        .map_or(::core::ptr::null(), |cmd| cmd.as_ptr());
+        .expect("run-shell callback requires a command")
+        .as_c_str();
     let mut msg: Option<CString> = None;
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
