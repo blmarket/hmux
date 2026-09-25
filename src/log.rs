@@ -23,7 +23,7 @@ unsafe fn log_file_ptr() -> *mut FILE {
 }
 
 unsafe extern "C" fn log_event_cb(
-    mut severity: ::core::ffi::c_int,
+    _severity: ::core::ffi::c_int,
     mut msg: *const ::core::ffi::c_char,
 ) {
     log_debug(b"%s\0" as *const u8 as *const ::core::ffi::c_char, msg);

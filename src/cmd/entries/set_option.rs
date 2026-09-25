@@ -146,7 +146,7 @@ pub static mut cmd_set_hook_entry: cmd_entry = unsafe {
 unsafe extern "C" fn cmd_set_option_args_parse(
     mut args: *mut args,
     mut idx: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    _cause: *mut *mut ::core::ffi::c_char,
 ) -> args_parse_type {
     if args_has(args, 'B' as i32 as u_char) != 0 {
         return ARGS_PARSE_COMMANDS_OR_STRING;

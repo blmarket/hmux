@@ -179,7 +179,7 @@ pub unsafe fn systemd_create_socket(
 unsafe extern "C" fn job_removed_handler(
     mut m: *mut sd_bus_message,
     mut userdata: *mut ::core::ffi::c_void,
-    mut ret_error: *mut sd_bus_error,
+    _ret_error: *mut sd_bus_error,
 ) -> ::core::ffi::c_int {
     let mut watch: *mut systemd_job_watch = userdata as *mut systemd_job_watch;
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

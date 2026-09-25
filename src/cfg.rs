@@ -60,8 +60,8 @@ pub(crate) fn cfg_files() -> &'static [CString] {
     CFG_FILES.get().map_or(&[], Vec::as_slice)
 }
 unsafe extern "C" fn cfg_client_done(
-    mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
+    _item: *mut cmdq_item,
+    _data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     if cfg_finished == 0 {
         return CMD_RETURN_WAIT;
@@ -69,8 +69,8 @@ unsafe extern "C" fn cfg_client_done(
     return CMD_RETURN_NORMAL;
 }
 unsafe extern "C" fn cfg_done(
-    mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
+    _item: *mut cmdq_item,
+    _data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     if cfg_finished != 0 {
         return CMD_RETURN_NORMAL;

@@ -499,7 +499,7 @@ pub unsafe extern "C" fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_
     }
 }
 unsafe extern "C" fn job_read_callback(
-    mut bufev: *mut bufferevent,
+    _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut job: *mut job = data as *mut job;
@@ -508,7 +508,7 @@ unsafe extern "C" fn job_read_callback(
     }
 }
 unsafe extern "C" fn job_write_callback(
-    mut bufev: *mut bufferevent,
+    _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut job: *mut job = data as *mut job;
@@ -528,8 +528,8 @@ unsafe extern "C" fn job_write_callback(
     }
 }
 unsafe extern "C" fn job_error_callback(
-    mut bufev: *mut bufferevent,
-    mut events: ::core::ffi::c_short,
+    _bufev: *mut bufferevent,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut job: *mut job = data as *mut job;

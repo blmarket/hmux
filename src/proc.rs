@@ -39,7 +39,7 @@ pub const EVLOOP_ONCE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 pub const PEER_BAD: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 unsafe extern "C" fn proc_event_cb(
-    mut fd: ::core::ffi::c_int,
+    _fd: ::core::ffi::c_int,
     mut events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
@@ -112,7 +112,7 @@ unsafe extern "C" fn proc_event_cb(
 }
 unsafe extern "C" fn proc_signal_cb(
     mut signo: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut tp: *mut tmuxproc = arg as *mut tmuxproc;

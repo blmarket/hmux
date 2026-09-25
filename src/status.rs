@@ -77,8 +77,8 @@ pub struct status_prompt_data {
 }
 
 unsafe extern "C" fn status_timer_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = arg as *mut client;
@@ -620,8 +620,8 @@ unsafe extern "C" fn status_message_area(
     *area_w = w;
 }
 unsafe extern "C" fn status_message_callback(
-    mut fd: ::core::ffi::c_int,
-    mut event: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _event: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = data as *mut client;
@@ -773,7 +773,7 @@ unsafe extern "C" fn status_prompt_free_callback(mut data: *mut ::core::ffi::c_v
     }
 }
 unsafe extern "C" fn status_prompt_accept(
-    mut item: *mut cmdq_item,
+    _item: *mut cmdq_item,
     mut data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     let mut c: *mut client = data as *mut client;

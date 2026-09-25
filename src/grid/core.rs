@@ -176,7 +176,7 @@ static mut grid_cleared_entry: grid_cell_entry = grid_cell_entry {
     flags: GRID_FLAG_CLEARED as u_char,
 };
 #[no_mangle]
-pub unsafe extern "C" fn grid_check_is_clear(mut gd: *mut grid) {}
+pub unsafe extern "C" fn grid_check_is_clear(_gd: *mut grid) {}
 unsafe extern "C" fn grid_store_cell(
     mut gce: *mut grid_cell_entry,
     mut gc: *const grid_cell,
@@ -625,7 +625,7 @@ pub unsafe extern "C" fn grid_scroll_history_region(
     mut bg: u_int,
 ) {
     let mut gl_history: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut gl_upper: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
+    let _gl_upper: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut yy: u_int = 0;
     yy = (*gd).hsize.wrapping_add((*gd).sy);
     (*gd)

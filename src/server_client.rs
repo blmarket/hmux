@@ -858,8 +858,8 @@ pub unsafe extern "C" fn server_client_how_many() -> u_int {
     return n;
 }
 unsafe extern "C" fn server_client_overlay_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     server_client_clear_overlay(data as *mut client);
@@ -1591,8 +1591,8 @@ pub unsafe extern "C" fn server_client_unref(mut c: *mut client) {
     }
 }
 unsafe extern "C" fn server_client_free(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = arg as *mut client;
@@ -3514,8 +3514,8 @@ unsafe extern "C" fn server_client_check_window_resize(mut w: *mut window) {
     );
 }
 unsafe extern "C" fn server_client_resize_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = data as *mut window_pane;
@@ -3944,8 +3944,8 @@ unsafe extern "C" fn server_client_reset_state(mut c: *mut client) {
     (*tty).flags |= flags;
 }
 unsafe extern "C" fn server_client_repeat_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = data as *mut client;
@@ -3956,8 +3956,8 @@ unsafe extern "C" fn server_client_repeat_timer(
     }
 }
 unsafe extern "C" fn server_client_click_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = data as *mut client;
@@ -3987,8 +3987,8 @@ unsafe extern "C" fn server_client_start_exit_timer(mut c: *mut client) {
     }
 }
 unsafe extern "C" fn server_client_exit_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = data as *mut client;
@@ -4093,9 +4093,9 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
     };
 }
 unsafe extern "C" fn server_client_redraw_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
+    _data: *mut ::core::ffi::c_void,
 ) {
     log_debug(b"redraw timer fired\0" as *const u8 as *const ::core::ffi::c_char);
 }
@@ -4536,7 +4536,7 @@ unsafe extern "C" fn server_client_dispatch(
 }
 unsafe extern "C" fn server_client_read_only(
     mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
+    _data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     cmdq_error(
         item,
@@ -4546,7 +4546,7 @@ unsafe extern "C" fn server_client_read_only(
 }
 unsafe extern "C" fn server_client_default_command(
     mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
+    _data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
@@ -4574,7 +4574,7 @@ unsafe extern "C" fn server_client_default_command(
 }
 unsafe extern "C" fn server_client_command_done(
     mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
+    _data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
     if !(*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
@@ -4930,7 +4930,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
             close((*c).fd);
             (*c).fd = -(1 as ::core::ffi::c_int);
         } else {
-            let owner = c;
+            let _owner = c;
             (*c).tty.r.ensure(1);
             tty_resize(&raw mut (*c).tty);
             (*c).flags |= CLIENT_TERMINAL as uint64_t;

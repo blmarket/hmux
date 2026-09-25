@@ -741,7 +741,7 @@ pub unsafe extern "C" fn tty_acs_get(
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_acs_reverse_get(
-    mut tty: *mut tty,
+    _tty: *mut tty,
     mut s: *const ::core::ffi::c_char,
     mut slen: size_t,
 ) -> ::core::ffi::c_int {

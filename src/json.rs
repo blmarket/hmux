@@ -696,7 +696,7 @@ unsafe extern "C" fn json_create_node(
 pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut field1: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut member: *mut json_node = ::core::ptr::null_mut::<json_node>();
+    let _member: *mut json_node = ::core::ptr::null_mut::<json_node>();
     if node.is_null() {
         return;
     }

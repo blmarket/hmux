@@ -433,7 +433,7 @@ pub unsafe extern "C" fn cmdq_insert_after(
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_insert_hook(
-    mut s: *mut session,
+    _s: *mut session,
     mut item: *mut cmdq_item,
     mut current: *mut cmd_find_state,
     mut fmt: *const ::core::ffi::c_char,
@@ -575,8 +575,8 @@ unsafe extern "C" fn cmdq_remove_group(mut item: *mut cmdq_item) {
     }
 }
 unsafe extern "C" fn cmdq_empty_command(
-    mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
+    _item: *mut cmdq_item,
+    _data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     return CMD_RETURN_NORMAL;
 }

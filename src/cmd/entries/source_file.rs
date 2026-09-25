@@ -136,7 +136,7 @@ unsafe extern "C" fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_da
     cmdq_insert_after((*cdata).after, new_item);
 }
 unsafe extern "C" fn cmd_source_file_done(
-    mut oc: *mut client,
+    _oc: *mut client,
     mut path: *const ::core::ffi::c_char,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,

@@ -79,9 +79,9 @@ pub static mut cmd_if_shell_entry: cmd_entry = unsafe {
     }
 };
 unsafe extern "C" fn cmd_if_shell_args_parse(
-    mut args: *mut args,
+    _args: *mut args,
     mut idx: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    _cause: *mut *mut ::core::ffi::c_char,
 ) -> args_parse_type {
     if idx == 1 as u_int || idx == 2 as u_int {
         return ARGS_PARSE_COMMANDS_OR_STRING;

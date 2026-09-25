@@ -581,7 +581,7 @@ unsafe extern "C" fn redraw_mark_border_cell(
 unsafe extern "C" fn redraw_mark_border_status(
     mut bctx: *mut redraw_build_ctx,
     mut wp: *mut window_pane,
-    mut left: ::core::ffi::c_int,
+    _left: ::core::ffi::c_int,
     mut right: ::core::ffi::c_int,
     mut top: ::core::ffi::c_int,
     mut bottom: ::core::ffi::c_int,

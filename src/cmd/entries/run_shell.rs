@@ -106,8 +106,8 @@ pub static mut cmd_run_shell_entry: cmd_entry = unsafe {
 };
 unsafe extern "C" fn cmd_run_shell_args_parse(
     mut args: *mut args,
-    mut idx: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    _idx: u_int,
+    _cause: *mut *mut ::core::ffi::c_char,
 ) -> args_parse_type {
     if args_has(args, 'C' as i32 as u_char) != 0 {
         return ARGS_PARSE_COMMANDS_OR_STRING;
@@ -329,8 +329,8 @@ unsafe extern "C" fn cmd_run_shell_exec(
     return CMD_RETURN_WAIT;
 }
 unsafe extern "C" fn cmd_run_shell_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut cdata: *mut cmd_run_shell_data = arg as *mut cmd_run_shell_data;

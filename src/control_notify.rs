@@ -27,9 +27,9 @@ pub struct C2RustUnnamed_35 {
 }
 
 unsafe extern "C" fn control_pane_mode_changed_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -74,9 +74,9 @@ unsafe extern "C" fn control_pane_mode_changed_cb(
     }
 }
 unsafe extern "C" fn control_window_layout_changed_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -124,9 +124,9 @@ unsafe extern "C" fn control_window_layout_changed_cb(
     }
 }
 unsafe extern "C" fn control_window_pane_changed_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window =
@@ -152,9 +152,9 @@ unsafe extern "C" fn control_window_pane_changed_cb(
     }
 }
 unsafe extern "C" fn control_window_unlinked_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut cs: *mut session = ::core::ptr::null_mut::<session>();
@@ -190,9 +190,9 @@ unsafe extern "C" fn control_window_unlinked_cb(
     }
 }
 unsafe extern "C" fn control_window_linked_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut cs: *mut session = ::core::ptr::null_mut::<session>();
@@ -228,9 +228,9 @@ unsafe extern "C" fn control_window_linked_cb(
     }
 }
 unsafe extern "C" fn control_window_renamed_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut cs: *mut session = ::core::ptr::null_mut::<session>();
@@ -269,9 +269,9 @@ unsafe extern "C" fn control_window_renamed_cb(
     }
 }
 unsafe extern "C" fn control_client_session_changed_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut cc: *mut client =
         event_payload_get_client(ep, b"client\0" as *const u8 as *const ::core::ffi::c_char);
@@ -313,9 +313,9 @@ unsafe extern "C" fn control_client_session_changed_cb(
     }
 }
 unsafe extern "C" fn control_client_detached_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut cc: *mut client =
         event_payload_get_client(ep, b"client\0" as *const u8 as *const ::core::ffi::c_char);
@@ -342,9 +342,9 @@ unsafe extern "C" fn control_client_detached_cb(
     }
 }
 unsafe extern "C" fn control_session_renamed_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut s: *mut session =
         event_payload_get_session(ep, b"session\0" as *const u8 as *const ::core::ffi::c_char);
@@ -370,9 +370,9 @@ unsafe extern "C" fn control_session_renamed_cb(
     }
 }
 unsafe extern "C" fn control_session_created_cb(
-    mut name: *const ::core::ffi::c_char,
-    mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _name: *const ::core::ffi::c_char,
+    _ep: *mut event_payload,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
@@ -391,9 +391,9 @@ unsafe extern "C" fn control_session_created_cb(
     }
 }
 unsafe extern "C" fn control_session_closed_cb(
-    mut name: *const ::core::ffi::c_char,
-    mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _name: *const ::core::ffi::c_char,
+    _ep: *mut event_payload,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     c = clients.first();
@@ -412,9 +412,9 @@ unsafe extern "C" fn control_session_closed_cb(
     }
 }
 unsafe extern "C" fn control_session_window_changed_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut s: *mut session =
         event_payload_get_session(ep, b"session\0" as *const u8 as *const ::core::ffi::c_char);
@@ -440,9 +440,9 @@ unsafe extern "C" fn control_session_window_changed_cb(
     }
 }
 unsafe extern "C" fn control_paste_buffer_changed_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut pbname: *const ::core::ffi::c_char = event_payload_get_string(
         ep,
@@ -469,9 +469,9 @@ unsafe extern "C" fn control_paste_buffer_changed_cb(
     }
 }
 unsafe extern "C" fn control_paste_buffer_deleted_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut pbname: *const ::core::ffi::c_char = event_payload_get_string(
         ep,

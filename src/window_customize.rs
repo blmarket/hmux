@@ -1670,8 +1670,8 @@ unsafe extern "C" fn window_customize_build_environment(
 }
 unsafe extern "C" fn window_customize_build(
     mut modedata: *mut ::core::ffi::c_void,
-    mut sort_crit: *mut sort_criteria,
-    mut tag: *mut uint64_t,
+    _sort_crit: *mut sort_criteria,
+    _tag: *mut uint64_t,
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
@@ -1830,7 +1830,7 @@ unsafe extern "C" fn window_customize_build(
     format_free(ft);
 }
 unsafe extern "C" fn window_customize_draw_key(
-    mut data: *mut window_customize_modedata,
+    _data: *mut window_customize_modedata,
     mut item: *mut window_customize_itemdata,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
@@ -2898,8 +2898,8 @@ unsafe extern "C" fn window_customize_menu(
     );
 }
 unsafe extern "C" fn window_customize_height(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut height: u_int,
+    _modedata: *mut ::core::ffi::c_void,
+    _height: u_int,
 ) -> u_int {
     return 12 as u_int;
 }
@@ -2940,7 +2940,7 @@ unsafe extern "C" fn window_customize_help(
 }
 unsafe extern "C" fn window_customize_init(
     mut wme: *mut window_mode_entry,
-    mut item: *mut cmdq_item,
+    _item: *mut cmdq_item,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
@@ -3070,7 +3070,7 @@ unsafe extern "C" fn window_customize_set_option_callback(
     mut c: *mut client,
     mut itemdata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut current_block: u64;
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
@@ -3167,10 +3167,10 @@ unsafe extern "C" fn window_customize_set_option_callback(
     };
 }
 unsafe extern "C" fn window_customize_set_environment_callback(
-    mut c: *mut client,
+    _c: *mut client,
     mut itemdata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
@@ -3313,7 +3313,7 @@ unsafe extern "C" fn window_customize_add_option_callback(
     mut c: *mut client,
     mut itemdata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
@@ -3449,7 +3449,7 @@ unsafe extern "C" fn window_customize_add_environment_callback(
     mut c: *mut client,
     mut itemdata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
@@ -3938,7 +3938,7 @@ unsafe extern "C" fn window_customize_set_array_key_callback(
     mut c: *mut client,
     mut itemdata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata =
@@ -4178,7 +4178,7 @@ unsafe extern "C" fn window_customize_set_command_callback(
     mut c: *mut client,
     mut itemdata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
@@ -4223,10 +4223,10 @@ unsafe extern "C" fn window_customize_set_command_callback(
     };
 }
 unsafe extern "C" fn window_customize_set_note_callback(
-    mut c: *mut client,
+    _c: *mut client,
     mut itemdata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
@@ -4355,7 +4355,7 @@ unsafe extern "C" fn window_customize_add_key_callback(
     mut c: *mut client,
     mut itemdata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key0: prompt_key_result,
+    _key0: prompt_key_result,
 ) -> prompt_result {
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
@@ -4527,8 +4527,8 @@ unsafe extern "C" fn window_customize_reset_key(
 unsafe extern "C" fn window_customize_change_each(
     mut modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
-    mut c: *mut client,
-    mut key: key_code,
+    _c: *mut client,
+    _key: key_code,
 ) {
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
@@ -4581,10 +4581,10 @@ unsafe extern "C" fn window_customize_change_each(
     }
 }
 unsafe extern "C" fn window_customize_change_current_callback(
-    mut c: *mut client,
+    _c: *mut client,
     mut modedata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
     let mut item: *mut window_customize_itemdata =
@@ -4680,7 +4680,7 @@ unsafe extern "C" fn window_customize_change_tagged_callback(
     mut c: *mut client,
     mut modedata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
@@ -4865,8 +4865,8 @@ unsafe extern "C" fn window_customize_add_current(
 unsafe extern "C" fn window_customize_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
-    mut s: *mut session,
-    mut wl: *mut winlink,
+    _s: *mut session,
+    _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {

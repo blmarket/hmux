@@ -828,18 +828,18 @@ unsafe extern "C" fn client_signal(mut sig: ::core::ffi::c_int) {
     };
 }
 unsafe extern "C" fn client_file_check_cb(
-    mut c: *mut client,
-    mut path: *const ::core::ffi::c_char,
-    mut error: ::core::ffi::c_int,
-    mut closed: ::core::ffi::c_int,
-    mut buffer: *mut evbuffer,
-    mut data: *mut ::core::ffi::c_void,
+    _c: *mut client,
+    _path: *const ::core::ffi::c_char,
+    _error: ::core::ffi::c_int,
+    _closed: ::core::ffi::c_int,
+    _buffer: *mut evbuffer,
+    _data: *mut ::core::ffi::c_void,
 ) {
     if client_exitflag != 0 {
         client_exit();
     }
 }
-unsafe extern "C" fn client_dispatch(mut imsg: *mut imsg, mut arg: *mut ::core::ffi::c_void) {
+unsafe extern "C" fn client_dispatch(mut imsg: *mut imsg, _arg: *mut ::core::ffi::c_void) {
     if imsg.is_null() {
         if client_exitflag == 0 {
             client_exitreason = CLIENT_EXIT_LOST_SERVER;

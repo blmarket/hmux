@@ -315,7 +315,7 @@ unsafe extern "C" fn popup_init_ctx_cb(mut ctx: *mut screen_write_ctx, mut ttyct
     (*ttyctx).arg = pd as *mut ::core::ffi::c_void;
 }
 unsafe extern "C" fn popup_mode_cb(
-    mut c: *mut client,
+    _c: *mut client,
     mut data: *mut ::core::ffi::c_void,
     mut cx: *mut u_int,
     mut cy: *mut u_int,
@@ -331,7 +331,7 @@ unsafe extern "C" fn popup_mode_cb(
     return &raw mut (*pd).s;
 }
 unsafe extern "C" fn popup_check_cb(
-    mut c: *mut client,
+    _c: *mut client,
     mut data: *mut ::core::ffi::c_void,
     mut px: u_int,
     mut py: u_int,
@@ -472,7 +472,7 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
     ) as overlay_check_cb;
     (*c).overlay_data = pd as *mut ::core::ffi::c_void;
 }
-unsafe extern "C" fn popup_free_cb(mut c: *mut client, mut data: *mut ::core::ffi::c_void) {
+unsafe extern "C" fn popup_free_cb(_c: *mut client, mut data: *mut ::core::ffi::c_void) {
     let mut pd: *mut popup_data = data as *mut popup_data;
     let mut item: *mut cmdq_item = (*pd).item;
     if (*pd).cb.is_some() {

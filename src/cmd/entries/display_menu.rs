@@ -118,7 +118,7 @@ pub static mut cmd_display_popup_entry: cmd_entry = unsafe {
 unsafe extern "C" fn cmd_display_menu_args_parse(
     mut args: *mut args,
     mut idx: u_int,
-    mut cause: *mut *mut ::core::ffi::c_char,
+    _cause: *mut *mut ::core::ffi::c_char,
 ) -> args_parse_type {
     let mut i: u_int = 0 as u_int;
     let mut type_0: args_parse_type = ARGS_PARSE_STRING;

@@ -255,7 +255,7 @@ unsafe extern "C" fn cmd_pipe_pane_exec(
     };
 }
 unsafe extern "C" fn cmd_pipe_pane_read_callback(
-    mut bufev: *mut bufferevent,
+    _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = data as *mut window_pane;
@@ -282,7 +282,7 @@ unsafe extern "C" fn cmd_pipe_pane_read_callback(
     }
 }
 unsafe extern "C" fn cmd_pipe_pane_write_callback(
-    mut bufev: *mut bufferevent,
+    _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = data as *mut window_pane;
@@ -295,8 +295,8 @@ unsafe extern "C" fn cmd_pipe_pane_write_callback(
     }
 }
 unsafe extern "C" fn cmd_pipe_pane_error_callback(
-    mut bufev: *mut bufferevent,
-    mut what: ::core::ffi::c_short,
+    _bufev: *mut bufferevent,
+    _what: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = data as *mut window_pane;

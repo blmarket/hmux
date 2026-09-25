@@ -70,7 +70,7 @@ pub static mut cmd_load_buffer_entry: cmd_entry = unsafe {
     }
 };
 unsafe extern "C" fn cmd_load_buffer_done(
-    mut c: *mut client,
+    _c: *mut client,
     mut path: *const ::core::ffi::c_char,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,

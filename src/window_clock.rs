@@ -619,8 +619,8 @@ unsafe extern "C" fn window_clock_start_timer(mut wme: *mut window_mode_entry) {
     event_add(&raw mut (*data).timer, &raw mut tv);
 }
 unsafe extern "C" fn window_clock_timer_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
@@ -666,9 +666,9 @@ unsafe extern "C" fn window_clock_timer_callback(
 }
 unsafe extern "C" fn window_clock_init(
     mut wme: *mut window_mode_entry,
-    mut item: *mut cmdq_item,
-    mut fs: *mut cmd_find_state,
-    mut args: *mut args,
+    _item: *mut cmdq_item,
+    _fs: *mut cmd_find_state,
+    _args: *mut args,
 ) -> *mut screen {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
@@ -719,11 +719,11 @@ unsafe extern "C" fn window_clock_resize(
 }
 unsafe extern "C" fn window_clock_key(
     mut wme: *mut window_mode_entry,
-    mut c: *mut client,
-    mut s: *mut session,
-    mut wl: *mut winlink,
-    mut key: key_code,
-    mut m: *mut mouse_event,
+    _c: *mut client,
+    _s: *mut session,
+    _wl: *mut winlink,
+    _key: key_code,
+    _m: *mut mouse_event,
 ) {
     window_pane_reset_mode((*wme).wp);
 }

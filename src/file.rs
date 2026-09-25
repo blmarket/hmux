@@ -248,8 +248,8 @@ pub unsafe extern "C" fn file_free(mut cf: *mut client_file) {
     drop(Box::from_raw(cf));
 }
 unsafe extern "C" fn file_fire_done_cb(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut cf: *mut client_file = arg as *mut client_file;
@@ -874,8 +874,8 @@ pub unsafe extern "C" fn file_cancel(mut cf: *mut client_file) {
     );
 }
 unsafe extern "C" fn file_push_cb(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut cf: *mut client_file = arg as *mut client_file;
@@ -1029,7 +1029,7 @@ unsafe extern "C" fn file_write_finished(mut cf: *mut client_file) {
     file_free(cf);
 }
 unsafe extern "C" fn file_write_error_callback(
-    mut bev: *mut bufferevent,
+    _bev: *mut bufferevent,
     mut what: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
@@ -1066,7 +1066,7 @@ unsafe extern "C" fn file_write_error_callback(
     }
 }
 unsafe extern "C" fn file_write_callback(
-    mut bev: *mut bufferevent,
+    _bev: *mut bufferevent,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut cf: *mut client_file = arg as *mut client_file;
@@ -1290,7 +1290,7 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
     }
 }
 unsafe extern "C" fn file_read_error_callback(
-    mut bev: *mut bufferevent,
+    _bev: *mut bufferevent,
     mut what: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
@@ -1322,7 +1322,7 @@ unsafe extern "C" fn file_read_error_callback(
     file_free(cf);
 }
 unsafe extern "C" fn file_read_callback(
-    mut bev: *mut bufferevent,
+    _bev: *mut bufferevent,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut cf: *mut client_file = arg as *mut client_file;

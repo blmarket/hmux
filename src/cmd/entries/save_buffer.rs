@@ -76,11 +76,11 @@ pub static mut cmd_show_buffer_entry: cmd_entry = unsafe {
     }
 };
 unsafe extern "C" fn cmd_save_buffer_done(
-    mut c: *mut client,
+    _c: *mut client,
     mut path: *const ::core::ffi::c_char,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
-    mut buffer: *mut evbuffer,
+    _buffer: *mut evbuffer,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut item: *mut cmdq_item = data as *mut cmdq_item;

@@ -248,8 +248,8 @@ pub unsafe extern "C" fn tty_set_size(
     (*tty).ypixel = ypixel;
 }
 unsafe extern "C" fn tty_read_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut tty: *mut tty = data as *mut tty;
@@ -286,8 +286,8 @@ unsafe extern "C" fn tty_read_callback(
     while tty_keys_next(tty) != 0 {}
 }
 unsafe extern "C" fn tty_timer_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut tty: *mut tty = data as *mut tty;
@@ -352,8 +352,8 @@ unsafe extern "C" fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn tty_write_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut tty: *mut tty = data as *mut tty;
@@ -499,8 +499,8 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
     Ok(())
 }
 unsafe extern "C" fn tty_start_timer_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut tty: *mut tty = data as *mut tty;
@@ -1486,7 +1486,7 @@ pub unsafe extern "C" fn tty_update_client_offset(mut c: *mut client) {
     (*c).flags |= (CLIENT_REDRAWWINDOW | CLIENT_REDRAWSTATUS) as uint64_t;
 }
 unsafe extern "C" fn tty_large_region(
-    mut tty: *mut tty,
+    _tty: *mut tty,
     mut ctx: *const tty_ctx,
 ) -> ::core::ffi::c_int {
     return ((*ctx).orlower.wrapping_sub((*ctx).orupper) >= (*ctx).sy.wrapping_div(2 as u_int))
@@ -1538,7 +1538,7 @@ unsafe extern "C" fn tty_redraw_region(mut tty: *mut tty, mut ctx: *const tty_ct
     }
 }
 unsafe extern "C" fn tty_is_visible(
-    mut tty: *mut tty,
+    _tty: *mut tty,
     mut ctx: *const tty_ctx,
     mut px: u_int,
     mut py: u_int,
@@ -3776,8 +3776,8 @@ pub unsafe extern "C" fn tty_default_attributes(
     tty_attributes(tty, &raw mut gc, style_ctx);
 }
 unsafe extern "C" fn tty_clipboard_query_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut tty: *mut tty = data as *mut tty;

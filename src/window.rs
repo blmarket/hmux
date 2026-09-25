@@ -3129,8 +3129,8 @@ unsafe extern "C" fn window_pane_free_modes(mut wp: *mut window_pane) {
     (*wp).screen = &raw mut (*wp).base;
 }
 unsafe extern "C" fn window_pane_scrollbar_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = arg as *mut window_pane;
@@ -3229,7 +3229,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     drop(owner);
 }
 unsafe extern "C" fn window_pane_read_callback(
-    mut bufev: *mut bufferevent,
+    _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = data as *mut window_pane;
@@ -3266,8 +3266,8 @@ unsafe extern "C" fn window_pane_read_callback(
     bufferevent_disable((*wp).event, EV_READ as ::core::ffi::c_short);
 }
 unsafe extern "C" fn window_pane_error_callback(
-    mut bufev: *mut bufferevent,
-    mut what: ::core::ffi::c_short,
+    _bufev: *mut bufferevent,
+    _what: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = data as *mut window_pane;
@@ -4371,7 +4371,7 @@ pub unsafe extern "C" fn winlink_shuffle_up(
 }
 unsafe extern "C" fn window_pane_input_callback(
     mut c: *mut client,
-    mut path: *const ::core::ffi::c_char,
+    _path: *const ::core::ffi::c_char,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
     mut buffer: *mut evbuffer,

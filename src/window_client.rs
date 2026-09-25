@@ -283,7 +283,7 @@ mod tests {
 unsafe extern "C" fn window_client_build(
     mut modedata: *mut ::core::ffi::c_void,
     mut sort_crit: *mut sort_criteria,
-    mut tag: *mut uint64_t,
+    _tag: *mut uint64_t,
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
@@ -353,7 +353,7 @@ unsafe extern "C" fn window_client_build(
     }
 }
 unsafe extern "C" fn window_client_draw_info(
-    mut modedata: *mut ::core::ffi::c_void,
+    _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
@@ -686,8 +686,8 @@ unsafe extern "C" fn window_client_help(
 }
 unsafe extern "C" fn window_client_init(
     mut wme: *mut window_mode_entry,
-    mut item: *mut cmdq_item,
-    mut fs: *mut cmd_find_state,
+    _item: *mut cmdq_item,
+    _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
     let mut wp: *mut window_pane = (*wme).wp;
@@ -815,7 +815,7 @@ unsafe extern "C" fn window_client_update(mut wme: *mut window_mode_entry) {
 unsafe extern "C" fn window_client_do_detach(
     mut modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
-    mut c: *mut client,
+    _c: *mut client,
     mut key: key_code,
 ) {
     let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
@@ -834,8 +834,8 @@ unsafe extern "C" fn window_client_do_detach(
 unsafe extern "C" fn window_client_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
-    mut s: *mut session,
-    mut wl: *mut winlink,
+    _s: *mut session,
+    _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {

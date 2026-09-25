@@ -2325,8 +2325,8 @@ unsafe extern "C" fn input_fire_pane_title_changed(
     );
 }
 unsafe extern "C" fn input_ground_timer_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut ictx: *mut input_ctx = arg as *mut input_ctx;
@@ -4051,7 +4051,7 @@ unsafe extern "C" fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe extern "C" fn input_csi_dispatch_sm_graphics(mut ictx: *mut input_ctx) {}
+unsafe extern "C" fn input_csi_dispatch_sm_graphics(_ictx: *mut input_ctx) {}
 unsafe extern "C" fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut s: *mut screen = (*sctx).s;
@@ -6054,8 +6054,8 @@ pub unsafe extern "C" fn input_set_buffer_size(mut buffer_size: size_t) {
     input_buffer_size = buffer_size;
 }
 unsafe extern "C" fn input_request_timer_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut ictx: *mut input_ctx = arg as *mut input_ctx;

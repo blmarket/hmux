@@ -407,8 +407,8 @@ unsafe extern "C" fn clients_calculate_size(
 }
 unsafe extern "C" fn default_window_size_skip_client(
     mut loop_0: *mut client,
-    mut type_0: ::core::ffi::c_int,
-    mut current: ::core::ffi::c_int,
+    _type_0: ::core::ffi::c_int,
+    _current: ::core::ffi::c_int,
     mut s: *mut session,
     mut w: *mut window,
 ) -> ::core::ffi::c_int {
@@ -521,9 +521,9 @@ pub unsafe extern "C" fn default_window_size(
 }
 unsafe extern "C" fn recalculate_size_skip_client(
     mut loop_0: *mut client,
-    mut type_0: ::core::ffi::c_int,
+    _type_0: ::core::ffi::c_int,
     mut current: ::core::ffi::c_int,
-    mut s: *mut session,
+    _s: *mut session,
     mut w: *mut window,
 ) -> ::core::ffi::c_int {
     if (*(*loop_0).session).curw.is_null() {

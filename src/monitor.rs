@@ -572,8 +572,8 @@ unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     }
 }
 unsafe extern "C" fn monitor_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut ms: *mut monitor_set = data as *mut monitor_set;

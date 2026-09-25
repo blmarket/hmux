@@ -25,8 +25,8 @@ use std::ffi::{CStr, CString};
 pub const NAME_INTERVAL: ::core::ffi::c_int = 500000 as ::core::ffi::c_int;
 
 unsafe extern "C" fn name_time_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut w: *mut window = arg as *mut window;

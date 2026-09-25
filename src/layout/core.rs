@@ -111,7 +111,7 @@ pub unsafe extern "C" fn layout_print_cell(
     mut hdr: *const ::core::ffi::c_char,
     mut n: u_int,
 ) {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
+    let _lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if lc.is_null() {
         return;

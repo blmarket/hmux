@@ -965,15 +965,15 @@ unsafe fn control_cancel_error(data: *mut ::core::ffi::c_void) {
     drop(Box::from_raw(data as *mut Option<CString>));
 }
 unsafe extern "C" fn control_error_callback(
-    mut bufev: *mut bufferevent,
-    mut what: ::core::ffi::c_short,
+    _bufev: *mut bufferevent,
+    _what: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = data as *mut client;
     (*c).flags |= CLIENT_EXIT as uint64_t;
 }
 unsafe extern "C" fn control_read_callback(
-    mut bufev: *mut bufferevent,
+    _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = data as *mut client;
@@ -1290,7 +1290,7 @@ unsafe extern "C" fn control_write_pending(
     return !(*cp).blocks.is_empty() as ::core::ffi::c_int;
 }
 unsafe extern "C" fn control_write_callback(
-    mut bufev: *mut bufferevent,
+    _bufev: *mut bufferevent,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = data as *mut client;
@@ -1346,7 +1346,7 @@ unsafe extern "C" fn control_write_callback(
 }
 unsafe extern "C" fn control_sub_change(
     mut change: *mut monitor_change,
-    mut data: *mut ::core::ffi::c_void,
+    _data: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = (*change).c;
     let mut s: *mut session = (*change).s;

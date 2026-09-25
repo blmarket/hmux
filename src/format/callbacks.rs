@@ -7,7 +7,7 @@ use crate::src::window::{window_pane_stack_first, window_winlinks_first, window_
 use std::ffi::{CStr, CString};
 use std::fmt::Write as _;
 
-unsafe fn format_cb_host(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_host(_ft: *mut format_tree) -> Option<CString> {
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
     if gethostname(
         &raw mut host as *mut ::core::ffi::c_char,
@@ -18,7 +18,7 @@ unsafe fn format_cb_host(mut ft: *mut format_tree) -> Option<CString> {
     }
     return Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned());
 }
-unsafe fn format_cb_host_short(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_host_short(_ft: *mut format_tree) -> Option<CString> {
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if gethostname(
@@ -34,7 +34,7 @@ unsafe fn format_cb_host_short(mut ft: *mut format_tree) -> Option<CString> {
     }
     return Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned());
 }
-unsafe fn format_cb_pid(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_pid(_ft: *mut format_tree) -> Option<CString> {
     let mut value = None;
     value = Some(
         CString::new(format!(
@@ -655,7 +655,7 @@ unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CStri
 unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = (*ft).s;
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
-    let mut session_loop: *mut session = ::core::ptr::null_mut::<session>();
+    let _session_loop: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     if s.is_null() {
@@ -1335,7 +1335,7 @@ unsafe fn format_cb_client_theme(mut ft: *mut format_tree) -> Option<CString> {
     }
     return None;
 }
-unsafe fn format_cb_config_files(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_config_files(_ft: *mut format_tree) -> Option<CString> {
     let mut paths = Vec::<u8>::new();
     for (index, path) in cfg_files().iter().enumerate() {
         if index != 0 {
@@ -1643,7 +1643,7 @@ unsafe fn format_cb_mouse_y(mut ft: *mut format_tree) -> Option<CString> {
     }
     return None;
 }
-unsafe fn format_cb_next_session_id(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_next_session_id(_ft: *mut format_tree) -> Option<CString> {
     return Some(
         CString::new(format!("${}", (next_session_id) as u32))
             .expect("formatted numbers contain no NUL"),
@@ -2337,7 +2337,7 @@ unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CStr
     }
     return None;
 }
-unsafe fn format_cb_server_sessions(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
     s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
@@ -2530,13 +2530,13 @@ unsafe fn format_cb_session_windows(mut ft: *mut format_tree) -> Option<CString>
     }
     return None;
 }
-unsafe fn format_cb_socket_path(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_socket_path(_ft: *mut format_tree) -> Option<CString> {
     return Some(CStr::from_ptr(socket_path).to_owned());
 }
-unsafe fn format_cb_version(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_version(_ft: *mut format_tree) -> Option<CString> {
     return Some(CStr::from_ptr(getversion()).to_owned());
 }
-unsafe fn format_cb_sixel_support(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_sixel_support(_ft: *mut format_tree) -> Option<CString> {
     return Some(c"0".to_owned());
 }
 unsafe fn format_cb_active_window_index(mut ft: *mut format_tree) -> Option<CString> {
@@ -2949,7 +2949,7 @@ unsafe fn format_cb_session_last_attached(mut ft: *mut format_tree) -> Option<ti
     }
     return None;
 }
-unsafe fn format_cb_start_time(mut ft: *mut format_tree) -> Option<time_t> {
+unsafe fn format_cb_start_time(_ft: *mut format_tree) -> Option<time_t> {
     return Some((start_time).tv_sec as time_t);
 }
 unsafe fn format_cb_window_activity(mut ft: *mut format_tree) -> Option<time_t> {
@@ -2958,16 +2958,16 @@ unsafe fn format_cb_window_activity(mut ft: *mut format_tree) -> Option<time_t> 
     }
     return None;
 }
-unsafe fn format_cb_buffer_mode_format(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_buffer_mode_format(_ft: *mut format_tree) -> Option<CString> {
     return Some(CStr::from_ptr(window_buffer_mode.default_format).to_owned());
 }
-unsafe fn format_cb_client_mode_format(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_client_mode_format(_ft: *mut format_tree) -> Option<CString> {
     return Some(CStr::from_ptr(window_client_mode.default_format).to_owned());
 }
-unsafe fn format_cb_tree_mode_format(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_tree_mode_format(_ft: *mut format_tree) -> Option<CString> {
     return Some(CStr::from_ptr(window_tree_mode.default_format).to_owned());
 }
-unsafe fn format_cb_uid(mut ft: *mut format_tree) -> Option<CString> {
+unsafe fn format_cb_uid(_ft: *mut format_tree) -> Option<CString> {
     return Some(
         CString::new(format!(
             "{}",

@@ -9,7 +9,7 @@ pub unsafe extern "C" fn getptmfd() -> ::core::ffi::c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn fdforkpty(
-    mut ptmfd: ::core::ffi::c_int,
+    _ptmfd: ::core::ffi::c_int,
     mut master: *mut ::core::ffi::c_int,
     mut name: *mut ::core::ffi::c_char,
     mut tio: *mut termios,

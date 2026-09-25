@@ -315,7 +315,7 @@ unsafe extern "C" fn cmd_wait_for_event_print(
     }
 }
 unsafe extern "C" fn cmd_wait_for_event_cb(
-    mut name: *const ::core::ffi::c_char,
+    _name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
     mut item_data: *mut ::core::ffi::c_void,
 ) {
@@ -476,7 +476,7 @@ unsafe extern "C" fn cmd_wait_for_list(
     return CMD_RETURN_NORMAL;
 }
 unsafe extern "C" fn cmd_wait_for_wake(
-    mut item: *mut cmdq_item,
+    _item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut args: *mut args,
     mut wc: *mut wait_channel,
@@ -515,7 +515,7 @@ unsafe extern "C" fn cmd_wait_for_wake(
     return CMD_RETURN_NORMAL;
 }
 unsafe extern "C" fn cmd_wait_for_signal(
-    mut item: *mut cmdq_item,
+    _item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
     mut wc: *mut wait_channel,
 ) -> cmd_retval {

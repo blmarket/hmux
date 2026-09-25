@@ -238,9 +238,9 @@ pub unsafe fn server_create_socket(mut flags: uint64_t) -> Result<::core::ffi::c
     Err(CString::new(message).expect("C strings contain no interior NUL"))
 }
 unsafe extern "C" fn server_tidy_event(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
+    _data: *mut ::core::ffi::c_void,
 ) {
     let mut tv: timeval = timeval {
         tv_sec: 3600 as __time_t,
@@ -574,7 +574,7 @@ pub unsafe extern "C" fn server_update_socket() {
 unsafe extern "C" fn server_accept(
     mut fd: ::core::ffi::c_int,
     mut events: ::core::ffi::c_short,
-    mut data: *mut ::core::ffi::c_void,
+    _data: *mut ::core::ffi::c_void,
 ) {
     let mut sa: sockaddr_storage = sockaddr_storage {
         ss_family: 0,
@@ -666,7 +666,7 @@ pub unsafe extern "C" fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     };
 }
 unsafe extern "C" fn server_signal(mut sig: ::core::ffi::c_int) {
-    let mut fd: ::core::ffi::c_int = 0;
+    let _fd: ::core::ffi::c_int = 0;
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"server_signal\0" as *const u8 as *const ::core::ffi::c_char,

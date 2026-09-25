@@ -64,7 +64,7 @@ pub static mut cmd_start_server_entry: cmd_entry = unsafe {
 };
 unsafe extern "C" fn cmd_kill_server_exec(
     mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
+    _item: *mut cmdq_item,
 ) -> cmd_retval {
     if cmd_get_entry(self_0) == &raw const cmd_kill_server_entry {
         kill(getpid(), SIGTERM);

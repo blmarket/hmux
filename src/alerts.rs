@@ -46,8 +46,8 @@ fn alerts_enqueue<T>(queue: &mut VecDeque<T>, queued: &mut ::core::ffi::c_int, i
 }
 
 unsafe extern "C" fn alerts_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut w: *mut window = arg as *mut window;
@@ -58,9 +58,9 @@ unsafe extern "C" fn alerts_timer(
     alerts_queue(w, WINDOW_SILENCE);
 }
 unsafe extern "C" fn alerts_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
-    mut arg: *mut ::core::ffi::c_void,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
+    _arg: *mut ::core::ffi::c_void,
 ) {
     let mut alerts: ::core::ffi::c_int = 0;
     loop {

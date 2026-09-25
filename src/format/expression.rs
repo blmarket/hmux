@@ -2243,8 +2243,8 @@ pub(super) unsafe fn format_replace_expression(
     return None;
 }
 pub(super) unsafe extern "C" fn format_cycle_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut c: *mut client = arg as *mut client;

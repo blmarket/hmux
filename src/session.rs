@@ -501,8 +501,8 @@ pub unsafe extern "C" fn session_remove_ref(
     }
 }
 unsafe extern "C" fn session_free(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut s: *mut session = arg as *mut session;
@@ -567,8 +567,8 @@ pub unsafe extern "C" fn session_destroy(
     );
 }
 unsafe extern "C" fn session_lock_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut s: *mut session = arg as *mut session;

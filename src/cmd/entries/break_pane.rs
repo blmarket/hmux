@@ -144,7 +144,7 @@ unsafe extern "C" fn cmd_break_pane_exec(
     let mut wp: *mut window_pane = (*source).wp;
     let mut w: *mut window = (*wl).window;
     let mut old_w: *mut window = w;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let _cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = (*target).idx;
     let mut before: ::core::ffi::c_int = 0;
     let mut old_idx: ::core::ffi::c_int = (*wl).idx;

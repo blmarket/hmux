@@ -339,8 +339,8 @@ pub const WINDOW_COPY_SEARCH_MAX_LINE: ::core::ffi::c_int = 2000 as ::core::ffi:
 pub const WINDOW_COPY_DRAG_REPEAT_TIME: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_REFRESH_INTERVAL: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
 unsafe extern "C" fn window_copy_scroll_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
@@ -578,8 +578,8 @@ unsafe extern "C" fn window_copy_common_init(
 }
 unsafe extern "C" fn window_copy_init(
     mut wme: *mut window_mode_entry,
-    mut item: *mut cmdq_item,
-    mut fs: *mut cmd_find_state,
+    _item: *mut cmdq_item,
+    _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
     let mut wp: *mut window_pane = (*wme).swp;
@@ -647,9 +647,9 @@ unsafe extern "C" fn window_copy_init(
 }
 unsafe extern "C" fn window_copy_view_init(
     mut wme: *mut window_mode_entry,
-    mut item: *mut cmdq_item,
-    mut fs: *mut cmd_find_state,
-    mut args: *mut args,
+    _item: *mut cmdq_item,
+    _fs: *mut cmd_find_state,
+    _args: *mut args,
 ) -> *mut screen {
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
@@ -699,8 +699,8 @@ pub unsafe extern "C" fn window_copy_add(
     window_copy_vadd(wp, parse, fmt, ap);
 }
 unsafe extern "C" fn window_copy_init_ctx_cb(
-    mut ctx: *mut screen_write_ctx,
-    mut ttyctx: *mut tty_ctx,
+    _ctx: *mut screen_write_ctx,
+    _ttyctx: *mut tty_ctx,
 ) {
 }
 #[no_mangle]
@@ -1560,7 +1560,7 @@ unsafe extern "C" fn window_copy_cmd_bottom_line(
     return WINDOW_COPY_CMD_REDRAW;
 }
 unsafe extern "C" fn window_copy_cmd_cancel(
-    mut cs: *mut window_copy_cmd_state,
+    _cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     return WINDOW_COPY_CMD_CANCEL;
 }
@@ -3583,8 +3583,8 @@ unsafe extern "C" fn window_copy_refresh_allowed(
     return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn window_copy_refresh_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;

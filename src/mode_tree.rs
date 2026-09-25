@@ -1806,7 +1806,7 @@ unsafe extern "C" fn mode_tree_search_set(mut mtd: *mut mode_tree_data) {
     (*(*mtd).wp).flags |= PANE_REDRAW;
 }
 unsafe extern "C" fn mode_tree_search_callback(
-    mut c: *mut client,
+    _c: *mut client,
     mut data: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
     mut key: prompt_key_result,
@@ -1832,7 +1832,7 @@ unsafe extern "C" fn mode_tree_search_callback(
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn mode_tree_filter_callback(
-    mut c: *mut client,
+    _c: *mut client,
     mut data: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
     mut key: prompt_key_result,
@@ -1863,8 +1863,8 @@ unsafe extern "C" fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
     (*(*mtd).wp).flags |= PANE_REDRAW;
 }
 unsafe extern "C" fn mode_tree_menu_callback(
-    mut menu: *mut menu,
-    mut idx: u_int,
+    _menu: *mut menu,
+    _idx: u_int,
     mut key: key_code,
     mut data: *mut ::core::ffi::c_void,
 ) {
@@ -2149,7 +2149,7 @@ pub unsafe extern "C" fn mode_tree_key(
     let mut line: *mut mode_tree_line = ::core::ptr::null_mut::<mode_tree_line>();
     let mut current: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut parent: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
+    let _mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut i: u_int = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;

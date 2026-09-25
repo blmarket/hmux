@@ -335,7 +335,7 @@ unsafe extern "C" fn hooks_insert_event(
 unsafe extern "C" fn hooks_event_cb(
     mut name: *const ::core::ffi::c_char,
     mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+    _sink_data: *mut ::core::ffi::c_void,
 ) {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if !event_payload_get_pointer(
@@ -623,7 +623,7 @@ unsafe extern "C" fn hooks_monitor_cb(
 }
 #[no_mangle]
 pub unsafe extern "C" fn hooks_monitor_add(
-    mut item: *mut cmdq_item,
+    _item: *mut cmdq_item,
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
     mut type_0: monitor_type,

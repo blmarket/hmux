@@ -1533,8 +1533,8 @@ unsafe extern "C" fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     (*(*data).wp).flags |= PANE_REDRAW;
 }
 unsafe extern "C" fn window_panes_timer_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
@@ -1543,7 +1543,7 @@ unsafe extern "C" fn window_panes_timer_callback(
 unsafe extern "C" fn window_panes_init(
     mut wme: *mut window_mode_entry,
     mut item: *mut cmdq_item,
-    mut fs: *mut cmd_find_state,
+    _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
     let mut wp: *mut window_pane = (*wme).wp;
@@ -1803,8 +1803,8 @@ unsafe extern "C" fn window_panes_get_target(
 unsafe extern "C" fn window_panes_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
-    mut s: *mut session,
-    mut wl: *mut winlink,
+    _s: *mut session,
+    _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {

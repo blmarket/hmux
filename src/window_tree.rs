@@ -1495,7 +1495,7 @@ unsafe extern "C" fn window_tree_draw(
     };
 }
 unsafe extern "C" fn window_tree_search(
-    mut modedata: *mut ::core::ffi::c_void,
+    _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut ss: *const ::core::ffi::c_char,
     mut icase: ::core::ffi::c_int,
@@ -1741,7 +1741,7 @@ unsafe extern "C" fn window_tree_help(
 }
 unsafe extern "C" fn window_tree_init(
     mut wme: *mut window_mode_entry,
-    mut item: *mut cmdq_item,
+    _item: *mut cmdq_item,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
@@ -1955,7 +1955,7 @@ unsafe extern "C" fn window_tree_command_each(
     mut modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut c: *mut client,
-    mut key: key_code,
+    _key: key_code,
 ) {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
@@ -1981,7 +1981,7 @@ unsafe extern "C" fn window_tree_command_each(
     }
 }
 unsafe extern "C" fn window_tree_command_done(
-    mut item: *mut cmdq_item,
+    _item: *mut cmdq_item,
     mut modedata: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
@@ -2013,7 +2013,7 @@ unsafe extern "C" fn window_tree_command_callback(
     mut c: *mut client,
     mut modedata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
@@ -2044,10 +2044,10 @@ unsafe extern "C" fn window_tree_command_free(mut modedata: *mut ::core::ffi::c_
     window_tree_destroy(data);
 }
 unsafe extern "C" fn window_tree_kill_each(
-    mut modedata: *mut ::core::ffi::c_void,
+    _modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
-    mut c: *mut client,
-    mut key: key_code,
+    _c: *mut client,
+    _key: key_code,
 ) {
     let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -2082,7 +2082,7 @@ unsafe extern "C" fn window_tree_kill_current_callback(
     mut c: *mut client,
     mut modedata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut mtd: *mut mode_tree_data = (*data).data;
@@ -2130,7 +2130,7 @@ unsafe extern "C" fn window_tree_kill_tagged_callback(
     mut c: *mut client,
     mut modedata: *mut ::core::ffi::c_void,
     mut s: *const ::core::ffi::c_char,
-    mut key: prompt_key_result,
+    _key: prompt_key_result,
 ) -> prompt_result {
     let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut mtd: *mut mode_tree_data = (*data).data;
@@ -2263,8 +2263,8 @@ unsafe extern "C" fn window_tree_mouse(
 unsafe extern "C" fn window_tree_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
-    mut s: *mut session,
-    mut wl: *mut winlink,
+    _s: *mut session,
+    _wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {

@@ -109,8 +109,8 @@ unsafe fn screen_write_recycle_items(items: &mut screen_write_items) {
     }
 }
 unsafe extern "C" fn screen_write_offset_timer(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut w: *mut window = data as *mut window;
@@ -428,8 +428,8 @@ pub unsafe extern "C" fn screen_write_make_list(mut s: *mut screen) {
 #[no_mangle]
 pub unsafe extern "C" fn screen_write_free_list(mut s: *mut screen) {
     let mut cl: *mut screen_write_cline = ::core::ptr::null_mut::<screen_write_cline>();
-    let mut ci: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
-    let mut ci1: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
+    let _ci: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
+    let _ci1: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
     let mut y: u_int = 0;
     y = 0 as u_int;
     while y < (*(*s).grid).sy {
@@ -1492,8 +1492,8 @@ pub unsafe extern "C" fn screen_write_mode_clear(
     }
 }
 unsafe extern "C" fn screen_write_sync_callback(
-    mut fd: ::core::ffi::c_int,
-    mut events: ::core::ffi::c_short,
+    _fd: ::core::ffi::c_int,
+    _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut wp: *mut window_pane = arg as *mut window_pane;

@@ -275,7 +275,7 @@ unsafe extern "C" fn cmd_resize_pane_exec(
     return CMD_RETURN_NORMAL;
 }
 unsafe extern "C" fn cmd_resize_pane_mouse_update(
-    mut self_0: *mut cmd,
+    _self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

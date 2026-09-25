@@ -528,7 +528,7 @@ unsafe extern "C" fn cmd_parse_build_command(
     let mut add: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut values = Vec::<args_value>::new();
     let mut count: u_int = 0 as u_int;
-    let mut idx: u_int = 0;
+    let _idx: u_int = 0;
     let mut argument_index: usize = 0;
     let argument_count = (*cmd).arguments.items.len();
     *pr = cmd_parse_result::empty();
