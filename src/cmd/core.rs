@@ -529,13 +529,13 @@ pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> *mut cmd {
     return new_cmd;
 }
 pub unsafe fn cmd_print(cmd: *mut cmd) -> CString {
-    cmd_print_cstring(cmd)
+    cmd_print_cstring(&*cmd)
 }
 
-pub(crate) unsafe fn cmd_print_cstring(cmd: *mut cmd) -> CString {
-    let args = args_print_cstring((*cmd).args);
+pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
+    let args = args_print_cstring(cmd.args);
     let arguments = args.as_bytes();
-    let name = CStr::from_ptr((*(*cmd).entry).name).to_bytes();
+    let name = CStr::from_ptr((*cmd.entry).name).to_bytes();
     let mut buf = Vec::with_capacity(
         name.len()
             + if arguments.is_empty() {
@@ -664,7 +664,7 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> C
     let mut buf = Vec::new();
     let commands = &*cmdlist.list;
     for (index, &cmd) in commands.iter().enumerate() {
-        let this = cmd_print_cstring(cmd);
+        let this = cmd_print_cstring(&*cmd);
         buf.extend_from_slice(this.as_bytes());
 
         if let Some(&next) = commands.get(index + 1) {

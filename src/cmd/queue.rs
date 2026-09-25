@@ -701,7 +701,7 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
     let mut state: *mut cmdq_state = (*item).state;
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    let tmp = cmd_print_cstring((*item).cmd);
+    let tmp = cmd_print_cstring(&*(*item).cmd);
     if !c.is_null() {
         uid = proc_get_peer_uid((*c).peer);
         let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
@@ -771,7 +771,7 @@ unsafe extern "C" fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
         cmdq_add_message(item);
     }
     if log_get_level() > 1 as ::core::ffi::c_int {
-        let tmp = cmd_print_cstring(cmd);
+        let tmp = cmd_print_cstring(&*cmd);
         log_debug(
             b"%s %s: (%u) %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_fire_command\0" as *const u8 as *const ::core::ffi::c_char,
