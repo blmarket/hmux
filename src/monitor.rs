@@ -1077,8 +1077,8 @@ pub unsafe fn monitor_items_prev(elm: *mut monitor_item) -> *mut monitor_item {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
-unsafe fn monitor_panes_key(elm: *mut monitor_pane) -> (u32, u32) {
-    ((*elm).pane, (*elm).idx)
+fn monitor_panes_key(elm: &monitor_pane) -> (u32, u32) {
+    (elm.pane, elm.idx)
 }
 pub unsafe fn monitor_panes_find(
     head: *mut monitor_panes,
@@ -1087,7 +1087,7 @@ pub unsafe fn monitor_panes_find(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_panes_key(elm);
+    let key = monitor_panes_key(&*elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_panes_nfind(
@@ -1097,7 +1097,7 @@ pub unsafe fn monitor_panes_nfind(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_panes_key(elm);
+    let key = monitor_panes_key(&*elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1106,7 +1106,7 @@ pub unsafe fn monitor_panes_insert(
     head: *mut monitor_panes,
     elm: *mut monitor_pane,
 ) -> *mut monitor_pane {
-    let key = monitor_panes_key(elm);
+    let key = monitor_panes_key(&*elm);
     if (*head).storage.is_null() {
         (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
@@ -1127,7 +1127,7 @@ pub unsafe fn monitor_panes_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = monitor_panes_key(elm);
+    let key = monitor_panes_key(&*elm);
     let Some(map) = (*head).storage.as_mut() else {
         return std::ptr::null_mut();
     };
@@ -1160,7 +1160,7 @@ pub unsafe fn monitor_panes_next(elm: *mut monitor_pane) -> *mut monitor_pane {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_panes_key(elm);
+    let key = monitor_panes_key(&*elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1169,7 +1169,7 @@ pub unsafe fn monitor_panes_prev(elm: *mut monitor_pane) -> *mut monitor_pane {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_panes_key(elm);
+    let key = monitor_panes_key(&*elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
