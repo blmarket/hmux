@@ -1263,7 +1263,7 @@ pub unsafe fn args_make_commands(
         b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
         cmd.as_ptr(),
     );
-    let pr = cmd_parse_from_string(cmd.as_ptr(), &raw mut (*state).pi);
+    let pr = cmd_parse_from_string(cmd.as_c_str(), &raw mut (*state).pi);
     drop(cmd);
     match pr.status as ::core::ffi::c_uint {
         0 => Err(pr.error),

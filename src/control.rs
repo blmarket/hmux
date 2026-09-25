@@ -96,7 +96,7 @@ use crate::src::window::{
 };
 use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -1032,7 +1032,7 @@ unsafe extern "C" fn control_read_callback(
                 CMDQ_STATE_CONTROL,
             );
             match cmd_parse_and_append(
-                line.as_ptr().cast::<::core::ffi::c_char>(),
+                CStr::from_ptr(line.as_ptr().cast::<::core::ffi::c_char>()),
                 ::core::ptr::null_mut::<cmd_parse_input>(),
                 c,
                 state,

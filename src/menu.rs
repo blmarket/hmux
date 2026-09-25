@@ -2081,7 +2081,7 @@ pub unsafe extern "C" fn menu_key(
     }
     state = cmdq_new_state(&raw mut (*md).fs, event, 0 as ::core::ffi::c_int);
     if let Err(error) = cmd_parse_and_append(
-        (*item).command,
+        CStr::from_ptr((*item).command),
         ::core::ptr::null_mut::<cmd_parse_input>(),
         c,
         state,

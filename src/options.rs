@@ -422,7 +422,7 @@ pub unsafe extern "C" fn options_default(
         }
         6 => {
             pr = cmd_parse_from_string(
-                (*oe).default_str,
+                CStr::from_ptr((*oe).default_str),
                 ::core::ptr::null_mut::<cmd_parse_input>(),
             );
             match pr.status as ::core::ffi::c_uint {
@@ -657,7 +657,7 @@ pub unsafe fn options_array_set(
         && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
+        pr = cmd_parse_from_string(CStr::from_ptr(value), ::core::ptr::null_mut::<cmd_parse_input>());
         match pr.status as ::core::ffi::c_uint {
             0 => {
                 if !cause.is_null() {
@@ -1701,7 +1701,7 @@ pub unsafe fn options_from_string(
         4 => return options_from_string_flag(oo, name, value, cause),
         5 => return options_from_string_choice(oe, oo, name, value, cause),
         6 => {
-            pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
+            pr = cmd_parse_from_string(CStr::from_ptr(value), ::core::ptr::null_mut::<cmd_parse_input>());
             match pr.status as ::core::ffi::c_uint {
                 0 => {
                     if !cause.is_null() {

@@ -72,7 +72,7 @@ unsafe fn run_option_command(command: &str) -> (cmd_retval, Vec<Vec<u8>>) {
     cfg_finished = 0;
 
     let command = CString::new(command).expect("command has no embedded NUL");
-    let parsed = cmd_parse_from_string(command.as_ptr(), std::ptr::null_mut());
+    let parsed = cmd_parse_from_string(command.as_c_str(), std::ptr::null_mut());
     assert_eq!(parsed.status, CMD_PARSE_SUCCESS, "command={command:?}");
 
     let command_list = parsed.cmdlist;
@@ -97,7 +97,7 @@ fn command_queue_name_keeps_entry_label_and_item_pointer() {
     unsafe {
         let _globals = OptionGlobalsGuard::new();
         let command = c"set-option status on";
-        let parsed = cmd_parse_from_string(command.as_ptr(), std::ptr::null_mut());
+        let parsed = cmd_parse_from_string(command, std::ptr::null_mut());
         assert_eq!(parsed.status, CMD_PARSE_SUCCESS);
 
         let command_list = parsed.cmdlist;

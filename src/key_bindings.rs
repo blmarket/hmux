@@ -1060,7 +1060,7 @@ pub unsafe extern "C" fn key_bindings_init() {
             .wrapping_div(::core::mem::size_of::<*const ::core::ffi::c_char>() as usize)
     {
         pr = cmd_parse_from_string(
-            defaults[i as usize],
+            CStr::from_ptr(defaults[i as usize]),
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
         if pr.status as ::core::ffi::c_uint

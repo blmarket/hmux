@@ -774,7 +774,7 @@ unsafe extern "C" fn window_switch_run_command(
             0 as ::core::ffi::c_int,
         );
         if let Err(mut error) = cmd_parse_and_append(
-            command.as_ptr(),
+            command.as_c_str(),
             ::core::ptr::null_mut::<cmd_parse_input>(),
             c,
             state,

@@ -169,7 +169,7 @@ unsafe extern "C" fn cmd_bind_key_exec(
     }
     if count == 2 as u_int {
         pr = cmd_parse_from_string(
-            args_string(args, 1 as u_int),
+            std::ffi::CStr::from_ptr(args_string(args, 1 as u_int)),
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
     } else {

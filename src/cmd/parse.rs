@@ -756,7 +756,7 @@ pub unsafe fn cmd_parse_from_file(
     return pr;
 }
 pub unsafe fn cmd_parse_from_string(
-    mut s: *const ::core::ffi::c_char,
+    s: &CStr,
     mut pi: *mut cmd_parse_input,
 ) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
@@ -779,10 +779,14 @@ pub unsafe fn cmd_parse_from_string(
         pi = &raw mut input;
     }
     (*pi).flags |= CMD_PARSE_ONEGROUP;
-    return cmd_parse_from_buffer(s as *const ::core::ffi::c_void, strlen(s), pi);
+    return cmd_parse_from_buffer(
+        s.as_ptr() as *const ::core::ffi::c_void,
+        s.to_bytes().len() as size_t,
+        pi,
+    );
 }
 pub unsafe fn cmd_parse_and_insert(
-    mut s: *const ::core::ffi::c_char,
+    s: &CStr,
     mut pi: *mut cmd_parse_input,
     mut after: *mut cmdq_item,
     mut state: *mut cmdq_state,
@@ -799,7 +803,7 @@ pub unsafe fn cmd_parse_and_insert(
     Ok(pr.status)
 }
 pub unsafe fn cmd_parse_and_append(
-    mut s: *const ::core::ffi::c_char,
+    s: &CStr,
     mut pi: *mut cmd_parse_input,
     mut c: *mut client,
     mut state: *mut cmdq_state,

@@ -916,7 +916,7 @@ unsafe fn window_customize_set_command_value(
     if window_customize_get_key(item, ::core::ptr::null_mut::<*mut key_table>(), &raw mut bd) == 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    let pr = cmd_parse_from_string(s, ::core::ptr::null_mut::<cmd_parse_input>());
+    let pr = cmd_parse_from_string(CStr::from_ptr(s), ::core::ptr::null_mut::<cmd_parse_input>());
     if pr.status == CMD_PARSE_ERROR {
         if !cause.is_null() {
             *cause = pr.error;
@@ -4187,7 +4187,7 @@ unsafe extern "C" fn window_customize_set_command_callback(
     {
         return PROMPT_CLOSE;
     }
-    let mut pr = cmd_parse_from_string(s, ::core::ptr::null_mut::<cmd_parse_input>());
+    let mut pr = cmd_parse_from_string(CStr::from_ptr(s), ::core::ptr::null_mut::<cmd_parse_input>());
     match pr.status as ::core::ffi::c_uint {
         0 => {
             cmd_parse_error_uppercase_first(&mut pr.error);
@@ -4401,7 +4401,7 @@ unsafe extern "C" fn window_customize_add_key_callback(
         return PROMPT_CLOSE;
     }
     drop(keystr);
-    let mut pr = cmd_parse_from_string(command, ::core::ptr::null_mut::<cmd_parse_input>());
+    let mut pr = cmd_parse_from_string(CStr::from_ptr(command), ::core::ptr::null_mut::<cmd_parse_input>());
     match pr.status as ::core::ffi::c_uint {
         0 => {
             cmd_parse_error_uppercase_first(&mut pr.error);

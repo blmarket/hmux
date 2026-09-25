@@ -191,7 +191,7 @@ unsafe fn hooks_parse(
 ) -> cmd_parse_result {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     if hd.expand == 0 {
-        return cmd_parse_from_string(value.as_ptr(), ::core::ptr::null_mut::<cmd_parse_input>());
+        return cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
     }
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
@@ -205,7 +205,7 @@ unsafe fn hooks_parse(
     }
     let expanded = format_expand_cstring(ft, value.as_ptr());
     format_free(ft);
-    let pr = cmd_parse_from_string(expanded.as_ptr(), ::core::ptr::null_mut::<cmd_parse_input>());
+    let pr = cmd_parse_from_string(expanded.as_c_str(), ::core::ptr::null_mut::<cmd_parse_input>());
     return pr;
 }
 unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
