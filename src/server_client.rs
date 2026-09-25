@@ -3416,7 +3416,7 @@ unsafe fn server_client_handle_key0(
         ),
         queued_event as *mut ::core::ffi::c_void,
     );
-    cmdq_set_cancel_data(item, server_client_key_cancel);
+    cmdq_set_cancel_data(&mut *item, server_client_key_cancel);
     if !after.is_null() {
         (*event).client = c;
         (*c).references += 1;

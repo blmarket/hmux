@@ -1049,7 +1049,7 @@ unsafe extern "C" fn control_read_callback(
                         ),
                         Box::into_raw(Box::new(error)) as *mut ::core::ffi::c_void,
                     );
-                    cmdq_set_cancel_data(error_item, control_cancel_error);
+                    cmdq_set_cancel_data(&mut *error_item, control_cancel_error);
                     cmdq_append(c, error_item);
                 }
                 Ok(_) => {}

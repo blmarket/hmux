@@ -184,7 +184,7 @@ unsafe extern "C" fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_da
         ),
         cdata as *mut ::core::ffi::c_void,
     );
-    cmdq_set_cancel_data(new_item, cmd_source_file_cancel_complete);
+    cmdq_set_cancel_data(&mut *new_item, cmd_source_file_cancel_complete);
     cmdq_insert_after((*cdata).after, new_item);
 }
 unsafe extern "C" fn cmd_source_file_done(

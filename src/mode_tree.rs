@@ -1710,7 +1710,7 @@ pub unsafe extern "C" fn mode_tree_set_prompt(
             ),
             mtd as *mut ::core::ffi::c_void,
         );
-        cmdq_set_cancel_data(item, mode_tree_cancel_prompt_accept);
+        cmdq_set_cancel_data(&mut *item, mode_tree_cancel_prompt_accept);
         cmdq_append(c, item);
     }
 }

@@ -2048,7 +2048,7 @@ unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tre
         ),
         data as *mut ::core::ffi::c_void,
     );
-    cmdq_set_cancel_data(item, window_tree_cancel_command_done);
+    cmdq_set_cancel_data(&mut *item, window_tree_cancel_command_done);
     cmdq_append(c, item);
 }
 unsafe extern "C" fn window_tree_command_callback(
