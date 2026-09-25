@@ -17,8 +17,8 @@ use crate::src::shared::client::client;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::event::*;
 use crate::src::shared::events::{
-    event_payload, event_payload_free_cb, event_payload_item, event_payload_print_cb,
-    event_payload_tree, event_payload_tree_storage, event_payload_type,
+    event_payload, event_payload_item, event_payload_tree, event_payload_tree_storage,
+    event_payload_type, EventPayloadPointer,
 };
 use crate::src::shared::format::format_tree;
 use crate::src::shared::pane::window_pane;
@@ -220,10 +220,8 @@ unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) 
             );
         }
         8 => {
-            let pointer = std::mem::ManuallyDrop::take(
-                &mut (*epi).c2rust_unnamed.pointer,
-            );
-            pointer.free();
+            let pointer = std::mem::ManuallyDrop::take(&mut (*epi).c2rust_unnamed.pointer);
+            drop(pointer);
         }
         2 | 3 | 1 | _ => {}
     };
@@ -521,22 +519,11 @@ pub unsafe extern "C" fn event_payload_set_pane(
 pub unsafe fn event_payload_set_pointer(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
-    ptr: *mut ::core::ffi::c_void,
-    free_cb: event_payload_free_cb,
-    print_cb: event_payload_print_cb,
+    pointer: EventPayloadPointer,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_POINTER;
-    let pointer = if free_cb.is_none() && print_cb.is_none() {
-        crate::src::shared::events::event_payload_item_c2rust_unnamed_pointer::Raw(ptr)
-    } else {
-        crate::src::shared::events::event_payload_item_c2rust_unnamed_pointer::Owned {
-            ptr,
-            free_cb,
-            print_cb,
-        }
-    };
     (*epi).c2rust_unnamed.pointer = std::mem::ManuallyDrop::new(pointer);
     event_payload_set_item(ep, name, epi);
 }
@@ -917,6 +904,30 @@ mod tests {
     use crate::src::shared::events::event_payload_item_c2rust_unnamed;
     use std::ffi::{CStr, CString};
 
+    struct TestEventPayload {
+        ptr: *mut ::core::ffi::c_void,
+        bytes: Vec<u8>,
+        released: Option<std::rc::Rc<std::cell::Cell<usize>>>,
+    }
+
+    impl crate::src::shared::events::EventPayloadPointerValue for TestEventPayload {
+        fn as_ptr(&self) -> *mut ::core::ffi::c_void {
+            self.ptr
+        }
+
+        fn print(&mut self) -> Option<Vec<u8>> {
+            Some(self.bytes.clone())
+        }
+    }
+
+    impl Drop for TestEventPayload {
+        fn drop(&mut self) {
+            if let Some(released) = self.released.as_ref() {
+                released.set(released.get() + 1);
+            }
+        }
+    }
+
     #[test]
     fn printed_pointer_bytes_keep_an_interior_nul() {
         unsafe {
@@ -924,9 +935,11 @@ mod tests {
             event_payload_set_pointer(
                 ep,
                 c"binary".as_ptr(),
-                ::core::ptr::null_mut(),
-                None,
-                Some(Box::new(|| b"A\0B".to_vec())),
+                EventPayloadPointer::Owned(Box::new(TestEventPayload {
+                    ptr: ::core::ptr::null_mut(),
+                    bytes: b"A\0B".to_vec(),
+                    released: None,
+                })),
             );
             let item = event_payload_first(ep);
             assert_eq!(event_payload_item_print_owned(item), b"A\0B\0");
@@ -974,11 +987,11 @@ mod tests {
             event_payload_set_pointer(
                 ep,
                 name.as_ptr(),
-                ::core::ptr::null_mut(),
-                Some(Box::new(move || {
-                    release_counter.set(release_counter.get() + 1);
+                EventPayloadPointer::Owned(Box::new(TestEventPayload {
+                    ptr: ::core::ptr::null_mut(),
+                    bytes: Vec::new(),
+                    released: Some(release_counter),
                 })),
-                None,
             );
             event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), c"".as_ptr());
             assert_eq!(releases.get(), 1);

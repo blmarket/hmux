@@ -516,9 +516,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     event_payload_set_pointer(
         ep,
         b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
-        hm.cast(),
-        None,
-        None,
+        crate::src::shared::events::EventPayloadPointer::Raw(hm.cast()),
     );
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     if !wl.is_null() && !wp.is_null() && (*wp).window == (*wl).window {

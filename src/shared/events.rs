@@ -17,10 +17,6 @@ pub struct event_payload {
     pub target: cmd_find_state,
 }
 
-pub type event_payload_free_cb = Option<Box<dyn FnOnce()>>;
-
-pub type event_payload_print_cb = Option<Box<dyn FnMut() -> Vec<u8>>>;
-
 pub struct event_payload_item {
     pub name: Option<std::ffi::CString>,
     pub type_0: event_payload_type,
@@ -98,7 +94,7 @@ pub union event_payload_item_c2rust_unnamed {
     pub session: *mut session,
     pub window: *mut window,
     pub pane: *mut window_pane,
-    pub pointer: std::mem::ManuallyDrop<event_payload_item_c2rust_unnamed_pointer>,
+    pub pointer: std::mem::ManuallyDrop<EventPayloadPointer>,
 }
 
 impl Default for event_payload_item_c2rust_unnamed {
@@ -107,37 +103,29 @@ impl Default for event_payload_item_c2rust_unnamed {
     }
 }
 
-pub enum event_payload_item_c2rust_unnamed_pointer {
-    Raw(*mut ::core::ffi::c_void),
-    Owned {
-        ptr: *mut ::core::ffi::c_void,
-        free_cb: event_payload_free_cb,
-        print_cb: event_payload_print_cb,
-    },
+pub trait EventPayloadPointerValue {
+    fn as_ptr(&self) -> *mut ::core::ffi::c_void;
+
+    fn print(&mut self) -> Option<Vec<u8>>;
 }
 
-impl event_payload_item_c2rust_unnamed_pointer {
+pub enum EventPayloadPointer {
+    Raw(*mut ::core::ffi::c_void),
+    Owned(Box<dyn EventPayloadPointerValue>),
+}
+
+impl EventPayloadPointer {
     pub fn ptr(&self) -> *mut ::core::ffi::c_void {
         match self {
-            Self::Raw(ptr) | Self::Owned { ptr, .. } => *ptr,
+            Self::Raw(ptr) => *ptr,
+            Self::Owned(value) => value.as_ptr(),
         }
     }
 
     pub fn print(&mut self) -> Option<Vec<u8>> {
         match self {
             Self::Raw(_) => None,
-            Self::Owned { print_cb, .. } => print_cb.as_mut().map(|callback| callback()),
-        }
-    }
-
-    pub fn free(self) {
-        if let Self::Owned {
-            mut free_cb, ..
-        } = self
-        {
-            if let Some(callback) = free_cb.take() {
-                callback();
-            }
+            Self::Owned(value) => value.print(),
         }
     }
 }
