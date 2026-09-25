@@ -469,7 +469,7 @@ pub unsafe fn client_main(
         fatal(b"pledge failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
     if isatty(STDIN_FILENO) != 0 && *termname as ::core::ffi::c_int != '\0' as i32 {
-        match tty_term_read_list(termname, STDIN_FILENO) {
+        match tty_term_read_list(CStr::from_ptr(termname), STDIN_FILENO) {
             Ok(read_caps) => caps = read_caps,
             Err(cause) => {
                 fprintf(

@@ -1591,7 +1591,7 @@ pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {
     drop(Box::from_raw(term));
 }
 pub(crate) unsafe fn tty_term_read_list(
-    name: *const ::core::ffi::c_char,
+    name: &CStr,
     fd: ::core::ffi::c_int,
 ) -> Result<Vec<CString>, CString> {
     let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
@@ -1601,7 +1601,7 @@ pub(crate) unsafe fn tty_term_read_list(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: [::core::ffi::c_char; 11] = [0; 11];
     let mut caps = Vec::new();
-    if setupterm(name as *mut ::core::ffi::c_char, fd, &raw mut error) != OK {
+    if setupterm(name.as_ptr().cast_mut(), fd, &raw mut error) != OK {
         let (message, with_name): (&[u8], bool) = match error {
             1 => (b"can't use hardcopy terminal: ", true),
             0 => (b"missing or unsuitable terminal: ", true),
@@ -1610,7 +1610,7 @@ pub(crate) unsafe fn tty_term_read_list(
         };
         let mut cause = message.to_vec();
         if with_name {
-            cause.extend_from_slice(CStr::from_ptr(name).to_bytes());
+            cause.extend_from_slice(name.to_bytes());
         }
         return Err(CString::new(cause).expect("C strings contain no interior NUL"));
     }
