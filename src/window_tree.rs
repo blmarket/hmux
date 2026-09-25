@@ -1991,17 +1991,19 @@ unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tre
     );
     cmdq_append(c, item);
 }
-unsafe extern "C" fn window_tree_command_callback(
+unsafe fn window_tree_command_callback(
     mut c: *mut client,
-    mut modedata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut data: *mut window_tree_modedata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
-    if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
+    let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
+        return PROMPT_CLOSE;
+    };
+    if (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    (*data).entered = Some(CStr::from_ptr(s).to_owned());
+    (*data).entered = Some(s.to_owned());
     mode_tree_each_tagged(
         (*data).data,
         Some(
@@ -2021,8 +2023,7 @@ unsafe extern "C" fn window_tree_command_callback(
     window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn window_tree_command_free(mut modedata: *mut ::core::ffi::c_void) {
-    let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
+unsafe fn window_tree_command_free(mut data: *mut window_tree_modedata) {
     window_tree_destroy(data);
 }
 unsafe extern "C" fn window_tree_kill_each(
@@ -2060,17 +2061,20 @@ unsafe extern "C" fn window_tree_kill_each(
         0 | _ => {}
     };
 }
-unsafe extern "C" fn window_tree_kill_current_callback(
+unsafe fn window_tree_kill_current_callback(
     mut c: *mut client,
-    mut modedata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut data: *mut window_tree_modedata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut mtd: *mut mode_tree_data = (*data).data;
-    if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
+    let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
+        return PROMPT_CLOSE;
+    };
+    if (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
+    let s = s.as_ptr();
     if ({
         let mut __res: ::core::ffi::c_int = 0;
         if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
@@ -2108,17 +2112,20 @@ unsafe extern "C" fn window_tree_kill_current_callback(
     window_tree_enqueue_command_done(c, data);
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn window_tree_kill_tagged_callback(
+unsafe fn window_tree_kill_tagged_callback(
     mut c: *mut client,
-    mut modedata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut data: *mut window_tree_modedata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
     let mut mtd: *mut mode_tree_data = (*data).data;
-    if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
+    let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
+        return PROMPT_CLOSE;
+    };
+    if (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
+    let s = s.as_ptr();
     if ({
         let mut __res: ::core::ffi::c_int = 0;
         if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
@@ -2376,20 +2383,10 @@ unsafe extern "C" fn window_tree_key(
                     b"\0" as *const u8 as *const ::core::ffi::c_char,
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                    Some(
-                        window_tree_kill_current_callback
-                            as unsafe extern "C" fn(
-                                *mut client,
-                                *mut ::core::ffi::c_void,
-                                *const ::core::ffi::c_char,
-                                prompt_key_result,
-                            ) -> prompt_result,
-                    ),
-                    Some(
-                        window_tree_command_free
-                            as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-                    ),
-                    data as *mut ::core::ffi::c_void,
+                    Some(Box::new(move |c, s, key| unsafe {
+                        window_tree_kill_current_callback(c, data, s, key)
+                    })),
+                    Some(Box::new(move || unsafe { window_tree_command_free(data) })),
                 );
             }
         }
@@ -2405,20 +2402,10 @@ unsafe extern "C" fn window_tree_key(
                     b"\0" as *const u8 as *const ::core::ffi::c_char,
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                    Some(
-                        window_tree_kill_tagged_callback
-                            as unsafe extern "C" fn(
-                                *mut client,
-                                *mut ::core::ffi::c_void,
-                                *const ::core::ffi::c_char,
-                                prompt_key_result,
-                            ) -> prompt_result,
-                    ),
-                    Some(
-                        window_tree_command_free
-                            as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-                    ),
-                    data as *mut ::core::ffi::c_void,
+                    Some(Box::new(move |c, s, key| unsafe {
+                        window_tree_kill_tagged_callback(c, data, s, key)
+                    })),
+                    Some(Box::new(move || unsafe { window_tree_command_free(data) })),
                 );
             }
         }
@@ -2437,20 +2424,10 @@ unsafe extern "C" fn window_tree_key(
                 b"\0" as *const u8 as *const ::core::ffi::c_char,
                 PROMPT_TYPE_COMMAND,
                 PROMPT_NOFORMAT,
-                Some(
-                    window_tree_command_callback
-                        as unsafe extern "C" fn(
-                            *mut client,
-                            *mut ::core::ffi::c_void,
-                            *const ::core::ffi::c_char,
-                            prompt_key_result,
-                        ) -> prompt_result,
-                ),
-                Some(
-                    window_tree_command_free
-                        as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-                ),
-                data as *mut ::core::ffi::c_void,
+                Some(Box::new(move |c, s, key| unsafe {
+                    window_tree_command_callback(c, data, s, key)
+                })),
+                Some(Box::new(move || unsafe { window_tree_command_free(data) })),
             );
         }
         13 => {

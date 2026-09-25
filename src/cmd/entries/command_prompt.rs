@@ -204,7 +204,7 @@ unsafe extern "C" fn cmd_command_prompt_exec(
                 b"unknown type: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 type_0,
             );
-            cmd_command_prompt_free(cdata as *mut ::core::ffi::c_void);
+            cmd_command_prompt_free(cdata);
             return CMD_RETURN_ERROR;
         }
     } else {
@@ -225,6 +225,10 @@ unsafe extern "C" fn cmd_command_prompt_exec(
         (*cdata).flags |= PROMPT_NOFREEZE;
     }
     let (prompt_ptr, input_ptr) = (&(*cdata).prompts)[0].pointers();
+    let inputcb: crate::src::shared::status::status_prompt_input_cb = Some(Box::new(move |c, s, key| unsafe {
+        cmd_command_prompt_callback(c, cdata, s, key)
+    }));
+    let freecb: prompt_free_cb = Some(Box::new(move || unsafe { cmd_command_prompt_free(cdata) }));
     if pane != 0 {
         (*cdata).flags |= PROMPT_ISPANE;
         window_pane_set_prompt(
@@ -233,17 +237,8 @@ unsafe extern "C" fn cmd_command_prompt_exec(
             target,
             prompt_ptr,
             input_ptr,
-            Some(
-                cmd_command_prompt_callback
-                    as unsafe extern "C" fn(
-                        *mut client,
-                        *mut ::core::ffi::c_void,
-                        *const ::core::ffi::c_char,
-                        prompt_key_result,
-                    ) -> prompt_result,
-            ),
-            Some(cmd_command_prompt_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
-            cdata as *mut ::core::ffi::c_void,
+            inputcb,
+            freecb,
             (*cdata).flags,
             (*cdata).prompt_type,
         );
@@ -253,17 +248,8 @@ unsafe extern "C" fn cmd_command_prompt_exec(
             target,
             prompt_ptr,
             input_ptr,
-            Some(
-                cmd_command_prompt_callback
-                    as unsafe extern "C" fn(
-                        *mut client,
-                        *mut ::core::ffi::c_void,
-                        *const ::core::ffi::c_char,
-                        prompt_key_result,
-                    ) -> prompt_result,
-            ),
-            Some(cmd_command_prompt_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
-            cdata as *mut ::core::ffi::c_void,
+            inputcb,
+            freecb,
             (*cdata).flags,
             (*cdata).prompt_type,
         );
@@ -273,17 +259,16 @@ unsafe extern "C" fn cmd_command_prompt_exec(
     }
     return CMD_RETURN_WAIT;
 }
-unsafe extern "C" fn cmd_command_prompt_callback(
+unsafe fn cmd_command_prompt_callback(
     mut c: *mut client,
-    mut data: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut cdata: *mut cmd_command_prompt_cdata,
+    mut s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
     let mut current_block: u64;
-    let mut cdata: *mut cmd_command_prompt_cdata = data as *mut cmd_command_prompt_cdata;
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    if !(s.is_null()
+    if !(s.is_none()
         || key as ::core::ffi::c_uint
             == PROMPT_KEY_MOVE as ::core::ffi::c_int as ::core::ffi::c_uint)
     {
@@ -293,7 +278,7 @@ unsafe extern "C" fn cmd_command_prompt_callback(
             if (*cdata).flags & PROMPT_INCREMENTAL != 0 {
                 current_block = 11745758271394821990;
             } else {
-                cmd_append_argv(&mut (*cdata).argv, CStr::from_ptr(s));
+                cmd_append_argv(&mut (*cdata).argv, s.expect("prompt text is present"));
                 (*cdata).current = (*cdata).current.wrapping_add(1);
                 if ((*cdata).current as usize) != (*cdata).prompts.len() {
                     let (prompt_ptr, input_ptr) =
@@ -317,7 +302,7 @@ unsafe extern "C" fn cmd_command_prompt_callback(
                 if key as ::core::ffi::c_uint
                     != PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    cmd_append_argv(&mut argv_owner, CStr::from_ptr(s));
+                    cmd_append_argv(&mut argv_owner, s.expect("prompt text is present"));
                 } else {
                     (*cdata).argv = argv_owner.clone();
                 }
@@ -355,8 +340,8 @@ unsafe extern "C" fn cmd_command_prompt_callback(
     }
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn cmd_command_prompt_free(mut data: *mut ::core::ffi::c_void) {
-    let mut cdata = Box::from_raw(data as *mut cmd_command_prompt_cdata);
+unsafe fn cmd_command_prompt_free(mut cdata: *mut cmd_command_prompt_cdata) {
+    let mut cdata = Box::from_raw(cdata);
     if !cdata.item.is_null() {
         cmdq_continue(cdata.item);
         cdata.item = ::core::ptr::null_mut::<cmdq_item>();

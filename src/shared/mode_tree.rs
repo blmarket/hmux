@@ -5,7 +5,7 @@ use super::client::client;
 use super::key::key_code;
 use super::menu::menu_item;
 use super::pane::window_pane;
-use super::prompt::{prompt, prompt_key_result, prompt_legacy_free_cb, prompt_result};
+use super::prompt::{prompt, prompt_free_cb, prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
@@ -110,23 +110,15 @@ impl Default for mode_tree_data {
 
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct mode_tree_prompt {
     pub mtd: *mut mode_tree_data,
     pub c: *mut client,
     pub inputcb: mode_tree_prompt_input_cb,
-    pub freecb: prompt_legacy_free_cb,
-    pub data: *mut ::core::ffi::c_void,
+    pub freecb: prompt_free_cb,
 }
 
 pub type mode_tree_prompt_input_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *mut ::core::ffi::c_void,
-        *const ::core::ffi::c_char,
-        prompt_key_result,
-    ) -> prompt_result,
+    Box<dyn FnMut(*mut client, Option<&std::ffi::CStr>, prompt_key_result) -> prompt_result>,
 >;
 
 #[derive(Copy, Clone)]

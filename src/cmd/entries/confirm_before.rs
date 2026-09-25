@@ -120,22 +120,18 @@ unsafe extern "C" fn cmd_confirm_before_exec(
         bytes.extend_from_slice(b"/n) ");
         CString::new(bytes).expect("C string command and validated key contain no interior NUL")
     };
+    let cdata = Box::into_raw(cdata);
+    let inputcb: crate::src::shared::status::status_prompt_input_cb = Some(Box::new(move |c, s, _key| unsafe {
+        cmd_confirm_before_callback(c, cdata, s)
+    }));
+    let freecb: prompt_free_cb = Some(Box::new(move || unsafe { cmd_confirm_before_free(cdata) }));
     status_prompt_set(
         tc,
         target,
         new_prompt.as_ptr(),
         ::core::ptr::null::<::core::ffi::c_char>(),
-        Some(
-            cmd_confirm_before_callback
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    *const ::core::ffi::c_char,
-                    prompt_key_result,
-                ) -> prompt_result,
-        ),
-        Some(cmd_confirm_before_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
-        Box::into_raw(cdata).cast(),
+        inputcb,
+        freecb,
         PROMPT_SINGLE,
         PROMPT_TYPE_COMMAND,
     );
@@ -145,24 +141,21 @@ unsafe extern "C" fn cmd_confirm_before_exec(
     }
     return CMD_RETURN_WAIT;
 }
-unsafe extern "C" fn cmd_confirm_before_callback(
+unsafe fn cmd_confirm_before_callback(
     mut c: *mut client,
-    mut data: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
-    _key: prompt_key_result,
+    mut cdata: *mut cmd_confirm_before_data,
+    s: Option<&CStr>,
 ) -> prompt_result {
-    let mut cdata: *mut cmd_confirm_before_data = data as *mut cmd_confirm_before_data;
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut retcode: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     if !((*c).flags & CLIENT_DEAD as uint64_t != 0) {
-        if !s.is_null() {
-            if !(*s.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                != (*cdata).confirm_key as ::core::ffi::c_int
-                && (*s.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                    != '\r' as i32
-                    || (*cdata).default_yes == 0))
-            {
+        if let Some(s) = s {
+            let bytes = s.to_bytes();
+            let confirmed = bytes.len() == 1
+                && (bytes[0] == (*cdata).confirm_key
+                    || (bytes[0] == b'\r' && (*cdata).default_yes != 0));
+            if confirmed {
                 retcode = 0 as ::core::ffi::c_int;
                 if item.is_null() {
                     new_item =
@@ -183,7 +176,7 @@ unsafe extern "C" fn cmd_confirm_before_callback(
     }
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn cmd_confirm_before_free(mut data: *mut ::core::ffi::c_void) {
-    let cdata = Box::from_raw(data as *mut cmd_confirm_before_data);
+unsafe fn cmd_confirm_before_free(mut data: *mut cmd_confirm_before_data) {
+    let cdata = Box::from_raw(data);
     cmd_list_free(cdata.cmdlist);
 }

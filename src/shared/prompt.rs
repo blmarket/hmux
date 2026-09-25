@@ -40,9 +40,6 @@ pub type prompt_result = ::core::ffi::c_uint;
 pub type prompt_free_cb = Option<Box<dyn FnOnce()>>;
 pub type prompt_input_cb = Option<Box<dyn FnMut(Option<&CStr>, prompt_key_result) -> prompt_result>>;
 
-/// Compatibility free callback used by the prompt wrapper registration APIs.
-pub type prompt_legacy_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
-
 #[cfg(test)]
 mod tests {
     use super::*;

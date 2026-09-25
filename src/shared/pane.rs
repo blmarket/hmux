@@ -13,7 +13,7 @@ use super::grid::grid_cell;
 use super::input::input_ctx;
 use super::layout::layout_cell;
 use super::options::options;
-use super::prompt::{prompt, prompt_legacy_free_cb, prompt_type};
+use super::prompt::{prompt, prompt_free_cb, prompt_type};
 use super::screen::screen;
 use super::spawn::spawn_editor_state;
 use super::status::status_prompt_input_cb;
@@ -135,13 +135,11 @@ pub const PANE_DESTROYED: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
 pub const PANE_STATUS_TOP_FLOATING: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 
-#[repr(C)]
 pub struct window_pane_prompt {
     pub wp_id: u_int,
     pub c: *mut client,
     pub inputcb: status_prompt_input_cb,
-    pub freecb: prompt_legacy_free_cb,
-    pub data: *mut ::core::ffi::c_void,
+    pub freecb: prompt_free_cb,
     pub type_0: prompt_type,
 }
 

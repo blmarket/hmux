@@ -55,7 +55,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
-    prompt_input_cb, prompt_legacy_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE,
+    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE,
     PROMPT_INCREMENTAL, PROMPT_NOFREEZE, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
@@ -66,15 +66,6 @@ use crate::src::shared::style::*;
 use crate::src::shared::tty::tty;
 use crate::src::shared::tty::{TTY_FREEZE, TTY_NOCURSOR};
 use crate::src::shared::window::winlink;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct status_prompt_data {
-    pub c: *mut client,
-    pub inputcb: status_prompt_input_cb,
-    pub freecb: prompt_legacy_free_cb,
-    pub data: *mut ::core::ffi::c_void,
-}
 
 unsafe extern "C" fn status_timer_callback(
     _fd: ::core::ffi::c_int,
@@ -750,32 +741,6 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     screen_free(&raw mut old_screen);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn status_prompt_input_callback(
-    mut spd: *mut status_prompt_data,
-    s: Option<&CStr>,
-    mut key: prompt_key_result,
-) -> prompt_result {
-    let mut c: *mut client = (*spd).c;
-    let mut inputcb: status_prompt_input_cb = (*spd).inputcb;
-    let mut arg: *mut ::core::ffi::c_void = (*spd).data;
-    if inputcb.is_some() {
-        return inputcb.expect("non-null function pointer")(
-            c,
-            arg,
-            s.map_or(::core::ptr::null(), CStr::as_ptr),
-            key,
-        );
-    }
-    return PROMPT_CLOSE;
-}
-unsafe fn status_prompt_free_callback(data: *mut status_prompt_data) {
-    let spd = Box::from_raw(data);
-    let freecb = spd.freecb;
-    let arg = spd.data;
-    if freecb.is_some() {
-        freecb.expect("non-null function pointer")(arg);
-    }
-}
 unsafe fn status_prompt_accept(mut c: *mut client) -> cmd_retval {
     if !(*c).prompt.is_null() {
         status_prompt_key(
@@ -786,15 +751,13 @@ unsafe fn status_prompt_accept(mut c: *mut client) -> cmd_retval {
     }
     return CMD_RETURN_NORMAL;
 }
-#[no_mangle]
-pub unsafe extern "C" fn status_prompt_set(
+pub unsafe fn status_prompt_set(
     mut c: *mut client,
     mut fs: *mut cmd_find_state,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
     mut inputcb: status_prompt_input_cb,
-    mut freecb: prompt_legacy_free_cb,
-    mut data: *mut ::core::ffi::c_void,
+    mut freecb: prompt_free_cb,
     mut flags: ::core::ffi::c_int,
     mut prompt_type: prompt_type,
 ) {
@@ -803,24 +766,16 @@ pub unsafe extern "C" fn status_prompt_set(
     status_message_clear(c);
     status_prompt_clear(c);
     status_push_screen(c);
-    let spd = Box::into_raw(Box::new(status_prompt_data {
-        c,
-        inputcb,
-        freecb,
-        data,
-    }));
     prompt_set_options(&raw mut pd, (*c).session);
     pd.fs = fs;
     pd.prompt = msg;
     pd.input = input;
     pd.type_0 = prompt_type;
     pd.flags = flags;
-    pd.inputcb = Some(Box::new(move |s, key| unsafe {
-        status_prompt_input_callback(spd, s, key)
-    }));
-    pd.freecb = Some(Box::new(move || unsafe {
-        status_prompt_free_callback(spd)
-    }));
+    if let Some(mut inputcb) = inputcb.take() {
+        pd.inputcb = Some(Box::new(move |s, key| inputcb(c, s, key)));
+    }
+    pd.freecb = freecb.take();
     (*c).prompt = prompt_create(&raw mut pd);
     if !flags & PROMPT_INCREMENTAL != 0 && !flags & PROMPT_NOFREEZE != 0 {
         (*c).tty.flags |= TTY_FREEZE;

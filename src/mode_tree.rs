@@ -55,7 +55,7 @@ use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    prompt_input_cb, prompt_legacy_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE,
+    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE,
     PROMPT_ISMODE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::{screen, MODE_CURSOR};
@@ -1479,28 +1479,22 @@ unsafe fn mode_tree_prompt_input_callback(
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    if (*mtp).inputcb.is_some() {
-        return (*mtp).inputcb.expect("non-null function pointer")(
-            (*mtp).c,
-            (*mtp).data,
-            s.map_or(::core::ptr::null(), CStr::as_ptr),
-            key,
-        );
+    if let Some(inputcb) = (*mtp).inputcb.as_mut() {
+        return inputcb((*mtp).c, s, key);
     }
     return PROMPT_CLOSE;
 }
 unsafe fn mode_tree_prompt_free_callback(mtp_ptr: *mut mode_tree_prompt) {
-    let mtp = Box::from_raw(mtp_ptr);
+    let mut mtp = Box::from_raw(mtp_ptr);
     if (*mtp.mtd).prompt_data == mtp_ptr {
         (*mtp.mtd).prompt_data = ::core::ptr::null_mut::<mode_tree_prompt>();
     }
-    if mtp.freecb.is_some() {
-        mtp.freecb.expect("non-null function pointer")(mtp.data);
+    if let Some(freecb) = mtp.freecb.take() {
+        freecb();
     }
     mode_tree_remove_ref(mtp.mtd);
 }
-#[no_mangle]
-pub unsafe extern "C" fn mode_tree_set_prompt(
+pub unsafe fn mode_tree_set_prompt(
     mut mtd: *mut mode_tree_data,
     mut c: *mut client,
     mut prompt: *const ::core::ffi::c_char,
@@ -1508,8 +1502,7 @@ pub unsafe extern "C" fn mode_tree_set_prompt(
     mut type_0: prompt_type,
     mut flags: ::core::ffi::c_int,
     mut inputcb: mode_tree_prompt_input_cb,
-    mut freecb: prompt_legacy_free_cb,
-    mut data: *mut ::core::ffi::c_void,
+    mut freecb: prompt_free_cb,
 ) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
@@ -1528,7 +1521,6 @@ pub unsafe extern "C" fn mode_tree_set_prompt(
         c,
         inputcb,
         freecb,
-        data,
     }));
     (*mtd).references = (*mtd).references.wrapping_add(1);
     (*mtd).prompt_top = (options_get_number(
@@ -1709,21 +1701,18 @@ unsafe extern "C" fn mode_tree_search_set(mut mtd: *mut mode_tree_data) {
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
 }
-unsafe extern "C" fn mode_tree_search_callback(
+unsafe fn mode_tree_search_callback(
     _c: *mut client,
-    mut data: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut mtd: *mut mode_tree_data,
+    s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let mut mtd: *mut mode_tree_data = data as *mut mode_tree_data;
     if (*mtd).dead != 0 {
         return PROMPT_CLOSE;
     }
-    let replacement = if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-        None
-    } else {
-        Some(CStr::from_ptr(s).to_owned())
-    };
+    let replacement = s
+        .filter(|text| !text.to_bytes().is_empty())
+        .map(CStr::to_owned);
     (*mtd).search = replacement;
     if let Some(search) = (*mtd).search.as_ref() {
         (*mtd).search_icase = mode_tree_is_lowercase(search.as_ptr());
@@ -1735,21 +1724,18 @@ unsafe extern "C" fn mode_tree_search_callback(
     }
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn mode_tree_filter_callback(
+unsafe fn mode_tree_filter_callback(
     _c: *mut client,
-    mut data: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut mtd: *mut mode_tree_data,
+    s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let mut mtd: *mut mode_tree_data = data as *mut mode_tree_data;
     if (*mtd).dead != 0 {
         return PROMPT_CLOSE;
     }
-    let replacement = if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-        None
-    } else {
-        Some(CStr::from_ptr(s).to_owned())
-    };
+    let replacement = s
+        .filter(|text| !text.to_bytes().is_empty())
+        .map(CStr::to_owned);
     (*mtd).filter = replacement;
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
@@ -2341,17 +2327,10 @@ pub unsafe extern "C" fn mode_tree_key(
                 b"\0" as *const u8 as *const ::core::ffi::c_char,
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
-                Some(
-                    mode_tree_search_callback
-                        as unsafe extern "C" fn(
-                            *mut client,
-                            *mut ::core::ffi::c_void,
-                            *const ::core::ffi::c_char,
-                            prompt_key_result,
-                        ) -> prompt_result,
-                ),
+                Some(Box::new(move |c, s, key| unsafe {
+                    mode_tree_search_callback(c, mtd, s, key)
+                })),
                 None,
-                mtd as *mut ::core::ffi::c_void,
             );
         }
         110 => {
@@ -2375,17 +2354,10 @@ pub unsafe extern "C" fn mode_tree_key(
                     }),
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
-                Some(
-                    mode_tree_filter_callback
-                        as unsafe extern "C" fn(
-                            *mut client,
-                            *mut ::core::ffi::c_void,
-                            *const ::core::ffi::c_char,
-                            prompt_key_result,
-                        ) -> prompt_result,
-                ),
+                Some(Box::new(move |c, s, key| unsafe {
+                    mode_tree_filter_callback(c, mtd, s, key)
+                })),
                 None,
-                mtd as *mut ::core::ffi::c_void,
             );
         }
         99 => {

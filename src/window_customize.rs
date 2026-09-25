@@ -65,7 +65,9 @@ use crate::src::shared::key::{key_binding, key_table};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
+use crate::src::shared::mode_tree::{
+    mode_tree_data, mode_tree_help_info, mode_tree_item, mode_tree_prompt_input_cb,
+};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
 use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
@@ -77,7 +79,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
-    prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
+    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -3037,21 +3039,35 @@ unsafe extern "C" fn window_customize_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
     window_customize_draw_waiting(data);
 }
-unsafe extern "C" fn window_customize_free_callback(mut modedata: *mut ::core::ffi::c_void) {
-    window_customize_destroy(modedata as *mut window_customize_modedata);
+unsafe fn window_customize_free_callback(mut data: *mut window_customize_modedata) {
+    window_customize_destroy(data);
 }
-unsafe extern "C" fn window_customize_free_item_callback(mut itemdata: *mut ::core::ffi::c_void) {
-    let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
+unsafe fn window_customize_free_item_callback(mut item: *mut window_customize_itemdata) {
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     window_customize_free_item(item);
     window_customize_destroy(data);
 }
-unsafe extern "C" fn window_customize_set_option_callback(
+fn window_customize_prompt_input_cb<T: 'static>(
+    callback: unsafe fn(*mut client, *mut T, Option<&CStr>, prompt_key_result) -> prompt_result,
+    data: *mut T,
+) -> mode_tree_prompt_input_cb {
+    Some(Box::new(move |c, s, key| unsafe {
+        callback(c, data, s, key)
+    }))
+}
+fn window_customize_prompt_free_cb<T: 'static>(
+    freecb: unsafe fn(*mut T),
+    data: *mut T,
+) -> prompt_free_cb {
+    Some(Box::new(move || unsafe { freecb(data) }))
+}
+unsafe fn window_customize_set_option_callback(
     mut c: *mut client,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut itemdata: *mut window_customize_itemdata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut current_block: u64;
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
@@ -3146,12 +3162,13 @@ unsafe extern "C" fn window_customize_set_option_callback(
         }
     };
 }
-unsafe extern "C" fn window_customize_set_environment_callback(
+unsafe fn window_customize_set_environment_callback(
     _c: *mut client,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut itemdata: *mut window_customize_itemdata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
@@ -3273,28 +3290,17 @@ unsafe extern "C" fn window_customize_set_environment(
         },
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        Some(
-            window_customize_set_environment_callback
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    *const ::core::ffi::c_char,
-                    prompt_key_result,
-                ) -> prompt_result,
-        ),
-        Some(
-            window_customize_free_item_callback
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-        ),
-        new_item as *mut ::core::ffi::c_void,
+        window_customize_prompt_input_cb(window_customize_set_environment_callback, new_item),
+        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
     );
 }
-unsafe extern "C" fn window_customize_add_option_callback(
+unsafe fn window_customize_add_option_callback(
     mut c: *mut client,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut itemdata: *mut window_customize_itemdata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -3409,28 +3415,17 @@ unsafe extern "C" fn window_customize_add_option(
         b"@\0" as *const u8 as *const ::core::ffi::c_char,
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        Some(
-            window_customize_add_option_callback
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    *const ::core::ffi::c_char,
-                    prompt_key_result,
-                ) -> prompt_result,
-        ),
-        Some(
-            window_customize_free_item_callback
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-        ),
-        new_item as *mut ::core::ffi::c_void,
+        window_customize_prompt_input_cb(window_customize_add_option_callback, new_item),
+        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
     );
 }
-unsafe extern "C" fn window_customize_add_environment_callback(
+unsafe fn window_customize_add_environment_callback(
     mut c: *mut client,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut itemdata: *mut window_customize_itemdata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -3508,20 +3503,8 @@ unsafe extern "C" fn window_customize_add_environment(
         b"\0" as *const u8 as *const ::core::ffi::c_char,
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        Some(
-            window_customize_add_environment_callback
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    *const ::core::ffi::c_char,
-                    prompt_key_result,
-                ) -> prompt_result,
-        ),
-        Some(
-            window_customize_free_item_callback
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-        ),
-        new_item as *mut ::core::ffi::c_void,
+        window_customize_prompt_input_cb(window_customize_add_environment_callback, new_item),
+        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
     );
 }
 unsafe fn window_customize_edit_close_cb(
@@ -3900,29 +3883,18 @@ unsafe extern "C" fn window_customize_set_option(
             value.as_ptr(),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
-            Some(
-                window_customize_set_option_callback
-                    as unsafe extern "C" fn(
-                        *mut client,
-                        *mut ::core::ffi::c_void,
-                        *const ::core::ffi::c_char,
-                        prompt_key_result,
-                    ) -> prompt_result,
-            ),
-            Some(
-                window_customize_free_item_callback
-                    as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-            ),
-            new_item as *mut ::core::ffi::c_void,
+            window_customize_prompt_input_cb(window_customize_set_option_callback, new_item),
+            window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
         );
     };
 }
-unsafe extern "C" fn window_customize_set_array_key_callback(
+unsafe fn window_customize_set_array_key_callback(
     mut c: *mut client,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut itemdata: *mut window_customize_itemdata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
@@ -4048,20 +4020,8 @@ unsafe extern "C" fn window_customize_set_array_key(
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        Some(
-            window_customize_set_array_key_callback
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    *const ::core::ffi::c_char,
-                    prompt_key_result,
-                ) -> prompt_result,
-        ),
-        Some(
-            window_customize_free_item_callback
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-        ),
-        new_item as *mut ::core::ffi::c_void,
+        window_customize_prompt_input_cb(window_customize_set_array_key_callback, new_item),
+        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
     );
 }
 unsafe extern "C" fn window_customize_unset_environment(
@@ -4157,12 +4117,13 @@ unsafe extern "C" fn window_customize_reset_option(
         oo = options_get_parent(oo);
     }
 }
-unsafe extern "C" fn window_customize_set_command_callback(
+unsafe fn window_customize_set_command_callback(
     mut c: *mut client,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut itemdata: *mut window_customize_itemdata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
@@ -4205,12 +4166,13 @@ unsafe extern "C" fn window_customize_set_command_callback(
         }
     };
 }
-unsafe extern "C" fn window_customize_set_note_callback(
+unsafe fn window_customize_set_note_callback(
     _c: *mut client,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut itemdata: *mut window_customize_itemdata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
@@ -4277,20 +4239,8 @@ unsafe extern "C" fn window_customize_set_key(
             value.as_ptr(),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
-            Some(
-                window_customize_set_command_callback
-                    as unsafe extern "C" fn(
-                        *mut client,
-                        *mut ::core::ffi::c_void,
-                        *const ::core::ffi::c_char,
-                        prompt_key_result,
-                    ) -> prompt_result,
-            ),
-            Some(
-                window_customize_free_item_callback
-                    as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-            ),
-            new_item as *mut ::core::ffi::c_void,
+            window_customize_prompt_input_cb(window_customize_set_command_callback, new_item),
+            window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
         );
     } else if strcmp(s, b"Note\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
@@ -4317,29 +4267,18 @@ unsafe extern "C" fn window_customize_set_key(
             },
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
-            Some(
-                window_customize_set_note_callback
-                    as unsafe extern "C" fn(
-                        *mut client,
-                        *mut ::core::ffi::c_void,
-                        *const ::core::ffi::c_char,
-                        prompt_key_result,
-                    ) -> prompt_result,
-            ),
-            Some(
-                window_customize_free_item_callback
-                    as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-            ),
-            new_item as *mut ::core::ffi::c_void,
+            window_customize_prompt_input_cb(window_customize_set_note_callback, new_item),
+            window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
         );
     }
 }
-unsafe extern "C" fn window_customize_add_key_callback(
+unsafe fn window_customize_add_key_callback(
     mut c: *mut client,
-    mut itemdata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut itemdata: *mut window_customize_itemdata,
+    s: Option<&CStr>,
     _key0: prompt_key_result,
 ) -> prompt_result {
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut window_customize_itemdata = itemdata as *mut window_customize_itemdata;
     let mut data: *mut window_customize_modedata = (*item).data as *mut window_customize_modedata;
     let mut key: key_code = 0;
@@ -4457,20 +4396,8 @@ unsafe extern "C" fn window_customize_add_key(
         b"\0" as *const u8 as *const ::core::ffi::c_char,
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
-        Some(
-            window_customize_add_key_callback
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *mut ::core::ffi::c_void,
-                    *const ::core::ffi::c_char,
-                    prompt_key_result,
-                ) -> prompt_result,
-        ),
-        Some(
-            window_customize_free_item_callback
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-        ),
-        new_item as *mut ::core::ffi::c_void,
+        window_customize_prompt_input_cb(window_customize_add_key_callback, new_item),
+        window_customize_prompt_free_cb(window_customize_free_item_callback, new_item),
     );
 }
 unsafe extern "C" fn window_customize_unset_key(
@@ -4563,13 +4490,13 @@ unsafe extern "C" fn window_customize_change_each(
         options_push_changes(name.as_ref().expect("option name was copied").as_ptr());
     }
 }
-unsafe extern "C" fn window_customize_change_current_callback(
+unsafe fn window_customize_change_current_callback(
     _c: *mut client,
-    mut modedata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut data: *mut window_customize_modedata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
     let mut type_0: window_customize_item_type = WINDOW_CUSTOMIZE_ITEM_OPTION;
@@ -4659,13 +4586,13 @@ unsafe extern "C" fn window_customize_change_current_callback(
     (*(*data).wp).flags |= PANE_REDRAW;
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn window_customize_change_tagged_callback(
+unsafe fn window_customize_change_tagged_callback(
     mut c: *mut client,
-    mut modedata: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+    mut data: *mut window_customize_modedata,
+    s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
+    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
@@ -5008,21 +4935,11 @@ unsafe extern "C" fn window_customize_key(
                         b"\0" as *const u8 as *const ::core::ffi::c_char,
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                        Some(
-                            window_customize_change_current_callback
-                                as unsafe extern "C" fn(
-                                    *mut client,
-                                    *mut ::core::ffi::c_void,
-                                    *const ::core::ffi::c_char,
-                                    prompt_key_result,
-                                )
-                                    -> prompt_result,
+                        window_customize_prompt_input_cb(
+                            window_customize_change_current_callback,
+                            data,
                         ),
-                        Some(
-                            window_customize_free_callback
-                                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-                        ),
-                        data as *mut ::core::ffi::c_void,
+                        window_customize_prompt_free_cb(window_customize_free_callback, data),
                     );
                 }
             }
@@ -5040,21 +4957,11 @@ unsafe extern "C" fn window_customize_key(
                         b"\0" as *const u8 as *const ::core::ffi::c_char,
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                        Some(
-                            window_customize_change_tagged_callback
-                                as unsafe extern "C" fn(
-                                    *mut client,
-                                    *mut ::core::ffi::c_void,
-                                    *const ::core::ffi::c_char,
-                                    prompt_key_result,
-                                )
-                                    -> prompt_result,
+                        window_customize_prompt_input_cb(
+                            window_customize_change_tagged_callback,
+                            data,
                         ),
-                        Some(
-                            window_customize_free_callback
-                                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-                        ),
-                        data as *mut ::core::ffi::c_void,
+                        window_customize_prompt_free_cb(window_customize_free_callback, data),
                     );
                 }
             }
@@ -5095,21 +5002,11 @@ unsafe extern "C" fn window_customize_key(
                         b"\0" as *const u8 as *const ::core::ffi::c_char,
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                        Some(
-                            window_customize_change_current_callback
-                                as unsafe extern "C" fn(
-                                    *mut client,
-                                    *mut ::core::ffi::c_void,
-                                    *const ::core::ffi::c_char,
-                                    prompt_key_result,
-                                )
-                                    -> prompt_result,
+                        window_customize_prompt_input_cb(
+                            window_customize_change_current_callback,
+                            data,
                         ),
-                        Some(
-                            window_customize_free_callback
-                                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-                        ),
-                        data as *mut ::core::ffi::c_void,
+                        window_customize_prompt_free_cb(window_customize_free_callback, data),
                     );
                 }
             }
@@ -5126,21 +5023,11 @@ unsafe extern "C" fn window_customize_key(
                         b"\0" as *const u8 as *const ::core::ffi::c_char,
                         PROMPT_TYPE_COMMAND,
                         PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                        Some(
-                            window_customize_change_tagged_callback
-                                as unsafe extern "C" fn(
-                                    *mut client,
-                                    *mut ::core::ffi::c_void,
-                                    *const ::core::ffi::c_char,
-                                    prompt_key_result,
-                                )
-                                    -> prompt_result,
+                        window_customize_prompt_input_cb(
+                            window_customize_change_tagged_callback,
+                            data,
                         ),
-                        Some(
-                            window_customize_free_callback
-                                as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-                        ),
-                        data as *mut ::core::ffi::c_void,
+                        window_customize_prompt_free_cb(window_customize_free_callback, data),
                     );
                 }
             }

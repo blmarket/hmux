@@ -108,7 +108,7 @@ use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
-    prompt_input_cb, prompt_legacy_free_cb, prompt_result, PROMPT_CLOSE,
+    prompt_input_cb, prompt_free_cb, prompt_result, PROMPT_CLOSE,
 };
 use crate::src::shared::regex::{
     re_dfa_t, re_pattern_buffer, regex_t, regmatch_t, REG_EXTENDED, REG_ICASE,
@@ -3521,13 +3521,8 @@ unsafe fn window_pane_prompt_input_callback(
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    if (*wpp).inputcb.is_some() {
-        return (*wpp).inputcb.expect("non-null function pointer")(
-            (*wpp).c,
-            (*wpp).data,
-            s.map_or(::core::ptr::null(), CStr::as_ptr),
-            key,
-        );
+    if let Some(inputcb) = (*wpp).inputcb.as_mut() {
+        return inputcb((*wpp).c, s, key);
     }
     return PROMPT_CLOSE;
 }
@@ -3537,21 +3532,19 @@ unsafe fn window_pane_prompt_free_callback(mut wpp: *mut window_pane_prompt) {
     if !wp.is_null() && (*wp).prompt_data == wpp {
         (*wp).prompt_data = ::core::ptr::null_mut::<window_pane_prompt>();
     }
-    if (*wpp).freecb.is_some() {
-        (*wpp).freecb.expect("non-null function pointer")((*wpp).data);
+    if let Some(freecb) = (*wpp).freecb.take() {
+        freecb();
     }
     drop(Box::from_raw(wpp));
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_set_prompt(
+pub unsafe fn window_pane_set_prompt(
     mut wp: *mut window_pane,
     mut c: *mut client,
     mut fs: *mut cmd_find_state,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
     mut inputcb: status_prompt_input_cb,
-    mut freecb: prompt_legacy_free_cb,
-    mut data: *mut ::core::ffi::c_void,
+    mut freecb: prompt_free_cb,
     mut flags: ::core::ffi::c_int,
     mut type_0: prompt_type,
 ) {
@@ -3567,7 +3560,6 @@ pub unsafe extern "C" fn window_pane_set_prompt(
         c,
         inputcb,
         freecb,
-        data,
         type_0,
     }));
     prompt_set_options(&raw mut pd, s);
