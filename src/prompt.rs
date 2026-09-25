@@ -1318,8 +1318,8 @@ unsafe extern "C" fn prompt_translate_key(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn prompt_save_copied(pr: *mut prompt, idx: size_t) {
-    let count = (*pr).index.wrapping_sub(idx);
+fn prompt_save_copied(pr: &mut prompt, idx: size_t) {
+    let count = pr.index.wrapping_sub(idx);
     let empty = utf8_data {
         data: [0; 32],
         have: 0,
@@ -1327,9 +1327,9 @@ unsafe fn prompt_save_copied(pr: *mut prompt, idx: size_t) {
         width: 0,
     };
     let mut copied = vec![empty; count.wrapping_add(1)];
-    let buffer = &(*pr).buffer;
+    let buffer = &pr.buffer;
     copied[..count].copy_from_slice(&buffer[idx..idx + count]);
-    (*pr).copied = Some(copied.into_boxed_slice());
+    pr.copied = Some(copied.into_boxed_slice());
 }
 
 unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
@@ -1871,7 +1871,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -2218,7 +2218,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -2565,7 +2565,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -2912,7 +2912,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -3259,7 +3259,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -3606,7 +3606,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -3953,7 +3953,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -4300,7 +4300,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -4647,7 +4647,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -4994,7 +4994,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -5341,7 +5341,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -5688,7 +5688,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -6035,7 +6035,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -6382,7 +6382,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -6729,7 +6729,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -7076,7 +7076,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -7423,7 +7423,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -7770,7 +7770,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -8117,7 +8117,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -8464,7 +8464,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -8811,7 +8811,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -9158,7 +9158,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -9505,7 +9505,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -9852,7 +9852,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -10199,7 +10199,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
@@ -10546,7 +10546,7 @@ pub unsafe extern "C" fn prompt_key(
                                     idx = idx.wrapping_add(1);
                                     break;
                                 }
-                                prompt_save_copied(pr, idx);
+                                prompt_save_copied(&mut *pr, idx);
                                 memmove(
                                     prompt_buffer_cells(pr).offset(idx as isize)
                                         as *mut ::core::ffi::c_void,
