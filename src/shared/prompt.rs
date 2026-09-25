@@ -5,7 +5,8 @@ use super::command::cmd_find_state;
 use super::display::screen_cursor_style;
 use super::grid::{grid_cell, utf8_data};
 use super::screen_write::screen_write_ctx;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
+use std::rc::Rc;
 pub type prompt_type = ::core::ffi::c_uint;
 pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
 pub const PROMPT_TYPE_INVALID: prompt_type = 255;
@@ -36,8 +37,12 @@ pub const PROMPT_EDITARROWS: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
 
 pub type prompt_result = ::core::ffi::c_uint;
 
-pub type prompt_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
-pub type prompt_input_cb = Option<
+pub type prompt_free_cb = Option<Box<dyn FnOnce()>>;
+pub type prompt_input_cb = Option<Box<dyn FnMut(Option<&CStr>, prompt_key_result) -> prompt_result>>;
+
+/// Compatibility callback types for the still-public prompt registration APIs.
+pub type prompt_legacy_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
+pub type prompt_legacy_input_cb = Option<
     unsafe extern "C" fn(
         *mut ::core::ffi::c_void,
         *const ::core::ffi::c_char,
@@ -71,7 +76,6 @@ pub struct prompt_completion {
 }
 
 #[derive(Default)]
-#[repr(C)]
 pub struct prompt {
     pub string: CString,
     pub buffer: Vec<utf8_data>,
@@ -80,7 +84,7 @@ pub struct prompt {
     pub index: size_t,
     pub inputcb: prompt_input_cb,
     pub freecb: prompt_free_cb,
-    pub data: *mut ::core::ffi::c_void,
+    pub alive: Rc<()>,
     pub message_format: CString,
     pub keys: ::core::ffi::c_int,
     pub word_separators: CString,
@@ -102,8 +106,7 @@ pub struct prompt {
     pub completion: prompt_completion,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
+#[derive(Default)]
 pub struct prompt_create_data {
     pub fs: *mut cmd_find_state,
     pub prompt: *const ::core::ffi::c_char,
@@ -125,7 +128,6 @@ pub struct prompt_create_data {
     pub word_separators: *const ::core::ffi::c_char,
     pub inputcb: prompt_input_cb,
     pub freecb: prompt_free_cb,
-    pub data: *mut ::core::ffi::c_void,
 }
 
 #[derive(Copy, Clone)]

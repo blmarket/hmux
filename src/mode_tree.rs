@@ -55,7 +55,7 @@ use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE,
+    prompt_input_cb, prompt_legacy_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE,
     PROMPT_ISMODE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::{screen, MODE_CURSOR};
@@ -1474,19 +1474,22 @@ unsafe fn mode_tree_prompt_accept(
 unsafe fn mode_tree_cancel_prompt_accept(mtd: *mut mode_tree_data) {
     mode_tree_remove_ref(mtd);
 }
-unsafe extern "C" fn mode_tree_prompt_input_callback(
-    mut data: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+unsafe fn mode_tree_prompt_input_callback(
+    mut mtp: *mut mode_tree_prompt,
+    s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let mut mtp: *mut mode_tree_prompt = data as *mut mode_tree_prompt;
     if (*mtp).inputcb.is_some() {
-        return (*mtp).inputcb.expect("non-null function pointer")((*mtp).c, (*mtp).data, s, key);
+        return (*mtp).inputcb.expect("non-null function pointer")(
+            (*mtp).c,
+            (*mtp).data,
+            s.map_or(::core::ptr::null(), CStr::as_ptr),
+            key,
+        );
     }
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn mode_tree_prompt_free_callback(data: *mut ::core::ffi::c_void) {
-    let mtp_ptr = data as *mut mode_tree_prompt;
+unsafe fn mode_tree_prompt_free_callback(mtp_ptr: *mut mode_tree_prompt) {
     let mtp = Box::from_raw(mtp_ptr);
     if (*mtp.mtd).prompt_data == mtp_ptr {
         (*mtp.mtd).prompt_data = ::core::ptr::null_mut::<mode_tree_prompt>();
@@ -1505,60 +1508,12 @@ pub unsafe extern "C" fn mode_tree_set_prompt(
     mut type_0: prompt_type,
     mut flags: ::core::ffi::c_int,
     mut inputcb: mode_tree_prompt_input_cb,
-    mut freecb: prompt_free_cb,
+    mut freecb: prompt_legacy_free_cb,
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut pd: prompt_create_data = prompt_create_data {
-        fs: ::core::ptr::null_mut::<cmd_find_state>(),
-        prompt: ::core::ptr::null::<::core::ffi::c_char>(),
-        input: ::core::ptr::null::<::core::ffi::c_char>(),
-        type_0: PROMPT_TYPE_COMMAND,
-        flags: 0,
-        style: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        command_style: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_str: ::core::ptr::null::<::core::ffi::c_char>(),
-        command_style_str: ::core::ptr::null::<::core::ffi::c_char>(),
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        command_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        command_ccolour: 0,
-        cmode: 0,
-        command_cmode: 0,
-        message_format: ::core::ptr::null::<::core::ffi::c_char>(),
-        keys: 0,
-        word_separators: ::core::ptr::null::<::core::ffi::c_char>(),
-        inputcb: None,
-        freecb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-    };
+    let mut pd = prompt_create_data::default();
     let mut mtp: *mut mode_tree_prompt = ::core::ptr::null_mut::<mode_tree_prompt>();
     if !c.is_null() && !(*c).session.is_null() {
         s = (*c).session;
@@ -1580,28 +1535,17 @@ pub unsafe extern "C" fn mode_tree_set_prompt(
         oo,
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong) as ::core::ffi::c_int;
-    memset(
-        &raw mut pd as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<prompt_create_data>() as size_t,
-    );
     prompt_set_options(&raw mut pd, s);
     pd.prompt = prompt;
     pd.input = input;
     pd.type_0 = type_0;
     pd.flags = flags | PROMPT_ISMODE;
-    pd.inputcb = Some(
-        mode_tree_prompt_input_callback
-            as unsafe extern "C" fn(
-                *mut ::core::ffi::c_void,
-                *const ::core::ffi::c_char,
-                prompt_key_result,
-            ) -> prompt_result,
-    ) as prompt_input_cb;
-    pd.freecb = Some(
-        mode_tree_prompt_free_callback as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> (),
-    ) as prompt_free_cb;
-    pd.data = mtp as *mut ::core::ffi::c_void;
+    pd.inputcb = Some(Box::new(move |s, key| unsafe {
+        mode_tree_prompt_input_callback(mtp, s, key)
+    }));
+    pd.freecb = Some(Box::new(move || unsafe {
+        mode_tree_prompt_free_callback(mtp)
+    }));
     (*mtd).prompt = prompt_create(&raw mut pd);
     (*mtd).prompt_data = mtp;
     mode_tree_draw(mtd);

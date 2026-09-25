@@ -264,7 +264,7 @@ pub unsafe extern "C" fn prompt_set_options(mut pd: *mut prompt_create_data, mut
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mut prompt {
+pub unsafe extern "C" fn prompt_create(mut pd: *mut prompt_create_data) -> *mut prompt {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut input: *const ::core::ffi::c_char = (*pd).input;
     let mut allocation = Box::new(prompt::default());
@@ -305,9 +305,8 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
         (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(tmp));
     }
     (*pr).index = utf8_strlen((*pr).buffer.as_ptr());
-    (*pr).inputcb = (*pd).inputcb;
-    (*pr).freecb = (*pd).freecb;
-    (*pr).data = (*pd).data;
+    (*pr).inputcb = ::core::mem::take(&mut (*pd).inputcb);
+    (*pr).freecb = ::core::mem::take(&mut (*pd).freecb);
     (*pr).flags = (*pd).flags;
     (*pr).type_0 = (*pd).type_0;
     memcpy(
@@ -337,8 +336,8 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
 #[no_mangle]
 pub unsafe extern "C" fn prompt_free(mut pr: *mut prompt) {
     if !pr.is_null() {
-        if (*pr).freecb.is_some() && !(*pr).data.is_null() {
-            (*pr).freecb.expect("non-null function pointer")((*pr).data);
+        if let Some(callback) = (*pr).freecb.take() {
+            callback();
         }
         prompt_clear_complete(pr);
         drop(Box::from_raw(pr));
@@ -356,8 +355,16 @@ unsafe extern "C" fn prompt_fire_callback(
     mut type_0: prompt_key_result,
     mut redraw: *mut ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut result: prompt_result = PROMPT_CONTINUE;
-    result = (*pr).inputcb.expect("non-null function pointer")((*pr).data, s, type_0);
+    let alive = (*pr).alive.clone();
+    let mut callback = (*pr).inputcb.take().expect("non-null prompt callback");
+    let text = (!s.is_null()).then(|| CStr::from_ptr(s));
+    let result = callback(text, type_0);
+    if ::std::rc::Rc::strong_count(&alive) == 1 {
+        return 1 as ::core::ffi::c_int;
+    }
+    if (*pr).inputcb.is_none() {
+        (*pr).inputcb = Some(callback);
+    }
     if result as ::core::ffi::c_uint == PROMPT_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint {
         (*pr).closed = 1 as ::core::ffi::c_int;
         return 1 as ::core::ffi::c_int;

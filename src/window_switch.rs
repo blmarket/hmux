@@ -3,7 +3,7 @@ use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_session, cmd_fin
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{cmdq_free_state, cmdq_new_state};
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::ffi::libc::{__ctype_toupper_loc, memset};
+use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::format_draw;
 use crate::src::fuzzy::fuzzy_match_owned;
@@ -38,7 +38,7 @@ use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    prompt_input_cb, prompt_result, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL,
+    prompt_result, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL,
     PROMPT_ISMODE, PROMPT_NOFORMAT,
 };
 use crate::src::shared::screen::{screen, MODE_CURSOR};
@@ -486,55 +486,7 @@ unsafe extern "C" fn window_switch_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_switch_modedata = ::core::ptr::null_mut::<window_switch_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    let mut pd: prompt_create_data = prompt_create_data {
-        fs: ::core::ptr::null_mut::<cmd_find_state>(),
-        prompt: ::core::ptr::null::<::core::ffi::c_char>(),
-        input: ::core::ptr::null::<::core::ffi::c_char>(),
-        type_0: PROMPT_TYPE_COMMAND,
-        flags: 0,
-        style: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        command_style: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_str: ::core::ptr::null::<::core::ffi::c_char>(),
-        command_style_str: ::core::ptr::null::<::core::ffi::c_char>(),
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        command_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        command_ccolour: 0,
-        cmode: 0,
-        command_cmode: 0,
-        message_format: ::core::ptr::null::<::core::ffi::c_char>(),
-        keys: 0,
-        word_separators: ::core::ptr::null::<::core::ffi::c_char>(),
-        inputcb: None,
-        freecb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-    };
+    let mut pd = prompt_create_data::default();
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
         WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr()
     } else {
@@ -567,26 +519,15 @@ unsafe extern "C" fn window_switch_init(
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
     }
-    memset(
-        &raw mut pd as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<prompt_create_data>() as size_t,
-    );
     prompt_set_options(&raw mut pd, (*fs).s);
     pd.fs = fs;
     pd.prompt = b"(search) \0" as *const u8 as *const ::core::ffi::c_char;
     pd.input = b"\0" as *const u8 as *const ::core::ffi::c_char;
     pd.type_0 = PROMPT_TYPE_SEARCH;
     pd.flags = PROMPT_INCREMENTAL | PROMPT_NOFORMAT | PROMPT_ISMODE | PROMPT_EDITARROWS;
-    pd.inputcb = Some(
-        window_switch_prompt_callback
-            as unsafe extern "C" fn(
-                *mut ::core::ffi::c_void,
-                *const ::core::ffi::c_char,
-                prompt_key_result,
-            ) -> prompt_result,
-    ) as prompt_input_cb;
-    pd.data = data as *mut ::core::ffi::c_void;
+    pd.inputcb = Some(Box::new(move |s, key| unsafe {
+        window_switch_prompt_callback(data, s, key)
+    }));
     (*data).prompt = prompt_create(&raw mut pd);
     prompt_update(
         (*data).prompt,
@@ -723,23 +664,22 @@ unsafe extern "C" fn window_switch_run_command(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_switch_prompt_callback(
-    mut arg: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+unsafe fn window_switch_prompt_callback(
+    mut data: *mut window_switch_modedata,
+    s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let mut data: *mut window_switch_modedata = arg as *mut window_switch_modedata;
     if key as ::core::ffi::c_uint != PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return PROMPT_CONTINUE;
     }
-    if s.is_null() {
-        s = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if *s as ::core::ffi::c_int != '\0' as i32 {
-        s = s.offset(1);
-    }
-    // A prompt callback may provide a view into existing mode storage.
-    (*data).filter = CStr::from_ptr(s).to_owned();
+    let value = s.map_or(&[][..], CStr::to_bytes);
+    let value = if s.is_some() && !value.is_empty() {
+        &value[1..]
+    } else {
+        value
+    };
+    (*data).filter = CString::new(value).expect("prompt input contains no NUL");
     window_switch_build(data);
     (*data).current = 0 as u_int;
     (*data).offset = 0 as u_int;

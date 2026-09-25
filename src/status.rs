@@ -55,7 +55,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
-    prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE,
+    prompt_input_cb, prompt_legacy_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE,
     PROMPT_INCREMENTAL, PROMPT_NOFREEZE, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
@@ -72,7 +72,7 @@ use crate::src::shared::window::winlink;
 pub struct status_prompt_data {
     pub c: *mut client,
     pub inputcb: status_prompt_input_cb,
-    pub freecb: prompt_free_cb,
+    pub freecb: prompt_legacy_free_cb,
     pub data: *mut ::core::ffi::c_void,
 }
 
@@ -750,22 +750,26 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     screen_free(&raw mut old_screen);
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn status_prompt_input_callback(
-    mut data: *mut ::core::ffi::c_void,
-    mut s: *const ::core::ffi::c_char,
+unsafe fn status_prompt_input_callback(
+    mut spd: *mut status_prompt_data,
+    s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let mut spd: *mut status_prompt_data = data as *mut status_prompt_data;
     let mut c: *mut client = (*spd).c;
     let mut inputcb: status_prompt_input_cb = (*spd).inputcb;
     let mut arg: *mut ::core::ffi::c_void = (*spd).data;
     if inputcb.is_some() {
-        return inputcb.expect("non-null function pointer")(c, arg, s, key);
+        return inputcb.expect("non-null function pointer")(
+            c,
+            arg,
+            s.map_or(::core::ptr::null(), CStr::as_ptr),
+            key,
+        );
     }
     return PROMPT_CLOSE;
 }
-unsafe extern "C" fn status_prompt_free_callback(mut data: *mut ::core::ffi::c_void) {
-    let spd = Box::from_raw(data as *mut status_prompt_data);
+unsafe fn status_prompt_free_callback(data: *mut status_prompt_data) {
+    let spd = Box::from_raw(data);
     let freecb = spd.freecb;
     let arg = spd.data;
     if freecb.is_some() {
@@ -789,60 +793,12 @@ pub unsafe extern "C" fn status_prompt_set(
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
     mut inputcb: status_prompt_input_cb,
-    mut freecb: prompt_free_cb,
+    mut freecb: prompt_legacy_free_cb,
     mut data: *mut ::core::ffi::c_void,
     mut flags: ::core::ffi::c_int,
     mut prompt_type: prompt_type,
 ) {
-    let mut pd: prompt_create_data = prompt_create_data {
-        fs: ::core::ptr::null_mut::<cmd_find_state>(),
-        prompt: ::core::ptr::null::<::core::ffi::c_char>(),
-        input: ::core::ptr::null::<::core::ffi::c_char>(),
-        type_0: PROMPT_TYPE_COMMAND,
-        flags: 0,
-        style: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        command_style: grid_cell {
-            data: utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            },
-            attr: 0,
-            flags: 0,
-            fg: 0,
-            bg: 0,
-            us: 0,
-            link: 0,
-        },
-        style_str: ::core::ptr::null::<::core::ffi::c_char>(),
-        command_style_str: ::core::ptr::null::<::core::ffi::c_char>(),
-        cstyle: SCREEN_CURSOR_DEFAULT,
-        command_cstyle: SCREEN_CURSOR_DEFAULT,
-        ccolour: 0,
-        command_ccolour: 0,
-        cmode: 0,
-        command_cmode: 0,
-        message_format: ::core::ptr::null::<::core::ffi::c_char>(),
-        keys: 0,
-        word_separators: ::core::ptr::null::<::core::ffi::c_char>(),
-        inputcb: None,
-        freecb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-    };
+    let mut pd = prompt_create_data::default();
     server_client_clear_overlay(c);
     status_message_clear(c);
     status_prompt_clear(c);
@@ -853,29 +809,18 @@ pub unsafe extern "C" fn status_prompt_set(
         freecb,
         data,
     }));
-    memset(
-        &raw mut pd as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<prompt_create_data>() as size_t,
-    );
     prompt_set_options(&raw mut pd, (*c).session);
     pd.fs = fs;
     pd.prompt = msg;
     pd.input = input;
     pd.type_0 = prompt_type;
     pd.flags = flags;
-    pd.inputcb = Some(
-        status_prompt_input_callback
-            as unsafe extern "C" fn(
-                *mut ::core::ffi::c_void,
-                *const ::core::ffi::c_char,
-                prompt_key_result,
-            ) -> prompt_result,
-    ) as prompt_input_cb;
-    pd.freecb =
-        Some(status_prompt_free_callback as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ())
-            as prompt_free_cb;
-    pd.data = spd as *mut ::core::ffi::c_void;
+    pd.inputcb = Some(Box::new(move |s, key| unsafe {
+        status_prompt_input_callback(spd, s, key)
+    }));
+    pd.freecb = Some(Box::new(move || unsafe {
+        status_prompt_free_callback(spd)
+    }));
     (*c).prompt = prompt_create(&raw mut pd);
     if !flags & PROMPT_INCREMENTAL != 0 && !flags & PROMPT_NOFREEZE != 0 {
         (*c).tty.flags |= TTY_FREEZE;
