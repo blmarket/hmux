@@ -77,8 +77,8 @@ fn server_acl_key(id: id_t, flags: ::core::ffi::c_int) -> (bool, id_t) {
     (flags & SERVER_ACL_IS_GROUP != 0, id)
 }
 
-unsafe fn server_acl_entry_key(entry: *mut server_acl_entry) -> (bool, id_t) {
-    server_acl_key((*entry).id, (*entry).flags)
+fn server_acl_entry_key(entry: &server_acl_entry) -> (bool, id_t) {
+    server_acl_key(entry.id, entry.flags)
 }
 
 #[no_mangle]
@@ -116,7 +116,7 @@ unsafe fn server_acl_entries_next(
     head: *mut server_acl_entries,
     entry: *mut server_acl_entry,
 ) -> *mut server_acl_entry {
-    let key = server_acl_entry_key(entry);
+    let key = server_acl_entry_key(&*entry);
     (*head)
         .entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
@@ -144,7 +144,7 @@ unsafe fn server_acl_entries_remove(
     head: *mut server_acl_entries,
     entry: *mut server_acl_entry,
 ) -> Option<Box<server_acl_entry>> {
-    (*head).entries.remove(&server_acl_entry_key(entry))
+    (*head).entries.remove(&server_acl_entry_key(&*entry))
 }
 
 unsafe fn server_acl_entries_clear(head: *mut server_acl_entries) {
