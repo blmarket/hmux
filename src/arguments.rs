@@ -711,7 +711,7 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
             args_value::string(expanded)
         }
         2 => args_value::commands(
-            cmd_list_copy(from.cmdlist(), argv) as *mut cmd_list
+            cmd_list_copy(&*from.cmdlist(), argv) as *mut cmd_list
         ),
         0 | _ => args_value::empty(),
     }
@@ -1226,7 +1226,7 @@ pub unsafe fn args_make_commands(
             (*(*state).cmdlist).references += 1;
             return Ok((*state).cmdlist);
         }
-        return Ok(cmd_list_copy((*state).cmdlist, argv));
+        return Ok(cmd_list_copy(&*(*state).cmdlist, argv));
     }
     let mut cmd = CStr::from_ptr(
         ((*state).cmd)

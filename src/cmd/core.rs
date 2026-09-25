@@ -629,20 +629,20 @@ pub unsafe extern "C" fn cmd_list_free(mut cmdlist: *mut cmd_list) {
     drop(Box::from_raw(cmdlist));
 }
 pub unsafe fn cmd_list_copy(
-    mut cmdlist: *const cmd_list,
+    cmdlist: &cmd_list,
     argv: &Vec<CString>,
 ) -> *mut cmd_list {
     let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    let mut group: u_int = (*cmdlist).group;
-    let s = cmd_list_print_cstring(&*cmdlist, 0);
+    let mut group: u_int = cmdlist.group;
+    let s = cmd_list_print_cstring(cmdlist, 0);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_list_copy\0" as *const u8 as *const ::core::ffi::c_char,
         s.as_ptr(),
     );
     new_cmdlist = cmd_list_new();
-    for &cmd in &*(*cmdlist).list {
+    for &cmd in &*cmdlist.list {
         if (*cmd).group != group {
             let fresh7 = cmd_list_next_group;
             cmd_list_next_group = cmd_list_next_group.wrapping_add(1);

@@ -110,7 +110,7 @@ fn list_splice_copy_and_refcount_keep_command_pointers_stable() {
         assert_eq!(cmd_list_next(second), third);
         assert!(cmd_list_next(third).is_null());
 
-        let copied = cmd_list_copy(destination, &Vec::new());
+        let copied = cmd_list_copy(&*destination, &Vec::new());
         let copied_first = cmd_list_first(copied);
         let copied_second = cmd_list_next(copied_first);
         let copied_third = cmd_list_next(copied_second);
