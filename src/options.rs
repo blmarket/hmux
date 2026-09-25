@@ -162,10 +162,10 @@ use crate::src::shared::window::{
 use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
-unsafe fn set_scalar_string(o: *mut options_entry, value: CString) {
+fn set_scalar_string(o: &mut options_entry, value: CString) {
     // Formatting has completed, so callers may have supplied the old value
     // as a %s argument. Replace its owner before publishing the new pointer.
-    (*o).value = options_value::String(value);
+    o.value = options_value::String(value);
 }
 
 unsafe fn set_array_string(a: *mut options_array_item, value: CString) {
@@ -418,7 +418,7 @@ pub unsafe extern "C" fn options_default(
     }
     match (*oe).type_0 as ::core::ffi::c_uint {
         0 => {
-            set_scalar_string(o, CStr::from_ptr((*oe).default_str).to_owned());
+            set_scalar_string(&mut *o, CStr::from_ptr((*oe).default_str).to_owned());
         }
         6 => {
             pr = cmd_parse_from_string(
@@ -1120,7 +1120,7 @@ pub unsafe extern "C" fn options_set_string(
             name,
         );
     }
-    set_scalar_string(o, value);
+    set_scalar_string(&mut *o, value);
     (*o).cached = 0 as ::core::ffi::c_int;
     return o;
 }
