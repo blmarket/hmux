@@ -186,8 +186,8 @@ unsafe fn options_array_correct_key(key: *const ::core::ffi::c_char) -> Option<C
     }
 }
 // Internal callers pass keys already validated by options_array_correct_key.
-unsafe fn options_array_index(key: *const ::core::ffi::c_char) -> OptionsArrayKey {
-    match parse_array_index(CStr::from_ptr(key).to_bytes()).expect("validated array key") {
+fn options_array_index(key: &CStr) -> OptionsArrayKey {
+    match parse_array_index(key.to_bytes()).expect("validated array key") {
         ArrayIndex::Numeric(number) => OptionsArrayKey::Numeric(number),
         ArrayIndex::Text(bytes) => OptionsArrayKey::Text(bytes.to_vec()),
     }
@@ -550,7 +550,7 @@ unsafe extern "C" fn options_array_item(
 ) -> *mut options_array_item {
     (*(*o).value.array_storage())
         .entries
-        .get(&options_array_index(key))
+        .get(&options_array_index(CStr::from_ptr(key)))
         .copied()
         .unwrap_or(::core::ptr::null_mut())
 }
@@ -566,14 +566,14 @@ unsafe extern "C" fn options_array_new(
     let a = Box::into_raw(owner);
     (*(*o).value.array_storage())
         .entries
-        .insert(options_array_index(key), a);
+        .insert(options_array_index(CStr::from_ptr(key)), a);
     return a;
 }
 unsafe extern "C" fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
     options_value_free(o, &raw mut (*a).value);
     (*(*o).value.array_storage())
         .entries
-        .remove(&options_array_index((*a).key.as_ptr()));
+        .remove(&options_array_index((*a).key.as_c_str()));
     drop(Box::from_raw(a));
 }
 #[no_mangle]
@@ -821,7 +821,7 @@ pub unsafe extern "C" fn options_array_first(mut o: *mut options_entry) -> *mut 
 pub unsafe extern "C" fn options_array_next(
     mut a: *mut options_array_item,
 ) -> *mut options_array_item {
-    let key = options_array_index((*a).key.as_ptr());
+    let key = options_array_index((*a).key.as_c_str());
     (*(*(*a).owner).value.array_storage())
         .entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
