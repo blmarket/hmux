@@ -249,8 +249,8 @@ fn server_client_replace_title(c: &mut client, title: Option<CString>) {
     c.title = title;
 }
 
-unsafe fn server_client_replace_path(c: *mut client, path: Option<CString>) {
-    (*c).path = path;
+fn server_client_replace_path(c: &mut client, path: Option<CString>) {
+    c.path = path;
 }
 
 unsafe fn server_client_set_exit_session(c: *mut client, exit_session: Option<CString>) {
@@ -560,7 +560,7 @@ mod client_message_owner_tests {
             assert!((*c).path.is_none());
 
             server_client_replace_path(
-                c,
+                &mut *c,
                 Some(CString::new(b"file:///work-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
@@ -574,7 +574,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_replace_path(c, Some(CString::new("").unwrap()));
+            server_client_replace_path(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).path.is_none());
             assert_eq!(
                 CStr::from_ptr(
@@ -586,7 +586,7 @@ mod client_message_owner_tests {
                 b""
             );
 
-            server_client_replace_path(c, None);
+            server_client_replace_path(&mut *c, None);
             assert!((*c).path.is_none());
             assert!(owner.path.is_none());
         }
@@ -1556,7 +1556,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     status_free(c);
     input_cancel_requests(c);
     server_client_replace_title(&mut *c, None);
-    server_client_replace_path(c, None);
+    server_client_replace_path(&mut *c, None);
     server_client_set_cwd(c, None);
     server_client_set_exit_session(c, None);
     server_client_set_exit_message(&mut *c, None);
@@ -4385,7 +4385,7 @@ unsafe extern "C" fn server_client_set_path(mut c: *mut client) {
         .as_ref()
         .map_or(c"", |path| path.as_c_str());
     if (*c).path.as_deref() != Some(path) {
-        server_client_replace_path(c, Some(path.to_owned()));
+        server_client_replace_path(&mut *c, Some(path.to_owned()));
         tty_set_path(&raw mut (*c).tty, path.as_ptr());
     }
 }
