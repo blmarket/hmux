@@ -145,7 +145,7 @@ pub unsafe extern "C" fn key_bindings_get_table(
     };
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     table_find.name = ::std::ffi::CStr::from_ptr(name).to_owned();
-    table = key_tables_find(&raw mut key_tables, &raw mut table_find);
+    table = key_tables_find(&*std::ptr::addr_of!(key_tables), &table_find);
     if !table.is_null() || create == 0 {
         return table;
     }
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn key_bindings_get_table(
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_first_table() -> *mut key_table {
-    return key_tables_minmax(&raw mut key_tables, RB_NEGINF);
+    return key_tables_minmax(&*std::ptr::addr_of!(key_tables), RB_NEGINF);
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_next_table(mut table: *mut key_table) -> *mut key_table {
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
     if (*table).references != 0 as u_int {
         return;
     }
-    bd = key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
+    bd = key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
     while !bd.is_null() && {
         bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
@@ -186,7 +186,7 @@ pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
         key_bindings_free(bd);
         bd = bd1;
     }
-    bd = key_bindings_index_minmax(&raw mut (*table).default_key_bindings, RB_NEGINF);
+    bd = key_bindings_index_minmax(&(*table).default_key_bindings, RB_NEGINF);
     while !bd.is_null() && {
         bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
@@ -213,7 +213,7 @@ pub unsafe extern "C" fn key_bindings_get(
         },
     };
     bd.key = key;
-    return key_bindings_index_find(&raw mut (*table).key_bindings, &raw mut bd);
+    return key_bindings_index_find(&(*table).key_bindings, &bd);
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_get_default(
@@ -231,11 +231,11 @@ pub unsafe extern "C" fn key_bindings_get_default(
         },
     };
     bd.key = key;
-    return key_bindings_index_find(&raw mut (*table).default_key_bindings, &raw mut bd);
+    return key_bindings_index_find(&(*table).default_key_bindings, &bd);
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_first(mut table: *mut key_table) -> *mut key_binding {
-    return key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
+    return key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_next(
@@ -378,7 +378,7 @@ pub unsafe extern "C" fn key_bindings_reset_table(mut name: *const ::core::ffi::
         key_bindings_remove_table(name);
         return;
     }
-    bd = key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
+    bd = key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
     while !bd.is_null() && {
         bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
@@ -413,9 +413,9 @@ unsafe extern "C" fn key_bindings_init_done(
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut new_bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    table = key_tables_minmax(&raw mut key_tables, RB_NEGINF);
+    table = key_tables_minmax(&*std::ptr::addr_of!(key_tables), RB_NEGINF);
     while !table.is_null() {
-        bd = key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
+        bd = key_bindings_index_minmax(&(*table).key_bindings, RB_NEGINF);
         while !bd.is_null() {
             (*(*bd).cmdlist).references += 1;
             new_bd = key_bindings_add_default(
@@ -1166,23 +1166,23 @@ fn key_bindings_key(elm: &key_binding) -> u64 {
     elm.key
 }
 pub unsafe fn key_bindings_index_find(
-    head: *mut key_bindings,
-    elm: *mut key_binding,
+    head: &key_bindings,
+    elm: &key_binding,
 ) -> *mut key_binding {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = key_bindings_key(&*elm);
+    let key = key_bindings_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn key_bindings_index_nfind(
-    head: *mut key_bindings,
-    elm: *mut key_binding,
+    head: &key_bindings,
+    elm: &key_binding,
 ) -> *mut key_binding {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = key_bindings_key(&*elm);
+    let key = key_bindings_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1228,10 +1228,10 @@ pub unsafe fn key_bindings_index_remove(
     elm
 }
 pub unsafe fn key_bindings_index_minmax(
-    head: *mut key_bindings,
+    head: &key_bindings,
     direction: ::core::ffi::c_int,
 ) -> *mut key_binding {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -1260,18 +1260,18 @@ pub unsafe fn key_bindings_index_prev(elm: &key_binding) -> *mut key_binding {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
-pub unsafe fn key_tables_find(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
-    let Some(map) = (*head).storage.as_ref() else {
+pub unsafe fn key_tables_find(head: &key_tables, elm: &key_table) -> *mut key_table {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_c_str().to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn key_tables_nfind(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
-    let Some(map) = (*head).storage.as_ref() else {
+pub unsafe fn key_tables_nfind(head: &key_tables, elm: &key_table) -> *mut key_table {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_c_str().to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1311,10 +1311,10 @@ pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> *
     elm
 }
 pub unsafe fn key_tables_minmax(
-    head: *mut key_tables,
+    head: &key_tables,
     direction: ::core::ffi::c_int,
 ) -> *mut key_table {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
