@@ -3507,7 +3507,7 @@ unsafe fn window_pane_prompt_input_callback(
     mut key: prompt_key_result,
 ) -> prompt_result {
     if let Some(inputcb) = (*wpp).inputcb.as_mut() {
-        return inputcb((*wpp).c, s, key);
+        return inputcb(std::ptr::NonNull::new((*wpp).c), s, key);
     }
     return PROMPT_CLOSE;
 }

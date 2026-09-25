@@ -2361,7 +2361,12 @@ unsafe fn window_tree_key(
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                     Some(Box::new(move |c, s, key| unsafe {
-                        window_tree_kill_current_callback(c, data, s, key)
+                        window_tree_kill_current_callback(
+                            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                            data,
+                            s,
+                            key,
+                        )
                     })),
                     Some(Box::new(move || unsafe { window_tree_command_free(data) })),
                 );
@@ -2380,7 +2385,12 @@ unsafe fn window_tree_key(
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                     Some(Box::new(move |c, s, key| unsafe {
-                        window_tree_kill_tagged_callback(c, data, s, key)
+                        window_tree_kill_tagged_callback(
+                            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                            data,
+                            s,
+                            key,
+                        )
                     })),
                     Some(Box::new(move || unsafe { window_tree_command_free(data) })),
                 );
@@ -2402,7 +2412,12 @@ unsafe fn window_tree_key(
                 PROMPT_TYPE_COMMAND,
                 PROMPT_NOFORMAT,
                 Some(Box::new(move |c, s, key| unsafe {
-                    window_tree_command_callback(c, data, s, key)
+                    window_tree_command_callback(
+                        c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                        data,
+                        s,
+                        key,
+                    )
                 })),
                 Some(Box::new(move || unsafe { window_tree_command_free(data) })),
             );

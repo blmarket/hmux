@@ -3052,7 +3052,12 @@ fn window_customize_prompt_input_cb<T: 'static>(
     data: *mut T,
 ) -> mode_tree_prompt_input_cb {
     Some(Box::new(move |c, s, key| unsafe {
-        callback(c, data, s, key)
+        callback(
+            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+            data,
+            s,
+            key,
+        )
     }))
 }
 fn window_customize_prompt_free_cb<T: 'static>(

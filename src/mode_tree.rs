@@ -1467,7 +1467,7 @@ unsafe fn mode_tree_prompt_input_callback(
     mut key: prompt_key_result,
 ) -> prompt_result {
     if let Some(inputcb) = (*mtp).inputcb.as_mut() {
-        return inputcb((*mtp).c, s, key);
+        return inputcb(std::ptr::NonNull::new((*mtp).c), s, key);
     }
     return PROMPT_CLOSE;
 }
@@ -2312,7 +2312,12 @@ pub unsafe extern "C" fn mode_tree_key(
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
                 Some(Box::new(move |c, s, key| unsafe {
-                    mode_tree_search_callback(c, mtd, s, key)
+                    mode_tree_search_callback(
+                        c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                        mtd,
+                        s,
+                        key,
+                    )
                 })),
                 None,
             );
@@ -2339,7 +2344,12 @@ pub unsafe extern "C" fn mode_tree_key(
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
                 Some(Box::new(move |c, s, key| unsafe {
-                    mode_tree_filter_callback(c, mtd, s, key)
+                    mode_tree_filter_callback(
+                        c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                        mtd,
+                        s,
+                        key,
+                    )
                 })),
                 None,
             );

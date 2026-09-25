@@ -122,7 +122,11 @@ unsafe fn cmd_confirm_before_exec(
     };
     let cdata = Box::into_raw(cdata);
     let inputcb: crate::src::shared::status::status_prompt_input_cb = Some(Box::new(move |c, s, _key| unsafe {
-        cmd_confirm_before_callback(c, cdata, s)
+        cmd_confirm_before_callback(
+            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+            cdata,
+            s,
+        )
     }));
     let freecb: prompt_free_cb = Some(Box::new(move || unsafe { cmd_confirm_before_free(cdata) }));
     status_prompt_set(

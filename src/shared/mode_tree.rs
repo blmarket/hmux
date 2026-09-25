@@ -115,7 +115,13 @@ pub struct mode_tree_prompt {
 }
 
 pub type mode_tree_prompt_input_cb = Option<
-    Box<dyn FnMut(*mut client, Option<&std::ffi::CStr>, prompt_key_result) -> prompt_result>,
+    Box<
+        dyn FnMut(
+            Option<std::ptr::NonNull<client>>,
+            Option<&std::ffi::CStr>,
+            prompt_key_result,
+        ) -> prompt_result,
+    >,
 >;
 
 #[derive(Copy, Clone)]

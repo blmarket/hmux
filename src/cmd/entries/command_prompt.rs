@@ -226,7 +226,12 @@ unsafe fn cmd_command_prompt_exec(
     }
     let (prompt_ptr, input_ptr) = (&(*cdata).prompts)[0].pointers();
     let inputcb: crate::src::shared::status::status_prompt_input_cb = Some(Box::new(move |c, s, key| unsafe {
-        cmd_command_prompt_callback(c, cdata, s, key)
+        cmd_command_prompt_callback(
+            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+            cdata,
+            s,
+            key,
+        )
     }));
     let freecb: prompt_free_cb = Some(Box::new(move || unsafe { cmd_command_prompt_free(cdata) }));
     if pane != 0 {

@@ -755,7 +755,9 @@ pub unsafe fn status_prompt_set(
     pd.type_0 = prompt_type;
     pd.flags = flags;
     if let Some(mut inputcb) = inputcb.take() {
-        pd.inputcb = Some(Box::new(move |s, key| inputcb(c, s, key)));
+        pd.inputcb = Some(Box::new(move |s, key| {
+            inputcb(std::ptr::NonNull::new(c), s, key)
+        }));
     }
     pd.freecb = freecb.take();
     (*c).prompt = prompt_create(&raw mut pd);
