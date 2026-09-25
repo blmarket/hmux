@@ -132,18 +132,17 @@ unsafe extern "C" fn fuzzy_align(mut align: style_align) -> style_align {
 }
 unsafe fn fuzzy_add(
     cs: &mut Vec<fuzzy_char>,
-    mut a: style_align,
-    mut ud: *const utf8_data,
-    mut widths: *mut u_int,
+    a: style_align,
+    ud: &utf8_data,
+    widths: &mut [u_int; 5],
 ) {
     cs.push(fuzzy_char {
         align: a,
         ud: *ud,
-        width: (*ud).width as u_int,
-        offset: *widths.offset(a as isize),
+        width: ud.width as u_int,
+        offset: widths[a as usize],
     });
-    let ref mut fresh4 = *widths.offset(a as isize);
-    *fresh4 = (*fresh4).wrapping_add((*ud).width as u_int);
+    widths[a as usize] = widths[a as usize].wrapping_add(ud.width as u_int);
 }
 unsafe extern "C" fn fuzzy_decode_one(
     mut cp: *const ::core::ffi::c_char,
@@ -174,7 +173,7 @@ unsafe extern "C" fn fuzzy_decode_one(
 }
 unsafe fn fuzzy_scan(
     mut text: *const ::core::ffi::c_char,
-    mut widths: *mut u_int,
+    widths: &mut [u_int; 5],
 ) -> Vec<fuzzy_char> {
     let mut cs = Vec::new();
     let mut n: u_int = 0;
@@ -231,13 +230,7 @@ unsafe fn fuzzy_scan(
         size: 0,
         width: 0,
     };
-    memset(
-        widths as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        (::core::mem::size_of::<u_int>() as size_t).wrapping_mul(
-            (STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int + 1 as ::core::ffi::c_int) as size_t,
-        ),
-    );
+    widths.fill(0);
     style_set(&raw mut sy, &raw const grid_default_cell);
     utf8_set(&raw mut hash, '#' as i32 as u_char);
     utf8_set(&raw mut bracket, '[' as i32 as u_char);
@@ -255,18 +248,18 @@ unsafe fn fuzzy_scan(
                 };
                 i = 0 as u_int;
                 while i < leading {
-                    fuzzy_add(&mut cs, current, &raw mut hash, widths);
+                    fuzzy_add(&mut cs, current, &hash, widths);
                     i = i.wrapping_add(1);
                 }
                 cp = cp.offset(n as isize);
             } else {
                 i = 0 as u_int;
                 while i < n.wrapping_div(2 as u_int) {
-                    fuzzy_add(&mut cs, current, &raw mut hash, widths);
+                    fuzzy_add(&mut cs, current, &hash, widths);
                     i = i.wrapping_add(1);
                 }
                 if n.wrapping_rem(2 as u_int) == 0 as u_int {
-                    fuzzy_add(&mut cs, current, &raw mut bracket, widths);
+                    fuzzy_add(&mut cs, current, &bracket, widths);
                     cp = cp.offset(n.wrapping_add(1 as u_int) as isize);
                 } else {
                     end = format_skip(
@@ -302,7 +295,7 @@ unsafe fn fuzzy_scan(
             {
                 continue;
             }
-            fuzzy_add(&mut cs, current, &raw mut ud, widths);
+            fuzzy_add(&mut cs, current, &ud, widths);
         }
     }
     return cs;
@@ -784,7 +777,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
             cp = cp.offset(1);
         }
     }
-    cs = fuzzy_scan(text.as_ptr(), &raw mut widths as *mut u_int);
+    cs = fuzzy_scan(text.as_ptr(), &mut widths);
     ncs = cs.len() as u_int;
     matched = vec![0; ncs.max(1) as usize];
     best = vec![0; ncs.max(1) as usize];
