@@ -86,15 +86,15 @@ pub const EVENT_PAYLOAD_INT: event_payload_type = 2;
 pub const EVENT_PAYLOAD_TIME: event_payload_type = 1;
 pub const EVENT_PAYLOAD_STRING: event_payload_type = 0;
 
-unsafe fn event_payload_name_key(name: *const ::core::ffi::c_char) -> Vec<u8> {
-    std::ffi::CStr::from_ptr(name).to_bytes().to_vec()
+fn event_payload_name_key(name: &CStr) -> Vec<u8> {
+    name.to_bytes().to_vec()
 }
 
 unsafe fn event_payload_tree_find(
     head: *mut event_payload_tree,
-    name: *const ::core::ffi::c_char,
+    name: &CStr,
 ) -> *mut event_payload_item {
-    if head.is_null() || (*head).entries.is_null() || name.is_null() {
+    if head.is_null() || (*head).entries.is_null() {
         return ::core::ptr::null_mut::<event_payload_item>();
     }
     (*(*head).entries)
@@ -116,7 +116,12 @@ unsafe fn event_payload_tree_insert(
     }
     match (*(*head).entries)
         .entries
-        .entry(event_payload_name_key(((*elm).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())))
+        .entry(event_payload_name_key(
+            (*elm)
+                .name
+                .as_deref()
+                .expect("event payload item has a name"),
+        ))
     {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -138,7 +143,12 @@ unsafe fn event_payload_tree_remove(
     }
     let removed = (*(*head).entries)
         .entries
-        .remove(&event_payload_name_key(((*elm).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())));
+        .remove(&event_payload_name_key(
+            (*elm)
+                .name
+                .as_deref()
+                .expect("event payload item has a name"),
+        ));
     if let Some(removed) = removed {
         (*removed).entry.rbe_parent = ::core::ptr::null_mut::<event_payload_item>();
         removed
@@ -174,7 +184,12 @@ unsafe fn event_payload_tree_next(elm: *mut event_payload_item) -> *mut event_pa
     (*(*head).entries)
         .entries
         .range((
-            std::ops::Bound::Excluded(event_payload_name_key(((*elm).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))),
+            std::ops::Bound::Excluded(event_payload_name_key(
+                (*elm)
+                    .name
+                    .as_deref()
+                    .expect("event payload item has a name"),
+            )),
             std::ops::Bound::Unbounded,
         ))
         .next()
@@ -186,7 +201,10 @@ unsafe extern "C" fn event_payload_find(
     ep: *mut event_payload,
     name: *const ::core::ffi::c_char,
 ) -> *mut event_payload_item {
-    event_payload_tree_find(&raw mut (*ep).items, name)
+    if name.is_null() {
+        return ::core::ptr::null_mut::<event_payload_item>();
+    }
+    event_payload_tree_find(&raw mut (*ep).items, CStr::from_ptr(name))
 }
 unsafe extern "C" fn event_payload_free_target(mut ep: *mut event_payload) {
     let mut target: *mut cmd_find_state = &raw mut (*ep).target;
@@ -1084,10 +1102,14 @@ mod tests {
                 vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
             );
             assert_eq!(
-                event_payload_tree_find(&raw mut tree, names[2].as_ptr()),
+                event_payload_tree_find(&raw mut tree, names[2].as_c_str()),
                 a_high
             );
-            assert!(event_payload_tree_find(&raw mut tree, b"missing\0".as_ptr().cast()).is_null());
+            assert!(event_payload_tree_find(
+                &raw mut tree,
+                CStr::from_bytes_with_nul(b"missing\0").unwrap()
+            )
+            .is_null());
 
             let mut current = event_payload_tree_minmax(&raw mut tree, -1);
             assert_eq!(current, a);
@@ -1101,7 +1123,7 @@ mod tests {
             assert_eq!(event_payload_tree_minmax(&raw mut tree, 1), z);
 
             assert_eq!(event_payload_tree_remove(&raw mut tree, a_high), a_high);
-            assert!(event_payload_tree_find(&raw mut tree, names[2].as_ptr()).is_null());
+            assert!(event_payload_tree_find(&raw mut tree, names[2].as_c_str()).is_null());
 
             let mut lazy_tree = event_payload_tree {
                 entries: ::core::ptr::null_mut::<event_payload_tree_storage>(),
