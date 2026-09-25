@@ -212,8 +212,8 @@ impl input_ctx {
     }
 }
 
-unsafe fn input_clear_params(ictx: *mut input_ctx) {
-    for param in &mut (&mut (*ictx).param_list)[..(*ictx).param_list_len as usize] {
+unsafe fn input_clear_params(ictx: &mut input_ctx) {
+    for param in &mut ictx.param_list[..ictx.param_list_len as usize] {
         *param = input_param::Missing;
     }
 }
@@ -251,7 +251,7 @@ mod input_buffer_ownership_tests {
                 },
                 c"48:5:25"
             );
-            input_clear_params(ictx);
+            input_clear_params(&mut *ictx);
             drop(Box::from_raw(ictx));
         }
     }
@@ -2489,7 +2489,7 @@ pub unsafe extern "C" fn input_init(
 }
 #[no_mangle]
 pub unsafe extern "C" fn input_free(mut ictx: *mut input_ctx) {
-    input_clear_params(ictx);
+    input_clear_params(&mut *ictx);
     loop {
         let ir = input_ctx_requests(ictx)
             .front_mut()
@@ -2667,7 +2667,7 @@ unsafe extern "C" fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ip: *mut input_param = ::core::ptr::null_mut::<input_param>();
     let mut i: u_int = 0;
-    input_clear_params(ictx);
+    input_clear_params(&mut *ictx);
     (*ictx).param_list_len = 0 as u_int;
     if (*ictx).param_len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
