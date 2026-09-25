@@ -239,9 +239,9 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
     line.push(b'\n');
     CString::new(line).expect("cell fields contain no NUL")
 }
-unsafe fn cmd_capture_pane_grid(wp: *mut window_pane) -> Vec<u8> {
-    let mut s: *mut screen = &raw mut (*wp).base;
-    let mut gd: *mut grid = (*s).grid;
+unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
+    let s = &wp.base;
+    let mut gd: *mut grid = s.grid;
     let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
     let mut od: *mut osc133_data = ::core::ptr::null_mut::<osc133_data>();
     let mut buf = Vec::new();
@@ -306,7 +306,7 @@ unsafe fn cmd_capture_pane_grid(wp: *mut window_pane) -> Vec<u8> {
         cmd_capture_pane_append(&mut buf, &row);
         xx = 0 as u_int;
         while xx < (*gd).sx {
-            let cell = cmd_capture_pane_cell(&*s, xx, yy);
+            let cell = cmd_capture_pane_cell(s, xx, yy);
             cmd_capture_pane_append(&mut buf, cell.as_bytes());
             xx = xx.wrapping_add(1);
         }
@@ -671,7 +671,7 @@ unsafe extern "C" fn cmd_capture_pane_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {
-        buf = cmd_capture_pane_grid(wp);
+        buf = cmd_capture_pane_grid(&*wp);
     } else if args_has(args, 'P' as i32 as u_char) != 0 && args_has(args, 'H' as i32 as u_char) == 0
     {
         buf = cmd_capture_pane_pending(args, wp);
