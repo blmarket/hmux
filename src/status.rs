@@ -503,8 +503,8 @@ pub unsafe extern "C" fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int
     );
     return (force != 0 || changed != 0) as ::core::ffi::c_int;
 }
-unsafe fn status_message_escape(s: *const ::core::ffi::c_char) -> CString {
-    let source = CStr::from_ptr(s).to_bytes();
+fn status_message_escape(s: &CStr) -> CString {
+    let source = s.to_bytes();
     let extra = source.iter().filter(|&&byte| byte == b'#').count();
     let mut escaped = Vec::with_capacity(source.len() + extra);
     for &byte in source {
@@ -518,15 +518,14 @@ unsafe fn status_message_escape(s: *const ::core::ffi::c_char) -> CString {
 
 #[cfg(test)]
 mod status_message_escape_tests {
-    use super::status_message_escape;
+    use super::{status_message_escape, CString};
 
     #[test]
     fn doubles_hash_without_changing_other_bytes() {
-        unsafe {
-            let escaped = status_message_escape(b"#\xff##tail\0".as_ptr().cast());
-            assert_eq!(escaped.as_bytes(), b"##\xff####tail");
-            assert!(status_message_escape(c"".as_ptr()).as_bytes().is_empty());
-        }
+        let input = CString::new(b"#\xff##tail".as_slice()).unwrap();
+        let escaped = status_message_escape(input.as_c_str());
+        assert_eq!(escaped.as_bytes(), b"##\xff####tail");
+        assert!(status_message_escape(c"").as_bytes().is_empty());
     }
 }
 #[no_mangle]
@@ -739,9 +738,9 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     );
     if (*c).message_ignore_styles != 0 {
         let msg = status_message_escape(
-            ((*c).message_string)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            (*c).message_string
+                .as_deref()
+                .unwrap_or(c""),
         );
         format_add(
             ft,
