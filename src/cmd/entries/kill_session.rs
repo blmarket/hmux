@@ -122,11 +122,11 @@ unsafe extern "C" fn cmd_kill_session_exec(
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'C' as i32 as u_char) != 0 {
-        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+        wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
             (*(*wl).window).flags &= !WINDOW_ALERTFLAGS;
             (*wl).flags &= !WINLINK_ALERTFLAGS;
-            wl = winlinks_next(wl);
+            wl = winlinks_next(&*wl);
         }
         server_redraw_session(s);
     } else if args_has(args, 'a' as i32 as u_char) != 0 {

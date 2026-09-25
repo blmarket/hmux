@@ -268,27 +268,27 @@ pub unsafe fn windows_prev(elm: &window) -> *mut window {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
-pub unsafe fn winlinks_find(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn winlinks_find(head: &winlinks, elm: &winlink) -> *mut winlink {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).idx;
+    let key = elm.idx;
     map.get(&key)
         .map_or(std::ptr::null_mut(), |owner| owner.as_ptr() as *mut winlink)
 }
-pub unsafe fn winlinks_nfind(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> *mut winlink {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).idx;
+    let key = elm.idx;
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, owner)| {
             owner.as_ptr() as *mut winlink
         })
 }
-pub unsafe fn winlinks_minmax(head: *mut winlinks, direction: ::core::ffi::c_int) -> *mut winlink {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> *mut winlink {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -300,22 +300,22 @@ pub unsafe fn winlinks_minmax(head: *mut winlinks, direction: ::core::ffi::c_int
         owner.as_ptr() as *mut winlink
     })
 }
-pub unsafe fn winlinks_next(elm: *mut winlink) -> *mut winlink {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn winlinks_next(elm: &winlink) -> *mut winlink {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).idx;
+    let key = elm.idx;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, owner)| {
             owner.as_ptr() as *mut winlink
         })
 }
-pub unsafe fn winlinks_prev(elm: *mut winlink) -> *mut winlink {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn winlinks_prev(elm: &winlink) -> *mut winlink {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = (*elm).idx;
+    let key = elm.idx;
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, owner)| {
@@ -730,12 +730,12 @@ pub unsafe extern "C" fn winlink_find_by_window(
     mut w: *mut window,
 ) -> *mut winlink {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_minmax(wwl, RB_NEGINF);
+    wl = winlinks_minmax(&*wwl, RB_NEGINF);
     while !wl.is_null() {
         if (*wl).window == w {
             return wl;
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     return ::core::ptr::null_mut::<winlink>();
 }
@@ -757,7 +757,7 @@ pub unsafe extern "C" fn winlink_find_by_index(
         fatalx(b"bad index\0" as *const u8 as *const ::core::ffi::c_char);
     }
     wl.idx = idx;
-    return winlinks_find(wwl, &raw mut wl);
+    return winlinks_find(&*wwl, &wl);
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_find_by_window_id(
@@ -765,12 +765,12 @@ pub unsafe extern "C" fn winlink_find_by_window_id(
     mut id: u_int,
 ) -> *mut winlink {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_minmax(wwl, RB_NEGINF);
+    wl = winlinks_minmax(&*wwl, RB_NEGINF);
     while !wl.is_null() {
         if (*(*wl).window).id == id {
             return wl;
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     return ::core::ptr::null_mut::<winlink>();
 }
@@ -800,10 +800,10 @@ pub unsafe extern "C" fn winlink_count(mut wwl: *mut winlinks) -> u_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut n: u_int = 0;
     n = 0 as u_int;
-    wl = winlinks_minmax(wwl, RB_NEGINF);
+    wl = winlinks_minmax(&*wwl, RB_NEGINF);
     while !wl.is_null() {
         n = n.wrapping_add(1);
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     return n;
 }
@@ -889,11 +889,11 @@ pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut win
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_next(mut wl: *mut winlink) -> *mut winlink {
-    return winlinks_next(wl);
+    return winlinks_next(&*wl);
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_previous(mut wl: *mut winlink) -> *mut winlink {
-    return winlinks_prev(wl);
+    return winlinks_prev(&*wl);
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_next_by_number(
@@ -902,9 +902,9 @@ pub unsafe extern "C" fn winlink_next_by_number(
     mut n: ::core::ffi::c_int,
 ) -> *mut winlink {
     while n > 0 as ::core::ffi::c_int {
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
         if wl.is_null() {
-            wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+            wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         }
         n -= 1;
     }
@@ -917,9 +917,9 @@ pub unsafe extern "C" fn winlink_previous_by_number(
     mut n: ::core::ffi::c_int,
 ) -> *mut winlink {
     while n > 0 as ::core::ffi::c_int {
-        wl = winlinks_prev(wl);
+        wl = winlinks_prev(&*wl);
         if wl.is_null() {
-            wl = winlinks_minmax(&raw mut (*s).windows, RB_INF);
+            wl = winlinks_minmax(&(*s).windows, RB_INF);
         }
         n -= 1;
     }

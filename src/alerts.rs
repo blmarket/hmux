@@ -163,10 +163,10 @@ unsafe extern "C" fn alerts_check_all(mut w: *mut window) -> ::core::ffi::c_int 
 #[no_mangle]
 pub unsafe extern "C" fn alerts_check_session(mut s: *mut session) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         alerts_check_all((*wl).window);
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
 }
 unsafe extern "C" fn alerts_enabled(

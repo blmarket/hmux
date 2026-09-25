@@ -83,7 +83,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
         return None;
     }
     *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
             if !alerted & (*wl).flags & WINLINK_ACTIVITY != 0 {
@@ -111,7 +111,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
                 alerted |= WINLINK_SILENCE;
             }
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     return Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned());
 }
@@ -124,7 +124,7 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
         return None;
     }
     *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
             xsnprintf(
@@ -167,7 +167,7 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
                 );
             }
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     return Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned());
 }
@@ -2369,7 +2369,7 @@ unsafe fn format_cb_session_active(mut ft: *mut format_tree) -> Option<CString> 
 unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
-        wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
+        wl = winlinks_minmax(&(*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*(*ft).wl).flags & WINLINK_ACTIVITY != 0 {
                 return Some(c"1".to_owned());
@@ -2382,7 +2382,7 @@ unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CS
 unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
-        wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
+        wl = winlinks_minmax(&(*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*wl).flags & WINLINK_BELL != 0 {
                 return Some(c"1".to_owned());
@@ -2395,7 +2395,7 @@ unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CStrin
 unsafe fn format_cb_session_silence_flag(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
-        wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
+        wl = winlinks_minmax(&(*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*(*ft).wl).flags & WINLINK_SILENCE != 0 {
                 return Some(c"1".to_owned());
@@ -2559,7 +2559,7 @@ unsafe fn format_cb_active_window_index(mut ft: *mut format_tree) -> Option<CStr
 unsafe fn format_cb_last_window_index(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
-        wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_INF);
+        wl = winlinks_minmax(&(*(*ft).s).windows, RB_INF);
         return Some(
             CString::new(format!("{}", ((*wl).idx) as u32))
                 .expect("formatted numbers contain no NUL"),
@@ -2634,7 +2634,7 @@ unsafe fn format_cb_window_cell_width(mut ft: *mut format_tree) -> Option<CStrin
 }
 unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
-        if (*ft).wl == winlinks_minmax(&raw mut (*(*(*ft).wl).session).windows, RB_INF) {
+        if (*ft).wl == winlinks_minmax(&(*(*(*ft).wl).session).windows, RB_INF) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2722,7 +2722,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
         s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
         while !s.is_null() {
-            wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+            wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
             while !wl.is_null() {
                 if (*wl).window == (*(*ft).wl).window {
                     if found != 0 {
@@ -2730,7 +2730,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
                     }
                     found = 1 as ::core::ffi::c_int;
                 }
-                wl = winlinks_next(wl);
+                wl = winlinks_next(&*wl);
             }
             s = sessions_next(&*s);
         }
@@ -2870,7 +2870,7 @@ unsafe fn format_cb_window_silence_flag(mut ft: *mut format_tree) -> Option<CStr
 }
 unsafe fn format_cb_window_start_flag(mut ft: *mut format_tree) -> Option<CString> {
     if !(*ft).wl.is_null() {
-        if (*ft).wl == winlinks_minmax(&raw mut (*(*(*ft).wl).session).windows, RB_NEGINF) {
+        if (*ft).wl == winlinks_minmax(&(*(*(*ft).wl).session).windows, RB_NEGINF) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

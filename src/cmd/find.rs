@@ -376,13 +376,13 @@ unsafe extern "C" fn cmd_find_best_winlink_with_window(
     if !(*(*fs).s).curw.is_null() && (*(*(*fs).s).curw).window == (*fs).w {
         wl = (*(*fs).s).curw;
     } else {
-        wl_loop = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
+        wl_loop = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
         while !wl_loop.is_null() {
             if (*wl_loop).window == (*fs).w {
                 wl = wl_loop;
                 break;
             } else {
-                wl_loop = winlinks_next(wl_loop);
+                wl_loop = winlinks_next(&*wl_loop);
             }
         }
     }
@@ -605,7 +605,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         } else if strcmp(window, b"^\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
+            (*fs).wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
             if (*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -615,7 +615,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         } else if strcmp(window, b"$\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_INF);
+            (*fs).wl = winlinks_minmax(&(*(*fs).s).windows, RB_INF);
             if (*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -647,7 +647,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         }
     }
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if strcmp(window, (*(*wl).window).name) == 0 as ::core::ffi::c_int {
             if !(*fs).wl.is_null() {
@@ -655,7 +655,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
             }
             (*fs).wl = wl;
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     if !(*fs).wl.is_null() {
         (*fs).idx = (*(*fs).wl).idx;
@@ -666,7 +666,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if strncmp(window, (*(*wl).window).name, strlen(window)) == 0 as ::core::ffi::c_int {
             if !(*fs).wl.is_null() {
@@ -674,7 +674,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
             }
             (*fs).wl = wl;
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     if !(*fs).wl.is_null() {
         (*fs).idx = (*(*fs).wl).idx;
@@ -682,7 +682,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         return 0 as ::core::ffi::c_int;
     }
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if fnmatch(window, (*(*wl).window).name, 0 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int
         {
@@ -691,7 +691,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
             }
             (*fs).wl = wl;
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     if !(*fs).wl.is_null() {
         (*fs).idx = (*(*fs).wl).idx;
@@ -898,12 +898,12 @@ pub unsafe extern "C" fn cmd_find_valid_state(mut fs: *mut cmd_find_state) -> ::
     if session_alive((*fs).s) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if (*wl).window == (*fs).w && wl == (*fs).wl {
             break;
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     if wl.is_null() {
         return 0 as ::core::ffi::c_int;

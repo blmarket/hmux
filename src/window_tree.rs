@@ -849,13 +849,13 @@ unsafe extern "C" fn window_tree_draw_session(
         visible = total;
     }
     current = 0 as u_int;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         if wl == (*s).curw {
             break;
         }
         current = current.wrapping_add(1);
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     if current < visible {
         start = 0 as u_int;
@@ -967,7 +967,7 @@ unsafe extern "C" fn window_tree_draw_session(
     (*data).each = each;
     loop_0 = 0 as u_int;
     i = loop_0;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         if loop_0 == end {
             break;
@@ -1058,7 +1058,7 @@ unsafe extern "C" fn window_tree_draw_session(
             loop_0 = loop_0.wrapping_add(1);
             i = i.wrapping_add(1);
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
 }
 unsafe extern "C" fn window_tree_draw_window(
@@ -2273,13 +2273,13 @@ unsafe extern "C" fn window_tree_mouse(
         }
         mode_tree_expand_current((*data).data);
         loop_0 = 0 as u_int;
-        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+        wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
             if loop_0 == (*data).start.wrapping_add(x) {
                 break;
             }
             loop_0 = loop_0.wrapping_add(1);
-            wl = winlinks_next(wl);
+            wl = winlinks_next(&*wl);
         }
         if !wl.is_null() {
             mode_tree_set_current((*data).data, wl as uint64_t);

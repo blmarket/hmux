@@ -537,7 +537,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     if (*ms).generation == 0 as u_int {
         (*ms).generation = 1 as u_int;
     }
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         wp = window_pane_first((*wl).window);
         while !wp.is_null() {
@@ -557,7 +557,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
             format_free(ft);
             wp = window_pane_next(wp);
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
     while !me.is_null() && {
@@ -583,7 +583,7 @@ unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     if (*ms).generation == 0 as u_int {
         (*ms).generation = 1 as u_int;
     }
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
         me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
@@ -599,7 +599,7 @@ unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
             me = me1;
         }
         format_free(ft);
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
     while !me.is_null() && {

@@ -6,7 +6,7 @@ use refbox::BorrowError;
 fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
     unsafe {
         let mut head = winlinks { storage: None };
-        assert!(winlinks_minmax(&mut head, -1).is_null());
+        assert!(winlinks_minmax(&head, -1).is_null());
         let ids = [i32::MAX, 0, 42, 7];
         let nodes: Vec<_> = ids.iter().map(|&id| winlink_add(&mut head, id)).collect();
         // Entry-only traversal must survive a moved tree head.
@@ -18,32 +18,32 @@ fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
         assert!(weak.is_alive());
         let mut probe: winlink = std::mem::zeroed();
         probe.idx = 42;
-        assert_eq!(winlinks_find(&mut *head, &mut probe), existing);
-        assert_eq!(winlinks_nfind(&mut *head, &mut probe), existing);
+        assert_eq!(winlinks_find(&*head, &probe), existing);
+        assert_eq!(winlinks_nfind(&*head, &probe), existing);
         probe.idx = 8;
-        assert!(winlinks_find(&mut *head, &mut probe).is_null());
-        assert_eq!(winlinks_nfind(&mut *head, &mut probe), existing);
-        let mut node = winlinks_minmax(&mut *head, -1);
+        assert!(winlinks_find(&*head, &probe).is_null());
+        assert_eq!(winlinks_nfind(&*head, &probe), existing);
+        let mut node = winlinks_minmax(&*head, -1);
         for id in [0, 7, 42, i32::MAX] {
             assert_eq!((*node).idx, id);
-            node = winlinks_next(node);
+            node = winlinks_next(&*node);
         }
         assert!(node.is_null());
-        node = winlinks_minmax(&mut *head, 1);
+        node = winlinks_minmax(&*head, 1);
         for id in [i32::MAX, 42, 7, 0] {
             assert_eq!((*node).idx, id);
-            node = winlinks_prev(node);
+            node = winlinks_prev(&*node);
         }
         assert!(node.is_null());
-        node = winlinks_minmax(&mut *head, -1);
+        node = winlinks_minmax(&*head, -1);
         while !node.is_null() {
-            let next = winlinks_next(node);
+            let next = winlinks_next(&*node);
             winlink_remove(&mut *head, node);
             node = next;
         }
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert!(head.storage.is_none());
-        assert!(winlinks_nfind(&mut *head, &mut probe).is_null());
+        assert!(winlinks_nfind(&*head, &probe).is_null());
         let replacement = winlink_add(&mut *head, 42);
         assert!(!replacement.is_null());
         winlink_remove(&mut *head, replacement);
@@ -67,10 +67,10 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
             assert!(!winlink_add(&mut old, idx).is_null());
         }
         assert_eq!(weak.as_ptr(), first as *const winlink);
-        assert_eq!(winlinks_next(first), winlink_find_by_index(&mut old, 6));
-        assert!(winlinks_next(replacement).is_null());
+        assert_eq!(winlinks_next(&*first), winlink_find_by_index(&mut old, 6));
+        assert!(winlinks_next(&*replacement).is_null());
         while old.storage.is_some() {
-            let node = winlinks_minmax(&mut old, -1);
+            let node = winlinks_minmax(&old, -1);
             winlink_remove(&mut old, node);
         }
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));

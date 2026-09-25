@@ -141,10 +141,10 @@ unsafe extern "C" fn cmd_list_panes_session(
     mut type_0: ::core::ffi::c_int,
 ) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         cmd_list_panes_window(self_0, s, wl, item, type_0);
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
 }
 unsafe extern "C" fn cmd_list_panes_window(

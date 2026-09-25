@@ -213,7 +213,7 @@ unsafe extern "C" fn cmd_new_window_exec(
                 ::core::ptr::null_mut::<winlink>(),
                 ::core::ptr::null_mut::<window_pane>(),
             );
-            wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+            wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
             while !wl.is_null() {
                 if !(strcmp((*(*wl).window).name, expanded.as_ptr()) != 0 as ::core::ffi::c_int) {
                     if new_wl.is_null() {
@@ -228,7 +228,7 @@ unsafe extern "C" fn cmd_new_window_exec(
                         return CMD_RETURN_ERROR;
                     }
                 }
-                wl = winlinks_next(wl);
+                wl = winlinks_next(&*wl);
             }
         }
     }

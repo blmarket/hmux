@@ -692,7 +692,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                                 session_select(
                                                                     s,
                                                                     (*winlinks_minmax(
-                                                                        &raw mut (*s).windows,
+                                                                        &(*s).windows,
                                                                         RB_NEGINF,
                                                                     ))
                                                                     .idx,

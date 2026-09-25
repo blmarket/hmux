@@ -698,10 +698,10 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winli
     let mut links = Vec::new();
     let mut s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
-        let mut wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+        let mut wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
             links.push(wl);
-            wl = winlinks_next(wl);
+            wl = winlinks_next(&*wl);
         }
         s = sessions_next(&*s);
     }
@@ -725,10 +725,10 @@ pub unsafe fn sort_get_winlinks_session(
     sort_crit: *mut sort_criteria,
 ) -> Vec<*mut winlink> {
     let mut l = Vec::new();
-    let mut wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    let mut wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while !wl.is_null() {
         l.push(wl);
-        wl = winlinks_next(wl);
+        wl = winlinks_next(&*wl);
     }
     sort_qsort(
         l.as_mut_ptr() as *mut ::core::ffi::c_void,
