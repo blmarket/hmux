@@ -122,23 +122,21 @@ fn start(state: &Rc<EventState>) -> std::io::Result<()> {
     *state.task.borrow_mut() = Some(task);
     Ok(())
 }
-fn configure(ev: *mut event, interval: Option<Duration>) -> Rc<EventState> {
-    unsafe {
-        Rc::new(EventState {
-            key: ev as usize,
-            fd: (*ev).fd,
-            flags: (*ev).flags,
-            callback: (*ev).callback,
-            arg: (*ev).arg,
-            deadline: Cell::new(interval.map(|d| Instant::now() + d)),
-            interval,
-            active: Cell::new(0),
-            live: Cell::new(true),
-            task: RefCell::new(None),
-            activation: RefCell::new(None),
-            owned: RefCell::new(None),
-        })
-    }
+fn configure(ev: &event, interval: Option<Duration>) -> Rc<EventState> {
+    Rc::new(EventState {
+        key: ev as *const event as usize,
+        fd: ev.fd,
+        flags: ev.flags,
+        callback: ev.callback,
+        arg: ev.arg,
+        deadline: Cell::new(interval.map(|d| Instant::now() + d)),
+        interval,
+        active: Cell::new(0),
+        live: Cell::new(true),
+        task: RefCell::new(None),
+        activation: RefCell::new(None),
+        owned: RefCell::new(None),
+    })
 }
 fn delay(tv: &timeval) -> Duration {
     Duration::from_secs(tv.tv_sec.max(0) as u64)
@@ -213,7 +211,7 @@ pub unsafe fn event_set(
 pub unsafe fn event_add(ev: *mut event, timeout: *const timeval) -> c_int {
     ensure_runtime();
     event_del(ev);
-    let state = configure(ev, timeout.as_ref().map(delay));
+    let state = configure(&*ev, timeout.as_ref().map(delay));
     EVENTS.with(|e| e.borrow_mut().insert(ev as usize, state.clone()));
     if let Err(error) = start(&state) {
         remove(ev as usize);
@@ -241,7 +239,7 @@ pub unsafe fn event_active(ev: *mut event, flags: c_int, _: c_short) {
     ensure_runtime();
     let existing = EVENTS.with(|e| e.borrow().get(&(ev as usize)).cloned());
     let state = existing.unwrap_or_else(|| {
-        let s = configure(ev, None);
+        let s = configure(&*ev, None);
         EVENTS.with(|e| e.borrow_mut().insert(ev as usize, s.clone()));
         s
     });
