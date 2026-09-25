@@ -318,7 +318,6 @@ pub struct tty_code {
 }
 
 #[derive(Default)]
-#[repr(C)]
 pub struct tty {
     pub client: *mut client,
     pub start_timer: event,
@@ -366,12 +365,15 @@ pub struct tty {
     pub mouse_scrolling_flag: ::core::ffi::c_int,
     pub mouse_slider_mpos: ::core::ffi::c_int,
     pub mouse_last_pane: ::core::ffi::c_int,
-    pub mouse_drag_update: Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>,
-    pub mouse_drag_release: Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>,
+    pub mouse_drag_update: mouse_drag_update_cb,
+    pub mouse_drag_release: mouse_drag_release_cb,
     pub key_timer: event,
     /// Root of Box-owned nodes, invalid after rebuild or tty_close.
     pub key_tree: *mut tty_key,
 }
+
+pub type mouse_drag_update_cb = Option<Box<dyn FnMut(&mut mouse_event)>>;
+pub type mouse_drag_release_cb = Option<Box<dyn FnOnce(&mut mouse_event)>>;
 
 impl tty {
     pub fn empty() -> Self {

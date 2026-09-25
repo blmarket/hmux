@@ -9583,12 +9583,14 @@ pub unsafe extern "C" fn window_copy_start_drag(mut c: *mut client, mut m: *mut 
     {
         return;
     }
-    (*c).tty.mouse_drag_update =
-        Some(window_copy_drag_update as unsafe extern "C" fn(*mut client, *mut mouse_event) -> ())
-            as Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>;
-    (*c).tty.mouse_drag_release =
-        Some(window_copy_drag_release as unsafe extern "C" fn(*mut client, *mut mouse_event) -> ())
-            as Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>;
+    let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
+    (*c).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
+        window_copy_drag_update(drag_client.as_ptr(), m as *mut mouse_event)
+    }));
+    let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
+    (*c).tty.mouse_drag_release = Some(Box::new(move |m| unsafe {
+        window_copy_drag_release(drag_client.as_ptr(), m as *mut mouse_event)
+    }));
     data = (*wme).data as *mut window_copy_mode_data;
     on_end = 0 as ::core::ffi::c_int;
     on_start = on_end;
@@ -9644,7 +9646,7 @@ pub unsafe extern "C" fn window_copy_start_drag(mut c: *mut client, mut m: *mut 
     window_copy_redraw_screen(wme);
     window_copy_drag_update(c, m);
 }
-unsafe extern "C" fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn window_copy_drag_update(mut c: *mut client, mut m: *mut mouse_event) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
@@ -9698,7 +9700,7 @@ unsafe extern "C" fn window_copy_drag_update(mut c: *mut client, mut m: *mut mou
         }
     }
 }
-unsafe extern "C" fn window_copy_drag_release(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn window_copy_drag_release(mut c: *mut client, mut m: *mut mouse_event) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();

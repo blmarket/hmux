@@ -297,25 +297,23 @@ unsafe extern "C" fn cmd_resize_pane_mouse_update(
         return CMD_RETURN_NORMAL;
     }
     if window_pane_is_floating(wp) == 0 {
-        (*c).tty.mouse_drag_update = Some(
-            cmd_resize_pane_mouse_resize_tiled
-                as unsafe extern "C" fn(*mut client, *mut mouse_event) -> (),
-        )
-            as Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>;
+        let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
+        (*c).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
+            cmd_resize_pane_mouse_resize_tiled(drag_client.as_ptr(), m as *mut mouse_event)
+        }));
         cmd_resize_pane_mouse_resize_tiled(c, &raw mut (*event).m);
         return CMD_RETURN_NORMAL;
     }
     window_redraw_active_switch(w, wp);
     window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
-    (*c).tty.mouse_drag_update = Some(
-        cmd_resize_pane_mouse_resize_move_floating
-            as unsafe extern "C" fn(*mut client, *mut mouse_event) -> (),
-    )
-        as Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>;
+    let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
+    (*c).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
+        cmd_resize_pane_mouse_resize_move_floating(drag_client.as_ptr(), m as *mut mouse_event)
+    }));
     cmd_resize_pane_mouse_resize_move_floating(c, &raw mut (*event).m);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_resize_pane_mouse_resize_move_floating(
+unsafe fn cmd_resize_pane_mouse_resize_move_floating(
     mut c: *mut client,
     mut m: *mut mouse_event,
 ) {
@@ -459,7 +457,7 @@ unsafe extern "C" fn cmd_resize_pane_mouse_resize_move_floating(
         server_redraw_window_borders(w);
     }
 }
-unsafe extern "C" fn cmd_resize_pane_mouse_resize_tiled(
+unsafe fn cmd_resize_pane_mouse_resize_tiled(
     mut c: *mut client,
     mut m: *mut mouse_event,
 ) {

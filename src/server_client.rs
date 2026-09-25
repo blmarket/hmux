@@ -2409,10 +2409,8 @@ unsafe extern "C" fn server_client_check_mouse(
             != KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_uint
         && (*c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int
     {
-        if (*c).tty.mouse_drag_release.is_some() {
-            (*c).tty
-                .mouse_drag_release
-                .expect("non-null function pointer")(c, m);
+        if let Some(release) = (*c).tty.mouse_drag_release.take() {
+            release(&mut *m);
         }
         (*c).tty.mouse_drag_update = None;
         (*c).tty.mouse_drag_release = None;
@@ -2824,9 +2822,12 @@ unsafe fn server_client_key_callback(
                     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                         == KEYC_DRAGGING as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                     {
-                        (*c).tty
-                            .mouse_drag_update
-                            .expect("non-null function pointer")(c, m);
+                        if let Some(mut update) = (*c).tty.mouse_drag_update.take() {
+                            update(&mut *m);
+                            if (*c).tty.mouse_drag_update.is_none() {
+                                (*c).tty.mouse_drag_update = Some(update);
+                            }
+                        }
                         current_block = 1578459965781631232;
                     } else {
                         (*event).key = key;

@@ -535,21 +535,14 @@ unsafe fn cmd_split_window_exec(
                                         {
                                             (*tc).tty.mouse_last_pane =
                                                 (*new_wp).id as ::core::ffi::c_int;
-                                            (*tc).tty.mouse_drag_update = Some(
-                                                cmd_split_window_mouse_resize
-                                                    as unsafe extern "C" fn(
-                                                        *mut client,
-                                                        *mut mouse_event,
-                                                    )
-                                                        -> (),
-                                            )
-                                                as Option<
-                                                    unsafe extern "C" fn(
-                                                        *mut client,
-                                                        *mut mouse_event,
-                                                    )
-                                                        -> (),
-                                                >;
+                                            let drag_client = std::ptr::NonNull::new(tc)
+                                                .expect("live drag client");
+                                            (*tc).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
+                                                cmd_split_window_mouse_resize(
+                                                    drag_client.as_ptr(),
+                                                    m as *mut mouse_event,
+                                                )
+                                            }));
                                             cmd_split_window_mouse_resize(tc, &raw mut (*event).m);
                                         }
                                         if args_has(args, 'P' as i32 as u_char) != 0 {
@@ -610,7 +603,7 @@ unsafe fn cmd_split_window_exec(
     environ_free(sc.environ);
     return CMD_RETURN_ERROR;
 }
-unsafe extern "C" fn cmd_split_window_mouse_resize(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn cmd_split_window_mouse_resize(mut c: *mut client, mut m: *mut mouse_event) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
