@@ -176,10 +176,10 @@ unsafe fn cmd_list_keys_filter_key_list(
 }
 unsafe fn cmd_list_keys_format_add_key_binding(
     mut ft: *mut format_tree,
-    mut bd: *const key_binding,
+    bd: &key_binding,
     prefix: &CStr,
 ) {
-    if (*bd).flags & KEY_BINDING_REPEAT != 0 {
+    if bd.flags & KEY_BINDING_REPEAT != 0 {
         format_add(
             ft,
             b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
@@ -192,12 +192,12 @@ unsafe fn cmd_list_keys_format_add_key_binding(
             b"0\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    if !(*bd).note.is_none() {
+    if bd.note.is_some() {
         format_add(
             ft,
             b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*bd).note).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            bd.note.as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     } else {
         format_add(
@@ -207,7 +207,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
             b"\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    let key_string = key_string_format((*bd).key, false);
+    let key_string = key_string_format(bd.key, false);
     format_add(
         ft,
         b"key_prefix\0" as *const u8 as *const ::core::ffi::c_char,
@@ -219,7 +219,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         ft,
         b"key_table\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*bd).tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
+        bd.tablename.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
     );
     format_add(
         ft,
@@ -228,7 +228,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         key_string.as_ptr(),
     );
     let command = cmd_list_print_cstring(
-        (*bd).cmdlist,
+        bd.cmdlist,
         CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
     );
     format_add(
@@ -368,7 +368,7 @@ unsafe extern "C" fn cmd_list_keys_exec(
         cmd_list_keys_get_table_width(&bindings),
     );
     for &bd in &bindings {
-        cmd_list_keys_format_add_key_binding(ft, bd, &prefix);
+        cmd_list_keys_format_add_key_binding(ft, &*bd, &prefix);
         let line = format_expand_cstring(ft, template);
         if single != 0 && !tc.is_null() && !(*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
             status_message_set(
