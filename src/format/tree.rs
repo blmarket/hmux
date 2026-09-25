@@ -5,11 +5,11 @@
 use super::*;
 use std::ffi::{CStr, CString};
 
-unsafe fn format_entry_new(key: *const ::core::ffi::c_char) -> *mut format_entry {
-    let key = CStr::from_ptr(key).to_owned();
+fn format_entry_new(key: &CStr) -> *mut format_entry {
+    let key = key.to_owned();
     let entry = format_entry {
         owned_cb: None,
-        key: ::std::ffi::CStr::from_ptr(key.as_ptr() as *mut ::core::ffi::c_char).to_owned(),
+        key: key.clone(),
         value: Default::default(),
         time: 0,
         cb: None,
@@ -322,7 +322,7 @@ pub unsafe extern "C" fn format_add(
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut ap: ::core::ffi::VaList;
-    fe = format_entry_new(key);
+    fe = format_entry_new(CStr::from_ptr(key));
     fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
         drop(Box::from_raw(fe as *mut format_entry));
@@ -342,7 +342,7 @@ pub unsafe extern "C" fn format_add_tv(
 ) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_new(key);
+    fe = format_entry_new(CStr::from_ptr(key));
     fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
         drop(Box::from_raw(fe as *mut format_entry));
@@ -361,7 +361,7 @@ pub unsafe extern "C" fn format_add_cb(
 ) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_new(key);
+    fe = format_entry_new(CStr::from_ptr(key));
     fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
         drop(Box::from_raw(fe as *mut format_entry));
@@ -379,7 +379,7 @@ pub(crate) unsafe fn format_add_owned_cb(
     key: &CStr,
     cb: unsafe fn(*mut format_tree) -> Option<CString>,
 ) {
-    let new = format_entry_new(key.as_ptr());
+    let new = format_entry_new(key);
     let existing = format_entry_tree_insert(&raw mut (*ft).tree, new);
     let fe = if existing.is_null() {
         new
