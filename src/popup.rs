@@ -795,10 +795,9 @@ unsafe extern "C" fn popup_job_update_cb(mut job: *mut job) {
     (*c).overlay_data = pd as *mut ::core::ffi::c_void;
     evbuffer_drain(evb, size);
 }
-unsafe extern "C" fn popup_job_complete_cb(mut job: *mut job) {
-    let mut pd: *mut popup_data = job_get_data(job) as *mut popup_data;
+unsafe fn popup_job_complete_cb(mut job: *mut job, mut pd: *mut popup_data) {
     let mut status: ::core::ffi::c_int = 0;
-    status = job_get_status((*pd).job);
+    status = job_get_status(job);
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         (*pd).status = (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int;
     } else if ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
@@ -1114,7 +1113,9 @@ pub unsafe fn popup_display(
         s,
         (!cwd.is_null()).then(|| CStr::from_ptr(cwd)),
         Some(popup_job_update_cb as unsafe extern "C" fn(*mut job) -> ()),
-        Some(popup_job_complete_cb as unsafe extern "C" fn(*mut job) -> ()),
+        Some(Box::new(move |job| unsafe {
+            popup_job_complete_cb(job, pd)
+        })),
         None,
         pd as *mut ::core::ffi::c_void,
         JOB_NOWAIT | JOB_PTY | JOB_KEEPWRITE | JOB_DEFAULTSHELL,

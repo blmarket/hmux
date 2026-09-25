@@ -12,7 +12,6 @@ pub const JOB_PTY: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 
 pub const JOB_DEFAULTSHELL: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 
-#[repr(C)]
 pub struct job {
     pub state: job_state,
     pub flags: ::core::ffi::c_int,
@@ -51,7 +50,7 @@ impl job {
 
 pub type job_update_cb = Option<unsafe extern "C" fn(*mut job) -> ()>;
 
-pub type job_complete_cb = Option<unsafe extern "C" fn(*mut job) -> ()>;
+pub type job_complete_cb = Option<Box<dyn FnOnce(*mut job)>>;
 
 pub type job_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
 

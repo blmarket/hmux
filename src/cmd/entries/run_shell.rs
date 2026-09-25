@@ -13,7 +13,7 @@ use crate::src::ffi::libc::{__ctype_toupper_loc, strtod};
 use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_free,
 };
-use crate::src::job::{job_get_data, job_get_event, job_get_status, job_run};
+use crate::src::job::{job_get_event, job_get_status, job_run};
 use crate::src::reactor::{
     evbuffer_get_length, evbuffer_pullup, evbuffer_readln, event_active, event_add, event_del,
     event_set,
@@ -105,8 +105,11 @@ fn cmd_run_shell_args_parse(args: &mut args, _idx: u_int) -> args_parse_type {
     }
     return ARGS_PARSE_STRING;
 }
-unsafe extern "C" fn cmd_run_shell_print(mut job: *mut job, mut msg: *const ::core::ffi::c_char) {
-    let mut cdata: *mut cmd_run_shell_data = job_get_data(job) as *mut cmd_run_shell_data;
+unsafe fn cmd_run_shell_print(
+    mut job: *mut job,
+    mut cdata: *mut cmd_run_shell_data,
+    mut msg: *const ::core::ffi::c_char,
+) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -344,7 +347,9 @@ unsafe extern "C" fn cmd_run_shell_timer(
             (*cdata).s,
             Some((*cdata).cwd.as_c_str()),
             None,
-            Some(cmd_run_shell_callback as unsafe extern "C" fn(*mut job) -> ()),
+            Some(Box::new(move |job| unsafe {
+                cmd_run_shell_callback(job, cdata)
+            })),
             Some(cmd_run_shell_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
             cdata as *mut ::core::ffi::c_void,
             (*cdata).flags,
@@ -417,8 +422,7 @@ unsafe extern "C" fn cmd_run_shell_timer(
     }
     cmd_run_shell_free(cdata as *mut ::core::ffi::c_void);
 }
-unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
-    let mut cdata: *mut cmd_run_shell_data = job_get_data(job) as *mut cmd_run_shell_data;
+unsafe fn cmd_run_shell_callback(mut job: *mut job, mut cdata: *mut cmd_run_shell_data) {
     let mut event: *mut bufferevent = job_get_event(job);
     let mut item: *mut cmdq_item = (*cdata).item;
     let cmd = (*cdata)
@@ -438,14 +442,14 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
         ) else {
             break;
         };
-        cmd_run_shell_print(job, line.as_ptr().cast());
+        cmd_run_shell_print(job, cdata, line.as_ptr().cast());
     }
     size = evbuffer_get_length(&*((*event).input));
     if size != 0 as size_t {
         let input = evbuffer_pullup((*event).input, -(1 as ::core::ffi::c_int) as ssize_t);
         let mut partial_line = ::core::slice::from_raw_parts(input as *const u8, size).to_vec();
         partial_line.push(0);
-        cmd_run_shell_print(job, partial_line.as_ptr().cast());
+        cmd_run_shell_print(job, cdata, partial_line.as_ptr().cast());
     }
     status = job_get_status(job);
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
@@ -469,7 +473,7 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
         retcode = 0 as ::core::ffi::c_int;
     }
     if let Some(msg) = msg.as_ref() {
-        cmd_run_shell_print(job, msg.as_ptr());
+        cmd_run_shell_print(job, cdata, msg.as_ptr());
     }
     if !item.is_null() {
         if !cmdq_get_client(item).is_null() && (*cmdq_get_client(item)).session.is_null() {

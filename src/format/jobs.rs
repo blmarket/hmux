@@ -70,8 +70,7 @@ pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
         (*fj).last = t;
     }
 }
-pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
-    let mut fj: *mut format_job = job_get_data(job) as *mut format_job;
+pub(super) unsafe fn format_job_complete(mut job: *mut job, mut fj: *mut format_job) {
     let mut evb: *mut evbuffer = (*job_get_event(job)).input;
     (*fj).job = ::core::ptr::null_mut::<job>();
     let line = evbuffer_readline(evb);
@@ -186,7 +185,9 @@ pub(super) unsafe fn format_job_get(
                 (!cwd.is_null()).then(|| CStr::from_ptr(cwd))
             },
             Some(format_job_update as unsafe extern "C" fn(*mut job) -> ()),
-            Some(format_job_complete as unsafe extern "C" fn(*mut job) -> ()),
+            Some(Box::new(move |job| unsafe {
+                format_job_complete(job, fj)
+            })),
             None,
             fj as *mut ::core::ffi::c_void,
             JOB_NOWAIT,

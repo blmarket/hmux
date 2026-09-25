@@ -10,7 +10,7 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::format_single_from_target_cstring;
-use crate::src::job::{job_get_data, job_get_status, job_run};
+use crate::src::job::{job_get_status, job_run};
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
@@ -155,7 +155,9 @@ unsafe extern "C" fn cmd_if_shell_exec(
             (!cwd.is_null()).then(|| std::ffi::CStr::from_ptr(cwd))
         },
         None,
-        Some(cmd_if_shell_callback as unsafe extern "C" fn(*mut job) -> ()),
+        Some(Box::new(move |job| unsafe {
+            cmd_if_shell_callback(job, cdata)
+        })),
         Some(cmd_if_shell_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
         cdata.cast(),
         0 as ::core::ffi::c_int,
@@ -177,8 +179,7 @@ unsafe extern "C" fn cmd_if_shell_exec(
     }
     return CMD_RETURN_WAIT;
 }
-unsafe extern "C" fn cmd_if_shell_callback(mut job: *mut job) {
-    let mut cdata: *mut cmd_if_shell_data = job_get_data(job) as *mut cmd_if_shell_data;
+unsafe fn cmd_if_shell_callback(mut job: *mut job, mut cdata: *mut cmd_if_shell_data) {
     let mut c: *mut client = (*cdata).client;
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();

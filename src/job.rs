@@ -543,8 +543,8 @@ unsafe extern "C" fn job_error_callback(
     );
     if (*job).state as ::core::ffi::c_uint == JOB_DEAD as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if (*job).completecb.is_some() {
-            (*job).completecb.expect("non-null function pointer")(job);
+        if let Some(callback) = (*job).completecb.take() {
+            callback(job);
         }
         job_free(job);
     } else {
@@ -586,8 +586,8 @@ pub unsafe extern "C" fn job_check_died(mut pid: pid_t, mut status: ::core::ffi:
     if (*job).state as ::core::ffi::c_uint
         == JOB_CLOSED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if (*job).completecb.is_some() {
-            (*job).completecb.expect("non-null function pointer")(job);
+        if let Some(callback) = (*job).completecb.take() {
+            callback(job);
         }
         job_free(job);
     } else {
