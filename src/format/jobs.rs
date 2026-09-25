@@ -37,8 +37,8 @@ fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
 static mut format_jobs: format_job_tree = format_job_tree {
     entries: std::collections::BTreeMap::new(),
 };
-pub(super) unsafe fn format_job_update(mut job: *mut job, mut fj: *mut format_job) {
-    let mut evb: *mut evbuffer = (*job_get_event(job)).input;
+pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
+    let mut evb: *mut evbuffer = (*job_get_event(job as *mut job)).input;
     let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
     loop {

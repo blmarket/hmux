@@ -514,7 +514,7 @@ unsafe fn job_read_callback(
     let Some(mut callback) = callback_slot.borrow_mut().take() else {
         return;
     };
-    callback(job);
+    callback(&mut *job);
     let mut callback_owner = callback_slot.borrow_mut();
     if callback_owner.is_none() {
         *callback_owner = Some(callback);
