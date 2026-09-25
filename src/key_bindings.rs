@@ -167,7 +167,7 @@ pub unsafe extern "C" fn key_bindings_first_table() -> *mut key_table {
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_next_table(mut table: *mut key_table) -> *mut key_table {
-    return key_tables_next(table);
+    return key_tables_next(&*table);
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
     }
     bd = key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
     while !bd.is_null() && {
-        bd1 = key_bindings_index_next(bd);
+        bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
     } {
         key_bindings_index_remove(&raw mut (*table).key_bindings, bd);
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn key_bindings_unref_table(mut table: *mut key_table) {
     }
     bd = key_bindings_index_minmax(&raw mut (*table).default_key_bindings, RB_NEGINF);
     while !bd.is_null() && {
-        bd1 = key_bindings_index_next(bd);
+        bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
     } {
         key_bindings_index_remove(&raw mut (*table).default_key_bindings, bd);
@@ -242,7 +242,7 @@ pub unsafe extern "C" fn key_bindings_next(
     mut table: *mut key_table,
     mut bd: *mut key_binding,
 ) -> *mut key_binding {
-    return key_bindings_index_next(bd);
+    return key_bindings_index_next(&*bd);
 }
 #[no_mangle]
 pub unsafe extern "C" fn key_bindings_add(
@@ -380,7 +380,7 @@ pub unsafe extern "C" fn key_bindings_reset_table(mut name: *const ::core::ffi::
     }
     bd = key_bindings_index_minmax(&raw mut (*table).key_bindings, RB_NEGINF);
     while !bd.is_null() && {
-        bd1 = key_bindings_index_next(bd);
+        bd1 = key_bindings_index_next(&*bd);
         1 as ::core::ffi::c_int != 0
     } {
         key_bindings_reset(name, (*bd).key);
@@ -426,9 +426,9 @@ unsafe extern "C" fn key_bindings_init_done(
                     (*bd).note.as_deref(),
                     (*bd).flags,
                 );
-            bd = key_bindings_index_next(bd);
+                bd = key_bindings_index_next(&*bd);
         }
-        table = key_tables_next(table);
+        table = key_tables_next(&*table);
     }
     return CMD_RETURN_NORMAL;
 }
@@ -1240,20 +1240,20 @@ pub unsafe fn key_bindings_index_minmax(
     };
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn key_bindings_index_next(elm: *mut key_binding) -> *mut key_binding {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn key_bindings_index_next(elm: &key_binding) -> *mut key_binding {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = key_bindings_key(&*elm);
+    let key = key_bindings_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn key_bindings_index_prev(elm: *mut key_binding) -> *mut key_binding {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn key_bindings_index_prev(elm: &key_binding) -> *mut key_binding {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = key_bindings_key(&*elm);
+    let key = key_bindings_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1323,20 +1323,20 @@ pub unsafe fn key_tables_minmax(
     };
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn key_tables_next(elm: *mut key_table) -> *mut key_table {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn key_tables_next(elm: &key_table) -> *mut key_table {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn key_tables_prev(elm: *mut key_table) -> *mut key_table {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn key_tables_prev(elm: &key_table) -> *mut key_table {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
