@@ -349,14 +349,14 @@ unsafe fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
     }
     Some(CStr::from_ptr(value.string_ptr()))
 }
-unsafe fn args_copy_value(from: *mut args_value) -> args_value {
-    match (*from).type_0() as ::core::ffi::c_uint {
+unsafe fn args_copy_value(from: &args_value) -> args_value {
+    match from.type_0() as ::core::ffi::c_uint {
         2 => {
-            let cmdlist = (*from).cmdlist();
+            let cmdlist = from.cmdlist();
             (*cmdlist).references += 1;
             args_value::commands(cmdlist)
         }
-        1 => args_value::string(CStr::from_ptr((*from).string_ptr()).to_owned()),
+        1 => args_value::string(CStr::from_ptr(from.string_ptr()).to_owned()),
         0 | _ => args_value::empty(),
     }
 }
@@ -467,7 +467,7 @@ unsafe fn args_parse_flag_argument(
             }
         }
         *i = (*i).wrapping_add(1);
-        args_copy_value(argument)
+        args_copy_value(&*argument)
     };
     let printed = args_value_for_log(&new);
     log_debug(
@@ -654,9 +654,9 @@ pub unsafe fn args_parse(
                         args_free(args);
                         return Err(ArgsParseError::Message(error));
                     }
-                    args_copy_value(value)
+                    args_copy_value(&*value)
                 }
-                2 => args_copy_value(value),
+                2 => args_copy_value(&*value),
                 3 => {
                     if (*value).type_0() as ::core::ffi::c_uint
                         != ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -668,7 +668,7 @@ pub unsafe fn args_parse(
                         args_free(args);
                         return Err(ArgsParseError::Message(error));
                     }
-                    args_copy_value(value)
+                    args_copy_value(&*value)
                 }
                 _ => args_value::empty(),
             };
