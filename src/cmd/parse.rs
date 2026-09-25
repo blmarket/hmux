@@ -158,14 +158,14 @@ pub const FORMAT: ::core::ffi::c_int = 264 as ::core::ffi::c_int;
 pub const TOKEN: ::core::ffi::c_int = 265 as ::core::ffi::c_int;
 pub const EQUALS: ::core::ffi::c_int = 266 as ::core::ffi::c_int;
 unsafe fn cmd_parse_get_error(
-    file: *const ::core::ffi::c_char,
+    file: Option<&CStr>,
     line: u_int,
     error: &CStr,
 ) -> CString {
-    if file.is_null() {
+    let Some(file) = file else {
         return error.to_owned();
-    }
-    let mut bytes = CStr::from_ptr(file).to_bytes().to_vec();
+    };
+    let mut bytes = file.to_bytes().to_vec();
     bytes.push(b':');
     bytes.extend_from_slice(line.to_string().as_bytes());
     bytes.extend_from_slice(b": ");
@@ -646,7 +646,7 @@ unsafe extern "C" fn cmd_parse_build_command(
                 Err(cause) => {
                     (*pr).status = CMD_PARSE_ERROR;
                     (*pr).error = Some(cmd_parse_get_error(
-                        (*pi).file_ptr(),
+                        (*pi).file.as_deref(),
                         (*pi).line,
                         cause.as_c_str(),
                     ));
@@ -967,7 +967,7 @@ unsafe extern "C" fn yyerror(mut fmt: *const ::core::ffi::c_char, mut args: ...)
     ap = args.clone();
     let error = xvasprintf_cstring(fmt, ap);
     (*ps).error = Some(cmd_parse_get_error(
-        (*pi).file_ptr(),
+        (*pi).file.as_deref(),
         (*pi).line,
         error.as_c_str(),
     ));
