@@ -61,7 +61,6 @@ pub const CMDQ_COMMAND: cmdq_type = 0;
 unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
     let mut owner = Box::new(cmdq_item {
         name: None,
-        error: None,
         cancel_data: None,
         wait_file: ::core::ptr::null_mut(),
         ..cmdq_item::empty()
@@ -869,7 +868,7 @@ unsafe extern "C" fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     return retval;
 }
 #[no_mangle]
-pub unsafe extern "C" fn cmdq_get_callback1(
+pub unsafe fn cmdq_get_callback_owned(
     mut name: *const ::core::ffi::c_char,
     mut cb: cmdq_cb,
     mut data: *mut ::core::ffi::c_void,
@@ -891,35 +890,41 @@ pub unsafe extern "C" fn cmdq_get_callback1(
     (*item).data = data;
     return item;
 }
-unsafe extern "C" fn cmdq_error_callback(
-    mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
-    let error: *const ::core::ffi::c_char = data.cast();
-    cmdq_error(
-        item,
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        error,
-    );
-    return CMD_RETURN_NORMAL;
+
+/// Compatibility adapter for callers that still provide an ABI callback.
+#[no_mangle]
+pub unsafe extern "C" fn cmdq_get_callback1(
+    name: *const ::core::ffi::c_char,
+    cb: Option<
+        unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
+    >,
+    data: *mut ::core::ffi::c_void,
+) -> *mut cmdq_item {
+    let callback = cb.map(|callback| {
+        Box::new(move |item| unsafe { callback(item, (*item).data) })
+            as Box<dyn FnOnce(*mut cmdq_item) -> cmd_retval>
+    });
+    cmdq_get_callback_owned(name, callback, data)
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> *mut cmdq_item {
-    let item = cmdq_get_callback1(
+    let error = CStr::from_ptr(error).to_owned();
+    cmdq_get_callback_owned(
         b"cmdq_error_callback\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(
-            cmdq_error_callback
-                as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-        ),
+        Some(Box::new(move |item| unsafe {
+            cmdq_error(
+                item,
+                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                error.as_ptr(),
+            );
+            CMD_RETURN_NORMAL
+        })),
         ::core::ptr::null_mut(),
-    );
-    let owner = &mut *item;
-    owner.error = Some(CStr::from_ptr(error).to_owned());
-    owner.data = owner.error.as_ref().unwrap().as_ptr().cast_mut().cast();
-    item
+    )
 }
 unsafe extern "C" fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
-    return (*item).cb.expect("non-null function pointer")(item, (*item).data);
+    return (*item).cb.take().expect("non-null queue callback")(item);
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {

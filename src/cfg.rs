@@ -2,7 +2,7 @@ use crate::src::cmd::cmd_list_free;
 use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::src::cmd::queue::{
     cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state, cmdq_free_state,
-    cmdq_get_callback1, cmdq_get_client, cmdq_get_command, cmdq_get_state, cmdq_insert_after,
+    cmdq_get_callback_owned, cmdq_get_client, cmdq_get_command, cmdq_get_state, cmdq_insert_after,
     cmdq_new_state, cmdq_print,
 };
 use crate::src::compat::stdio::CFile;
@@ -59,19 +59,13 @@ pub(crate) fn cfg_set_files(files: Vec<CString>) {
 pub(crate) fn cfg_files() -> &'static [CString] {
     CFG_FILES.get().map_or(&[], Vec::as_slice)
 }
-unsafe extern "C" fn cfg_client_done(
-    _item: *mut cmdq_item,
-    _data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
+unsafe fn cfg_client_done() -> cmd_retval {
     if cfg_finished == 0 {
         return CMD_RETURN_WAIT;
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cfg_done(
-    _item: *mut cmdq_item,
-    _data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
+unsafe fn cfg_done() -> cmd_retval {
     if cfg_finished != 0 {
         return CMD_RETURN_NORMAL;
     }
@@ -90,12 +84,9 @@ pub unsafe extern "C" fn start_cfg() {
     c = clients.first();
     cfg_client = c;
     if !c.is_null() {
-        cfg_item = cmdq_get_callback1(
+        cfg_item = cmdq_get_callback_owned(
             b"cfg_client_done\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                cfg_client_done
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
+            Some(Box::new(|_| unsafe { cfg_client_done() })),
             ::core::ptr::null_mut::<::core::ffi::c_void>(),
         );
         cmdq_append(c, cfg_item);
@@ -115,12 +106,9 @@ pub unsafe extern "C" fn start_cfg() {
     }
     cmdq_append(
         ::core::ptr::null_mut::<client>(),
-        cmdq_get_callback1(
+        cmdq_get_callback_owned(
             b"cfg_done\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                cfg_done
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
+            Some(Box::new(|_| unsafe { cfg_done() })),
             ::core::ptr::null_mut::<::core::ffi::c_void>(),
         ),
     );

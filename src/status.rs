@@ -1,4 +1,4 @@
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback1};
+use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::ffi::libc::{memcpy, memset};
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_time_cstring,
@@ -772,11 +772,7 @@ unsafe extern "C" fn status_prompt_free_callback(mut data: *mut ::core::ffi::c_v
         freecb.expect("non-null function pointer")(arg);
     }
 }
-unsafe extern "C" fn status_prompt_accept(
-    _item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
-    let mut c: *mut client = data as *mut client;
+unsafe fn status_prompt_accept(mut c: *mut client) -> cmd_retval {
     if !(*c).prompt.is_null() {
         status_prompt_key(
             c,
@@ -889,16 +885,10 @@ pub unsafe extern "C" fn status_prompt_set(
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 {
         cmdq_append(
             c,
-            cmdq_get_callback1(
+            cmdq_get_callback_owned(
                 b"status_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
-                Some(
-                    status_prompt_accept
-                        as unsafe extern "C" fn(
-                            *mut cmdq_item,
-                            *mut ::core::ffi::c_void,
-                        ) -> cmd_retval,
-                ),
-                c as *mut ::core::ffi::c_void,
+                Some(Box::new(move |_| unsafe { status_prompt_accept(c) })),
+                ::core::ptr::null_mut(),
             ),
         );
     }

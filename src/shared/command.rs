@@ -145,7 +145,6 @@ mod tests {
     }
 }
 
-#[repr(C)]
 pub struct cmdq_item {
     pub name: Option<std::ffi::CString>,
     pub queue: *mut cmdq_list,
@@ -164,7 +163,6 @@ pub struct cmdq_item {
     pub cmd: *mut cmd,
     pub cb: cmdq_cb,
     pub data: *mut ::core::ffi::c_void,
-    pub(crate) error: Option<std::ffi::CString>,
     pub(crate) cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
     pub(crate) wait_file: *mut super::client::client_file,
 }
@@ -189,7 +187,6 @@ impl cmdq_item {
             cmd: Default::default(),
             cb: Default::default(),
             data: Default::default(),
-            error: Default::default(),
             cancel_data: Default::default(),
             wait_file: Default::default(),
         }
@@ -298,8 +295,7 @@ pub struct cmdq_state {
     pub current: cmd_find_state,
 }
 
-pub type cmdq_cb =
-    Option<unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval>;
+pub type cmdq_cb = Option<Box<dyn FnOnce(*mut cmdq_item) -> cmd_retval>>;
 
 pub type cmdq_type = ::core::ffi::c_uint;
 
