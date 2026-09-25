@@ -4862,32 +4862,13 @@ mod name_tests {
     use super::*;
     use crate::src::events::{events_add_sink, events_remove_sink};
     use crate::src::events_payload::event_payload_get_string;
-    use crate::src::shared::events::event_payload;
-    use std::ffi::{c_char, c_void, CStr};
+    use crate::src::shared::events::{event_payload, events_callback};
+    use std::ffi::CStr;
 
     struct RenameState {
         window: *mut window,
         events: Vec<(Vec<u8>, Vec<u8>)>,
         reenter: bool,
-    }
-
-    unsafe extern "C" fn on_rename(
-        _: *const c_char,
-        payload: *mut event_payload,
-        data: *mut c_void,
-    ) {
-        let state = data.cast::<RenameState>();
-        let old = CStr::from_ptr(event_payload_get_string(payload, c"old_name".as_ptr()))
-            .to_bytes()
-            .to_vec();
-        let new = CStr::from_ptr(event_payload_get_string(payload, c"new_name".as_ptr()))
-            .to_bytes()
-            .to_vec();
-        (*state).events.push((old, new));
-        if (*state).reenter {
-            (*state).reenter = false;
-            window_set_name((*state).window, c"inner".as_ptr(), 0);
-        }
     }
 
     #[test]
@@ -4900,20 +4881,35 @@ mod name_tests {
             node.name = CString::new("before").unwrap();
             let w = &raw mut node;
             (*w).references = 1;
-            let mut state = RenameState {
+            let state = std::rc::Rc::new(std::cell::RefCell::new(RenameState {
                 window: w,
                 events: Vec::new(),
                 reenter: true,
-            };
-            let sink = events_add_sink(
-                c"window-renamed".as_ptr(),
-                Some(on_rename),
-                (&raw mut state).cast(),
-            );
+            }));
+            let callback_state = state.clone();
+            let sink = events_add_sink(c"window-renamed", events_callback(move |_, payload| {
+                let payload = payload as *mut event_payload;
+                let (window, reenter) = unsafe {
+                    let old = CStr::from_ptr(event_payload_get_string(payload, c"old_name".as_ptr()))
+                        .to_bytes()
+                        .to_vec();
+                    let new = CStr::from_ptr(event_payload_get_string(payload, c"new_name".as_ptr()))
+                        .to_bytes()
+                        .to_vec();
+                    let mut state = callback_state.borrow_mut();
+                    state.events.push((old, new));
+                    let reenter = state.reenter;
+                    state.reenter = false;
+                    (state.window, reenter)
+                };
+                if reenter {
+                    unsafe { window_set_name(window, c"inner".as_ptr(), 0) };
+                }
+            }));
 
             window_set_name(w, c"outer".as_ptr(), 0);
             assert_eq!(
-                state.events,
+                state.borrow().events,
                 vec![
                     (b"before".to_vec(), b"outer".to_vec()),
                     (b"outer".to_vec(), b"inner".to_vec()),
@@ -4924,7 +4920,7 @@ mod name_tests {
 
             window_set_name(w, c"\xff".as_ptr(), 0);
             assert_eq!(CStr::from_ptr((*w).name.as_ptr()), c"inner");
-            assert_eq!(state.events.len(), 2);
+            assert_eq!(state.borrow().events.len(), 2);
             events_remove_sink(sink);
         }
     }

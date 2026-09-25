@@ -39,7 +39,7 @@ use crate::src::shared::client::client;
 use crate::src::shared::command::CMDQ_STATE_NOHOOKS;
 use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::events::{event_payload, events_sink};
+use crate::src::shared::events::{event_payload, events_callback, events_sink};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::key_event;
@@ -332,11 +332,9 @@ unsafe extern "C" fn hooks_insert_event(
     hooks_insert(item, &raw mut hd);
     format_free(ft);
 }
-unsafe extern "C" fn hooks_event_cb(
-    mut name: *const ::core::ffi::c_char,
-    mut ep: *mut event_payload,
-    _sink_data: *mut ::core::ffi::c_void,
-) {
+unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
+    let name = name.as_ptr();
+    let ep = payload as *mut event_payload;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if !event_payload_get_pointer(
         ep,
@@ -380,16 +378,8 @@ pub unsafe extern "C" fn hooks_add_event(mut name: *const ::core::ffi::c_char) {
     }
 
     let sink = events_add_sink(
-        name,
-        Some(
-            hooks_event_cb
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_char,
-                    *mut event_payload,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        NULL,
+        event_name,
+        events_callback(|name, payload| unsafe { hooks_event_cb(name, payload) }),
     );
     let events = &raw mut hooks_events;
     (*events).insert(event_name.to_owned(), sink);
@@ -488,12 +478,13 @@ pub unsafe extern "C" fn hooks_monitor_remove(
         hooks_monitor_free(hm as *mut ::core::ffi::c_void);
     }
 }
-unsafe extern "C" fn hooks_monitor_hook_cb(
-    mut name: *const ::core::ffi::c_char,
-    mut ep: *mut event_payload,
-    mut sink_data: *mut ::core::ffi::c_void,
+unsafe fn hooks_monitor_hook_cb(
+    name: &CStr,
+    payload: &mut event_payload,
+    hm: *mut hooks_monitor,
 ) {
-    let mut hm: *mut hooks_monitor = sink_data as *mut hooks_monitor;
+    let name = name.as_ptr();
+    let ep = payload as *mut event_payload;
     if event_payload_get_pointer(
         ep,
         b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
@@ -665,16 +656,10 @@ pub unsafe extern "C" fn hooks_monitor_add(
         monitor_callback(move |change| unsafe { hooks_monitor_cb(change, hm) }),
     );
     (*hm).sink = events_add_sink(
-        name,
-        Some(
-            hooks_monitor_hook_cb
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_char,
-                    *mut event_payload,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        hm as *mut ::core::ffi::c_void,
+        CStr::from_ptr(name),
+        events_callback(move |name, payload| unsafe {
+            hooks_monitor_hook_cb(name, payload, hm)
+        }),
     );
     options_set_monitor_data(o, hm as *mut ::core::ffi::c_void);
     monitor_add((*hm).set, name, type_0, id, format, flags);

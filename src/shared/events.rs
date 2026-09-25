@@ -49,11 +49,9 @@ impl event_payload_item {
     }
 }
 
-#[repr(C)]
 pub struct events_sink {
     pub name: std::ffi::CString,
     pub cb: events_cb,
-    pub data: *mut ::core::ffi::c_void,
     pub dead: ::core::ffi::c_int,
     pub generation: u_int,
 }
@@ -62,21 +60,20 @@ impl events_sink {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            cb: Default::default(),
-            data: Default::default(),
+            cb: events_callback(|_, _| {}),
             dead: Default::default(),
             generation: Default::default(),
         }
     }
 }
 
-pub type events_cb = Option<
-    unsafe extern "C" fn(
-        *const ::core::ffi::c_char,
-        *mut event_payload,
-        *mut ::core::ffi::c_void,
-    ) -> (),
->;
+pub type events_cb = std::rc::Rc<dyn Fn(&std::ffi::CStr, &mut event_payload)>;
+
+pub fn events_callback(
+    callback: impl Fn(&std::ffi::CStr, &mut event_payload) + 'static,
+) -> events_cb {
+    std::rc::Rc::new(callback)
+}
 
 #[repr(C)]
 pub struct event_payload_tree {

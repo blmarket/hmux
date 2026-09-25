@@ -23,7 +23,7 @@ static mut events_sinks: Vec<Box<events_sink>> = Vec::new();
 static mut events_dispatching: u_int = 0;
 static mut events_generation: u_int = 0;
 
-unsafe extern "C" fn events_free_sink(mut es: *mut events_sink) {
+unsafe fn events_free_sink(mut es: *mut events_sink) {
     let sinks = &mut *(&raw mut events_sinks);
     if let Some(index) = sinks
         .iter()
@@ -32,7 +32,7 @@ unsafe extern "C" fn events_free_sink(mut es: *mut events_sink) {
         drop(sinks.remove(index));
     }
 }
-unsafe extern "C" fn events_free_dead() {
+unsafe fn events_free_dead() {
     let sinks = &mut *(&raw mut events_sinks);
     let mut index = 0;
     while index < sinks.len() {
@@ -43,17 +43,11 @@ unsafe extern "C" fn events_free_dead() {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn events_add_sink(
-    mut name: *const ::core::ffi::c_char,
-    mut cb: events_cb,
-    mut data: *mut ::core::ffi::c_void,
-) -> *mut events_sink {
+pub unsafe fn events_add_sink(name: &CStr, cb: events_cb) -> *mut events_sink {
     events_generation = events_generation.wrapping_add(1);
     let mut owner = Box::new(events_sink {
-        name: CStr::from_ptr(name).to_owned(),
+        name: name.to_owned(),
         cb: cb,
-        data: data,
         dead: 0,
         generation: events_generation,
     });
@@ -62,8 +56,7 @@ pub unsafe extern "C" fn events_add_sink(
     (&mut *(&raw mut events_sinks)).push(owner);
     es
 }
-#[no_mangle]
-pub unsafe extern "C" fn events_remove_sink(mut es: *mut events_sink) {
+pub unsafe fn events_remove_sink(mut es: *mut events_sink) {
     if !es.is_null() && (*es).dead == 0 {
         if events_dispatching != 0 as u_int {
             (*es).dead = 1 as ::core::ffi::c_int;
@@ -103,7 +96,8 @@ pub unsafe extern "C" fn events_fire(
         index += 1;
         if !((*es).dead != 0 || (*es).generation > generation) {
             if strcmp(((*es).name).as_ptr().cast_mut(), name) == 0 as ::core::ffi::c_int {
-                (*es).cb.expect("non-null function pointer")(name, ep, (*es).data);
+                let callback = (*es).cb.clone();
+                callback(CStr::from_ptr(name), &mut *ep);
             }
         }
     }

@@ -15,7 +15,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item, wait_item};
-use crate::src::shared::events::{event_payload, event_payload_item, events_sink};
+use crate::src::shared::events::{event_payload, event_payload_item, events_callback, events_sink};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use std::ffi::CStr;
@@ -314,12 +314,12 @@ unsafe extern "C" fn cmd_wait_for_event_print(
         epi = event_payload_next(epi);
     }
 }
-unsafe extern "C" fn cmd_wait_for_event_cb(
-    _name: *const ::core::ffi::c_char,
-    mut ep: *mut event_payload,
-    mut item_data: *mut ::core::ffi::c_void,
+unsafe fn cmd_wait_for_event_cb(
+    _name: &CStr,
+    payload: &mut event_payload,
+    wei: *mut wait_event_item,
 ) {
-    let mut wei: *mut wait_event_item = item_data as *mut wait_event_item;
+    let ep = payload as *mut event_payload;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if (*wei).verbose != 0 {
@@ -396,16 +396,10 @@ unsafe extern "C" fn cmd_wait_for_event(
 
     wei = &raw mut *owner;
     (*wei).sink = events_add_sink(
-        name,
-        Some(
-            cmd_wait_for_event_cb
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_char,
-                    *mut event_payload,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        wei as *mut ::core::ffi::c_void,
+        &(*wei).name,
+        events_callback(move |name, payload| unsafe {
+            cmd_wait_for_event_cb(name, payload, wei)
+        }),
     );
     (&raw mut wait_event_items).as_mut().unwrap().push(owner);
     return CMD_RETURN_WAIT;
