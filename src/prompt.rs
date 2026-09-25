@@ -109,9 +109,9 @@ unsafe fn prompt_buffer_cells(pr: *mut prompt) -> *mut utf8_data {
     (*pr).buffer.as_mut_ptr()
 }
 
-unsafe fn prompt_trim_buffer(pr: *mut prompt) {
-    let len = utf8_strlen(prompt_buffer_cells(pr)) + 1;
-    (*pr).buffer.truncate(len);
+unsafe fn prompt_trim_buffer(pr: &mut prompt) {
+    let len = utf8_strlen(pr.buffer.as_mut_ptr()) + 1;
+    pr.buffer.truncate(len);
 }
 
 #[derive(Copy, Clone)]
@@ -10548,7 +10548,7 @@ pub unsafe extern "C" fn prompt_key(
     // Key editing changes the C-visible end marker in place. Keep the Vec
     // length at that marker so later inserts and replacements never retain
     // cells that the prompt no longer exposes.
-    prompt_trim_buffer(pr);
+    prompt_trim_buffer(&mut *pr);
     *redraw = 1 as ::core::ffi::c_int;
     if (*pr).flags & PROMPT_INCREMENTAL != 0 {
         let input = utf8_tocstr_cstring(prompt_buffer_cells(pr));
@@ -10764,7 +10764,7 @@ mod prompt_buffer_tests {
 
         unsafe {
             assert_eq!(prompt_paste(&mut *pr), 1);
-            prompt_trim_buffer(&mut *pr);
+            prompt_trim_buffer(&mut pr);
             assert_eq!(
                 utf8_tocstr_cstring(pr.buffer.as_ptr()).as_bytes(),
                 b"a\xce\xbb\xc3\xa9Z"
