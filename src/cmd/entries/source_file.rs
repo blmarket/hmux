@@ -130,8 +130,8 @@ unsafe fn cmd_source_file_free_data(cdata: *mut cmd_source_file_data) {
         server_client_unref(cdata.client);
     }
 }
-unsafe fn cmd_source_file_decrement_depth(cdata: *mut cmd_source_file_data) {
-    let c = (*cdata).client;
+unsafe fn cmd_source_file_decrement_depth(cdata: &cmd_source_file_data) {
+    let c = cdata.client;
     if c.is_null() {
         cmd_source_file_depth = cmd_source_file_depth.wrapping_sub(1);
         log_debug(
@@ -150,7 +150,7 @@ unsafe fn cmd_source_file_decrement_depth(cdata: *mut cmd_source_file_data) {
 }
 unsafe fn cmd_source_file_cancel_complete(data: *mut ::core::ffi::c_void) {
     let cdata = data as *mut cmd_source_file_data;
-    cmd_source_file_decrement_depth(cdata);
+    cmd_source_file_decrement_depth(&*cdata);
     cmd_source_file_free_data(cdata);
 }
 unsafe extern "C" fn cmd_source_file_complete_cb(
@@ -158,7 +158,7 @@ unsafe extern "C" fn cmd_source_file_complete_cb(
     data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     let cdata = data as *mut cmd_source_file_data;
-    cmd_source_file_decrement_depth(cdata);
+    cmd_source_file_decrement_depth(&*cdata);
     cfg_print_causes(item);
     cmd_source_file_free_data(cdata);
     return CMD_RETURN_NORMAL;
