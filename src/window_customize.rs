@@ -228,8 +228,8 @@ impl window_customize_itemdata {
 
 // All callers pass an item created as a window_customize_itemdata. C-facing fields
 // remain borrowed pointers, invalidated only when the owner is dropped.
-unsafe fn window_customize_set_table(item: *mut window_customize_itemdata, value: Option<&CStr>) {
-    (*item).table = value.map(CStr::to_owned);
+fn window_customize_set_table(item: &mut window_customize_itemdata, value: Option<&CStr>) {
+    item.table = value.map(CStr::to_owned);
 }
 
 unsafe fn window_customize_set_name(item: *mut window_customize_itemdata, value: Option<&CStr>) {
@@ -687,7 +687,7 @@ unsafe extern "C" fn window_customize_copy_item(
     (*new_item).oo = (*item).oo;
     (*new_item).environ = (*item).environ;
     (*new_item).environ_flags = (*item).environ_flags;
-    window_customize_set_table(new_item, (*item).table.as_deref());
+    window_customize_set_table(&mut *new_item, (*item).table.as_deref());
     window_customize_set_name(new_item, (*item).name.as_deref());
     window_customize_set_item_array_key(&mut *new_item, (*item).array_key.as_deref());
     return new_item;
@@ -1499,7 +1499,7 @@ unsafe extern "C" fn window_customize_build_keys(
             item = window_customize_add_item(data);
             (*item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
             (*item).scope = WINDOW_CUSTOMIZE_KEY;
-            window_customize_set_table(item, Some((*kt).name.as_c_str()));
+            window_customize_set_table(&mut *item, Some((*kt).name.as_c_str()));
             (*item).key = (*bd).key;
             let key_string = key_string_format((*item).key, false);
             window_customize_set_name(item, Some(key_string.as_c_str()));
@@ -4274,7 +4274,7 @@ unsafe extern "C" fn window_customize_set_key(
         (*new_item).data = data as *mut window_customize_modedata;
         (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
         (*new_item).scope = (*item).scope;
-        window_customize_set_table(new_item, (*item).table.as_deref());
+        window_customize_set_table(&mut *new_item, (*item).table.as_deref());
         (*new_item).key = key;
         (*data).references += 1;
         mode_tree_set_prompt(
@@ -4308,7 +4308,7 @@ unsafe extern "C" fn window_customize_set_key(
         (*new_item).data = data as *mut window_customize_modedata;
         (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
         (*new_item).scope = (*item).scope;
-        window_customize_set_table(new_item, (*item).table.as_deref());
+        window_customize_set_table(&mut *new_item, (*item).table.as_deref());
         (*new_item).key = key;
         (*data).references += 1;
         mode_tree_set_prompt(
@@ -4446,7 +4446,7 @@ unsafe extern "C" fn window_customize_add_key(
     (*new_item).data = data as *mut window_customize_modedata;
     (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
     (*new_item).scope = WINDOW_CUSTOMIZE_KEY;
-    window_customize_set_table(new_item, Some(CStr::from_ptr(table)));
+    window_customize_set_table(&mut *new_item, Some(CStr::from_ptr(table)));
     (*data).references += 1;
     mode_tree_set_prompt(
         (*data).data,
@@ -5140,12 +5140,12 @@ mod item_owner_tests {
         unsafe {
             let item = window_customize_new_item();
             let table = CString::new(b"\xfftable".to_vec()).unwrap();
-            window_customize_set_table(item, Some(table.as_c_str()));
+            window_customize_set_table(&mut *item, Some(table.as_c_str()));
             window_customize_set_name(item, Some(c"first"));
             window_customize_set_item_array_key(&mut *item, Some(c""));
             let copy = window_customize_copy_item(item);
 
-            window_customize_set_table(item, Some(c"changed"));
+            window_customize_set_table(&mut *item, Some(c"changed"));
             window_customize_set_name(item, Some(c"second"));
             window_customize_free_item(item);
 
