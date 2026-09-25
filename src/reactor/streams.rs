@@ -44,10 +44,10 @@ pub(super) fn wake_buffer(buffer: *mut evbuffer) {
         state.wake();
     }
 }
-fn state(stream: *mut bufferevent) -> Rc<StreamState> {
+fn state(stream: &bufferevent) -> Rc<StreamState> {
     STREAMS.with(|s| {
         s.borrow()
-            .get(&(stream as usize))
+            .get(&(stream as *const bufferevent as usize))
             .expect("live stream")
             .clone()
     })
@@ -276,7 +276,7 @@ pub unsafe fn bufferevent_get_output(stream: *mut bufferevent) -> *mut evbuffer 
 pub unsafe fn bufferevent_enable(stream: *mut bufferevent, flags: c_short) -> c_int {
     let previous = (*stream).enabled;
     (*stream).enabled |= flags;
-    let s = state(stream);
+    let s = state(&*stream);
     if flags & 4 != 0 {
         s.write_requested.set(true);
     }
@@ -289,7 +289,7 @@ pub unsafe fn bufferevent_disable(stream: *mut bufferevent, flags: c_short) -> c
     let previous = (*stream).enabled;
     (*stream).enabled &= !flags;
     if previous != (*stream).enabled {
-        state(stream).wake();
+        state(&*stream).wake();
     }
     0
 }
@@ -306,7 +306,7 @@ pub unsafe fn bufferevent_write_buffer(stream: *mut bufferevent, buffer: *mut ev
     }
     (*(*stream).output).put(&mut *buffer);
     wake_buffer(buffer);
-    state(stream).wake();
+    state(&*stream).wake();
     0
 }
 pub unsafe fn bufferevent_setwatermark(
@@ -323,5 +323,5 @@ pub unsafe fn bufferevent_setwatermark(
         (*stream).wm_write.low = low;
         (*stream).wm_write.high = high;
     }
-    state(stream).wake();
+    state(&*stream).wake();
 }
