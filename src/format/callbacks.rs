@@ -553,7 +553,7 @@ unsafe fn format_cb_pane_tabs(mut ft: *mut format_tree) -> Option<CString> {
     let mut tabs = String::new();
     i = 0 as u_int;
     while i < (*(*wp).base.grid).sx {
-        if crate::src::screen::screen_has_tab(&raw const (*wp).base, i) {
+        if crate::src::screen::screen_has_tab(&(*wp).base, i) {
             if !tabs.is_empty() {
                 tabs.push(',');
             }

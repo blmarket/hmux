@@ -190,8 +190,8 @@ pub(crate) unsafe fn screen_share_hyperlinks(dst: *mut screen, src: *const scree
     }
     (*dst).hyperlinks = shared;
 }
-pub(crate) unsafe fn screen_has_tab(s: *const screen, column: u_int) -> bool {
-    *(&(*s).tabs).get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0
+pub(crate) unsafe fn screen_has_tab(s: &screen, column: u_int) -> bool {
+    *s.tabs.get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0
 }
 pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
     let byte = s.tabs.get_unchecked_mut(column as usize / 8);
@@ -1133,17 +1133,17 @@ mod text_owner_tests {
             );
             assert_eq!(current.title.as_c_str(), c"original");
 
-            assert!(screen_has_tab(&raw const current, 8));
+            assert!(screen_has_tab(&current, 8));
             screen_set_tab(&mut current, 3, true);
-            assert!(screen_has_tab(&raw const current, 3));
+            assert!(screen_has_tab(&current, 3));
             screen_set_tab(&mut current, 8, false);
-            assert!(!screen_has_tab(&raw const current, 8));
+            assert!(!screen_has_tab(&current, 8));
             screen_clear_tabs(&mut current);
-            assert!((0..10).all(|x| !screen_has_tab(&raw const current, x)));
+            assert!((0..10).all(|x| !screen_has_tab(&current, x)));
             screen_resize(&raw mut current, 17, 2, 0);
-            assert!(screen_has_tab(&raw const current, 8));
-            assert!(screen_has_tab(&raw const current, 16));
-            assert!(!screen_has_tab(&raw const current, 3));
+            assert!(screen_has_tab(&current, 8));
+            assert!(screen_has_tab(&current, 16));
+            assert!(!screen_has_tab(&current, 3));
             let mut cell = crate::src::grid::grid_default_cell;
             screen_set_selection(
                 &raw mut current,
@@ -1216,7 +1216,7 @@ mod text_owner_tests {
             assert_eq!((*current.hyperlinks).references, 2);
             assert!(old.sel.is_some());
             assert!(current.sel.is_none());
-            assert!(screen_has_tab(&raw const old, 16));
+            assert!(screen_has_tab(&old, 16));
             screen_free(&raw mut old);
             assert!(old.titles.is_empty());
             assert!(old.sel.is_none());
@@ -1313,7 +1313,7 @@ mod text_owner_tests {
             screen_reinit(&raw mut current, 0);
             assert_eq!(current.titles.len(), 0);
             assert!(current.sel.is_none());
-            assert!(screen_has_tab(&raw const current, 8));
+            assert!(screen_has_tab(&current, 8));
             assert_eq!(current.title.as_c_str(), c"new");
             screen_free(&raw mut current);
             assert!(current.titles.is_empty());

@@ -2939,7 +2939,7 @@ unsafe extern "C" fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi:
                         }
                     }
                     cx = cx.wrapping_add(1);
-                    if screen_has_tab(s, cx) {
+                    if screen_has_tab(&*s, cx) {
                         break;
                     }
                     if !(cx < (*(*s).grid).sx.wrapping_sub(1 as u_int)) {
@@ -3142,7 +3142,7 @@ unsafe extern "C" fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
                 } {
                     loop {
                         cx = cx.wrapping_sub(1);
-                        if !(cx > 0 as u_int && !screen_has_tab(s, cx)) {
+                        if !(cx > 0 as u_int && !screen_has_tab(&*s, cx)) {
                             break;
                         }
                     }
