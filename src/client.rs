@@ -826,14 +826,7 @@ unsafe fn client_signal(mut sig: ::core::ffi::c_int) {
         }
     };
 }
-unsafe extern "C" fn client_file_check_cb(
-    _c: *mut client,
-    _path: *const ::core::ffi::c_char,
-    _error: ::core::ffi::c_int,
-    _closed: ::core::ffi::c_int,
-    _buffer: *mut evbuffer,
-    _data: *mut ::core::ffi::c_void,
-) {
+unsafe fn client_file_check_cb() {
     if client_exitflag != 0 {
         client_exit();
     }
@@ -968,18 +961,7 @@ unsafe extern "C" fn client_dispatch_wait(mut imsg: *mut imsg) {
                 imsg,
                 1 as ::core::ffi::c_int,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
-                Some(
-                    client_file_check_cb
-                        as unsafe extern "C" fn(
-                            *mut client,
-                            *const ::core::ffi::c_char,
-                            ::core::ffi::c_int,
-                            ::core::ffi::c_int,
-                            *mut evbuffer,
-                            *mut ::core::ffi::c_void,
-                        ) -> (),
-                ),
-                NULL,
+                Some(Box::new(|_| unsafe { client_file_check_cb() })),
             );
         }
         307 => {
@@ -992,18 +974,7 @@ unsafe extern "C" fn client_dispatch_wait(mut imsg: *mut imsg) {
                 imsg,
                 1 as ::core::ffi::c_int,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
-                Some(
-                    client_file_check_cb
-                        as unsafe extern "C" fn(
-                            *mut client,
-                            *const ::core::ffi::c_char,
-                            ::core::ffi::c_int,
-                            ::core::ffi::c_int,
-                            *mut evbuffer,
-                            *mut ::core::ffi::c_void,
-                        ) -> (),
-                ),
-                NULL,
+                Some(Box::new(|_| unsafe { client_file_check_cb() })),
             );
         }
         304 => {

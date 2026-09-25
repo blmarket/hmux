@@ -18,6 +18,7 @@ use super::screen::screen;
 use super::session::session;
 use super::status::status_line;
 use super::tty::tty;
+use std::ffi::CStr;
 pub type client_exit_type = ::core::ffi::c_uint;
 
 pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
@@ -287,7 +288,6 @@ pub struct client_files {
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<i32, *mut client_file>>>,
 }
 
-#[repr(C)]
 pub struct client_file {
     pub c: *mut client,
     pub peer: *mut tmuxpeer,
@@ -301,13 +301,19 @@ pub struct client_file {
     pub error: ::core::ffi::c_int,
     pub closed: ::core::ffi::c_int,
     pub cb: client_file_cb,
-    pub data: *mut ::core::ffi::c_void,
     pub entry: client_file_entry,
-    pub(crate) callback_data: Option<Box<dyn std::any::Any>>,
     pub(crate) wait_item: *mut super::command::cmdq_item,
     pub(crate) wait_client: *mut client,
-    pub(crate) cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
+    pub(crate) cancel_cb: Option<Box<dyn FnOnce()>>,
     pub(crate) terminal_scheduled: bool,
+}
+
+pub struct client_file_event<'a> {
+    pub client: Option<std::ptr::NonNull<client>>,
+    pub path: Option<&'a CStr>,
+    pub error: i32,
+    pub closed: bool,
+    pub buffer: Option<std::ptr::NonNull<evbuffer>>,
 }
 
 impl client_file {
@@ -325,12 +331,10 @@ impl client_file {
             error: Default::default(),
             closed: Default::default(),
             cb: Default::default(),
-            data: Default::default(),
             entry: client_file_entry { owner: None },
-            callback_data: Default::default(),
             wait_item: Default::default(),
             wait_client: Default::default(),
-            cancel_data: Default::default(),
+            cancel_cb: Default::default(),
             terminal_scheduled: Default::default(),
         }
     }
@@ -342,16 +346,7 @@ pub struct client_file_entry {
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<i32, *mut client_file>>>,
 }
 
-pub type client_file_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *const ::core::ffi::c_char,
-        ::core::ffi::c_int,
-        ::core::ffi::c_int,
-        *mut evbuffer,
-        *mut ::core::ffi::c_void,
-    ) -> (),
->;
+pub type client_file_cb = Option<Box<dyn for<'a> FnMut(client_file_event<'a>)>>;
 
 pub type overlay_resize_cb =
     Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;

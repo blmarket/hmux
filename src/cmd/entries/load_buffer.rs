@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::strerror;
-use crate::src::file::file_read_with_owned_data_and_cmdq_wait;
+use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
@@ -69,20 +69,18 @@ pub static mut cmd_load_buffer_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_load_buffer_done(
-    _c: *mut client,
-    mut path: *const ::core::ffi::c_char,
+unsafe fn cmd_load_buffer_done(
+    cdata: &mut cmd_load_buffer_data,
+    path: Option<&CStr>,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
     mut buffer: *mut evbuffer,
-    mut data: *mut ::core::ffi::c_void,
 ) {
     // Progress notifications do not need contiguous storage. Coalesce only
     // once, after the complete file has arrived.
     if closed == 0 {
         return;
     }
-    let cdata = &mut *data.cast::<cmd_load_buffer_data>();
     let mut tc: *mut client = cdata.client;
     let mut item: *mut cmdq_item = cdata.item;
     let mut bdata: *mut ::core::ffi::c_void =
@@ -94,7 +92,7 @@ unsafe extern "C" fn cmd_load_buffer_done(
             item,
             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             strerror(error),
-            path,
+            path.map_or(::core::ptr::null(), CStr::as_ptr),
         );
     } else if bsize != 0 as size_t {
         let owned: Box<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
@@ -147,22 +145,22 @@ unsafe extern "C" fn cmd_load_buffer_exec(
         (*tc).references += 1;
     }
     let path = format_single_from_target_cstring(item, args_string(args, 0 as u_int));
-    file_read_with_owned_data_and_cmdq_wait(
+    file_read_with_cmdq_wait(
         cmdq_get_client(item),
         path.as_ptr(),
-        Some(
-            cmd_load_buffer_done
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *const ::core::ffi::c_char,
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_int,
-                    *mut evbuffer,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        cdata,
+        Some(Box::new(move |event| unsafe {
+            cmd_load_buffer_done(
+                &mut cdata,
+                event.path,
+                event.error,
+                event.closed as ::core::ffi::c_int,
+                event
+                    .buffer
+                    .map_or(::core::ptr::null_mut(), |buffer| buffer.as_ptr()),
+            )
+        })),
         item,
+        None,
     );
     return CMD_RETURN_WAIT;
 }
@@ -185,12 +183,11 @@ mod tests {
             buffer.put(SegmentedBuf::from(vec![2; 4096]));
             unsafe {
                 cmd_load_buffer_done(
-                    std::ptr::null_mut(),
-                    c"input".as_ptr(),
+                    &mut data,
+                    Some(c"input"),
                     0,
                     0,
                     &mut buffer,
-                    (&mut data as *mut cmd_load_buffer_data).cast(),
                 );
             }
             assert_eq!(buffer.chunks().count(), count);

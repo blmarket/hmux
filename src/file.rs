@@ -14,7 +14,7 @@ use crate::src::server_client::{server_client_get_cwd, server_client_unref};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files,
+    client, client_file, client_file_cb, client_file_entry, client_file_event, client_files,
 };
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
 use crate::src::shared::command::cmdq_item;
@@ -31,7 +31,6 @@ use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::tmux::find_home_cstr;
-use std::any::Any;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -100,10 +99,9 @@ static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 unsafe fn file_create_owner() -> *mut client_file {
     Box::into_raw(Box::new(client_file {
         path: None,
-        callback_data: None,
         wait_item: std::ptr::null_mut(),
         wait_client: std::ptr::null_mut(),
-        cancel_data: None,
+        cancel_cb: None,
         terminal_scheduled: false,
         ..client_file::empty()
     }))
@@ -118,14 +116,14 @@ fn file_set_path(cf: &mut client_file, path: CString) {
 unsafe fn file_set_cmdq_wait(
     cf: *mut client_file,
     item: *mut cmdq_item,
-    cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
+    cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
     let owner = &mut *cf;
     assert!(!item.is_null());
     assert!(owner.wait_item.is_null());
     owner.wait_item = item;
     owner.wait_client = (*item).client;
-    owner.cancel_data = cancel_data;
+    owner.cancel_cb = cancel_cb;
     cmdq_set_wait_file(&mut *item, cf);
 }
 
@@ -140,12 +138,9 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(cf: *mut client_file) {
     owner.wait_item = std::ptr::null_mut();
     owner.wait_client = std::ptr::null_mut();
     (*cf).cb = None;
-    let data = std::mem::replace(&mut (*cf).data, std::ptr::null_mut());
-    let callback_data = owner.callback_data.take();
-    let cancel_data = owner.cancel_data.take();
-    drop(callback_data);
-    if let Some(cancel_data) = cancel_data {
-        cancel_data(data);
+    let cancel_cb = owner.cancel_cb.take();
+    if let Some(cancel_cb) = cancel_cb {
+        cancel_cb();
     }
 }
 
@@ -178,13 +173,11 @@ pub unsafe extern "C" fn file_cmp(
     }
     return 0 as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_create_with_peer(
+pub unsafe fn file_create_with_peer(
     mut peer: *mut tmuxpeer,
     mut files: *mut client_files,
     mut stream: ::core::ffi::c_int,
     mut cb: client_file_cb,
-    mut cbdata: *mut ::core::ffi::c_void,
 ) -> *mut client_file {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     cf = file_create_owner();
@@ -196,18 +189,15 @@ pub unsafe extern "C" fn file_create_with_peer(
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     (*cf).cb = cb;
-    (*cf).data = cbdata;
     (*cf).peer = peer;
     (*cf).tree = files as *mut client_files;
     client_files_insert(files, cf);
     return cf;
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_create_with_client(
+unsafe fn file_create_with_client(
     mut c: *mut client,
     mut stream: ::core::ffi::c_int,
     mut cb: client_file_cb,
-    mut cbdata: *mut ::core::ffi::c_void,
 ) -> *mut client_file {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     if !c.is_null() && (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
@@ -222,7 +212,6 @@ pub unsafe extern "C" fn file_create_with_client(
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     (*cf).cb = cb;
-    (*cf).data = cbdata;
     if !(*cf).c.is_null() {
         (*cf).peer = (*(*cf).c).peer;
         (*cf).tree = &raw mut (*(*cf).c).files as *mut client_files;
@@ -265,24 +254,22 @@ unsafe extern "C" fn file_fire_done_cb(
             cmdq_clear_wait_file(&mut *owner.wait_item, cf);
             owner.wait_item = std::ptr::null_mut();
             owner.wait_client = std::ptr::null_mut();
-            owner.cancel_data = None;
+            owner.cancel_cb = None;
         }
     }
-    // The callback borrows this payload. Keep it alive through delivery.
-    let callback_data = (*cf).callback_data.take();
-    if !dead && (*cf).cb.is_some() {
-        (*cf).cb.expect("non-null function pointer")(
-            c,
-            ((*cf).path)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            (*cf).error,
-            1 as ::core::ffi::c_int,
-            (*cf).buffer,
-            (*cf).data,
-        );
+    let mut callback = (*cf).cb.take();
+    if !dead {
+        if let Some(callback) = callback.as_mut() {
+            callback(client_file_event {
+                client: std::ptr::NonNull::new(c),
+                path: (*cf).path.as_deref(),
+                error: (*cf).error,
+                closed: true,
+                buffer: std::ptr::NonNull::new((*cf).buffer),
+            });
+        }
     }
-    drop(callback_data);
+    drop(callback);
     file_free(cf);
 }
 #[no_mangle]
@@ -316,17 +303,16 @@ pub unsafe extern "C" fn file_fire_read(mut cf: *mut client_file) {
     let wait_client = (*cf).wait_client;
     let dead = (!c.is_null() && (*c).flags & CLIENT_DEAD as uint64_t != 0)
         || (!wait_client.is_null() && (*wait_client).flags & CLIENT_DEAD as uint64_t != 0);
-    if !dead && (*cf).cb.is_some() {
-        (*cf).cb.expect("non-null function pointer")(
-            (*cf).c,
-            ((*cf).path)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            (*cf).error,
-            0 as ::core::ffi::c_int,
-            (*cf).buffer,
-            (*cf).data,
-        );
+    if !dead {
+        if let Some(callback) = (*cf).cb.as_mut() {
+            callback(client_file_event {
+                client: std::ptr::NonNull::new((*cf).c),
+                path: (*cf).path.as_deref(),
+                error: (*cf).error,
+                closed: false,
+                buffer: std::ptr::NonNull::new((*cf).buffer),
+            });
+        }
     }
 }
 #[no_mangle]
@@ -369,7 +355,6 @@ pub unsafe extern "C" fn file_vprint(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -385,7 +370,7 @@ pub unsafe extern "C" fn file_vprint(
     find.stream = 1 as ::core::ffi::c_int;
     cf = client_files_find(&(*c).files, &find);
     if cf.is_null() {
-        cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
+        cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_vprintf((*cf).buffer, fmt, ap);
         msg.stream = 1 as ::core::ffi::c_int;
@@ -422,7 +407,6 @@ pub unsafe extern "C" fn file_print_buffer(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -438,7 +422,7 @@ pub unsafe extern "C" fn file_print_buffer(
     find.stream = 1 as ::core::ffi::c_int;
     cf = client_files_find(&(*c).files, &find);
     if cf.is_null() {
-        cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
+        cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None);
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add((*cf).buffer, data, size);
         msg.stream = 1 as ::core::ffi::c_int;
@@ -475,7 +459,6 @@ pub unsafe extern "C" fn file_error(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -493,7 +476,7 @@ pub unsafe extern "C" fn file_error(
     find.stream = 2 as ::core::ffi::c_int;
     cf = client_files_find(&(*c).files, &find);
     if cf.is_null() {
-        cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None, NULL);
+        cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None);
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_vprintf((*cf).buffer, fmt, ap);
         msg.stream = 2 as ::core::ffi::c_int;
@@ -511,17 +494,15 @@ pub unsafe extern "C" fn file_error(
         file_push(cf);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_write(
+pub unsafe fn file_write(
     c: *mut client,
     path: *const ::core::ffi::c_char,
     flags: ::core::ffi::c_int,
     bdata: *const ::core::ffi::c_void,
     bsize: size_t,
     cb: client_file_cb,
-    cbdata: *mut ::core::ffi::c_void,
 ) {
-    file_write_impl(c, path, flags, bdata, bsize, cb, cbdata, None);
+    file_write_impl(c, path, flags, bdata, bsize, cb, None);
 }
 
 pub(crate) unsafe fn file_write_with_cmdq_wait(
@@ -531,9 +512,8 @@ pub(crate) unsafe fn file_write_with_cmdq_wait(
     bdata: *const ::core::ffi::c_void,
     bsize: size_t,
     cb: client_file_cb,
-    cbdata: *mut ::core::ffi::c_void,
     item: *mut cmdq_item,
-    cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
+    cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
     file_write_impl(
         c,
@@ -542,8 +522,7 @@ pub(crate) unsafe fn file_write_with_cmdq_wait(
         bdata,
         bsize,
         cb,
-        cbdata,
-        Some((item, cancel_data)),
+        Some((item, cancel_cb)),
     );
 }
 
@@ -554,8 +533,7 @@ unsafe fn file_write_impl(
     mut bdata: *const ::core::ffi::c_void,
     mut bsize: size_t,
     mut cb: client_file_cb,
-    mut cbdata: *mut ::core::ffi::c_void,
-    wait: Option<(*mut cmdq_item, Option<unsafe fn(*mut ::core::ffi::c_void)>)>,
+    wait: Option<(*mut cmdq_item, Option<Box<dyn FnOnce()>>)>,
 ) {
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -567,9 +545,9 @@ unsafe fn file_write_impl(
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut mode: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
-        if let Some((item, cancel_data)) = wait {
-            file_set_cmdq_wait(cf, item, cancel_data);
+        cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
+        if let Some((item, cancel_cb)) = wait {
+            file_set_cmdq_wait(cf, item, cancel_cb);
         }
         file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
@@ -583,9 +561,9 @@ unsafe fn file_write_impl(
             current_block = 8821498768635335055;
         }
     } else {
-        cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
-        if let Some((item, cancel_data)) = wait {
-            file_set_cmdq_wait(cf, item, cancel_data);
+        cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
+        if let Some((item, cancel_cb)) = wait {
+            file_set_cmdq_wait(cf, item, cancel_cb);
         }
         file_set_path(&mut *cf, file_get_path(c, CStr::from_ptr(path)));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
@@ -668,57 +646,29 @@ unsafe fn file_write_impl(
     }
     file_fire_done(cf);
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_read(
+pub unsafe fn file_read(
     mut c: *mut client,
     mut path: *const ::core::ffi::c_char,
     mut cb: client_file_cb,
-    mut cbdata: *mut ::core::ffi::c_void,
 ) -> *mut client_file {
-    file_read_impl(c, path, cb, cbdata, None, None)
+    file_read_impl(c, path, cb, None)
 }
 
 pub(crate) unsafe fn file_read_with_cmdq_wait(
     c: *mut client,
     path: *const ::core::ffi::c_char,
     cb: client_file_cb,
-    cbdata: *mut ::core::ffi::c_void,
     item: *mut cmdq_item,
-    cancel_data: Option<unsafe fn(*mut ::core::ffi::c_void)>,
+    cancel_cb: Option<Box<dyn FnOnce()>>,
 ) -> *mut client_file {
-    file_read_impl(c, path, cb, cbdata, None, Some((item, cancel_data)))
-}
-
-/// The file owns the payload until its terminal event. `client_file.data` is
-/// only a borrowed pointer for the existing callback ABI, including progress.
-pub(crate) unsafe fn file_read_with_owned_data<T: 'static>(
-    c: *mut client,
-    path: *const ::core::ffi::c_char,
-    cb: client_file_cb,
-    mut data: Box<T>,
-) -> *mut client_file {
-    let borrowed = (&mut *data as *mut T).cast();
-    file_read_impl(c, path, cb, borrowed, Some(data), None)
-}
-
-pub(crate) unsafe fn file_read_with_owned_data_and_cmdq_wait<T: 'static>(
-    c: *mut client,
-    path: *const ::core::ffi::c_char,
-    cb: client_file_cb,
-    mut data: Box<T>,
-    item: *mut cmdq_item,
-) -> *mut client_file {
-    let borrowed = (&mut *data as *mut T).cast();
-    file_read_impl(c, path, cb, borrowed, Some(data), Some((item, None)))
+    file_read_impl(c, path, cb, Some((item, cancel_cb)))
 }
 
 unsafe fn file_read_impl(
     mut c: *mut client,
     mut path: *const ::core::ffi::c_char,
     mut cb: client_file_cb,
-    mut cbdata: *mut ::core::ffi::c_void,
-    callback_data: Option<Box<dyn Any>>,
-    wait: Option<(*mut cmdq_item, Option<unsafe fn(*mut ::core::ffi::c_void)>)>,
+    wait: Option<(*mut cmdq_item, Option<Box<dyn FnOnce()>>)>,
 ) -> *mut client_file {
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -730,10 +680,9 @@ unsafe fn file_read_impl(
     let mut file_owner: Option<CFile> = None;
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
-    cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb, cbdata);
-    (*cf).callback_data = callback_data;
-    if let Some((item, cancel_data)) = wait {
-        file_set_cmdq_wait(cf, item, cancel_data);
+    cf = file_create_with_client(c, stream as ::core::ffi::c_int, cb);
+    if let Some((item, cancel_cb)) = wait {
+        file_set_cmdq_wait(cf, item, cancel_cb);
     }
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         file_set_path(&mut *cf, CString::new("-").unwrap());
@@ -1010,15 +959,14 @@ unsafe extern "C" fn file_write_finished(mut cf: *mut client_file) {
         &raw mut msg as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_write_done>() as size_t,
     );
-    if (*cf).cb.is_some() {
-        (*cf).cb.expect("non-null function pointer")(
-            ::core::ptr::null_mut::<client>(),
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            0 as ::core::ffi::c_int,
-            -(1 as ::core::ffi::c_int),
-            ::core::ptr::null_mut::<evbuffer>(),
-            (*cf).data,
-        );
+    if let Some(callback) = (*cf).cb.as_mut() {
+        callback(client_file_event {
+            client: None,
+            path: None,
+            error: 0,
+            closed: true,
+            buffer: None,
+        });
     }
     file_free(cf);
 }
@@ -1048,15 +996,14 @@ unsafe extern "C" fn file_write_error_callback(
     (*cf).fd = -(1 as ::core::ffi::c_int);
     if (*cf).closed != 0 {
         file_write_finished(cf);
-    } else if (*cf).cb.is_some() {
-        (*cf).cb.expect("non-null function pointer")(
-            ::core::ptr::null_mut::<client>(),
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            0 as ::core::ffi::c_int,
-            -(1 as ::core::ffi::c_int),
-            ::core::ptr::null_mut::<evbuffer>(),
-            (*cf).data,
-        );
+    } else if let Some(callback) = (*cf).cb.as_mut() {
+        callback(client_file_event {
+            client: None,
+            path: None,
+            error: 0,
+            closed: true,
+            buffer: None,
+        });
     }
 }
 unsafe extern "C" fn file_write_callback(
@@ -1070,26 +1017,23 @@ unsafe extern "C" fn file_write_callback(
     );
     if (*cf).closed != 0 && evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
         file_write_finished(cf);
-    } else if (*cf).cb.is_some() {
-        (*cf).cb.expect("non-null function pointer")(
-            ::core::ptr::null_mut::<client>(),
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            0 as ::core::ffi::c_int,
-            -(1 as ::core::ffi::c_int),
-            ::core::ptr::null_mut::<evbuffer>(),
-            (*cf).data,
-        );
+    } else if let Some(callback) = (*cf).cb.as_mut() {
+        callback(client_file_event {
+            client: None,
+            path: None,
+            error: 0,
+            closed: true,
+            buffer: None,
+        });
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_write_open(
+pub unsafe fn file_write_open(
     mut files: *mut client_files,
     mut peer: *mut tmuxpeer,
     mut imsg: *mut imsg,
     mut allow_streams: ::core::ffi::c_int,
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
-    mut cbdata: *mut ::core::ffi::c_void,
 ) {
     let mut msg: *mut msg_write_open = (*imsg).data as *mut msg_write_open;
     let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
@@ -1111,7 +1055,6 @@ pub unsafe extern "C" fn file_write_open(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -1135,7 +1078,7 @@ pub unsafe extern "C" fn file_write_open(
     if !client_files_find(&*files, &find).is_null() {
         error = EBADF;
     } else {
-        cf = file_create_with_peer(peer, files, (*msg).stream, cb, cbdata);
+        cf = file_create_with_peer(peer, files, (*msg).stream, cb);
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
@@ -1211,7 +1154,6 @@ pub unsafe extern "C" fn file_write_data(mut files: *mut client_files, mut imsg:
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -1255,7 +1197,6 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -1357,15 +1298,13 @@ unsafe extern "C" fn file_read_callback(_bev: *mut bufferevent, mut arg: *mut ::
         evbuffer_drain((*(*cf).event).input, bsize);
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn file_read_open(
+pub unsafe fn file_read_open(
     mut files: *mut client_files,
     mut peer: *mut tmuxpeer,
     mut imsg: *mut imsg,
     mut allow_streams: ::core::ffi::c_int,
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
-    mut cbdata: *mut ::core::ffi::c_void,
 ) {
     let mut msg: *mut msg_read_open = (*imsg).data as *mut msg_read_open;
     let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
@@ -1387,7 +1326,6 @@ pub unsafe extern "C" fn file_read_open(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -1411,7 +1349,7 @@ pub unsafe extern "C" fn file_read_open(
     if !client_files_find(&*files, &find).is_null() {
         error = EBADF;
     } else {
-        cf = file_create_with_peer(peer, files, (*msg).stream, cb, cbdata);
+        cf = file_create_with_peer(peer, files, (*msg).stream, cb);
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
@@ -1488,7 +1426,6 @@ pub unsafe extern "C" fn file_read_cancel(mut files: *mut client_files, mut imsg
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -1531,7 +1468,6 @@ pub unsafe extern "C" fn file_write_ready(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -1572,7 +1508,6 @@ pub unsafe extern "C" fn file_write_done(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -1616,7 +1551,6 @@ pub unsafe extern "C" fn file_read_data(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };
@@ -1667,7 +1601,6 @@ pub unsafe extern "C" fn file_read_done(
         error: 0,
         closed: 0,
         cb: None,
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry { owner: None },
         ..client_file::empty()
     };

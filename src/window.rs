@@ -4274,17 +4274,16 @@ pub unsafe extern "C" fn winlink_shuffle_up(
     }
     return idx;
 }
-unsafe extern "C" fn window_pane_input_callback(
+unsafe fn window_pane_input_callback(
     mut c: *mut client,
-    _path: *const ::core::ffi::c_char,
+    _path: Option<&CStr>,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
     mut buffer: *mut evbuffer,
-    mut data: *mut ::core::ffi::c_void,
+    mut cdata: *mut window_pane_input_data,
 ) {
     // file_read retains this pointer until its terminal callback. Only that
     // callback reconstructs the Box, after using its command and client links.
-    let cdata = data.cast::<window_pane_input_data>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut buf: *mut u_char =
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut u_char;
@@ -4308,8 +4307,8 @@ unsafe extern "C" fn window_pane_input_callback(
     }
     evbuffer_drain(buffer, len);
 }
-unsafe fn window_pane_input_cancel(data: *mut ::core::ffi::c_void) {
-    let cdata = Box::from_raw(data.cast::<window_pane_input_data>());
+unsafe fn window_pane_input_cancel(cdata: *mut window_pane_input_data) {
+    let cdata = Box::from_raw(cdata);
     server_client_unref(cdata.client);
 }
 pub unsafe fn window_pane_start_input(
@@ -4336,20 +4335,22 @@ pub unsafe fn window_pane_start_input(
     let file = file_read_with_cmdq_wait(
         c,
         b"-\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(
-            window_pane_input_callback
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *const ::core::ffi::c_char,
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_int,
-                    *mut evbuffer,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        cdata as *mut ::core::ffi::c_void,
+        Some(Box::new(move |event| unsafe {
+            window_pane_input_callback(
+                event
+                    .client
+                    .map_or(::core::ptr::null_mut(), |client| client.as_ptr()),
+                event.path,
+                event.error,
+                event.closed as ::core::ffi::c_int,
+                event
+                    .buffer
+                    .map_or(::core::ptr::null_mut(), |buffer| buffer.as_ptr()),
+                cdata,
+            )
+        })),
         item,
-        Some(window_pane_input_cancel),
+        Some(Box::new(move || unsafe { window_pane_input_cancel(cdata) })),
     );
     // A failed open schedules a terminal callback and returns null. That
     // callback uses the initial null file value to release this owner.

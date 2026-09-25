@@ -96,9 +96,6 @@ unsafe fn cmd_source_file_decrement_depth(cdata: &cmd_source_file_data) {
         );
     }
 }
-unsafe fn cmd_source_file_cancel_complete(data: *mut ::core::ffi::c_void) {
-    cmd_source_file_cancel_complete_typed(data.cast());
-}
 unsafe fn cmd_source_file_cancel_complete_typed(cdata: *mut cmd_source_file_data) {
     cmd_source_file_decrement_depth(&*cdata);
     cmd_source_file_free_data(cdata);
@@ -140,20 +137,19 @@ unsafe extern "C" fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_da
     );
     cmdq_insert_after((*cdata).after, new_item);
 }
-unsafe extern "C" fn cmd_source_file_done(
-    _oc: *mut client,
-    mut path: *const ::core::ffi::c_char,
+unsafe fn cmd_source_file_done(
+    mut cdata: *mut cmd_source_file_data,
+    path: Option<&CStr>,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
     mut buffer: *mut evbuffer,
-    mut data: *mut ::core::ffi::c_void,
 ) {
     // Progress notifications do not need contiguous storage. Coalesce only
     // once, after the complete file has arrived.
     if closed == 0 {
         return;
     }
-    let mut cdata: *mut cmd_source_file_data = data as *mut cmd_source_file_data;
+    let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut c: *mut client = (*cdata).client;
     let mut bdata: *mut ::core::ffi::c_void =
@@ -193,20 +189,21 @@ unsafe extern "C" fn cmd_source_file_done(
         file_read_with_cmdq_wait(
             c,
             next_path,
-            Some(
-                cmd_source_file_done
-                    as unsafe extern "C" fn(
-                        *mut client,
-                        *const ::core::ffi::c_char,
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_int,
-                        *mut evbuffer,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            cdata as *mut ::core::ffi::c_void,
+            Some(Box::new(move |event| unsafe {
+                cmd_source_file_done(
+                    cdata,
+                    event.path,
+                    event.error,
+                    event.closed as ::core::ffi::c_int,
+                    event
+                        .buffer
+                        .map_or(::core::ptr::null_mut(), |buffer| buffer.as_ptr()),
+                )
+            })),
             item,
-            Some(cmd_source_file_cancel_complete),
+            Some(Box::new(move || unsafe {
+                cmd_source_file_cancel_complete_typed(cdata)
+            })),
         );
     } else {
         cmd_source_file_complete(cdata);
@@ -375,20 +372,21 @@ unsafe extern "C" fn cmd_source_file_exec(
         file_read_with_cmdq_wait(
             c,
             first_path,
-            Some(
-                cmd_source_file_done
-                    as unsafe extern "C" fn(
-                        *mut client,
-                        *const ::core::ffi::c_char,
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_int,
-                        *mut evbuffer,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            cdata as *mut ::core::ffi::c_void,
+            Some(Box::new(move |event| unsafe {
+                cmd_source_file_done(
+                    cdata,
+                    event.path,
+                    event.error,
+                    event.closed as ::core::ffi::c_int,
+                    event
+                        .buffer
+                        .map_or(::core::ptr::null_mut(), |buffer| buffer.as_ptr()),
+                )
+            })),
             item,
-            Some(cmd_source_file_cancel_complete),
+            Some(Box::new(move || unsafe {
+                cmd_source_file_cancel_complete_typed(cdata)
+            })),
         );
         retval = CMD_RETURN_WAIT;
     } else {

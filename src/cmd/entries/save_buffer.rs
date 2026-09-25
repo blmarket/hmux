@@ -75,15 +75,12 @@ pub static mut cmd_show_buffer_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_save_buffer_done(
-    _c: *mut client,
-    mut path: *const ::core::ffi::c_char,
+unsafe fn cmd_save_buffer_done(
+    mut item: *mut cmdq_item,
+    path: Option<&CStr>,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
-    _buffer: *mut evbuffer,
-    mut data: *mut ::core::ffi::c_void,
 ) {
-    let mut item: *mut cmdq_item = data as *mut cmdq_item;
     if closed == 0 {
         return;
     }
@@ -92,7 +89,7 @@ unsafe extern "C" fn cmd_save_buffer_done(
             item,
             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             strerror(error),
-            path,
+            path.map_or(::core::ptr::null(), CStr::as_ptr),
         );
     }
     cmdq_continue(item);
@@ -160,18 +157,14 @@ unsafe extern "C" fn cmd_save_buffer_exec(
         flags,
         bufdata as *const ::core::ffi::c_void,
         bufsize,
-        Some(
-            cmd_save_buffer_done
-                as unsafe extern "C" fn(
-                    *mut client,
-                    *const ::core::ffi::c_char,
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_int,
-                    *mut evbuffer,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        item as *mut ::core::ffi::c_void,
+        Some(Box::new(move |event| unsafe {
+            cmd_save_buffer_done(
+                item,
+                event.path,
+                event.error,
+                event.closed as ::core::ffi::c_int,
+            )
+        })),
         item,
         None,
     );
