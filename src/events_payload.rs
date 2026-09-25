@@ -219,10 +219,11 @@ unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) 
             );
         }
         8 => {
-            if let Some(mut callbacks) = (*epi).pointer_callbacks.take() {
-                if let Some(free) = callbacks.free_cb.take() {
-                    free();
-                }
+            let mut pointer = std::mem::ManuallyDrop::take(
+                &mut (*epi).c2rust_unnamed.pointer,
+            );
+            if let Some(free) = pointer.free_cb.take() {
+                free();
             }
         }
         2 | 3 | 1 | _ => {}
@@ -528,11 +529,13 @@ pub unsafe fn event_payload_set_pointer(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_POINTER;
-    (*epi).c2rust_unnamed.pointer.ptr = ptr;
-    (*epi).pointer_callbacks = Some(crate::src::shared::events::event_payload_pointer_callbacks {
+    (*epi).c2rust_unnamed.pointer = std::mem::ManuallyDrop::new(
+        crate::src::shared::events::event_payload_item_c2rust_unnamed_pointer {
+            ptr,
         free_cb,
         print_cb,
-    });
+        },
+    );
     event_payload_set_item(ep, name, epi);
 }
 #[no_mangle]
@@ -614,17 +617,15 @@ unsafe extern "C" fn event_payload_add_item(
             );
         }
         8 => {
-            let callback = (*epi)
-                .pointer_callbacks
-                .as_mut()
-                .and_then(|callbacks| callbacks.print_cb.as_mut());
+            let pointer = &mut (*epi).c2rust_unnamed.pointer;
+            let callback = pointer.print_cb.as_mut();
             if let Some(callback) = callback {
                 callback(evb);
             } else {
                 evbuffer_add_printf(
                     evb,
                     b"%p\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*epi).c2rust_unnamed.pointer.ptr,
+                    pointer.ptr,
                 );
             }
         }
@@ -902,7 +903,8 @@ pub unsafe extern "C" fn event_payload_get_pointer(
     {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    return (*epi).c2rust_unnamed.pointer.ptr;
+    let pointer = std::ops::Deref::deref(&(*epi).c2rust_unnamed.pointer);
+    return pointer.ptr;
 }
 
 #[cfg(test)]

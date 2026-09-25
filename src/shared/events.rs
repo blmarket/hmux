@@ -21,19 +21,14 @@ pub type event_payload_free_cb = Option<Box<dyn FnOnce()>>;
 
 pub type event_payload_print_cb = Option<Box<dyn FnMut(*mut evbuffer)>>;
 
-#[repr(C)]
 pub struct event_payload_item {
     pub name: Option<std::ffi::CString>,
     pub type_0: event_payload_type,
     pub c2rust_unnamed: event_payload_item_c2rust_unnamed,
     /// Weak traversal handle into the payload's ordered item map.
     pub(crate) owner: Option<refbox::Weak<event_payload_tree_storage>>,
-    // The Copy payload union also stores borrowed object pointers. Its string
-    // variant borrows this allocation until this item is freed.
+    // The payload union's string variant borrows this allocation until freed.
     pub(crate) string: Option<std::ffi::CString>,
-    /// Owns local Rust hooks for an opaque pointer payload. The pointer itself
-    /// stays in the Copy union for consumers that retrieve the payload value.
-    pub(crate) pointer_callbacks: Option<event_payload_pointer_callbacks>,
 }
 
 impl event_payload_item {
@@ -44,7 +39,6 @@ impl event_payload_item {
             c2rust_unnamed: Default::default(),
             owner: None,
             string: Default::default(),
-            pointer_callbacks: None,
         }
     }
 }
@@ -95,8 +89,6 @@ pub struct event_payload_tree_storage {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut event_payload_item>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub union event_payload_item_c2rust_unnamed {
     pub string: *mut ::core::ffi::c_char,
     pub time: time_t,
@@ -106,7 +98,7 @@ pub union event_payload_item_c2rust_unnamed {
     pub session: *mut session,
     pub window: *mut window,
     pub pane: *mut window_pane,
-    pub pointer: event_payload_item_c2rust_unnamed_pointer,
+    pub pointer: std::mem::ManuallyDrop<event_payload_item_c2rust_unnamed_pointer>,
 }
 
 impl Default for event_payload_item_c2rust_unnamed {
@@ -115,13 +107,8 @@ impl Default for event_payload_item_c2rust_unnamed {
     }
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct event_payload_item_c2rust_unnamed_pointer {
     pub ptr: *mut ::core::ffi::c_void,
-}
-
-pub struct event_payload_pointer_callbacks {
     pub free_cb: event_payload_free_cb,
     pub print_cb: event_payload_print_cb,
 }

@@ -1118,7 +1118,6 @@ pub unsafe fn popup_display(
             popup_job_complete_cb(job, pd)
         })),
         None,
-        pd as *mut ::core::ffi::c_void,
         JOB_NOWAIT | JOB_PTY | JOB_KEEPWRITE | JOB_DEFAULTSHELL,
         jx as ::core::ffi::c_int,
         jy as ::core::ffi::c_int,

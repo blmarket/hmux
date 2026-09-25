@@ -240,7 +240,6 @@ pub(super) unsafe fn format_find(
         key: Default::default(),
         value: Default::default(),
         time: 0,
-        cb: None,
     };
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();

@@ -71,7 +71,6 @@ pub unsafe fn job_run(
     mut updatecb: job_update_cb,
     mut completecb: job_complete_cb,
     mut freecb: job_free_cb,
-    mut data: *mut ::core::ffi::c_void,
     mut flags: ::core::ffi::c_int,
     mut sx: ::core::ffi::c_int,
     mut sy: ::core::ffi::c_int,
@@ -347,7 +346,6 @@ pub unsafe fn job_run(
                     (*job).updatecb = updatecb;
                     (*job).completecb = completecb;
                     (*job).freecb = freecb;
-                    (*job).data = data;
                     if !flags & JOB_PTY != 0 {
                         close(out[1 as ::core::ffi::c_int as usize]);
                         (*job).fd = out[0 as ::core::ffi::c_int as usize];
@@ -433,10 +431,8 @@ pub unsafe extern "C" fn job_transfer(
         (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
     }
     *(*job).entry.le_prev = (*job).entry.le_next;
-    if !(*job).data.is_null() {
-        if let Some(callback) = (*job).freecb.take() {
-            callback();
-        }
+    if let Some(callback) = (*job).freecb.take() {
+        callback();
     }
     if !(*job).event.is_null() {
         bufferevent_free((*job).event);
@@ -458,10 +454,8 @@ pub unsafe extern "C" fn job_free(mut job: *mut job) {
         (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
     }
     *(*job).entry.le_prev = (*job).entry.le_next;
-    if !(*job).data.is_null() {
-        if let Some(callback) = (*job).freecb.take() {
-            callback();
-        }
+    if let Some(callback) = (*job).freecb.take() {
+        callback();
     }
     if (*job).pid != -(1 as ::core::ffi::c_int) {
         kill((*job).pid as __pid_t, SIGTERM);
@@ -608,10 +602,6 @@ pub unsafe extern "C" fn job_check_died(mut pid: pid_t, mut status: ::core::ffi:
 #[no_mangle]
 pub unsafe extern "C" fn job_get_status(mut job: *mut job) -> ::core::ffi::c_int {
     return (*job).status;
-}
-#[no_mangle]
-pub unsafe extern "C" fn job_get_data(mut job: *mut job) -> *mut ::core::ffi::c_void {
-    return (*job).data;
 }
 #[no_mangle]
 pub unsafe extern "C" fn job_get_event(mut job: *mut job) -> *mut bufferevent {

@@ -151,13 +151,11 @@ pub struct format_entry_tree_storage {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut format_entry>,
 }
 
-#[repr(C)]
 pub struct format_entry {
     pub key: std::ffi::CString,
     pub value: Option<std::ffi::CString>,
     pub time: time_t,
-    pub cb: format_cb,
-    pub(crate) owned_cb: Option<unsafe fn(*mut format_tree) -> Option<std::ffi::CString>>,
+    pub(crate) owned_cb: Option<Box<dyn FnMut(*mut format_tree) -> Option<std::ffi::CString>>>,
 }
 
 impl format_entry {
@@ -166,13 +164,10 @@ impl format_entry {
             key: Default::default(),
             value: Default::default(),
             time: Default::default(),
-            cb: Default::default(),
             owned_cb: Default::default(),
         }
     }
 }
-
-pub type format_cb = Option<unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void>;
 
 pub type format_type = ::core::ffi::c_uint;
 

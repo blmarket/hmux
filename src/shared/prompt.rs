@@ -40,15 +40,8 @@ pub type prompt_result = ::core::ffi::c_uint;
 pub type prompt_free_cb = Option<Box<dyn FnOnce()>>;
 pub type prompt_input_cb = Option<Box<dyn FnMut(Option<&CStr>, prompt_key_result) -> prompt_result>>;
 
-/// Compatibility callback types for the still-public prompt registration APIs.
+/// Compatibility free callback used by the prompt wrapper registration APIs.
 pub type prompt_legacy_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
-pub type prompt_legacy_input_cb = Option<
-    unsafe extern "C" fn(
-        *mut ::core::ffi::c_void,
-        *const ::core::ffi::c_char,
-        prompt_key_result,
-    ) -> prompt_result,
->;
 
 #[cfg(test)]
 mod tests {

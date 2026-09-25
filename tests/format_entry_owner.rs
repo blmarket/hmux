@@ -1,7 +1,7 @@
 //! Exercise lazy format-entry caching through the owned expansion path.
-use hmux2::src::ffi::libc::strdup;
 use hmux2::src::format::{
-    format_add, format_add_cb, format_create, format_expand_cstring, format_free, format_tree,
+    format_add, format_add_owned_cb, format_create, format_expand_cstring, format_free,
+    format_tree,
 };
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::tmux::{global_options, global_s_options, global_w_options};
@@ -9,11 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static CALLBACK_CALLS: AtomicUsize = AtomicUsize::new(0);
 
-unsafe extern "C" fn callback(_ft: *mut format_tree) -> *mut core::ffi::c_void {
+fn callback(_ft: *mut format_tree) -> Option<std::ffi::CString> {
     CALLBACK_CALLS.fetch_add(1, Ordering::SeqCst);
-    let value = strdup(b"cached\xff\0".as_ptr().cast());
-    assert!(!value.is_null());
-    value.cast()
+    Some(std::ffi::CString::new(b"cached\xff".to_vec()).unwrap())
 }
 
 #[test]
@@ -32,7 +30,7 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
         let ft = format_create(core::ptr::null_mut(), core::ptr::null_mut(), 0, 0);
         let key = b"zz_test_format_value\0".as_ptr().cast();
         let expression = b"#{zz_test_format_value}\0".as_ptr().cast();
-        format_add_cb(ft, key, Some(callback));
+        format_add_owned_cb(ft, std::ffi::CStr::from_ptr(key), callback);
 
         for _ in 0..2 {
             let expanded = format_expand_cstring(ft, expression);

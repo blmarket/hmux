@@ -1410,13 +1410,19 @@ unsafe extern "C" fn window_copy_formats(
             (*data).searchmore,
         );
     }
-    format_add_owned_cb(ft, c"search_match", window_copy_search_match_cb);
-    format_add_owned_cb(ft, c"copy_cursor_word", window_copy_cursor_word_cb);
-    format_add_owned_cb(ft, c"copy_cursor_line", window_copy_cursor_line_cb);
+    format_add_owned_cb(ft, c"search_match", |ft| unsafe {
+        window_copy_search_match_cb(ft)
+    });
+    format_add_owned_cb(ft, c"copy_cursor_word", |ft| unsafe {
+        window_copy_cursor_word_cb(ft)
+    });
+    format_add_owned_cb(ft, c"copy_cursor_line", |ft| unsafe {
+        window_copy_cursor_line_cb(ft)
+    });
     format_add_owned_cb(
         ft,
         c"copy_cursor_hyperlink",
-        window_copy_cursor_hyperlink_cb,
+        |ft| unsafe { window_copy_cursor_hyperlink_cb(ft) },
     );
 }
 unsafe extern "C" fn window_copy_get_screen(mut wme: *mut window_mode_entry) -> *mut screen {
@@ -8273,7 +8279,6 @@ unsafe fn window_copy_pipe_run(
             None,
             None,
             None,
-            NULL,
             JOB_NOWAIT,
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),

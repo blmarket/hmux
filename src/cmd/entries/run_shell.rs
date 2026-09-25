@@ -353,7 +353,6 @@ unsafe extern "C" fn cmd_run_shell_timer(
             Some(Box::new(move || unsafe {
                 cmd_run_shell_free(cdata)
             })),
-            cdata as *mut ::core::ffi::c_void,
             (*cdata).flags,
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),

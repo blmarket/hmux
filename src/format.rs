@@ -18,7 +18,7 @@ use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::view::grid_view_get_cell;
 use crate::src::grid::{grid_get_cell, grid_get_line, grid_line_length, grid_peek_line};
 use crate::src::hyperlinks::hyperlinks_get;
-use crate::src::job::{job_free, job_get_data, job_get_event, job_run};
+use crate::src::job::{job_free, job_get_event, job_run};
 use crate::src::layout::custom::layout_dump_owned;
 use crate::src::layout::layout_add_horizontal_border;
 use crate::src::log::{fatalx, log_debug, log_get_level};
@@ -100,7 +100,7 @@ use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
-    format_cb, format_entry, format_entry_tree, format_entry_tree_storage, format_job,
+    format_entry, format_entry_tree, format_entry_tree_storage, format_job,
     format_job_tree, format_tree, format_type,
 };
 use crate::src::shared::format::{
@@ -169,10 +169,10 @@ use crate::src::shared::window::{
  * small logging/state helpers used by more than one group.
  */
 mod tree;
-pub(crate) use tree::format_add_owned_cb;
+pub use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
-    format_add, format_add_cb, format_add_tv, format_create, format_each, format_free,
+    format_add, format_add_tv, format_create, format_each, format_free,
     format_get_pane, format_log_debug, format_merge,
 };
 mod jobs;

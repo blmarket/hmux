@@ -190,7 +190,6 @@ pub(super) unsafe fn format_job_get(
                 format_job_complete(job, fj)
             })),
             None,
-            fj as *mut ::core::ffi::c_void,
             JOB_NOWAIT,
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),

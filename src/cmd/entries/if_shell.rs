@@ -161,7 +161,6 @@ unsafe extern "C" fn cmd_if_shell_exec(
         Some(Box::new(move || unsafe {
             cmd_if_shell_free(cdata)
         })),
-        cdata.cast(),
         0 as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
         -(1 as ::core::ffi::c_int),

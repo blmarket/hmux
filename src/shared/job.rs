@@ -26,7 +26,7 @@ pub struct job {
     pub updatecb: job_update_cb,
     pub completecb: job_complete_cb,
     pub freecb: job_free_cb,
-    pub data: *mut ::core::ffi::c_void,
+    /// Shared liveness state for callbacks that may release the job reentrantly.
     pub alive: Rc<Cell<bool>>,
     pub entry: job_entry,
 }
@@ -45,7 +45,6 @@ impl job {
             updatecb: Default::default(),
             completecb: Default::default(),
             freecb: Default::default(),
-            data: Default::default(),
             alive: Rc::new(Cell::new(true)),
             entry: Default::default(),
         }
