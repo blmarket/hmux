@@ -236,7 +236,7 @@ pub unsafe extern "C" fn file_free(mut cf: *mut client_file) {
     (*cf).path = Default::default();
     drop(Box::from_raw(cf));
 }
-unsafe extern "C" fn file_fire_done_cb(
+unsafe fn file_fire_done_cb(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -285,15 +285,7 @@ pub unsafe extern "C" fn file_fire_done(mut cf: *mut client_file) {
     event_once(
         -(1 as ::core::ffi::c_int),
         EV_TIMEOUT as ::core::ffi::c_short,
-        Some(
-            file_fire_done_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        cf as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { file_fire_done_cb(fd, flags, cf as *mut ::core::ffi::c_void) },
         ::core::ptr::null::<timeval>(),
     );
 }
@@ -816,7 +808,7 @@ pub unsafe extern "C" fn file_cancel(mut cf: *mut client_file) {
         ::core::mem::size_of::<msg_read_cancel>() as size_t,
     );
 }
-unsafe extern "C" fn file_push_cb(
+unsafe fn file_push_cb(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -886,15 +878,7 @@ pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
         event_once(
             -(1 as ::core::ffi::c_int),
             EV_TIMEOUT as ::core::ffi::c_short,
-            Some(
-                file_push_cb
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            cf as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { file_push_cb(fd, flags, cf as *mut ::core::ffi::c_void) },
             ::core::ptr::null::<timeval>(),
         );
     } else if (*cf).stream > 2 as ::core::ffi::c_int {

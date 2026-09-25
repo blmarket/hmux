@@ -401,7 +401,7 @@ pub const WINDOW_COPY_SEARCH_ALL_TIMEOUT: ::core::ffi::c_int = 200 as ::core::ff
 pub const WINDOW_COPY_SEARCH_MAX_LINE: ::core::ffi::c_int = 2000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_DRAG_REPEAT_TIME: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_REFRESH_INTERVAL: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
-unsafe extern "C" fn window_copy_scroll_timer(
+unsafe fn window_copy_scroll_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -603,29 +603,13 @@ unsafe extern "C" fn window_copy_common_init(
         &raw mut (*data).dragtimer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            window_copy_scroll_timer
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        wme as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { window_copy_scroll_timer(fd, flags, wme as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*data).refresh_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            window_copy_refresh_timer
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        wme as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { window_copy_refresh_timer(fd, flags, wme as *mut ::core::ffi::c_void) },
     );
     return data;
 }
@@ -3628,7 +3612,7 @@ unsafe extern "C" fn window_copy_refresh_allowed(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_copy_refresh_timer(
+unsafe fn window_copy_refresh_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,

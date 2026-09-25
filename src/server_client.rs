@@ -857,7 +857,7 @@ pub unsafe extern "C" fn server_client_how_many() -> u_int {
     }
     return n;
 }
-unsafe extern "C" fn server_client_overlay_timer(
+unsafe fn server_client_overlay_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -892,15 +892,7 @@ pub unsafe fn server_client_set_overlay(
         &raw mut (*c).overlay_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            server_client_overlay_timer
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        c as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { server_client_overlay_timer(fd, flags, c as *mut ::core::ffi::c_void) },
     );
     if delay != 0 as u_int {
         event_add(&raw mut (*c).overlay_timer, &raw mut tv);
@@ -1147,43 +1139,19 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         &raw mut (*c).repeat_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            server_client_repeat_timer
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        c as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { server_client_repeat_timer(fd, flags, c as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*c).click_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            server_client_click_timer
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        c as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { server_client_click_timer(fd, flags, c as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*c).exit_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            server_client_exit_timer
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        c as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { server_client_exit_timer(fd, flags, c as *mut ::core::ffi::c_void) },
     );
     (*c).click_wp = -(1 as ::core::ffi::c_int);
     clients.push_back(owner);
@@ -1573,20 +1541,12 @@ pub unsafe extern "C" fn server_client_unref(mut c: *mut client) {
         event_once(
             -(1 as ::core::ffi::c_int),
             EV_TIMEOUT as ::core::ffi::c_short,
-            Some(
-                server_client_free
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            c as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { server_client_free(fd, flags, c as *mut ::core::ffi::c_void) },
             ::core::ptr::null::<timeval>(),
         );
     }
 }
-unsafe extern "C" fn server_client_free(
+unsafe fn server_client_free(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -3509,7 +3469,7 @@ unsafe extern "C" fn server_client_check_window_resize(mut w: *mut window) {
         (*w).new_ypixel as ::core::ffi::c_int,
     );
 }
-unsafe extern "C" fn server_client_resize_timer(
+unsafe fn server_client_resize_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -3535,15 +3495,7 @@ unsafe extern "C" fn server_client_check_pane_resize(mut wp: *mut window_pane) {
             &raw mut (*wp).resize_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            Some(
-                server_client_resize_timer
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            wp as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { server_client_resize_timer(fd, flags, wp as *mut ::core::ffi::c_void) },
         );
     }
     if event_pending(
@@ -3942,7 +3894,7 @@ unsafe extern "C" fn server_client_reset_state(mut c: *mut client) {
     tty_sync_end(tty);
     (*tty).flags |= flags;
 }
-unsafe extern "C" fn server_client_repeat_timer(
+unsafe fn server_client_repeat_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -3954,7 +3906,7 @@ unsafe extern "C" fn server_client_repeat_timer(
         server_status_client(c);
     }
 }
-unsafe extern "C" fn server_client_click_timer(
+unsafe fn server_client_click_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -3985,7 +3937,7 @@ unsafe extern "C" fn server_client_start_exit_timer(mut c: *mut client) {
         event_add(&raw mut (*c).exit_timer, &raw mut tv);
     }
 }
-unsafe extern "C" fn server_client_exit_timer(
+unsafe fn server_client_exit_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -4091,7 +4043,7 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
         _ => {}
     };
 }
-unsafe extern "C" fn server_client_redraw_timer(
+unsafe fn server_client_redraw_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     _data: *mut ::core::ffi::c_void,
@@ -4219,15 +4171,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
                 &raw mut ev,
                 -(1 as ::core::ffi::c_int),
                 0 as ::core::ffi::c_short,
-                Some(
-                    server_client_redraw_timer
-                        as unsafe extern "C" fn(
-                            ::core::ffi::c_int,
-                            ::core::ffi::c_short,
-                            *mut ::core::ffi::c_void,
-                        ) -> (),
-                ),
-                ::core::ptr::null_mut::<::core::ffi::c_void>(),
+                move |fd, flags| unsafe { server_client_redraw_timer(fd, flags, ::core::ptr::null_mut::<::core::ffi::c_void>()) },
             );
         }
         if event_pending(

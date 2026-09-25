@@ -7,17 +7,18 @@ use super::abi::*;
 pub use crate::src::reactor::{bufferevent_ops, evbuffer, event_base};
 
 pub type EventCallback = Option<
-    unsafe extern "C" fn(::core::ffi::c_int, ::core::ffi::c_short, *mut ::core::ffi::c_void),
+    std::rc::Rc<
+        std::cell::RefCell<Box<dyn FnMut(::core::ffi::c_int, ::core::ffi::c_short)>>,
+    >,
 >;
 
-#[derive(Copy, Clone, Default)]
+#[derive(Default)]
 #[repr(C)]
 pub struct event {
     pub(crate) initialized: bool,
     pub(crate) fd: ::core::ffi::c_int,
     pub(crate) flags: ::core::ffi::c_short,
     pub(crate) callback: EventCallback,
-    pub(crate) arg: *mut ::core::ffi::c_void,
 }
 
 impl event {
@@ -28,12 +29,11 @@ impl event {
             fd: 0,
             flags: 0,
             callback: None,
-            arg: ::core::ptr::null_mut(),
         }
     }
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Default)]
 #[repr(C)]
 pub struct bufferevent {
     pub ev_base: *mut event_base,

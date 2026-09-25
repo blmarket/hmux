@@ -108,7 +108,7 @@ unsafe fn screen_write_recycle_items(items: &mut screen_write_items) {
         screen_write_free_citem(item);
     }
 }
-unsafe extern "C" fn screen_write_offset_timer(
+unsafe fn screen_write_offset_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -156,15 +156,7 @@ unsafe extern "C" fn screen_write_set_cursor(
             &raw mut (*w).offset_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            Some(
-                screen_write_offset_timer
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            w as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { screen_write_offset_timer(fd, flags, w as *mut ::core::ffi::c_void) },
         );
     }
     if event_pending(
@@ -1484,7 +1476,7 @@ pub unsafe extern "C" fn screen_write_mode_clear(
         );
     }
 }
-unsafe extern "C" fn screen_write_sync_callback(
+unsafe fn screen_write_sync_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -1516,15 +1508,7 @@ pub unsafe extern "C" fn screen_write_start_sync(mut wp: *mut window_pane) {
             &raw mut (*wp).sync_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            Some(
-                screen_write_sync_callback
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            wp as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { screen_write_sync_callback(fd, flags, wp as *mut ::core::ffi::c_void) },
         );
     }
     event_add(&raw mut (*wp).sync_timer, &raw mut tv);

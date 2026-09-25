@@ -3038,15 +3038,7 @@ unsafe extern "C" fn window_pane_create(
         &raw mut (*wp).sb_auto_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            window_pane_scrollbar_timer
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        wp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { window_pane_scrollbar_timer(fd, flags, wp as *mut ::core::ffi::c_void) },
     );
     if gethostname(
         &raw mut host as *mut ::core::ffi::c_char,
@@ -3097,7 +3089,7 @@ unsafe extern "C" fn window_pane_free_modes(mut wp: *mut window_pane) {
     }
     (*wp).screen = &raw mut (*wp).base;
 }
-unsafe extern "C" fn window_pane_scrollbar_timer(
+unsafe fn window_pane_scrollbar_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,

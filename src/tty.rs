@@ -247,7 +247,7 @@ pub unsafe extern "C" fn tty_set_size(
     (*tty).xpixel = xpixel;
     (*tty).ypixel = ypixel;
 }
-unsafe extern "C" fn tty_read_callback(
+unsafe fn tty_read_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -285,7 +285,7 @@ unsafe extern "C" fn tty_read_callback(
     );
     while tty_keys_next(tty) != 0 {}
 }
-unsafe extern "C" fn tty_timer_callback(
+unsafe fn tty_timer_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -351,7 +351,7 @@ unsafe extern "C" fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
     event_add(&raw mut (*tty).timer, &raw mut tv);
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn tty_write_callback(
+unsafe fn tty_write_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -420,15 +420,7 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
         &raw mut (*tty).event_in,
         (*c).fd,
         (EV_PERSIST | EV_READ) as ::core::ffi::c_short,
-        Some(
-            tty_read_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tty as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { tty_read_callback(fd, flags, tty as *mut ::core::ffi::c_void) },
     );
     (*tty).in_0 = evbuffer_new();
     if (*tty).in_0.is_null() {
@@ -438,15 +430,7 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
         &raw mut (*tty).event_out,
         (*c).fd,
         EV_WRITE as ::core::ffi::c_short,
-        Some(
-            tty_write_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tty as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { tty_write_callback(fd, flags, tty as *mut ::core::ffi::c_void) },
     );
     (*tty).out = evbuffer_new();
     if (*tty).out.is_null() {
@@ -456,49 +440,25 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
         &raw mut (*tty).clipboard_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            tty_clipboard_query_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tty as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { tty_clipboard_query_callback(fd, flags, tty as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*tty).start_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            tty_start_timer_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tty as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { tty_start_timer_callback(fd, flags, tty as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*tty).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            tty_timer_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tty as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { tty_timer_callback(fd, flags, tty as *mut ::core::ffi::c_void) },
     );
     tty_start_tty(tty);
     tty_keys_build(tty);
     Ok(())
 }
-unsafe extern "C" fn tty_start_timer_callback(
+unsafe fn tty_start_timer_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -3766,7 +3726,7 @@ pub unsafe extern "C" fn tty_default_attributes(
     gc.bg = bg as ::core::ffi::c_int;
     tty_attributes(tty, &raw mut gc, style_ctx);
 }
-unsafe extern "C" fn tty_clipboard_query_callback(
+unsafe fn tty_clipboard_query_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,

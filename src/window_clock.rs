@@ -618,7 +618,7 @@ unsafe extern "C" fn window_clock_start_timer(mut wme: *mut window_mode_entry) {
     }
     event_add(&raw mut (*data).timer, &raw mut tv);
 }
-unsafe extern "C" fn window_clock_timer_callback(
+unsafe fn window_clock_timer_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -684,15 +684,7 @@ unsafe fn window_clock_init(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            window_clock_timer_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        wme as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { window_clock_timer_callback(fd, flags, wme as *mut ::core::ffi::c_void) },
     );
     window_clock_start_timer(wme);
     s = &raw mut (*data).screen;

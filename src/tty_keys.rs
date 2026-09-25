@@ -2195,15 +2195,7 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                         &raw mut (*tty).key_timer,
                         -(1 as ::core::ffi::c_int),
                         0 as ::core::ffi::c_short,
-                        Some(
-                            tty_keys_callback
-                                as unsafe extern "C" fn(
-                                    ::core::ffi::c_int,
-                                    ::core::ffi::c_short,
-                                    *mut ::core::ffi::c_void,
-                                ) -> (),
-                        ),
-                        tty as *mut ::core::ffi::c_void,
+                        move |fd, flags| unsafe { tty_keys_callback(fd, flags, tty as *mut ::core::ffi::c_void) },
                     );
                     event_add(&raw mut (*tty).key_timer, &raw mut tv);
                     (*tty).flags |= TTY_TIMER;
@@ -2213,7 +2205,7 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
         }
     }
 }
-unsafe extern "C" fn tty_keys_callback(
+unsafe fn tty_keys_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,

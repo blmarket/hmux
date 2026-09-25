@@ -2235,7 +2235,7 @@ pub(super) unsafe fn format_replace_expression(
     }
     return None;
 }
-pub(super) unsafe extern "C" fn format_cycle_callback(
+pub(super) unsafe fn format_cycle_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -2258,15 +2258,7 @@ pub(super) unsafe extern "C" fn format_cycle_start_timer(mut c: *mut client) {
             &raw mut (*c).cycle_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            Some(
-                format_cycle_callback
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            c as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { format_cycle_callback(fd, flags, c as *mut ::core::ffi::c_void) },
         );
     }
     if event_pending(

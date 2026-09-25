@@ -24,7 +24,7 @@ use std::ffi::{CStr, CString};
 
 pub const NAME_INTERVAL: ::core::ffi::c_int = 500000 as ::core::ffi::c_int;
 
-unsafe extern "C" fn name_time_callback(
+unsafe fn name_time_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -94,15 +94,7 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
                 &raw mut (*w).name_event,
                 -(1 as ::core::ffi::c_int),
                 0 as ::core::ffi::c_short,
-                Some(
-                    name_time_callback
-                        as unsafe extern "C" fn(
-                            ::core::ffi::c_int,
-                            ::core::ffi::c_short,
-                            *mut ::core::ffi::c_void,
-                        ) -> (),
-                ),
-                w as *mut ::core::ffi::c_void,
+                move |fd, flags| unsafe { name_time_callback(fd, flags, w as *mut ::core::ffi::c_void) },
             );
         }
         if event_pending(

@@ -540,20 +540,12 @@ pub unsafe extern "C" fn session_remove_ref(
         event_once(
             -(1 as ::core::ffi::c_int),
             EV_TIMEOUT as ::core::ffi::c_short,
-            Some(
-                session_free
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            s as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { session_free(fd, flags, s as *mut ::core::ffi::c_void) },
             ::core::ptr::null::<timeval>(),
         );
     }
 }
-unsafe extern "C" fn session_free(
+unsafe fn session_free(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -619,7 +611,7 @@ pub unsafe extern "C" fn session_destroy(
         b"session_destroy\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
-unsafe extern "C" fn session_lock_timer(
+unsafe fn session_lock_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -665,15 +657,7 @@ pub unsafe extern "C" fn session_update_activity(mut s: *mut session, mut from: 
             &raw mut (*s).lock_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            Some(
-                session_lock_timer
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            s as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { session_lock_timer(fd, flags, s as *mut ::core::ffi::c_void) },
         );
     }
     if (*s).attached != 0 as u_int {

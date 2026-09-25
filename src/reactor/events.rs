@@ -4,7 +4,7 @@ use crate::src::shared::event::{event, event_base, EventCallback};
 use hmux_rt::{Handle as _, Runtime as _, Signals as _};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_short, c_void};
+use std::ffi::{c_char, c_int, c_short};
 use std::future::{poll_fn, Future};
 use std::pin::pin;
 use std::rc::Rc;
@@ -16,7 +16,6 @@ struct EventState {
     fd: c_int,
     flags: c_short,
     callback: Callback,
-    arg: *mut c_void,
     deadline: Cell<Option<Instant>>,
     interval: Option<Duration>,
     active: Cell<c_short>,
@@ -54,10 +53,9 @@ fn fire(state: &Rc<EventState>, flags: c_short) {
     if state.flags & 0x10 == 0 {
         remove(state.key);
     }
-    if let Some(cb) = state.callback {
-        unsafe {
-            cb(state.fd, flags, state.arg);
-        }
+    if let Some(cb) = &state.callback {
+        let mut cb = cb.borrow_mut();
+        (*cb)(state.fd, flags);
     }
 }
 fn start(state: &Rc<EventState>) -> std::io::Result<()> {
@@ -127,8 +125,7 @@ fn configure(ev: &event, interval: Option<Duration>) -> Rc<EventState> {
         key: ev as *const event as usize,
         fd: ev.fd,
         flags: ev.flags,
-        callback: ev.callback,
-        arg: ev.arg,
+        callback: ev.callback.clone(),
         deadline: Cell::new(interval.map(|d| Instant::now() + d)),
         interval,
         active: Cell::new(0),
@@ -192,21 +189,22 @@ pub unsafe fn event_del(ev: *mut event) -> c_int {
     remove(ev as usize);
     0
 }
-pub unsafe fn event_set(
+pub unsafe fn event_set<F>(
     ev: *mut event,
     fd: c_int,
     flags: c_short,
-    callback: Callback,
-    arg: *mut c_void,
-) {
+    callback: F,
+)
+where
+    F: FnMut(c_int, c_short) + 'static,
+{
     event_del(ev);
-    ev.write(event {
+    *ev = event {
         initialized: true,
         fd,
         flags,
-        callback,
-        arg,
-    });
+        callback: Some(std::rc::Rc::new(RefCell::new(Box::new(callback)))),
+    };
 }
 pub unsafe fn event_add(ev: *mut event, timeout: *const timeval) -> c_int {
     ensure_runtime();
@@ -246,15 +244,17 @@ pub unsafe fn event_active(ev: *mut event, flags: c_int, _: c_short) {
     state.active.set(state.active.get() | flags as c_short);
     activate(&state);
 }
-pub unsafe fn event_once(
+pub unsafe fn event_once<F>(
     fd: c_int,
     flags: c_short,
-    cb: Callback,
-    arg: *mut c_void,
+    cb: F,
     timeout: *const timeval,
-) -> c_int {
+) -> c_int
+where
+    F: FnMut(c_int, c_short) + 'static,
+{
     let mut ev: Box<event> = Box::default();
-    event_set(&mut *ev, fd, flags & !0x10, cb, arg);
+    event_set(&mut *ev, fd, flags & !0x10, cb);
     let zero = timeval {
         tv_sec: 0,
         tv_usec: 0,

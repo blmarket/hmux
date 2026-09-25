@@ -67,7 +67,7 @@ use crate::src::shared::tty::tty;
 use crate::src::shared::tty::{TTY_FREEZE, TTY_NOCURSOR};
 use crate::src::shared::window::winlink;
 
-unsafe extern "C" fn status_timer_callback(
+unsafe fn status_timer_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -110,15 +110,7 @@ pub unsafe extern "C" fn status_timer_start(mut c: *mut client) {
             &raw mut (*c).status.timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            Some(
-                status_timer_callback
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            c as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { status_timer_callback(fd, flags, c as *mut ::core::ffi::c_void) },
         );
     }
     if !s.is_null()
@@ -529,15 +521,7 @@ pub unsafe extern "C" fn status_message_set(
             &raw mut (*c).message_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            Some(
-                status_message_callback
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            c as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { status_message_callback(fd, flags, c as *mut ::core::ffi::c_void) },
         );
         event_add(&raw mut (*c).message_timer, &raw mut tv);
     }
@@ -609,7 +593,7 @@ unsafe extern "C" fn status_message_area(
     }
     *area_w = w;
 }
-unsafe extern "C" fn status_message_callback(
+unsafe fn status_message_callback(
     _fd: ::core::ffi::c_int,
     _event: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,

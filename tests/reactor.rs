@@ -29,9 +29,6 @@ impl Drop for Runtime {
         shutdown_runtime();
     }
 }
-unsafe extern "C" fn count(_: c_int, _: c_short, arg: *mut c_void) {
-    *(arg as *mut usize) += 1;
-}
 #[test]
 fn timers_activation_cancellation_and_deadline_queries() {
     let rt = Runtime::new();
@@ -39,12 +36,12 @@ fn timers_activation_cancellation_and_deadline_queries() {
         let mut event = event::default();
         assert_eq!(event_initialized(&event), 0);
         let mut calls = 0usize;
+        let calls_ptr = &mut calls as *mut usize;
         event_set(
             &mut event,
             -1,
             0,
-            Some(count),
-            (&mut calls as *mut usize).cast(),
+            move |_, _| *calls_ptr += 1,
         );
         assert_eq!(event_initialized(&event), 1);
         assert_eq!(event_pending(&event, 1, std::ptr::null_mut()), 0);
@@ -77,8 +74,7 @@ fn timers_activation_cancellation_and_deadline_queries() {
         event_once(
             -1,
             0,
-            Some(count),
-            (&mut calls as *mut usize).cast(),
+            move |_, _| *calls_ptr += 1,
             std::ptr::null(),
         );
         rt.tick();
@@ -89,12 +85,6 @@ struct Owner {
     event: event,
     calls: *mut usize,
 }
-unsafe extern "C" fn free_owner(_: c_int, _: c_short, arg: *mut c_void) {
-    let owner = unsafe { Box::from_raw(arg as *mut Owner) };
-    unsafe {
-        *owner.calls += 1;
-    }
-}
 #[test]
 fn activation_can_free_its_embedded_owner() {
     let rt = Runtime::new();
@@ -104,7 +94,10 @@ fn activation_can_free_its_embedded_owner() {
             event: Default::default(),
             calls: &mut calls,
         }));
-        event_set(&mut (*owner).event, -1, 0, Some(free_owner), owner.cast());
+        event_set(&mut (*owner).event, -1, 0, move |_, _| {
+            let owner = Box::from_raw(owner);
+            *owner.calls += 1;
+        });
         event_active(&mut (*owner).event, 1, 1);
         event_active(&mut (*owner).event, 1, 1);
         rt.tick();
@@ -344,15 +337,14 @@ struct Reuse {
     old_fd: c_int,
     calls: usize,
 }
-unsafe extern "C" fn reuse_fd(fd: c_int, _: c_short, arg: *mut c_void) {
-    let state = unsafe { &mut *(arg as *mut Reuse) };
+unsafe fn reuse_event(state: *mut Reuse, fd: c_int) {
+    let state = &mut *state;
     state.calls += 1;
     if state.calls == 1 {
-        unsafe {
-            libc::dup2(state.replacement, state.old_fd);
-            event_set(&mut state.event, fd, 2, Some(reuse_fd), arg);
-            event_add(&mut state.event, std::ptr::null());
-        }
+        libc::dup2(state.replacement, state.old_fd);
+        let state_ptr = state as *mut Reuse;
+        event_set(&mut state.event, fd, 2, move |fd, _| reuse_event(state_ptr, fd));
+        event_add(&mut state.event, std::ptr::null());
     }
 }
 #[test]
@@ -367,12 +359,12 @@ fn callback_rearming_a_reused_descriptor_cannot_keep_the_old_lease() {
         calls: 0,
     };
     unsafe {
+        let state_ptr = &mut state as *mut Reuse;
         event_set(
             &mut state.event,
             old_fd.as_raw_fd(),
             2,
-            Some(reuse_fd),
-            (&mut state as *mut Reuse).cast(),
+            move |fd, _| reuse_event(state_ptr, fd),
         );
         event_add(&mut state.event, std::ptr::null());
         old_peer.write_all(b"old").unwrap();

@@ -237,7 +237,7 @@ pub unsafe fn server_create_socket(mut flags: uint64_t) -> Result<::core::ffi::c
     message.push(b')');
     Err(CString::new(message).expect("C strings contain no interior NUL"))
 }
-unsafe extern "C" fn server_tidy_event(
+unsafe fn server_tidy_event(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     _data: *mut ::core::ffi::c_void,
@@ -404,15 +404,7 @@ unsafe fn server_start_inner(
         &raw mut server_ev_tidy,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            server_tidy_event
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        ::core::ptr::null_mut::<::core::ffi::c_void>(),
+        move |fd, flags| unsafe { server_tidy_event(fd, flags, ::core::ptr::null_mut::<::core::ffi::c_void>()) },
     );
     event_add(&raw mut server_ev_tidy, &raw mut tv);
     server_acl_init();
@@ -569,7 +561,7 @@ pub unsafe extern "C" fn server_update_socket() {
         chmod(socket_path, mode as __mode_t);
     }
 }
-unsafe extern "C" fn server_accept(
+unsafe fn server_accept(
     mut fd: ::core::ffi::c_int,
     mut events: ::core::ffi::c_short,
     _data: *mut ::core::ffi::c_void,
@@ -634,15 +626,7 @@ pub unsafe extern "C" fn server_add_accept(mut timeout: ::core::ffi::c_int) {
             &raw mut server_ev_accept,
             server_fd,
             EV_READ as ::core::ffi::c_short,
-            Some(
-                server_accept
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            NULL,
+            move |fd, flags| unsafe { server_accept(fd, flags, NULL) },
         );
         event_add(&raw mut server_ev_accept, ::core::ptr::null::<timeval>());
     } else {
@@ -650,15 +634,7 @@ pub unsafe extern "C" fn server_add_accept(mut timeout: ::core::ffi::c_int) {
             &raw mut server_ev_accept,
             server_fd,
             EV_TIMEOUT as ::core::ffi::c_short,
-            Some(
-                server_accept
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            NULL,
+            move |fd, flags| unsafe { server_accept(fd, flags, NULL) },
         );
         event_add(&raw mut server_ev_accept, &raw mut tv);
     };

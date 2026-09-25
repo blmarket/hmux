@@ -565,7 +565,7 @@ unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
         me = me1;
     }
 }
-unsafe extern "C" fn monitor_timer(
+unsafe fn monitor_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut data: *mut ::core::ffi::c_void,
@@ -790,15 +790,7 @@ pub unsafe extern "C" fn monitor_add(
             &raw mut (*ms).timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            Some(
-                monitor_timer
-                    as unsafe extern "C" fn(
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_short,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            ms as *mut ::core::ffi::c_void,
+            move |fd, flags| unsafe { monitor_timer(fd, flags, ms as *mut ::core::ffi::c_void) },
         );
     }
     if event_pending(

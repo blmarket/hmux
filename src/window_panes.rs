@@ -1530,7 +1530,7 @@ unsafe extern "C" fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
     screen_write_stop(&raw mut ctx);
     (*(*data).wp).flags |= PANE_REDRAW;
 }
-unsafe extern "C" fn window_panes_timer_callback(
+unsafe fn window_panes_timer_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -1642,15 +1642,7 @@ unsafe fn window_panes_init(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            window_panes_timer_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        wme as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { window_panes_timer_callback(fd, flags, wme as *mut ::core::ffi::c_void) },
     );
     if (*data).delay != 0 as u_int {
         tv.tv_sec = (*data).delay.wrapping_div(1000 as u_int) as __time_t;

@@ -55,7 +55,7 @@ unsafe fn proc_dispatch(peer: *mut tmuxpeer, imsg: *mut imsg) -> bool {
         false
     }
 }
-unsafe extern "C" fn proc_event_cb(
+unsafe fn proc_event_cb(
     _fd: ::core::ffi::c_int,
     mut events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -118,7 +118,7 @@ unsafe extern "C" fn proc_event_cb(
     }
     proc_update_event(peer);
 }
-unsafe extern "C" fn proc_signal_cb(
+unsafe fn proc_signal_cb(
     mut signo: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -173,15 +173,7 @@ unsafe extern "C" fn proc_update_event(mut peer: *mut tmuxpeer) {
         &raw mut (*peer).event,
         (*peer).ibuf.fd,
         events | EV_PERSIST as ::core::ffi::c_short,
-        Some(
-            proc_event_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        peer as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_event_cb(fd, flags, peer as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*peer).event, ::core::ptr::null::<timeval>());
 }
@@ -346,120 +338,56 @@ pub unsafe fn proc_set_signals(
         &raw mut (*tp).ev_sigint,
         2 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        Some(
-            proc_signal_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_signal_cb(fd, flags, tp as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*tp).ev_sigint, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sighup,
         1 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        Some(
-            proc_signal_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_signal_cb(fd, flags, tp as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*tp).ev_sighup, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigchld,
         17 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        Some(
-            proc_signal_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_signal_cb(fd, flags, tp as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*tp).ev_sigchld, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigcont,
         18 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        Some(
-            proc_signal_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_signal_cb(fd, flags, tp as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*tp).ev_sigcont, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigterm,
         15 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        Some(
-            proc_signal_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_signal_cb(fd, flags, tp as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*tp).ev_sigterm, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigusr1,
         10 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        Some(
-            proc_signal_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_signal_cb(fd, flags, tp as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*tp).ev_sigusr1, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigusr2,
         12 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        Some(
-            proc_signal_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_signal_cb(fd, flags, tp as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*tp).ev_sigusr2, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigwinch,
         28 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        Some(
-            proc_signal_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        tp as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_signal_cb(fd, flags, tp as *mut ::core::ffi::c_void) },
     );
     event_add(&raw mut (*tp).ev_sigwinch, ::core::ptr::null::<timeval>());
 }
@@ -522,15 +450,7 @@ pub unsafe fn proc_add_peer(
         &raw mut (*peer).event,
         fd,
         EV_READ as ::core::ffi::c_short,
-        Some(
-            proc_event_cb
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        peer as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { proc_event_cb(fd, flags, peer as *mut ::core::ffi::c_void) },
     );
     if getpeereid(fd, &raw mut (*peer).uid, &raw mut (*peer).gid) != 0 as ::core::ffi::c_int {
         (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;

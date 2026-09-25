@@ -2294,7 +2294,7 @@ unsafe extern "C" fn input_fire_pane_title_changed(
         ep,
     );
 }
-unsafe extern "C" fn input_ground_timer_callback(
+unsafe fn input_ground_timer_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
@@ -2384,29 +2384,13 @@ pub unsafe extern "C" fn input_init(
         &raw mut (*ictx).ground_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            input_ground_timer_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        ictx as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { input_ground_timer_callback(fd, flags, ictx as *mut ::core::ffi::c_void) },
     );
     event_set(
         &raw mut (*ictx).request_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            input_request_timer_callback
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        ictx as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { input_request_timer_callback(fd, flags, ictx as *mut ::core::ffi::c_void) },
     );
     input_reset(ictx, 0 as ::core::ffi::c_int);
     return ictx;
@@ -5999,7 +5983,7 @@ pub unsafe extern "C" fn input_set_buffer_size(mut buffer_size: size_t) {
     );
     input_buffer_size = buffer_size;
 }
-unsafe extern "C" fn input_request_timer_callback(
+unsafe fn input_request_timer_callback(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,

@@ -292,15 +292,7 @@ unsafe fn cmd_run_shell_exec(
         &raw mut (*cdata).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        Some(
-            cmd_run_shell_timer
-                as unsafe extern "C" fn(
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_short,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        cdata as *mut ::core::ffi::c_void,
+        move |fd, flags| unsafe { cmd_run_shell_timer(fd, flags, cdata as *mut ::core::ffi::c_void) },
     );
     if !delay.is_null() {
         tv.tv_usec = 0 as __suseconds_t;
@@ -322,7 +314,7 @@ unsafe fn cmd_run_shell_exec(
     }
     return CMD_RETURN_WAIT;
 }
-unsafe extern "C" fn cmd_run_shell_timer(
+unsafe fn cmd_run_shell_timer(
     _fd: ::core::ffi::c_int,
     _events: ::core::ffi::c_short,
     mut arg: *mut ::core::ffi::c_void,
