@@ -53,10 +53,10 @@ use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
-unsafe fn set_spawn_cause(cause: *mut Option<CString>, parts: &[&[u8]]) {
-    if cause.is_null() {
+fn set_spawn_cause(cause: Option<&mut Option<CString>>, parts: &[&[u8]]) {
+    let Some(cause) = cause else {
         return;
-    }
+    };
     let mut bytes = Vec::with_capacity(parts.iter().map(|part| part.len()).sum());
     for part in parts {
         bytes.extend_from_slice(part);
@@ -341,7 +341,7 @@ pub unsafe fn spawn_window(
             }
             if !wp.is_null() {
                 set_spawn_cause(
-                    cause,
+                    cause.as_mut(),
                     &[
                         b"window ",
                         (*s).name.as_bytes(),
@@ -368,7 +368,7 @@ pub unsafe fn spawn_window(
     if !(*sc).flags & SPAWN_RESPAWN != 0 && idx != -(1 as ::core::ffi::c_int) {
         wl = winlink_find_by_index(&raw mut (*s).windows, idx);
         if !wl.is_null() && !(*sc).flags & SPAWN_KILL != 0 {
-            set_spawn_cause(cause, &[b"index ", idx.to_string().as_bytes(), b" in use"]);
+            set_spawn_cause(cause.as_mut(), &[b"index ", idx.to_string().as_bytes(), b" in use"]);
             return ::core::ptr::null_mut::<winlink>();
         }
         if !wl.is_null() {
@@ -396,7 +396,7 @@ pub unsafe fn spawn_window(
         (*sc).wl = winlink_add(&raw mut (*s).windows, idx);
         if (*sc).wl.is_null() {
             set_spawn_cause(
-                cause,
+                cause.as_mut(),
                 &[b"couldn't add window ", idx.to_string().as_bytes()],
             );
             return ::core::ptr::null_mut::<winlink>();
@@ -415,7 +415,7 @@ pub unsafe fn spawn_window(
         if w.is_null() {
             winlink_remove(&raw mut (*s).windows, (*sc).wl);
             set_spawn_cause(
-                cause,
+                cause.as_mut(),
                 &[b"couldn't create window ", idx.to_string().as_bytes()],
             );
             return ::core::ptr::null_mut::<winlink>();
@@ -526,11 +526,11 @@ pub unsafe fn spawn_pane(
     );
     if (*sc).flags & SPAWN_MODAL != 0 {
         if !(*sc).flags & SPAWN_FLOATING != 0 {
-            set_spawn_cause(cause, &[b"modal pane must be floating"]);
+            set_spawn_cause(cause.as_mut(), &[b"modal pane must be floating"]);
             return ::core::ptr::null_mut::<window_pane>();
         }
         if !(*w).modal.is_null() {
-            set_spawn_cause(cause, &[b"window already has a modal pane"]);
+            set_spawn_cause(cause.as_mut(), &[b"window already has a modal pane"]);
             return ::core::ptr::null_mut::<window_pane>();
         }
     }
@@ -575,7 +575,7 @@ pub unsafe fn spawn_pane(
         if (*(*sc).wp0).fd != -(1 as ::core::ffi::c_int) && !(*sc).flags & SPAWN_KILL != 0 {
             window_pane_index((*sc).wp0, &raw mut idx);
             set_spawn_cause(
-                cause,
+                cause.as_mut(),
                 &[
                     b"pane ",
                     (*s).name.as_bytes(),
@@ -796,7 +796,7 @@ pub unsafe fn spawn_pane(
         );
         if (*new_wp).pid == -(1 as ::core::ffi::c_int) {
             set_spawn_cause(
-                cause,
+                cause.as_mut(),
                 &[
                     b"fork failed: ",
                     CStr::from_ptr(strerror(*__errno_location())).to_bytes(),
