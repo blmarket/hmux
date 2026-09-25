@@ -152,6 +152,69 @@ pub struct window_copy_mode_data {
     pub refresh_active: ::core::ffi::c_int,
 }
 
+impl Default for window_copy_mode_data {
+    fn default() -> Self {
+        Self {
+            screen: screen::empty(),
+            backing: std::ptr::null_mut(),
+            backing_written: 0,
+            ictx: std::ptr::null_mut(),
+            sync_added: 0,
+            sync_collected: 0,
+            sync_generation: 0,
+            viewmode: 0,
+            oy: 0,
+            selx: 0,
+            sely: 0,
+            endselx: 0,
+            endsely: 0,
+            cursordrag: CURSORDRAG_NONE,
+            modekeys: 0,
+            lineflag: LINE_SEL_NONE,
+            rectflag: 0,
+            scroll_exit: 0,
+            hide_position: 0,
+            line_numbers: 0,
+            selflag: SEL_CHAR,
+            recentre_state: RECENTRE_TOP,
+            recentre_line: 0,
+            separators: std::ptr::null(),
+            dx: 0,
+            dy: 0,
+            selrx: 0,
+            selry: 0,
+            endselrx: 0,
+            endselry: 0,
+            cx: 0,
+            cy: 0,
+            lastcx: 0,
+            lastsx: 0,
+            mx: 0,
+            my: 0,
+            showmark: 0,
+            searchtype: 0,
+            searchdirection: 0,
+            searchregex: 0,
+            searchstr: None,
+            searchmark_owner: None,
+            searchmark: std::ptr::null_mut(),
+            searchcount: 0,
+            searchmore: 0,
+            searchall: 0,
+            searchx: 0,
+            searchy: 0,
+            searcho: 0,
+            searchgen: 0,
+            timeout: 0,
+            jumptype: 0,
+            jumpchar: Vec::new(),
+            dragtimer: event::new(),
+            refresh_timer: event::new(),
+            refresh_active: 0,
+        }
+    }
+}
+
 fn window_copy_searchstr(data: &window_copy_mode_data) -> *const ::core::ffi::c_char {
     data.searchstr
         .as_ref()
@@ -504,18 +567,8 @@ unsafe extern "C" fn window_copy_common_init(
     mut wme: *mut window_mode_entry,
 ) -> *mut window_copy_mode_data {
     let mut wp: *mut window_pane = (*wme).wp;
-    let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
     let mut base: *mut screen = &raw mut (*wp).base;
-    // The C-translated fields start zeroed, as they did with xcalloc. Write
-    // the Rust-owned field before treating the allocation as initialized.
-    let mut storage = Box::<window_copy_mode_data>::new_uninit();
-    let uninit_data = storage.as_mut_ptr();
-    uninit_data.write_bytes(0, 1);
-    (&raw mut (*uninit_data).screen).write(screen::empty());
-    (&raw mut (*uninit_data).jumpchar).write(Vec::new());
-    (&raw mut (*uninit_data).searchmark_owner).write(None);
-    (&raw mut (*uninit_data).searchstr).write(None);
-    data = Box::into_raw(storage.assume_init());
+    let mut data = Box::into_raw(Box::new(window_copy_mode_data::default()));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).cursordrag = CURSORDRAG_NONE;
     (*data).lineflag = LINE_SEL_NONE;

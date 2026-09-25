@@ -69,7 +69,6 @@ use crate::src::window_border::{
 };
 use crate::src::window_copy::window_copy_get_current_offset;
 use std::cell::RefCell;
-use std::mem::MaybeUninit;
 
 pub const REDRAW_SPAN_MENU: redraw_span_type = 6;
 pub const REDRAW_SPAN_SCROLLBAR: redraw_span_type = 5;
@@ -90,7 +89,7 @@ pub struct redraw_draw_ctx {
     pub default_gc: grid_cell,
     pub flags: ::core::ffi::c_int,
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct redraw_build_cell {
     pub data: redraw_span_data,
@@ -132,12 +131,12 @@ pub const REDRAW_START_ISOLATE: [::core::ffi::c_char; 4] =
 pub const REDRAW_END_ISOLATE: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"\xE2\x81\xA9\0") };
 thread_local! {
-    static REDRAW_CELLS: RefCell<Vec<MaybeUninit<redraw_build_cell>>> = RefCell::new(Vec::new());
+    static REDRAW_CELLS: RefCell<Vec<redraw_build_cell>> = RefCell::new(Vec::new());
 }
 
 // Each scene build owns its scratch cells until it has copied them into spans.
 // Taking the cache leaves an empty slot for a nested scene build.
-struct RedrawCellScratch(Vec<MaybeUninit<redraw_build_cell>>);
+struct RedrawCellScratch(Vec<redraw_build_cell>);
 
 impl RedrawCellScratch {
     fn take() -> Self {
@@ -283,11 +282,7 @@ unsafe extern "C" fn redraw_reset_cell(
 ) {
     let mut bc: *mut redraw_build_cell = redraw_get_build_cell(bctx, x, y);
     let mut w: *mut window = (*bctx).w;
-    memset(
-        bc as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<redraw_build_cell>() as size_t,
-    );
+    (*bc).data = redraw_span_data::default();
     if (*bctx).ox.wrapping_add(x) < (*w).sx && (*bctx).oy.wrapping_add(y) < (*w).sy {
         (*bc).data.type_0 = REDRAW_SPAN_EMPTY;
     } else {
@@ -1061,7 +1056,7 @@ unsafe extern "C" fn redraw_compare_data(
 }
 unsafe fn redraw_build_cells(
     mut bctx: *mut redraw_build_ctx,
-    cells: &mut Vec<MaybeUninit<redraw_build_cell>>,
+    cells: &mut Vec<redraw_build_cell>,
 ) {
     let mut w: *mut window = (*bctx).w;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1085,9 +1080,9 @@ unsafe fn redraw_build_cells(
                 b"redraw_build_cells\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        cells.resize_with(ncells, MaybeUninit::uninit);
+        cells.resize_with(ncells, redraw_build_cell::default);
     }
-    (*bctx).cells = cells.as_mut_ptr().cast::<redraw_build_cell>();
+    (*bctx).cells = cells.as_mut_ptr();
     y = 0 as u_int;
     while y < (*bctx).sy {
         x = 0 as u_int;

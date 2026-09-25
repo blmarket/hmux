@@ -121,12 +121,14 @@ fn fork_parent_survives(reset: bool) {
             matches!(runtime.poll(Some(Duration::ZERO)), Err(e) if e.kind() == io::ErrorKind::BrokenPipe)
         );
         if reset {
-            let mut saved = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+            let mut saved = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
             assert_eq!(
-                unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, saved.as_mut_ptr()) },
+                unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut saved) },
                 0
             );
-            let saved = unsafe { saved.assume_init() };
             let limited = libc::rlimit {
                 rlim_cur: 0,
                 rlim_max: saved.rlim_max,

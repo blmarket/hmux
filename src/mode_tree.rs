@@ -265,18 +265,7 @@ unsafe extern "C" fn mode_tree_check_selected(mut mtd: *mut mode_tree_data) {
     }
 }
 unsafe fn mode_tree_alloc_data() -> *mut mode_tree_data {
-    let mut allocation = Box::<mode_tree_data>::new_uninit();
-    let mtd = allocation.as_mut_ptr();
-    // All remaining fields retain the translated C zero state. Initialize
-    // Rust-owned fields before treating the record as a mode_tree_data value.
-    mtd.write_bytes(0, 1);
-    ::core::ptr::write(&raw mut (*mtd).children, mode_tree_list::default());
-    ::core::ptr::write(&raw mut (*mtd).saved, mode_tree_list::default());
-    ::core::ptr::write(&raw mut (*mtd).lines, Vec::new());
-    ::core::ptr::write(&raw mut (*mtd).search, None);
-    ::core::ptr::write(&raw mut (*mtd).filter, None);
-    ::core::ptr::write(&raw mut (*mtd).screen, screen::empty());
-    let mtd = Box::into_raw(allocation.assume_init());
+    let mtd = Box::into_raw(Box::new(mode_tree_data::default()));
     (*mtd).references = 1;
     mtd
 }

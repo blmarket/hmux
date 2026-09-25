@@ -52,6 +52,55 @@ pub struct mode_tree_data {
     pub help: ::core::ffi::c_int,
 }
 
+impl Default for mode_tree_data {
+    fn default() -> Self {
+        Self {
+            dead: 0,
+            references: 0,
+            zoomed: 0,
+            wp: std::ptr::null_mut(),
+            modedata: std::ptr::null_mut(),
+            menu: std::ptr::null(),
+            sort_crit: sort_criteria {
+                order: 0,
+                reversed: 0,
+                order_seq: std::ptr::null_mut(),
+            },
+            view_name: None,
+            buildcb: None,
+            drawcb: None,
+            searchcb: None,
+            menucb: None,
+            heightcb: None,
+            keycb: None,
+            swapcb: None,
+            sortcb: None,
+            helpcb: None,
+            children: mode_tree_list::default(),
+            saved: mode_tree_list::default(),
+            lines: Vec::new(),
+            depth: 0,
+            maxdepth: 0,
+            width: 0,
+            height: 0,
+            offset: 0,
+            current: 0,
+            screen: screen::empty(),
+            prompt: std::ptr::null_mut(),
+            prompt_data: std::ptr::null_mut(),
+            prompt_cx: 0,
+            prompt_top: 0,
+            preview: 0,
+            search: None,
+            filter: None,
+            no_matches: 0,
+            search_dir: 0,
+            search_icase: 0,
+            help: 0,
+        }
+    }
+}
+
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
 
 #[derive(Copy, Clone)]
