@@ -237,8 +237,8 @@ unsafe fn server_client_set_ttyname(c: *mut client, ttyname: Option<CString>) {
     (*c).ttyname = ttyname;
 }
 
-unsafe fn server_client_set_term_name(c: *mut client, term_name: Option<CString>) {
-    (*c).term_name = term_name;
+fn server_client_set_term_name(c: &mut client, term_name: Option<CString>) {
+    c.term_name = term_name;
 }
 
 unsafe fn server_client_set_cwd(c: *mut client, cwd: Option<CString>) {
@@ -275,7 +275,7 @@ pub(crate) fn server_client_set_term_type(c: &mut client, term_type: Option<CStr
 
 unsafe fn server_client_ensure_term_name(c: *mut client) {
     if (*c).term_name.is_none() || *(*c).term_name.as_ref().unwrap().as_ptr() == 0 {
-        server_client_set_term_name(c, Some(CString::new("unknown").unwrap()));
+        server_client_set_term_name(&mut *c, Some(CString::new("unknown").unwrap()));
     }
 }
 
@@ -411,7 +411,7 @@ mod client_message_owner_tests {
                 b"unknown"
             );
 
-            server_client_set_term_name(c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
+            server_client_set_term_name(&mut *c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).term_name)
@@ -423,7 +423,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_set_term_name(c, Some(CString::new("").unwrap()));
+            server_client_set_term_name(&mut *c, Some(CString::new("").unwrap()));
             server_client_ensure_term_name(c);
             assert_eq!(
                 CStr::from_ptr(
@@ -435,7 +435,7 @@ mod client_message_owner_tests {
                 b"unknown"
             );
 
-            server_client_set_term_name(c, None);
+            server_client_set_term_name(&mut *c, None);
             assert!((*c).term_name.is_none());
             assert!(owner.term_name.is_none());
         }
@@ -1550,7 +1550,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     }
     server_client_set_ttyname(c, None);
     free((*c).clipboard_panes as *mut ::core::ffi::c_void);
-    server_client_set_term_name(c, None);
+    server_client_set_term_name(&mut *c, None);
     server_client_set_term_type(&mut *c, None);
     server_client_clear_term_caps(c);
     status_free(c);
@@ -4811,7 +4811,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
             {
                 return -(1 as ::core::ffi::c_int);
             }
-            server_client_set_term_name(c, Some(CStr::from_ptr(data).to_owned()));
+            server_client_set_term_name(&mut *c, Some(CStr::from_ptr(data).to_owned()));
             log_debug(
                 b"client %p IDENTIFY_TERM %s\0" as *const u8 as *const ::core::ffi::c_char,
                 c,
