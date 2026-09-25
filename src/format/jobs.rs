@@ -27,8 +27,8 @@ unsafe fn format_job_set_out_from_line(fj: *mut format_job, value: &[u8]) {
     format_job_set_out(fj, owned);
 }
 
-unsafe fn format_job_message(fj: *mut format_job, suffix: &[u8]) -> CString {
-    let cmd = CStr::from_ptr(((*fj).cmd).as_ptr().cast_mut()).to_bytes();
+fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
+    let cmd = fj.cmd.as_bytes();
     let mut bytes = Vec::with_capacity(2 + cmd.len() + suffix.len());
     bytes.extend_from_slice(b"<'");
     bytes.extend_from_slice(cmd);
@@ -196,12 +196,12 @@ pub(super) unsafe fn format_job_get(
             -(1 as ::core::ffi::c_int),
         );
         if (*fj).job.is_null() {
-            format_job_set_out(fj, format_job_message(fj, b"' didn't start>"));
+            format_job_set_out(fj, format_job_message(&*fj, b"' didn't start>"));
         }
         (*fj).last = t;
         (*fj).updated = 0 as ::core::ffi::c_int;
     } else if !(*fj).job.is_null() && t - (*fj).last > 1 as time_t && (*fj).out.is_none() {
-        format_job_set_out(fj, format_job_message(fj, b"' not ready>"));
+        format_job_set_out(fj, format_job_message(&*fj, b"' not ready>"));
     }
     if (*ft).flags & FORMAT_STATUS != 0 {
         (*fj).status = 1 as ::core::ffi::c_int;
@@ -435,7 +435,7 @@ mod tests {
                 b"first"
             );
             format_job_set_expanded(fj, CString::new(b"expanded\xff".to_vec()).unwrap());
-            format_job_set_out(fj, format_job_message(fj, b"' not ready>"));
+            format_job_set_out(fj, format_job_message(&*fj, b"' not ready>"));
             assert_eq!(
                 CStr::from_ptr(
                     ((*fj).out)
