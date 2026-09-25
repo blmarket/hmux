@@ -1988,13 +1988,13 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         s = sessions_minmax(&raw mut sessions, RB_NEGINF);
         while !s.is_null() {
             session_update_history(s);
-            s = sessions_next(s);
+            s = sessions_next(&*s);
         }
     }
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         status_update_cache(s);
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     recalculate_sizes();
     loop_0 = clients.first();

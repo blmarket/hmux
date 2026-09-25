@@ -131,7 +131,7 @@ unsafe extern "C" fn cmd_list_panes_server(mut self_0: *mut cmd, mut item: *mut 
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         cmd_list_panes_session(self_0, s, item, 2 as ::core::ffi::c_int);
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
 }
 unsafe extern "C" fn cmd_list_panes_session(

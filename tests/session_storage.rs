@@ -34,19 +34,19 @@ fn byte_order_duplicates_neighbors_and_removal() {
         let mut node = sessions_minmax(&mut *head, -1);
         for name in [c"", c"a", c"z", c"\xff"] {
             assert_eq!(CStr::from_ptr(((*node).name).as_ptr().cast_mut()), name);
-            node = sessions_next(node);
+            node = sessions_next(&*node);
         }
         assert!(node.is_null());
         node = sessions_minmax(&mut *head, 1);
         for name in [c"\xff", c"z", c"a", c""] {
             assert_eq!(CStr::from_ptr(((*node).name).as_ptr().cast_mut()), name);
-            node = sessions_prev(node);
+            node = sessions_prev(&*node);
         }
         assert!(node.is_null());
         // Cache the successor before removing the current record, as callers do.
         node = sessions_minmax(&mut *head, -1);
         while !node.is_null() {
-            let next = sessions_next(node);
+            let next = sessions_next(&*node);
             assert_eq!(sessions_remove(&mut *head, node), node);
             assert!((*node).entry.owner.is_null());
             node = next;
@@ -72,7 +72,7 @@ fn rename_preserves_identity_and_updates_name_order() {
         assert!(sessions_insert(head, second_ptr).is_null());
         assert_eq!(session_find(c"a".as_ptr()), first_ptr);
         assert_eq!(session_find_by_id(42), first_ptr);
-        assert_eq!(sessions_next(first_ptr), second_ptr);
+        assert_eq!(sessions_next(&*first_ptr), second_ptr);
         // Same remove/change/reinsert sequence used by rename-session.
         assert_eq!(sessions_remove(head, first_ptr), first_ptr);
         first.name = ::std::ffi::CStr::from_ptr(c"z".as_ptr().cast_mut()).to_owned();
@@ -81,8 +81,8 @@ fn rename_preserves_identity_and_updates_name_order() {
         assert_eq!(session_find(c"z".as_ptr()), first_ptr);
         assert_eq!(session_find_by_id(42), first_ptr);
         assert_eq!(sessions_minmax(head, -1), second_ptr);
-        assert_eq!(sessions_next(second_ptr), first_ptr);
-        assert_eq!(sessions_prev(first_ptr), second_ptr);
+        assert_eq!(sessions_next(&*second_ptr), first_ptr);
+        assert_eq!(sessions_prev(&*first_ptr), second_ptr);
         assert_eq!(sessions_remove(head, first_ptr), first_ptr);
         assert_eq!(sessions_remove(head, second_ptr), second_ptr);
         assert!((*head).storage.is_none());

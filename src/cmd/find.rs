@@ -314,7 +314,7 @@ unsafe extern "C" fn cmd_find_best_session(
                     s = s_loop;
                 }
             }
-            s_loop = sessions_next(s_loop);
+            s_loop = sessions_next(&*s_loop);
         }
     }
     return s;
@@ -334,7 +334,7 @@ unsafe extern "C" fn cmd_find_best_session_with_window(
         if !(session_has(s, (*fs).w) == 0) {
             slist.push(s);
         }
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     let best = if slist.is_empty() {
         None
@@ -448,7 +448,7 @@ unsafe extern "C" fn cmd_find_get_session(
             }
             s = s_loop;
         }
-        s_loop = sessions_next(s_loop);
+        s_loop = sessions_next(&*s_loop);
     }
     if !s.is_null() {
         (*fs).s = s;
@@ -463,7 +463,7 @@ unsafe extern "C" fn cmd_find_get_session(
             }
             s = s_loop;
         }
-        s_loop = sessions_next(s_loop);
+        s_loop = sessions_next(&*s_loop);
     }
     if !s.is_null() {
         (*fs).s = s;

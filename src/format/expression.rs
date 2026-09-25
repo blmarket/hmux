@@ -995,7 +995,7 @@ pub(super) unsafe fn format_session_name(
         if strcmp(((*s).name).as_ptr().cast_mut(), name.as_ptr()) == 0 as ::core::ffi::c_int {
             return c"1".to_owned();
         }
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     return c"0".to_owned();
 }

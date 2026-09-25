@@ -275,7 +275,7 @@ pub unsafe extern "C" fn server_status_window(mut w: *mut window) {
         if session_has(s, w) != 0 {
             server_status_session(s);
         }
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
 }
 #[no_mangle]
@@ -415,7 +415,7 @@ pub unsafe extern "C" fn server_renumber_all() {
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         server_renumber_session(s);
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
 }
 pub unsafe fn server_link_window(
@@ -661,7 +661,7 @@ unsafe extern "C" fn server_find_session(
         if s_loop != s && f.expect("non-null function pointer")(s_loop, s_out) != 0 {
             s_out = s_loop;
         }
-        s_loop = sessions_next(s_loop);
+        s_loop = sessions_next(&*s_loop);
     }
     return s_out;
 }

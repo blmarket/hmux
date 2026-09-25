@@ -605,7 +605,7 @@ pub unsafe extern "C" fn server_update_socket() {
             n += 1;
             break;
         } else {
-            s = sessions_next(s);
+            s = sessions_next(&*s);
         }
     }
     if n != last {

@@ -29,19 +29,19 @@ fn byte_order_duplicates_neighbors_and_owner_removal() {
         let mut node = session_groups_minmax(&mut *head, -1);
         for name in [c"", c"a", c"z", c"\xff"] {
             assert_eq!((*node).name.as_c_str(), name);
-            node = session_groups_next(node);
+            node = session_groups_next(&*node);
         }
         assert!(node.is_null());
         node = session_groups_minmax(&mut *head, 1);
         for name in [c"\xff", c"z", c"a", c""] {
             assert_eq!((*node).name.as_c_str(), name);
-            node = session_groups_prev(node);
+            node = session_groups_prev(&*node);
         }
         assert!(node.is_null());
         // Cache the successor before the index drops the current owner.
         node = session_groups_minmax(&mut *head, -1);
         while !node.is_null() {
-            let next = session_groups_next(node);
+            let next = session_groups_next(&*node);
             assert!(session_groups_remove(&mut *head, node));
             node = next;
         }

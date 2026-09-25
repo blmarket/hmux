@@ -203,21 +203,21 @@ pub unsafe fn sessions_after(head: *mut sessions, name: &[u8]) -> *mut session {
 }
 
 /// The session must still belong to its index. Destructive walks use sessions_after.
-pub unsafe fn sessions_next(elm: *mut session) -> *mut session {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn sessions_next(elm: &session) -> *mut session {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 /// The session must still belong to its index.
-pub unsafe fn sessions_prev(elm: *mut session) -> *mut session {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn sessions_prev(elm: &session) -> *mut session {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -327,20 +327,20 @@ pub unsafe fn session_groups_minmax(
     };
     pair.map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
-pub unsafe fn session_groups_next(elm: *mut session_group) -> *mut session_group {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn session_groups_next(elm: &session_group) -> *mut session_group {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
-pub unsafe fn session_groups_prev(elm: *mut session_group) -> *mut session_group {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn session_groups_prev(elm: &session_group) -> *mut session_group {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = std::ffi::CStr::from_ptr(elm.name.as_ptr().cast_mut()).to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
@@ -354,7 +354,7 @@ pub unsafe extern "C" fn session_alive(mut s: *mut session) -> ::core::ffi::c_in
         if s_loop == s {
             return 1 as ::core::ffi::c_int;
         }
-        s_loop = sessions_next(s_loop);
+        s_loop = sessions_next(&*s_loop);
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -428,7 +428,7 @@ pub unsafe extern "C" fn session_find_by_id(mut id: u_int) -> *mut session {
         if (*s).id == id {
             return s;
         }
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     return ::core::ptr::null_mut::<session>();
 }
@@ -1002,7 +1002,7 @@ pub unsafe extern "C" fn session_group_contains(mut target: *mut session) -> *mu
         if (*sg).members.contains(&target) {
             return sg;
         }
-        sg = session_groups_next(sg);
+        sg = session_groups_next(&*sg);
     }
     return ::core::ptr::null_mut::<session_group>();
 }

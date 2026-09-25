@@ -2351,7 +2351,7 @@ unsafe fn format_cb_server_sessions(mut ft: *mut format_tree) -> Option<CString>
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         n = n.wrapping_add(1);
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     return Some(
         CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),
@@ -2732,7 +2732,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
                 }
                 wl = winlinks_next(wl);
             }
-            s = sessions_next(s);
+            s = sessions_next(&*s);
         }
         return Some(c"0".to_owned());
     }
@@ -2756,7 +2756,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         if !s.is_null() && !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
             n = n.wrapping_add(1);
         }
-        sg = session_groups_next(sg);
+        sg = session_groups_next(&*sg);
     }
     s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
@@ -2765,7 +2765,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
                 n = n.wrapping_add(1);
             }
         }
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     return Some(
         CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),

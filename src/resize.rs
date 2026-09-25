@@ -669,7 +669,7 @@ pub unsafe extern "C" fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     while !s.is_null() {
         (*s).attached = 0 as u_int;
         status_update_cache(s);
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     c = clients.first();
     while !c.is_null() {

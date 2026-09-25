@@ -642,7 +642,7 @@ pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut sessi
     let mut s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         l.push(s);
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     sort_qsort(
         l.as_mut_ptr() as *mut ::core::ffi::c_void,
@@ -693,7 +693,7 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winli
             links.push(wl);
             wl = winlinks_next(wl);
         }
-        s = sessions_next(s);
+        s = sessions_next(&*s);
     }
     sort_qsort(
         links.as_mut_ptr() as *mut ::core::ffi::c_void,
