@@ -1864,33 +1864,35 @@ pub unsafe extern "C" fn utf8_strwidth(mut s: *const utf8_data, mut n: ssize_t) 
 }
 // Decode into Rust-owned cells while retaining the size-zero terminator used
 // by the existing UTF-8 routines that borrow this array as a C-style view.
-pub(crate) unsafe fn utf8_fromcstr_vec(mut src: *const ::core::ffi::c_char) -> Vec<utf8_data> {
+pub(crate) fn utf8_fromcstr_vec(src: &CStr) -> Vec<utf8_data> {
+    let bytes = src.to_bytes();
     let mut cells = Vec::new();
-    while *src != 0 {
+    let mut index = 0;
+    while index < bytes.len() {
         let mut cell = utf8_data {
             data: [0; 32],
             have: 0,
             size: 0,
             width: 0,
         };
-        let mut more = utf8_open(&raw mut cell, *src as u_char);
+        let mut more = unsafe { utf8_open(&raw mut cell, bytes[index] as u_char) };
         if more == UTF8_MORE {
             loop {
-                src = src.offset(1);
-                if *src == 0 || more != UTF8_MORE {
+                index += 1;
+                if index == bytes.len() || more != UTF8_MORE {
                     break;
                 }
-                more = utf8_append(&raw mut cell, *src as u_char);
+                more = unsafe { utf8_append(&raw mut cell, bytes[index] as u_char) };
             }
             if more == UTF8_DONE {
                 cells.push(cell);
                 continue;
             }
-            src = src.offset(-(cell.have as isize));
+            index -= cell.have as usize;
         }
-        utf8_set(&raw mut cell, *src as u_char);
+        unsafe { utf8_set(&raw mut cell, bytes[index] as u_char) };
         cells.push(cell);
-        src = src.offset(1);
+        index += 1;
     }
     cells.push(utf8_data {
         data: [0; 32],
@@ -2049,15 +2051,13 @@ mod tests {
 
     #[test]
     fn owned_cell_decoder_retries_each_byte_after_a_bad_sequence() {
-        unsafe {
-            let cells = utf8_fromcstr_vec(b"\xe2(\xa1\0".as_ptr().cast());
-            assert_eq!(cells.len(), 4);
-            for (cell, byte) in cells[..3].iter().zip([0xe2, b'(', 0xa1]) {
-                assert_eq!(cell.size, 1);
-                assert_eq!(cell.data[0], byte);
-            }
-            assert_eq!(cells[3].size, 0);
+        let cells = utf8_fromcstr_vec(CStr::from_bytes_with_nul(b"\xe2(\xa1\0").unwrap());
+        assert_eq!(cells.len(), 4);
+        for (cell, byte) in cells[..3].iter().zip([0xe2, b'(', 0xa1]) {
+            assert_eq!(cell.size, 1);
+            assert_eq!(cell.data[0], byte);
         }
+        assert_eq!(cells[3].size, 0);
     }
 
     #[test]

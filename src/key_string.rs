@@ -5634,7 +5634,7 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
     }
     multibyte[length as usize] = '\0' as ::core::ffi::c_char;
 
-    let decoded = unsafe { utf8_fromcstr_vec(multibyte.as_ptr()) };
+    let decoded = unsafe { utf8_fromcstr_vec(CStr::from_ptr(multibyte.as_ptr())) };
     let mut codepoint: utf8_char = 0;
     let valid = unsafe {
         decoded[0].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int

@@ -3271,7 +3271,7 @@ unsafe extern "C" fn window_copy_cmd_jump_backward(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPBACKWARD as ::core::ffi::c_int;
-        (*data).jumpchar = utf8_fromcstr_vec(arg0);
+        (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
         while np != 0 as u_int {
             window_copy_cursor_jump_back(wme);
             np = np.wrapping_sub(1);
@@ -3288,7 +3288,7 @@ unsafe extern "C" fn window_copy_cmd_jump_forward(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPFORWARD as ::core::ffi::c_int;
-        (*data).jumpchar = utf8_fromcstr_vec(arg0);
+        (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
         while np != 0 as u_int {
             window_copy_cursor_jump(wme);
             np = np.wrapping_sub(1);
@@ -3305,7 +3305,7 @@ unsafe extern "C" fn window_copy_cmd_jump_to_backward(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPTOBACKWARD as ::core::ffi::c_int;
-        (*data).jumpchar = utf8_fromcstr_vec(arg0);
+        (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
         while np != 0 as u_int {
             window_copy_cursor_jump_to_back(wme);
             np = np.wrapping_sub(1);
@@ -3322,7 +3322,7 @@ unsafe extern "C" fn window_copy_cmd_jump_to_forward(
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
         (*data).jumptype = WINDOW_COPY_JUMPTOFORWARD as ::core::ffi::c_int;
-        (*data).jumpchar = utf8_fromcstr_vec(arg0);
+        (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
         while np != 0 as u_int {
             window_copy_cursor_jump_to(wme);
             np = np.wrapping_sub(1);

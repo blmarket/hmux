@@ -702,7 +702,7 @@ pub unsafe extern "C" fn screen_write_text(
     ap = args.clone();
     let cells = {
         let tmp = xvasprintf_cstring(fmt, ap);
-        utf8_fromcstr_vec(tmp.as_ptr())
+        utf8_fromcstr_vec(tmp.as_c_str())
     };
     let text = cells.as_ptr();
     left = cx.wrapping_add(width).wrapping_sub((*s).cx);

@@ -228,7 +228,7 @@ unsafe extern "C" fn cmd_send_keys_inject_string(
         literal = 1 as ::core::ffi::c_int;
     }
     if literal != 0 {
-        let cells = utf8_fromcstr_vec(s);
+        let cells = utf8_fromcstr_vec(std::ffi::CStr::from_ptr(s));
         let mut current_block_20: u64;
         for cell in cells.iter().take_while(|cell| cell.size != 0) {
             if cell.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
