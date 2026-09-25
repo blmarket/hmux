@@ -56,7 +56,7 @@ pub type job_update_cb = Option<Box<dyn FnMut(*mut job)>>;
 
 pub type job_complete_cb = Option<Box<dyn FnOnce(*mut job)>>;
 
-pub type job_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
+pub type job_free_cb = Option<Box<dyn FnOnce()>>;
 
 #[derive(Copy, Clone, Default)]
 #[repr(C)]

@@ -337,7 +337,7 @@ unsafe extern "C" fn cmd_run_shell_timer(
             if !(*cdata).item.is_null() {
                 cmdq_continue((*cdata).item);
             }
-            cmd_run_shell_free(cdata as *mut ::core::ffi::c_void);
+            cmd_run_shell_free(cdata);
             return;
         }
         if job_run(
@@ -350,7 +350,9 @@ unsafe extern "C" fn cmd_run_shell_timer(
             Some(Box::new(move |job| unsafe {
                 cmd_run_shell_callback(job, cdata)
             })),
-            Some(cmd_run_shell_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
+            Some(Box::new(move || unsafe {
+                cmd_run_shell_free(cdata)
+            })),
             cdata as *mut ::core::ffi::c_void,
             (*cdata).flags,
             -(1 as ::core::ffi::c_int),
@@ -376,7 +378,7 @@ unsafe extern "C" fn cmd_run_shell_timer(
                 );
                 cmdq_continue((*cdata).item);
             }
-            cmd_run_shell_free(cdata as *mut ::core::ffi::c_void);
+            cmd_run_shell_free(cdata);
         }
         return;
     }
@@ -420,7 +422,7 @@ unsafe extern "C" fn cmd_run_shell_timer(
     if !(*cdata).item.is_null() {
         cmdq_continue((*cdata).item);
     }
-    cmd_run_shell_free(cdata as *mut ::core::ffi::c_void);
+    cmd_run_shell_free(cdata);
 }
 unsafe fn cmd_run_shell_callback(mut job: *mut job, mut cdata: *mut cmd_run_shell_data) {
     let mut event: *mut bufferevent = job_get_event(job);
@@ -482,8 +484,8 @@ unsafe fn cmd_run_shell_callback(mut job: *mut job, mut cdata: *mut cmd_run_shel
         cmdq_continue(item);
     }
 }
-unsafe extern "C" fn cmd_run_shell_free(mut data: *mut ::core::ffi::c_void) {
-    let mut cdata = Box::from_raw(data as *mut cmd_run_shell_data);
+unsafe fn cmd_run_shell_free(mut data: *mut cmd_run_shell_data) {
+    let mut cdata = Box::from_raw(data);
     event_del(&raw mut (*cdata).timer);
     if !(*cdata).s.is_null() {
         session_remove_ref(

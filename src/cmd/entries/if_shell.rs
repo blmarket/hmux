@@ -158,7 +158,9 @@ unsafe extern "C" fn cmd_if_shell_exec(
         Some(Box::new(move |job| unsafe {
             cmd_if_shell_callback(job, cdata)
         })),
-        Some(cmd_if_shell_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
+        Some(Box::new(move || unsafe {
+            cmd_if_shell_free(cdata)
+        })),
         cdata.cast(),
         0 as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
@@ -171,7 +173,7 @@ unsafe extern "C" fn cmd_if_shell_exec(
             b"failed to run command: %s\0" as *const u8 as *const ::core::ffi::c_char,
             shellcmd.as_ptr(),
         );
-        cmd_if_shell_free(cdata.cast());
+        cmd_if_shell_free(cdata);
         return CMD_RETURN_ERROR;
     }
     if wait == 0 {
@@ -237,8 +239,8 @@ unsafe fn cmd_if_shell_callback(mut job: *mut job, mut cdata: *mut cmd_if_shell_
         cmdq_continue((*cdata).item);
     }
 }
-unsafe extern "C" fn cmd_if_shell_free(data: *mut ::core::ffi::c_void) {
-    let cdata = Box::from_raw(data as *mut cmd_if_shell_data);
+unsafe fn cmd_if_shell_free(data: *mut cmd_if_shell_data) {
+    let cdata = Box::from_raw(data);
     if !cdata.client.is_null() {
         server_client_unref(cdata.client);
     }

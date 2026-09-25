@@ -433,8 +433,10 @@ pub unsafe extern "C" fn job_transfer(
         (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
     }
     *(*job).entry.le_prev = (*job).entry.le_next;
-    if (*job).freecb.is_some() && !(*job).data.is_null() {
-        (*job).freecb.expect("non-null function pointer")((*job).data);
+    if !(*job).data.is_null() {
+        if let Some(callback) = (*job).freecb.take() {
+            callback();
+        }
     }
     if !(*job).event.is_null() {
         bufferevent_free((*job).event);
@@ -456,8 +458,10 @@ pub unsafe extern "C" fn job_free(mut job: *mut job) {
         (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
     }
     *(*job).entry.le_prev = (*job).entry.le_next;
-    if (*job).freecb.is_some() && !(*job).data.is_null() {
-        (*job).freecb.expect("non-null function pointer")((*job).data);
+    if !(*job).data.is_null() {
+        if let Some(callback) = (*job).freecb.take() {
+            callback();
+        }
     }
     if (*job).pid != -(1 as ::core::ffi::c_int) {
         kill((*job).pid as __pid_t, SIGTERM);
