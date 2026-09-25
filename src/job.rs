@@ -377,13 +377,13 @@ pub unsafe fn job_run(
                     (*job).event = bufferevent_new(
                         (*job).fd,
                         bufferevent_data_callback(move |stream| {
-                            unsafe { job_read_callback(stream, job as *mut ::core::ffi::c_void) }
+                            unsafe { job_read_callback(stream.as_ptr(), job as *mut ::core::ffi::c_void) }
                         }),
                         bufferevent_data_callback(move |stream| {
-                            unsafe { job_write_callback(stream, job as *mut ::core::ffi::c_void) }
+                            unsafe { job_write_callback(stream.as_ptr(), job as *mut ::core::ffi::c_void) }
                         }),
                         bufferevent_event_callback(move |stream, flags| {
-                            unsafe { job_error_callback(stream, flags, job as *mut ::core::ffi::c_void) }
+                            unsafe { job_error_callback(stream.as_ptr(), flags, job as *mut ::core::ffi::c_void) }
                         }),
                     );
                     if (*job).event.is_null() {

@@ -139,7 +139,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                                 let cb = (*stream).readcb.clone();
                                 if let Some(cb) = cb {
                                     let mut cb = cb.borrow_mut();
-                                    (*cb)(stream);
+                                    (*cb)(std::ptr::NonNull::new(stream).expect("live stream"));
                                 }
                             }
                         } else if n == 0
@@ -150,7 +150,10 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                             let cb = (*stream).errorcb.clone();
                             if let Some(cb) = cb {
                                 let mut cb = cb.borrow_mut();
-                                (*cb)(stream, 1 | if n == 0 { 0x10 } else { 0x20 });
+                                (*cb)(
+                                    std::ptr::NonNull::new(stream).expect("live stream"),
+                                    1 | if n == 0 { 0x10 } else { 0x20 },
+                                );
                             }
                         }
                     }
@@ -171,7 +174,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                             let cb = (*stream).writecb.clone();
                             if let Some(cb) = cb {
                                 let mut cb = cb.borrow_mut();
-                                (*cb)(stream);
+                                (*cb)(std::ptr::NonNull::new(stream).expect("live stream"));
                             }
                         }
                     } else if n < 0
@@ -182,7 +185,10 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                         let cb = (*stream).errorcb.clone();
                         if let Some(cb) = cb {
                             let mut cb = cb.borrow_mut();
-                            (*cb)(stream, 2 | 0x20);
+                            (*cb)(
+                                std::ptr::NonNull::new(stream).expect("live stream"),
+                                2 | 0x20,
+                            );
                         }
                     }
                 }

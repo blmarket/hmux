@@ -224,13 +224,13 @@ unsafe fn cmd_pipe_pane_exec(
             (*wp).pipe_event = bufferevent_new(
                 (*wp).pipe_fd,
                 bufferevent_data_callback(move |stream| {
-                    unsafe { cmd_pipe_pane_read_callback(stream, wp as *mut ::core::ffi::c_void) }
+                    unsafe { cmd_pipe_pane_read_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void) }
                 }),
                 bufferevent_data_callback(move |stream| {
-                    unsafe { cmd_pipe_pane_write_callback(stream, wp as *mut ::core::ffi::c_void) }
+                    unsafe { cmd_pipe_pane_write_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void) }
                 }),
                 bufferevent_event_callback(move |stream, flags| {
-                    unsafe { cmd_pipe_pane_error_callback(stream, flags, wp as *mut ::core::ffi::c_void) }
+                    unsafe { cmd_pipe_pane_error_callback(stream.as_ptr(), flags, wp as *mut ::core::ffi::c_void) }
                 }),
             );
             if (*wp).pipe_event.is_null() {

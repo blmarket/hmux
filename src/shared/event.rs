@@ -55,22 +55,22 @@ pub struct bufferevent {
 pub type bufferevent_event_cb = Option<
     std::rc::Rc<
         std::cell::RefCell<
-            Box<dyn FnMut(*mut bufferevent, ::core::ffi::c_short)>,
+            Box<dyn FnMut(std::ptr::NonNull<bufferevent>, ::core::ffi::c_short)>,
         >,
     >,
 >;
 pub type bufferevent_data_cb = Option<
-    std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(*mut bufferevent)>>>,
+    std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(std::ptr::NonNull<bufferevent>)>>>,
 >;
 
 pub fn bufferevent_data_callback(
-    callback: impl FnMut(*mut bufferevent) + 'static,
+    callback: impl FnMut(std::ptr::NonNull<bufferevent>) + 'static,
 ) -> bufferevent_data_cb {
     Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(callback))))
 }
 
 pub fn bufferevent_event_callback(
-    callback: impl FnMut(*mut bufferevent, ::core::ffi::c_short) + 'static,
+    callback: impl FnMut(std::ptr::NonNull<bufferevent>, ::core::ffi::c_short) + 'static,
 ) -> bufferevent_event_cb {
     Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(callback))))
 }

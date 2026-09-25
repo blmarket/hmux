@@ -1433,13 +1433,13 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
     (*cs).read_event = bufferevent_new(
         (*c).fd,
         bufferevent_data_callback(move |stream| {
-            unsafe { control_read_callback(stream, c as *mut ::core::ffi::c_void) }
+            unsafe { control_read_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void) }
         }),
         bufferevent_data_callback(move |stream| {
-            unsafe { control_write_callback(stream, c as *mut ::core::ffi::c_void) }
+            unsafe { control_write_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void) }
         }),
         bufferevent_event_callback(move |stream, flags| {
-            unsafe { control_error_callback(stream, flags, c as *mut ::core::ffi::c_void) }
+            unsafe { control_error_callback(stream.as_ptr(), flags, c as *mut ::core::ffi::c_void) }
         }),
     );
     if (*cs).read_event.is_null() {
@@ -1452,10 +1452,10 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
             (*c).out_fd,
             None,
             bufferevent_data_callback(move |stream| {
-                unsafe { control_write_callback(stream, c as *mut ::core::ffi::c_void) }
+                unsafe { control_write_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void) }
             }),
             bufferevent_event_callback(move |stream, flags| {
-                unsafe { control_error_callback(stream, flags, c as *mut ::core::ffi::c_void) }
+                unsafe { control_error_callback(stream.as_ptr(), flags, c as *mut ::core::ffi::c_void) }
             }),
         );
         if (*cs).write_event.is_null() {

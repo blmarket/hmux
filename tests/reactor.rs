@@ -146,13 +146,13 @@ fn descriptorless_stream_keeps_buffers_without_io_callbacks() {
         let stream = bufferevent_new(
             -1,
             bufferevent_data_callback(move |stream| {
-                read_cb(stream, observations_ptr.cast())
+                read_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             bufferevent_data_callback(move |stream| {
-                write_cb(stream, observations_ptr.cast())
+                write_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             bufferevent_event_callback(move |stream, flags| {
-                error_cb(stream, flags, observations_ptr.cast())
+                error_cb(stream.as_ptr(), flags, observations_ptr.cast())
             }),
         );
         assert!(!stream.is_null());
@@ -191,13 +191,13 @@ fn stream_watermarks_drain_reenable_and_direct_output_append() {
         let stream = bufferevent_new(
             fd.as_raw_fd(),
             bufferevent_data_callback(move |stream| {
-                read_cb(stream, observations_ptr.cast())
+                read_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             bufferevent_data_callback(move |stream| {
-                write_cb(stream, observations_ptr.cast())
+                write_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             bufferevent_event_callback(move |stream, flags| {
-                error_cb(stream, flags, observations_ptr.cast())
+                error_cb(stream.as_ptr(), flags, observations_ptr.cast())
             }),
         );
         assert!(!stream.is_null());
@@ -243,13 +243,13 @@ fn stream_callback_can_free_owner_with_both_directions_ready() {
         let stream = bufferevent_new(
             fd.as_raw_fd(),
             bufferevent_data_callback(move |stream| {
-                read_cb(stream, observations_ptr.cast())
+                read_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             bufferevent_data_callback(move |stream| {
-                write_cb(stream, observations_ptr.cast())
+                write_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             bufferevent_event_callback(move |stream, flags| {
-                error_cb(stream, flags, observations_ptr.cast())
+                error_cb(stream.as_ptr(), flags, observations_ptr.cast())
             }),
         );
         bufferevent_enable(stream, 2);
@@ -271,13 +271,13 @@ fn partial_writes_resume_after_backpressure_and_deliver_eof_once() {
         let stream = bufferevent_new(
             fd.as_raw_fd(),
             bufferevent_data_callback(move |stream| {
-                read_cb(stream, observations_ptr.cast())
+                read_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             bufferevent_data_callback(move |stream| {
-                write_cb(stream, observations_ptr.cast())
+                write_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             bufferevent_event_callback(move |stream, flags| {
-                error_cb(stream, flags, observations_ptr.cast())
+                error_cb(stream.as_ptr(), flags, observations_ptr.cast())
             }),
         );
         let payload = (0..2_000_000).map(|i| (i % 251) as u8).collect::<Vec<_>>();
@@ -337,7 +337,7 @@ fn enabling_an_empty_writer_requests_one_callback_without_busy_polling() {
             fd.as_raw_fd(),
             None,
             bufferevent_data_callback(move |stream| {
-                write_cb(stream, observations_ptr.cast())
+                write_cb(stream.as_ptr(), observations_ptr.cast())
             }),
             None,
         );

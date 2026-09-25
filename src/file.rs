@@ -1088,10 +1088,10 @@ pub unsafe fn file_write_open(
                     (*cf).fd,
                     None,
                     bufferevent_data_callback(move |stream| {
-                        unsafe { file_write_callback(stream, cf as *mut ::core::ffi::c_void) }
+                        unsafe { file_write_callback(stream.as_ptr(), cf as *mut ::core::ffi::c_void) }
                     }),
                     bufferevent_event_callback(move |stream, flags| {
-                        unsafe { file_write_error_callback(stream, flags, cf as *mut ::core::ffi::c_void) }
+                        unsafe { file_write_error_callback(stream.as_ptr(), flags, cf as *mut ::core::ffi::c_void) }
                     }),
                 );
                 if (*cf).event.is_null() {
@@ -1348,11 +1348,11 @@ pub unsafe fn file_read_open(
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
                     bufferevent_data_callback(move |stream| {
-                        unsafe { file_read_callback(stream, cf as *mut ::core::ffi::c_void) }
+                        unsafe { file_read_callback(stream.as_ptr(), cf as *mut ::core::ffi::c_void) }
                     }),
                     None,
                     bufferevent_event_callback(move |stream, flags| {
-                        unsafe { file_read_error_callback(stream, flags, cf as *mut ::core::ffi::c_void) }
+                        unsafe { file_read_error_callback(stream.as_ptr(), flags, cf as *mut ::core::ffi::c_void) }
                     }),
                 );
                 if (*cf).event.is_null() {

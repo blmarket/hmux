@@ -3247,11 +3247,11 @@ pub unsafe extern "C" fn window_pane_set_event(mut wp: *mut window_pane) {
     (*wp).event = bufferevent_new(
         (*wp).fd,
         bufferevent_data_callback(move |stream| {
-            unsafe { window_pane_read_callback(stream, wp as *mut ::core::ffi::c_void) }
+            unsafe { window_pane_read_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void) }
         }),
         None,
         bufferevent_event_callback(move |stream, flags| {
-            unsafe { window_pane_error_callback(stream, flags, wp as *mut ::core::ffi::c_void) }
+            unsafe { window_pane_error_callback(stream.as_ptr(), flags, wp as *mut ::core::ffi::c_void) }
         }),
     );
     if (*wp).event.is_null() {
