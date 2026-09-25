@@ -41,7 +41,7 @@ fn window_resize_replacement_and_pane_reset_release_indexes() {
         }
         let first = control_panes_minmax(&mut (*state).panes, -1);
         assert_eq!((*first).pane, 0);
-        assert_eq!((*control_panes_next(first)).pane, 2);
+        assert_eq!((*control_panes_next(&*first)).pane, 2);
         control_reset_offsets(c);
         assert!((*state).panes.storage.is_null());
         control_reset_offsets(c);

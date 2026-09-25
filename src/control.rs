@@ -389,8 +389,8 @@ mod control_queue_tests {
             assert!(control_panes_insert(&raw mut index, first).is_null());
             assert!(control_panes_insert(&raw mut index, second).is_null());
             assert_eq!(control_panes_find(&raw mut index, first), first);
-            assert_eq!(control_panes_next(first), second);
-            assert_eq!(control_panes_prev(second), first);
+            assert_eq!(control_panes_next(&*first), second);
+            assert_eq!(control_panes_prev(&*second), first);
 
             drop(control_panes_remove(&raw mut index, first));
             assert_eq!(control_panes_minmax(&raw mut index, RB_NEGINF), second);
@@ -573,7 +573,7 @@ pub unsafe extern "C" fn control_reset_offsets(mut c: *mut client) {
     let mut cp1: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     cp = control_panes_minmax(&raw mut (*cs).panes, RB_NEGINF);
     while !cp.is_null() && {
-        cp1 = control_panes_next(cp);
+        cp1 = control_panes_next(&*cp);
         1 as ::core::ffi::c_int != 0
     } {
         control_discard_pane(c, cp);
@@ -1500,7 +1500,7 @@ pub unsafe extern "C" fn control_discard(mut c: *mut client) {
     cp = control_panes_minmax(&raw mut (*cs).panes, RB_NEGINF);
     while !cp.is_null() {
         control_discard_pane(c, cp);
-        cp = control_panes_next(cp);
+        cp = control_panes_next(&*cp);
     }
     bufferevent_disable((*cs).read_event, EV_READ as ::core::ffi::c_short);
 }
@@ -1534,7 +1534,7 @@ pub unsafe extern "C" fn control_stop(mut c: *mut client) {
     control_reset_offsets(c);
     cw = control_windows_minmax(&raw mut (*cs).windows, RB_NEGINF);
     while !cw.is_null() && {
-        cw1 = control_windows_next(cw);
+        cw1 = control_windows_next(&*cw);
         1 as ::core::ffi::c_int != 0
     } {
         control_windows_remove(&raw mut (*cs).windows, cw);
@@ -1663,22 +1663,22 @@ pub unsafe fn control_panes_minmax(
         &**node as *const control_pane as *mut control_pane
     })
 }
-pub unsafe fn control_panes_next(elm: *mut control_pane) -> *mut control_pane {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn control_panes_next(elm: &control_pane) -> *mut control_pane {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_panes_key(&*elm);
+    let key = control_panes_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| {
             &**node as *const control_pane as *mut control_pane
         })
 }
-pub unsafe fn control_panes_prev(elm: *mut control_pane) -> *mut control_pane {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn control_panes_prev(elm: &control_pane) -> *mut control_pane {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_panes_key(&*elm);
+    let key = control_panes_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| {
@@ -1765,20 +1765,20 @@ pub unsafe fn control_windows_minmax(
     };
     pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn control_windows_next(elm: *mut control_window) -> *mut control_window {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn control_windows_next(elm: &control_window) -> *mut control_window {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_windows_key(&*elm);
+    let key = control_windows_key(elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
-pub unsafe fn control_windows_prev(elm: *mut control_window) -> *mut control_window {
-    let Some(map) = (*elm).entry.owner.as_ref() else {
+pub unsafe fn control_windows_prev(elm: &control_window) -> *mut control_window {
+    let Some(map) = elm.entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_windows_key(&*elm);
+    let key = control_windows_key(elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
