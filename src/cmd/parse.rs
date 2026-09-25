@@ -633,7 +633,7 @@ unsafe extern "C" fn cmd_parse_build_command(
                     values.as_mut_ptr()
                 },
                 count,
-                (*pi).file_ptr(),
+                (*pi).file.as_deref(),
                 (*pi).line,
                 (*pi).flags,
             ) {

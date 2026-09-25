@@ -1,6 +1,4 @@
 use std::ffi::CStr;
-use std::ptr;
-
 use hmux2::src::arguments::{
     args_create, args_free, args_print, args_push_positional_commands, args_to_vector,
 };
@@ -13,7 +11,7 @@ use hmux2::src::shared::arguments::args_value;
 
 unsafe fn display_message_command() -> *mut cmd {
     let mut value = args_value::borrowed_string(c"display-message".as_ptr());
-    cmd_parse(&mut value, 1, ptr::null(), 0, 0).expect("command parse reported an error")
+    cmd_parse(&mut value, 1, None, 0, 0).expect("command parse reported an error")
 }
 
 #[test]

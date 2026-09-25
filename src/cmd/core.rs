@@ -455,13 +455,9 @@ pub unsafe fn cmd_find(mut name: *const ::core::ffi::c_char) -> Result<*const cm
     };
 }
 
-unsafe fn cmd_new_owned(file: *const ::core::ffi::c_char) -> *mut cmd {
+unsafe fn cmd_new_owned(file: Option<&CStr>) -> *mut cmd {
     let mut owner = Box::new(cmd {
-        file: if file.is_null() {
-            None
-        } else {
-            Some(CStr::from_ptr(file).to_owned())
-        },
+        file: file.map(CStr::to_owned),
         ..cmd::empty()
     });
 
@@ -471,7 +467,7 @@ unsafe fn cmd_new_owned(file: *const ::core::ffi::c_char) -> *mut cmd {
 pub unsafe fn cmd_parse(
     mut values: *mut args_value,
     mut count: u_int,
-    mut file: *const ::core::ffi::c_char,
+    file: Option<&CStr>,
     mut line: u_int,
     mut parse_flags: ::core::ffi::c_int,
 ) -> Result<*mut cmd, CString> {
@@ -518,11 +514,7 @@ pub unsafe extern "C" fn cmd_free(mut cmd: *mut cmd) {
 }
 pub unsafe fn cmd_copy(mut cmd: *mut cmd, argv: &Vec<CString>) -> *mut cmd {
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    new_cmd = cmd_new_owned(
-        ((*cmd).file)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    new_cmd = cmd_new_owned((*cmd).file.as_deref());
     (*new_cmd).entry = (*cmd).entry;
     (*new_cmd).args = args_copy((*cmd).args, argv);
     (*new_cmd).line = (*cmd).line;

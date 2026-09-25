@@ -1,10 +1,9 @@
 use std::ffi::CStr;
-use std::ptr;
 
 use hmux2::src::cmd::{cmd_copy, cmd_free, cmd_parse};
 use hmux2::src::shared::arguments::args_value;
 
-unsafe fn parse_display_message(file: *const std::ffi::c_char) -> *mut hmux2::src::cmd::cmd {
+unsafe fn parse_display_message(file: Option<&CStr>) -> *mut hmux2::src::cmd::cmd {
     let command_name = c"display-message";
     let mut value = args_value::borrowed_string(command_name.as_ptr());
     cmd_parse(&mut value, 1, file, 37, 0).expect("command parse reported an error")
@@ -14,7 +13,7 @@ unsafe fn parse_display_message(file: *const std::ffi::c_char) -> *mut hmux2::sr
 fn filename_survives_input_mutation_and_original_command_free() {
     unsafe {
         let mut filename = *b"source-\xff.conf\0";
-        let command = parse_display_message(filename.as_ptr().cast());
+        let command = parse_display_message(Some(CStr::from_bytes_with_nul(&filename).unwrap()));
         let copied = cmd_copy(command, &Vec::new());
 
         assert!(!copied.is_null());
@@ -66,7 +65,7 @@ fn filename_survives_input_mutation_and_original_command_free() {
 #[test]
 fn absent_filename_stays_null_in_copy() {
     unsafe {
-        let command = parse_display_message(ptr::null());
+        let command = parse_display_message(None);
         let copied = cmd_copy(command, &Vec::new());
         assert!((*command).file.is_none());
         assert!((*copied).file.is_none());
