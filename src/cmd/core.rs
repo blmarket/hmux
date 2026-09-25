@@ -845,21 +845,21 @@ pub unsafe extern "C" fn cmd_mouse_pane(
     return wp;
 }
 pub unsafe fn cmd_template_replace(
-    template: *const ::core::ffi::c_char,
-    s: *const ::core::ffi::c_char,
+    template: &CStr,
+    s: &CStr,
     idx: ::core::ffi::c_int,
 ) -> CString {
     cmd_template_replace_cstring(template, s, idx)
 }
 
 pub(crate) unsafe fn cmd_template_replace_cstring(
-    template: *const ::core::ffi::c_char,
-    s: *const ::core::ffi::c_char,
+    template: &CStr,
+    s: &CStr,
     idx: ::core::ffi::c_int,
 ) -> CString {
-    let template_bytes = CStr::from_ptr(template).to_bytes();
+    let template_bytes = template.to_bytes();
     if !template_bytes.contains(&b'%') {
-        return CStr::from_ptr(template).to_owned();
+        return template.to_owned();
     }
 
     let mut output = Vec::new();
@@ -891,7 +891,7 @@ pub(crate) unsafe fn cmd_template_replace_cstring(
                 None
             };
             if let Some(quote) = quote {
-                let replacement = CStr::from_ptr(s).to_bytes();
+                let replacement = s.to_bytes();
                 if replacement.len() >= usize::MAX / 4
                     || output.len() > usize::MAX - replacement.len() * 4 - 1
                 {
@@ -920,7 +920,7 @@ pub(crate) unsafe fn cmd_template_replace_cstring(
     log_debug(
         b"%s: %s -> %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_template_replace\0" as *const u8 as *const ::core::ffi::c_char,
-        template,
+        template.as_ptr(),
         text.as_ptr(),
     );
     text
@@ -942,16 +942,21 @@ mod template_replace_tests {
         for &(template, replacement, idx, expected) in cases {
             let actual = unsafe {
                 cmd_template_replace_cstring(
-                    template.as_ptr().cast(),
-                    replacement.as_ptr().cast(),
+                    CStr::from_bytes_with_nul(template).unwrap(),
+                    CStr::from_bytes_with_nul(replacement).unwrap(),
                     idx,
                 )
             };
             assert_eq!(actual.as_bytes(), expected);
         }
 
-        let owned =
-            unsafe { cmd_template_replace(b"%1\0".as_ptr().cast(), b"x\0".as_ptr().cast(), 1) };
+        let owned = unsafe {
+            cmd_template_replace(
+                CStr::from_bytes_with_nul(b"%1\0").unwrap(),
+                CStr::from_bytes_with_nul(b"x\0").unwrap(),
+                1,
+            )
+        };
         assert_eq!(owned.as_bytes(), b"x");
     }
 }

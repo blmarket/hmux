@@ -700,11 +700,12 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
             if argv.is_empty() {
                 return args_value::string(source.to_owned());
             }
-            let mut expanded = cmd_template_replace_cstring(source.as_ptr(), argv[0].as_ptr(), 1);
+            let mut expanded =
+                cmd_template_replace_cstring(source, argv[0].as_c_str(), 1);
             for i in 1..argv.len() {
                 expanded = cmd_template_replace_cstring(
-                    expanded.as_ptr(),
-                    argv[i].as_ptr(),
+                    expanded.as_c_str(),
+                    argv[i].as_c_str(),
                     (i + 1) as ::core::ffi::c_int,
                 );
             }
@@ -1243,8 +1244,8 @@ pub unsafe fn args_make_commands(
     i = 0 as ::core::ffi::c_int;
     while (i as usize) < argv.len() {
         let next = cmd_template_replace_cstring(
-            cmd.as_ptr(),
-            argv[i as usize].as_ptr(),
+            cmd.as_c_str(),
+            argv[i as usize].as_c_str(),
             i + 1 as ::core::ffi::c_int,
         );
         log_debug(

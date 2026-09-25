@@ -763,8 +763,8 @@ unsafe extern "C" fn window_switch_run_command(
         return 0 as ::core::ffi::c_int;
     };
     let command = cmd_template_replace_cstring(
-        (*data).command.as_ptr(),
-        target.as_ptr(),
+        (*data).command.as_c_str(),
+        target.as_c_str(),
         1 as ::core::ffi::c_int,
     );
     if !command.as_bytes().is_empty() {

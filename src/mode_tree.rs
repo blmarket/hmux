@@ -2011,7 +2011,11 @@ unsafe extern "C" fn mode_tree_draw_help_line(
     mut y: u_int,
     mut w: u_int,
 ) {
-    let replaced = cmd_template_replace_cstring(line, item, 1 as ::core::ffi::c_int);
+    let replaced = cmd_template_replace_cstring(
+        CStr::from_ptr(line),
+        CStr::from_ptr(item),
+        1 as ::core::ffi::c_int,
+    );
     let expanded = format_expand_cstring(ft, replaced.as_ptr());
     drop(replaced);
     screen_write_cursormove(
@@ -2604,7 +2608,11 @@ pub unsafe extern "C" fn mode_tree_run_command(
     mut name: *const ::core::ffi::c_char,
 ) {
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
-    let command = cmd_template_replace_cstring(template, name, 1 as ::core::ffi::c_int);
+    let command = cmd_template_replace_cstring(
+        CStr::from_ptr(template),
+        CStr::from_ptr(name),
+        1 as ::core::ffi::c_int,
+    );
     if !command.as_bytes().is_empty() {
         state = cmdq_new_state(
             fs,
