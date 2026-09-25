@@ -359,7 +359,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                         current_block = 5193972633326621385;
                     } else {
                         prefix = Some(utf8_stravis_cstring(
-                            group,
+                            CStr::from_ptr(group),
                             VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
                         ));
                         current_block = 6717214610478484138;

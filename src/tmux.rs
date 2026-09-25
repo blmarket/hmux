@@ -771,7 +771,7 @@ pub unsafe fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> 
         }
     }
     Some(utf8_stravis_cstring(
-        copy.as_ptr().cast(),
+        CStr::from_bytes_with_nul(&copy).expect("copied name has one trailing NUL"),
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
     ))
 }

@@ -114,14 +114,16 @@ pub unsafe extern "C" fn hyperlinks_put(
         },
     };
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    if internal_id_in.is_null() {
-        internal_id_in = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    let uri = utf8_stravis_cstring(uri_in, VIS_OCTAL | VIS_CSTYLE);
+    let internal_id_input = if internal_id_in.is_null() {
+        c""
+    } else {
+        ::std::ffi::CStr::from_ptr(internal_id_in)
+    };
+    let uri = utf8_stravis_cstring(::std::ffi::CStr::from_ptr(uri_in), VIS_OCTAL | VIS_CSTYLE);
     if uri.as_bytes().len() > MAX_HYPERLINK_URI as usize {
         return 0 as u_int;
     }
-    let internal_id = utf8_stravis_cstring(internal_id_in, VIS_OCTAL | VIS_CSTYLE);
+    let internal_id = utf8_stravis_cstring(internal_id_input, VIS_OCTAL | VIS_CSTYLE);
     if !internal_id.as_bytes().is_empty() {
         find.uri = ::std::ffi::CStr::from_ptr(uri.as_ptr()).to_owned();
         find.internal_id = ::std::ffi::CStr::from_ptr(internal_id.as_ptr()).to_owned();

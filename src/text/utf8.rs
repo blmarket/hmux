@@ -1714,8 +1714,8 @@ pub unsafe extern "C" fn utf8_strvis(
 }
 /// Escape a C string using the same byte conversion as `utf8_strvis`, with
 /// the result owned by Rust.
-pub(crate) unsafe fn utf8_stravis_cstring(src: *const ::core::ffi::c_char, flag: i32) -> CString {
-    let source_len = strlen(src);
+pub(crate) fn utf8_stravis_cstring(src: &CStr, flag: i32) -> CString {
+    let source_len = src.to_bytes().len();
     // `utf8_strvis` writes at most four bytes for each source byte, followed
     // by one NUL. It initializes the buffer through that final NUL.
     let capacity = source_len
@@ -1723,7 +1723,7 @@ pub(crate) unsafe fn utf8_stravis_cstring(src: *const ::core::ffi::c_char, flag:
         .and_then(|size| size.checked_add(1))
         .expect("escaped UTF-8 string is too large");
     let mut buffer = vec![0u8; capacity];
-    let escaped_len = utf8_strvis(buffer.as_mut_ptr().cast(), src, source_len, flag);
+    let escaped_len = unsafe { utf8_strvis(buffer.as_mut_ptr().cast(), src.as_ptr(), source_len, flag) };
     buffer.truncate(escaped_len + 1);
     CString::from_vec_with_nul(buffer).expect("utf8_strvis output has no interior NUL")
 }
@@ -2097,10 +2097,7 @@ mod tests {
     fn owned_vis_helpers_preserve_multibyte_and_explicit_length_bytes() {
         unsafe {
             let input = CString::new(&b"a\xc3\xa9\xff"[..]).unwrap();
-            let escaped = utf8_stravis_cstring(
-                input.as_ptr(),
-                crate::src::shared::vis::VIS_OCTAL,
-            );
+            let escaped = utf8_stravis_cstring(input.as_c_str(), crate::src::shared::vis::VIS_OCTAL);
             assert_eq!(escaped.as_bytes(), b"a\xc3\xa9\\377");
 
             let bytes = utf8_stravisx_bytes(
