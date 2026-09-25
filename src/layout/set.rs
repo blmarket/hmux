@@ -1079,7 +1079,7 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
                 .wrapping_mul(width.wrapping_add(1 as u_int))
                 .wrapping_sub(1 as u_int);
             if !((*w).sx <= used) {
-                lcchild = layout_cells_last(lcrow);
+                lcchild = layout_cells_last(&*lcrow);
                 layout_resize_adjust(
                     w,
                     lcchild,
@@ -1095,7 +1095,7 @@ unsafe extern "C" fn layout_set_tiled(mut w: *mut window) {
         .wrapping_add(rows)
         .wrapping_sub(1 as u_int);
     if (*w).sy > used {
-        lcrow = layout_cells_last(lcroot);
+        lcrow = layout_cells_last(&*lcroot);
         layout_resize_adjust(
             w,
             lcrow,

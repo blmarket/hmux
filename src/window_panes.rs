@@ -514,7 +514,7 @@ unsafe extern "C" fn window_panes_mark_borders_cell(
     {
         return;
     }
-    lcchild = layout_cells_first(lc);
+    lcchild = layout_cells_first(&*lc);
     while !lcchild.is_null() {
         window_panes_mark_borders_cell(map, lcchild, osx, osy, dsx, dsy);
         if !((*lcchild).flags & LAYOUT_CELL_FLOATING != 0) {
@@ -739,7 +739,7 @@ unsafe extern "C" fn window_panes_mark_border_joins_cell(
     {
         return;
     }
-    lcchild = layout_cells_first(lc);
+    lcchild = layout_cells_first(&*lc);
     while !lcchild.is_null() {
         window_panes_mark_border_joins_cell(map, lcchild, osx, osy, dsx, dsy);
         if !((*lcchild).flags & LAYOUT_CELL_FLOATING != 0) {

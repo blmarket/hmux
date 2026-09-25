@@ -267,7 +267,7 @@ unsafe extern "C" fn layout_find_bottomright(mut lc: *mut layout_cell) -> *mut l
     {
         return lc;
     }
-    lc = layout_cells_last(lc);
+    lc = layout_cells_last(&*lc);
     return layout_find_bottomright(lc);
 }
 unsafe extern "C" fn layout_checksum(mut layout: *const ::core::ffi::c_char) -> u_short {
@@ -353,7 +353,7 @@ unsafe extern "C" fn layout_append_v2(
     {
         layout_string_write(ls, b",\"c\":[\0" as *const u8 as *const ::core::ffi::c_char);
         n = 0 as u_int;
-        lcchild = layout_cells_first(lc);
+        lcchild = layout_cells_first(&*lc);
         while !lcchild.is_null() {
             if layout_append_v2(lcchild, ls) != 0 as ::core::ffi::c_int {
                 return -(1 as ::core::ffi::c_int);
@@ -460,7 +460,7 @@ unsafe extern "C" fn layout_append_v1(
                 b"%c\0" as *const u8 as *const ::core::ffi::c_char,
                 *brackets.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int,
             );
-            lcchild = layout_cells_first(lc);
+            lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
                 if layout_append_v1(lcchild, ls) != 0 as ::core::ffi::c_int {
                     return -(1 as ::core::ffi::c_int);
@@ -501,7 +501,7 @@ unsafe extern "C" fn layout_custom_copy_layout(mut lc: *mut layout_cell) -> *mut
     layout_set_size(lcnew, (*lc).g.sx, (*lc).g.sy, (*lc).g.xoff, (*lc).g.yoff);
     match (*lc).type_0 as ::core::ffi::c_uint {
         1 | 0 => {
-            lcchild = layout_cells_first(lc);
+            lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
                 lcnewchild = layout_custom_copy_layout(lcchild);
                 if !lcnewchild.is_null() {
@@ -510,7 +510,7 @@ unsafe extern "C" fn layout_custom_copy_layout(mut lc: *mut layout_cell) -> *mut
                 }
                 lcchild = layout_cell_next(lcchild);
             }
-            lconly = layout_cells_first(lcnew);
+            lconly = layout_cells_first(&*lcnew);
             if lconly.is_null() {
                 layout_free_cell(lcnew, 0 as ::core::ffi::c_int);
                 return ::core::ptr::null_mut::<layout_cell>();
@@ -542,7 +542,7 @@ unsafe extern "C" fn layout_custom_unlink_panes(mut lc: *mut layout_cell) {
             (*lc).wp = ::core::ptr::null_mut::<window_pane>();
         }
         0 | 1 => {
-            lcchild = layout_cells_first(lc);
+            lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
                 layout_custom_unlink_panes(lcchild);
                 lcchild = layout_cell_next(lcchild);
@@ -582,7 +582,7 @@ unsafe extern "C" fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_in
     let mut n: u_int = 0 as u_int;
     match (*lc).type_0 as ::core::ffi::c_uint {
         0 => {
-            lcchild = layout_cells_first(lc);
+            lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
                 if !(layout_cell_is_tiled(lcchild) == 0
                     && layout_cell_has_tiled_child(lcchild) == 0)
@@ -602,7 +602,7 @@ unsafe extern "C" fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_in
             }
         }
         1 => {
-            lcchild = layout_cells_first(lc);
+            lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
                 if !(layout_cell_is_tiled(lcchild) == 0
                     && layout_cell_has_tiled_child(lcchild) == 0)
@@ -694,7 +694,7 @@ pub unsafe fn layout_parse(
                 pctx.root = ::core::ptr::null_mut::<layout_cell>();
                 match (*lc).type_0 as ::core::ffi::c_uint {
                     0 => {
-                        lcchild = layout_cells_first(lc);
+                        lcchild = layout_cells_first(&*lc);
                         while !lcchild.is_null() {
                             if layout_cell_is_tiled(lcchild) != 0
                                 || layout_cell_has_tiled_child(lcchild) != 0
@@ -706,7 +706,7 @@ pub unsafe fn layout_parse(
                         }
                     }
                     1 => {
-                        lcchild = layout_cells_first(lc);
+                        lcchild = layout_cells_first(&*lc);
                         while !lcchild.is_null() {
                             if layout_cell_is_tiled(lcchild) != 0
                                 || layout_cell_has_tiled_child(lcchild) != 0
@@ -831,7 +831,7 @@ unsafe extern "C" fn layout_assign_fallback_tiled(
             return;
         }
         0 | 1 => {
-            lcchild = layout_cells_first(lc);
+            lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
                 layout_assign_fallback_tiled(wp, lcchild);
                 lcchild = layout_cell_next(lcchild);

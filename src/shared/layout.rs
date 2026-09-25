@@ -88,8 +88,8 @@ fn layout_cell_ptr(cell: &Box<layout_cell>) -> *mut layout_cell {
 }
 
 #[inline]
-pub unsafe fn layout_cells_first(parent: *mut layout_cell) -> *mut layout_cell {
-    (*parent)
+pub fn layout_cells_first(parent: &layout_cell) -> *mut layout_cell {
+    parent
         .cells
         .children
         .first()
@@ -98,8 +98,8 @@ pub unsafe fn layout_cells_first(parent: *mut layout_cell) -> *mut layout_cell {
 }
 
 #[inline]
-pub unsafe fn layout_cells_last(parent: *mut layout_cell) -> *mut layout_cell {
-    (*parent)
+pub fn layout_cells_last(parent: &layout_cell) -> *mut layout_cell {
+    parent
         .cells
         .children
         .last()
