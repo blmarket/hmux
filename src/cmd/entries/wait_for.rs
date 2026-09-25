@@ -155,23 +155,17 @@ fn wait_channel_key(name: &CStr) -> Vec<u8> {
     name.to_bytes().to_vec()
 }
 
-unsafe fn wait_channels_find(
-    head: *mut wait_channels,
-    name: &CStr,
-) -> *mut wait_channel {
-    (*head)
+fn wait_channels_find(head: &mut wait_channels, name: &CStr) -> *mut wait_channel {
+    head
         .entries
         .get_mut(&wait_channel_key(name))
         .map(|owner| &raw mut **owner)
         .unwrap_or(::core::ptr::null_mut::<wait_channel>())
 }
 
-unsafe fn wait_channels_insert(
-    head: *mut wait_channels,
-    mut owner: Box<wait_channel>,
-) -> *mut wait_channel {
+fn wait_channels_insert(head: &mut wait_channels, mut owner: Box<wait_channel>) -> *mut wait_channel {
     let key = wait_channel_key(owner.name.as_c_str());
-    match (*head).entries.entry(key) {
+    match head.entries.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             let channel = &raw mut *owner;
@@ -181,13 +175,8 @@ unsafe fn wait_channels_insert(
     }
 }
 
-unsafe fn wait_channels_remove(
-    head: *mut wait_channels,
-    elm: *mut wait_channel,
-) -> Option<Box<wait_channel>> {
-    (*head)
-        .entries
-        .remove(&wait_channel_key((*elm).name.as_c_str()))
+fn wait_channels_remove(head: &mut wait_channels, elm: &wait_channel) -> Option<Box<wait_channel>> {
+    head.entries.remove(&wait_channel_key(elm.name.as_c_str()))
 }
 
 // Each channel is the first field of its boxed owner, so pointers handed to
@@ -274,7 +263,7 @@ unsafe extern "C" fn cmd_wait_for_add(name: *const ::core::ffi::c_char) -> *mut 
         waiters: Vec::new(),
         lockers: Vec::new(),
     });
-    let wc = wait_channels_insert(&raw mut wait_channels, owner);
+    let wc = wait_channels_insert(&mut *(&raw mut wait_channels), owner);
     log_debug(
         b"add wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
         ((*wc).name).as_ptr().cast_mut(),
@@ -292,7 +281,7 @@ unsafe extern "C" fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
         b"remove wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
         ((*wc).name).as_ptr().cast_mut(),
     );
-    drop(wait_channels_remove(&raw mut wait_channels, wc));
+    drop(wait_channels_remove(&mut *(&raw mut wait_channels), &*wc));
 }
 unsafe extern "C" fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     if (*wc).locked != 0 || (*wc).woken != 0 {
@@ -305,7 +294,7 @@ unsafe extern "C" fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
         b"remove empty wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
         ((*wc).name).as_ptr().cast_mut(),
     );
-    drop(wait_channels_remove(&raw mut wait_channels, wc));
+    drop(wait_channels_remove(&mut *(&raw mut wait_channels), &*wc));
 }
 
 unsafe extern "C" fn cmd_wait_for_item_client_name(
@@ -334,7 +323,7 @@ unsafe extern "C" fn cmd_wait_for_exec(
     if args_has(args, 'E' as i32 as u_char) != 0 {
         return cmd_wait_for_event(item, name, args);
     }
-    wc = wait_channels_find(&raw mut wait_channels, CStr::from_ptr(name));
+    wc = wait_channels_find(&mut *(&raw mut wait_channels), CStr::from_ptr(name));
     if args_has(args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_list(item, wc);
     }
@@ -759,16 +748,16 @@ mod tests {
             entries: std::collections::BTreeMap::new(),
         };
         unsafe {
-            let a = wait_channels_insert(&raw mut channels, test_channel(&name_a));
-            let a0 = wait_channels_insert(&raw mut channels, test_channel(&name_a0));
-            let a_high = wait_channels_insert(&raw mut channels, test_channel(&name_a_high));
-            let z = wait_channels_insert(&raw mut channels, test_channel(&name_z));
+            let a = wait_channels_insert(&mut channels, test_channel(&name_a));
+            let a0 = wait_channels_insert(&mut channels, test_channel(&name_a0));
+            let a_high = wait_channels_insert(&mut channels, test_channel(&name_a_high));
+            let z = wait_channels_insert(&mut channels, test_channel(&name_z));
             assert!(!a.is_null() && !a0.is_null() && !a_high.is_null() && !z.is_null());
             assert_eq!(
-                wait_channels_insert(&raw mut channels, test_channel(&name_a)),
+                wait_channels_insert(&mut channels, test_channel(&name_a)),
                 a
             );
-            assert_eq!(wait_channels_find(&raw mut channels, lookup_a.as_c_str()), a);
+            assert_eq!(wait_channels_find(&mut channels, lookup_a.as_c_str()), a);
 
             let ordered = channels
                 .entries
@@ -777,9 +766,9 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(ordered, vec![a, a0, a_high, z]);
 
-            let mut removed = wait_channels_remove(&raw mut channels, a_high).unwrap();
+            let mut removed = wait_channels_remove(&mut channels, &*a_high).unwrap();
             assert_eq!(&raw mut *removed, a_high);
-            assert!(wait_channels_find(&raw mut channels, name_a_high.as_c_str()).is_null());
+            assert!(wait_channels_find(&mut channels, name_a_high.as_c_str()).is_null());
         }
     }
 
