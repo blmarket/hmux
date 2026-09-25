@@ -657,7 +657,7 @@ pub unsafe fn spawn_pane(
         (*new_wp).argv = (*sc).argv.clone();
     }
     if let Some(cwd) = cwd.take() {
-        window_pane_set_cwd(new_wp, Some(cwd));
+        window_pane_set_cwd(&mut *new_wp, Some(cwd));
     }
     // `child_owner` owns the C tree for the whole synchronous spawn
     // operation. Its raw pointer is borrowed by the translated C calls below;

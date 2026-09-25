@@ -2989,9 +2989,9 @@ pub(crate) fn window_pane_set_shell(wp: &mut window_pane, shell: Option<CString>
 }
 
 /// `pane.cwd` is a borrowed view, invalidated on replacement or clear.
-pub(crate) unsafe fn window_pane_set_cwd(wp: *mut window_pane, cwd: Option<CString>) {
-    (*wp).cwd_owner = cwd;
-    (*wp).cwd = (*wp)
+pub(crate) fn window_pane_set_cwd(wp: &mut window_pane, cwd: Option<CString>) {
+    wp.cwd_owner = cwd;
+    wp.cwd = wp
         .cwd_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
@@ -3200,7 +3200,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     screen_free(&raw mut (*wp).status_screen);
     screen_free(&raw mut (*wp).base);
     options_free((*wp).options);
-    window_pane_set_cwd(wp, None);
+    window_pane_set_cwd(&mut *wp, None);
     window_pane_set_shell(&mut *wp, None);
     colour_palette_free(&raw mut (*wp).palette);
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);
