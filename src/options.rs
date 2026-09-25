@@ -168,8 +168,8 @@ fn set_scalar_string(o: &mut options_entry, value: CString) {
     o.value = options_value::String(value);
 }
 
-unsafe fn set_array_string(a: *mut options_array_item, value: CString) {
-    (*a).value = options_value::String(value);
+fn set_array_string(a: &mut options_array_item, value: CString) {
+    a.value = options_value::String(value);
 }
 
 use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
@@ -694,7 +694,7 @@ pub unsafe fn options_array_set(
         if a.is_null() {
             a = options_array_new(o, new_key.as_ptr());
         }
-        set_array_string(a, owned_value);
+        set_array_string(&mut *a, owned_value);
         return 0 as ::core::ffi::c_int;
     }
     if (*(*o).tableentry).type_0 as ::core::ffi::c_uint
