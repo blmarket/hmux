@@ -196,8 +196,8 @@ pub struct window_copy_mode_data {
     pub refresh_active: ::core::ffi::c_int,
 }
 
-unsafe fn window_copy_searchstr(data: *const window_copy_mode_data) -> *const ::core::ffi::c_char {
-    (*data)
+fn window_copy_searchstr(data: &window_copy_mode_data) -> *const ::core::ffi::c_char {
+    data
         .searchstr
         .as_ref()
         .map_or(::core::ptr::null(), |value| value.as_ptr())
@@ -3445,7 +3445,7 @@ unsafe extern "C" fn window_copy_cmd_search_backward_incremental(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
-    let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(data);
+    let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(&*data);
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
@@ -3510,7 +3510,7 @@ unsafe extern "C" fn window_copy_cmd_search_forward_incremental(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut arg0: *const ::core::ffi::c_char = args_string((*cs).wargs, 0 as u_int);
-    let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(data);
+    let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(&*data);
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
@@ -6568,7 +6568,7 @@ unsafe extern "C" fn window_copy_search(
         bg: 0,
     };
     let mut gd: *mut grid = (*s).grid;
-    let mut str: *const ::core::ffi::c_char = window_copy_searchstr(data);
+    let mut str: *const ::core::ffi::c_char = window_copy_searchstr(&*data);
     let mut at: u_int = 0;
     let mut endline: u_int = 0;
     let mut fx: u_int = 0;
@@ -6907,7 +6907,7 @@ unsafe extern "C" fn window_copy_search_marks(
     if ssp.is_null() {
         width = screen_write_strlen(
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            window_copy_searchstr(data),
+            window_copy_searchstr(&*data),
         ) as u_int;
         screen_init(&raw mut ss, width, 1 as u_int, 0 as u_int);
         screen_write_start(&raw mut ctx, &raw mut ss);
@@ -6916,14 +6916,14 @@ unsafe extern "C" fn window_copy_search_marks(
             -(1 as ::core::ffi::c_int) as ssize_t,
             &raw const grid_default_cell,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            window_copy_searchstr(data),
+            window_copy_searchstr(&*data),
         );
         screen_write_stop(&raw mut ctx);
         ssp = &raw mut ss;
     } else {
         width = (*(*ssp).grid).sx;
     }
-    cis = window_copy_is_lowercase(window_copy_searchstr(data));
+    cis = window_copy_is_lowercase(window_copy_searchstr(&*data));
     if regex != 0 {
         let mut sbuf = vec![0u8];
         window_copy_stringify(
