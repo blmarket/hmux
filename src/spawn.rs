@@ -102,12 +102,11 @@ pub type off_t = __off_t;
 pub type uintmax_t = ::libc::uintmax_t;
 
 impl spawn_editor_state {
-    fn new(path: CString, cb: spawn_finish_edit_cb, arg: *mut ::core::ffi::c_void) -> Box<Self> {
+    fn new(path: CString, cb: spawn_finish_edit_cb) -> Box<Self> {
         Box::new(spawn_editor_state {
             path: path,
             pid: 0,
             cb: cb,
-            arg: arg,
         })
     }
 
@@ -934,7 +933,6 @@ pub unsafe extern "C" fn spawn_cancel_editor(mut es: *mut spawn_editor_state) {
         return;
     }
     (*es).cb = None;
-    (*es).arg = NULL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn spawn_get_editor_pid(mut es: *mut spawn_editor_state) -> pid_t {
@@ -970,7 +968,7 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
         return;
     }
     if status != 0 as ::core::ffi::c_int {
-        (*es).cb.expect("non-null function pointer")(None, (*es).arg);
+        (*es).cb.take().expect("non-null editor callback")(None);
         spawn_editor_free(es);
         return;
     }
@@ -1008,7 +1006,10 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
         }
         drop(stream);
     }
-    (*es).cb.expect("non-null function pointer")(result, (*es).arg);
+    (*es)
+        .cb
+        .take()
+        .expect("non-null editor callback")(result);
     spawn_editor_free(es);
 }
 
@@ -1038,7 +1039,6 @@ pub unsafe fn spawn_editor(
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
     mut cb: spawn_finish_edit_cb,
-    mut arg: *mut ::core::ffi::c_void,
 ) -> *mut spawn_editor_state {
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {
@@ -1103,8 +1103,7 @@ pub unsafe fn spawn_editor(
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     drop(stream);
-    es =
-        spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb, arg).into_state_ptr();
+    es = spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb).into_state_ptr();
     lg.sx = (*w).sx.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
     lg.sy = (*w).sy.wrapping_mul(9 as u_int).wrapping_div(10 as u_int);
     lg.xoff = (*w)
@@ -1238,8 +1237,10 @@ mod tests {
         run_isolated(FAILURE_TEST, FAILURE_CASE);
     }
 
-    unsafe fn capture_editor_result(result: Option<Vec<u8>>, arg: *mut ::core::ffi::c_void) {
-        *(arg as *mut Option<Vec<u8>>) = result;
+    fn capture_editor_result(result: *mut Option<Vec<u8>>) -> spawn_finish_edit_cb {
+        Some(Box::new(move |value| unsafe {
+            *result = value;
+        }))
     }
 
     #[test]
@@ -1275,8 +1276,7 @@ mod tests {
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
                 let state = spawn_editor_state::new(
                     path.to_owned(),
-                    Some(capture_editor_result),
-                    result as *mut ::core::ffi::c_void,
+                    capture_editor_result(result),
                 )
                 .into_state_ptr();
                 let wp = Box::into_raw(Box::new(window_pane::empty()));
@@ -1294,8 +1294,7 @@ mod tests {
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
                 let state = spawn_editor_state::new(
                     path.to_owned(),
-                    Some(capture_editor_result),
-                    result as *mut ::core::ffi::c_void,
+                    capture_editor_result(result),
                 )
                 .into_state_ptr();
                 let wp = Box::into_raw(Box::new(window_pane::empty()));
@@ -1313,8 +1312,7 @@ mod tests {
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
                 let state = spawn_editor_state::new(
                     path.to_owned(),
-                    Some(capture_editor_result),
-                    result as *mut ::core::ffi::c_void,
+                    capture_editor_result(result),
                 )
                 .into_state_ptr();
                 let wp = Box::into_raw(Box::new(window_pane::empty()));

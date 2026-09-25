@@ -3524,9 +3524,11 @@ unsafe extern "C" fn window_customize_add_environment(
         new_item as *mut ::core::ffi::c_void,
     );
 }
-unsafe fn window_customize_edit_close_cb(buf: Option<Vec<u8>>, mut arg: *mut ::core::ffi::c_void) {
+unsafe fn window_customize_edit_close_cb(
+    buf: Option<Vec<u8>>,
+    mut ed: *mut window_customize_editdata,
+) {
     let mut current_block: u64;
-    let mut ed: *mut window_customize_editdata = arg as *mut window_customize_editdata;
     let mut item: *mut window_customize_itemdata = (*ed).item;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -3724,8 +3726,9 @@ unsafe extern "C" fn window_customize_start_edit(
         c,
         buf,
         len,
-        Some(window_customize_edit_close_cb),
-        ed as *mut ::core::ffi::c_void,
+        Some(Box::new(move |buf| unsafe {
+            window_customize_edit_close_cb(buf, ed)
+        })),
     );
     if (*ed).editor.is_null() {
         window_customize_finish_edit(ed);

@@ -866,8 +866,10 @@ unsafe extern "C" fn window_buffer_draw_waiting(mut data: *mut window_buffer_mod
     );
     screen_write_stop(&raw mut ctx);
 }
-unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut arg: *mut ::core::ffi::c_void) {
-    let mut ed: *mut window_buffer_editdata = arg as *mut window_buffer_editdata;
+unsafe fn window_buffer_edit_close_cb(
+    buf: Option<Vec<u8>>,
+    mut ed: *mut window_buffer_editdata,
+) {
     let mut oldlen: size_t = 0;
     let mut oldbuf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
@@ -957,8 +959,9 @@ unsafe extern "C" fn window_buffer_start_edit(
         c,
         buf,
         len,
-        Some(window_buffer_edit_close_cb),
-        ed as *mut ::core::ffi::c_void,
+        Some(Box::new(move |buf| unsafe {
+            window_buffer_edit_close_cb(buf, ed)
+        })),
     );
     if (*ed).editor.is_null() {
         window_buffer_finish_edit(ed);
