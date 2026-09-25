@@ -3648,7 +3648,7 @@ mod format_choose_tests {
                 format_expand_cstring(ft, b"first\0\xffignored\0".as_ptr().cast()).as_bytes(),
                 b"first"
             );
-            let mut es: format_expand_state = std::mem::zeroed();
+            let mut es: format_expand_state = Default::default();
             es.ft = ft;
             es.start_time = get_timer();
             es.loop_0 = FORMAT_LOOP_LIMIT as u_int;
@@ -3675,7 +3675,7 @@ mod format_choose_tests {
     fn split_operands_preserve_escapes_nesting_and_bytes() {
         unsafe {
             let ft = format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0);
-            let mut es: format_expand_state = std::mem::zeroed();
+            let mut es: format_expand_state = Default::default();
             es.ft = ft;
             es.start_time = get_timer();
 

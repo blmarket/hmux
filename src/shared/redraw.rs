@@ -52,7 +52,7 @@ pub struct redraw_span {
     pub data: redraw_span_data,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct redraw_span_data {
     pub type_0: redraw_span_type,
@@ -67,6 +67,14 @@ pub union redraw_span_data_c2rust_unnamed {
     pub st: redraw_span_data_c2rust_unnamed_st,
     pub sb: redraw_span_data_c2rust_unnamed_sb,
     pub m: redraw_span_data_c2rust_unnamed_m,
+}
+
+impl Default for redraw_span_data_c2rust_unnamed {
+    fn default() -> Self {
+        Self {
+            p: redraw_span_data_c2rust_unnamed_p::default(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -111,7 +119,7 @@ pub struct redraw_span_data_c2rust_unnamed_b {
     pub flags: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct redraw_span_data_c2rust_unnamed_p {
     pub wp: *mut window_pane,
@@ -129,7 +137,7 @@ mod tests {
         redraw_span {
             x,
             width: 1,
-            data: unsafe { ::core::mem::zeroed() },
+            data: Default::default(),
         }
     }
 

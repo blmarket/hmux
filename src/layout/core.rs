@@ -50,8 +50,8 @@ pub unsafe extern "C" fn layout_create_cell(mut lcparent: *mut layout_cell) -> *
         flags: 0,
         parent: lcparent,
         sibling_index: 0,
-        g: ::core::mem::zeroed::<layout_geometry>(),
-        fg: ::core::mem::zeroed::<layout_geometry>(),
+        g: layout_geometry::default(),
+        fg: layout_geometry::default(),
         wp: ::core::ptr::null_mut::<window_pane>(),
         cells: layout_cells {
             children: Vec::new(),

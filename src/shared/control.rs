@@ -26,12 +26,12 @@ impl control_state {
         Self {
             panes: control_panes { storage: None },
             windows: control_windows { storage: None },
-            pending_count: unsafe { ::core::mem::zeroed() },
-            queued_reply_bytes: unsafe { ::core::mem::zeroed() },
-            read_event: unsafe { ::core::mem::zeroed() },
-            write_event: unsafe { ::core::mem::zeroed() },
-            subs: unsafe { ::core::mem::zeroed() },
-            guard_depth: unsafe { ::core::mem::zeroed() },
+            pending_count: Default::default(),
+            queued_reply_bytes: Default::default(),
+            read_event: Default::default(),
+            write_event: Default::default(),
+            subs: Default::default(),
+            guard_depth: Default::default(),
             deferred: Default::default(),
             all_blocks: Default::default(),
             pending_panes: Default::default(),
@@ -49,9 +49,9 @@ pub struct control_block {
 impl control_block {
     pub fn empty() -> Self {
         Self {
-            size: unsafe { ::core::mem::zeroed() },
+            size: Default::default(),
             line: Default::default(),
-            t: unsafe { ::core::mem::zeroed() },
+            t: Default::default(),
         }
     }
 }

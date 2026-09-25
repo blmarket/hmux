@@ -256,7 +256,7 @@ pub unsafe extern "C" fn cmdq_new_state(
         key_event {
             client: ::core::ptr::null_mut(),
             key: KEYC_NONE as key_code,
-            m: ::core::mem::zeroed(),
+            m: Default::default(),
             bytes: None,
         }
     } else {
@@ -267,7 +267,7 @@ pub unsafe extern "C" fn cmdq_new_state(
         flags,
         formats: ::core::ptr::null_mut(),
         event: snapshot,
-        current: ::core::mem::zeroed(),
+        current: Default::default(),
     }));
     if !current.is_null() && cmd_find_valid_state(current) != 0 {
         cmd_find_copy_state(&raw mut (*state).current, current);

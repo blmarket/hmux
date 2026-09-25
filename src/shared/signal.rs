@@ -1,7 +1,7 @@
 //! Authoritative signal declarations from the translated Linux C ABI.
 use super::abi::{__clock_t, __pid_t, __uid_t, __uint32_t};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct __sigset_t {
     pub __val: [::core::ffi::c_ulong; 16],
@@ -122,6 +122,17 @@ pub struct sigaction {
     pub sa_restorer: Option<unsafe extern "C" fn() -> ()>,
 }
 
+impl Default for sigaction {
+    fn default() -> Self {
+        Self {
+            __sigaction_handler: Default::default(),
+            sa_mask: Default::default(),
+            sa_flags: 0,
+            sa_restorer: None,
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union sigaction___sigaction_handler {
@@ -129,6 +140,12 @@ pub union sigaction___sigaction_handler {
     pub sa_sigaction: Option<
         unsafe extern "C" fn(::core::ffi::c_int, *mut siginfo_t, *mut ::core::ffi::c_void) -> (),
     >,
+}
+
+impl Default for sigaction___sigaction_handler {
+    fn default() -> Self {
+        Self { sa_handler: None }
+    }
 }
 
 pub const SIG_DFL: __sighandler_t = None;

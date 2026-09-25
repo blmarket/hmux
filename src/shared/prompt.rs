@@ -70,6 +70,7 @@ pub struct prompt_completion {
     pub display: Option<CString>,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct prompt {
     pub string: CString,

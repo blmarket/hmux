@@ -1,7 +1,7 @@
 //! Authoritative time declarations from the translated Linux C ABI.
 use super::abi::{__syscall_slong_t, __time_t};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct tm {
     pub tm_sec: ::core::ffi::c_int,

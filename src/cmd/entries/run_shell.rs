@@ -233,7 +233,7 @@ unsafe extern "C" fn cmd_run_shell_exec(
         item: ::core::ptr::null_mut(),
         s: ::core::ptr::null_mut(),
         wp_id: 0,
-        timer: ::core::mem::zeroed(),
+        timer: Default::default(),
         flags: 0,
     }));
     if args_has(args, 'C' as i32 as u_char) == 0 {

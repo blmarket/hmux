@@ -5,7 +5,7 @@ pub const THEME_DARK: client_theme = 2;
 pub const THEME_LIGHT: client_theme = 1;
 pub const THEME_UNKNOWN: client_theme = 0;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct colour_palette {
     pub fg: ::core::ffi::c_int,

@@ -293,7 +293,7 @@ fn read_header_failure_drops_borrowed_view_without_queueing() {
 #[test]
 fn imsgbuf_reader_owns_a_live_msgbuf_until_clear() {
     unsafe {
-        let mut owner = MaybeUninit::<hmux2::src::compat::imsg::imsgbuf>::zeroed().assume_init();
+        let mut owner = hmux2::src::compat::imsg::imsgbuf::default();
         assert_eq!(imsgbuf_init(&raw mut owner, -1), 0);
         assert!(!owner.w.is_null());
         imsgbuf_clear(&raw mut owner);

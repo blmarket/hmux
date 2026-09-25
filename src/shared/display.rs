@@ -1,6 +1,6 @@
 //! Authoritative screen display state and cursor domains.
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct progress_bar {
     pub state: progress_bar_state,

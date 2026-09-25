@@ -105,7 +105,7 @@ pub enum input_param {
     String(CString),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct input_cell {
     pub cell: grid_cell,

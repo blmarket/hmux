@@ -2201,10 +2201,10 @@ impl key_table {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            activity_time: unsafe { ::core::mem::zeroed() },
+            activity_time: Default::default(),
             key_bindings: key_bindings::default(),
             default_key_bindings: key_bindings::default(),
-            references: unsafe { ::core::mem::zeroed() },
+            references: Default::default(),
             entry: key_table_entry { owner: None },
         }
     }
@@ -2240,11 +2240,11 @@ pub struct key_binding {
 impl key_binding {
     pub fn empty() -> Self {
         Self {
-            key: unsafe { ::core::mem::zeroed() },
-            cmdlist: unsafe { ::core::mem::zeroed() },
+            key: Default::default(),
+            cmdlist: Default::default(),
             note: Default::default(),
-            tablename: unsafe { ::core::mem::zeroed() },
-            flags: unsafe { ::core::mem::zeroed() },
+            tablename: Default::default(),
+            flags: Default::default(),
             entry: key_binding_entry { owner: None },
         }
     }

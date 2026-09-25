@@ -45,7 +45,7 @@ impl args {
     pub fn empty() -> Self {
         Self {
             tree: args_tree::default(),
-            count: unsafe { ::core::mem::zeroed() },
+            count: Default::default(),
             values: Vec::new(),
         }
     }
@@ -214,9 +214,9 @@ pub struct args_command_state {
 impl args_command_state {
     pub fn empty() -> Self {
         Self {
-            cmdlist: unsafe { ::core::mem::zeroed() },
+            cmdlist: Default::default(),
             cmd: Default::default(),
-            pi: unsafe { ::core::mem::zeroed() },
+            pi: Default::default(),
             file: Default::default(),
         }
     }

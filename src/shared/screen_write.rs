@@ -14,6 +14,7 @@ pub struct screen_write_cline {
     pub data: GridArray<::core::ffi::c_char>,
     pub items: screen_write_items,
 }
+#[derive(Default)]
 pub struct screen_write_citem {
     pub x: u_int,
     pub wrapped: ::core::ffi::c_int,
@@ -36,6 +37,7 @@ pub type screen_write_item_type = ::core::ffi::c_uint;
 pub const CLEAR: screen_write_item_type = 1;
 pub const TEXT: screen_write_item_type = 0;
 
+#[derive(Default)]
 #[repr(C)]
 pub struct screen_write_ctx {
     pub wp: *mut window_pane,
@@ -114,7 +116,7 @@ mod tests {
     fn owner_operations_preserve_item_addresses_and_order() {
         let mut dst = screen_write_items::default();
         let mut src = screen_write_items::default();
-        let make_item = || Box::new(unsafe { std::mem::zeroed() });
+        let make_item = || Box::new(Default::default());
 
         let first = make_item();
         let first_ptr = &*first as *const _ as *mut _;

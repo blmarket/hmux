@@ -32,19 +32,19 @@ pub struct job {
 impl job {
     pub fn empty() -> Self {
         Self {
-            state: unsafe { ::core::mem::zeroed() },
-            flags: unsafe { ::core::mem::zeroed() },
+            state: Default::default(),
+            flags: Default::default(),
             cmd: Default::default(),
-            pid: unsafe { ::core::mem::zeroed() },
-            tty: unsafe { ::core::mem::zeroed() },
-            status: unsafe { ::core::mem::zeroed() },
-            fd: unsafe { ::core::mem::zeroed() },
-            event: unsafe { ::core::mem::zeroed() },
-            updatecb: unsafe { ::core::mem::zeroed() },
-            completecb: unsafe { ::core::mem::zeroed() },
-            freecb: unsafe { ::core::mem::zeroed() },
-            data: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            pid: Default::default(),
+            tty: Default::default(),
+            status: Default::default(),
+            fd: Default::default(),
+            event: Default::default(),
+            updatecb: Default::default(),
+            completecb: Default::default(),
+            freecb: Default::default(),
+            data: Default::default(),
+            entry: Default::default(),
         }
     }
 }
@@ -55,7 +55,7 @@ pub type job_complete_cb = Option<unsafe extern "C" fn(*mut job) -> ()>;
 
 pub type job_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct job_entry {
     pub le_next: *mut job,

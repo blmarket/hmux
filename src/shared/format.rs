@@ -113,7 +113,7 @@ pub const FORMAT_EXPAND_NOJOBS: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 
 /// Box-owned by format_create; borrowed pointers are invalid after format_free.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct format_tree {
     pub type_0: format_type,
@@ -138,7 +138,7 @@ pub struct format_job_tree {
     pub(crate) entries: std::collections::BTreeMap<(u_int, Vec<u8>), *mut format_job>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct format_entry_tree {
     pub entries: *mut format_entry_tree_storage,
@@ -165,8 +165,8 @@ impl format_entry {
         Self {
             key: Default::default(),
             value: Default::default(),
-            time: unsafe { ::core::mem::zeroed() },
-            cb: unsafe { ::core::mem::zeroed() },
+            time: Default::default(),
+            cb: Default::default(),
             owned_cb: Default::default(),
         }
     }
@@ -192,15 +192,15 @@ pub struct format_job {
 impl format_job {
     pub fn empty() -> Self {
         Self {
-            client: unsafe { ::core::mem::zeroed() },
-            tag: unsafe { ::core::mem::zeroed() },
+            client: Default::default(),
+            tag: Default::default(),
             cmd: Default::default(),
             expanded: Default::default(),
-            last: unsafe { ::core::mem::zeroed() },
+            last: Default::default(),
             out: Default::default(),
-            updated: unsafe { ::core::mem::zeroed() },
-            job: unsafe { ::core::mem::zeroed() },
-            status: unsafe { ::core::mem::zeroed() },
+            updated: Default::default(),
+            job: Default::default(),
+            status: Default::default(),
         }
     }
 }

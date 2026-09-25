@@ -5444,7 +5444,7 @@ mod key_event_owner_tests {
 
     #[test]
     fn absent_and_empty_bytes_remain_distinct_in_snapshots() {
-        let mouse = unsafe { std::mem::zeroed() };
+        let mouse = Default::default();
         let absent = key_event::new(1, mouse, None);
         let empty = key_event::new(1, mouse, Some(Vec::new()));
         assert!(absent.bytes_ptr_len().is_none());
@@ -5459,7 +5459,7 @@ mod key_event_owner_tests {
         unsafe {
             let mut client = Box::new(client::empty());
             let pointer = &raw mut *client;
-            let mouse = std::mem::zeroed();
+            let mouse = Default::default();
             assert_eq!(
                 server_client_handle_key(pointer, key_event::new(1, mouse, Some(vec![1]))),
                 0

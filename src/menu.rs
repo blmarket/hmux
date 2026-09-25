@@ -468,7 +468,7 @@ pub unsafe extern "C" fn menu_key(
     let mut saved_event = key_event {
         client: ::core::ptr::null_mut(),
         key: 0,
-        m: ::core::mem::zeroed(),
+        m: Default::default(),
         bytes: None,
     };
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();

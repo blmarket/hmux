@@ -23,7 +23,7 @@ use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::tmux::global_options;
 use std::ffi::{CStr, CString};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 /// Dynamic entries are Box-owned while indexed; static defaults have
 /// `allocated == 0` and must never be passed to `Box::from_raw`.
@@ -36,7 +36,7 @@ pub struct utf8_width_item {
 pub struct utf8_width_cache {
     entries: std::collections::BTreeMap<wchar_t, *mut utf8_width_item>,
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct utf8_item {
     pub index: u_int,
@@ -1231,7 +1231,7 @@ unsafe extern "C" fn utf8_put_item(
     if utf8_next_index == (0xffffff as ::core::ffi::c_int + 1 as ::core::ffi::c_int) as u_int {
         return -(1 as ::core::ffi::c_int);
     }
-    let mut owned = Box::new(::core::mem::zeroed::<utf8_item>());
+    let mut owned = Box::new(utf8_item::default());
     let fresh2 = utf8_next_index;
     utf8_next_index = utf8_next_index.wrapping_add(1);
     owned.index = fresh2;
@@ -2054,12 +2054,12 @@ mod tests {
             ] {
                 let mut cells = Vec::new();
                 for part in parts {
-                    let mut cell: utf8_data = std::mem::zeroed();
+                    let mut cell = utf8_data::default();
                     cell.data[..part.len()].copy_from_slice(&part);
                     cell.size = part.len() as u_char;
                     cells.push(cell);
                 }
-                cells.push(std::mem::zeroed());
+                cells.push(utf8_data::default());
 
                 let mut expected = Vec::new();
                 for cell in &cells {
@@ -2095,18 +2095,18 @@ mod tests {
     fn utf8_index_tree_matches_index_comparator() {
         unsafe {
             let mut tree = utf8_index_tree::default();
-            let mut first_item = Box::new(std::mem::zeroed::<utf8_item>());
+            let mut first_item = Box::new(utf8_item::default());
             first_item.index = 7;
             let first = first_item.as_mut() as *mut utf8_item;
             assert!(utf8_index_tree_insert(&mut tree, first_item).is_null());
 
-            let mut zero = Box::new(std::mem::zeroed::<utf8_item>());
+            let mut zero = Box::new(utf8_item::default());
             zero.index = 0;
             assert!(utf8_index_tree_insert(&mut tree, zero).is_null());
-            let mut maximum = Box::new(std::mem::zeroed::<utf8_item>());
+            let mut maximum = Box::new(utf8_item::default());
             maximum.index = u_int::MAX;
             assert!(utf8_index_tree_insert(&mut tree, maximum).is_null());
-            let mut duplicate = Box::new(std::mem::zeroed::<utf8_item>());
+            let mut duplicate = Box::new(utf8_item::default());
             duplicate.index = 7;
             assert_eq!(
                 utf8_index_tree_insert(&mut tree, duplicate),
@@ -2134,7 +2134,7 @@ mod tests {
 
         unsafe {
             let mut tree = utf8_data_tree::default();
-            let mut items: [utf8_item; 4] = [std::mem::zeroed(); 4];
+            let mut items: [utf8_item; 4] = [utf8_item::default(); 4];
             set_data(&mut items[0], &[0x80]);
             set_data(&mut items[1], &[0xff]);
             set_data(&mut items[2], &[0x00, 0x00]);
@@ -2167,7 +2167,7 @@ mod tests {
     fn utf8_width_cache_matches_width_comparator() {
         unsafe {
             let mut cache = utf8_width_cache::default();
-            let mut items: [utf8_width_item; 4] = [std::mem::zeroed(); 4];
+            let mut items: [utf8_width_item; 4] = [utf8_width_item::default(); 4];
             items[0].wc = 7;
             items[1].wc = -1;
             items[2].wc = 0;

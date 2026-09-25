@@ -34,9 +34,9 @@ impl spawn_editor_state {
     pub fn empty() -> Self {
         Self {
             path: Default::default(),
-            pid: unsafe { ::core::mem::zeroed() },
-            cb: unsafe { ::core::mem::zeroed() },
-            arg: unsafe { ::core::mem::zeroed() },
+            pid: Default::default(),
+            cb: Default::default(),
+            arg: Default::default(),
         }
     }
 }

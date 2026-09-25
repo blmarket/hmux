@@ -63,7 +63,7 @@ pub struct stat {
     pub __glibc_reserved: [__syscall_slong_t; 3],
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct glob_t {
     pub gl_pathc: __size_t,

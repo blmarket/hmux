@@ -676,7 +676,7 @@ unsafe extern "C" fn window_clock_init(
     data = Box::into_raw(Box::new(window_clock_mode_data {
         screen: screen::empty(),
         tim: 0,
-        timer: ::core::mem::zeroed(),
+        timer: Default::default(),
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).tim = time(::core::ptr::null_mut::<time_t>());

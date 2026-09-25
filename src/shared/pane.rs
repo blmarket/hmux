@@ -19,7 +19,7 @@ use super::spawn::spawn_editor_state;
 use super::status::status_prompt_input_cb;
 use super::style::{style, style_line_entry};
 use super::window::{window, window_mode_entry};
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct window_pane_offset {
     pub used: size_t,
@@ -84,7 +84,7 @@ impl window_pane_resizes {
         }
     }
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct window_pane_resize {
     pub sx: u_int,
@@ -145,6 +145,7 @@ pub struct window_pane_prompt {
     pub type_0: prompt_type,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct window_pane {
     pub id: u_int,
@@ -230,25 +231,11 @@ pub struct window_pane {
 
 impl window_pane {
     pub fn empty() -> Self {
-        let mut storage = ::core::mem::MaybeUninit::<Self>::zeroed();
-        let pane = storage.as_mut_ptr();
-        unsafe {
-            ::core::ptr::addr_of_mut!((*pane).base).write(screen::empty());
-            ::core::ptr::addr_of_mut!((*pane).status_screen).write(screen::empty());
-            ::core::ptr::addr_of_mut!((*pane).r).write(visible_ranges::default());
-            ::core::ptr::addr_of_mut!((*pane).argv).write(Vec::new());
-            ::core::ptr::addr_of_mut!((*pane).resize_queue).write(window_pane_resizes::default());
-            ::core::ptr::addr_of_mut!((*pane).modes).write(window_pane_modes::default());
-            ::core::ptr::addr_of_mut!((*pane).tree_entry)
-                .write(window_pane_tree_entry { owner: None });
-            ::core::ptr::addr_of_mut!((*pane).searchstr_owner).write(None);
-            ::core::ptr::addr_of_mut!((*pane).shell_owner).write(None);
-            ::core::ptr::addr_of_mut!((*pane).cwd_owner).write(None);
-            storage.assume_init()
-        }
+        Self::default()
     }
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct window_pane_tree_entry {
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, *mut window_pane>>>,

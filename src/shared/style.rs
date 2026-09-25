@@ -3,7 +3,7 @@
 use super::abi::*;
 use super::grid::*;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct style {
     pub gc: grid_cell,
@@ -52,14 +52,14 @@ pub const STYLE_ALIGN_CENTRE: style_align = 2;
 pub const STYLE_ALIGN_LEFT: style_align = 1;
 pub const STYLE_ALIGN_DEFAULT: style_align = 0;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct style_line_entry {
     pub expanded: Option<::std::ffi::CString>,
     pub ranges: style_ranges,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct style_ranges {
     /// Box-owned Vec storage; null means empty or uninitialized.

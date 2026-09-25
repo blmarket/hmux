@@ -173,22 +173,22 @@ impl cmdq_item {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            queue: unsafe { ::core::mem::zeroed() },
-            next: unsafe { ::core::mem::zeroed() },
-            client: unsafe { ::core::mem::zeroed() },
-            target_client: unsafe { ::core::mem::zeroed() },
-            type_0: unsafe { ::core::mem::zeroed() },
-            group: unsafe { ::core::mem::zeroed() },
-            number: unsafe { ::core::mem::zeroed() },
-            time: unsafe { ::core::mem::zeroed() },
-            flags: unsafe { ::core::mem::zeroed() },
-            state: unsafe { ::core::mem::zeroed() },
-            source: unsafe { ::core::mem::zeroed() },
-            target: unsafe { ::core::mem::zeroed() },
-            cmdlist: unsafe { ::core::mem::zeroed() },
-            cmd: unsafe { ::core::mem::zeroed() },
-            cb: unsafe { ::core::mem::zeroed() },
-            data: unsafe { ::core::mem::zeroed() },
+            queue: Default::default(),
+            next: Default::default(),
+            client: Default::default(),
+            target_client: Default::default(),
+            type_0: Default::default(),
+            group: Default::default(),
+            number: Default::default(),
+            time: Default::default(),
+            flags: Default::default(),
+            state: Default::default(),
+            source: Default::default(),
+            target: Default::default(),
+            cmdlist: Default::default(),
+            cmd: Default::default(),
+            cb: Default::default(),
+            data: Default::default(),
             error: Default::default(),
             cancel_data: Default::default(),
             wait_file: Default::default(),
@@ -221,7 +221,7 @@ impl cmdq_list {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct cmd_find_state {
     pub flags: ::core::ffi::c_int,
@@ -235,6 +235,7 @@ pub struct cmd_find_state {
 
 #[repr(C)]
 /// Box-owned from `cmd_list_new` until the last explicit reference is freed.
+#[derive(Default)]
 pub struct cmd_list {
     pub references: ::core::ffi::c_int,
     pub group: u_int,
@@ -255,12 +256,12 @@ pub struct cmd {
 impl cmd {
     pub fn empty() -> Self {
         Self {
-            entry: unsafe { ::core::mem::zeroed() },
-            args: unsafe { ::core::mem::zeroed() },
-            group: unsafe { ::core::mem::zeroed() },
+            entry: Default::default(),
+            args: Default::default(),
+            group: Default::default(),
             file: Default::default(),
-            line: unsafe { ::core::mem::zeroed() },
-            parse_flags: unsafe { ::core::mem::zeroed() },
+            line: Default::default(),
+            parse_flags: Default::default(),
         }
     }
 }
@@ -308,7 +309,7 @@ pub struct wait_item {
     pub item: *mut cmdq_item,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct cmd_parse_input {
     pub flags: ::core::ffi::c_int,

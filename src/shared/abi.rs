@@ -29,7 +29,7 @@ pub type cc_t = ::core::ffi::c_uchar;
 pub type speed_t = ::core::ffi::c_uint;
 pub type tcflag_t = ::core::ffi::c_uint;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct timeval {
     pub tv_sec: __time_t,

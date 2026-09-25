@@ -25,6 +25,7 @@ pub struct screen_sel {
 /// Kept as a compatibility name for translated modules that import the old
 /// history type. Screen history is now stored inline as owned C strings.
 pub type screen_titles = VecDeque<CString>;
+#[derive(Default)]
 #[repr(C)]
 pub struct screen {
     pub title: CString,
@@ -58,15 +59,7 @@ impl screen {
     /// All scalar and pointer fields retain their translated zero state while
     /// the drop-bearing owners are initialized with their Rust invariants.
     pub fn empty() -> Self {
-        let mut storage = ::core::mem::MaybeUninit::<Self>::zeroed();
-        let screen = storage.as_mut_ptr();
-        unsafe {
-            ::core::ptr::addr_of_mut!((*screen).title).write(CString::default());
-            ::core::ptr::addr_of_mut!((*screen).path).write(None);
-            ::core::ptr::addr_of_mut!((*screen).titles).write(VecDeque::new());
-            ::core::ptr::addr_of_mut!((*screen).tabs).write(Vec::new());
-            storage.assume_init()
-        }
+        Self::default()
     }
 }
 

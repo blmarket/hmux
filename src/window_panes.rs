@@ -1600,7 +1600,7 @@ unsafe extern "C" fn window_panes_init(
         source_window: 0,
         screen: screen::empty(),
         preview: None,
-        timer: ::core::mem::zeroed(),
+        timer: Default::default(),
         state: ::core::ptr::null_mut(),
         delay: 0,
         ignore_keys: 0,

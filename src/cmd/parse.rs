@@ -240,7 +240,7 @@ impl hmux_cmdparse::Context for ParserContext {
     fn expand_format(&mut self, token: hmux_cmdparse::TokenText) -> hmux_cmdparse::TokenText {
         unsafe {
             let pi = parse_state.input;
-            let mut fs: cmd_find_state = std::mem::zeroed();
+            let mut fs: cmd_find_state = Default::default();
             let fsp = if cmd_find_valid_state(&raw mut (*pi).fs) != 0 {
                 &raw mut (*pi).fs
             } else {
@@ -1516,7 +1516,7 @@ mod parser_collection_tests {
     use super::*;
 
     unsafe fn parse_commands(input: &[u8]) -> Vec<Vec<Vec<u8>>> {
-        let mut pi: cmd_parse_input = ::core::mem::zeroed();
+        let mut pi: cmd_parse_input = Default::default();
         pi.line = 1;
         let cmds = cmd_parse_do_buffer(input.as_ptr().cast(), input.len(), &mut pi)
             .expect("valid parser test input");
@@ -1549,7 +1549,7 @@ mod parser_collection_tests {
     fn parser_collections_preserve_order_scope_and_element_addresses() {
         let _guard = crate::src::cfg::CFG_TEST_LOCK.lock().unwrap();
         unsafe {
-            let mut pi: cmd_parse_input = ::core::mem::zeroed();
+            let mut pi: cmd_parse_input = Default::default();
             pi.line = 1;
             let malformed = b"%if 1\ndisplay-message unfinished\n";
             let failed = cmd_parse_do_buffer(malformed.as_ptr().cast(), malformed.len(), &mut pi);

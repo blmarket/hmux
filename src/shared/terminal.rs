@@ -2,7 +2,7 @@
 
 use super::abi::{cc_t, speed_t, tcflag_t};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct termios {
     pub c_iflag: tcflag_t,
@@ -22,11 +22,23 @@ pub union termios_output_speed {
     pub c_ospeed: speed_t,
 }
 
+impl Default for termios_output_speed {
+    fn default() -> Self {
+        Self { __ospeed: 0 }
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union termios_input_speed {
     pub __ispeed: speed_t,
     pub c_ispeed: speed_t,
+}
+
+impl Default for termios_input_speed {
+    fn default() -> Self {
+        Self { __ispeed: 0 }
+    }
 }
 
 #[cfg(test)]

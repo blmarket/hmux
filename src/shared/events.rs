@@ -38,8 +38,8 @@ impl event_payload_item {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            type_0: unsafe { ::core::mem::zeroed() },
-            c2rust_unnamed: unsafe { ::core::mem::zeroed() },
+            type_0: Default::default(),
+            c2rust_unnamed: Default::default(),
             owner: None,
             string: Default::default(),
         }
@@ -59,10 +59,10 @@ impl events_sink {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            cb: unsafe { ::core::mem::zeroed() },
-            data: unsafe { ::core::mem::zeroed() },
-            dead: unsafe { ::core::mem::zeroed() },
-            generation: unsafe { ::core::mem::zeroed() },
+            cb: Default::default(),
+            data: Default::default(),
+            dead: Default::default(),
+            generation: Default::default(),
         }
     }
 }
@@ -107,6 +107,12 @@ pub union event_payload_item_c2rust_unnamed {
     pub window: *mut window,
     pub pane: *mut window_pane,
     pub pointer: event_payload_item_c2rust_unnamed_pointer,
+}
+
+impl Default for event_payload_item_c2rust_unnamed {
+    fn default() -> Self {
+        Self { number: 0 }
+    }
 }
 
 #[derive(Copy, Clone)]

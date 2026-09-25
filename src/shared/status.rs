@@ -10,6 +10,7 @@ use super::style::style_line_entry;
 use std::collections::VecDeque;
 use std::ffi::CString;
 
+#[derive(Default)]
 #[repr(C)]
 pub struct status_line {
     pub timer: event,
@@ -23,12 +24,7 @@ pub struct status_line {
 
 impl status_line {
     pub fn empty() -> Self {
-        let mut storage = ::core::mem::MaybeUninit::<Self>::zeroed();
-        let status = storage.as_mut_ptr();
-        unsafe {
-            ::core::ptr::addr_of_mut!((*status).screen).write(screen::empty());
-            storage.assume_init()
-        }
+        Self::default()
     }
 }
 

@@ -16,11 +16,11 @@ impl paste_buffer {
     pub fn empty() -> Self {
         Self {
             data: Default::default(),
-            size: unsafe { ::core::mem::zeroed() },
+            size: Default::default(),
             name: Default::default(),
-            created: unsafe { ::core::mem::zeroed() },
-            automatic: unsafe { ::core::mem::zeroed() },
-            order: unsafe { ::core::mem::zeroed() },
+            created: Default::default(),
+            automatic: Default::default(),
+            order: Default::default(),
         }
     }
 }

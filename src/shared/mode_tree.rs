@@ -104,20 +104,20 @@ pub struct mode_tree_item {
 impl mode_tree_item {
     pub fn empty() -> Self {
         Self {
-            parent: unsafe { ::core::mem::zeroed() },
-            itemdata: unsafe { ::core::mem::zeroed() },
-            line: unsafe { ::core::mem::zeroed() },
-            key: unsafe { ::core::mem::zeroed() },
+            parent: Default::default(),
+            itemdata: Default::default(),
+            line: Default::default(),
+            key: Default::default(),
             keystr: Default::default(),
-            keylen: unsafe { ::core::mem::zeroed() },
+            keylen: Default::default(),
             tag: 0,
             name: Default::default(),
             text: Default::default(),
-            expanded: unsafe { ::core::mem::zeroed() },
-            tagged: unsafe { ::core::mem::zeroed() },
-            draw_as_parent: unsafe { ::core::mem::zeroed() },
-            no_tag: unsafe { ::core::mem::zeroed() },
-            align: unsafe { ::core::mem::zeroed() },
+            expanded: Default::default(),
+            tagged: Default::default(),
+            draw_as_parent: Default::default(),
+            no_tag: Default::default(),
+            align: Default::default(),
             children: Default::default(),
         }
     }

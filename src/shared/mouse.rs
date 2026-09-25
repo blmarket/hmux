@@ -1,7 +1,7 @@
 //! Authoritative mouse declarations, shared by the C translation units.
 
 use super::{abi::u_int, key::key_code};
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct mouse_event {
     pub valid: ::core::ffi::c_int,

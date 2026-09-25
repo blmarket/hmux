@@ -33,8 +33,8 @@ impl wait_channel {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            locked: unsafe { ::core::mem::zeroed() },
-            woken: unsafe { ::core::mem::zeroed() },
+            locked: Default::default(),
+            woken: Default::default(),
             waiters: Default::default(),
             lockers: Default::default(),
         }
@@ -58,11 +58,11 @@ pub struct wait_event_item {
 impl wait_event_item {
     pub fn empty() -> Self {
         Self {
-            item: unsafe { ::core::mem::zeroed() },
-            sink: unsafe { ::core::mem::zeroed() },
+            item: Default::default(),
+            sink: Default::default(),
             name: Default::default(),
             filter: Default::default(),
-            verbose: unsafe { ::core::mem::zeroed() },
+            verbose: Default::default(),
         }
     }
 }

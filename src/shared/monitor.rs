@@ -67,14 +67,14 @@ impl monitor_item {
         Self {
             name: Default::default(),
             format: Default::default(),
-            type_0: unsafe { ::core::mem::zeroed() },
-            id: unsafe { ::core::mem::zeroed() },
-            flags: unsafe { ::core::mem::zeroed() },
+            type_0: Default::default(),
+            id: Default::default(),
+            flags: Default::default(),
             last: Default::default(),
             panes: monitor_panes { storage: None },
             windows: monitor_windows { storage: None },
-            fire_count: unsafe { ::core::mem::zeroed() },
-            fire_time: unsafe { ::core::mem::zeroed() },
+            fire_count: Default::default(),
+            fire_time: Default::default(),
             entry: monitor_item_entry { owner: None },
         }
     }
@@ -104,10 +104,10 @@ pub struct monitor_window {
 impl monitor_window {
     pub fn empty() -> Self {
         Self {
-            window: unsafe { ::core::mem::zeroed() },
-            idx: unsafe { ::core::mem::zeroed() },
+            window: Default::default(),
+            idx: Default::default(),
             last: Default::default(),
-            generation: unsafe { ::core::mem::zeroed() },
+            generation: Default::default(),
             entry: monitor_window_entry { owner: None },
         }
     }
@@ -136,10 +136,10 @@ pub struct monitor_pane {
 impl monitor_pane {
     pub fn empty() -> Self {
         Self {
-            pane: unsafe { ::core::mem::zeroed() },
-            idx: unsafe { ::core::mem::zeroed() },
+            pane: Default::default(),
+            idx: Default::default(),
             last: Default::default(),
-            generation: unsafe { ::core::mem::zeroed() },
+            generation: Default::default(),
             entry: monitor_pane_entry { owner: None },
         }
     }

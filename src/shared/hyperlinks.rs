@@ -43,8 +43,8 @@ pub struct hyperlinks_uri {
 impl hyperlinks_uri {
     pub fn empty() -> Self {
         Self {
-            tree: unsafe { ::core::mem::zeroed() },
-            inner: unsafe { ::core::mem::zeroed() },
+            tree: Default::default(),
+            inner: Default::default(),
             internal_id: Default::default(),
             external_id: Default::default(),
             uri: Default::default(),

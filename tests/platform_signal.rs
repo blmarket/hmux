@@ -14,7 +14,7 @@ fn signal_callback_abi() {
     unsafe extern "C" fn restore() {}
     let client_handler: client::__sighandler_t = Some(handler);
     let proc_handler: proc::__sighandler_t = client_handler;
-    let mut action: client::sigaction = unsafe { std::mem::zeroed() };
+    let mut action: client::sigaction = Default::default();
     action.__sigaction_handler.sa_handler = proc_handler;
     unsafe {
         action.__sigaction_handler.sa_handler.unwrap()(15);

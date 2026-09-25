@@ -138,7 +138,7 @@ pub struct msgbuf {
     pub hdrsize: size_t,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct imsgbuf {
     pub w: *mut msgbuf,

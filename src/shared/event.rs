@@ -33,7 +33,7 @@ impl event {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct bufferevent {
     pub ev_base: *mut event_base,
@@ -59,7 +59,7 @@ pub type bufferevent_event_cb = Option<
 pub type bufferevent_data_cb =
     Option<unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> ()>;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct event_watermark {
     pub low: size_t,

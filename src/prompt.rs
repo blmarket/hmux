@@ -52,7 +52,6 @@ use crate::src::text::utf8::{
 };
 use crate::src::tmux::{global_options, global_s_options};
 use std::ffi::{CStr, CString};
-use std::mem::MaybeUninit;
 
 unsafe fn prompt_buffer_cells(pr: *mut prompt) -> *mut utf8_data {
     (*pr).buffer.as_mut_ptr()
@@ -268,13 +267,8 @@ pub unsafe extern "C" fn prompt_set_options(mut pd: *mut prompt_create_data, mut
 pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mut prompt {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut input: *const ::core::ffi::c_char = (*pd).input;
-    let mut allocation = Box::new(MaybeUninit::<prompt>::zeroed());
-    let pr = allocation.as_mut_ptr();
-    // The remaining C-style fields accept zero; initialize the owned Rust field before use.
-    (&raw mut (*pr).buffer).write(Vec::new());
-    (&raw mut (*pr).completion).write(prompt_completion::default());
-    (&raw mut (*pr).copied).write(None);
-    let pr = Box::into_raw(allocation) as *mut prompt;
+    let mut allocation = Box::new(prompt::default());
+    let pr = &mut *allocation as *mut prompt;
     if !(*pd).fs.is_null() {
         ft = format_create_from_state(
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -295,7 +289,7 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
     if input.is_null() {
         input = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    (&raw mut (*pr).string).write(CStr::from_ptr((*pd).prompt).to_owned());
+    (*pr).string = CStr::from_ptr((*pd).prompt).to_owned();
     let expanded = if (*pd).flags & PROMPT_NOFORMAT != 0 {
         None
     } else {
@@ -303,10 +297,10 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
     };
     if (*pd).flags & PROMPT_INCREMENTAL != 0 {
         let last = expanded.unwrap_or_else(|| CStr::from_ptr(input).to_owned());
-        (&raw mut (*pr).last).write(Some(last));
+        (*pr).last = Some(last);
         (*pr).buffer = utf8_fromcstr_vec(CStr::from_bytes_with_nul_unchecked(b"\0"));
     } else {
-        (&raw mut (*pr).last).write(None);
+        (*pr).last = None;
         let tmp = expanded.as_ref().map_or(input, |value| value.as_ptr());
         (*pr).buffer = utf8_fromcstr_vec(CStr::from_ptr(tmp));
     }
@@ -326,19 +320,19 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
         &raw const (*pd).command_style as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    (&raw mut (*pr).style_str).write(CStr::from_ptr((*pd).style_str).to_owned());
-    (&raw mut (*pr).command_style_str).write(CStr::from_ptr((*pd).command_style_str).to_owned());
+    (*pr).style_str = CStr::from_ptr((*pd).style_str).to_owned();
+    (*pr).command_style_str = CStr::from_ptr((*pd).command_style_str).to_owned();
     (*pr).cstyle = (*pd).cstyle;
     (*pr).command_cstyle = (*pd).command_cstyle;
     (*pr).ccolour = (*pd).ccolour;
     (*pr).command_ccolour = (*pd).command_ccolour;
     (*pr).cmode = (*pd).cmode;
     (*pr).command_cmode = (*pd).command_cmode;
-    (&raw mut (*pr).message_format).write(CStr::from_ptr((*pd).message_format).to_owned());
+    (*pr).message_format = CStr::from_ptr((*pd).message_format).to_owned();
     (*pr).keys = (*pd).keys;
-    (&raw mut (*pr).word_separators).write(CStr::from_ptr((*pd).word_separators).to_owned());
+    (*pr).word_separators = CStr::from_ptr((*pd).word_separators).to_owned();
     format_free(ft);
-    return pr;
+    return Box::into_raw(allocation);
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_free(mut pr: *mut prompt) {
@@ -10944,21 +10938,20 @@ mod prompt_buffer_tests {
     use super::*;
 
     fn make_prompt(input: &CStr, index: usize, copied: Option<Box<[utf8_data]>>) -> Box<prompt> {
-        let mut allocation = Box::new(MaybeUninit::<prompt>::zeroed());
-        let raw = allocation.as_mut_ptr();
+        let mut allocation = Box::new(prompt::default());
+        let raw = &mut *allocation as *mut prompt;
         unsafe {
-            (&raw mut (*raw).string).write(CString::new(Vec::new()).unwrap());
-            (&raw mut (*raw).buffer).write(utf8_fromcstr_vec(input));
-            (&raw mut (*raw).last).write(None);
-            (&raw mut (*raw).message_format).write(CString::new(Vec::new()).unwrap());
-            (&raw mut (*raw).word_separators).write(CString::new(Vec::new()).unwrap());
-            (&raw mut (*raw).style_str).write(CString::new(Vec::new()).unwrap());
-            (&raw mut (*raw).command_style_str).write(CString::new(Vec::new()).unwrap());
-            (&raw mut (*raw).copied).write(copied);
-            (&raw mut (*raw).completion).write(prompt_completion::default());
+            (*raw).string = CString::new(Vec::new()).unwrap();
+            (*raw).buffer = utf8_fromcstr_vec(input);
+            (*raw).last = None;
+            (*raw).message_format = CString::new(Vec::new()).unwrap();
+            (*raw).word_separators = CString::new(Vec::new()).unwrap();
+            (*raw).style_str = CString::new(Vec::new()).unwrap();
+            (*raw).command_style_str = CString::new(Vec::new()).unwrap();
+            (*raw).copied = copied;
             (*raw).index = index;
-            Box::from_raw(Box::into_raw(allocation).cast::<prompt>())
         }
+        allocation
     }
 
     fn cell(byte: u8) -> utf8_data {

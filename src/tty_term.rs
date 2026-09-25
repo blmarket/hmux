@@ -1352,8 +1352,7 @@ pub unsafe fn tty_term_create(
     term = &raw mut *owner;
     let _ = Box::into_raw(owner);
     (*term).tty = tty as *mut tty;
-    let codes =
-        vec![::core::mem::zeroed::<tty_code>(); tty_term_ncodes() as usize].into_boxed_slice();
+    let codes = vec![tty_code::default(); tty_term_ncodes() as usize].into_boxed_slice();
     (*term).codes = Box::into_raw(codes) as *mut tty_code;
     (*term).entry.le_next = tty_terms.lh_first;
     if !(*term).entry.le_next.is_null() {

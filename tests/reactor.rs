@@ -101,7 +101,7 @@ fn activation_can_free_its_embedded_owner() {
     unsafe {
         let mut calls = 0;
         let owner = Box::into_raw(Box::new(Owner {
-            event: std::mem::zeroed(),
+            event: Default::default(),
             calls: &mut calls,
         }));
         event_set(&mut (*owner).event, -1, 0, Some(free_owner), owner.cast());
@@ -361,7 +361,7 @@ fn callback_rearming_a_reused_descriptor_cannot_keep_the_old_lease() {
     let (mut old_peer, old_fd) = pair();
     let (mut new_peer, replacement) = pair();
     let mut state = Reuse {
-        event: unsafe { std::mem::zeroed() },
+        event: Default::default(),
         replacement: replacement.as_raw_fd(),
         old_fd: old_fd.as_raw_fd(),
         calls: 0,

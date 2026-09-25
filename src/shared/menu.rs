@@ -31,8 +31,8 @@ impl menu {
         Self {
             title: Default::default(),
             items: Default::default(),
-            count: unsafe { ::core::mem::zeroed() },
-            width: unsafe { ::core::mem::zeroed() },
+            count: Default::default(),
+            width: Default::default(),
             strings: Default::default(),
         }
     }
@@ -67,25 +67,25 @@ pub struct menu_data {
 impl menu_data {
     pub fn empty() -> Self {
         Self {
-            w: unsafe { ::core::mem::zeroed() },
-            flags: unsafe { ::core::mem::zeroed() },
+            w: Default::default(),
+            flags: Default::default(),
             style: Default::default(),
             border_style: Default::default(),
             selected_style: Default::default(),
-            style_gc: unsafe { ::core::mem::zeroed() },
-            border_style_gc: unsafe { ::core::mem::zeroed() },
-            selected_style_gc: unsafe { ::core::mem::zeroed() },
-            border_lines: unsafe { ::core::mem::zeroed() },
-            fs: unsafe { ::core::mem::zeroed() },
-            key: unsafe { ::core::mem::zeroed() },
-            m: unsafe { ::core::mem::zeroed() },
+            style_gc: Default::default(),
+            border_style_gc: Default::default(),
+            selected_style_gc: Default::default(),
+            border_lines: Default::default(),
+            fs: Default::default(),
+            key: Default::default(),
+            m: Default::default(),
             s: screen::empty(),
-            px: unsafe { ::core::mem::zeroed() },
-            py: unsafe { ::core::mem::zeroed() },
-            menu: unsafe { ::core::mem::zeroed() },
-            choice: unsafe { ::core::mem::zeroed() },
-            cb: unsafe { ::core::mem::zeroed() },
-            data: unsafe { ::core::mem::zeroed() },
+            px: Default::default(),
+            py: Default::default(),
+            menu: Default::default(),
+            choice: Default::default(),
+            cb: Default::default(),
+            data: Default::default(),
         }
     }
 }

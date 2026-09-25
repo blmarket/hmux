@@ -110,7 +110,7 @@ unsafe extern "C" fn cmd_send_keys_inject_key(
         }
         let event = key_event::new(
             (key as ::core::ffi::c_ulonglong | KEYC_SENT) as key_code,
-            ::core::mem::zeroed(),
+            Default::default(),
             None,
         );
         if after.is_null() {

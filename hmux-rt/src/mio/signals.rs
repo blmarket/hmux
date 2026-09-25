@@ -78,10 +78,10 @@ impl Signals {
                 if *signal <= 0 || signal_hook::consts::FORBIDDEN.contains(signal) {
                     return true;
                 }
-                // SAFETY: querying a signal disposition without changing it; the
-                // initialized local struct is only an output destination.
-                let mut action = unsafe { std::mem::zeroed::<libc::sigaction>() };
-                unsafe { libc::sigaction(*signal, std::ptr::null(), &mut action) != 0 }
+                // SAFETY: querying a signal disposition without changing it. The
+                // uninitialized value is an output destination and is never read.
+                let mut action = std::mem::MaybeUninit::<libc::sigaction>::uninit();
+                unsafe { libc::sigaction(*signal, std::ptr::null(), action.as_mut_ptr()) != 0 }
             })
         {
             return Err(io::Error::new(

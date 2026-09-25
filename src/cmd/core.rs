@@ -509,7 +509,7 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_new() -> *mut cmd_list {
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    cmdlist = Box::into_raw(Box::new(::core::mem::zeroed::<cmd_list>()));
+    cmdlist = Box::into_raw(Box::new(cmd_list::default()));
     (*cmdlist).references = 1 as ::core::ffi::c_int;
     let fresh6 = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);

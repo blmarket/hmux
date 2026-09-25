@@ -208,7 +208,7 @@ impl format_modifier {
         self.argv[index].as_ptr()
     }
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct format_expand_state {
     pub ft: *mut format_tree,

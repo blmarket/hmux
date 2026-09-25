@@ -1779,7 +1779,7 @@ unsafe extern "C" fn window_tree_init(
         prompt_flags: 0,
         item_list: Vec::new(),
         entered: None,
-        fs: ::core::mem::zeroed(),
+        fs: Default::default(),
         type_0: WINDOW_TREE_NONE,
         offset: 0,
         left: 0,

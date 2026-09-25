@@ -193,7 +193,7 @@ pub unsafe extern "C" fn format_create(
     mut flags: ::core::ffi::c_int,
 ) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    ft = Box::into_raw(Box::new(::core::mem::zeroed::<format_tree>()));
+    ft = Box::into_raw(Box::new(format_tree::default()));
     (*ft).tree.entries = Box::into_raw(Box::new(format_entry_tree_storage::default()));
     if !c.is_null() {
         (*ft).client = c;

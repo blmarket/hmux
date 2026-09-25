@@ -20,10 +20,10 @@ pub struct json_node {
 impl json_node {
     pub fn empty() -> Self {
         Self {
-            type_0: unsafe { ::core::mem::zeroed() },
+            type_0: Default::default(),
             key: Default::default(),
-            parent: unsafe { ::core::mem::zeroed() },
-            c2rust_unnamed: unsafe { ::core::mem::zeroed() },
+            parent: Default::default(),
+            c2rust_unnamed: Default::default(),
             string: Default::default(),
             members: Default::default(),
         }
@@ -38,6 +38,12 @@ pub union json_node_c2rust_unnamed {
     pub boolean: ::core::ffi::c_int,
     pub fields: json_fields,
     pub members: json_members,
+}
+
+impl Default for json_node_c2rust_unnamed {
+    fn default() -> Self {
+        Self { num: 0 }
+    }
 }
 
 #[derive(Copy, Clone)]

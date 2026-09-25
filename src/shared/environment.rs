@@ -30,7 +30,7 @@ impl environ_entry {
         Self {
             name: Default::default(),
             value: Default::default(),
-            flags: unsafe { ::core::mem::zeroed() },
+            flags: Default::default(),
             owner: None,
         }
     }

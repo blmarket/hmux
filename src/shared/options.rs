@@ -152,7 +152,7 @@ impl options_value {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct options_table_entry {
     pub name: *const ::core::ffi::c_char,

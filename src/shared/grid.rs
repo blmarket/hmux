@@ -2,7 +2,7 @@
 
 use super::abi::*;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct utf8_data {
     pub data: [u_char; 32],
@@ -11,7 +11,7 @@ pub struct utf8_data {
     pub width: u_char,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct grid_cell {
     pub data: utf8_data,
@@ -23,7 +23,7 @@ pub struct grid_cell {
     pub link: u_int,
 }
 
-/// Nullable thin owner preserves translated record layout and zeroed construction.
+/// Nullable thin owner preserves translated record layout and default construction.
 /// All element allocation, growth, cloning, and destruction belong to the Vec.
 #[derive(Clone)]
 #[repr(transparent)]
@@ -74,6 +74,7 @@ impl<T> GridArray<T> {
     }
 }
 
+#[derive(Default)]
 #[repr(C)]
 /// Owns its lines and their cell allocations. Screens and temporary reflow
 /// operations keep this record in a Box; raw grid pointers are scoped borrows.
@@ -113,7 +114,7 @@ pub struct osc133_data {
     pub exit_status: u_char,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 pub struct grid_extd_entry {
     pub data: utf8_char,
@@ -136,6 +137,12 @@ pub union grid_cell_entry_storage {
     pub data: grid_cell_entry_data,
 }
 
+impl Default for grid_cell_entry_storage {
+    fn default() -> Self {
+        Self { offset: 0 }
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct grid_cell_entry_data {
@@ -145,7 +152,7 @@ pub struct grid_cell_entry_data {
     pub data: u_char,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 pub struct grid_cell_entry {
     pub c2rust_unnamed: grid_cell_entry_storage,

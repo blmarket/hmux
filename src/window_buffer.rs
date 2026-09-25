@@ -74,8 +74,8 @@ impl window_buffer_itemdata {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            order: unsafe { ::core::mem::zeroed() },
-            size: unsafe { ::core::mem::zeroed() },
+            order: Default::default(),
+            size: Default::default(),
         }
     }
 }
@@ -626,7 +626,7 @@ unsafe extern "C" fn window_buffer_init(
     };
     data = Box::into_raw(Box::new(window_buffer_modedata {
         wp,
-        fs: ::core::mem::zeroed(),
+        fs: Default::default(),
         data: ::core::ptr::null_mut(),
         editor: ::core::ptr::null_mut(),
         edit: ::core::ptr::null_mut(),

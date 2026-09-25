@@ -630,7 +630,7 @@ mod tests {
     #[test]
     fn feature_presence_checks_capability_names_before_values() {
         unsafe {
-            let mut codes = vec![std::mem::zeroed::<tty_code>(); tty_term_ncodes() as usize];
+            let mut codes = vec![tty_code::default(); tty_term_ncodes() as usize];
             let mut term = tty_term::empty();
             term.codes = codes.as_mut_ptr();
 

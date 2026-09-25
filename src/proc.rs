@@ -266,14 +266,14 @@ pub unsafe extern "C" fn proc_start(mut name: *const ::core::ffi::c_char) -> *mu
         name: CStr::from_ptr(name).to_owned(),
         exit: 0,
         signalcb: None,
-        ev_sigint: ::core::mem::zeroed(),
-        ev_sighup: ::core::mem::zeroed(),
-        ev_sigchld: ::core::mem::zeroed(),
-        ev_sigcont: ::core::mem::zeroed(),
-        ev_sigterm: ::core::mem::zeroed(),
-        ev_sigusr1: ::core::mem::zeroed(),
-        ev_sigusr2: ::core::mem::zeroed(),
-        ev_sigwinch: ::core::mem::zeroed(),
+        ev_sigint: Default::default(),
+        ev_sighup: Default::default(),
+        ev_sigchld: Default::default(),
+        ev_sigcont: Default::default(),
+        ev_sigterm: Default::default(),
+        ev_sigusr1: Default::default(),
+        ev_sigusr2: Default::default(),
+        ev_sigwinch: Default::default(),
         peers: Vec::new(),
     }));
     return tp;
@@ -505,7 +505,7 @@ pub unsafe extern "C" fn proc_add_peer(
     mut dispatchcb: Option<unsafe extern "C" fn(*mut imsg, *mut ::core::ffi::c_void) -> ()>,
     mut arg: *mut ::core::ffi::c_void,
 ) -> *mut tmuxpeer {
-    let mut owned_peer = Box::new(::core::mem::zeroed::<tmuxpeer>());
+    let mut owned_peer = Box::new(tmuxpeer::default());
     let peer: *mut tmuxpeer = &mut *owned_peer;
     (*peer).parent = tp;
     (*peer).dispatchcb = dispatchcb;

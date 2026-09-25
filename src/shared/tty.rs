@@ -310,13 +310,14 @@ pub struct tty_key {
     pub next: *mut tty_key,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct tty_code {
     pub type_0: tty_code_type,
     pub value: tty_code_value,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct tty {
     pub client: *mut client,
@@ -374,12 +375,7 @@ pub struct tty {
 
 impl tty {
     pub fn empty() -> Self {
-        let mut storage = ::core::mem::MaybeUninit::<Self>::zeroed();
-        let tty = storage.as_mut_ptr();
-        unsafe {
-            ::core::ptr::addr_of_mut!((*tty).r).write(Default::default());
-            storage.assume_init()
-        }
+        Self::default()
     }
 }
 
@@ -402,18 +398,18 @@ impl tty_term {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            tty: unsafe { ::core::mem::zeroed() },
-            applied_features: unsafe { ::core::mem::zeroed() },
-            acs: unsafe { ::core::mem::zeroed() },
-            codes: unsafe { ::core::mem::zeroed() },
-            flags: unsafe { ::core::mem::zeroed() },
-            entry: unsafe { ::core::mem::zeroed() },
+            tty: Default::default(),
+            applied_features: Default::default(),
+            acs: [[0; 2]; 256],
+            codes: Default::default(),
+            flags: Default::default(),
+            entry: Default::default(),
             strings: Default::default(),
         }
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct tty_term_entry {
     pub le_next: *mut tty_term,
@@ -492,6 +488,14 @@ pub union tty_code_value {
     pub string: *mut ::core::ffi::c_char,
     pub number: ::core::ffi::c_int,
     pub flag: ::core::ffi::c_int,
+}
+
+impl Default for tty_code_value {
+    fn default() -> Self {
+        Self {
+            string: ::core::ptr::null_mut(),
+        }
+    }
 }
 
 pub type tty_code_type = ::core::ffi::c_uint;

@@ -24,7 +24,7 @@ fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
         assert!(winlink_add(&mut *head, 42).is_null());
         assert_eq!(weak.as_ptr(), existing as *const winlink);
         assert!(weak.is_alive());
-        let mut probe: winlink = std::mem::zeroed();
+        let mut probe: winlink = Default::default();
         probe.idx = 42;
         probe.entry.owner = None;
         assert_eq!(winlinks_find(&*head, &probe), existing);

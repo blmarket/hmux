@@ -139,15 +139,15 @@ pub struct window_customize_itemdata {
 impl window_customize_itemdata {
     pub fn empty() -> Self {
         Self {
-            data: unsafe { ::core::mem::zeroed() },
-            type_0: unsafe { ::core::mem::zeroed() },
-            option_type: unsafe { ::core::mem::zeroed() },
-            scope: unsafe { ::core::mem::zeroed() },
+            data: Default::default(),
+            type_0: Default::default(),
+            option_type: Default::default(),
+            scope: Default::default(),
             table: Default::default(),
-            key: unsafe { ::core::mem::zeroed() },
-            oo: unsafe { ::core::mem::zeroed() },
-            environ: unsafe { ::core::mem::zeroed() },
-            environ_flags: unsafe { ::core::mem::zeroed() },
+            key: Default::default(),
+            oo: Default::default(),
+            environ: Default::default(),
+            environ_flags: Default::default(),
             name: Default::default(),
             array_key: Default::default(),
         }

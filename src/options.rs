@@ -419,7 +419,7 @@ unsafe extern "C" fn options_add(
         tableentry: ::core::ptr::null(),
         value: options_value::Empty,
         cached: 0,
-        style: ::core::mem::zeroed(),
+        style: Default::default(),
         monitor_data: ::core::ptr::null_mut(),
         fire_count: 0,
         fire_time: 0,
@@ -2018,7 +2018,7 @@ mod array_string_owner_tests {
     fn append_and_replace_accept_the_previous_items_string_pointer() {
         unsafe {
             let oo = options_create(::core::ptr::null_mut());
-            let mut table: options_table_entry = ::core::mem::zeroed();
+            let mut table: options_table_entry = Default::default();
             table.name = c"sample-array".as_ptr();
             table.type_0 = OPTIONS_TABLE_STRING;
             table.flags = OPTIONS_TABLE_IS_ARRAY;

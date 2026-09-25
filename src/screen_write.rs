@@ -93,8 +93,8 @@ thread_local! {
 fn screen_write_get_citem() -> Box<screen_write_citem> {
     let mut item = WRITE_ITEM_POOL
         .with(|pool| pool.borrow_mut().pop_front())
-        .unwrap_or_else(|| Box::new(unsafe { std::mem::zeroed() }));
-    *item = unsafe { std::mem::zeroed() };
+        .unwrap_or_else(|| Box::new(Default::default()));
+    *item = Default::default();
     item
 }
 fn screen_write_free_citem(item: Box<screen_write_citem>) {
@@ -443,7 +443,7 @@ pub unsafe extern "C" fn screen_write_free_list(mut s: *mut screen) {
 }
 unsafe extern "C" fn screen_write_init(mut ctx: *mut screen_write_ctx, mut s: *mut screen) {
     // Accept fresh C storage; a previously started context must be stopped.
-    std::ptr::write(ctx, std::mem::zeroed());
+    std::ptr::write(ctx, Default::default());
     (*ctx).s = s;
     if (*(*ctx).s).write_list.is_null() {
         screen_write_make_list((*ctx).s);
@@ -5183,7 +5183,7 @@ mod write_row_tests {
                     .resize_with(4, || (b'A' + y as u8) as ::core::ffi::c_char);
                 pointers.push(row.data.as_ptr());
             }
-            let mut ctx: screen_write_ctx = std::mem::zeroed();
+            let mut ctx: screen_write_ctx = Default::default();
             ctx.s = &raw mut s;
             for _ in 0..4 {
                 screen_write_collect_scroll(&raw mut ctx, 8);

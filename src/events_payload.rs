@@ -267,7 +267,7 @@ unsafe extern "C" fn event_payload_set_item(
 pub unsafe extern "C" fn event_payload_create() -> *mut event_payload {
     let ep = Box::into_raw(Box::new(event_payload {
         items: event_payload_tree::default(),
-        target: ::core::mem::zeroed::<cmd_find_state>(),
+        target: cmd_find_state::default(),
     }));
     cmd_find_clear_state(&raw mut (*ep).target, 0 as ::core::ffi::c_int);
     return ep;
@@ -1027,7 +1027,7 @@ mod tests {
 
             let mut payload = event_payload {
                 items: event_payload_tree::default(),
-                target: ::core::mem::zeroed(),
+                target: Default::default(),
             };
             let mut other = event_payload_tree::default();
             let first = item("alpha");

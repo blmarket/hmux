@@ -233,7 +233,7 @@ unsafe extern "C" fn grid_get_extended_cell(
     let mut at: u_int = (*gl).extdsize.wrapping_add(1 as u_int);
     (*gl)
         .extddata
-        .resize_with(at as usize, || std::mem::zeroed());
+        .resize_with(at as usize, grid_extd_entry::default);
     (*gl).extdsize = at;
     (*gce).c2rust_unnamed.offset = at.wrapping_sub(1 as u_int);
     (*gce).flags = (flags | GRID_FLAG_EXTENDED) as u_char;
@@ -296,9 +296,7 @@ unsafe extern "C" fn grid_compact_line(mut gl: *mut grid_line) {
         (*gl).extdsize = 0 as u_int;
         return;
     }
-    new_extddata.resize_with(new_extdsize as usize, || {
-        std::mem::zeroed::<grid_extd_entry>()
-    });
+    new_extddata.resize_with(new_extdsize as usize, grid_extd_entry::default);
     idx = 0 as u_int;
     px = 0 as u_int;
     while px < (*gl).cellsize as u_int {
@@ -473,7 +471,7 @@ pub unsafe extern "C" fn grid_free_lines(mut gd: *mut grid, mut py: u_int, mut n
     }
 }
 pub(crate) unsafe fn grid_create_box(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
-    let mut owner = Box::new(::core::mem::zeroed::<grid>());
+    let mut owner = Box::new(grid::default());
     owner.sx = sx;
     owner.sy = sy;
     if hlimit != 0 {
@@ -665,7 +663,7 @@ unsafe extern "C" fn grid_expand_line(
     }
     (*gl)
         .celldata
-        .resize_with(sx as usize, || std::mem::zeroed());
+        .resize_with(sx as usize, grid_cell_entry::default);
     xx = (*gl).cellsize as u_int;
     while xx < sx {
         grid_clear_cell(gd, xx, py, bg, 0 as ::core::ffi::c_int);
@@ -1953,7 +1951,7 @@ unsafe extern "C" fn grid_reflow_join(
         (*from).cellsize = (*from).cellused;
         (*from)
             .celldata
-            .resize_with((*from).cellsize as usize, || std::mem::zeroed());
+            .resize_with((*from).cellsize as usize, grid_cell_entry::default);
         lines = lines.wrapping_sub(1);
     } else if wrapped == 0 {
         (*gl).flags = ((*gl).flags as ::core::ffi::c_int & !GRID_LINE_WRAPPED) as u_short;
@@ -2045,7 +2043,7 @@ unsafe extern "C" fn grid_reflow_split(
     (*gl).cellsize = (*gl).cellused;
     (*gl)
         .celldata
-        .resize_with((*gl).cellsize as usize, || std::mem::zeroed());
+        .resize_with((*gl).cellsize as usize, grid_cell_entry::default);
     (*gl).flags = ((*gl).flags as ::core::ffi::c_int | GRID_LINE_WRAPPED) as u_short;
     *first = std::mem::take(&mut *gl);
     grid_reflow_dead(gl);

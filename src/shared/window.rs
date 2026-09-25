@@ -47,6 +47,7 @@ pub struct winlinks {
     >,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct winlink {
     pub idx: ::core::ffi::c_int,
@@ -56,6 +57,7 @@ pub struct winlink {
     pub entry: winlink_entry,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct winlink_entry {
     pub owner: Option<
@@ -63,6 +65,7 @@ pub struct winlink_entry {
     >,
 }
 
+#[derive(Default)]
 #[repr(C)]
 /// Box-owned window record; references remain managed by window_add_ref/remove_ref.
 pub struct window {
@@ -114,29 +117,7 @@ pub struct window {
     pub entry: window_entry,
 }
 
-impl Default for window {
-    fn default() -> Self {
-        let mut value = ::core::mem::MaybeUninit::<Self>::zeroed();
-        let ptr = value.as_mut_ptr();
-        // SAFETY: Remaining C-style fields accept zeroed bytes. Initialize
-        // Rust-owned fields before assuming the value is fully initialized.
-        unsafe {
-            ::core::ptr::addr_of_mut!((*ptr).name).write(std::ffi::CString::default());
-            ::core::ptr::addr_of_mut!((*ptr).name_event).write(event::default());
-            ::core::ptr::addr_of_mut!((*ptr).alerts_timer).write(event::default());
-            ::core::ptr::addr_of_mut!((*ptr).offset_timer).write(event::default());
-            ::core::ptr::addr_of_mut!((*ptr).last_panes)
-                .write(window_pane_history::default());
-            ::core::ptr::addr_of_mut!((*ptr).z_index).write(window_panes::default());
-            ::core::ptr::addr_of_mut!((*ptr).panes).write(window_panes::default());
-            ::core::ptr::addr_of_mut!((*ptr).old_layout).write(None);
-            ::core::ptr::addr_of_mut!((*ptr).winlinks).write(window_winlinks { storage: None });
-            ::core::ptr::addr_of_mut!((*ptr).entry).write(window_entry { owner: None });
-            value.assume_init()
-        }
-    }
-}
-
+#[derive(Default)]
 #[repr(C)]
 pub struct window_entry {
     /// Weak traversal handle into the index; cleared when this window is removed.
@@ -149,6 +130,7 @@ pub struct WindowWinlinksStorage {
     pub(crate) positions: std::collections::HashMap<*mut winlink, usize>,
 }
 
+#[derive(Default)]
 #[repr(C)]
 pub struct window_winlinks {
     /// Ordered non-owning handles; session BTreeMaps own the RefBox allocations.

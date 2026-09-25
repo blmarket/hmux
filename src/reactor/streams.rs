@@ -221,7 +221,7 @@ pub unsafe fn bufferevent_new(
         errorcb,
         cbarg,
         enabled: 4,
-        ..std::mem::zeroed()
+        ..Default::default()
     }));
     let s = Rc::new(StreamState {
         stream,
