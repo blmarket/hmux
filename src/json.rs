@@ -22,22 +22,24 @@ use std::ffi::CString;
 macro_rules! json_format_cause {
     ($cause:expr, $fmt:expr, $arg:expr $(,)?) => {{
         let cause = $cause;
-        if !cause.is_null() {
-            *cause = Some(json_one_arg_cause($fmt, $arg));
+        unsafe {
+            if !cause.is_null() {
+                *cause = Some(json_one_arg_cause(
+                    CStr::from_ptr($fmt),
+                    CStr::from_ptr($arg),
+                ));
+            }
         }
     }};
 }
 
-unsafe fn json_one_arg_cause(
-    fmt: *const ::core::ffi::c_char,
-    arg: *const ::core::ffi::c_char,
-) -> CString {
-    let fmt = CStr::from_ptr(fmt).to_bytes();
+fn json_one_arg_cause(fmt: &CStr, arg: &CStr) -> CString {
+    let fmt = fmt.to_bytes();
     let at = fmt
         .windows(2)
         .position(|part| part == b"%s")
         .expect("JSON diagnostic has %s");
-    let arg = CStr::from_ptr(arg).to_bytes();
+    let arg = arg.to_bytes();
     let mut message = Vec::with_capacity(fmt.len() + arg.len());
     message.extend_from_slice(&fmt[..at]);
     message.extend_from_slice(arg);
