@@ -1003,21 +1003,20 @@ impl LexerBuffer {
         Self { bytes: Vec::new() }
     }
 
-    unsafe fn append(&mut self, add: *const ::core::ffi::c_char, addlen: size_t) {
+    fn append(&mut self, add: &[u8]) {
         if self
             .bytes
             .len()
-            .checked_add(addlen)
+            .checked_add(add.len())
             .and_then(|len| len.checked_add(1))
             .is_none()
         {
-            fatalx(b"buffer is too big\0" as *const u8 as *const ::core::ffi::c_char);
+            unsafe { fatalx(b"buffer is too big\0" as *const u8 as *const ::core::ffi::c_char) };
         }
-        if addlen == 0 {
+        if add.is_empty() {
             return;
         }
-        self.bytes
-            .extend_from_slice(std::slice::from_raw_parts(add.cast(), addlen));
+        self.bytes.extend_from_slice(add);
     }
 
     fn push(&mut self, byte: ::core::ffi::c_char) {
@@ -1227,7 +1226,7 @@ unsafe fn yylex_format() -> Option<CString> {
     let mut buf = LexerBuffer::new();
     let mut ch: ::core::ffi::c_int = 0;
     let mut brackets: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    buf.append(b"#{".as_ptr().cast(), 2);
+    buf.append(b"#{");
     loop {
         ch = yylex_getc();
         if ch == EOF || ch == '\n' as i32 {
@@ -1408,7 +1407,10 @@ unsafe fn yylex_token_escape(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
                 );
                 return 0 as ::core::ffi::c_int;
             }
-            buf.append(&raw mut m as *mut ::core::ffi::c_char, mlen as size_t);
+            buf.append(std::slice::from_raw_parts(
+                (&raw mut m as *mut ::core::ffi::c_char).cast(),
+                mlen as usize,
+            ));
             return 1 as ::core::ffi::c_int;
         }
         _ => {
@@ -1483,7 +1485,7 @@ unsafe fn yylex_token_variable(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
             &raw mut name as *mut ::core::ffi::c_char,
             value,
         );
-        buf.append(value, strlen(value));
+        buf.append(CStr::from_ptr(value).to_bytes());
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -1557,7 +1559,7 @@ unsafe fn yylex_token_tilde(buf: &mut LexerBuffer) -> ::core::ffi::c_int {
         &raw mut name as *mut ::core::ffi::c_char,
         home,
     );
-    buf.append(home, strlen(home));
+    buf.append(CStr::from_ptr(home).to_bytes());
     return 1 as ::core::ffi::c_int;
 }
 
