@@ -174,8 +174,8 @@ unsafe fn set_array_string(a: *mut options_array_item, value: CString) {
 
 use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-unsafe fn options_array_correct_key(key: *const ::core::ffi::c_char) -> Option<CString> {
-    match parse_array_index(CStr::from_ptr(key).to_bytes()) {
+fn options_array_correct_key(key: &CStr) -> Option<CString> {
+    match parse_array_index(key.to_bytes()) {
         Ok(ArrayIndex::Numeric(number)) => {
             Some(CString::new(number.to_string()).expect("numeric key has no NUL"))
         }
@@ -601,7 +601,7 @@ pub unsafe extern "C" fn options_array_get(
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return ::core::ptr::null_mut::<options_value>();
     }
-    let Some(new_key) = options_array_correct_key(key) else {
+    let Some(new_key) = options_array_correct_key(CStr::from_ptr(key)) else {
         return ::core::ptr::null_mut::<options_value>();
     };
     a = options_array_item(o, new_key.as_ptr());
@@ -637,7 +637,7 @@ pub unsafe fn options_array_set(
         }
         return -(1 as ::core::ffi::c_int);
     }
-    let Some(new_key) = options_array_correct_key(key) else {
+    let Some(new_key) = options_array_correct_key(CStr::from_ptr(key)) else {
         if !cause.is_null() {
             format_options_cause!(cause,
                 b"bad array key: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -881,7 +881,7 @@ pub unsafe fn options_to_cstring(
             }
             return CString::new(result).expect("option values have no NUL");
         }
-        let Some(new_key) = options_array_correct_key(key) else {
+        let Some(new_key) = options_array_correct_key(CStr::from_ptr(key)) else {
             return c"".to_owned();
         };
         let a = options_array_item(o, new_key.as_ptr());
