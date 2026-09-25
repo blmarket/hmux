@@ -116,13 +116,10 @@ unsafe fn paste_name_tree_insert(
     }
 }
 
-unsafe fn paste_name_tree_remove(
-    head: *mut paste_name_tree,
-    elm: *mut paste_buffer,
-) -> *mut paste_buffer {
-    (*head)
+fn paste_name_tree_remove(head: &mut paste_name_tree, elm: &paste_buffer) -> *mut paste_buffer {
+    head
         .entries
-        .remove(&paste_name_key((*elm).name.as_c_str()))
+        .remove(&paste_name_key(elm.name.as_c_str()))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 // The original comparator puts larger order values first and treats equal
@@ -180,13 +177,10 @@ fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> *mut past
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 
-unsafe fn paste_time_tree_remove(
-    head: *mut paste_time_tree,
-    elm: *mut paste_buffer,
-) -> *mut paste_buffer {
-    (*head)
+fn paste_time_tree_remove(head: &mut paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
+    head
         .entries
-        .remove(&paste_time_key(&*elm))
+        .remove(&paste_time_key(elm))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 
@@ -204,10 +198,10 @@ unsafe fn paste_name_tree_insert_local(elm: *mut paste_buffer) -> *mut paste_buf
     })
 }
 
-unsafe fn paste_name_tree_remove_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+fn paste_name_tree_remove_local(elm: &paste_buffer) -> *mut paste_buffer {
     paste_by_name.with(|head| {
         let mut head = head.borrow_mut();
-        paste_name_tree_remove(&mut *head, elm)
+        paste_name_tree_remove(&mut head, elm)
     })
 }
 
@@ -239,10 +233,10 @@ fn paste_time_tree_prev_local(elm: &paste_buffer) -> *mut paste_buffer {
     })
 }
 
-unsafe fn paste_time_tree_remove_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+fn paste_time_tree_remove_local(elm: &paste_buffer) -> *mut paste_buffer {
     paste_by_time.with(|head| {
         let mut head = head.borrow_mut();
-        paste_time_tree_remove(&mut *head, elm)
+        paste_time_tree_remove(&mut head, elm)
     })
 }
 
@@ -366,8 +360,8 @@ pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
         b"paste-buffer-deleted\0" as *const u8 as *const ::core::ffi::c_char,
         ((*pb).name).as_ptr().cast_mut(),
     );
-    paste_name_tree_remove_local(pb);
-    paste_time_tree_remove_local(pb);
+    paste_name_tree_remove_local(&*pb);
+    paste_time_tree_remove_local(&*pb);
     if (*pb).automatic != 0 {
         paste_automatic_count_decrement();
     }
@@ -486,7 +480,7 @@ pub unsafe fn paste_rename(
     if !pb_new.is_null() {
         paste_free(pb_new);
     }
-    paste_name_tree_remove_local(pb);
+    paste_name_tree_remove_local(&*pb);
     let previous = paste_replace_name(&mut *pb, name);
     if (*pb).automatic != 0 {
         paste_automatic_count_decrement();
@@ -910,7 +904,7 @@ mod tests {
             )
             .is_null());
 
-            assert_eq!(paste_name_tree_remove(&raw mut tree, a_high), a_high);
+            assert_eq!(paste_name_tree_remove(&mut tree, &*a_high), a_high);
             assert!(paste_name_tree_find(&tree, names[2].as_c_str()).is_null());
         }
     }
@@ -955,7 +949,7 @@ mod tests {
             assert_eq!((*paste_time_tree_prev(&tree, &*middle)).order, 12);
             assert!(paste_time_tree_prev(&tree, &*newest).is_null());
 
-            assert_eq!(paste_time_tree_remove(&raw mut tree, middle), middle);
+            assert_eq!(paste_time_tree_remove(&mut tree, &*middle), middle);
             assert_eq!((*paste_time_tree_next(&tree, &*newest)).order, 4);
         }
     }
