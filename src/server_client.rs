@@ -261,8 +261,8 @@ pub(crate) unsafe fn server_client_set_user(c: *mut client, user: Option<CString
     (*c).user = user;
 }
 
-unsafe fn server_client_set_name(c: *mut client, name: Option<CString>) {
-    (*c).name = name;
+fn server_client_set_name(c: &mut client, name: Option<CString>) {
+    c.name = name;
 }
 
 pub(crate) fn server_client_set_exit_message(c: &mut client, exit_message: Option<CString>) {
@@ -676,7 +676,7 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).name.is_none());
 
-            server_client_set_name(c, Some(CString::new(b"/dev/pts/\xff".to_vec()).unwrap()));
+            server_client_set_name(&mut *c, Some(CString::new(b"/dev/pts/\xff".to_vec()).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).name)
@@ -688,7 +688,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_set_name(c, Some(CString::new("").unwrap()));
+            server_client_set_name(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).name.is_none());
             assert_eq!(
                 CStr::from_ptr(
@@ -700,7 +700,7 @@ mod client_message_owner_tests {
                 b""
             );
 
-            server_client_set_name(c, None);
+            server_client_set_name(&mut *c, None);
             assert!((*c).name.is_none());
             assert!(owner.name.is_none());
         }
@@ -1630,7 +1630,7 @@ unsafe extern "C" fn server_client_free(
     redraw_free_scene((*c).redraw_scene);
     cmdq_free((*c).queue);
     if (*c).references == 0 as ::core::ffi::c_int {
-        server_client_set_name(c, None);
+        server_client_set_name(&mut *c, None);
         server_client_set_user(c, None);
         assert!(
             (*c).files.storage.is_none(),
@@ -4931,22 +4931,16 @@ unsafe extern "C" fn server_client_dispatch_identify(
     if !(*c).ttyname.is_none()
         && *(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int != '\0' as i32
     {
-        server_client_set_name(
-            c,
-            Some(
-                CStr::from_ptr(
-                    ((*c).ttyname)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
-                .to_owned(),
-            ),
-        );
+        let name = CStr::from_ptr(
+            ((*c).ttyname)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        )
+        .to_owned();
+        server_client_set_name(&mut *c, Some(name));
     } else {
-        server_client_set_name(
-            c,
-            Some(CString::new(format!("client-{}", (*c).pid as ::core::ffi::c_long)).unwrap()),
-        );
+        let name = CString::new(format!("client-{}", (*c).pid as ::core::ffi::c_long)).unwrap();
+        server_client_set_name(&mut *c, Some(name));
     }
     log_debug(
         b"client %p name is %s\0" as *const u8 as *const ::core::ffi::c_char,
