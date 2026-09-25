@@ -1161,8 +1161,8 @@ pub unsafe extern "C" fn key_bindings_has_repeat(
     return 0 as ::core::ffi::c_int;
 }
 
-unsafe fn key_bindings_key(elm: *mut key_binding) -> u64 {
-    (*elm).key
+fn key_bindings_key(elm: &key_binding) -> u64 {
+    elm.key
 }
 pub unsafe fn key_bindings_index_find(
     head: *mut key_bindings,
@@ -1171,7 +1171,7 @@ pub unsafe fn key_bindings_index_find(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = key_bindings_key(elm);
+    let key = key_bindings_key(&*elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn key_bindings_index_nfind(
@@ -1181,7 +1181,7 @@ pub unsafe fn key_bindings_index_nfind(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = key_bindings_key(elm);
+    let key = key_bindings_key(&*elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1190,7 +1190,7 @@ pub unsafe fn key_bindings_index_insert(
     head: *mut key_bindings,
     elm: *mut key_binding,
 ) -> *mut key_binding {
-    let key = key_bindings_key(elm);
+    let key = key_bindings_key(&*elm);
     if (*head).storage.is_null() {
         (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
@@ -1211,7 +1211,7 @@ pub unsafe fn key_bindings_index_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = key_bindings_key(elm);
+    let key = key_bindings_key(&*elm);
     let Some(map) = (*head).storage.as_mut() else {
         return std::ptr::null_mut();
     };
@@ -1244,7 +1244,7 @@ pub unsafe fn key_bindings_index_next(elm: *mut key_binding) -> *mut key_binding
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = key_bindings_key(elm);
+    let key = key_bindings_key(&*elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1253,7 +1253,7 @@ pub unsafe fn key_bindings_index_prev(elm: *mut key_binding) -> *mut key_binding
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = key_bindings_key(elm);
+    let key = key_bindings_key(&*elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
