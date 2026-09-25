@@ -142,15 +142,15 @@ unsafe fn json_fields_minmax(head: *mut json_fields, val: ::core::ffi::c_int) ->
 }
 
 unsafe fn json_fields_find(
-    head: *mut json_fields,
-    key: *const ::core::ffi::c_char,
+    head: &json_fields,
+    key: &CStr,
 ) -> *mut json_node {
-    if head.is_null() || (*head).entries.is_null() || key.is_null() {
+    if head.entries.is_null() {
         return ::core::ptr::null_mut::<json_node>();
     }
-    (*(*head).entries)
+    (*head.entries)
         .entries
-        .get(CStr::from_ptr(key).to_bytes())
+        .get(key.to_bytes())
         .copied()
         .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
@@ -241,10 +241,11 @@ pub unsafe extern "C" fn json_find(
 ) -> *mut json_node {
     if (*jn).type_0 as ::core::ffi::c_uint
         != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
+        || key.is_null()
     {
         return ::core::ptr::null_mut::<json_node>();
     }
-    return json_fields_find(&raw mut (*jn).c2rust_unnamed.fields, key);
+    return json_fields_find(&(*jn).c2rust_unnamed.fields, CStr::from_ptr(key));
 }
 #[no_mangle]
 pub unsafe extern "C" fn json_array_first(mut jn: *mut json_node) -> *mut json_node {
@@ -1390,7 +1391,7 @@ mod json_fields_tests {
             json_destroy_node(duplicate);
 
             let probe_key = CString::new(b"alpha".as_slice()).unwrap();
-            assert_eq!(json_fields_find(&mut head, probe_key.as_ptr()), items[1]);
+            assert_eq!(json_fields_find(&head, probe_key.as_c_str()), items[1]);
 
             assert_eq!(
                 CStr::from_ptr(((*json_fields_minmax(&mut head, RB_NEGINF)).key).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes(),
@@ -1424,7 +1425,7 @@ mod json_fields_tests {
             let removed = json_fields_remove(&mut head, items[2]);
             assert_eq!(removed, items[2]);
             let removed_probe = CString::new(b"alpha-2".as_slice()).unwrap();
-            assert!(json_fields_find(&mut head, removed_probe.as_ptr()).is_null());
+            assert!(json_fields_find(&head, removed_probe.as_c_str()).is_null());
             json_destroy_node(removed);
             free_tree(&mut head);
         }
