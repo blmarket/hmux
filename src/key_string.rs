@@ -5736,16 +5736,8 @@ fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
     key | modifiers
 }
 
-/// Adapt the historical raw C string to the safe byte parser.
-///
-/// # Safety
-/// `string` must be non-null and point to a readable NUL-terminated string
-/// whose terminator is reachable within the same allocation.
-unsafe fn key_string_lookup_string_impl(string: *const ::core::ffi::c_char) -> key_code {
-    // SAFETY: the caller supplies the valid C string required by this
-    // function's contract; all parsing after this conversion is safe.
-    let input = unsafe { CStr::from_ptr(string) };
-    key_string_lookup_string_bytes(input)
+fn key_string_lookup_string_impl(string: &CStr) -> key_code {
+    key_string_lookup_string_bytes(string)
 }
 /// Parse a complete key name from bytes without converting it to UTF-8.
 /// Embedded NUL bytes and invalid key names return `None`.
@@ -5769,7 +5761,7 @@ pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
 /// `string` must point to a readable NUL-terminated string for this call.
 #[no_mangle]
 pub unsafe extern "C" fn key_string_lookup_string(string: *const ::core::ffi::c_char) -> key_code {
-    key_string_lookup_string_impl(string)
+    key_string_lookup_string_impl(CStr::from_ptr(string))
 }
 
 /// Format canonical key text into a caller-owned NUL-terminated buffer.
