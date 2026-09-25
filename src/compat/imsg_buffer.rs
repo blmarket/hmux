@@ -12,6 +12,7 @@ pub use crate::src::shared::message::{ibuf, ibufqueue, msgbuf};
 use crate::src::shared::posix_io::iovec;
 use crate::src::shared::socket::SOL_SOCKET;
 use std::ffi::CString;
+use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use std::ptr::slice_from_raw_parts_mut;
 
 pub type __caddr_t = *mut ::core::ffi::c_char;
@@ -119,17 +120,22 @@ unsafe fn raw_boxed_bytes(buf: *mut u8, len: size_t) -> Box<[u8]> {
     Box::from_raw(slice_from_raw_parts_mut(buf, len))
 }
 
-/// A temporary borrowed byte span used while parsing data in the reader
-/// scratch buffer. The read-header callback is a raw-pointer ABI, so no Rust
-/// slice remains live while it runs.
-struct IbufView<'a> {
+pub(crate) type MsgbufHeaderCallback = Box<
+    dyn FnMut(
+        &[u8],
+        Option<OwnedFd>,
+    ) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>),
+>;
+
+/// A temporary ibuf-compatible view over a borrowed header span.
+pub(crate) struct IbufView<'a> {
     bytes: &'a [u8],
     cursor: usize,
     record: ibuf,
 }
 
 impl<'a> IbufView<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
+    pub(crate) fn new(bytes: &'a [u8]) -> Self {
         Self {
             bytes,
             cursor: 0,
@@ -145,7 +151,7 @@ impl<'a> IbufView<'a> {
         }
     }
 
-    fn as_ibuf_ptr(&mut self) -> *mut ibuf {
+    pub(crate) fn as_ibuf_ptr(&mut self) -> *mut ibuf {
         &raw mut self.record
     }
 
@@ -935,10 +941,73 @@ pub unsafe extern "C" fn msgbuf_new_reader(
     (*msgbuf).rarg = arg;
     return msgbuf;
 }
+
+unsafe extern "C" fn msgbuf_reader_trampoline(
+    buf: *mut ibuf,
+    arg: *mut ::core::ffi::c_void,
+    fd: *mut ::core::ffi::c_int,
+) -> *mut ibuf {
+    if buf.is_null() || arg.is_null() {
+        *__errno_location() = EINVAL;
+        return ::core::ptr::null_mut();
+    }
+    let header: &[u8] = if (*buf).size == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts((*buf).buf.cast_const(), (*buf).size)
+    };
+    let input_fd = if !fd.is_null() && *fd >= 0 {
+        let owned = OwnedFd::from_raw_fd(*fd);
+        *fd = -1;
+        Some(owned)
+    } else {
+        None
+    };
+    let callback = &mut *(arg as *mut MsgbufHeaderCallback);
+    let (message, remaining_fd) = callback(header, input_fd);
+    if !fd.is_null() {
+        *fd = remaining_fd.map_or(-1, IntoRawFd::into_raw_fd);
+    } else {
+        drop(remaining_fd);
+    }
+    message.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr)
+}
+
+pub(crate) unsafe fn msgbuf_new_reader_owned(
+    hdrsz: size_t,
+    callback: impl FnMut(
+            &[u8],
+            Option<OwnedFd>,
+        ) -> (Option<std::ptr::NonNull<ibuf>>, Option<OwnedFd>)
+        + 'static,
+) -> *mut msgbuf {
+    let callback: MsgbufHeaderCallback = Box::new(callback);
+    let arg = Box::into_raw(Box::new(callback)) as *mut ::core::ffi::c_void;
+    let msgbuf = msgbuf_new_reader(hdrsz, Some(msgbuf_reader_trampoline), arg);
+    if msgbuf.is_null() {
+        drop(Box::from_raw(arg as *mut MsgbufHeaderCallback));
+    }
+    msgbuf
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn msgbuf_free(mut msgbuf: *mut msgbuf) {
     if msgbuf.is_null() {
         return;
+    }
+    let owned_reader: unsafe extern "C" fn(
+        *mut ibuf,
+        *mut ::core::ffi::c_void,
+        *mut ::core::ffi::c_int,
+    ) -> *mut ibuf = msgbuf_reader_trampoline;
+    if (*msgbuf).readhdr.is_some_and(|callback| {
+        std::ptr::fn_addr_eq(callback, owned_reader)
+    }) && !(*msgbuf).rarg.is_null()
+    {
+        drop(Box::from_raw(
+            (*msgbuf).rarg as *mut MsgbufHeaderCallback,
+        ));
+        (*msgbuf).rarg = ::core::ptr::null_mut();
     }
     msgbuf_clear(msgbuf);
     if !(*msgbuf).rbuf.is_null() {

@@ -2,8 +2,8 @@ use crate::src::compat::imsg_buffer::{
     ibuf_add, ibuf_add_ibuf, ibuf_close, ibuf_data, ibuf_dynamic, ibuf_fd_avail, ibuf_fd_get,
     ibuf_fd_set, ibuf_free, ibuf_get, ibuf_get_ibuf, ibuf_get_strbuf, ibuf_open, ibuf_read,
     ibuf_rewind, ibuf_set_h32, ibuf_set_maxsize, ibuf_size, ibuf_skip, ibuf_write, ibufq_pop,
-    ibufq_push, msgbuf_free, msgbuf_get, msgbuf_new_reader, msgbuf_queuelen, msgbuf_read,
-    msgbuf_write,
+    ibufq_push, msgbuf_free, msgbuf_get, msgbuf_new_reader_owned, msgbuf_queuelen, msgbuf_read,
+    msgbuf_write, IbufView,
 };
 use crate::src::ffi::libc::{__errno_location, getpid, memset};
 use crate::src::shared::abi::*;
@@ -13,6 +13,8 @@ use crate::src::shared::limits::UINT32_MAX;
 pub use crate::src::shared::message::{ibuf, ibufqueue, imsg, imsgbuf, msgbuf};
 use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::posix_io::iovec;
+use std::os::fd::{IntoRawFd, OwnedFd};
+use std::ptr::NonNull;
 
 pub const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const IMSG_FD_MARK: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
@@ -21,23 +23,15 @@ pub unsafe extern "C" fn imsgbuf_init(
     mut imsgbuf: *mut imsgbuf,
     mut fd: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    (*imsgbuf).w = msgbuf_new_reader(
-        IMSG_HEADER_SIZE,
-        Some(
-            imsg_parse_hdr
-                as unsafe extern "C" fn(
-                    *mut ibuf,
-                    *mut ::core::ffi::c_void,
-                    *mut ::core::ffi::c_int,
-                ) -> *mut ibuf,
-        ),
-        imsgbuf as *mut ::core::ffi::c_void,
-    );
+    let maxsize = MAX_IMSGSIZE as uint32_t;
+    (*imsgbuf).w = msgbuf_new_reader_owned(IMSG_HEADER_SIZE, move |header, fd| unsafe {
+        imsg_parse_hdr(header, maxsize, fd)
+    });
     if (*imsgbuf).w.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
     (*imsgbuf).pid = getpid() as pid_t;
-    (*imsgbuf).maxsize = MAX_IMSGSIZE as uint32_t;
+    (*imsgbuf).maxsize = maxsize;
     (*imsgbuf).fd = fd;
     (*imsgbuf).flags = 0 as ::core::ffi::c_int;
     return 0 as ::core::ffi::c_int;
@@ -483,12 +477,12 @@ pub unsafe extern "C" fn imsg_set_maxsize(
     }
     return ibuf_set_maxsize(msg, max.wrapping_add(IMSG_HEADER_SIZE));
 }
-unsafe extern "C" fn imsg_parse_hdr(
-    mut buf: *mut ibuf,
-    mut arg: *mut ::core::ffi::c_void,
-    mut fd: *mut ::core::ffi::c_int,
-) -> *mut ibuf {
-    let mut imsgbuf: *mut imsgbuf = arg as *mut imsgbuf;
+unsafe fn imsg_parse_hdr(
+    header: &[u8],
+    maxsize: uint32_t,
+    mut fd: Option<OwnedFd>,
+) -> (Option<NonNull<ibuf>>, Option<OwnedFd>) {
+    let mut view = IbufView::new(header);
     let mut hdr: imsg_hdr = imsg_hdr {
         type_0: 0,
         len: 0,
@@ -498,25 +492,25 @@ unsafe extern "C" fn imsg_parse_hdr(
     let mut b: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
     let mut len: uint32_t = 0;
     if ibuf_get(
-        buf,
+        view.as_ibuf_ptr(),
         &raw mut hdr as *mut ::core::ffi::c_void,
         ::core::mem::size_of::<imsg_hdr>() as size_t,
     ) == -(1 as ::core::ffi::c_int)
     {
-        return ::core::ptr::null_mut::<ibuf>();
+        return (None, fd);
     }
     len = hdr.len & !(IMSG_FD_MARK as uint32_t);
-    if (len as usize) < IMSG_HEADER_SIZE || len > (*imsgbuf).maxsize {
+    if (len as usize) < IMSG_HEADER_SIZE || len > maxsize {
         *__errno_location() = ERANGE;
-        return ::core::ptr::null_mut::<ibuf>();
+        return (None, fd);
     }
     b = ibuf_open(len as size_t);
     if b.is_null() {
-        return ::core::ptr::null_mut::<ibuf>();
+        return (None, fd);
     }
     if hdr.len & IMSG_FD_MARK as uint32_t != 0 {
-        ibuf_fd_set(b, *fd);
-        *fd = -(1 as ::core::ffi::c_int);
+        let raw_fd = fd.take().map(IntoRawFd::into_raw_fd).unwrap_or(-1);
+        ibuf_fd_set(b, raw_fd);
     }
-    return b;
+    (NonNull::new(b), fd)
 }
