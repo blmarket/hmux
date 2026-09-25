@@ -112,12 +112,12 @@ fn server_acl_entries_minmax(
         .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
 
-unsafe fn server_acl_entries_next(
-    head: *mut server_acl_entries,
-    entry: *mut server_acl_entry,
+fn server_acl_entries_next(
+    head: &server_acl_entries,
+    entry: &server_acl_entry,
 ) -> *mut server_acl_entry {
-    let key = server_acl_entry_key(&*entry);
-    (*head)
+    let key = server_acl_entry_key(entry);
+    head
         .entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
@@ -259,7 +259,7 @@ pub unsafe extern "C" fn server_acl_display(mut item: *mut cmdq_item) {
             }
             _ => {}
         }
-        loop_0 = server_acl_entries_next(&raw mut server_acl_entries, loop_0);
+        loop_0 = server_acl_entries_next(&*(&raw mut server_acl_entries), &*loop_0);
     }
 }
 #[no_mangle]
@@ -351,11 +351,11 @@ mod tests {
 
             assert_eq!(server_acl_entries_minmax(&tree, -1), second_ptr);
             assert_eq!(
-                server_acl_entries_next(&raw mut tree, second_ptr),
+                server_acl_entries_next(&tree, &*second_ptr),
                 first_ptr
             );
-            assert_eq!(server_acl_entries_next(&raw mut tree, first_ptr), group_ptr);
-            assert!(server_acl_entries_next(&raw mut tree, group_ptr).is_null());
+            assert_eq!(server_acl_entries_next(&tree, &*first_ptr), group_ptr);
+            assert!(server_acl_entries_next(&tree, &*group_ptr).is_null());
             assert_eq!(server_acl_entries_minmax(&tree, 1), group_ptr);
             assert_eq!(
                 server_acl_entry_find(&tree, 1, SERVER_ACL_IS_GROUP | SERVER_ACL_READONLY),
