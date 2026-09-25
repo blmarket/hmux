@@ -98,14 +98,14 @@ fn server_acl_entry_find(
         .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
 
-unsafe fn server_acl_entries_minmax(
-    head: *mut server_acl_entries,
+fn server_acl_entries_minmax(
+    head: &server_acl_entries,
     val: ::core::ffi::c_int,
 ) -> *mut server_acl_entry {
     let entry = if val < 0 {
-        (*head).entries.iter().next()
+        head.entries.iter().next()
     } else {
-        (*head).entries.iter().next_back()
+        head.entries.iter().next_back()
     };
     entry
         .map(|(_, entry)| entry.as_ref() as *const server_acl_entry as *mut server_acl_entry)
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn server_acl_display(mut item: *mut cmdq_item) {
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut type_0: ::core::ffi::c_char = 0;
     let mut current_block_12: u64;
-    loop_0 = server_acl_entries_minmax(&raw mut server_acl_entries, -1);
+    loop_0 = server_acl_entries_minmax(&*(&raw mut server_acl_entries), -1);
     while !loop_0.is_null() {
         if !(*loop_0).flags & SERVER_ACL_IS_GROUP != 0 {
             if (*loop_0).id == 0 as id_t {
@@ -349,14 +349,14 @@ mod tests {
                 "duplicate keys keep the original item"
             );
 
-            assert_eq!(server_acl_entries_minmax(&raw mut tree, -1), second_ptr);
+            assert_eq!(server_acl_entries_minmax(&tree, -1), second_ptr);
             assert_eq!(
                 server_acl_entries_next(&raw mut tree, second_ptr),
                 first_ptr
             );
             assert_eq!(server_acl_entries_next(&raw mut tree, first_ptr), group_ptr);
             assert!(server_acl_entries_next(&raw mut tree, group_ptr).is_null());
-            assert_eq!(server_acl_entries_minmax(&raw mut tree, 1), group_ptr);
+            assert_eq!(server_acl_entries_minmax(&tree, 1), group_ptr);
             assert_eq!(
                 server_acl_entry_find(&tree, 1, SERVER_ACL_IS_GROUP | SERVER_ACL_READONLY),
                 group_ptr,
@@ -368,7 +368,7 @@ mod tests {
             );
             assert!(server_acl_entry_find(&tree, 9, 0).is_null());
             server_acl_entries_clear(&mut tree);
-            assert!(server_acl_entries_minmax(&raw mut tree, -1).is_null());
+            assert!(server_acl_entries_minmax(&tree, -1).is_null());
         }
     }
 }
