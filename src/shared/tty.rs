@@ -416,13 +416,10 @@ pub struct tty_term_entry {
     pub le_prev: *mut *mut tty_term,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct tty_ctx {
     pub s: *mut screen,
     pub redraw_cb: tty_ctx_redraw_cb,
     pub set_client_cb: tty_ctx_set_client_cb,
-    pub arg: *mut ::core::ffi::c_void,
     pub cell: *const grid_cell,
     pub flags: ::core::ffi::c_int,
     pub c2rust_unnamed: tty_ctx_c2rust_unnamed,
@@ -477,10 +474,9 @@ pub struct tty_ctx_c2rust_unnamed_data {
     pub size: size_t,
 }
 
-pub type tty_ctx_set_client_cb =
-    Option<unsafe extern "C" fn(*mut tty_ctx, *mut client) -> ::core::ffi::c_int>;
+pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &mut client) -> i32>>;
 
-pub type tty_ctx_redraw_cb = Option<unsafe extern "C" fn(*const tty_ctx) -> ()>;
+pub type tty_ctx_redraw_cb = Option<Box<dyn Fn(&tty_ctx)>>;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

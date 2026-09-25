@@ -1519,7 +1519,10 @@ unsafe extern "C" fn tty_redraw_region(mut tty: *mut tty, mut ctx: *const tty_ct
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
-        (*ctx).redraw_cb.expect("non-null function pointer")(ctx);
+        (*ctx)
+            .redraw_cb
+            .as_ref()
+            .expect("non-null redraw callback")(&*ctx);
         return;
     }
     log_debug(
@@ -2189,13 +2192,13 @@ pub unsafe extern "C" fn tty_write(
 ) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut state: ::core::ffi::c_int = 0;
-    if (*ctx).set_client_cb.is_none() {
+    let Some(mut set_client_cb) = (*ctx).set_client_cb.take() else {
         return;
-    }
+    };
     c = clients.first();
     while !c.is_null() {
         if tty_client_ready(ctx, c) != 0 {
-            state = (*ctx).set_client_cb.expect("non-null function pointer")(ctx, c);
+            state = set_client_cb(&mut *ctx, &mut *c);
             if state == -(1 as ::core::ffi::c_int) {
                 break;
             }
@@ -2204,6 +2207,9 @@ pub unsafe extern "C" fn tty_write(
             }
         }
         c = clients.next(c);
+    }
+    if (*ctx).set_client_cb.is_none() {
+        (*ctx).set_client_cb = Some(set_client_cb);
     }
 }
 #[no_mangle]
@@ -2521,7 +2527,10 @@ pub unsafe extern "C" fn tty_cmd_alignmenttest(mut tty: *mut tty, mut ctx: *cons
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0 || (*c).overlay_check.is_some() {
-        (*ctx).redraw_cb.expect("non-null function pointer")(ctx);
+        (*ctx)
+            .redraw_cb
+            .as_ref()
+            .expect("non-null redraw callback")(&*ctx);
         return;
     }
     tty_attributes(
@@ -2633,7 +2642,10 @@ pub unsafe extern "C" fn tty_cmd_cells(mut tty: *mut tty, mut ctx: *const tty_ct
         {
             tty_draw_pane(tty, ctx, (*ctx).ocy);
         } else {
-            (*ctx).redraw_cb.expect("non-null function pointer")(ctx);
+            (*ctx)
+                .redraw_cb
+                .as_ref()
+                .expect("non-null redraw callback")(&*ctx);
         }
         return;
     }

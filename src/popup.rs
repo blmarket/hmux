@@ -262,20 +262,12 @@ unsafe extern "C" fn popup_reapply_styles(mut pd: *mut popup_data) {
     (*pd).border_cell.attr = 0 as u_short;
     format_free(ft);
 }
-unsafe extern "C" fn popup_redraw_cb(mut ttyctx: *const tty_ctx) {
-    let mut pd: *mut popup_data = (*ttyctx).arg as *mut popup_data;
-    (*(*pd).c).flags |= CLIENT_REDRAWOVERLAY as uint64_t;
-}
-unsafe extern "C" fn popup_set_client_cb(
-    mut ttyctx: *mut tty_ctx,
-    mut c: *mut client,
-) -> ::core::ffi::c_int {
-    let mut pd: *mut popup_data = (*ttyctx).arg as *mut popup_data;
+unsafe fn popup_set_client(pd: *mut popup_data, ttyctx: &mut tty_ctx, c: *mut client) -> i32 {
     if c != (*pd).c {
-        return 0 as ::core::ffi::c_int;
+        return 0;
     }
     if (*(*pd).c).flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
-        return 0 as ::core::ffi::c_int;
+        return 0;
     }
     (*ttyctx).wox = 0 as u_int;
     (*ttyctx).woy = 0 as u_int;
@@ -292,7 +284,7 @@ unsafe extern "C" fn popup_set_client_cb(
         (*ttyctx).ryoff = (*pd).py.wrapping_add(1 as u_int) as ::core::ffi::c_int;
         (*ttyctx).yoff = (*ttyctx).ryoff;
     }
-    return 1 as ::core::ffi::c_int;
+    1
 }
 unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: *mut tty_ctx) {
     memcpy(
@@ -303,13 +295,12 @@ unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: *mut tty_ctx) {
     (*ttyctx).flags &= !TTY_CTX_WINDOW_BIGGER;
     (*ttyctx).style_ctx.defaults = &raw mut (*ttyctx).defaults;
     (*ttyctx).style_ctx.palette = &raw mut (*pd).palette;
-    (*ttyctx).redraw_cb =
-        Some(popup_redraw_cb as unsafe extern "C" fn(*const tty_ctx) -> ()) as tty_ctx_redraw_cb;
-    (*ttyctx).set_client_cb = Some(
-        popup_set_client_cb
-            as unsafe extern "C" fn(*mut tty_ctx, *mut client) -> ::core::ffi::c_int,
-    ) as tty_ctx_set_client_cb;
-    (*ttyctx).arg = pd as *mut ::core::ffi::c_void;
+    (*ttyctx).redraw_cb = Some(Box::new(move |_| unsafe {
+        (*(*pd).c).flags |= CLIENT_REDRAWOVERLAY as uint64_t;
+    }));
+    (*ttyctx).set_client_cb = Some(Box::new(move |ttyctx, c| unsafe {
+        popup_set_client(pd, ttyctx, c as *mut client)
+    }));
 }
 unsafe extern "C" fn popup_mode_cb(
     _c: *mut client,

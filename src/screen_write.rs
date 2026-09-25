@@ -176,62 +176,64 @@ unsafe extern "C" fn screen_write_set_cursor(
         event_add(&raw mut (*w).offset_timer, &raw mut tv);
     }
 }
-unsafe extern "C" fn screen_write_redraw_cb(mut ttyctx: *const tty_ctx) {
-    let mut wp: *mut window_pane = (*ttyctx).arg as *mut window_pane;
-    if !wp.is_null() {
-        (*wp).flags |= PANE_REDRAW;
-    }
-}
-unsafe extern "C" fn screen_write_set_client_cb(
-    mut ttyctx: *mut tty_ctx,
-    mut c: *mut client,
-) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = (*ttyctx).arg as *mut window_pane;
-    if (*ttyctx).flags & TTY_CTX_INVISIBLE_PANES != 0 {
-        if session_has((*c).session, (*wp).window as *mut window) != 0 {
-            return 1 as ::core::ffi::c_int;
+fn screen_write_redraw_cb(wp: *mut window_pane) -> tty_ctx_redraw_cb {
+    Some(Box::new(move |_| unsafe {
+        if !wp.is_null() {
+            (*wp).flags |= PANE_REDRAW;
         }
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*(*(*c).session).curw).window != (*wp).window {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*wp).layout_cell.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*wp).flags & (PANE_REDRAW | PANE_DROP) != 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-        log_debug(
-            b"%s: adding %%%u to deferred redraw\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_set_client_cb\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).id,
-        );
-        (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
-        return -(1 as ::core::ffi::c_int);
-    }
-    if tty_window_offset(
-        &raw mut (*c).tty,
-        &raw mut (*ttyctx).wox,
-        &raw mut (*ttyctx).woy,
-        &raw mut (*ttyctx).wsx,
-        &raw mut (*ttyctx).wsy,
-    ) != 0
-    {
-        (*ttyctx).flags |= TTY_CTX_WINDOW_BIGGER;
-    } else {
-        (*ttyctx).flags &= !TTY_CTX_WINDOW_BIGGER;
-    }
-    (*ttyctx).rxoff = (*wp).xoff;
-    (*ttyctx).xoff = (*ttyctx).rxoff;
-    (*ttyctx).ryoff = (*wp).yoff;
-    (*ttyctx).yoff = (*ttyctx).ryoff;
-    if status_at_line(c) == 0 as ::core::ffi::c_int {
-        (*ttyctx).yoff = ((*ttyctx).yoff as u_int).wrapping_add(status_line_size(c))
-            as ::core::ffi::c_int as ::core::ffi::c_int;
-    }
-    return 1 as ::core::ffi::c_int;
+    }))
+}
+fn screen_write_set_client_cb(wp: *mut window_pane) -> tty_ctx_set_client_cb {
+    Some(Box::new(move |ttyctx, c| unsafe {
+        let c = c as *mut client;
+        if (*ttyctx).flags & TTY_CTX_INVISIBLE_PANES != 0 {
+            if session_has((*c).session, (*wp).window as *mut window) != 0 {
+                return 1;
+            }
+            return 0;
+        }
+        if (*(*(*c).session).curw).window != (*wp).window {
+            return 0;
+        }
+        if (*wp).layout_cell.is_null() {
+            return 0;
+        }
+        if (*wp).flags & (PANE_REDRAW | PANE_DROP) != 0 {
+            return -1;
+        }
+        if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
+            log_debug(
+                b"%s: adding %%%u to deferred redraw\0" as *const u8
+                    as *const ::core::ffi::c_char,
+                b"screen_write_set_client_cb\0" as *const u8
+                    as *const ::core::ffi::c_char,
+                (*wp).id,
+            );
+            (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
+            return -1;
+        }
+        if tty_window_offset(
+            &raw mut (*c).tty,
+            &raw mut (*ttyctx).wox,
+            &raw mut (*ttyctx).woy,
+            &raw mut (*ttyctx).wsx,
+            &raw mut (*ttyctx).wsy,
+        ) != 0
+        {
+            (*ttyctx).flags |= TTY_CTX_WINDOW_BIGGER;
+        } else {
+            (*ttyctx).flags &= !TTY_CTX_WINDOW_BIGGER;
+        }
+        (*ttyctx).rxoff = (*wp).xoff;
+        (*ttyctx).xoff = (*ttyctx).rxoff;
+        (*ttyctx).ryoff = (*wp).yoff;
+        (*ttyctx).yoff = (*ttyctx).ryoff;
+        if status_at_line(c) == 0 {
+            (*ttyctx).yoff = ((*ttyctx).yoff as u_int).wrapping_add(status_line_size(c))
+                as ::core::ffi::c_int;
+        }
+        1
+    }))
 }
 unsafe extern "C" fn screen_write_pane_is_obscured(
     mut ctx: *mut screen_write_ctx,
@@ -376,9 +378,7 @@ unsafe extern "C" fn screen_write_initctx(
             }
         }
     } else {
-        (*ttyctx).redraw_cb =
-            Some(screen_write_redraw_cb as unsafe extern "C" fn(*const tty_ctx) -> ())
-                as tty_ctx_redraw_cb;
+        (*ttyctx).redraw_cb = screen_write_redraw_cb((*ctx).wp);
         if !(*ctx).wp.is_null() {
             tty_default_colours(
                 &raw mut (*ttyctx).defaults,
@@ -386,11 +386,7 @@ unsafe extern "C" fn screen_write_initctx(
                 &raw mut (*ttyctx).style_ctx.dim,
             );
             (*ttyctx).style_ctx.palette = &raw mut (*(*ctx).wp).palette;
-            (*ttyctx).set_client_cb = Some(
-                screen_write_set_client_cb
-                    as unsafe extern "C" fn(*mut tty_ctx, *mut client) -> ::core::ffi::c_int,
-            ) as tty_ctx_set_client_cb;
-            (*ttyctx).arg = (*ctx).wp as *mut ::core::ffi::c_void;
+            (*ttyctx).set_client_cb = screen_write_set_client_cb((*ctx).wp);
         }
     }
     if !(*ctx).flags & SCREEN_WRITE_SYNC != 0 {
@@ -870,7 +866,6 @@ pub unsafe extern "C" fn screen_write_fast_copy(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -1813,7 +1808,6 @@ unsafe extern "C" fn screen_write_flush_dirty(mut wp: *mut window_pane) {
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -1919,7 +1913,6 @@ pub unsafe extern "C" fn screen_write_alignmenttest(mut ctx: *mut screen_write_c
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -2023,7 +2016,6 @@ pub unsafe extern "C" fn screen_write_insertcharacter(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -2112,7 +2104,6 @@ pub unsafe extern "C" fn screen_write_deletecharacter(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -2201,7 +2192,6 @@ pub unsafe extern "C" fn screen_write_clearcharacter(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -2291,7 +2281,6 @@ pub unsafe extern "C" fn screen_write_insertline(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -2422,7 +2411,6 @@ pub unsafe extern "C" fn screen_write_deleteline(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -2688,7 +2676,6 @@ pub unsafe extern "C" fn screen_write_reverseindex(mut ctx: *mut screen_write_ct
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -2888,7 +2875,6 @@ pub unsafe extern "C" fn screen_write_scrolldown(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -2992,7 +2978,6 @@ pub unsafe extern "C" fn screen_write_clearendofscreen(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -3157,7 +3142,6 @@ pub unsafe extern "C" fn screen_write_clearstartofscreen(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -3300,7 +3284,6 @@ pub unsafe extern "C" fn screen_write_clearscreen(mut ctx: *mut screen_write_ctx
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -3420,7 +3403,6 @@ pub unsafe extern "C" fn screen_write_fullredraw(mut ctx: *mut screen_write_ctx)
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -3472,7 +3454,10 @@ pub unsafe extern "C" fn screen_write_fullredraw(mut ctx: *mut screen_write_ctx)
         0 as ::core::ffi::c_int,
     );
     if ttyctx.redraw_cb.is_some() {
-        ttyctx.redraw_cb.expect("non-null function pointer")(&raw mut ttyctx);
+        ttyctx
+            .redraw_cb
+            .as_ref()
+            .expect("non-null redraw callback")(&ttyctx);
     }
 }
 unsafe fn screen_write_collect_trim(
@@ -3587,7 +3572,6 @@ unsafe extern "C" fn screen_write_collect_flush_scrolled(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -3705,7 +3689,6 @@ unsafe extern "C" fn screen_write_collect_flush_line(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -4290,7 +4273,6 @@ pub unsafe extern "C" fn screen_write_cell(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -4588,7 +4570,6 @@ unsafe extern "C" fn screen_write_combine(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -4862,7 +4843,6 @@ pub unsafe extern "C" fn screen_write_setselection(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -4927,7 +4907,6 @@ pub unsafe extern "C" fn screen_write_rawstring(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -4993,7 +4972,6 @@ pub unsafe extern "C" fn screen_write_alternateon(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -5072,7 +5050,10 @@ pub unsafe extern "C" fn screen_write_alternateon(
         0 as ::core::ffi::c_int,
     );
     if ttyctx.redraw_cb.is_some() {
-        ttyctx.redraw_cb.expect("non-null function pointer")(&raw mut ttyctx);
+        ttyctx
+            .redraw_cb
+            .as_ref()
+            .expect("non-null redraw callback")(&ttyctx);
     }
 }
 #[no_mangle]
@@ -5085,7 +5066,6 @@ pub unsafe extern "C" fn screen_write_alternateoff(
         s: ::core::ptr::null_mut::<screen>(),
         redraw_cb: None,
         set_client_cb: None,
-        arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         cell: ::core::ptr::null::<grid_cell>(),
         flags: 0,
         c2rust_unnamed: tty_ctx_c2rust_unnamed { n: 0 },
@@ -5156,7 +5136,10 @@ pub unsafe extern "C" fn screen_write_alternateoff(
         0 as ::core::ffi::c_int,
     );
     if ttyctx.redraw_cb.is_some() {
-        ttyctx.redraw_cb.expect("non-null function pointer")(&raw mut ttyctx);
+        ttyctx
+            .redraw_cb
+            .as_ref()
+            .expect("non-null redraw callback")(&ttyctx);
     }
 }
 
