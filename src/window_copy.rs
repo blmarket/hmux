@@ -6603,7 +6603,7 @@ unsafe extern "C" fn window_copy_search(
     if visible_only == 0 as ::core::ffi::c_int && !(*data).searchmark.is_null() {
         window_copy_clear_marks(wme);
     }
-    window_pane_set_searchstr(wp, Some(CStr::from_ptr(str).to_owned()));
+    window_pane_set_searchstr(&mut *wp, Some(CStr::from_ptr(str).to_owned()));
     (*wp).searchregex = regex;
     fx = (*data).cx;
     fy = (*(*(*data).backing).grid)

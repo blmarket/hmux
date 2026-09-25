@@ -2971,9 +2971,9 @@ mod window_mode_collection_tests {
 }
 
 /// `pane.searchstr` is a borrowed view, invalidated on replacement or clear.
-pub(crate) unsafe fn window_pane_set_searchstr(wp: *mut window_pane, searchstr: Option<CString>) {
-    (*wp).searchstr_owner = searchstr;
-    (*wp).searchstr = (*wp)
+pub(crate) fn window_pane_set_searchstr(wp: &mut window_pane, searchstr: Option<CString>) {
+    wp.searchstr_owner = searchstr;
+    wp.searchstr = wp
         .searchstr_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
@@ -3196,7 +3196,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
         (*wp).id,
         (*wp).references,
     );
-    window_pane_set_searchstr(wp, None);
+    window_pane_set_searchstr(&mut *wp, None);
     screen_free(&raw mut (*wp).status_screen);
     screen_free(&raw mut (*wp).base);
     options_free((*wp).options);
