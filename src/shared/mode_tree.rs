@@ -17,7 +17,6 @@ pub struct mode_tree_help_info {
     pub lines: &'static [&'static ::std::ffi::CStr],
 }
 
-#[repr(C)]
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
     pub references: u_int,
@@ -262,6 +261,16 @@ pub type mode_tree_draw_cb = Option<
 >;
 
 pub type mode_tree_build_cb = Option<
+    Box<
+        dyn FnMut(
+            &mut sort_criteria,
+            Option<uint64_t>,
+            Option<&std::ffi::CStr>,
+        ) -> Option<uint64_t>,
+    >,
+>;
+
+pub type mode_tree_build_fn = Option<
     unsafe extern "C" fn(
         *mut ::core::ffi::c_void,
         *mut sort_criteria,

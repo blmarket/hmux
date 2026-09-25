@@ -42,7 +42,8 @@ use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::{menu, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
-    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb,
+    mode_tree_build_cb, mode_tree_build_fn, mode_tree_data, mode_tree_draw_cb,
+    mode_tree_height_cb,
     mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line,
     mode_tree_list, mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb,
     mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
@@ -61,6 +62,7 @@ use crate::src::shared::prompt::{
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::style::*;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
@@ -553,7 +555,7 @@ pub unsafe fn mode_tree_each_tagged(
 pub unsafe extern "C" fn mode_tree_start(
     mut wp: *mut window_pane,
     mut args: *mut args,
-    mut buildcb: mode_tree_build_cb,
+    mut buildcb: mode_tree_build_fn,
     mut drawcb: mode_tree_draw_cb,
     mut searchcb: mode_tree_search_cb,
     mut menucb: mode_tree_menu_cb,
@@ -587,7 +589,21 @@ pub unsafe extern "C" fn mode_tree_start(
     } else {
         (*mtd).filter = None;
     }
-    (*mtd).buildcb = buildcb;
+    (*mtd).buildcb = buildcb.map(|mut callback| {
+        let data = modedata;
+        Box::new(move |sort: &mut sort_criteria, tag: Option<uint64_t>, filter: Option<&CStr>| {
+            let mut selected = tag.unwrap_or(UINT64_MAX as uint64_t);
+            callback(
+                data,
+                sort,
+                &mut selected,
+                filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
+            );
+            (selected != UINT64_MAX as uint64_t).then_some(selected)
+        }) as Box<
+            dyn FnMut(&mut sort_criteria, Option<uint64_t>, Option<&CStr>) -> Option<uint64_t>,
+        >
+    });
     (*mtd).drawcb = drawcb;
     (*mtd).searchcb = searchcb;
     (*mtd).menucb = menucb;
@@ -653,44 +669,39 @@ unsafe extern "C" fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
 #[no_mangle]
 pub unsafe extern "C" fn mode_tree_build(mut mtd: *mut mode_tree_data) {
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut tag: uint64_t;
+    let mut tag: Option<uint64_t>;
     if !(*mtd).lines.is_empty() {
-        tag = (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).tag;
+        tag = Some((*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).tag);
     } else {
-        tag = UINT64_MAX as uint64_t;
+        tag = None;
     }
     (*mtd).saved.items.append(&mut (*mtd).children.items);
     if (*mtd).sortcb.is_some() {
         (*mtd).sortcb.expect("non-null sort callback")(&mut (*mtd).sort_crit);
     }
-    (*mtd).buildcb.expect("non-null function pointer")(
-        (*mtd).modedata,
-        &raw mut (*mtd).sort_crit,
-        &raw mut tag,
-        (*mtd)
-            .filter
-            .as_ref()
-            .map_or(::core::ptr::null(), |filter| filter.as_ptr()),
+    tag = (*mtd).buildcb.as_mut().expect("non-null build callback")(
+        &mut (*mtd).sort_crit,
+        tag,
+        (*mtd).filter.as_deref(),
     );
     (*mtd).no_matches = ((*mtd).children.first()
         == ::core::ptr::null_mut::<::core::ffi::c_void>() as *mut mode_tree_item)
         as ::core::ffi::c_int;
     if (*mtd).no_matches != 0 {
-        (*mtd).buildcb.expect("non-null function pointer")(
-            (*mtd).modedata,
-            &raw mut (*mtd).sort_crit,
-            &raw mut tag,
-            ::core::ptr::null::<::core::ffi::c_char>(),
+        tag = (*mtd).buildcb.as_mut().expect("non-null build callback")(
+            &mut (*mtd).sort_crit,
+            tag,
+            None,
         );
     }
     mode_tree_free_items(&raw mut (*mtd).saved);
     mode_tree_clear_lines(mtd);
     (*mtd).maxdepth = 0 as u_int;
     mode_tree_build_lines(mtd, &raw mut (*mtd).children, 0 as u_int);
-    if !(*mtd).lines.is_empty() && tag == UINT64_MAX as uint64_t {
-        tag = (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).tag;
+    if !(*mtd).lines.is_empty() && tag.is_none() {
+        tag = Some((*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).tag);
     }
-    mode_tree_set_current(mtd, tag);
+    mode_tree_set_current(mtd, tag.unwrap_or(UINT64_MAX as uint64_t));
     (*mtd).width = (*(*s).grid).sx;
     if (*mtd).preview != MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
         mode_tree_set_height(mtd);
@@ -2550,13 +2561,7 @@ mod mode_tree_tests {
         empty: bool,
     }
 
-    unsafe extern "C" fn nested_build(
-        data: *mut ::core::ffi::c_void,
-        _: *mut sort_criteria,
-        _: *mut uint64_t,
-        _: *const ::core::ffi::c_char,
-    ) {
-        let state = &mut *(data as *mut NestedBuildState);
+    unsafe fn nested_build(state: &mut NestedBuildState) {
         if state.empty {
             return;
         }
@@ -2587,9 +2592,11 @@ mod mode_tree_tests {
         unsafe {
             let mtd = mode_tree_alloc_data();
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
-            (*mtd).buildcb = Some(nested_build);
-            let mut state = NestedBuildState { mtd, empty: false };
-            (*mtd).modedata = (&raw mut state).cast();
+            let state = Box::into_raw(Box::new(NestedBuildState { mtd, empty: false }));
+            (*mtd).buildcb = Some(Box::new(move |_, _, _| unsafe {
+                nested_build(&mut *state);
+                None
+            }));
             let mut grid_owner = crate::src::grid::grid_create_box(80, 24, 0);
             (*mtd).screen.grid = &raw mut *grid_owner;
 
@@ -2603,13 +2610,14 @@ mod mode_tree_tests {
             assert_eq!(mode_tree_set_current(mtd, 65), 1);
             assert_eq!((*mtd).current, 64);
 
-            state.empty = true;
+            (*state).empty = true;
             mode_tree_build(mtd);
             assert!((*mtd).lines.is_empty());
             mode_tree_free_items(&raw mut (*mtd).children);
             (*mtd).screen.grid = std::ptr::null_mut();
             drop(grid_owner);
             mode_tree_remove_ref(mtd);
+            drop(Box::from_raw(state));
         }
     }
 
