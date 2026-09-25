@@ -172,7 +172,7 @@ unsafe extern "C" fn fuzzy_decode_one(
     return cp.offset(1 as ::core::ffi::c_int as isize);
 }
 unsafe fn fuzzy_scan(
-    mut text: *const ::core::ffi::c_char,
+    text: &CStr,
     widths: &mut [u_int; 5],
 ) -> Vec<fuzzy_char> {
     let mut cs = Vec::new();
@@ -209,8 +209,9 @@ unsafe fn fuzzy_scan(
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    let mut cp: *const ::core::ffi::c_char = text;
-    let mut textend: *const ::core::ffi::c_char = text.offset(strlen(text) as isize);
+    let mut cp: *const ::core::ffi::c_char = text.as_ptr();
+    let mut textend: *const ::core::ffi::c_char =
+        text.as_ptr().add(text.to_bytes().len());
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -777,7 +778,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
             cp = cp.offset(1);
         }
     }
-    cs = fuzzy_scan(text.as_ptr(), &mut widths);
+    cs = fuzzy_scan(text, &mut widths);
     ncs = cs.len() as u_int;
     matched = vec![0; ncs.max(1) as usize];
     best = vec![0; ncs.max(1) as usize];
