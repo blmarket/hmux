@@ -299,9 +299,9 @@ unsafe fn server_client_add_term_cap(c: *mut client, data: &CStr) {
     (*c).term_caps.push(data.to_owned());
 }
 
-unsafe fn server_client_clear_term_caps(c: *mut client) {
+fn server_client_clear_term_caps(c: &mut client) {
     // Release on client loss, even if other references delay client destruction.
-    (*c).term_caps = Vec::new();
+    c.term_caps = Vec::new();
 }
 
 #[cfg(test)]
@@ -762,7 +762,7 @@ mod client_message_owner_tests {
                     assert_eq!((&(*c).term_caps)[index].as_bytes(), cap.as_bytes());
                 }
             }
-            server_client_clear_term_caps(c);
+            server_client_clear_term_caps(&mut *c);
             assert!((*c).term_caps.is_empty());
             assert_eq!((*c).term_caps.len(), 0);
         }
@@ -1552,7 +1552,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     free((*c).clipboard_panes as *mut ::core::ffi::c_void);
     server_client_set_term_name(&mut *c, None);
     server_client_set_term_type(&mut *c, None);
-    server_client_clear_term_caps(c);
+    server_client_clear_term_caps(&mut *c);
     status_free(c);
     input_cancel_requests(c);
     server_client_replace_title(&mut *c, None);
