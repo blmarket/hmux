@@ -517,7 +517,7 @@ unsafe extern "C" fn window_buffer_menu(
         ::core::ptr::null_mut::<mouse_event>(),
     );
 }
-unsafe extern "C" fn window_buffer_get_key(
+unsafe fn window_buffer_get_key(
     mut modedata: *mut ::core::ffi::c_void,
     mut itemdata: *mut ::core::ffi::c_void,
     mut line: u_int,
@@ -667,7 +667,7 @@ unsafe extern "C" fn window_buffer_init(
         None,
         Some(
             window_buffer_get_key
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut ::core::ffi::c_void,
                     *mut ::core::ffi::c_void,
                     u_int,

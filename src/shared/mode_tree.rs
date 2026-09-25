@@ -231,8 +231,11 @@ pub type mode_tree_swap_cb = Option<
     ) -> ::core::ffi::c_int,
 >;
 
-pub type mode_tree_key_cb = Option<
-    unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, u_int) -> key_code,
+pub type mode_tree_key_cb =
+    Option<Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>>;
+
+pub type mode_tree_key_fn = Option<
+    unsafe fn(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, u_int) -> key_code,
 >;
 
 pub type mode_tree_height_cb = Option<Box<dyn FnMut(u_int) -> u_int>>;

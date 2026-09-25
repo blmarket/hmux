@@ -44,7 +44,8 @@ use crate::src::shared::menu::{menu, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_build_fn, mode_tree_data, mode_tree_draw_cb,
     mode_tree_height_cb, mode_tree_height_fn,
-    mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line,
+    mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_key_fn,
+    mode_tree_line,
     mode_tree_list, mode_tree_menu_cb, mode_tree_menu_fn, mode_tree_prompt,
     mode_tree_prompt_input_cb,
     mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
@@ -280,11 +281,10 @@ unsafe extern "C" fn mode_tree_build_lines(
             );
         }
         if (*mtd).keycb.is_some() {
-            (*mti).key = (*mtd).keycb.expect("non-null function pointer")(
-                (*mtd).modedata,
-                (*mti).itemdata,
-                (*mti).line,
-            );
+            (*mti).key = (*mtd)
+                .keycb
+                .as_mut()
+                .expect("non-null key callback")((*mti).itemdata, (*mti).line);
             if (*mti).key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                 (*mti).key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
             }
@@ -561,7 +561,7 @@ pub unsafe extern "C" fn mode_tree_start(
     mut searchcb: mode_tree_search_cb,
     mut menucb: mode_tree_menu_fn,
     mut heightcb: mode_tree_height_fn,
-    mut keycb: mode_tree_key_cb,
+    mut keycb: mode_tree_key_fn,
     mut swapcb: mode_tree_swap_cb,
     mut sortcb: mode_tree_sort_cb,
     mut helpcb: mode_tree_help_cb,
@@ -617,7 +617,11 @@ pub unsafe extern "C" fn mode_tree_start(
         Box::new(move |height| callback(data, height))
             as Box<dyn FnMut(u_int) -> u_int>
     });
-    (*mtd).keycb = keycb;
+    (*mtd).keycb = keycb.map(|mut callback| {
+        let data = modedata;
+        Box::new(move |itemdata, line| callback(data, itemdata, line))
+            as Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>
+    });
     (*mtd).swapcb = swapcb;
     (*mtd).sortcb = sortcb;
     (*mtd).helpcb = helpcb;
@@ -2454,14 +2458,6 @@ mod mode_tree_tests {
     use super::*;
     use crate::src::shared::sort::sort_criteria;
 
-    unsafe extern "C" fn changing_key(
-        data: *mut ::core::ffi::c_void,
-        _: *mut ::core::ffi::c_void,
-        _: u_int,
-    ) -> key_code {
-        *(data as *const key_code)
-    }
-
     #[test]
     fn child_owners_preserve_search_order_and_survive_removal() {
         unsafe {
@@ -2520,8 +2516,8 @@ mod mode_tree_tests {
         unsafe {
             let mtd = mode_tree_alloc_data();
             let mut key = b'x' as key_code;
-            (*mtd).keycb = Some(changing_key);
-            (*mtd).modedata = (&raw mut key).cast();
+            let key_ptr = &raw const key;
+            (*mtd).keycb = Some(Box::new(move |_, _| unsafe { *key_ptr }));
             let item = mode_tree_add(
                 mtd,
                 ::core::ptr::null_mut(),
