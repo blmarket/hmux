@@ -260,17 +260,17 @@ unsafe extern "C" fn cmd_source_file_done(
         cmdq_continue(item);
     };
 }
-unsafe fn cmd_source_file_add(cdata: *mut cmd_source_file_data, path: *const ::core::ffi::c_char) {
+unsafe fn cmd_source_file_add(cdata: *mut cmd_source_file_data, path: &CStr) {
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_source_file_add\0" as *const u8 as *const ::core::ffi::c_char,
-        path,
+        path.as_ptr(),
     );
-    (*cdata).files.push(CStr::from_ptr(path).to_owned());
+    (*cdata).files.push(path.to_owned());
 }
-unsafe fn cmd_source_file_quote_for_glob(path: *const ::core::ffi::c_char) -> CString {
+unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     let mut quoted = Vec::new();
-    for &byte in CStr::from_ptr(path).to_bytes() {
+    for &byte in path.to_bytes() {
         if byte < 128
             && *(*__ctype_b_loc()).offset(byte as isize) as ::core::ffi::c_int
                 & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
@@ -349,10 +349,10 @@ unsafe extern "C" fn cmd_source_file_exec(
             (*cdata).flags |= CMD_PARSE_VERBOSE;
         }
     }
-    let cwd = cmd_source_file_quote_for_glob(server_client_get_cwd(
+    let cwd = cmd_source_file_quote_for_glob(CStr::from_ptr(server_client_get_cwd(
         c,
         ::core::ptr::null_mut::<session>(),
-    ));
+    )));
     i = 0 as u_int;
     while i < args_count(args) {
         path = args_string(args, i);
@@ -367,7 +367,7 @@ unsafe extern "C" fn cmd_source_file_exec(
         if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            cmd_source_file_add(cdata, b"-\0" as *const u8 as *const ::core::ffi::c_char);
+            cmd_source_file_add(cdata, c"-");
         } else {
             let pattern = if *path as ::core::ffi::c_int == '/' as i32 {
                 CStr::from_ptr(path).to_owned()
@@ -408,7 +408,7 @@ unsafe extern "C" fn cmd_source_file_exec(
                 drop(pattern);
                 j = 0 as u_int;
                 while (j as __size_t) < matches.len() {
-                    cmd_source_file_add(cdata, matches.path(j as usize));
+                    cmd_source_file_add(cdata, CStr::from_ptr(matches.path(j as usize)));
                     j = j.wrapping_add(1);
                 }
             }
