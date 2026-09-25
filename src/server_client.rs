@@ -220,8 +220,8 @@ pub type clients = ClientRegistry;
 #[no_mangle]
 pub static mut clients: ClientRegistry = ClientRegistry::new();
 
-pub(crate) unsafe fn server_client_set_message(c: *mut client, message: Option<CString>) {
-    (*c).message_string = message;
+pub(crate) fn server_client_set_message(c: &mut client, message: Option<CString>) {
+    c.message_string = message;
 }
 
 pub(crate) unsafe fn server_client_set_status_expanded(
@@ -324,7 +324,7 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).message_string.is_none());
 
-            server_client_set_message(c, Some(CString::new(vec![b'a', 0xff]).unwrap()));
+            server_client_set_message(&mut *c, Some(CString::new(vec![b'a', 0xff]).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).message_string)
@@ -336,7 +336,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_set_message(c, Some(CString::new(Vec::<u8>::new()).unwrap()));
+            server_client_set_message(&mut *c, Some(CString::new(Vec::<u8>::new()).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).message_string)
@@ -1569,7 +1569,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     key_bindings_unref_table((*c).keytable as *mut key_table);
     // Callbacks during client loss can set another message after the earlier
     // clear. Preserve the final release point before cancelling its timer.
-    server_client_set_message(c, None);
+    server_client_set_message(&mut *c, None);
     if event_initialized(&raw mut (*c).message_timer) != 0 {
         event_del(&raw mut (*c).message_timer);
     }

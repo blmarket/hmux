@@ -559,7 +559,7 @@ pub unsafe extern "C" fn status_message_set(
     }
     status_message_clear(c);
     status_push_screen(c);
-    server_client_set_message(c, Some(s));
+    server_client_set_message(&mut *c, Some(s));
     server_add_message(
         b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
         ((*c).name)
@@ -613,7 +613,7 @@ pub unsafe extern "C" fn status_message_clear(mut c: *mut client) {
     if (*c).message_string.is_none() {
         return;
     }
-    server_client_set_message(c, None);
+    server_client_set_message(&mut *c, None);
     if (*c).prompt.is_null() {
         (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
     }
