@@ -4,7 +4,6 @@ use crate::src::ffi::libc::{
     __errno_location, exit, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf, snprintf,
     strerror,
 };
-use crate::src::reactor::event_set_log_callback;
 use crate::src::shared::abi::*;
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
@@ -22,12 +21,6 @@ unsafe fn log_file_ptr() -> *mut FILE {
         .map_or(::core::ptr::null_mut::<FILE>(), CFile::as_ptr)
 }
 
-unsafe extern "C" fn log_event_cb(
-    _severity: ::core::ffi::c_int,
-    mut msg: *const ::core::ffi::c_char,
-) {
-    log_debug(b"%s\0" as *const u8 as *const ::core::ffi::c_char, msg);
-}
 #[no_mangle]
 pub unsafe extern "C" fn log_add_level() {
     log_level += 1;
@@ -63,9 +56,6 @@ pub unsafe extern "C" fn log_open(mut name: *const ::core::ffi::c_char) {
         _IOLBF,
         0 as size_t,
     );
-    event_set_log_callback(Some(
-        log_event_cb as unsafe extern "C" fn(::core::ffi::c_int, *const ::core::ffi::c_char) -> (),
-    ));
 }
 #[no_mangle]
 pub unsafe extern "C" fn log_toggle(mut name: *const ::core::ffi::c_char) {
@@ -82,7 +72,6 @@ pub unsafe extern "C" fn log_toggle(mut name: *const ::core::ffi::c_char) {
 #[no_mangle]
 pub unsafe extern "C" fn log_close() {
     log_file = None;
-    event_set_log_callback(None);
 }
 unsafe extern "C" fn log_vwrite(
     mut msg: *const ::core::ffi::c_char,

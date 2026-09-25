@@ -299,5 +299,3 @@ pub unsafe fn event_get_method() -> *const c_char {
 pub unsafe fn event_get_version() -> *const c_char {
     c"hmux-rt 0.1".as_ptr()
 }
-pub type event_log_cb = Option<unsafe extern "C" fn(c_int, *const c_char)>;
-pub unsafe fn event_set_log_callback(_: event_log_cb) {}
