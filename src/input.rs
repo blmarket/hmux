@@ -3035,7 +3035,8 @@ unsafe extern "C" fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
         }
         5 => {
             if (*s).cx < (*(*s).grid).sx {
-                screen_set_tab(s, (*s).cx, true);
+                let column = (*s).cx;
+                screen_set_tab(&mut *s, column, true);
             }
         }
         8 => {
@@ -3811,7 +3812,8 @@ unsafe extern "C" fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
                 -1 => {}
                 0 => {
                     if (*s).cx < (*(*s).grid).sx {
-                        screen_set_tab(s, (*s).cx, false);
+                        let column = (*s).cx;
+                        screen_set_tab(&mut *s, column, false);
                     }
                 }
                 3 => {

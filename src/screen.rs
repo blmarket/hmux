@@ -193,8 +193,8 @@ pub(crate) unsafe fn screen_share_hyperlinks(dst: *mut screen, src: *const scree
 pub(crate) unsafe fn screen_has_tab(s: *const screen, column: u_int) -> bool {
     *(&(*s).tabs).get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0
 }
-pub(crate) unsafe fn screen_set_tab(s: *mut screen, column: u_int, set: bool) {
-    let byte = (&mut (*s).tabs).get_unchecked_mut(column as usize / 8);
+pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
+    let byte = s.tabs.get_unchecked_mut(column as usize / 8);
     let mask = 1 << (column % 8);
     if set {
         *byte |= mask;
@@ -1134,9 +1134,9 @@ mod text_owner_tests {
             assert_eq!(current.title.as_c_str(), c"original");
 
             assert!(screen_has_tab(&raw const current, 8));
-            screen_set_tab(&raw mut current, 3, true);
+            screen_set_tab(&mut current, 3, true);
             assert!(screen_has_tab(&raw const current, 3));
-            screen_set_tab(&raw mut current, 8, false);
+            screen_set_tab(&mut current, 8, false);
             assert!(!screen_has_tab(&raw const current, 8));
             screen_clear_tabs(&raw mut current);
             assert!((0..10).all(|x| !screen_has_tab(&raw const current, x)));
