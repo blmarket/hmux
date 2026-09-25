@@ -2,7 +2,7 @@
 use crate::src::shared::abi::{size_t, ssize_t};
 pub use hmux_buffer::SegmentedBuf as evbuffer;
 use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf as ByteBuffer};
-use std::ffi::{c_char, c_int, c_void, VaList};
+use std::ffi::{c_char, c_int, c_void, CStr, VaList};
 
 pub unsafe fn evbuffer_new() -> *mut ByteBuffer {
     Box::into_raw(Box::new(ByteBuffer::default()))
@@ -124,7 +124,7 @@ pub unsafe extern "C" fn evbuffer_add_vprintf(
     fmt: *const c_char,
     args: VaList,
 ) -> c_int {
-    let Some(mut formatted) = format_buffer(fmt, args) else {
+    let Some(mut formatted) = format_buffer(CStr::from_ptr(fmt), args) else {
         return -1;
     };
     let count = formatted.remaining();
@@ -139,9 +139,8 @@ pub unsafe extern "C" fn evbuffer_add_vprintf(
 /// Moving this buffer with `append` preserves that allocation and capacity.
 ///
 /// # Safety
-/// `format` must be a valid NUL-terminated C format string, and `args` must
-/// contain valid arguments of the types required by that format.
-unsafe fn format_buffer(format: *const c_char, args: VaList) -> Option<ByteBuffer> {
+/// `args` must contain valid arguments of the types required by `format`.
+unsafe fn format_buffer(format: &CStr, args: VaList) -> Option<ByteBuffer> {
     let mut bytes = Vec::<u8>::with_capacity(1024);
     loop {
         // Each attempt consumes its own copy of the argument list.
@@ -149,7 +148,7 @@ unsafe fn format_buffer(format: *const c_char, args: VaList) -> Option<ByteBuffe
             crate::src::ffi::libc::vsnprintf(
                 bytes.as_mut_ptr().cast(),
                 bytes.capacity(),
-                format,
+                format.as_ptr(),
                 args.clone(),
             )
         };
@@ -176,7 +175,7 @@ mod tests {
         format: *const c_char,
         args: ...
     ) -> c_int {
-        let Some(mut formatted) = (unsafe { format_buffer(format, args.clone()) }) else {
+        let Some(mut formatted) = (unsafe { format_buffer(CStr::from_ptr(format), args.clone()) }) else {
             return -1;
         };
         let count = formatted.remaining();
