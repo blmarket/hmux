@@ -588,7 +588,7 @@ pub unsafe extern "C" fn session_destroy(
     }
     (*s).tio = None;
     (*s).tio = None;
-    if event_initialized(&raw mut (*s).lock_timer) != 0 {
+    if event_initialized(&(*s).lock_timer) != 0 {
         event_del(&raw mut (*s).lock_timer);
     }
     session_group_remove(s);
@@ -653,7 +653,7 @@ pub unsafe extern "C" fn session_update_activity(mut s: *mut session, mut from: 
         (*s).activity_time.tv_sec as ::core::ffi::c_longlong,
         (*s).activity_time.tv_usec as ::core::ffi::c_int,
     );
-    if event_initialized(&raw mut (*s).lock_timer) != 0 {
+    if event_initialized(&(*s).lock_timer) != 0 {
         event_del(&raw mut (*s).lock_timer);
     } else {
         event_set(

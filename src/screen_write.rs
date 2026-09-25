@@ -197,7 +197,7 @@ unsafe extern "C" fn screen_write_set_cursor(
         return;
     }
     w = (*wp).window as *mut window;
-    if event_initialized(&raw mut (*w).offset_timer) == 0 {
+    if event_initialized(&(*w).offset_timer) == 0 {
         event_set(
             &raw mut (*w).offset_timer,
             -(1 as ::core::ffi::c_int),
@@ -1564,7 +1564,7 @@ pub unsafe extern "C" fn screen_write_start_sync(mut wp: *mut window_pane) {
         return;
     }
     (*wp).base.mode |= MODE_SYNC;
-    if event_initialized(&raw mut (*wp).sync_timer) == 0 {
+    if event_initialized(&(*wp).sync_timer) == 0 {
         event_set(
             &raw mut (*wp).sync_timer,
             -(1 as ::core::ffi::c_int),
@@ -1592,7 +1592,7 @@ pub unsafe extern "C" fn screen_write_stop_sync(mut wp: *mut window_pane) {
     if wp.is_null() || !(*wp).base.mode & MODE_SYNC != 0 {
         return;
     }
-    if event_initialized(&raw mut (*wp).sync_timer) != 0 {
+    if event_initialized(&(*wp).sync_timer) != 0 {
         event_del(&raw mut (*wp).sync_timer);
     }
     (*wp).base.mode &= !MODE_SYNC;
@@ -5101,7 +5101,7 @@ pub unsafe extern "C" fn screen_write_alternateon(
     }
     if !wp.is_null() {
         window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
-        if event_initialized(&raw mut (*wp).resize_timer) != 0 {
+        if event_initialized(&(*wp).resize_timer) != 0 {
             event_del(&raw mut (*wp).resize_timer);
         }
         layout_fix_panes(

@@ -159,7 +159,7 @@ unsafe extern "C" fn status_timer_callback(
 #[no_mangle]
 pub unsafe extern "C" fn status_timer_start(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
-    if event_initialized(&raw mut (*c).status.timer) != 0 {
+    if event_initialized(&(*c).status.timer) != 0 {
         event_del(&raw mut (*c).status.timer);
     } else {
         event_set(
@@ -326,7 +326,7 @@ pub unsafe extern "C" fn status_free(mut c: *mut client) {
         server_client_set_status_expanded(&mut *c, i as usize, None);
         i = i.wrapping_add(1);
     }
-    if event_initialized(&raw mut (*sl).timer) != 0 {
+    if event_initialized(&(*sl).timer) != 0 {
         event_del(&raw mut (*sl).timer);
     }
     if (*sl).active != &raw mut (*sl).screen {
@@ -579,7 +579,7 @@ pub unsafe extern "C" fn status_message_set(
         tv.tv_sec = (delay / 1000 as ::core::ffi::c_int) as __time_t;
         tv.tv_usec = ((delay % 1000 as ::core::ffi::c_int) as ::core::ffi::c_long
             * 1000 as ::core::ffi::c_long) as __suseconds_t;
-        if event_initialized(&raw mut (*c).message_timer) != 0 {
+        if event_initialized(&(*c).message_timer) != 0 {
             event_del(&raw mut (*c).message_timer);
         }
         event_set(

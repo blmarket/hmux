@@ -687,7 +687,7 @@ pub unsafe extern "C" fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     if server_fd == -(1 as ::core::ffi::c_int) {
         return;
     }
-    if event_initialized(&raw mut server_ev_accept) != 0 {
+    if event_initialized(&*(&raw const server_ev_accept)) != 0 {
         event_del(&raw mut server_ev_accept);
     }
     if timeout == 0 as ::core::ffi::c_int {

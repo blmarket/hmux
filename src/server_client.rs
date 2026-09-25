@@ -910,7 +910,7 @@ pub unsafe extern "C" fn server_client_set_overlay(
     tv.tv_sec = delay.wrapping_div(1000 as u_int) as __time_t;
     tv.tv_usec = (delay.wrapping_rem(1000 as u_int) as ::core::ffi::c_long
         * 1000 as ::core::ffi::c_long) as __suseconds_t;
-    if event_initialized(&raw mut (*c).overlay_timer) != 0 {
+    if event_initialized(&(*c).overlay_timer) != 0 {
         event_del(&raw mut (*c).overlay_timer);
     }
     event_set(
@@ -951,7 +951,7 @@ pub unsafe extern "C" fn server_client_clear_overlay(mut c: *mut client) {
     if (*c).overlay_draw.is_none() {
         return;
     }
-    if event_initialized(&raw mut (*c).overlay_timer) != 0 {
+    if event_initialized(&(*c).overlay_timer) != 0 {
         event_del(&raw mut (*c).overlay_timer);
     }
     if (*c).overlay_free.is_some() {
@@ -1561,14 +1561,14 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     event_del(&raw mut (*c).repeat_timer);
     event_del(&raw mut (*c).click_timer);
     event_del(&raw mut (*c).exit_timer);
-    if event_initialized(&raw mut (*c).cycle_timer) != 0 {
+    if event_initialized(&(*c).cycle_timer) != 0 {
         event_del(&raw mut (*c).cycle_timer);
     }
     key_bindings_unref_table((*c).keytable as *mut key_table);
     // Callbacks during client loss can set another message after the earlier
     // clear. Preserve the final release point before cancelling its timer.
     server_client_set_message(&mut *c, None);
-    if event_initialized(&raw mut (*c).message_timer) != 0 {
+    if event_initialized(&(*c).message_timer) != 0 {
         event_del(&raw mut (*c).message_timer);
     }
     prompt_free((*c).prompt);
@@ -3558,7 +3558,7 @@ unsafe extern "C" fn server_client_check_pane_resize(mut wp: *mut window_pane) {
     if (*wp).resize_queue.is_empty() {
         return;
     }
-    if event_initialized(&raw mut (*wp).resize_timer) == 0 {
+    if event_initialized(&(*wp).resize_timer) == 0 {
         event_set(
             &raw mut (*wp).resize_timer,
             -(1 as ::core::ffi::c_int),
@@ -4239,7 +4239,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             );
         }
-        if event_initialized(&raw mut ev) == 0 {
+        if event_initialized(&ev) == 0 {
             event_set(
                 &raw mut ev,
                 -(1 as ::core::ffi::c_int),

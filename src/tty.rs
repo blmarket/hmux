@@ -864,7 +864,7 @@ pub unsafe extern "C" fn tty_stop_tty(mut tty: *mut tty) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn tty_close(mut tty: *mut tty) {
-    if event_initialized(&raw mut (*tty).key_timer) != 0 {
+    if event_initialized(&(*tty).key_timer) != 0 {
         event_del(&raw mut (*tty).key_timer);
     }
     tty_stop_tty(tty);

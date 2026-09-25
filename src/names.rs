@@ -138,7 +138,7 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
     gettimeofday(&raw mut tv, NULL);
     left = name_time_expired(w, &raw mut tv);
     if left != 0 as ::core::ffi::c_int {
-        if event_initialized(&raw mut (*w).name_event) == 0 {
+        if event_initialized(&(*w).name_event) == 0 {
             event_set(
                 &raw mut (*w).name_event,
                 -(1 as ::core::ffi::c_int),
@@ -184,7 +184,7 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
         &raw mut tv as *const ::core::ffi::c_void,
         ::core::mem::size_of::<timeval>() as size_t,
     );
-    if event_initialized(&raw mut (*w).name_event) != 0 {
+    if event_initialized(&(*w).name_event) != 0 {
         event_del(&raw mut (*w).name_event);
     }
     (*(*w).active).flags &= !PANE_CHANGED;

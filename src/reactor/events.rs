@@ -187,8 +187,8 @@ pub unsafe fn event_loop(flags: c_int) -> c_int {
     super::run_once(flags & 2 != 0);
     0
 }
-pub unsafe fn event_initialized(ev: *const event) -> c_int {
-    (*ev).initialized as c_int
+pub fn event_initialized(ev: &event) -> c_int {
+    ev.initialized as c_int
 }
 pub unsafe fn event_del(ev: *mut event) -> c_int {
     remove(ev as usize);

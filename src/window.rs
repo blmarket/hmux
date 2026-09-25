@@ -1302,13 +1302,13 @@ unsafe extern "C" fn window_destroy(mut w: *mut window) {
     drop(window_replace_old_layout(w, None));
     menu_destroy(w);
     window_destroy_panes(w);
-    if event_initialized(&raw mut (*w).name_event) != 0 {
+    if event_initialized(&(*w).name_event) != 0 {
         event_del(&raw mut (*w).name_event);
     }
-    if event_initialized(&raw mut (*w).alerts_timer) != 0 {
+    if event_initialized(&(*w).alerts_timer) != 0 {
         event_del(&raw mut (*w).alerts_timer);
     }
-    if event_initialized(&raw mut (*w).offset_timer) != 0 {
+    if event_initialized(&(*w).offset_timer) != 0 {
         event_del(&raw mut (*w).offset_timer);
     }
     options_free((*w).options);
@@ -3174,13 +3174,13 @@ unsafe extern "C" fn window_pane_destroy(mut wp: *mut window_pane) {
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     }
-    if event_initialized(&raw mut (*wp).resize_timer) != 0 {
+    if event_initialized(&(*wp).resize_timer) != 0 {
         event_del(&raw mut (*wp).resize_timer);
     }
-    if event_initialized(&raw mut (*wp).sync_timer) != 0 {
+    if event_initialized(&(*wp).sync_timer) != 0 {
         event_del(&raw mut (*wp).sync_timer);
     }
-    if event_initialized(&raw mut (*wp).sb_auto_timer) != 0 {
+    if event_initialized(&(*wp).sb_auto_timer) != 0 {
         event_del(&raw mut (*wp).sb_auto_timer);
     }
     window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
@@ -4573,7 +4573,7 @@ pub unsafe extern "C" fn window_pane_scrollbar_show(
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_scrollbar_hide(mut wp: *mut window_pane) {
-    if event_initialized(&raw mut (*wp).sb_auto_timer) != 0 {
+    if event_initialized(&(*wp).sb_auto_timer) != 0 {
         event_del(&raw mut (*wp).sb_auto_timer);
     }
     (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;

@@ -2117,7 +2117,7 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     buf,
                     key,
                 );
-                if event_initialized(&raw mut (*tty).key_timer) != 0 {
+                if event_initialized(&(*tty).key_timer) != 0 {
                     event_del(&raw mut (*tty).key_timer);
                 }
                 (*tty).flags &= !TTY_TIMER;
@@ -2165,7 +2165,7 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     buf,
                 );
                 if (*tty).flags & TTY_TIMER != 0 {
-                    if event_initialized(&raw mut (*tty).key_timer) != 0
+                    if event_initialized(&(*tty).key_timer) != 0
                         && event_pending(
                             &raw mut (*tty).key_timer,
                             EV_TIMEOUT as ::core::ffi::c_short,
@@ -2222,7 +2222,7 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     tv.tv_usec = ((delay % 1000 as ::core::ffi::c_int) as ::core::ffi::c_long
                         * 1000 as ::core::ffi::c_long)
                         as __suseconds_t;
-                    if event_initialized(&raw mut (*tty).key_timer) != 0 {
+                    if event_initialized(&(*tty).key_timer) != 0 {
                         event_del(&raw mut (*tty).key_timer);
                     }
                     event_set(

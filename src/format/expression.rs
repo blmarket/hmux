@@ -2238,7 +2238,7 @@ pub(super) unsafe extern "C" fn format_cycle_start_timer(mut c: *mut client) {
     tv.tv_sec = (FORMAT_CYCLE_PERIOD / 1000 as ::core::ffi::c_int) as __time_t;
     tv.tv_usec = ((FORMAT_CYCLE_PERIOD % 1000 as ::core::ffi::c_int) as ::core::ffi::c_long
         * 1000 as ::core::ffi::c_long) as __suseconds_t;
-    if event_initialized(&raw mut (*c).cycle_timer) == 0 {
+    if event_initialized(&(*c).cycle_timer) == 0 {
         event_set(
             &raw mut (*c).cycle_timer,
             -(1 as ::core::ffi::c_int),

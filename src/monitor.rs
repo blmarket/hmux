@@ -723,7 +723,7 @@ pub unsafe extern "C" fn monitor_destroy(mut ms: *mut monitor_set) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut me1: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     if !ms.is_null() {
-        if event_initialized(&raw mut (*ms).timer) != 0 {
+        if event_initialized(&(*ms).timer) != 0 {
             event_del(&raw mut (*ms).timer);
         }
         me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
@@ -861,7 +861,7 @@ pub unsafe extern "C" fn monitor_add(
     (*me).panes.storage = std::ptr::null_mut();
     (*me).windows.storage = std::ptr::null_mut();
     monitor_items_insert(&raw mut (*ms).items, me);
-    if event_initialized(&raw mut (*ms).timer) == 0 {
+    if event_initialized(&(*ms).timer) == 0 {
         event_set(
             &raw mut (*ms).timer,
             -(1 as ::core::ffi::c_int),
@@ -915,7 +915,7 @@ pub unsafe extern "C" fn monitor_remove(
     if !me.is_null() {
         monitor_free_item(ms, me);
     }
-    if (*ms).items.storage.is_null() && event_initialized(&raw mut (*ms).timer) != 0 {
+    if (*ms).items.storage.is_null() && event_initialized(&(*ms).timer) != 0 {
         event_del(&raw mut (*ms).timer);
     }
 }

@@ -218,7 +218,7 @@ unsafe extern "C" fn alerts_reset(mut w: *mut window) {
         tv_sec: 0,
         tv_usec: 0,
     };
-    if event_initialized(&raw mut (*w).alerts_timer) == 0 {
+    if event_initialized(&(*w).alerts_timer) == 0 {
         event_set(
             &raw mut (*w).alerts_timer,
             -(1 as ::core::ffi::c_int),
