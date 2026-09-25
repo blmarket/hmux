@@ -83,12 +83,12 @@ pub unsafe extern "C" fn window_position_is_visible(
 
 /// Grow the owned range storage and refresh its synchronous pointer view.
 /// Growing the vector invalidates prior element pointers.
-unsafe fn window_visible_ensure_ranges(wp: *mut window_pane, r: *mut visible_ranges, n: u_int) {
-    if r != &raw mut (*wp).r {
+unsafe fn window_visible_ensure_ranges(wp: &mut window_pane, r: *mut visible_ranges, n: u_int) {
+    if r != &raw mut wp.r {
         server_client_ensure_ranges(r, n);
         return;
     }
-    window_pane_ensure_visible_ranges(&mut *wp, n);
+    window_pane_ensure_visible_ranges(wp, n);
 }
 
 #[no_mangle]
@@ -151,7 +151,11 @@ pub unsafe extern "C" fn window_visible_ranges(
                         width = (*w).sx.wrapping_sub(px as u_int);
                     }
                     if r.is_null() {
-                        window_visible_ensure_ranges(base_wp, &raw mut (*base_wp).r, 1 as u_int);
+                        window_visible_ensure_ranges(
+                            &mut *base_wp,
+                            &raw mut (*base_wp).r,
+                            1 as u_int,
+                        );
                         r = &raw mut (*base_wp).r;
                         (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).px = px as u_int;
                         (*(*r).ranges.offset(0 as ::core::ffi::c_int as isize)).nx = width;
@@ -255,7 +259,7 @@ pub unsafe extern "C" fn window_visible_ranges(
                                                             (rb + 1 as ::core::ffi::c_int) as u_int;
                                                     } else if lb > sx && rb <= ex {
                                                         window_visible_ensure_ranges(
-                                                            base_wp,
+                                                            &mut *base_wp,
                                                             r,
                                                             (*r).used.wrapping_add(1 as u_int),
                                                         );
