@@ -1,6 +1,6 @@
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_callback1, cmdq_get_command,
+    cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_command,
     cmdq_insert_after, cmdq_new_state,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_list_print_cstring};
@@ -346,10 +346,7 @@ pub unsafe fn key_bindings_add_default(
     key_bindings_index_insert(&raw mut (*table).default_key_bindings, bd);
     bd
 }
-unsafe extern "C" fn key_bindings_init_done(
-    _item: *mut cmdq_item,
-    _data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
+unsafe fn key_bindings_init_done() -> cmd_retval {
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
     let mut bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut new_bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
@@ -1025,19 +1022,15 @@ pub unsafe extern "C" fn key_bindings_init() {
     }
     cmdq_append(
         ::core::ptr::null_mut::<client>(),
-        cmdq_get_callback1(
+        cmdq_get_callback_owned(
             b"key_bindings_init_done\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                key_bindings_init_done
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
-            ::core::ptr::null_mut::<::core::ffi::c_void>(),
+            Some(Box::new(|_| unsafe { key_bindings_init_done() })),
+            ::core::ptr::null_mut(),
         ),
     );
 }
-unsafe extern "C" fn key_bindings_read_only(
+unsafe fn key_bindings_read_only(
     mut item: *mut cmdq_item,
-    _data: *mut ::core::ffi::c_void,
 ) -> cmd_retval {
     cmdq_error(
         item,
@@ -1063,13 +1056,10 @@ pub unsafe extern "C" fn key_bindings_dispatch(
         readonly = cmd_list_all_have((*bd).cmdlist, CMD_READONLY);
     }
     if readonly == 0 {
-        new_item = cmdq_get_callback1(
+        new_item = cmdq_get_callback_owned(
             b"key_bindings_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                key_bindings_read_only
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
-            ::core::ptr::null_mut::<::core::ffi::c_void>(),
+            Some(Box::new(|item| unsafe { key_bindings_read_only(item) })),
+            ::core::ptr::null_mut(),
         );
     } else {
         if (*bd).flags & KEY_BINDING_REPEAT != 0 {

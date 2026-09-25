@@ -1,7 +1,7 @@
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_free_state, cmdq_get_callback1, cmdq_get_client, cmdq_guard, cmdq_new_state,
-    cmdq_set_cancel_data,
+    cmdq_append, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard,
+    cmdq_new_state,
 };
 use crate::src::ffi::libc::{__errno_location, close, memcpy, memset, poll, strcmp, strlen};
 use crate::src::ffi::libc::{nfds_t, pollfd};
@@ -978,12 +978,8 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
     window_pane_update_used_data(wp, &raw mut (*cp).offset, SIZE_MAX as size_t);
     window_pane_update_used_data(wp, &raw mut (*cp).queued, SIZE_MAX as size_t);
 }
-unsafe extern "C" fn control_error(
-    mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
+unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
-    let error = Box::from_raw(data as *mut Option<CString>);
     cmdq_guard(
         item,
         b"begin\0" as *const u8 as *const ::core::ffi::c_char,
@@ -992,22 +988,14 @@ unsafe extern "C" fn control_error(
     control_write(
         c,
         b"parse error: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        error
-            .as_ref()
-            .as_ref()
-            .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+        error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
     );
     cmdq_guard(
         item,
         b"error\0" as *const u8 as *const ::core::ffi::c_char,
         1 as ::core::ffi::c_int,
     );
-    drop(error);
     return CMD_RETURN_NORMAL;
-}
-
-unsafe fn control_cancel_error(data: *mut ::core::ffi::c_void) {
-    drop(Box::from_raw(data as *mut Option<CString>));
 }
 unsafe extern "C" fn control_error_callback(
     _bufev: *mut bufferevent,
@@ -1055,19 +1043,13 @@ unsafe extern "C" fn control_read_callback(
                 state,
             ) {
                 Err(error) => {
-                    let error_item = cmdq_get_callback1(
+                    let error_item = cmdq_get_callback_owned(
                         b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
-                        Some(
-                            control_error
-                                as unsafe extern "C" fn(
-                                    *mut cmdq_item,
-                                    *mut ::core::ffi::c_void,
-                                )
-                                    -> cmd_retval,
-                        ),
-                        Box::into_raw(Box::new(error)) as *mut ::core::ffi::c_void,
+                        Some(Box::new(move |item| unsafe {
+                            control_error(item, error)
+                        })),
+                        ::core::ptr::null_mut(),
                     );
-                    cmdq_set_cancel_data(&mut *error_item, control_cancel_error);
                     cmdq_append(c, error_item);
                 }
                 Ok(_) => {}

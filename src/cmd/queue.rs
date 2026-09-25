@@ -61,7 +61,7 @@ pub const CMDQ_COMMAND: cmdq_type = 0;
 unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
     let mut owner = Box::new(cmdq_item {
         name: None,
-        cancel_data: None,
+        cancel_cb: None,
         wait_file: ::core::ptr::null_mut(),
         ..cmdq_item::empty()
     });
@@ -80,26 +80,22 @@ unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
     Box::into_raw(owner)
 }
 
-/// Register the release path for callback data when this item is removed
-/// before its callback runs. The normal callback still owns its release.
-pub(crate) fn cmdq_set_cancel_data(
-    item: &mut cmdq_item,
-    cancel: unsafe fn(*mut ::core::ffi::c_void),
-) {
+/// Register cleanup to run when an unfired callback item is removed.
+pub(crate) fn cmdq_set_cancel_callback(item: &mut cmdq_item, cancel: Box<dyn FnOnce()>) {
     assert_eq!(item.type_0, CMDQ_CALLBACK);
     assert!(
-        item.cancel_data.is_none(),
+        item.cancel_cb.is_none(),
         "callback cancel hook already set"
     );
-    item.cancel_data = Some(cancel);
+    item.cancel_cb = Some(cancel);
 }
 
 unsafe fn cmdq_cancel_unfired_data(item: &mut cmdq_item) {
     if item.flags & CMDQ_FIRED != 0 {
         return;
     }
-    if let Some(cancel) = item.cancel_data.take() {
-        cancel(item.data);
+    if let Some(cancel) = item.cancel_cb.take() {
+        cancel();
     }
 }
 
@@ -573,12 +569,6 @@ unsafe extern "C" fn cmdq_remove_group(mut item: *mut cmdq_item) {
         }
     }
 }
-unsafe extern "C" fn cmdq_empty_command(
-    _item: *mut cmdq_item,
-    _data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
-    return CMD_RETURN_NORMAL;
-}
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_get_command(
     mut cmdlist: *mut cmd_list,
@@ -592,13 +582,10 @@ pub unsafe extern "C" fn cmdq_get_command(
     let mut created: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     cmd = cmd_list_first(cmdlist);
     if cmd.is_null() {
-        return cmdq_get_callback1(
+        return cmdq_get_callback_owned(
             b"cmdq_empty_command\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                cmdq_empty_command
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
-            ::core::ptr::null_mut::<::core::ffi::c_void>(),
+            Some(Box::new(|_| CMD_RETURN_NORMAL)),
+            ::core::ptr::null_mut(),
         );
     }
     if state.is_null() {
@@ -924,6 +911,7 @@ pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -
     )
 }
 unsafe extern "C" fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
+    (*item).flags |= CMDQ_FIRED;
     return (*item).cb.take().expect("non-null queue callback")(item);
 }
 #[no_mangle]
@@ -1176,10 +1164,6 @@ mod cancellation_tests {
         }
     }
 
-    unsafe fn cancel_payload(data: *mut ::core::ffi::c_void) {
-        drop(Box::from_raw(data.cast::<Payload>()));
-    }
-
     unsafe extern "C" fn record_and_insert(
         item: *mut cmdq_item,
         data: *mut ::core::ffi::c_void,
@@ -1240,9 +1224,13 @@ mod cancellation_tests {
     fn detached_unfired_callback_releases_its_payload() {
         let before = DROPPED.load(Ordering::SeqCst);
         unsafe {
-            let data = Box::into_raw(Box::new(Payload)).cast();
-            let item = cmdq_get_callback1(c"cancel-payload".as_ptr(), None, data);
-            cmdq_set_cancel_data(&mut *item, cancel_payload);
+            let payload = Box::new(Payload);
+            let item = cmdq_get_callback_owned(
+                c"cancel-payload".as_ptr(),
+                None,
+                std::ptr::null_mut(),
+            );
+            cmdq_set_cancel_callback(&mut *item, Box::new(move || drop(payload)));
             cmdq_free_detached(item);
         }
         assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1);

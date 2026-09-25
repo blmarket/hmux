@@ -3,8 +3,8 @@ use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::queue::{
-    cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback1, cmdq_get_client,
-    cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_set_cancel_data,
+    cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_free, cmdq_get_callback_owned,
+    cmdq_get_client, cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_log_argv};
 use crate::src::compat::imsg::imsg_get_fd;
@@ -2758,14 +2758,13 @@ unsafe extern "C" fn server_client_handle_dead_key(
     server_destroy_pane(wp, 0 as ::core::ffi::c_int);
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn server_client_key_callback(
+unsafe fn server_client_key_callback(
     mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
+    mut owned: QueuedKeyEvent,
 ) -> cmd_retval {
     let mut current_block: u64;
     // The queued callback owns the event and its bytes until this call returns.
-    let mut owned = Box::from_raw(data as *mut key_event);
-    let mut event: *mut key_event = &raw mut *owned;
+    let mut event: *mut key_event = &raw mut *owned.0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut ec: *mut client = (*event).client;
     let mut key: key_code = (*event).key;
@@ -3201,18 +3200,17 @@ unsafe extern "C" fn server_client_key_callback(
     if !s.is_null() && key != KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
         server_client_update_latest(c);
     }
-    if !ec.is_null() {
-        server_client_unref(ec);
-    }
     return CMD_RETURN_NORMAL;
 }
 
-unsafe fn server_client_key_cancel(data: *mut ::core::ffi::c_void) {
-    let owned = Box::from_raw(data as *mut key_event);
-    let ec = owned.client;
-    drop(owned);
-    if !ec.is_null() {
-        server_client_unref(ec);
+struct QueuedKeyEvent(Box<key_event>);
+
+impl Drop for QueuedKeyEvent {
+    fn drop(&mut self) {
+        let client = self.0.client;
+        if !client.is_null() {
+            unsafe { server_client_unref(client) };
+        }
     }
 }
 
@@ -3383,16 +3381,14 @@ unsafe fn server_client_handle_key0(
             }
         }
     }
-    let queued_event = Box::into_raw(owned);
-    item = cmdq_get_callback1(
+    let queued_event = QueuedKeyEvent(owned);
+    item = cmdq_get_callback_owned(
         b"server_client_key_callback\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(
-            server_client_key_callback
-                as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-        ),
-        queued_event as *mut ::core::ffi::c_void,
+        Some(Box::new(move |item| unsafe {
+            server_client_key_callback(item, queued_event)
+        })),
+        ::core::ptr::null_mut(),
     );
-    cmdq_set_cancel_data(&mut *item, server_client_key_cancel);
     if !after.is_null() {
         (*event).client = c;
         (*c).references += 1;
@@ -4534,20 +4530,14 @@ unsafe extern "C" fn server_client_dispatch(
         }
     };
 }
-unsafe extern "C" fn server_client_read_only(
-    mut item: *mut cmdq_item,
-    _data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
+unsafe fn server_client_read_only(mut item: *mut cmdq_item) -> cmd_retval {
     cmdq_error(
         item,
         b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
     );
     return CMD_RETURN_ERROR;
 }
-unsafe extern "C" fn server_client_default_command(
-    mut item: *mut cmdq_item,
-    _data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
+unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -4558,13 +4548,10 @@ unsafe extern "C" fn server_client_default_command(
     if (*c).flags & CLIENT_READONLY as uint64_t != 0
         && cmd_list_all_have(cmdlist, CMD_READONLY) == 0
     {
-        new_item = cmdq_get_callback1(
+        new_item = cmdq_get_callback_owned(
             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                server_client_read_only
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
-            ::core::ptr::null_mut::<::core::ffi::c_void>(),
+            Some(Box::new(|item| unsafe { server_client_read_only(item) })),
+            ::core::ptr::null_mut(),
         );
     } else {
         new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
@@ -4572,10 +4559,7 @@ unsafe extern "C" fn server_client_default_command(
     cmdq_insert_after(item, new_item);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn server_client_command_done(
-    mut item: *mut cmdq_item,
-    _data: *mut ::core::ffi::c_void,
-) -> cmd_retval {
+unsafe fn server_client_command_done(mut item: *mut cmdq_item) -> cmd_retval {
     let mut c: *mut client = cmdq_get_client(item);
     if !(*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         (*c).flags |= CLIENT_EXIT as uint64_t;
@@ -4634,16 +4618,10 @@ unsafe extern "C" fn server_client_dispatch_command(
         argv = decoded;
         argc = ::core::ffi::c_int::try_from(argv.len()).expect("argv length exceeds c_int");
         if argc == 0 as ::core::ffi::c_int {
-            new_item = cmdq_get_callback1(
+            new_item = cmdq_get_callback_owned(
                 b"server_client_default_command\0" as *const u8 as *const ::core::ffi::c_char,
-                Some(
-                    server_client_default_command
-                        as unsafe extern "C" fn(
-                            *mut cmdq_item,
-                            *mut ::core::ffi::c_void,
-                        ) -> cmd_retval,
-                ),
-                ::core::ptr::null_mut::<::core::ffi::c_void>(),
+                Some(Box::new(|item| unsafe { server_client_default_command(item) })),
+                ::core::ptr::null_mut(),
             );
             current_block = 13472856163611868459;
         } else {
@@ -4658,17 +4636,10 @@ unsafe extern "C" fn server_client_dispatch_command(
                     if (*c).flags & CLIENT_READONLY as uint64_t != 0
                         && cmd_list_all_have(pr.cmdlist, CMD_READONLY) == 0
                     {
-                        new_item = cmdq_get_callback1(
+                        new_item = cmdq_get_callback_owned(
                             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-                            Some(
-                                server_client_read_only
-                                    as unsafe extern "C" fn(
-                                        *mut cmdq_item,
-                                        *mut ::core::ffi::c_void,
-                                    )
-                                        -> cmd_retval,
-                            ),
-                            ::core::ptr::null_mut::<::core::ffi::c_void>(),
+                            Some(Box::new(|item| unsafe { server_client_read_only(item) })),
+                            ::core::ptr::null_mut(),
                         );
                     } else {
                         new_item =
@@ -4685,17 +4656,10 @@ unsafe extern "C" fn server_client_dispatch_command(
                 cmdq_append(c, new_item);
                 cmdq_append(
                     c,
-                    cmdq_get_callback1(
+                    cmdq_get_callback_owned(
                         b"server_client_command_done\0" as *const u8 as *const ::core::ffi::c_char,
-                        Some(
-                            server_client_command_done
-                                as unsafe extern "C" fn(
-                                    *mut cmdq_item,
-                                    *mut ::core::ffi::c_void,
-                                )
-                                    -> cmd_retval,
-                        ),
-                        ::core::ptr::null_mut::<::core::ffi::c_void>(),
+                        Some(Box::new(|item| unsafe { server_client_command_done(item) })),
+                        ::core::ptr::null_mut(),
                     ),
                 );
                 return 0 as ::core::ffi::c_int;
@@ -5440,7 +5404,7 @@ mod client_registry_tests {
 
 #[cfg(test)]
 mod key_event_owner_tests {
-    use super::{client, key_event, server_client_handle_key, server_client_key_cancel};
+    use super::{client, key_event, server_client_handle_key, QueuedKeyEvent};
 
     #[test]
     fn absent_and_empty_bytes_remain_distinct_in_snapshots() {
@@ -5468,7 +5432,7 @@ mod key_event_owner_tests {
             client.references = 2;
             let mut queued = key_event::new(2, mouse, Some(vec![2]));
             queued.client = pointer;
-            server_client_key_cancel(Box::into_raw(queued).cast());
+            drop(QueuedKeyEvent(queued));
             assert_eq!(client.references, 1);
         }
     }

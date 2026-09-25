@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_get_callback_owned, cmdq_set_cancel_data,
+    cmdq_append, cmdq_get_callback_owned, cmdq_set_cancel_callback,
 };
 use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strstr};
 use crate::src::format::{
@@ -1971,8 +1971,8 @@ unsafe fn window_tree_command_done(mut data: *mut window_tree_modedata) -> cmd_r
     window_tree_destroy(data);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn window_tree_cancel_command_done(modedata: *mut ::core::ffi::c_void) {
-    window_tree_destroy(modedata.cast::<window_tree_modedata>());
+unsafe fn window_tree_cancel_command_done(modedata: *mut window_tree_modedata) {
+    window_tree_destroy(modedata);
 }
 unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tree_modedata) {
     (*data).references += 1;
@@ -1981,9 +1981,14 @@ unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tre
         Some(Box::new(move |_| unsafe {
             window_tree_command_done(data)
         })),
-        data as *mut ::core::ffi::c_void,
+        ::core::ptr::null_mut(),
     );
-    cmdq_set_cancel_data(&mut *item, window_tree_cancel_command_done);
+    cmdq_set_cancel_callback(
+        &mut *item,
+        Box::new(move || unsafe {
+            window_tree_cancel_command_done(data)
+        }),
+    );
     cmdq_append(c, item);
 }
 unsafe extern "C" fn window_tree_command_callback(

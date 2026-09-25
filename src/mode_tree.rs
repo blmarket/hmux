@@ -1,8 +1,8 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_free_state, cmdq_get_callback1, cmdq_get_client, cmdq_new_state,
-    cmdq_set_cancel_data,
+    cmdq_append, cmdq_free_state, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
+    cmdq_set_cancel_callback,
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::{
@@ -1452,11 +1452,10 @@ pub unsafe extern "C" fn mode_tree_clear_prompt(mut mtd: *mut mode_tree_data) {
 pub unsafe extern "C" fn mode_tree_has_prompt(mut mtd: *mut mode_tree_data) -> ::core::ffi::c_int {
     return ((*mtd).prompt != NULL as *mut prompt) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn mode_tree_prompt_accept(
+unsafe fn mode_tree_prompt_accept(
     mut item: *mut cmdq_item,
-    mut data: *mut ::core::ffi::c_void,
+    mut mtd: *mut mode_tree_data,
 ) -> cmd_retval {
-    let mut mtd: *mut mode_tree_data = data as *mut mode_tree_data;
     let mut c: *mut client = cmdq_get_client(item);
     let mut key: key_code = 'y' as i32 as key_code;
     if !(*mtd).prompt.is_null() && !c.is_null() {
@@ -1472,8 +1471,8 @@ unsafe extern "C" fn mode_tree_prompt_accept(
     mode_tree_remove_ref(mtd);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn mode_tree_cancel_prompt_accept(data: *mut ::core::ffi::c_void) {
-    mode_tree_remove_ref(data.cast::<mode_tree_data>());
+unsafe fn mode_tree_cancel_prompt_accept(mtd: *mut mode_tree_data) {
+    mode_tree_remove_ref(mtd);
 }
 unsafe extern "C" fn mode_tree_prompt_input_callback(
     mut data: *mut ::core::ffi::c_void,
@@ -1609,15 +1608,19 @@ pub unsafe extern "C" fn mode_tree_set_prompt(
     (*(*mtd).wp).flags |= PANE_REDRAW;
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && !c.is_null() {
         (*mtd).references = (*mtd).references.wrapping_add(1);
-        let item = cmdq_get_callback1(
+        let item = cmdq_get_callback_owned(
             b"mode_tree_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(
-                mode_tree_prompt_accept
-                    as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-            ),
-            mtd as *mut ::core::ffi::c_void,
+            Some(Box::new(move |item| unsafe {
+                mode_tree_prompt_accept(item, mtd)
+            })),
+            ::core::ptr::null_mut(),
         );
-        cmdq_set_cancel_data(&mut *item, mode_tree_cancel_prompt_accept);
+        cmdq_set_cancel_callback(
+            &mut *item,
+            Box::new(move || unsafe {
+                mode_tree_cancel_prompt_accept(mtd)
+            }),
+        );
         cmdq_append(c, item);
     }
 }

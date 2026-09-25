@@ -1,8 +1,8 @@
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::src::cmd::queue::{
-    cmdq_continue, cmdq_error, cmdq_get_callback1, cmdq_get_client, cmdq_get_target,
-    cmdq_insert_after, cmdq_set_cancel_data,
+    cmdq_continue, cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_get_target,
+    cmdq_insert_after, cmdq_set_cancel_callback,
 };
 use crate::src::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
@@ -97,15 +97,16 @@ unsafe fn cmd_source_file_decrement_depth(cdata: &cmd_source_file_data) {
     }
 }
 unsafe fn cmd_source_file_cancel_complete(data: *mut ::core::ffi::c_void) {
-    let cdata = data as *mut cmd_source_file_data;
+    cmd_source_file_cancel_complete_typed(data.cast());
+}
+unsafe fn cmd_source_file_cancel_complete_typed(cdata: *mut cmd_source_file_data) {
     cmd_source_file_decrement_depth(&*cdata);
     cmd_source_file_free_data(cdata);
 }
-unsafe extern "C" fn cmd_source_file_complete_cb(
+unsafe fn cmd_source_file_complete_cb(
     item: *mut cmdq_item,
-    data: *mut ::core::ffi::c_void,
+    cdata: *mut cmd_source_file_data,
 ) -> cmd_retval {
-    let cdata = data as *mut cmd_source_file_data;
     cmd_source_file_decrement_depth(&*cdata);
     cfg_print_causes(item);
     cmd_source_file_free_data(cdata);
@@ -124,15 +125,19 @@ unsafe extern "C" fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_da
     {
         (*c).retval = 1 as ::core::ffi::c_int;
     }
-    new_item = cmdq_get_callback1(
+    new_item = cmdq_get_callback_owned(
         b"cmd_source_file_complete_cb\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(
-            cmd_source_file_complete_cb
-                as unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-        ),
-        cdata as *mut ::core::ffi::c_void,
+        Some(Box::new(move |item| unsafe {
+            cmd_source_file_complete_cb(item, cdata)
+        })),
+        ::core::ptr::null_mut(),
     );
-    cmdq_set_cancel_data(&mut *new_item, cmd_source_file_cancel_complete);
+    cmdq_set_cancel_callback(
+        &mut *new_item,
+        Box::new(move || unsafe {
+            cmd_source_file_cancel_complete_typed(cdata)
+        }),
+    );
     cmdq_insert_after((*cdata).after, new_item);
 }
 unsafe extern "C" fn cmd_source_file_done(
