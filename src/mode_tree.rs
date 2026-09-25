@@ -45,7 +45,8 @@ use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_build_fn, mode_tree_data, mode_tree_draw_cb,
     mode_tree_height_cb,
     mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line,
-    mode_tree_list, mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb,
+    mode_tree_list, mode_tree_menu_cb, mode_tree_menu_fn, mode_tree_prompt,
+    mode_tree_prompt_input_cb,
     mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
@@ -558,7 +559,7 @@ pub unsafe extern "C" fn mode_tree_start(
     mut buildcb: mode_tree_build_fn,
     mut drawcb: mode_tree_draw_cb,
     mut searchcb: mode_tree_search_cb,
-    mut menucb: mode_tree_menu_cb,
+    mut menucb: mode_tree_menu_fn,
     mut heightcb: mode_tree_height_cb,
     mut keycb: mode_tree_key_cb,
     mut swapcb: mode_tree_swap_cb,
@@ -606,7 +607,11 @@ pub unsafe extern "C" fn mode_tree_start(
     });
     (*mtd).drawcb = drawcb;
     (*mtd).searchcb = searchcb;
-    (*mtd).menucb = menucb;
+    (*mtd).menucb = menucb.map(|mut callback| {
+        let data = modedata;
+        Box::new(move |client, key| callback(data, client, key))
+            as Box<dyn FnMut(*mut client, key_code)>
+    });
     (*mtd).heightcb = heightcb;
     (*mtd).keycb = keycb;
     (*mtd).swapcb = swapcb;
@@ -1832,7 +1837,9 @@ unsafe extern "C" fn mode_tree_display_menu(
                     && line < mode_tree_line_count(&*mtd)
                 {
                     (*mtd).current = line;
-                    (*mtd).menucb.expect("non-null function pointer")((*mtd).modedata, c, key);
+                    if let Some(callback) = (*mtd).menucb.as_mut() {
+                        callback(c, key);
+                    }
                 }
             }
             mode_tree_remove_ref(mtd);
