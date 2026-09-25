@@ -1469,7 +1469,7 @@ unsafe extern "C" fn prompt_replace_complete(
     if s.is_null() {
         allocated = prompt_complete(
             pr,
-            &raw mut word as *mut ::core::ffi::c_char,
+            CStr::from_ptr(word.as_ptr()),
             first.offset_from(prompt_buffer_cells(pr)) as ::core::ffi::c_long as u_int,
         );
         let Some(completion) = allocated.as_ref() else {
@@ -10565,24 +10565,22 @@ pub unsafe extern "C" fn prompt_key(
     }
     return result;
 }
-unsafe fn prompt_complete_add(list: &mut Vec<CString>, s: &CStr) {
+fn prompt_complete_add(list: &mut Vec<CString>, s: &CStr) {
     if !list.iter().any(|name| name.as_bytes() == s.to_bytes()) {
         list.push(s.to_owned());
     }
 }
-unsafe fn prompt_complete_commands(s: *const ::core::ffi::c_char) -> Vec<CString> {
+unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     let mut list = Vec::new();
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmdent: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
-    let mut slen: size_t = strlen(s);
-    let mut valuelen: size_t = 0;
+    let prefix = s.to_bytes();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     cmdent = &raw mut cmd_table as *mut *const cmd_entry;
     while !(*cmdent).is_null() {
-        if strncmp((**cmdent).name, s, slen) == 0 as ::core::ffi::c_int {
-            prompt_complete_add(&mut list, CStr::from_ptr((**cmdent).name));
+        let name = CStr::from_ptr((**cmdent).name);
+        if name.to_bytes().starts_with(prefix) {
+            prompt_complete_add(&mut list, name);
         }
         cmdent = cmdent.offset(1);
     }
@@ -10593,12 +10591,10 @@ unsafe fn prompt_complete_commands(s: *const ::core::ffi::c_char) -> Vec<CString
     if !o.is_null() {
         a = options_array_first(o);
         while !a.is_null() {
-            value = (*options_array_item_value(a)).string_ptr();
-            cp = strchr(value, '=' as i32);
-            if !cp.is_null() {
-                valuelen = cp.offset_from(value) as ::core::ffi::c_long as size_t;
-                if !(slen > valuelen || strncmp(value, s, slen) != 0 as ::core::ffi::c_int) {
-                    let alias = CString::new(&CStr::from_ptr(value).to_bytes()[..valuelen])
+            let value = CStr::from_ptr((*options_array_item_value(a)).string_ptr());
+            if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
+                if prefix.len() <= separator && &value.to_bytes()[..prefix.len()] == prefix {
+                    let alias = CString::new(&value.to_bytes()[..separator])
                         .expect("alias prefix contains no NUL");
                     prompt_complete_add(&mut list, alias.as_c_str());
                 }
@@ -10639,7 +10635,7 @@ unsafe fn prompt_store_complete(mut pr: *mut prompt, list: Vec<CString>) {
 }
 unsafe fn prompt_complete(
     mut pr: *mut prompt,
-    mut word: *const ::core::ffi::c_char,
+    word: &CStr,
     mut offset: u_int,
 ) -> Option<CString> {
     let mut list: Vec<CString>;
@@ -10647,7 +10643,7 @@ unsafe fn prompt_complete(
     if (*pr).type_0 as ::core::ffi::c_uint
         != PROMPT_TYPE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
         || offset != 0 as u_int
-        || *word as ::core::ffi::c_int == '\0' as i32
+        || word.to_bytes().is_empty()
     {
         return None;
     }
@@ -10672,7 +10668,7 @@ unsafe fn prompt_complete(
     } else {
         prompt_complete_prefix(&list)
     };
-    if strcmp(word, out.as_ptr()) != 0 as ::core::ffi::c_int {
+    if word != out.as_c_str() {
         return Some(out);
     }
     if list.len() <= 1 {
