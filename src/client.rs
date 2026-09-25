@@ -507,7 +507,13 @@ pub unsafe fn client_main(
         cfsetospeed(&raw mut tio, cfgetospeed(&raw mut saved_tio));
         tcsetattr(STDIN_FILENO, TCSANOW, &raw mut tio);
     }
-    client_send_identify(ttynam, termname, &caps, cwd, feat);
+    client_send_identify(
+        CStr::from_ptr(ttynam),
+        CStr::from_ptr(termname),
+        &caps,
+        CStr::from_ptr(cwd),
+        feat,
+    );
     proc_flush_peer(client_peer);
     if msg as ::core::ffi::c_uint == MSG_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint {
         size = 0 as size_t;
@@ -632,10 +638,10 @@ pub unsafe fn client_main(
     return client_exitval;
 }
 unsafe fn client_send_identify(
-    mut ttynam: *const ::core::ffi::c_char,
-    mut termname: *const ::core::ffi::c_char,
+    ttynam: &CStr,
+    termname: &CStr,
     caps: &[CString],
-    mut cwd: *const ::core::ffi::c_char,
+    cwd: &CStr,
     mut feat: ::core::ffi::c_int,
 ) {
     let mut ss: *mut *mut ::core::ffi::c_char = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -661,8 +667,8 @@ unsafe fn client_send_identify(
         client_peer,
         MSG_IDENTIFY_TERM,
         -(1 as ::core::ffi::c_int),
-        termname as *const ::core::ffi::c_void,
-        strlen(termname).wrapping_add(1 as size_t),
+        termname.as_ptr() as *const ::core::ffi::c_void,
+        termname.to_bytes_with_nul().len() as size_t,
     );
     proc_send(
         client_peer,
@@ -675,15 +681,15 @@ unsafe fn client_send_identify(
         client_peer,
         MSG_IDENTIFY_TTYNAME,
         -(1 as ::core::ffi::c_int),
-        ttynam as *const ::core::ffi::c_void,
-        strlen(ttynam).wrapping_add(1 as size_t),
+        ttynam.as_ptr() as *const ::core::ffi::c_void,
+        ttynam.to_bytes_with_nul().len() as size_t,
     );
     proc_send(
         client_peer,
         MSG_IDENTIFY_CWD,
         -(1 as ::core::ffi::c_int),
-        cwd as *const ::core::ffi::c_void,
-        strlen(cwd).wrapping_add(1 as size_t),
+        cwd.as_ptr() as *const ::core::ffi::c_void,
+        cwd.to_bytes_with_nul().len() as size_t,
     );
     for cap in caps {
         proc_send(
