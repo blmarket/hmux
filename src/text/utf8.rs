@@ -69,8 +69,8 @@ pub const WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX;
 // The old comparator ordered entries only by their signed wchar_t value.
 // BTreeMap has the same ordering, while its entry API preserves the tree's
 // duplicate-insertion behavior of returning the existing item.
-unsafe fn utf8_width_cache_find(head: *mut utf8_width_cache, wc: wchar_t) -> *mut utf8_width_item {
-    (*head)
+fn utf8_width_cache_find(head: &utf8_width_cache, wc: wchar_t) -> *mut utf8_width_item {
+    head
         .entries
         .get(&wc)
         .copied()
@@ -78,26 +78,26 @@ unsafe fn utf8_width_cache_find(head: *mut utf8_width_cache, wc: wchar_t) -> *mu
 }
 
 unsafe fn utf8_width_cache_insert(
-    head: *mut utf8_width_cache,
-    elm: *mut utf8_width_item,
+    head: &mut utf8_width_cache,
+    elm: &mut utf8_width_item,
 ) -> *mut utf8_width_item {
-    match (*head).entries.entry((*elm).wc) {
+    match head.entries.entry(elm.wc) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
+            entry.insert(&raw mut *elm);
             ::core::ptr::null_mut::<utf8_width_item>()
         }
     }
 }
 
 unsafe fn utf8_width_cache_minmax(
-    head: *mut utf8_width_cache,
+    head: &utf8_width_cache,
     val: ::core::ffi::c_int,
 ) -> *mut utf8_width_item {
     let entry = if val < 0 {
-        (*head).entries.iter().next()
+        head.entries.iter().next()
     } else {
-        (*head).entries.iter().next_back()
+        head.entries.iter().next_back()
     };
     entry
         .map(|(_, entry)| *entry)
@@ -105,13 +105,13 @@ unsafe fn utf8_width_cache_minmax(
 }
 
 unsafe fn utf8_width_cache_next(
-    head: *mut utf8_width_cache,
-    elm: *mut utf8_width_item,
+    head: &utf8_width_cache,
+    elm: &utf8_width_item,
 ) -> *mut utf8_width_item {
-    (*head)
+    head
         .entries
         .range((
-            std::ops::Bound::Excluded((*elm).wc),
+            std::ops::Bound::Excluded(elm.wc),
             std::ops::Bound::Unbounded,
         ))
         .next()
@@ -120,12 +120,11 @@ unsafe fn utf8_width_cache_next(
 }
 
 unsafe fn utf8_width_cache_remove(
-    head: *mut utf8_width_cache,
-    elm: *mut utf8_width_item,
+    head: &mut utf8_width_cache,
+    elm: &utf8_width_item,
 ) -> *mut utf8_width_item {
-    (*head)
-        .entries
-        .remove(&(*elm).wc)
+    head.entries
+        .remove(&elm.wc)
         .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
 }
 
@@ -1033,7 +1032,7 @@ unsafe extern "C" fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
     return utf8_index_tree_find(&*(&raw const utf8_index_tree), ui.index);
 }
 unsafe extern "C" fn utf8_find_in_width_cache(mut wc: wchar_t) -> *mut utf8_width_item {
-    return utf8_width_cache_find(&raw mut utf8_width_cache, wc);
+    return utf8_width_cache_find(&*(&raw const utf8_width_cache), wc);
 }
 unsafe extern "C" fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) {
     let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
@@ -1048,13 +1047,13 @@ unsafe extern "C" fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) 
         width,
         allocated: 1,
     }));
-    old = utf8_width_cache_insert(&raw mut utf8_width_cache, uw);
+    old = utf8_width_cache_insert(&mut *(&raw mut utf8_width_cache), &mut *uw);
     if !old.is_null() {
-        utf8_width_cache_remove(&raw mut utf8_width_cache, old);
+        utf8_width_cache_remove(&mut *(&raw mut utf8_width_cache), &*old);
         if (*old).allocated != 0 {
             drop(Box::from_raw(old));
         }
-        utf8_width_cache_insert(&raw mut utf8_width_cache, uw);
+        utf8_width_cache_insert(&mut *(&raw mut utf8_width_cache), &mut *uw);
     }
 }
 unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) {
@@ -1193,12 +1192,12 @@ pub unsafe extern "C" fn utf8_update_width_cache() {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut i: u_int = 0;
-    uw = utf8_width_cache_minmax(&raw mut utf8_width_cache, RB_NEGINF);
+    uw = utf8_width_cache_minmax(&*(&raw const utf8_width_cache), RB_NEGINF);
     while !uw.is_null() && {
-        uw1 = utf8_width_cache_next(&raw mut utf8_width_cache, uw);
+        uw1 = utf8_width_cache_next(&*(&raw const utf8_width_cache), &*uw);
         1 as ::core::ffi::c_int != 0
     } {
-        utf8_width_cache_remove(&raw mut utf8_width_cache, uw);
+        utf8_width_cache_remove(&mut *(&raw mut utf8_width_cache), &*uw);
         if (*uw).allocated != 0 {
             drop(Box::from_raw(uw));
         }
@@ -1210,9 +1209,8 @@ pub unsafe extern "C" fn utf8_update_width_cache() {
             .wrapping_div(::core::mem::size_of::<utf8_width_item>() as usize)
     {
         utf8_width_cache_insert(
-            &raw mut utf8_width_cache,
-            (&raw mut utf8_default_width_cache as *mut utf8_width_item).offset(i as isize)
-                as *mut utf8_width_item,
+            &mut *(&raw mut utf8_width_cache),
+            &mut *((&raw mut utf8_default_width_cache as *mut utf8_width_item).offset(i as isize)),
         );
         i = i.wrapping_add(1);
     }
@@ -2190,11 +2188,11 @@ mod tests {
 
             let first = &mut items[0] as *mut utf8_width_item;
             let duplicate = &mut items[3] as *mut utf8_width_item;
-            assert!(utf8_width_cache_insert(&raw mut cache, first).is_null());
-            assert!(utf8_width_cache_insert(&raw mut cache, &mut items[1]).is_null());
-            assert!(utf8_width_cache_insert(&raw mut cache, &mut items[2]).is_null());
+            assert!(utf8_width_cache_insert(&mut cache, &mut *first).is_null());
+            assert!(utf8_width_cache_insert(&mut cache, &mut items[1]).is_null());
+            assert!(utf8_width_cache_insert(&mut cache, &mut items[2]).is_null());
             assert_eq!(
-                utf8_width_cache_insert(&raw mut cache, duplicate),
+                utf8_width_cache_insert(&mut cache, &mut *duplicate),
                 first,
                 "duplicate codepoints keep the original item"
             );
@@ -2203,24 +2201,24 @@ mod tests {
                 cache.entries.keys().copied().collect::<Vec<_>>(),
                 vec![-1, 0, 7]
             );
-            assert_eq!(utf8_width_cache_find(&raw mut cache, 7), first);
-            assert!(utf8_width_cache_find(&raw mut cache, 8).is_null());
+            assert_eq!(utf8_width_cache_find(&cache, 7), first);
+            assert!(utf8_width_cache_find(&cache, 8).is_null());
             assert_eq!(
-                utf8_width_cache_minmax(&raw mut cache, RB_NEGINF),
+                utf8_width_cache_minmax(&cache, RB_NEGINF),
                 &mut items[1] as *mut utf8_width_item
             );
             assert_eq!(
-                utf8_width_cache_next(&raw mut cache, &mut items[1]),
+                utf8_width_cache_next(&cache, &items[1]),
                 &mut items[2] as *mut utf8_width_item
             );
             assert_eq!(
-                utf8_width_cache_minmax(&raw mut cache, 0),
+                utf8_width_cache_minmax(&cache, 0),
                 first,
                 "non-negative minmax selects the maximum"
             );
 
-            assert_eq!(utf8_width_cache_remove(&raw mut cache, first), first);
-            assert!(utf8_width_cache_find(&raw mut cache, 7).is_null());
+            assert_eq!(utf8_width_cache_remove(&mut cache, &*first), first);
+            assert!(utf8_width_cache_find(&cache, 7).is_null());
         }
     }
 
@@ -2275,7 +2273,7 @@ mod tests {
 
             for codepoint in [0xE010, 0xE011, 0xE012, 0xE013, 0xE020, 0xE040, 'z' as i32] {
                 let item = utf8_find_in_width_cache(codepoint);
-                utf8_width_cache_remove(&raw mut utf8_width_cache, item);
+                utf8_width_cache_remove(&mut *(&raw mut utf8_width_cache), &*item);
                 drop(Box::from_raw(item));
             }
         }
