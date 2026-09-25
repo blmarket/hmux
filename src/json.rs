@@ -220,8 +220,8 @@ pub unsafe fn json_parse(
     if *input as ::core::ffi::c_int == '\0' as i32 {
         json_error(
             cause.as_mut(),
-            b"empty input\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::ptr::null::<::core::ffi::c_char>(),
+            c"empty input",
+            None,
         );
         return ::core::ptr::null_mut::<json_node>();
     }
@@ -498,18 +498,18 @@ pub unsafe fn json_find_array(
 }
 unsafe fn json_error(
     cause: Option<&mut Option<CString>>,
-    mut reason: *const ::core::ffi::c_char,
-    mut loc: *const ::core::ffi::c_char,
+    reason: &CStr,
+    loc: Option<&CStr>,
 ) {
     let Some(cause) = cause else {
         return;
     };
-    if loc.is_null() || *loc as ::core::ffi::c_int == '\0' as i32 {
-        *cause = Some(CStr::from_ptr(reason).to_owned());
+    let Some(loc) = loc.filter(|loc| !loc.to_bytes().is_empty()) else {
+        *cause = Some(reason.to_owned());
         return;
-    }
-    let reason = CStr::from_ptr(reason).to_bytes();
-    let loc = CStr::from_ptr(loc).to_bytes();
+    };
+    let reason = reason.to_bytes();
+    let loc = loc.to_bytes();
     let context_len = loc.len().min(ERROR_CTX_LEN as usize);
     let mut message = Vec::with_capacity(reason.len() + 2 + context_len + 3);
     message.extend_from_slice(reason);
@@ -590,8 +590,8 @@ unsafe fn json_tokenize_input(
         2526103352432062781 => {
             json_error(
                 cause.as_mut(),
-                b"tokenization error\0" as *const u8 as *const ::core::ffi::c_char,
-                loc,
+                c"tokenization error",
+                Some(CStr::from_ptr(loc)),
             );
             return None;
         }
@@ -811,8 +811,8 @@ unsafe fn json_parse_tokens(
             {
                 json_error(
                     (*pctx).cause.as_mut(),
-                    b"unexpected trailing data\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*pctx).input.offset((*tok).offset as isize),
+                    c"unexpected trailing data",
+                    Some(CStr::from_ptr((*pctx).input.offset((*tok).offset as isize))),
                 );
             } else {
                 return jn;
@@ -821,8 +821,8 @@ unsafe fn json_parse_tokens(
     } else {
         json_error(
             (*pctx).cause.as_mut(),
-            b"expected object\0" as *const u8 as *const ::core::ffi::c_char,
-            (*pctx).input.offset((*tok).offset as isize),
+            c"expected object",
+            Some(CStr::from_ptr((*pctx).input.offset((*tok).offset as isize))),
         );
     }
     if !jn.is_null() {
@@ -864,8 +864,8 @@ unsafe fn json_parse_key(
     }
     json_error(
         (*pctx).cause.as_mut(),
-        b"invalid key\0" as *const u8 as *const ::core::ffi::c_char,
-        start,
+        c"invalid key",
+        Some(CStr::from_ptr(start)),
     );
     return None;
 }
@@ -888,8 +888,8 @@ unsafe extern "C" fn json_parse_object(
     if (*pctx).depth > PARSE_DEPTH_MAX {
         json_error(
             (*pctx).cause.as_mut(),
-            b"parse depth exceeded\0" as *const u8 as *const ::core::ffi::c_char,
-            (*pctx).input.offset((**tok).offset as isize),
+            c"parse depth exceeded",
+            Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
         );
         return ::core::ptr::null_mut::<json_node>();
     }
@@ -911,8 +911,8 @@ unsafe extern "C" fn json_parse_object(
         if !json_find(object, fkey.as_ptr()).is_null() {
             json_error(
                 (*pctx).cause.as_mut(),
-                b"duplicate key\0" as *const u8 as *const ::core::ffi::c_char,
-                (*pctx).input.offset((**tok).offset as isize),
+                c"duplicate key",
+                Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
             );
             current_block = 7971653673408253115;
             break;
@@ -921,8 +921,8 @@ unsafe extern "C" fn json_parse_object(
         {
             json_error(
                 (*pctx).cause.as_mut(),
-                b"missing colon\0" as *const u8 as *const ::core::ffi::c_char,
-                (*pctx).input.offset((**tok).offset as isize),
+                c"missing colon",
+                Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
             );
             current_block = 7971653673408253115;
             break;
@@ -962,9 +962,8 @@ unsafe extern "C" fn json_parse_object(
                 _ => {
                     json_error(
                         (*pctx).cause.as_mut(),
-                        b"unexpected value when parsing object\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                        (*pctx).input.offset((**tok).offset as isize),
+                        c"unexpected value when parsing object",
+                        Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
                     );
                     current_block = 7971653673408253115;
                     break;
@@ -983,8 +982,8 @@ unsafe extern "C" fn json_parse_object(
                 {
                     json_error(
                         (*pctx).cause.as_mut(),
-                        b"invalid object\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*pctx).input.offset((**tok).offset as isize),
+                        c"invalid object",
+                        Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
                     );
                     current_block = 7971653673408253115;
                     break;
@@ -996,8 +995,8 @@ unsafe extern "C" fn json_parse_object(
             {
                 json_error(
                     (*pctx).cause.as_mut(),
-                    b"invalid object\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*pctx).input.offset((**tok).offset as isize),
+                    c"invalid object",
+                    Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
                 );
                 current_block = 7971653673408253115;
                 break;
@@ -1057,8 +1056,8 @@ unsafe extern "C" fn json_parse_array(
                     {
                         json_error(
                             (*pctx).cause.as_mut(),
-                            b"invalid array\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*pctx).input.offset((**tok).offset as isize),
+                            c"invalid array",
+                            Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
                         );
                         current_block = 15988181977378875837;
                         break;
@@ -1073,8 +1072,8 @@ unsafe extern "C" fn json_parse_array(
                     }
                     json_error(
                         (*pctx).cause.as_mut(),
-                        b"invalid array\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*pctx).input.offset((**tok).offset as isize),
+                        c"invalid array",
+                        Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
                     );
                     current_block = 15988181977378875837;
                     break;
@@ -1083,8 +1082,8 @@ unsafe extern "C" fn json_parse_array(
             _ => {
                 json_error(
                     (*pctx).cause.as_mut(),
-                    b"invalid array member\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*pctx).input.offset((**tok).offset as isize),
+                    c"invalid array member",
+                    Some(CStr::from_ptr((*pctx).input.offset((**tok).offset as isize))),
                 );
                 current_block = 15988181977378875837;
                 break;
@@ -1135,8 +1134,8 @@ unsafe extern "C" fn json_parse_string(
     }
     json_error(
         (*pctx).cause.as_mut(),
-        b"invalid string\0" as *const u8 as *const ::core::ffi::c_char,
-        start,
+        c"invalid string",
+        Some(CStr::from_ptr(start)),
     );
     return ::core::ptr::null_mut::<json_node>();
 }
@@ -1172,8 +1171,8 @@ unsafe extern "C" fn json_parse_number(
     }
     json_error(
         (*pctx).cause.as_mut(),
-        b"invalid number\0" as *const u8 as *const ::core::ffi::c_char,
-        start,
+        c"invalid number",
+        Some(CStr::from_ptr(start)),
     );
     return ::core::ptr::null_mut::<json_node>();
 }
@@ -1203,10 +1202,10 @@ unsafe extern "C" fn json_parse_boolean(
     {
         boolean = 0 as ::core::ffi::c_int;
     } else {
-        json_error(
-            (*pctx).cause.as_mut(),
-            b"invalid boolean\0" as *const u8 as *const ::core::ffi::c_char,
-            start,
+    json_error(
+        (*pctx).cause.as_mut(),
+        c"invalid boolean",
+        Some(CStr::from_ptr(start)),
         );
         return ::core::ptr::null_mut::<json_node>();
     }
@@ -1336,9 +1335,9 @@ mod json_fields_tests {
     fn diagnostics_preserve_bytes_and_context_truncation() {
         unsafe {
             let mut cause = None;
-            json_error(Some(&mut cause), c"\xff".as_ptr(), c"abcdefghZ".as_ptr());
+            json_error(Some(&mut cause), c"\xff", Some(c"abcdefghZ"));
             assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: abcdefgh...");
-            json_error(Some(&mut cause), c"\xff".as_ptr(), c"ab".as_ptr());
+            json_error(Some(&mut cause), c"\xff", Some(c"ab"));
             assert_eq!(cause.take().unwrap().to_bytes(), b"\xff: ab");
         }
     }
