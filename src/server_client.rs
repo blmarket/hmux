@@ -253,8 +253,8 @@ fn server_client_replace_path(c: &mut client, path: Option<CString>) {
     c.path = path;
 }
 
-unsafe fn server_client_set_exit_session(c: *mut client, exit_session: Option<CString>) {
-    (*c).exit_session = exit_session;
+fn server_client_set_exit_session(c: &mut client, exit_session: Option<CString>) {
+    c.exit_session = exit_session;
 }
 
 pub(crate) unsafe fn server_client_set_user(c: *mut client, user: Option<CString>) {
@@ -600,7 +600,7 @@ mod client_message_owner_tests {
             assert!((*c).exit_session.is_none());
 
             server_client_set_exit_session(
-                c,
+                &mut *c,
                 Some(CString::new(b"session-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
@@ -614,7 +614,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_set_exit_session(c, Some(CString::new("").unwrap()));
+            server_client_set_exit_session(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).exit_session.is_none());
             assert_eq!(
                 CStr::from_ptr(
@@ -626,7 +626,7 @@ mod client_message_owner_tests {
                 b""
             );
 
-            server_client_set_exit_session(c, None);
+            server_client_set_exit_session(&mut *c, None);
             assert!((*c).exit_session.is_none());
             assert!(owner.exit_session.is_none());
         }
@@ -1558,7 +1558,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     server_client_replace_title(&mut *c, None);
     server_client_replace_path(&mut *c, None);
     server_client_set_cwd(c, None);
-    server_client_set_exit_session(c, None);
+    server_client_set_exit_session(&mut *c, None);
     server_client_set_exit_message(&mut *c, None);
     event_del(&raw mut (*c).repeat_timer);
     event_del(&raw mut (*c).click_timer);
@@ -1665,7 +1665,7 @@ pub unsafe extern "C" fn server_client_detach(mut c: *mut client, mut msgtype: m
     (*c).exit_type = CLIENT_EXIT_DETACH;
     (*c).exit_msgtype = msgtype;
     server_client_set_exit_session(
-        c,
+        &mut *c,
         Some(CStr::from_ptr(((*s).name).as_ptr().cast_mut()).to_owned()),
     );
 }
