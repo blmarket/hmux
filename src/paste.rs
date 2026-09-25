@@ -76,16 +76,15 @@ unsafe fn paste_take_data(pb: *mut paste_buffer, data: *mut ::core::ffi::c_char,
     } else {
         Some(std::slice::from_raw_parts(data.cast::<u8>(), size).into())
     };
-    paste_store_data(pb, owned);
+    paste_store_data(&mut *pb, owned);
     free(data.cast());
 }
 
-unsafe fn paste_store_data(pb: *mut paste_buffer, data: Option<Box<[u8]>>) {
+fn paste_store_data(pb: &mut paste_buffer, data: Option<Box<[u8]>>) {
     let size = data.as_ref().map_or(0, |bytes| bytes.len());
-    let owner = &mut *pb;
-    owner.data = data;
+    pb.data = data;
 
-    owner.size = size;
+    pb.size = size;
 }
 
 unsafe fn paste_replace_name(pb: *mut paste_buffer, name: CString) -> CString {
@@ -447,7 +446,7 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
             break;
         }
     }
-    paste_store_data(pb, Some(data));
+    paste_store_data(&mut *pb, Some(data));
     (*pb).automatic = 1 as ::core::ffi::c_int;
     paste_automatic_count_increment();
     (*pb).created = time(::core::ptr::null_mut::<time_t>());
@@ -576,7 +575,7 @@ unsafe fn paste_set_inner(
         return -(1 as ::core::ffi::c_int);
     };
     pb = paste_new_owned(newname);
-    paste_store_data(pb, Some(data));
+    paste_store_data(&mut *pb, Some(data));
     free(c_producer);
     (*pb).automatic = 0 as ::core::ffi::c_int;
     let fresh1 = paste_next_order_take();
@@ -608,7 +607,7 @@ pub unsafe extern "C" fn paste_replace(
 }
 /// Replace a paste buffer with Rust-owned bytes from an internal caller.
 pub(crate) unsafe fn paste_replace_owned(pb: *mut paste_buffer, data: Box<[u8]>) {
-    paste_store_data(pb, Some(data));
+    paste_store_data(&mut *pb, Some(data));
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
         ((*pb).name).as_ptr().cast_mut(),
