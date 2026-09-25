@@ -158,10 +158,9 @@ unsafe fn file_create_owner() -> *mut client_file {
     .cast()
 }
 
-unsafe fn file_set_path(cf: *mut client_file, path: CString) {
-    let owner = &mut *cf;
-    owner.path = Default::default();
-    owner.path = Some(path);
+fn file_set_path(cf: &mut client_file, path: CString) {
+    cf.path = Default::default();
+    cf.path = Some(path);
 }
 
 unsafe fn file_set_cmdq_wait(
@@ -432,7 +431,7 @@ pub unsafe extern "C" fn file_vprint(
     cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
-        file_set_path(cf, CString::new("-").unwrap());
+        file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_vprintf((*cf).buffer, fmt, ap);
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
@@ -486,7 +485,7 @@ pub unsafe extern "C" fn file_print_buffer(
     cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
-        file_set_path(cf, CString::new("-").unwrap());
+        file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add((*cf).buffer, data, size);
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
@@ -542,7 +541,7 @@ pub unsafe extern "C" fn file_error(
     cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None, NULL);
-        file_set_path(cf, CString::new("-").unwrap());
+        file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_vprintf((*cf).buffer, fmt, ap);
         msg.stream = 2 as ::core::ffi::c_int;
         msg.fd = STDERR_FILENO;
@@ -619,7 +618,7 @@ unsafe fn file_write_impl(
         if let Some((item, cancel_data)) = wait {
             file_set_cmdq_wait(cf, item, cancel_data);
         }
-        file_set_path(cf, CString::new("-").unwrap());
+        file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
         if c.is_null()
             || (*c).flags & CLIENT_ATTACHED as uint64_t != 0
@@ -635,7 +634,7 @@ unsafe fn file_write_impl(
         if let Some((item, cancel_data)) = wait {
             file_set_cmdq_wait(cf, item, cancel_data);
         }
-        file_set_path(cf, file_get_path(c, CStr::from_ptr(path)));
+        file_set_path(&mut *cf, file_get_path(c, CStr::from_ptr(path)));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
             if flags & O_APPEND != 0 {
                 mode = b"ab\0" as *const u8 as *const ::core::ffi::c_char;
@@ -772,7 +771,7 @@ unsafe fn file_read_impl(
         file_set_cmdq_wait(cf, item, cancel_data);
     }
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        file_set_path(cf, CString::new("-").unwrap());
+        file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
         if c.is_null()
             || (*c).flags & CLIENT_ATTACHED as uint64_t != 0
@@ -784,7 +783,7 @@ unsafe fn file_read_impl(
             current_block = 17710118112003399050;
         }
     } else {
-        file_set_path(cf, file_get_path(c, CStr::from_ptr(path)));
+        file_set_path(&mut *cf, file_get_path(c, CStr::from_ptr(path)));
         if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
             f = fopen(
                 ((*cf).path).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
