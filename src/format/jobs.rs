@@ -37,8 +37,7 @@ fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
 static mut format_jobs: format_job_tree = format_job_tree {
     entries: std::collections::BTreeMap::new(),
 };
-pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
-    let mut fj: *mut format_job = job_get_data(job) as *mut format_job;
+pub(super) unsafe fn format_job_update(mut job: *mut job, mut fj: *mut format_job) {
     let mut evb: *mut evbuffer = (*job_get_event(job)).input;
     let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
@@ -184,7 +183,9 @@ pub(super) unsafe fn format_job_get(
                 let cwd = server_client_get_cwd((*ft).client, ::core::ptr::null_mut::<session>());
                 (!cwd.is_null()).then(|| CStr::from_ptr(cwd))
             },
-            Some(format_job_update as unsafe extern "C" fn(*mut job) -> ()),
+            Some(Box::new(move |job| unsafe {
+                format_job_update(job, fj)
+            })),
             Some(Box::new(move |job| unsafe {
                 format_job_complete(job, fj)
             })),

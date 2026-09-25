@@ -2,6 +2,8 @@
 
 use super::abi::pid_t;
 use super::event::bufferevent;
+use std::cell::Cell;
+use std::rc::Rc;
 pub const JOB_NOWAIT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 pub const JOB_SHOWSTDERR: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
@@ -25,6 +27,7 @@ pub struct job {
     pub completecb: job_complete_cb,
     pub freecb: job_free_cb,
     pub data: *mut ::core::ffi::c_void,
+    pub alive: Rc<Cell<bool>>,
     pub entry: job_entry,
 }
 
@@ -43,12 +46,13 @@ impl job {
             completecb: Default::default(),
             freecb: Default::default(),
             data: Default::default(),
+            alive: Rc::new(Cell::new(true)),
             entry: Default::default(),
         }
     }
 }
 
-pub type job_update_cb = Option<unsafe extern "C" fn(*mut job) -> ()>;
+pub type job_update_cb = Option<Box<dyn FnMut(*mut job)>>;
 
 pub type job_complete_cb = Option<Box<dyn FnOnce(*mut job)>>;
 

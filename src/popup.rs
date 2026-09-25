@@ -4,7 +4,7 @@ use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::input_keys::{input_key, input_key_get_mouse};
-use crate::src::job::{job_free, job_get_data, job_get_event, job_get_status, job_resize, job_run};
+use crate::src::job::{job_free, job_get_event, job_get_status, job_resize, job_run};
 use crate::src::options::options_get_number;
 use crate::src::reactor::{
     bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
@@ -761,8 +761,7 @@ unsafe extern "C" fn popup_key_cb(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn popup_job_update_cb(mut job: *mut job) {
-    let mut pd: *mut popup_data = job_get_data(job) as *mut popup_data;
+unsafe fn popup_job_update_cb(mut job: *mut job, mut pd: *mut popup_data) {
     let mut evb: *mut evbuffer = (*job_get_event(job)).input;
     let mut c: *mut client = (*pd).c;
     let mut s: *mut screen = &raw mut (*pd).s;
@@ -1112,7 +1111,9 @@ pub unsafe fn popup_display(
         env,
         s,
         (!cwd.is_null()).then(|| CStr::from_ptr(cwd)),
-        Some(popup_job_update_cb as unsafe extern "C" fn(*mut job) -> ()),
+        Some(Box::new(move |job| unsafe {
+            popup_job_update_cb(job, pd)
+        })),
         Some(Box::new(move |job| unsafe {
             popup_job_complete_cb(job, pd)
         })),
