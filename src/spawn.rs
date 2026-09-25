@@ -1058,8 +1058,8 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
 /// failure, `FILE` never owns the descriptor and `OwnedFd::drop` closes it
 /// exactly once. On success, `into_raw_fd` relinquishes the Rust owner before
 /// the caller can `fclose` the stream, making `FILE` the sole closer.
-unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd, mode: *const ::core::ffi::c_char) -> *mut FILE {
-    let file = fdopen(fd_owner.as_raw_fd(), mode);
+unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd, mode: &CStr) -> *mut FILE {
+    let file = fdopen(fd_owner.as_raw_fd(), mode.as_ptr());
     if file.is_null() {
         // Keep the fdopen errno available to the caller while the Rust owner
         // closes the descriptor on this failure path.
@@ -1124,7 +1124,7 @@ pub unsafe fn spawn_editor(
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
     let fd_owner = OwnedFd::from_raw_fd(fd);
-    f = spawn_editor_fdopen(fd_owner, b"w\0" as *const u8 as *const ::core::ffi::c_char);
+    f = spawn_editor_fdopen(fd_owner, c"w");
     if f.is_null() {
         unlink(&raw mut path as *mut ::core::ffi::c_char);
         return ::core::ptr::null_mut::<spawn_editor_state>();
@@ -1267,7 +1267,7 @@ mod tests {
                 );
                 let file = spawn_editor_fdopen(
                     fd_owner,
-                    b"not-a-stdio-mode\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"not-a-stdio-mode",
                 );
                 assert!(file.is_null(), "invalid fdopen mode unexpectedly succeeded");
                 assert_eq!(*__errno_location(), ::libc::EINVAL);
@@ -1296,7 +1296,7 @@ mod tests {
                 assert!(std::path::Path::new(path.to_str().unwrap()).exists());
                 let file = spawn_editor_fdopen(
                     fd_owner,
-                    b"w\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"w",
                 );
                 assert!(!file.is_null());
                 assert_eq!(::libc::fcntl(fd, ::libc::F_GETFL), flags);
