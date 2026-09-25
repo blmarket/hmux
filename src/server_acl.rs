@@ -147,8 +147,8 @@ unsafe fn server_acl_entries_remove(
     (*head).entries.remove(&server_acl_entry_key(&*entry))
 }
 
-unsafe fn server_acl_entries_clear(head: *mut server_acl_entries) {
-    (*head).entries.clear();
+fn server_acl_entries_clear(head: &mut server_acl_entries) {
+    head.entries.clear();
 }
 
 unsafe extern "C" fn server_acl_check(mut c: *mut client) -> *mut server_acl_entry {
@@ -192,7 +192,7 @@ unsafe extern "C" fn server_acl_update() {
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_acl_init() {
-    server_acl_entries_clear(&raw mut server_acl_entries);
+    server_acl_entries_clear(&mut *(&raw mut server_acl_entries));
     if getuid() != 0 as __uid_t {
         server_acl_allow(0 as id_t, 0 as ::core::ffi::c_int);
     }
@@ -367,7 +367,7 @@ mod tests {
                 first_ptr
             );
             assert!(server_acl_entry_find(&raw mut tree, 9, 0).is_null());
-            server_acl_entries_clear(&raw mut tree);
+            server_acl_entries_clear(&mut tree);
             assert!(server_acl_entries_minmax(&raw mut tree, -1).is_null());
         }
     }
