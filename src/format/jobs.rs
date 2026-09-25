@@ -82,7 +82,7 @@ pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
             .unwrap_or(line.len());
         CString::new(&line[..visible]).expect("visible job output contains no NUL")
     } else {
-        let len = evbuffer_get_length(evb);
+        let len = evbuffer_get_length(&*(evb));
         let bytes = if len == 0 {
             &[][..]
         } else {

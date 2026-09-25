@@ -2795,7 +2795,7 @@ unsafe extern "C" fn input_ground(mut ictx: *mut input_ctx) {
     event_del(&raw mut (*ictx).ground_timer);
     evbuffer_drain(
         (*ictx).since_ground,
-        evbuffer_get_length((*ictx).since_ground),
+        evbuffer_get_length(&*((*ictx).since_ground)),
     );
     (*ictx).shrink_buffer();
 }

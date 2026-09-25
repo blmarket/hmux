@@ -677,7 +677,7 @@ pub(crate) unsafe fn event_payload_item_print_owned(epi: *mut event_payload_item
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     event_payload_add_item(epi, evb);
-    size = evbuffer_get_length(evb);
+    size = evbuffer_get_length(&*(evb));
     let mut value = Vec::with_capacity(size + 1);
     if size != 0 as size_t {
         let bytes = evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *const u8;
@@ -794,7 +794,7 @@ pub unsafe extern "C" fn event_payload_log(
     if !ep.is_null() {
         epi = event_payload_tree_minmax(&raw mut (*ep).items, -1);
         while !epi.is_null() {
-            if evbuffer_get_length(evb) != 0 as size_t {
+            if evbuffer_get_length(&*(evb)) != 0 as size_t {
                 evbuffer_add_printf(evb, b", \0" as *const u8 as *const ::core::ffi::c_char);
             }
             evbuffer_add_printf(
@@ -809,7 +809,7 @@ pub unsafe extern "C" fn event_payload_log(
     log_debug(
         b"%s%.*s\0" as *const u8 as *const ::core::ffi::c_char,
         prefix.as_ptr(),
-        evbuffer_get_length(evb) as ::core::ffi::c_int,
+        evbuffer_get_length(&*(evb)) as ::core::ffi::c_int,
         evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_char,
     );
     evbuffer_free(evb);

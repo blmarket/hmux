@@ -12,8 +12,8 @@ pub unsafe fn evbuffer_free(b: *mut ByteBuffer) {
         drop(Box::from_raw(b));
     }
 }
-pub unsafe fn evbuffer_get_length(b: *const ByteBuffer) -> size_t {
-    (*b).remaining() as size_t
+pub fn evbuffer_get_length(b: &ByteBuffer) -> size_t {
+    b.remaining() as size_t
 }
 pub unsafe fn evbuffer_add(b: *mut ByteBuffer, data: *const c_void, len: size_t) -> c_int {
     if len != 0 {
@@ -261,7 +261,7 @@ mod tests {
                 .unwrap()
                 .to_bytes()
                 .ends_with(b":-7:42"));
-            assert_eq!(evbuffer_get_length(b), 0);
+            assert_eq!(evbuffer_get_length(&*(b)), 0);
             evbuffer_free(b);
         }
     }

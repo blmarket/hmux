@@ -205,7 +205,7 @@ unsafe extern "C" fn cmd_source_file_done(
     let mut c: *mut client = (*cdata).client;
     let mut bdata: *mut ::core::ffi::c_void =
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
-    let mut bsize: size_t = evbuffer_get_length(buffer);
+    let mut bsize: size_t = evbuffer_get_length(&*(buffer));
     let mut n: u_int = 0;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

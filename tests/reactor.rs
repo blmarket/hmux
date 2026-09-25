@@ -166,8 +166,8 @@ fn descriptorless_stream_keeps_buffers_without_io_callbacks() {
         for _ in 0..3 {
             rt.tick();
         }
-        assert_eq!(evbuffer_get_length((*stream).input), 5);
-        assert_eq!(evbuffer_get_length((*stream).output), 6);
+        assert_eq!(evbuffer_get_length(&*(*stream).input), 5);
+        assert_eq!(evbuffer_get_length(&*(*stream).output), 6);
         assert_eq!(observations.reads, 0);
         assert_eq!(observations.writes, 0);
         assert!(observations.errors.is_empty());
@@ -200,13 +200,13 @@ fn stream_watermarks_drain_reenable_and_direct_output_append() {
         bufferevent_enable(stream, 2);
         peer.write_all(b"abcdefgh").unwrap();
         rt.tick();
-        assert_eq!(evbuffer_get_length((*stream).input), 4);
+        assert_eq!(evbuffer_get_length(&*(*stream).input), 4);
         assert_eq!(observations.reads, 1);
         rt.tick();
         assert_eq!(observations.reads, 1);
         evbuffer_drain((*stream).input, 4);
         rt.tick();
-        assert_eq!(evbuffer_get_length((*stream).input), 4);
+        assert_eq!(evbuffer_get_length(&*(*stream).input), 4);
         assert_eq!(observations.reads, 2);
         bufferevent_disable(stream, 2);
         evbuffer_drain((*stream).input, 4);
@@ -266,7 +266,7 @@ fn partial_writes_resume_after_backpressure_and_deliver_eof_once() {
         let payload = (0..2_000_000).map(|i| (i % 251) as u8).collect::<Vec<_>>();
         bufferevent_write(stream, payload.as_ptr().cast(), payload.len());
         rt.tick();
-        assert!(evbuffer_get_length((*stream).output) > 0);
+        assert!(evbuffer_get_length(&*(*stream).output) > 0);
         let mut received = Vec::new();
         let mut chunk = [0; 65536];
         for _ in 0..200 {

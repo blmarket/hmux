@@ -1318,7 +1318,7 @@ unsafe extern "C" fn window_destroy(mut w: *mut window) {
 pub unsafe extern "C" fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut n: ::core::ffi::c_int = 0;
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int)
-        && evbuffer_get_length((*(*wp).pipe_event).output) != 0 as size_t
+        && evbuffer_get_length(&*((*(*wp).pipe_event).output)) != 0 as size_t
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -3217,7 +3217,7 @@ unsafe extern "C" fn window_pane_read_callback(
     let mut wp: *mut window_pane = data as *mut window_pane;
     let mut evb: *mut evbuffer = (*(*wp).event).input;
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
-    let mut size: size_t = evbuffer_get_length(evb);
+    let mut size: size_t = evbuffer_get_length(&*(evb));
     let mut new_data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut new_size: size_t = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -4365,7 +4365,7 @@ unsafe extern "C" fn window_pane_input_callback(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut buf: *mut u_char =
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut u_char;
-    let mut len: size_t = evbuffer_get_length(buffer);
+    let mut len: size_t = evbuffer_get_length(&*(buffer));
     wp = window_pane_find_by_id((*cdata).wp);
     if wp.is_null() {
         (*c).retval = 1 as ::core::ffi::c_int;
@@ -4442,7 +4442,7 @@ pub unsafe extern "C" fn window_pane_get_new_data(
     mut size: *mut size_t,
 ) -> *mut ::core::ffi::c_void {
     let mut used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
-    *size = evbuffer_get_length((*(*wp).event).input).wrapping_sub(used);
+    *size = evbuffer_get_length(&*((*(*wp).event).input)).wrapping_sub(used);
     return evbuffer_pullup((*(*wp).event).input, -(1 as ::core::ffi::c_int) as ssize_t)
         .offset(used as isize) as *mut ::core::ffi::c_void;
 }
@@ -4453,8 +4453,8 @@ pub unsafe extern "C" fn window_pane_update_used_data(
     mut size: size_t,
 ) {
     let mut used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
-    if size > evbuffer_get_length((*(*wp).event).input).wrapping_sub(used) {
-        size = evbuffer_get_length((*(*wp).event).input).wrapping_sub(used);
+    if size > evbuffer_get_length(&*((*(*wp).event).input)).wrapping_sub(used) {
+        size = evbuffer_get_length(&*((*(*wp).event).input)).wrapping_sub(used);
     }
     (*wpo).used = (*wpo).used.wrapping_add(size);
 }

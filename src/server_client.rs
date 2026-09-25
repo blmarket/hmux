@@ -3700,7 +3700,7 @@ unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
             b"server_client_check_pane_buffer\0" as *const u8 as *const ::core::ffi::c_char,
             (*wp).id,
             minimum,
-            evbuffer_get_length(evb),
+            evbuffer_get_length(&*(evb)),
         );
         evbuffer_drain(evb, minimum);
         if (*wp).base_offset > (SIZE_MAX as size_t).wrapping_sub(minimum) {
@@ -4064,7 +4064,7 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
     if force == 0 {
         cf = client_files_minmax(&raw mut (*c).files, RB_NEGINF);
         while !cf.is_null() {
-            if evbuffer_get_length((*cf).buffer) != 0 as size_t {
+            if evbuffer_get_length(&*((*cf).buffer)) != 0 as size_t {
                 server_client_start_exit_timer(c);
                 return;
             }
@@ -4221,7 +4221,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
         (*c).flags &= !CLIENT_STATUSFORCE as uint64_t;
         return;
     }
-    n = evbuffer_get_length((*tty).out);
+    n = evbuffer_get_length(&*((*tty).out));
     if n != 0 as size_t || (*tty).flags & TTY_BLOCK != 0 {
         if n != 0 as size_t {
             log_debug(
@@ -4329,7 +4329,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
         & !(CLIENT_ALLREDRAWFLAGS as ::core::ffi::c_ulonglong
             | CLIENT_REDRAWSCROLLBARS
             | CLIENT_STATUSFORCE as ::core::ffi::c_ulonglong)) as uint64_t;
-    (*c).redraw = evbuffer_get_length((*tty).out);
+    (*c).redraw = evbuffer_get_length(&*((*tty).out));
     log_debug(
         b"%s: redraw added %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
         ((*c).name)
@@ -5286,7 +5286,7 @@ pub unsafe extern "C" fn server_client_print(
 ) {
     let mut data: *mut ::core::ffi::c_void =
         evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
-    let mut size: size_t = evbuffer_get_length(evb);
+    let mut size: size_t = evbuffer_get_length(&*(evb));
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -5370,7 +5370,7 @@ pub unsafe extern "C" fn server_client_print(
                         line.as_ptr().cast::<::core::ffi::c_char>(),
                     );
                 }
-                size = evbuffer_get_length(evb);
+                size = evbuffer_get_length(&*(evb));
                 if size != 0 as size_t {
                     line = evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t)
                         as *mut ::core::ffi::c_char;

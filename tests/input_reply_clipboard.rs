@@ -10,7 +10,7 @@ fn reply(buf: *const c_char, len: usize, end: &'static [u8], clip: c_char) -> Ve
         assert!(!bev.is_null());
         input_reply_clipboard(bev, buf, len, end.as_ptr().cast(), clip);
         let output = (*bev).output;
-        let output_len = evbuffer_get_length(output);
+        let output_len = evbuffer_get_length(&*output);
         let bytes = if output_len == 0 {
             Vec::new()
         } else {

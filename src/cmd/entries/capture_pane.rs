@@ -327,7 +327,7 @@ unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &window_pane) -> Vec<u8>
     }
     line =
         evbuffer_pullup(pending, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_char;
-    linelen = evbuffer_get_length(pending);
+    linelen = evbuffer_get_length(&*(pending));
     if args_has(args, 'C' as i32 as u_char) != 0 {
         i = 0 as u_int;
         while (i as size_t) < linelen {

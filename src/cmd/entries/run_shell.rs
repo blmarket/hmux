@@ -498,7 +498,7 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
         };
         cmd_run_shell_print(job, line.as_ptr().cast());
     }
-    size = evbuffer_get_length((*event).input);
+    size = evbuffer_get_length(&*((*event).input));
     if size != 0 as size_t {
         let input = evbuffer_pullup((*event).input, -(1 as ::core::ffi::c_int) as ssize_t);
         let mut partial_line = ::core::slice::from_raw_parts(input as *const u8, size).to_vec();

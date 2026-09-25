@@ -803,7 +803,7 @@ unsafe extern "C" fn popup_job_update_cb(mut job: *mut job) {
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void =
         evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
-    let mut size: size_t = evbuffer_get_length(evb);
+    let mut size: size_t = evbuffer_get_length(&*(evb));
     if size == 0 as size_t {
         return;
     }

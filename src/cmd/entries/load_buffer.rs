@@ -136,7 +136,7 @@ unsafe extern "C" fn cmd_load_buffer_done(
     let mut item: *mut cmdq_item = cdata.item;
     let mut bdata: *mut ::core::ffi::c_void =
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_void;
-    let mut bsize: size_t = evbuffer_get_length(buffer);
+    let mut bsize: size_t = evbuffer_get_length(&*(buffer));
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(

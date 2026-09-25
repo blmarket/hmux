@@ -296,7 +296,7 @@ unsafe extern "C" fn tty_read_callback(
     let mut name: *const ::core::ffi::c_char = ((*c).name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut size: size_t = evbuffer_get_length((*tty).in_0);
+    let mut size: size_t = evbuffer_get_length(&*((*tty).in_0));
     let mut nread: ::core::ffi::c_int = 0;
     nread = evbuffer_read((*tty).in_0, (*c).fd, -(1 as ::core::ffi::c_int));
     if nread == 0 as ::core::ffi::c_int || nread == -(1 as ::core::ffi::c_int) {
@@ -357,7 +357,7 @@ unsafe extern "C" fn tty_timer_callback(
 }
 unsafe extern "C" fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
     let mut c: *mut client = (*tty).client;
-    let mut size: size_t = evbuffer_get_length((*tty).out);
+    let mut size: size_t = evbuffer_get_length(&*((*tty).out));
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: TTY_BLOCK_INTERVAL as __suseconds_t,
@@ -397,7 +397,7 @@ unsafe extern "C" fn tty_write_callback(
 ) {
     let mut tty: *mut tty = data as *mut tty;
     let mut c: *mut client = (*tty).client;
-    let mut size: size_t = evbuffer_get_length((*tty).out);
+    let mut size: size_t = evbuffer_get_length(&*((*tty).out));
     let mut nwrite: ::core::ffi::c_int = 0;
     nwrite = evbuffer_write((*tty).out, (*c).fd);
     if nwrite == -(1 as ::core::ffi::c_int) {
@@ -427,7 +427,7 @@ unsafe extern "C" fn tty_write_callback(
     } else if tty_block_maybe(tty) != 0 {
         return;
     }
-    if evbuffer_get_length((*tty).out) != 0 as size_t {
+    if evbuffer_get_length(&*((*tty).out)) != 0 as size_t {
         event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
     }
 }

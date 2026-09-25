@@ -1320,7 +1320,7 @@ pub unsafe fn json_to_string(node: *mut json_node) -> Option<CString> {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
     }
     json_string_append(buffer, node);
-    let len = evbuffer_get_length(buffer);
+    let len = evbuffer_get_length(&*(buffer));
     let bytes = if len == 0 {
         Vec::new()
     } else {

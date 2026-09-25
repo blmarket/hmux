@@ -911,7 +911,7 @@ pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
     let mut sent: size_t = 0;
     let mut left: size_t = 0;
     let mut close_0: msg_write_close = msg_write_close { stream: 0 };
-    left = evbuffer_get_length((*cf).buffer);
+    left = evbuffer_get_length(&*((*cf).buffer));
     while left != 0 as size_t {
         sent = left;
         if sent
@@ -950,7 +950,7 @@ pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
             break;
         }
         evbuffer_drain((*cf).buffer, sent);
-        left = evbuffer_get_length((*cf).buffer);
+        left = evbuffer_get_length(&*((*cf).buffer));
         log_debug(
             b"file %d sent %zu, left %zu\0" as *const u8 as *const ::core::ffi::c_char,
             (*cf).stream,
@@ -998,7 +998,7 @@ pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core
     cf = client_files_minmax(files, RB_NEGINF);
     while !cf.is_null() {
         if !(*cf).event.is_null() {
-            left = evbuffer_get_length((*(*cf).event).output);
+            left = evbuffer_get_length(&*((*(*cf).event).output));
             if left != 0 as size_t {
                 waiting += 1;
                 log_debug(
@@ -1094,7 +1094,7 @@ unsafe extern "C" fn file_write_callback(
         b"write check file %d\0" as *const u8 as *const ::core::ffi::c_char,
         (*cf).stream,
     );
-    if (*cf).closed != 0 && evbuffer_get_length((*(*cf).event).output) == 0 as size_t {
+    if (*cf).closed != 0 && evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
         file_write_finished(cf);
     } else if (*cf).cb.is_some() {
         (*cf).cb.expect("non-null function pointer")(
@@ -1302,7 +1302,7 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         (*cf).stream,
     );
     (*cf).closed = 1 as ::core::ffi::c_int;
-    if (*cf).event.is_null() || evbuffer_get_length((*(*cf).event).output) == 0 as size_t {
+    if (*cf).event.is_null() || evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
         file_write_finished(cf);
     }
 }
@@ -1348,7 +1348,7 @@ unsafe extern "C" fn file_read_callback(
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_read_data>();
     loop {
-        bsize = evbuffer_get_length((*(*cf).event).input);
+        bsize = evbuffer_get_length(&*((*(*cf).event).input));
         if bsize == 0 as size_t {
             break;
         }

@@ -604,7 +604,7 @@ pub unsafe extern "C" fn control_pane_offset(
         *off = 1 as ::core::ffi::c_int;
         return ::core::ptr::null_mut::<window_pane_offset>();
     }
-    *off = (evbuffer_get_length((*(*cs).write_event).output) >= CONTROL_BUFFER_LOW as size_t)
+    *off = (evbuffer_get_length(&*((*(*cs).write_event).output)) >= CONTROL_BUFFER_LOW as size_t)
         as ::core::ffi::c_int;
     return &raw mut (*cp).offset;
 }
@@ -711,7 +711,7 @@ unsafe extern "C" fn control_check_reply_buffer(
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_DISCARD != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    size = evbuffer_get_length((*(*cs).write_event).output);
+    size = evbuffer_get_length(&*((*(*cs).write_event).output));
     size = size.wrapping_add((*cs).queued_reply_bytes);
     size = size.wrapping_add(added);
     if size < CONTROL_MAXIMUM_REPLY_BUFFER as size_t {
@@ -1064,7 +1064,7 @@ pub unsafe extern "C" fn control_all_done(mut c: *mut client) -> ::core::ffi::c_
     if !control_first_block(cs).is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    return (evbuffer_get_length((*(*cs).write_event).output) == 0 as size_t) as ::core::ffi::c_int;
+    return (evbuffer_get_length(&*((*(*cs).write_event).output)) == 0 as size_t) as ::core::ffi::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn control_wait_exit(mut fd: ::core::ffi::c_int) {
@@ -1220,7 +1220,7 @@ unsafe extern "C" fn control_write_data(mut c: *mut client, mut message: *mut ev
         b"%s: %s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_write_data\0" as *const u8 as *const ::core::ffi::c_char,
         ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        evbuffer_get_length(message) as ::core::ffi::c_int,
+        evbuffer_get_length(&*(message)) as ::core::ffi::c_int,
         evbuffer_pullup(message, -(1 as ::core::ffi::c_int) as ssize_t),
     );
     evbuffer_add(
@@ -1313,11 +1313,11 @@ unsafe extern "C" fn control_write_callback(
     let mut space: size_t = 0;
     let mut limit: size_t = 0;
     control_flush_all_blocks(c);
-    while evbuffer_get_length(evb) < CONTROL_BUFFER_HIGH as size_t {
+    while evbuffer_get_length(&*(evb)) < CONTROL_BUFFER_HIGH as size_t {
         if (*cs).pending_count == 0 as u_int {
             break;
         }
-        space = (CONTROL_BUFFER_HIGH as size_t).wrapping_sub(evbuffer_get_length(evb));
+        space = (CONTROL_BUFFER_HIGH as size_t).wrapping_sub(evbuffer_get_length(&*(evb)));
         log_debug(
             b"%s: %s: %zu bytes available, %u panes\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_write_callback\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1333,7 +1333,7 @@ unsafe extern "C" fn control_write_callback(
         }
         let pending = (*control_state_owner(cs)).pending_snapshot();
         for cp in pending {
-            if evbuffer_get_length(evb) >= CONTROL_BUFFER_HIGH as size_t {
+            if evbuffer_get_length(&*(evb)) >= CONTROL_BUFFER_HIGH as size_t {
                 break;
             }
             if !(*control_state_owner(cs))
@@ -1352,7 +1352,7 @@ unsafe extern "C" fn control_write_callback(
             }
         }
     }
-    if evbuffer_get_length(evb) == 0 as size_t {
+    if evbuffer_get_length(&*(evb)) == 0 as size_t {
         bufferevent_disable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
     }
 }

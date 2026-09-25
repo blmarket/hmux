@@ -555,7 +555,7 @@ unsafe extern "C" fn job_write_callback(
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut job: *mut job = data as *mut job;
-    let mut len: size_t = evbuffer_get_length(bufferevent_get_output((*job).event));
+    let mut len: size_t = evbuffer_get_length(&*(bufferevent_get_output((*job).event)));
     log_debug(
         b"job write %p: %s, pid %ld, output left %zu\0" as *const u8 as *const ::core::ffi::c_char,
         job,

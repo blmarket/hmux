@@ -310,7 +310,7 @@ unsafe extern "C" fn cmd_pipe_pane_read_callback(
         return;
     }
     evb = (*(*wp).pipe_event).input;
-    available = evbuffer_get_length(evb);
+    available = evbuffer_get_length(&*(evb));
     log_debug(
         b"%%%u pipe read %zu\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).id,
