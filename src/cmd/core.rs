@@ -386,7 +386,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     }
     None
 }
-pub unsafe fn cmd_find(mut name: *const ::core::ffi::c_char) -> Result<*const cmd_entry, CString> {
+pub unsafe fn cmd_find(name: &CStr) -> Result<*const cmd_entry, CString> {
     let mut loop_0: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
     let mut found: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
@@ -396,17 +396,21 @@ pub unsafe fn cmd_find(mut name: *const ::core::ffi::c_char) -> Result<*const cm
     loop_0 = &raw mut cmd_table as *mut *const cmd_entry;
     while !(*loop_0).is_null() {
         entry = *loop_0;
-        if !(*entry).alias.is_null() && strcmp((*entry).alias, name) == 0 as ::core::ffi::c_int {
+        if !(*entry).alias.is_null()
+            && strcmp((*entry).alias, name.as_ptr()) == 0 as ::core::ffi::c_int
+        {
             ambiguous = 0 as ::core::ffi::c_int;
             found = entry;
             break;
         } else {
-            if !(strncmp((*entry).name, name, strlen(name)) != 0 as ::core::ffi::c_int) {
+            if !(strncmp((*entry).name, name.as_ptr(), name.to_bytes().len())
+                != 0 as ::core::ffi::c_int)
+            {
                 if !found.is_null() {
                     ambiguous = 1 as ::core::ffi::c_int;
                 }
                 found = entry;
-                if strcmp((*entry).name, name) == 0 as ::core::ffi::c_int {
+                if strcmp((*entry).name, name.as_ptr()) == 0 as ::core::ffi::c_int {
                     break;
                 }
             }
@@ -418,7 +422,9 @@ pub unsafe fn cmd_find(mut name: *const ::core::ffi::c_char) -> Result<*const cm
         loop_0 = &raw mut cmd_table as *mut *const cmd_entry;
         while !(*loop_0).is_null() {
             entry = *loop_0;
-            if !(strncmp((*entry).name, name, strlen(name)) != 0 as ::core::ffi::c_int) {
+            if !(strncmp((*entry).name, name.as_ptr(), name.to_bytes().len())
+                != 0 as ::core::ffi::c_int)
+            {
                 if strlcat(
                     &raw mut s as *mut ::core::ffi::c_char,
                     (*entry).name,
@@ -443,14 +449,14 @@ pub unsafe fn cmd_find(mut name: *const ::core::ffi::c_char) -> Result<*const cm
         s[strlen(&raw mut s as *mut ::core::ffi::c_char).wrapping_sub(2 as size_t) as usize] =
             '\0' as i32 as ::core::ffi::c_char;
         let mut error = b"ambiguous command: ".to_vec();
-        error.extend_from_slice(CStr::from_ptr(name).to_bytes());
+        error.extend_from_slice(name.to_bytes());
         error.extend_from_slice(b", could be: ");
         error.extend_from_slice(CStr::from_ptr(s.as_ptr()).to_bytes());
         return Err(CString::new(error).expect("command diagnostic contains no NUL"));
     } else {
         if found.is_null() {
             let mut error = b"unknown command: ".to_vec();
-            error.extend_from_slice(CStr::from_ptr(name).to_bytes());
+            error.extend_from_slice(name.to_bytes());
             return Err(CString::new(error).expect("command diagnostic contains no NUL"));
         }
         return Ok(found);
@@ -482,9 +488,9 @@ pub unsafe fn cmd_parse(
     {
         return Err(CString::new("no command").unwrap());
     }
-    entry = cmd_find(
+    entry = cmd_find(CStr::from_ptr(
         (*values.offset(0 as ::core::ffi::c_int as isize)).string_ptr(),
-    )?;
+    ))?;
     args = match args_parse(&raw const (*entry).args, values, count) {
         Ok(args) => args,
         Err(ArgsParseError::Usage) => {

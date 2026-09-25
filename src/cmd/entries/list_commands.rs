@@ -18,6 +18,7 @@ use crate::src::shared::command::{
     cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds,
 };
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_STARTSERVER};
+use std::ffi::CStr;
 use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 use crate::src::shared::display::{visible_range, visible_ranges};
@@ -177,7 +178,7 @@ unsafe extern "C" fn cmd_list_commands(
             entryp = entryp.offset(1);
         }
     } else {
-        match cmd_find(command) {
+        match cmd_find(CStr::from_ptr(command)) {
             Ok(found) => {
                 entry = found;
             }
