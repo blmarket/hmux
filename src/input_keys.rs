@@ -131,12 +131,8 @@ unsafe fn input_key_tree_insert_generated(
     }
 }
 
-unsafe fn input_key_generated(
-    template: *const ::core::ffi::c_char,
-    key: key_code,
-    j: u_int,
-) -> Box<InputKeyGenerated> {
-    let mut bytes = CStr::from_ptr(template).to_bytes().to_vec();
+fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<InputKeyGenerated> {
+    let mut bytes = template.to_bytes().to_vec();
     let modifier = bytes
         .iter()
         .position(|byte| *byte == b'_')
@@ -576,8 +572,11 @@ pub unsafe extern "C" fn input_key_build() {
                     .wrapping_div(::core::mem::size_of::<key_code>() as usize)
             {
                 key = ((*ike).key as ::core::ffi::c_ulonglong & !KEYC_BUILD_MODIFIERS) as key_code;
-                let generated =
-                    input_key_generated((*ike).data, key | input_key_modifiers[j as usize], j);
+                let generated = input_key_generated(
+                    CStr::from_ptr((*ike).data),
+                    key | input_key_modifiers[j as usize],
+                    j,
+                );
                 input_key_tree_insert_generated(&raw mut input_key_tree, generated);
                 j = j.wrapping_add(1);
             }
@@ -1206,7 +1205,7 @@ mod tests {
             let mut tree = input_key_tree::default();
             input_key_tree_insert_generated(
                 &raw mut tree,
-                input_key_generated(c"\x1b[1;_A".as_ptr(), 7, 2),
+                input_key_generated(c"\x1b[1;_A", 7, 2),
             );
             let first = input_key_tree_find(&raw mut tree, 7);
             assert_eq!(CStr::from_ptr((*first).data), c"\x1b[1;2A");
@@ -1214,12 +1213,12 @@ mod tests {
             for key in 10..110 {
                 input_key_tree_insert_generated(
                     &raw mut tree,
-                    input_key_generated(c"\x1b[1;_B".as_ptr(), key, 3),
+                    input_key_generated(c"\x1b[1;_B", key, 3),
                 );
             }
             input_key_tree_insert_generated(
                 &raw mut tree,
-                input_key_generated(c"\x1b[1;_C".as_ptr(), 7, 4),
+                input_key_generated(c"\x1b[1;_C", 7, 4),
             );
             assert_eq!(tree.generated.len(), 101);
             assert_eq!(input_key_tree_find(&raw mut tree, 7), first);
