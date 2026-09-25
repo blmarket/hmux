@@ -95,13 +95,13 @@ unsafe fn paste_replace_name(pb: *mut paste_buffer, name: CString) -> CString {
     previous
 }
 
-unsafe fn paste_name_key(name: *const ::core::ffi::c_char) -> Vec<u8> {
-    CStr::from_ptr(name).to_bytes().to_vec()
+fn paste_name_key(name: &CStr) -> Vec<u8> {
+    name.to_bytes().to_vec()
 }
 
 unsafe fn paste_name_tree_find(
     head: *mut paste_name_tree,
-    name: *const ::core::ffi::c_char,
+    name: &CStr,
 ) -> *mut paste_buffer {
     (*head)
         .entries
@@ -114,7 +114,7 @@ unsafe fn paste_name_tree_insert(
     head: *mut paste_name_tree,
     elm: *mut paste_buffer,
 ) -> *mut paste_buffer {
-    match (*head).entries.entry(paste_name_key(((*elm).name).as_ptr().cast_mut())) {
+    match (*head).entries.entry(paste_name_key((*elm).name.as_c_str())) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
@@ -129,7 +129,7 @@ unsafe fn paste_name_tree_remove(
 ) -> *mut paste_buffer {
     (*head)
         .entries
-        .remove(&paste_name_key(((*elm).name).as_ptr().cast_mut()))
+        .remove(&paste_name_key((*elm).name.as_c_str()))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 // The original comparator puts larger order values first and treats equal
@@ -206,7 +206,7 @@ unsafe fn paste_time_tree_remove(
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 
-unsafe fn paste_name_tree_find_local(name: *const ::core::ffi::c_char) -> *mut paste_buffer {
+unsafe fn paste_name_tree_find_local(name: &CStr) -> *mut paste_buffer {
     paste_by_name.with(|head| {
         let mut head = head.borrow_mut();
         paste_name_tree_find(&mut *head, name)
@@ -374,7 +374,7 @@ pub unsafe extern "C" fn paste_get_name(mut name: *const ::core::ffi::c_char) ->
     if name.is_null() || *name as ::core::ffi::c_int == '\0' as i32 {
         return ::core::ptr::null_mut::<paste_buffer>();
     }
-    return paste_name_tree_find_local(name);
+    return paste_name_tree_find_local(CStr::from_ptr(name));
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
@@ -917,13 +917,17 @@ mod tests {
                 vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
             );
             assert_eq!(
-                paste_name_tree_find(&raw mut tree, names[2].as_ptr()),
+                paste_name_tree_find(&raw mut tree, names[2].as_c_str()),
                 a_high
             );
-            assert!(paste_name_tree_find(&raw mut tree, b"missing\0".as_ptr().cast()).is_null());
+            assert!(paste_name_tree_find(
+                &raw mut tree,
+                CStr::from_bytes_with_nul(b"missing\0").unwrap()
+            )
+            .is_null());
 
             assert_eq!(paste_name_tree_remove(&raw mut tree, a_high), a_high);
-            assert!(paste_name_tree_find(&raw mut tree, names[2].as_ptr()).is_null());
+            assert!(paste_name_tree_find(&raw mut tree, names[2].as_c_str()).is_null());
         }
     }
 
