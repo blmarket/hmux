@@ -238,7 +238,7 @@ unsafe fn options_value_to_cstring(
         && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return cmd_list_print_cstring((*ov).cmdlist(), 0);
+        return cmd_list_print_cstring(&*(*ov).cmdlist(), 0);
     }
     if !(*o).tableentry.is_null()
         && ((*(*o).tableentry).type_0 as ::core::ffi::c_uint

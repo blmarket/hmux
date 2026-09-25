@@ -170,7 +170,7 @@ unsafe extern "C" fn hooks_insert_one(
         return item;
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
-        let s = cmd_list_print_cstring(cmdlist, 0 as ::core::ffi::c_int);
+        let s = cmd_list_print_cstring(&*cmdlist, 0 as ::core::ffi::c_int);
         log_debug(
             b"%s: hook %s is: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"hooks_insert_one\0" as *const u8 as *const ::core::ffi::c_char,

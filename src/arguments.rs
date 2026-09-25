@@ -373,7 +373,7 @@ unsafe fn args_value_for_log(value: &args_value) -> Cow<'_, CStr> {
     match value.type_0() as ::core::ffi::c_uint {
         0 => Cow::Borrowed(CStr::from_bytes_with_nul_unchecked(b"\0")),
         1 => Cow::Borrowed(CStr::from_ptr(value.string_ptr())),
-        2 => Cow::Owned(cmd_list_print_cstring(value.cmdlist(), 0)),
+        2 => Cow::Owned(cmd_list_print_cstring(&*value.cmdlist(), 0)),
         _ => fatalx(b"unexpected argument type\0" as *const u8 as *const ::core::ffi::c_char),
     }
 }
@@ -794,7 +794,7 @@ pub unsafe fn args_to_vector(args: *mut args) -> Vec<CString> {
             }
             2 => {
                 let printed =
-                    cmd_list_print_cstring(value.cmdlist(), 0 as ::core::ffi::c_int);
+                    cmd_list_print_cstring(&*value.cmdlist(), 0 as ::core::ffi::c_int);
                 argv.push(printed);
             }
             _ => {}
@@ -818,7 +818,7 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     }
     match value.type_0() as ::core::ffi::c_uint {
         2 => {
-            let expanded = cmd_list_print_cstring(value.cmdlist(), 0);
+            let expanded = cmd_list_print_cstring(&*value.cmdlist(), 0);
             args_print_add(
                 buf,
                 b"{ %s }\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1111,7 +1111,7 @@ pub unsafe extern "C" fn args_string(
             if let Some(cached) = &(*value).cached {
                 return cached.as_ptr();
             }
-            let printed = cmd_list_print_cstring((*value).cmdlist(), 0);
+            let printed = cmd_list_print_cstring(&*(*value).cmdlist(), 0);
             let pointer = printed.as_ptr();
             (*value).cached = Some(printed);
             pointer

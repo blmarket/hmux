@@ -635,7 +635,7 @@ pub unsafe fn cmd_list_copy(
     let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut group: u_int = (*cmdlist).group;
-    let s = cmd_list_print_cstring(cmdlist, 0);
+    let s = cmd_list_print_cstring(&*cmdlist, 0);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_list_copy\0" as *const u8 as *const ::core::ffi::c_char,
@@ -652,7 +652,7 @@ pub unsafe fn cmd_list_copy(
         new_cmd = cmd_copy(cmd, argv);
         cmd_list_append(new_cmdlist, new_cmd);
     }
-    let s = cmd_list_print_cstring(new_cmdlist, 0);
+    let s = cmd_list_print_cstring(&*new_cmdlist, 0);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_list_copy\0" as *const u8 as *const ::core::ffi::c_char,
@@ -660,9 +660,9 @@ pub unsafe fn cmd_list_copy(
     );
     return new_cmdlist;
 }
-pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: *const cmd_list, flags: i32) -> CString {
+pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString {
     let mut buf = Vec::new();
-    let commands = &*(*cmdlist).list;
+    let commands = &*cmdlist.list;
     for (index, &cmd) in commands.iter().enumerate() {
         let this = cmd_print_cstring(cmd);
         buf.extend_from_slice(this.as_bytes());
@@ -683,7 +683,7 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: *const cmd_list, flags: i32
 }
 
 pub unsafe fn cmd_list_print(cmdlist: *const cmd_list, flags: ::core::ffi::c_int) -> CString {
-    cmd_list_print_cstring(cmdlist, flags)
+    cmd_list_print_cstring(&*cmdlist, flags)
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_list_first(mut cmdlist: *mut cmd_list) -> *mut cmd {

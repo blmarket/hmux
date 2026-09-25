@@ -282,7 +282,7 @@ pub unsafe extern "C" fn key_bindings_add(
         (*bd).flags |= KEY_BINDING_REPEAT;
     }
     (*bd).cmdlist = cmdlist;
-    let s = cmd_list_print_cstring((*bd).cmdlist, 0);
+    let s = cmd_list_print_cstring(&*(*bd).cmdlist, 0);
     let key_string = key_string_format((*bd).key, true);
     log_debug(
         b"%s: %#llx %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
