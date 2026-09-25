@@ -269,8 +269,8 @@ pub(crate) unsafe fn server_client_set_exit_message(c: *mut client, exit_message
     (*c).exit_message = exit_message;
 }
 
-pub(crate) unsafe fn server_client_set_term_type(c: *mut client, term_type: Option<CString>) {
-    (*c).term_type = term_type;
+pub(crate) fn server_client_set_term_type(c: &mut client, term_type: Option<CString>) {
+    c.term_type = term_type;
 }
 
 unsafe fn server_client_ensure_term_name(c: *mut client) {
@@ -485,7 +485,7 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).term_type.is_none());
 
-            server_client_set_term_type(c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
+            server_client_set_term_type(&mut *c, Some(CString::new(b"term-\xff".to_vec()).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).term_type)
@@ -497,7 +497,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_set_term_type(c, Some(CString::new("").unwrap()));
+            server_client_set_term_type(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).term_type.is_none());
             assert_eq!(
                 CStr::from_ptr(
@@ -509,7 +509,7 @@ mod client_message_owner_tests {
                 b""
             );
 
-            server_client_set_term_type(c, None);
+            server_client_set_term_type(&mut *c, None);
             assert!((*c).term_type.is_none());
             assert!(owner.term_type.is_none());
         }
@@ -1551,7 +1551,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     server_client_set_ttyname(c, None);
     free((*c).clipboard_panes as *mut ::core::ffi::c_void);
     server_client_set_term_name(c, None);
-    server_client_set_term_type(c, None);
+    server_client_set_term_type(&mut *c, None);
     server_client_clear_term_caps(c);
     status_free(c);
     input_cancel_requests(c);

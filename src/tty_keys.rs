@@ -3240,7 +3240,7 @@ unsafe extern "C" fn tty_keys_extended_device_attributes(
         *size as ::core::ffi::c_int,
         buf,
     );
-    server_client_set_term_type(c, Some(CStr::from_ptr(tmp.as_ptr()).to_owned()));
+    server_client_set_term_type(&mut *c, Some(CStr::from_ptr(tmp.as_ptr()).to_owned()));
     tty_update_features(tty);
     (*tty).flags |= TTY_HAVEXDA;
     return 0 as ::core::ffi::c_int;
