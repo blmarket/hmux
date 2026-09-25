@@ -398,8 +398,9 @@ mod tests {
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
                 )
                 .to_bytes(),
-                b"owned\xff"
+                b"temporary"
             );
+            assert!((*entry).owned_cb.is_none());
 
             format_add_owned_cb(ft, c"owned", absent);
             format_entry_ensure_value(ft, entry);
