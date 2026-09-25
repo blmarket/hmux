@@ -104,7 +104,7 @@ use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;
 
-unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_item {
+unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
     let mut owner = Box::new(cmdq_item {
         name: None,
         error: None,
@@ -113,11 +113,7 @@ unsafe fn cmdq_new_named_item(label: *const ::core::ffi::c_char) -> *mut cmdq_it
         ..cmdq_item::empty()
     });
     let item = &raw mut *owner;
-    let label = if label.is_null() {
-        b"(null)".as_slice()
-    } else {
-        CStr::from_ptr(label).to_bytes()
-    };
+    let label = label.map_or(b"(null)".as_slice(), CStr::to_bytes);
     let address = format!("{item:p}");
     let mut bytes = Vec::with_capacity(label.len() + address.len() + 3);
     bytes.push(b'[');
@@ -659,7 +655,7 @@ pub unsafe extern "C" fn cmdq_get_command(
     }
     while !cmd.is_null() {
         entry = cmd_get_entry(cmd);
-        item = cmdq_new_named_item((*entry).name);
+        item = cmdq_new_named_item(Some(CStr::from_ptr((*entry).name)));
         (*item).type_0 = CMDQ_COMMAND;
         (*item).group = cmd_get_group(cmd);
         (*item).state = cmdq_link_state(state);
@@ -916,7 +912,11 @@ pub unsafe extern "C" fn cmdq_get_callback1(
     mut data: *mut ::core::ffi::c_void,
 ) -> *mut cmdq_item {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    item = cmdq_new_named_item(name);
+    item = cmdq_new_named_item(if name.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(name))
+    });
     (*item).type_0 = CMDQ_CALLBACK;
     (*item).group = 0 as u_int;
     (*item).state = cmdq_new_state(
