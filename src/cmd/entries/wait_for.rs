@@ -151,13 +151,13 @@ static mut wait_channels: wait_channels = wait_channels {
     entries: std::collections::BTreeMap::new(),
 };
 
-unsafe fn wait_channel_key(name: *const ::core::ffi::c_char) -> Vec<u8> {
-    std::ffi::CStr::from_ptr(name).to_bytes().to_vec()
+fn wait_channel_key(name: &CStr) -> Vec<u8> {
+    name.to_bytes().to_vec()
 }
 
 unsafe fn wait_channels_find(
     head: *mut wait_channels,
-    name: *const ::core::ffi::c_char,
+    name: &CStr,
 ) -> *mut wait_channel {
     (*head)
         .entries
@@ -170,7 +170,7 @@ unsafe fn wait_channels_insert(
     head: *mut wait_channels,
     mut owner: Box<wait_channel>,
 ) -> *mut wait_channel {
-    let key = wait_channel_key((owner.name).as_ptr().cast_mut());
+    let key = wait_channel_key(owner.name.as_c_str());
     match (*head).entries.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -187,7 +187,7 @@ unsafe fn wait_channels_remove(
 ) -> Option<Box<wait_channel>> {
     (*head)
         .entries
-        .remove(&wait_channel_key(((*elm).name).as_ptr().cast_mut()))
+        .remove(&wait_channel_key((*elm).name.as_c_str()))
 }
 
 // Each channel is the first field of its boxed owner, so pointers handed to
@@ -334,7 +334,7 @@ unsafe extern "C" fn cmd_wait_for_exec(
     if args_has(args, 'E' as i32 as u_char) != 0 {
         return cmd_wait_for_event(item, name, args);
     }
-    wc = wait_channels_find(&raw mut wait_channels, name);
+    wc = wait_channels_find(&raw mut wait_channels, CStr::from_ptr(name));
     if args_has(args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_list(item, wc);
     }
@@ -768,7 +768,7 @@ mod tests {
                 wait_channels_insert(&raw mut channels, test_channel(&name_a)),
                 a
             );
-            assert_eq!(wait_channels_find(&raw mut channels, lookup_a.as_ptr()), a);
+            assert_eq!(wait_channels_find(&raw mut channels, lookup_a.as_c_str()), a);
 
             let ordered = channels
                 .entries
@@ -779,7 +779,7 @@ mod tests {
 
             let mut removed = wait_channels_remove(&raw mut channels, a_high).unwrap();
             assert_eq!(&raw mut *removed, a_high);
-            assert!(wait_channels_find(&raw mut channels, name_a_high.as_ptr()).is_null());
+            assert!(wait_channels_find(&raw mut channels, name_a_high.as_c_str()).is_null());
         }
     }
 
