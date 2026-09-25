@@ -29,9 +29,8 @@ fn format_entry_new(key: &CStr) -> *mut format_entry {
     Box::into_raw(owner) as *mut format_entry
 }
 
-unsafe fn format_entry_set_value(fe: *mut format_entry, value: Option<CString>) {
-    let owner = &mut *(fe as *mut format_entry);
-    owner.value = value;
+fn format_entry_set_value(fe: &mut format_entry, value: Option<CString>) {
+    fe.value = value;
 }
 
 /// Legacy C callback results have the exported malloc/free contract. Copy
@@ -47,7 +46,7 @@ pub(super) unsafe fn format_entry_cache_callback(
         free(value as *mut ::core::ffi::c_void);
         owned
     };
-    format_entry_set_value(fe, Some(owned));
+    format_entry_set_value(&mut *fe, Some(owned));
 }
 
 /// Evaluate without retaining an owner borrow: callbacks may add or replace
@@ -59,7 +58,7 @@ pub(super) unsafe fn format_entry_ensure_value(ft: *mut format_tree, fe: *mut fo
     let owned_cb = (*(fe as *mut format_entry)).owned_cb;
     if let Some(callback) = owned_cb {
         let value = callback(ft).unwrap_or_default();
-        format_entry_set_value(fe, Some(value));
+        format_entry_set_value(&mut *fe, Some(value));
     } else if let Some(callback) = (*fe).cb {
         let value = callback(ft) as *mut ::core::ffi::c_char;
         format_entry_cache_callback(fe, value);
@@ -333,7 +332,7 @@ pub unsafe extern "C" fn format_add(
     (*fe).cb = None;
     (*fe).time = 0 as time_t;
     ap = args.clone();
-    format_entry_set_value(fe, Some(xvasprintf_cstring(fmt, ap)));
+    format_entry_set_value(&mut *fe, Some(xvasprintf_cstring(fmt, ap)));
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_add_tv(
@@ -352,7 +351,7 @@ pub unsafe extern "C" fn format_add_tv(
     (*(fe as *mut format_entry)).owned_cb = None;
     (*fe).cb = None;
     (*fe).time = (*tv).tv_sec as time_t;
-    format_entry_set_value(fe, None);
+    format_entry_set_value(&mut *fe, None);
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_add_cb(
@@ -371,7 +370,7 @@ pub unsafe extern "C" fn format_add_cb(
     (*(fe as *mut format_entry)).owned_cb = None;
     (*fe).cb = cb;
     (*fe).time = 0 as time_t;
-    format_entry_set_value(fe, None);
+    format_entry_set_value(&mut *fe, None);
 }
 
 /// Internal lazy callbacks transfer their result directly into the entry cache.
@@ -391,7 +390,7 @@ pub(crate) unsafe fn format_add_owned_cb(
     (*fe).cb = None;
     (*(fe as *mut format_entry)).owned_cb = Some(cb);
     (*fe).time = 0;
-    format_entry_set_value(fe, None);
+    format_entry_set_value(&mut *fe, None);
 }
 
 #[cfg(test)]
