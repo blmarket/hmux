@@ -5,9 +5,7 @@ use std::ffi::CString;
 
 use super::abi::{time_t, u_int};
 use super::command::cmd_list;
-use super::session::session;
 use super::style::style;
-use super::window::window;
 pub type options_table_type = ::core::ffi::c_uint;
 pub const OPTIONS_TABLE_NUMBER: options_table_type = 1;
 pub const OPTIONS_TABLE_KEY: options_table_type = 2;

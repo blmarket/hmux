@@ -1,12 +1,10 @@
 use crate::src::ffi::utf8proc::{
-    int32_t, ptrdiff_t, utf8proc_bool, utf8proc_category_t, utf8proc_int32_t, utf8proc_ssize_t,
-    utf8proc_uint8_t,
-};
-use crate::src::ffi::utf8proc::{
     utf8proc_category, utf8proc_charwidth, utf8proc_codepoint_valid, utf8proc_encode_char,
     utf8proc_iterate,
 };
-use crate::src::shared::abi::__int32_t;
+use crate::src::ffi::utf8proc::{
+    utf8proc_category_t, utf8proc_int32_t, utf8proc_ssize_t, utf8proc_uint8_t,
+};
 use crate::src::shared::abi::*;
 use crate::src::shared::utf8::wchar_t;
 

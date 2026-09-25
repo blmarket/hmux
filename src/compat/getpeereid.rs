@@ -1,6 +1,6 @@
 use crate::src::ffi::libc::getsockopt;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__gid_t, __socklen_t, __uid_t, gid_t, socklen_t, uid_t};
+use crate::src::shared::abi::{gid_t, socklen_t, uid_t};
 use crate::src::shared::socket::SOL_SOCKET;
 
 #[derive(Copy, Clone)]

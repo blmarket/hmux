@@ -7,7 +7,7 @@ mod waits;
 
 pub use readiness::Io;
 pub use runtime::{Handle, Runtime, Task};
-pub use signals::{Recv, Signals};
+pub use signals::Signals;
 pub use waits::Sleep;
 
 mod descriptor;

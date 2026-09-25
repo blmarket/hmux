@@ -10,33 +10,11 @@ use crate::src::session::{
     session_add_ref, session_find_by_id, session_remove_ref, sessions_minmax,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
-use crate::src::shared::client::*;
-use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
-    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
-};
-use crate::src::shared::colour::*;
-use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
-use crate::src::shared::control::control_state;
-use crate::src::shared::display::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
-use crate::src::shared::environment::environ;
+use crate::src::shared::client::client;
+use crate::src::shared::command::cmdq_item;
 use crate::src::shared::event::EV_TIMEOUT;
+use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NOJOBS;
-use crate::src::shared::format::{format_job_tree, format_tree};
-use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
-use crate::src::shared::input::{input_ctx, input_request, input_requests};
-use crate::src::shared::key::*;
-use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
-};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-use crate::src::shared::menu::menu_data;
-use crate::src::shared::message::*;
 use crate::src::shared::monitor::{
     monitor_cb, monitor_change, monitor_item, monitor_item_entry, monitor_items, monitor_pane,
     monitor_pane_entry, monitor_panes, monitor_set, monitor_window, monitor_window_entry,
@@ -46,36 +24,15 @@ pub use crate::src::shared::monitor::{
     monitor_type, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_NOTIFY_INITIAL,
     MONITOR_NOTIFY_TRUE, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
-use crate::src::shared::pane::{
-    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
-};
-use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-use crate::src::shared::screen_write::screen_write_cline;
-use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_line;
-use crate::src::shared::style::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-use crate::src::shared::window::{
-    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
-    winlink_stack, winlinks,
-};
+use crate::src::shared::pane::window_pane;
+use crate::src::shared::session::session;
+use crate::src::shared::tree::RB_NEGINF;
+use crate::src::shared::window::{window, winlink};
 use crate::src::window::{
     window_find_by_id, window_pane_find_by_id, window_pane_first, window_pane_next,
     window_winlinks_first, window_winlinks_next, winlinks_minmax, winlinks_next,
 };
 use std::ffi::{CStr, CString};
-
-use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub unsafe fn monitor_pane_new() -> *mut monitor_pane {
     Box::into_raw(Box::new(monitor_pane {
@@ -966,20 +923,14 @@ pub unsafe extern "C" fn monitor_get_fire_time(
     return (*me).fire_time;
 }
 
-pub unsafe fn monitor_items_find(
-    head: &monitor_items,
-    elm: &monitor_item,
-) -> *mut monitor_item {
+pub unsafe fn monitor_items_find(head: &monitor_items, elm: &monitor_item) -> *mut monitor_item {
     let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let key = elm.name.as_c_str().to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn monitor_items_nfind(
-    head: &monitor_items,
-    elm: &monitor_item,
-) -> *mut monitor_item {
+pub unsafe fn monitor_items_nfind(head: &monitor_items, elm: &monitor_item) -> *mut monitor_item {
     let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
@@ -1064,20 +1015,14 @@ pub unsafe fn monitor_items_prev(elm: &monitor_item) -> *mut monitor_item {
 fn monitor_panes_key(elm: &monitor_pane) -> (u32, u32) {
     (elm.pane, elm.idx)
 }
-pub unsafe fn monitor_panes_find(
-    head: &monitor_panes,
-    elm: &monitor_pane,
-) -> *mut monitor_pane {
+pub unsafe fn monitor_panes_find(head: &monitor_panes, elm: &monitor_pane) -> *mut monitor_pane {
     let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let key = monitor_panes_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn monitor_panes_nfind(
-    head: &monitor_panes,
-    elm: &monitor_pane,
-) -> *mut monitor_pane {
+pub unsafe fn monitor_panes_nfind(head: &monitor_panes, elm: &monitor_pane) -> *mut monitor_pane {
     let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };

@@ -7,7 +7,6 @@ use hmux2::src::cmd::{
     cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::shared::arguments::args_value;
-use std::ffi::CStr;
 
 unsafe fn display_message_command() -> *mut cmd {
     let mut value = args_value::borrowed_string(c"display-message".as_ptr());

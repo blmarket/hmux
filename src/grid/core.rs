@@ -5,10 +5,8 @@ use crate::src::server::current_time;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
 use crate::src::shared::grid::*;
-pub use crate::src::shared::hyperlinks::hyperlinks;
-pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
-pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-pub use crate::src::shared::screen_write::screen_write_cline;
+pub use crate::src::shared::limits::UINT_MAX;
+pub use crate::src::shared::screen::screen;
 use crate::src::style::colour::{colour_split_rgb, colour_theme_terminal_colour};
 use crate::src::text::utf8::{
     utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
@@ -17,8 +15,6 @@ use crate::src::tmux::start_time;
 use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
-pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
-pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_1 {

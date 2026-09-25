@@ -1,17 +1,12 @@
 use crate::src::compat::stdio::CFile;
-use crate::src::ffi::libc::__ssize_t;
 use crate::src::ffi::libc::{__errno_location, fgetc, fopen, fputc, fputs, strcmp, strerror};
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::prompt_type_string;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
-use crate::src::shared::options::options;
 use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
-use crate::src::shared::stdio::{
-    _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
-};
+use crate::src::shared::stdio::FILE;
 use crate::src::tmux::{find_home_cstr, global_options};
 use std::ffi::{CStr, CString};
 

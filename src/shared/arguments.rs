@@ -1,7 +1,7 @@
 //! Authoritative argument storage, parsing callbacks, and scalar domains.
 
 use super::abi::{u_char, u_int};
-use super::command::{cmd, cmd_list, cmd_parse_input};
+use super::command::{cmd_list, cmd_parse_input};
 use std::collections::BTreeMap;
 use std::ffi::CString;
 pub type args_type = ::core::ffi::c_uint;

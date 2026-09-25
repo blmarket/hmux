@@ -1,13 +1,10 @@
 use crate::src::shared::abi::*;
 use crate::src::shared::alerts::{ALERT_ANY, ALERT_OTHER, VISUAL_OFF};
 use crate::src::shared::input::INPUT_BUF_DEFAULT_SIZE;
-use crate::src::shared::key::key_code_enum as C2RustUnnamed;
 use crate::src::shared::key::MODEKEY_EMACS;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::limits::{
-    __INT_MAX__, __SHRT_MAX__, INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX,
-};
+use crate::src::shared::limits::{INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX};
 use crate::src::shared::options::options_name_map;
 use crate::src::shared::options::options_table_entry;
 use crate::src::shared::options::*;

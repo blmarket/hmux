@@ -2,8 +2,7 @@ use crate::src::ffi::libc::{
     __errno_location, free, getpid, getppid, getsockname, gettimeofday, strcmp, strerror,
 };
 use crate::src::ffi::systemd::{
-    sd_bus, sd_bus_error, sd_bus_message, sd_bus_message_handler_t, sd_bus_slot, sd_id128,
-    sd_id128_t,
+    sd_bus, sd_bus_error, sd_bus_message, sd_bus_slot, sd_id128, sd_id128_t,
 };
 use crate::src::ffi::systemd::{
     sd_bus_call, sd_bus_default_user, sd_bus_error_free, sd_bus_match_signal,
@@ -14,15 +13,9 @@ use crate::src::ffi::systemd::{
 };
 use crate::src::server::server_create_socket;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__socklen_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t};
+use crate::src::shared::abi::{socklen_t, uint32_t};
 use crate::src::shared::errno::E2BIG;
-use crate::src::shared::socket::{
-    __socket_type, in6_addr, in6_addr___in6_u, in_addr, in_addr_t, in_port_t, sa_family_t,
-    sockaddr, sockaddr_at, sockaddr_ax25, sockaddr_dl, sockaddr_eon, sockaddr_in, sockaddr_in6,
-    sockaddr_inarp, sockaddr_ipx, sockaddr_iso, sockaddr_ns, sockaddr_un, sockaddr_x25,
-    __SOCKADDR_ARG, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM, SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW,
-    SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
-};
+use crate::src::shared::socket::{sockaddr, sockaddr_un, __SOCKADDR_ARG, SOCK_STREAM};
 use crate::src::tmux::socket_path;
 use std::ffi::{CStr, CString};
 

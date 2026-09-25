@@ -1,8 +1,7 @@
 use crate::src::ffi::libc::{calloc, free, vasprintf, vsnprintf};
 use crate::src::log::{fatal, fatalx};
 use crate::src::shared::abi::*;
-use crate::src::shared::limits::{__INT_MAX__, INT_MAX, SIZE_MAX};
-use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
+use crate::src::shared::limits::{INT_MAX, SIZE_MAX};
 use std::ffi::{CStr, CString};
 
 #[no_mangle]

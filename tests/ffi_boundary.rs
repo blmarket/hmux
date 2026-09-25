@@ -1,7 +1,6 @@
 //! Parse Rust syntax so comments, wrapping, visibility, and symbol aliases cannot
 //! hide a Rust definition behind a foreign declaration.
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };

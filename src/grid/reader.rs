@@ -7,9 +7,6 @@ use crate::src::shared::grid::grid_reader;
 use crate::src::shared::grid::WHITESPACE;
 use crate::src::shared::grid::*;
 
-use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
-
 #[no_mangle]
 pub unsafe extern "C" fn grid_reader_start(
     mut gr: *mut grid_reader,

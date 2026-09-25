@@ -8,7 +8,6 @@ use super::display::{progress_bar, visible_ranges};
 use super::environment::environ;
 use super::event::{bufferevent, evbuffer, event};
 use super::format::format_job_tree;
-use super::input::input_requests;
 use super::key::{key_code, key_event, key_table};
 use super::message::msgtype;
 use super::mouse::mouse_event;

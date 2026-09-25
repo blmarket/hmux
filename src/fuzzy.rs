@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_tolower_loc, memcmp, memset, strchr, strlen};
+use crate::src::ffi::libc::{__ctype_tolower_loc, memcmp, memset, strchr};
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 use crate::src::shared::abi::__int32_t;

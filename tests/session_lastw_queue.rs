@@ -21,14 +21,8 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
         winlink_stack_push(&raw mut stack, first);
         winlink_stack_push(&raw mut stack, second);
         assert_eq!(winlink_stack_indices(&stack), [2, 1]);
-        assert_eq!(
-            winlink_stack_first(&stack, &raw mut links),
-            second
-        );
-        assert_eq!(
-            winlink_stack_next(&stack, &raw mut links, second),
-            first
-        );
+        assert_eq!(winlink_stack_first(&stack, &raw mut links), second);
+        assert_eq!(winlink_stack_next(&stack, &raw mut links, second), first);
 
         winlink_stack_remove(&raw mut stack, second);
         winlink_remove(&raw mut links, second);

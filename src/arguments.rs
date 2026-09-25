@@ -15,73 +15,17 @@ use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
     args, args_entry, args_entry_entry, args_parse, args_parse_cb, args_tree, args_tree_storage,
-    args_value, args_value_entry, args_values, args_values_storage,
+    args_value, args_values, args_values_storage,
 };
-use crate::src::shared::client::*;
-use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
-    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
-};
-use crate::src::shared::colour::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds,
-};
-use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::control::control_state;
-use crate::src::shared::ctype::{
-    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
-    _ISspace, _ISupper, _ISxdigit, ctype_code,
-};
-use crate::src::shared::display::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
-use crate::src::shared::environment::environ;
-use crate::src::shared::event::*;
-use crate::src::shared::format::{format_job_tree, format_tree};
-use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
-use crate::src::shared::input::{input_ctx, input_request, input_requests};
-use crate::src::shared::key::*;
-use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
-};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-use crate::src::shared::menu::menu_data;
-use crate::src::shared::message::*;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
-use crate::src::shared::pane::{
-    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
-};
-use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-use crate::src::shared::screen_write::screen_write_cline;
-use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_line;
-use crate::src::shared::style::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
+use crate::src::shared::client::client;
+use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item};
+use crate::src::shared::ctype::{_ISalnum, _ISalpha};
+use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::shared::window::{
-    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
-    winlink_stack, winlinks,
-};
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::xmalloc::xvasprintf_cstring;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
-
-use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_21;
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_20;
 
 pub const ARGS_ENTRY_OPTIONAL_VALUE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 

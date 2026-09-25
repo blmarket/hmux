@@ -1,6 +1,6 @@
 use hmux2::src::session::*;
 use hmux2::src::shared::session::{session_group, session_groups};
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 
 #[test]
 fn byte_order_duplicates_neighbors_and_owner_removal() {

@@ -5,7 +5,6 @@ use super::command::cmd_find_state;
 use super::display::screen_cursor_style;
 use super::grid::{grid_cell, utf8_data};
 use super::screen_write::screen_write_ctx;
-use super::style::style;
 use std::ffi::CString;
 pub type prompt_type = ::core::ffi::c_uint;
 pub const PROMPT_TYPE_COMMAND: prompt_type = 0;

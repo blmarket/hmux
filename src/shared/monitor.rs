@@ -5,7 +5,7 @@ use super::client::client;
 use super::event::event;
 use super::pane::window_pane;
 use super::session::session;
-use super::window::{window, windows, winlink};
+use super::window::winlink;
 pub type monitor_type = ::core::ffi::c_uint;
 pub const MONITOR_ALL_WINDOWS: monitor_type = 4;
 pub const MONITOR_WINDOW: monitor_type = 3;

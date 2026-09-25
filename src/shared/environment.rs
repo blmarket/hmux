@@ -1,7 +1,6 @@
 //! Authoritative environment declarations.
 
 use std::collections::BTreeMap;
-use std::ffi::CString;
 
 pub const ENVIRON_HIDDEN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 

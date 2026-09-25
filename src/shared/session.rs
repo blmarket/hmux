@@ -5,7 +5,7 @@ use super::environment::environ;
 use super::event::event;
 use super::options::options;
 use super::terminal::termios;
-use super::window::{windows, winlink, winlink_stack, winlinks};
+use super::window::{winlink, winlink_stack, winlinks};
 
 #[repr(C)]
 pub struct session {

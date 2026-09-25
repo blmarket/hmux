@@ -7,7 +7,7 @@ use crate::src::compat::imsg_buffer::{
 };
 use crate::src::ffi::libc::{__errno_location, getpid, memset};
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
+use crate::src::shared::abi::{ssize_t, uint32_t};
 use crate::src::shared::errno::{EBADMSG, EINVAL, ERANGE};
 use crate::src::shared::limits::UINT32_MAX;
 pub use crate::src::shared::message::{ibuf, ibufqueue, imsg, imsgbuf, msgbuf};

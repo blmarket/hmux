@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_free_state, cmdq_get_callback1, cmdq_get_client, cmdq_guard, cmdq_new_state,
     cmdq_set_cancel_data,
 };
-use crate::src::ffi::libc::{__errno_location, close, free, memcpy, memset, poll, strcmp, strlen};
+use crate::src::ffi::libc::{__errno_location, close, memcpy, memset, poll, strcmp, strlen};
 use crate::src::ffi::libc::{nfds_t, pollfd};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::monitor::{monitor_add, monitor_create_client, monitor_destroy, monitor_remove};
@@ -16,79 +16,31 @@ use crate::src::reactor::{
 use crate::src::server_client::server_client_set_exit_message;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
-use crate::src::shared::client::*;
-use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
-    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
-};
+use crate::src::shared::client::client;
 use crate::src::shared::client::{
     CLIENT_CONTROLCONTROL, CLIENT_CONTROL_DISCARD, CLIENT_CONTROL_NOOUTPUT,
-    CLIENT_CONTROL_PAUSEAFTER, CLIENT_DEAD, CLIENT_EXIT, CLIENT_SUSPENDED, CLIENT_UNATTACHEDFLAGS,
+    CLIENT_CONTROL_PAUSEAFTER, CLIENT_EXIT, CLIENT_UNATTACHEDFLAGS,
 };
-use crate::src::shared::colour::*;
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::CMDQ_STATE_CONTROL;
 use crate::src::shared::command::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_list, cmdq_state, cmds,
-};
+use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::control::{
     control_block, control_pane, control_pane_entry, control_panes, control_state, control_window,
     control_window_entry, control_windows,
 };
-use crate::src::shared::display::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
-use crate::src::shared::environment::environ;
 use crate::src::shared::errno::{EAGAIN, EINTR};
 use crate::src::shared::event::*;
-use crate::src::shared::event::{
-    evbuffer_eol_style, EVBUFFER_EOL_ANY, EVBUFFER_EOL_CRLF, EVBUFFER_EOL_CRLF_STRICT,
-    EVBUFFER_EOL_LF, EVBUFFER_EOL_NUL, EV_READ, EV_WRITE,
-};
-use crate::src::shared::format::{format_job_tree, format_tree};
-use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
-use crate::src::shared::input::{input_ctx, input_request, input_requests};
-use crate::src::shared::key::*;
-use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
-};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
+use crate::src::shared::event::{EVBUFFER_EOL_LF, EV_READ, EV_WRITE};
+use crate::src::shared::key::key_event;
 use crate::src::shared::limits::SIZE_MAX;
-use crate::src::shared::menu::menu_data;
-use crate::src::shared::message::*;
-use crate::src::shared::monitor::{monitor_cb, monitor_change, monitor_set};
-use crate::src::shared::monitor::{
-    monitor_type, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_NOTIFY_INITIAL, MONITOR_PANE,
-    MONITOR_SESSION, MONITOR_WINDOW,
-};
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
-use crate::src::shared::pane::{
-    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
-};
-use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-use crate::src::shared::screen_write::screen_write_cline;
-use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_line;
-use crate::src::shared::style::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
-use crate::src::shared::window::{
-    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
-    winlink_stack, winlinks,
-};
+use crate::src::shared::monitor::{monitor_change, monitor_set};
+use crate::src::shared::monitor::{monitor_type, MONITOR_NOTIFY_INITIAL};
+use crate::src::shared::pane::window_pane;
+use crate::src::shared::pane::window_pane_offset;
+use crate::src::shared::session::session;
+use crate::src::shared::tree::RB_NEGINF;
+use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{get_timer, setblocking};
 use crate::src::window::{
     window_pane_find_by_id, window_pane_get_new_data, window_pane_update_used_data,
@@ -97,9 +49,6 @@ use crate::src::window::{
 use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
-
-use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub const POLLIN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const INFTIM: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -1613,10 +1562,7 @@ pub unsafe extern "C" fn control_remove_sub(
 fn control_panes_key(elm: &control_pane) -> u32 {
     elm.pane
 }
-pub unsafe fn control_panes_find(
-    head: &control_panes,
-    elm: &control_pane,
-) -> *mut control_pane {
+pub unsafe fn control_panes_find(head: &control_panes, elm: &control_pane) -> *mut control_pane {
     let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
@@ -1625,10 +1571,7 @@ pub unsafe fn control_panes_find(
         &**node as *const control_pane as *mut control_pane
     })
 }
-pub unsafe fn control_panes_nfind(
-    head: &control_panes,
-    elm: &control_pane,
-) -> *mut control_pane {
+pub unsafe fn control_panes_nfind(head: &control_panes, elm: &control_pane) -> *mut control_pane {
     let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };

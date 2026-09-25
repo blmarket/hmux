@@ -6,93 +6,40 @@ use crate::src::cmd::{
 };
 use crate::src::environ::{environ_find, environ_put};
 use crate::src::ffi::libc::{
-    __ctype_b_loc, getc, getpwnam, getpwuid, getuid, memset, sscanf, strchr, strcmp, strlen,
-    ungetc, wctomb,
+    __ctype_b_loc, getc, getpwnam, getpwuid, getuid, sscanf, strchr, ungetc, wctomb,
 };
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::log::{fatalx, log_debug};
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__gid_t, __off64_t, __off_t, __uid_t};
 use crate::src::shared::account::passwd;
+use crate::src::shared::arguments::args_value;
 use crate::src::shared::arguments::*;
-use crate::src::shared::arguments::{args, args_value, args_value_entry};
-use crate::src::shared::client::*;
-use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
-    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
-};
-use crate::src::shared::colour::*;
+use crate::src::shared::client::client;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmdq_state, cmds,
-};
+use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::command::{
     CMD_PARSE_MAX_ENVIRON_LEN, CMD_PARSE_NOALIAS, CMD_PARSE_ONEGROUP, CMD_PARSE_PARSEONLY,
     CMD_PARSE_VERBOSE,
 };
-use crate::src::shared::control::control_state;
-use crate::src::shared::ctype::{
-    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
-    _ISspace, _ISupper, _ISxdigit, ctype_code,
-};
-use crate::src::shared::display::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
+use crate::src::shared::ctype::{_ISalnum, _ISdigit, _ISxdigit};
+use crate::src::shared::environment::environ_entry;
 use crate::src::shared::environment::ENVIRON_HIDDEN;
-use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::event::*;
-use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
-use crate::src::shared::input::{input_ctx, input_request, input_requests};
-use crate::src::shared::key::*;
-use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
-};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-use crate::src::shared::limits::{__INT_MAX__, SIZE_MAX, UINT_MAX};
-use crate::src::shared::menu::menu_data;
-use crate::src::shared::message::*;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
-use crate::src::shared::pane::{
-    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
-};
-use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-use crate::src::shared::screen_write::screen_write_cline;
-use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_line;
+use crate::src::shared::limits::{SIZE_MAX, UINT_MAX};
+use crate::src::shared::pane::window_pane;
+use crate::src::shared::session::session;
 use crate::src::shared::stdio::EOF;
-use crate::src::shared::stdio::{
-    _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
-};
-use crate::src::shared::style::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
+use crate::src::shared::stdio::FILE;
 use crate::src::shared::utf8::wchar_t;
-use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
-use crate::src::shared::window::{
-    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
-    winlink_stack, winlinks,
-};
+use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_environ;
 use crate::src::xmalloc::xvasprintf_cstring;
 use libc;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
-
-use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
 /// Box-owned collection of parser commands. Each command is separately boxed
 /// so pointers held by the parser remain stable when the collection grows.

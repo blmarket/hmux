@@ -1,7 +1,6 @@
 use crate::src::cmd::cmd_get_entry;
 use crate::src::ffi::libc::{getpid, kill};
-use crate::src::shared::arguments::*;
-use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
+use crate::src::shared::arguments::args_parse;
 use crate::src::shared::command::CMD_STARTSERVER;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};

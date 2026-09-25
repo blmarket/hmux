@@ -17,8 +17,7 @@ use crate::src::ffi::libc::nl_item;
 use crate::src::ffi::libc::{
     __errno_location, access, clock_gettime, environ, err, errx, exit, fcntl, fprintf, getcwd,
     getenv, getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale, stderr,
-    stdout, strcasecmp, strcasestr, strchr, strcmp, strerror, strncmp, strrchr, strsep, strstr,
-    tzset,
+    stdout, strcasecmp, strcasestr, strcmp, strerror, strrchr, strsep, strstr, tzset,
 };
 use crate::src::log::{log_add_level, log_debug};
 use crate::src::options::{
@@ -27,10 +26,7 @@ use crate::src::options::{
 use crate::src::options_table::options_table;
 use crate::src::osdep_linux::osdep_event_init;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{
-    __blkcnt_t, __blksize_t, __clockid_t, __dev_t, __gid_t, __ino_t, __mode_t, __nlink_t,
-    __off64_t, __off_t, __syscall_slong_t, __uid_t, clockid_t, uid_t,
-};
+use crate::src::shared::abi::{__mode_t, uid_t};
 use crate::src::shared::account::passwd;
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_DEFAULTSOCKET, CLIENT_LOGIN, CLIENT_NOFORK,
@@ -38,18 +34,12 @@ use crate::src::shared::client::{
 };
 use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
-use crate::src::shared::options::*;
-use crate::src::shared::options::{options, options_entry, options_table_entry};
+use crate::src::shared::options::{options, options_table_entry};
 use crate::src::shared::options::{
     OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
 use crate::src::shared::posix_io::stat;
-use crate::src::shared::posix_io::{
-    _PATH_BSHELL, __S_IEXEC, __S_IREAD, __S_IWRITE, O_NONBLOCK, S_IRWXU, X_OK,
-};
-use crate::src::shared::stdio::{
-    _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
-};
+use crate::src::shared::posix_io::{O_NONBLOCK, S_IRWXU, X_OK};
 use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};

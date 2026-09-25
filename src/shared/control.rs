@@ -4,7 +4,6 @@ use super::abi::{size_t, u_int, uint64_t};
 use super::event::bufferevent;
 use super::monitor::monitor_set;
 use super::pane::window_pane_offset;
-use super::window::{window, windows};
 use std::collections::VecDeque;
 
 #[repr(C)]

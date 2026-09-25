@@ -4,6 +4,7 @@ mod core;
 pub mod reader;
 pub mod view;
 
+#[cfg(test)]
 pub(crate) use self::core::grid_create_box;
 
 // Preserve the established family API without glob exports.
@@ -16,7 +17,5 @@ pub use self::core::{
     grid_move_cells, grid_move_lines, grid_peek_line, grid_reflow, grid_remove_history,
     grid_scroll_history, grid_scroll_history_region, grid_set_cell, grid_set_cells,
     grid_set_padding, grid_set_tab, grid_string_cells_bytes, grid_unwrap_position,
-    grid_wrap_position, hyperlinks, screen, screen_sel, screen_titles, screen_write_cline,
-    C2RustUnnamed, C2RustUnnamed_0, C2RustUnnamed_1, __INT_MAX__, COLOUR_FLAG_256, COLOUR_FLAG_RGB,
-    COLOUR_FLAG_THEME, UINT_MAX,
+    grid_wrap_position,
 };

@@ -1,10 +1,7 @@
 use crate::src::ffi::libc::{__ctype_b_loc, memcpy};
 use crate::src::shared::abi::*;
-use crate::src::shared::ctype::{
-    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
-    _ISspace, _ISupper, _ISxdigit, ctype_code,
-};
-use crate::src::shared::limits::{__SCHAR_MAX__, UCHAR_MAX};
+use crate::src::shared::ctype::{_IScntrl, _ISgraph};
+use crate::src::shared::limits::UCHAR_MAX;
 use crate::src::shared::vis::{
     VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_TAB,
 };

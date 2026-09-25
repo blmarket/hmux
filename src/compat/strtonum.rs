@@ -1,5 +1,4 @@
 use crate::src::ffi::libc::{__errno_location, strtoll};
-use crate::src::shared::abi::*;
 use crate::src::shared::errno::{EINVAL, ERANGE};
 use crate::src::shared::limits::__LONG_LONG_MAX__;
 

@@ -7,4 +7,4 @@ mod segmented;
 
 pub use buffer::{Buffer, LineEnding};
 pub use bytes::{Buf, BufMut};
-pub use segmented::{Chunks, SegmentedBuf};
+pub use segmented::SegmentedBuf;

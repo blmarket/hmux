@@ -5,12 +5,10 @@ use crate::src::ffi::libc::{
     __errno_location, abort, close, memcpy, memset, readv, recvmsg, sendmsg, strlcpy, writev,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{
-    __socklen_t, __uint16_t, __uint32_t, socklen_t, ssize_t, uint16_t, uint32_t,
-};
+use crate::src::shared::abi::{__uint16_t, __uint32_t, ssize_t, uint16_t, uint32_t};
 pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
-pub use crate::src::shared::message::{ibuf, ibufqueue, ibufqueue_bufs, msgbuf};
+pub use crate::src::shared::message::{ibuf, ibufqueue, msgbuf};
 use crate::src::shared::posix_io::iovec;
 use crate::src::shared::socket::SOL_SOCKET;
 use std::ffi::CString;

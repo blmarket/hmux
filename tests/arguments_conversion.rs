@@ -2,11 +2,10 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 
 use hmux2::src::arguments::{
-    args_copy, args_create, args_escape, args_first_value, args_free, args_get, args_has,
-    args_next_value, args_parse as parse_args, args_percentage_result, args_print,
-    args_push_positional_commands, args_push_positional_string, args_set_flag,
-    args_set_owned_commands, args_set_owned_string, args_string,
-    args_string_percentage_and_expand_result, args_string_percentage_result,
+    args_copy, args_create, args_first_value, args_free, args_get, args_has, args_next_value,
+    args_parse as parse_args, args_percentage_result, args_print, args_push_positional_commands,
+    args_push_positional_string, args_set_flag, args_set_owned_commands, args_set_owned_string,
+    args_string, args_string_percentage_and_expand_result, args_string_percentage_result,
     args_strtonum_and_expand_result, args_strtonum_result, parse_number, parse_percentage,
     ArgumentValueError,
 };
@@ -15,9 +14,7 @@ use hmux2::src::cmd::queue::{
 };
 use hmux2::src::cmd::{cmd_list_free, cmd_list_new, cmd_list_print};
 use hmux2::src::ffi::libc::snprintf;
-use hmux2::src::shared::arguments::{
-    args, args_parse, args_value, ARGS_COMMANDS, ARGS_PARSE_COMMANDS, ARGS_STRING,
-};
+use hmux2::src::shared::arguments::{args, args_parse, args_value, ARGS_PARSE_COMMANDS};
 
 fn cstring(value: &str) -> CString {
     CString::new(value).expect("test input contains no NUL")

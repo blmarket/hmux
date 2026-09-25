@@ -9,7 +9,7 @@ mod events;
 mod streams;
 pub use buffer::*;
 pub use events::*;
-use hmux_rt::{Handle as _, Runtime as _};
+use hmux_rt::Runtime as _;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};

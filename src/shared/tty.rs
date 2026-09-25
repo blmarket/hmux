@@ -10,7 +10,7 @@ use super::hyperlinks::hyperlinks;
 use super::key::key_code;
 use super::mouse::mouse_event;
 use super::screen::screen;
-use super::terminal::{term, termios};
+use super::terminal::termios;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 233;
 pub const TTYC_VPA: tty_code_code = 232;

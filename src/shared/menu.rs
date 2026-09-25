@@ -7,7 +7,6 @@ use super::key::key_code;
 use super::layout::box_lines;
 use super::mouse::mouse_event;
 use super::screen::screen;
-use super::style::style;
 use super::window::window;
 #[derive(Copy, Clone)]
 #[repr(C)]

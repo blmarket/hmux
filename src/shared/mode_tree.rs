@@ -3,7 +3,7 @@
 use super::abi::{size_t, u_int, uint64_t};
 use super::client::client;
 use super::key::key_code;
-use super::menu::{menu, menu_item};
+use super::menu::menu_item;
 use super::pane::window_pane;
 use super::prompt::{prompt, prompt_free_cb, prompt_key_result, prompt_result};
 use super::screen::screen;

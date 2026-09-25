@@ -1,6 +1,5 @@
 use crate::src::ffi::libc::forkpty;
 use crate::src::shared::abi::*;
-use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
 use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::terminal::*;
 

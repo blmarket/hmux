@@ -5,17 +5,13 @@ use crate::src::reactor::{
     evbuffer_pullup,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__int64_t, int64_t, ssize_t};
-use crate::src::shared::ctype::{
-    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
-    _ISspace, _ISupper, _ISxdigit, ctype_code,
-};
+use crate::src::shared::abi::{int64_t, ssize_t};
+use crate::src::shared::ctype::{_ISdigit, _ISspace, _ISxdigit};
 use crate::src::shared::event::*;
 use crate::src::shared::json::{
-    json_fields, json_fields_storage, json_members, json_members_storage, json_node,
-    json_node_c2rust_unnamed, json_node_oentry, json_node_type,
+    json_fields, json_fields_storage, json_members, json_members_storage, json_node, json_node_type,
 };
-use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
+use crate::src::shared::tree::RB_NEGINF;
 use std::ffi::CStr;
 use std::ffi::CString;
 

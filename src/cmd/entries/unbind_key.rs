@@ -6,17 +6,11 @@ use crate::src::key_bindings::{
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::*;
-use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
+use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item, cmds};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::key::*;
-use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_table, key_table_entry,
-};
-
-use crate::src::shared::key::key_code_enum as C2RustUnnamed_1;
 
 #[no_mangle]
 pub static mut cmd_unbind_key_entry: cmd_entry = unsafe {

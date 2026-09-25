@@ -1,10 +1,8 @@
 //! Authoritative command objects, queues, parsing records, and scalar domains.
 
 use super::abi::{time_t, u_int};
-use super::account::group;
 use super::arguments::{args, args_parse};
 use super::client::client;
-use super::event::event;
 use super::format::format_tree;
 use super::key::key_event;
 use super::pane::window_pane;

@@ -205,11 +205,7 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
             &raw mut tmp as *mut ::core::ffi::c_char,
             ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
         );
-        wl = crate::src::window::winlink_stack_next(
-            &(*s).lastw,
-            &raw mut (*s).windows,
-            wl,
-        );
+        wl = crate::src::window::winlink_stack_next(&(*s).lastw, &raw mut (*s).windows, wl);
     }
     return Some(CStr::from_ptr(&raw mut result as *mut ::core::ffi::c_char).to_owned());
 }
@@ -229,11 +225,7 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
         if wl == (*ft).wl {
             break;
         }
-        wl = crate::src::window::winlink_stack_next(
-            &(*s).lastw,
-            &raw mut (*s).windows,
-            wl,
-        );
+        wl = crate::src::window::winlink_stack_next(&(*s).lastw, &raw mut (*s).windows, wl);
     }
     if wl.is_null() {
         return Some(c"0".to_owned());

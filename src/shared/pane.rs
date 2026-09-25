@@ -6,7 +6,7 @@ use std::ffi::CString;
 use super::abi::{bitstr_t, pid_t, size_t, time_t, timeval, u_int, uint64_t};
 use super::client::client;
 use super::colour::{client_theme, colour_palette};
-use super::command::{cmdq_item, wait_item};
+use super::command::cmdq_item;
 use super::display::visible_ranges;
 use super::event::{bufferevent, event};
 use super::grid::grid_cell;
@@ -18,7 +18,6 @@ use super::screen::screen;
 use super::spawn::spawn_editor_state;
 use super::status::status_prompt_input_cb;
 use super::style::{style, style_line_entry};
-use super::tty::tty;
 use super::window::{window, window_mode_entry};
 #[derive(Copy, Clone)]
 #[repr(C)]

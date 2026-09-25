@@ -1,6 +1,6 @@
 //! Authoritative spawn declarations, shared by the C translation units.
 
-use super::abi::{pid_t, size_t};
+use super::abi::pid_t;
 use super::client::client;
 use super::command::cmdq_item;
 use super::environment::environ;

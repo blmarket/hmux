@@ -3,13 +3,11 @@ use std::ffi::CString;
 use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{fgetc, fopen, ioctl, readlink, setenv, tcgetpgrp, unsetenv};
 use crate::src::reactor::event_init;
+use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
 use crate::src::shared::event::*;
 use crate::src::shared::stdio::EOF;
-use crate::src::shared::stdio::{
-    _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
-};
+use crate::src::shared::stdio::FILE;
 
 pub const MAXPATHLEN: ::core::ffi::c_int = PATH_MAX;
 pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;

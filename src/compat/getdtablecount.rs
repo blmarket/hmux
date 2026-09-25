@@ -1,9 +1,7 @@
 use crate::src::compat::glob::GlobResult;
 use crate::src::ffi::libc::{getpid, snprintf};
 use crate::src::log::fatal;
-use crate::src::shared::abi::__size_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::posix_io::{dirent, glob_t, stat};
 use std::ffi::CStr;
 
 #[no_mangle]

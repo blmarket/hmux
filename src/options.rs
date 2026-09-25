@@ -1,9 +1,9 @@
 use crate::src::alerts::alerts_reset_all;
 use crate::src::arguments::{args_get, args_has};
+use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::cmd::{cmd_list_free, cmd_list_print_cstring};
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{fnmatch, free, strcasecmp, strcmp, strncmp, strsep, strstr};
+use crate::src::ffi::libc::{fnmatch, strcasecmp, strcmp, strncmp, strsep, strstr};
 use crate::src::format::format_expand_cstring;
 use crate::src::grid::grid_default_cell;
 use crate::src::hooks::hooks_monitor_free;
@@ -13,7 +13,7 @@ use crate::src::layout::layout_fix_panes;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::options_parse::{
     match_option_name, parse_array_index, parse_option_name, ArrayIndex, ArrayIndexError,
-    OptionNameError, OptionNameMatch, OptionNameMatchError, ParsedOptionName,
+    OptionNameMatch, OptionNameMatchError,
 };
 use crate::src::options_table::{options_other_names, options_table};
 use crate::src::resize::recalculate_sizes;
@@ -25,7 +25,6 @@ use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
 use crate::src::session::{session_update_history, sessions_minmax, sessions_next};
 use crate::src::shared::options::options_name_map;
-use crate::src::shared::pane::window_pane_tree;
 use crate::src::status::{status_timer_start_all, status_update_cache};
 use crate::src::style::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
 use crate::src::style::{
@@ -63,10 +62,7 @@ macro_rules! format_options_cause {
 }
 
 /// The option diagnostics use only literal text and `%s` substitutions.
-unsafe fn options_string_cause(
-    fmt: &CStr,
-    args: &[*const ::core::ffi::c_char],
-) -> CString {
+unsafe fn options_string_cause(fmt: &CStr, args: &[*const ::core::ffi::c_char]) -> CString {
     let fmt = fmt.to_bytes();
     let mut message = Vec::with_capacity(fmt.len());
     let mut at = 0;
@@ -92,75 +88,29 @@ unsafe fn options_string_cause(
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::*;
-use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
-    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
-};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
+use crate::src::shared::client::client;
+use crate::src::shared::command::{cmd_find_state, cmd_list};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::control::control_state;
-use crate::src::shared::ctype::{
-    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
-    _ISspace, _ISupper, _ISxdigit, ctype_code,
-};
-use crate::src::shared::display::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
-use crate::src::shared::environment::environ;
-use crate::src::shared::event::*;
-use crate::src::shared::format::{format_job_tree, format_tree};
+use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
-use crate::src::shared::input::{input_ctx, input_request, input_requests};
 use crate::src::shared::key::*;
-use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
-};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
-use crate::src::shared::menu::menu_data;
-use crate::src::shared::message::*;
-use crate::src::shared::mouse::mouse_event;
+use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::*;
 use crate::src::shared::options::{
-    options, options_array, options_array_item, options_array_storage, options_entry,
-    options_storage, options_table_entry, options_value, OptionCommand, OptionsArrayKey,
+    options, options_array_item, options_array_storage, options_entry, options_storage,
+    options_table_entry, options_value, OptionCommand, OptionsArrayKey,
 };
 use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_NONE,
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
-use crate::src::shared::pane::{
-    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
-};
-use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_STYLECHANGED,
-    PANE_THEMECHANGED,
-};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-use crate::src::shared::screen_write::screen_write_cline;
-use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_line;
+use crate::src::shared::pane::window_pane;
+use crate::src::shared::pane::{PANE_CHANGED, PANE_STYLECHANGED, PANE_THEMECHANGED};
+use crate::src::shared::session::session;
 use crate::src::shared::style::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
+use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::tty::TTY_OPENED;
-use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
-use crate::src::shared::window::{
-    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
-    winlink_stack, winlinks,
-};
-
-use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
+use crate::src::shared::window::{window, winlink};
 
 fn set_scalar_string(o: &mut options_entry, value: CString) {
     // Formatting has completed, so callers may have supplied the old value
@@ -171,8 +121,6 @@ fn set_scalar_string(o: &mut options_entry, value: CString) {
 fn set_array_string(a: &mut options_array_item, value: CString) {
     a.value = options_value::String(value);
 }
-
-use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
 fn options_array_correct_key(key: &CStr) -> Option<CString> {
     match parse_array_index(key.to_bytes()) {
@@ -269,8 +217,7 @@ unsafe fn options_value_to_cstring(
                     .to_owned()
                 }
             }
-            5 => CStr::from_ptr(*(*tableentry).choices.offset(ov.number() as isize))
-                .to_owned(),
+            5 => CStr::from_ptr(*(*tableentry).choices.offset(ov.number() as isize)).to_owned(),
             _ => {
                 fatalx(b"not a number option type\0" as *const u8 as *const ::core::ffi::c_char);
             }
@@ -2061,10 +2008,8 @@ mod array_string_owner_tests {
     #[test]
     fn formatted_diagnostic_preserves_non_utf8_arguments() {
         unsafe {
-            let message = options_string_cause(
-                c"value is %s: %s",
-                &[c"invalid".as_ptr(), c"\xff".as_ptr()],
-            );
+            let message =
+                options_string_cause(c"value is %s: %s", &[c"invalid".as_ptr(), c"\xff".as_ptr()]);
             assert_eq!(message.to_bytes(), b"value is invalid: \xff");
         }
     }

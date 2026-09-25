@@ -14,27 +14,19 @@ use crate::src::reactor::{
     event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t};
+use crate::src::shared::abi::{gid_t, uid_t, uint32_t};
 use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::message::*;
-use crate::src::shared::message::{ibuf, imsg, imsgbuf, msgbuf};
+use crate::src::shared::message::{ibuf, imsg, imsgbuf};
 use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{
-    __sighandler_t, __sigset_t, __sigval_t, sigaction, sigaction___sigaction_handler, siginfo_t,
-    siginfo_t__sifields, siginfo_t__sifields__kill, siginfo_t__sifields__rt,
-    siginfo_t__sifields__sigchld, siginfo_t__sifields__sigfault,
-    siginfo_t__sifields__sigfault__bounds, siginfo_t__sifields__sigfault__bounds__addr_bnd,
-    siginfo_t__sifields__sigpoll, siginfo_t__sifields__sigsys, siginfo_t__sifields__timer,
-    sigset_t, sigval, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN,
-    SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH, SIG_DFL,
+    __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, SA_RESTART, SIGCHLD,
+    SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH,
+    SIG_DFL,
 };
-use crate::src::shared::socket::{
-    __socket_type, AF_UNIX, PF_LOCAL, PF_UNIX, PF_UNSPEC, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
-    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
-};
+use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::tmux::{getversion, socket_path};
-use ::libc;
 use std::ffi::CStr;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;

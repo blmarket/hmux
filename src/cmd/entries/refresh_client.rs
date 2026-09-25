@@ -8,85 +8,30 @@ use crate::src::control::{
     control_add_sub, control_clear_window_size, control_continue_pane, control_pause_pane,
     control_remove_sub, control_set_pane_off, control_set_pane_on, control_set_window_size,
 };
-use crate::src::ffi::libc::{free, sscanf};
+use crate::src::ffi::libc::sscanf;
 use crate::src::log::log_debug;
 use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
 use crate::src::server_client::server_client_set_flags;
 use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::*;
-use crate::src::shared::arguments::{
-    args, args_parse, args_parse_cb, args_value, args_value_entry,
-};
-use crate::src::shared::client::*;
-use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
-    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
-};
+use crate::src::shared::arguments::{args, args_parse, args_value};
+use crate::src::shared::client::client;
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_SIZECHANGED, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED,
 };
-use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds,
-};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
-use crate::src::shared::control::control_state;
-use crate::src::shared::display::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
-use crate::src::shared::environment::environ;
-use crate::src::shared::event::*;
-use crate::src::shared::format::{format_job_tree, format_tree};
-use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
-use crate::src::shared::input::{input_ctx, input_request, input_requests};
-use crate::src::shared::key::*;
-use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
-};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
-use crate::src::shared::menu::menu_data;
-use crate::src::shared::message::*;
-use crate::src::shared::monitor::{
-    monitor_type, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION,
-    MONITOR_WINDOW,
-};
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
-use crate::src::shared::pane::{
-    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
-};
-use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_MINIMUM, PANE_THEMECHANGED,
-};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-use crate::src::shared::screen_write::screen_write_cline;
-use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_line;
-use crate::src::shared::style::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-use crate::src::shared::window::{
-    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
-    winlink_stack, winlinks,
-};
+use crate::src::shared::limits::INT_MAX;
+use crate::src::shared::pane::PANE_THEMECHANGED;
+use crate::src::shared::tty::tty;
+use crate::src::shared::window::window;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
 use crate::src::tty::{tty_clipboard_query, tty_set_size, tty_update_client_offset};
 use crate::src::tty_keys::tty_keys_colours;
 use crate::src::window::window_pane_find_by_id;
 use std::ffi::{CStr, CString};
-
-use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 #[no_mangle]
 pub static mut cmd_refresh_client_entry: cmd_entry = unsafe {

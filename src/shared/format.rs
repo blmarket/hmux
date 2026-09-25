@@ -2,7 +2,7 @@
 
 use super::abi::{time_t, u_int};
 use super::client::client;
-use super::command::{cmd, cmdq_item};
+use super::command::cmdq_item;
 use super::job::job;
 use super::mouse::mouse_event;
 use super::pane::window_pane;

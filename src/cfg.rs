@@ -7,83 +7,33 @@ use crate::src::cmd::queue::{
 };
 use crate::src::compat::stdio::CFile;
 use crate::src::control::control_notify_write;
-use crate::src::ffi::libc::{__errno_location, fopen, free, memset, strerror};
+use crate::src::ffi::libc::{__errno_location, fopen, strerror};
 use crate::src::log::log_debug;
 use crate::src::prompt_history::prompt_load_history;
 use crate::src::server::clients;
 use crate::src::session::sessions;
 use crate::src::session::sessions_minmax;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__off64_t, __off_t};
 use crate::src::shared::arguments::args;
+use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::client::*;
-use crate::src::shared::client::{
-    client, client_file, client_file_cb, client_file_entry, client_files, overlay_check_cb,
-    overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
-};
-use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_list, cmdq_state, cmds,
-};
+use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
-use crate::src::shared::control::control_state;
-use crate::src::shared::display::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
-use crate::src::shared::environment::environ;
 use crate::src::shared::errno::ENOENT;
-use crate::src::shared::event::*;
-use crate::src::shared::format::{format_job_tree, format_tree};
-use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks;
-use crate::src::shared::input::{input_ctx, input_request, input_requests};
-use crate::src::shared::key::*;
-use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
-};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-use crate::src::shared::menu::menu_data;
-use crate::src::shared::message::*;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
-use crate::src::shared::pane::{
-    window_pane, window_pane_modes, window_pane_prompt, window_pane_tree_entry, window_panes,
-};
-use crate::src::shared::pane::{window_pane_offset, window_pane_resize, window_pane_resizes};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-use crate::src::shared::screen_write::screen_write_cline;
-use crate::src::shared::session::{session, session_entry};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_line;
-use crate::src::shared::stdio::{
-    _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
-};
-use crate::src::shared::style::*;
-use crate::src::shared::terminal::*;
+use crate::src::shared::key::key_event;
+use crate::src::shared::pane::window_pane;
+use crate::src::shared::session::session;
+use crate::src::shared::stdio::FILE;
 use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
-use crate::src::shared::window::{
-    window, window_entry, window_mode, window_mode_entry, window_winlinks, winlink, winlink_entry,
-    winlink_stack, winlinks,
-};
+use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::window::window_pane_set_mode;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::xmalloc::xvasprintf_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
-
-use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
-use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 #[no_mangle]
 pub static mut cfg_client: *mut client = ::core::ptr::null::<client>() as *mut client;

@@ -4,7 +4,7 @@ use crate::src::shared::hyperlinks::{
     hyperlink_inner_entry, hyperlink_uri_entry, hyperlinks, hyperlinks_by_inner_tree,
     hyperlinks_by_uri_tree, hyperlinks_uri,
 };
-use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
+use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 use crate::src::text::utf8::utf8_stravis_cstring;
 use std::{collections::VecDeque, ffi::CString};

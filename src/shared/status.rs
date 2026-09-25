@@ -6,7 +6,7 @@ use super::event::event;
 use super::grid::grid_cell;
 use super::prompt::{prompt_key_result, prompt_result};
 use super::screen::screen;
-use super::style::{style, style_line_entry};
+use super::style::style_line_entry;
 use std::collections::VecDeque;
 use std::ffi::CString;
 
