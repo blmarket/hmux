@@ -25,13 +25,13 @@ macro_rules! set_paste_cause {
 }
 
 unsafe fn paste_name_cause(
-    cause: *mut Option<CString>,
+    cause: Option<&mut Option<CString>>,
     prefix: &[u8],
     name: *const ::core::ffi::c_char,
 ) {
-    if cause.is_null() {
+    let Some(cause) = cause else {
         return;
-    }
+    };
     let mut message = prefix.to_vec();
     message.extend_from_slice(CStr::from_ptr(name).to_bytes());
     *cause = Some(CString::new(message).expect("paste diagnostic contains no NUL"));
@@ -474,14 +474,14 @@ pub unsafe fn paste_rename(
     }
     let Some(name) = clean_name_cstring(CStr::from_ptr(newname), 0) else {
         if !cause.is_null() {
-            paste_name_cause(cause, b"invalid buffer name: ", newname);
+            paste_name_cause(cause.as_mut(), b"invalid buffer name: ", newname);
         }
         return -(1 as ::core::ffi::c_int);
     };
     pb = paste_get_name(oldname);
     if pb.is_null() {
         if !cause.is_null() {
-            paste_name_cause(cause, b"no buffer ", oldname);
+            paste_name_cause(cause.as_mut(), b"no buffer ", oldname);
         }
         return -(1 as ::core::ffi::c_int);
     }
@@ -561,7 +561,7 @@ unsafe fn paste_set_inner(
     }
     let Some(newname) = clean_name_cstring(CStr::from_ptr(name), 0) else {
         if !cause.is_null() {
-            paste_name_cause(cause, b"invalid buffer name: ", name);
+            paste_name_cause(cause.as_mut(), b"invalid buffer name: ", name);
         }
         return -(1 as ::core::ffi::c_int);
     };
