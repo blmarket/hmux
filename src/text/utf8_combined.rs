@@ -140,85 +140,85 @@ pub unsafe extern "C" fn utf8_should_combine(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn hanguljamo_get_subclass(mut s: *const u_char) -> hanguljamo_subclass {
-    match *s.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int {
-        225 => match *s.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int {
+fn hanguljamo_get_subclass(s: &[u_char; 3]) -> hanguljamo_subclass {
+    match s[0] as ::core::ffi::c_int {
+        225 => match s[1] as ::core::ffi::c_int {
             132 => {
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0x80 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0x92 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_CHOSEONG;
                 }
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0x93 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0xbf as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_CHOSEONG;
                 }
             }
             133 => {
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     == 0x9f as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_CHOSEONG_FILLER;
                 }
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     == 0xa0 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_JUNGSEONG_FILLER;
                 }
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0x80 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0x9e as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_CHOSEONG;
                 }
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0xa1 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0xb5 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_JUNGSEONG;
                 }
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0xb6 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0xbf as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_JUNGSEONG;
                 }
             }
             134 => {
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0x80 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0xa7 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_JUNGSEONG;
                 }
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0xa8 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0xbf as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_JONGSEONG;
                 }
             }
             135 => {
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0x80 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0x82 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_JONGSEONG;
                 }
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0x83 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0xbf as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_OLD_JONGSEONG;
@@ -227,39 +227,39 @@ unsafe extern "C" fn hanguljamo_get_subclass(mut s: *const u_char) -> hanguljamo
             _ => {}
         },
         234 => {
-            if *s.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+            if s[1] as ::core::ffi::c_int
                 == 0xa5 as ::core::ffi::c_int
-                && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                && s[2] as ::core::ffi::c_int
                     >= 0xa0 as ::core::ffi::c_int
-                && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                && s[2] as ::core::ffi::c_int
                     <= 0xbc as ::core::ffi::c_int
             {
                 return HANGULJAMO_SUBCLASS_EXTENDED_OLD_CHOSEONG;
             }
         }
         237 => {
-            if *s.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+            if s[1] as ::core::ffi::c_int
                 == 0x9e as ::core::ffi::c_int
-                && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                && s[2] as ::core::ffi::c_int
                     >= 0xb0 as ::core::ffi::c_int
-                && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                && s[2] as ::core::ffi::c_int
                     <= 0xbf as ::core::ffi::c_int
             {
                 return HANGULJAMO_SUBCLASS_EXTENDED_OLD_JUNGSEONG;
             }
-            if !(*s.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+            if !(s[1] as ::core::ffi::c_int
                 != 0x9f as ::core::ffi::c_int)
             {
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0x80 as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0x86 as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_EXTENDED_OLD_JUNGSEONG;
                 }
-                if *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                if s[2] as ::core::ffi::c_int
                     >= 0x8b as ::core::ffi::c_int
-                    && *s.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+                    && s[2] as ::core::ffi::c_int
                         <= 0xbb as ::core::ffi::c_int
                 {
                     return HANGULJAMO_SUBCLASS_EXTENDED_OLD_JONGSEONG;
@@ -270,7 +270,7 @@ unsafe extern "C" fn hanguljamo_get_subclass(mut s: *const u_char) -> hanguljamo
     }
     return HANGULJAMO_SUBCLASS_NOT_HANGULJAMO;
 }
-unsafe extern "C" fn hanguljamo_get_class(mut s: *const u_char) -> hanguljamo_class {
+fn hanguljamo_get_class(s: &[u_char; 3]) -> hanguljamo_class {
     match hanguljamo_get_subclass(s) as ::core::ffi::c_uint {
         1 | 3 | 2 | 9 => return HANGULJAMO_CLASS_CHOSEONG,
         5 | 4 | 6 | 10 => return HANGULJAMO_CLASS_JUNGSEONG,
@@ -280,25 +280,27 @@ unsafe extern "C" fn hanguljamo_get_class(mut s: *const u_char) -> hanguljamo_cl
     }
     return HANGULJAMO_CLASS_NOT_HANGULJAMO;
 }
+fn hanguljamo_last_three(ud: &utf8_data) -> Option<&[u_char; 3]> {
+    let size = ud.size as usize;
+    let start = size.checked_sub(3)?;
+    ud.data.get(start..size)?.try_into().ok()
+}
 #[no_mangle]
 pub unsafe extern "C" fn hanguljamo_check_state(
     mut p_ud: *const utf8_data,
     mut ud: *const utf8_data,
 ) -> hanguljamo_state {
-    let mut s: *const u_char = ::core::ptr::null::<u_char>();
     if (*ud).size as ::core::ffi::c_int != 3 as ::core::ffi::c_int {
         return HANGULJAMO_STATE_NOT_HANGULJAMO;
     }
-    match hanguljamo_get_class(&raw const (*ud).data as *const u_char) as ::core::ffi::c_uint {
+    let bytes: &[u_char; 3] = (&(*ud).data).get(..3).unwrap().try_into().unwrap();
+    match hanguljamo_get_class(bytes) as ::core::ffi::c_uint {
         1 => return HANGULJAMO_STATE_CHOSEONG,
         2 => {
-            if ((*p_ud).size as ::core::ffi::c_int) < 3 as ::core::ffi::c_int {
+            let Some(previous) = hanguljamo_last_three(&*p_ud) else {
                 return HANGULJAMO_STATE_NOT_COMPOSABLE;
-            }
-            s = (&raw const (*p_ud).data as *const u_char)
-                .offset((*p_ud).size as ::core::ffi::c_int as isize)
-                .offset(-(3 as ::core::ffi::c_int as isize));
-            if hanguljamo_get_class(s) as ::core::ffi::c_uint
+            };
+            if hanguljamo_get_class(previous) as ::core::ffi::c_uint
                 == HANGULJAMO_CLASS_CHOSEONG as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 return HANGULJAMO_STATE_COMPOSABLE;
@@ -306,13 +308,10 @@ pub unsafe extern "C" fn hanguljamo_check_state(
             return HANGULJAMO_STATE_NOT_COMPOSABLE;
         }
         3 => {
-            if ((*p_ud).size as ::core::ffi::c_int) < 3 as ::core::ffi::c_int {
+            let Some(previous) = hanguljamo_last_three(&*p_ud) else {
                 return HANGULJAMO_STATE_NOT_COMPOSABLE;
-            }
-            s = (&raw const (*p_ud).data as *const u_char)
-                .offset((*p_ud).size as ::core::ffi::c_int as isize)
-                .offset(-(3 as ::core::ffi::c_int as isize));
-            if hanguljamo_get_class(s) as ::core::ffi::c_uint
+            };
+            if hanguljamo_get_class(previous) as ::core::ffi::c_uint
                 == HANGULJAMO_CLASS_JUNGSEONG as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 return HANGULJAMO_STATE_COMPOSABLE;
