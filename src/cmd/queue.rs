@@ -585,7 +585,6 @@ pub unsafe extern "C" fn cmdq_get_command(
         return cmdq_get_callback_owned(
             b"cmdq_empty_command\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| CMD_RETURN_NORMAL)),
-            ::core::ptr::null_mut(),
         );
     }
     if state.is_null() {
@@ -858,7 +857,6 @@ unsafe extern "C" fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
 pub unsafe fn cmdq_get_callback_owned(
     mut name: *const ::core::ffi::c_char,
     mut cb: cmdq_cb,
-    mut data: *mut ::core::ffi::c_void,
 ) -> *mut cmdq_item {
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     item = cmdq_new_named_item(if name.is_null() {
@@ -874,7 +872,6 @@ pub unsafe fn cmdq_get_callback_owned(
         0 as ::core::ffi::c_int,
     );
     (*item).cb = cb;
-    (*item).data = data;
     return item;
 }
 
@@ -888,16 +885,19 @@ pub unsafe extern "C" fn cmdq_get_callback1(
     data: *mut ::core::ffi::c_void,
 ) -> *mut cmdq_item {
     let callback = cb.map(|callback| {
-        Box::new(move |item| unsafe { callback(item, (*item).data) })
+        Box::new(move |item| unsafe { callback(item, data) })
             as Box<dyn FnOnce(*mut cmdq_item) -> cmd_retval>
     });
-    cmdq_get_callback_owned(name, callback, data)
+    let item = cmdq_get_callback_owned(name, callback);
+    (*item).data = data;
+    item
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> *mut cmdq_item {
     let error = CStr::from_ptr(error).to_owned();
-    cmdq_get_callback_owned(
+    let data = error.as_ptr().cast_mut().cast();
+    let item = cmdq_get_callback_owned(
         b"cmdq_error_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(Box::new(move |item| unsafe {
             cmdq_error(
@@ -907,8 +907,9 @@ pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -
             );
             CMD_RETURN_NORMAL
         })),
-        ::core::ptr::null_mut(),
-    )
+    );
+    (*item).data = data;
+    item
 }
 unsafe extern "C" fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
     (*item).flags |= CMDQ_FIRED;
@@ -1228,7 +1229,6 @@ mod cancellation_tests {
             let item = cmdq_get_callback_owned(
                 c"cancel-payload".as_ptr(),
                 None,
-                std::ptr::null_mut(),
             );
             cmdq_set_cancel_callback(&mut *item, Box::new(move || drop(payload)));
             cmdq_free_detached(item);

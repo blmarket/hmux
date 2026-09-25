@@ -770,7 +770,6 @@ pub unsafe fn status_prompt_set(
             cmdq_get_callback_owned(
                 b"status_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
                 Some(Box::new(move |_| unsafe { status_prompt_accept(c) })),
-                ::core::ptr::null_mut(),
             ),
         );
     }

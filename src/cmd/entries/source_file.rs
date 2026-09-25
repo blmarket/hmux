@@ -127,7 +127,6 @@ unsafe extern "C" fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_da
         Some(Box::new(move |item| unsafe {
             cmd_source_file_complete_cb(item, cdata)
         })),
-        ::core::ptr::null_mut(),
     );
     cmdq_set_cancel_callback(
         &mut *new_item,

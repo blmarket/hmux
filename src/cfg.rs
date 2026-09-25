@@ -87,7 +87,6 @@ pub unsafe extern "C" fn start_cfg() {
         cfg_item = cmdq_get_callback_owned(
             b"cfg_client_done\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| unsafe { cfg_client_done() })),
-            ::core::ptr::null_mut::<::core::ffi::c_void>(),
         );
         cmdq_append(c, cfg_item);
     }
@@ -109,7 +108,6 @@ pub unsafe extern "C" fn start_cfg() {
         cmdq_get_callback_owned(
             b"cfg_done\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| unsafe { cfg_done() })),
-            ::core::ptr::null_mut::<::core::ffi::c_void>(),
         ),
     );
 }

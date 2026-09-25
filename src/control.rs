@@ -1048,7 +1048,6 @@ unsafe fn control_read_callback(
                         Some(Box::new(move |item| unsafe {
                             control_error(item, error)
                         })),
-                        ::core::ptr::null_mut(),
                     );
                     cmdq_append(c, error_item);
                 }

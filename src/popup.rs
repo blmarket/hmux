@@ -36,7 +36,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::input::input_ctx;
-use crate::src::shared::job::job;
+use crate::src::shared::job::{job, job_update_callback};
 use crate::src::shared::job::{JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY};
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
@@ -1080,9 +1080,9 @@ pub unsafe fn popup_display(
         env,
         s,
         (!cwd.is_null()).then(|| CStr::from_ptr(cwd)),
-        Some(Box::new(move |job| unsafe {
+        job_update_callback(move |job| unsafe {
             popup_job_update_cb(job, pd)
-        })),
+        }),
         Some(Box::new(move |job| unsafe {
             popup_job_complete_cb(job, pd)
         })),

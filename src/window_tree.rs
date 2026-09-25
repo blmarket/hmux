@@ -1970,7 +1970,6 @@ unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tre
         Some(Box::new(move |_| unsafe {
             window_tree_command_done(data)
         })),
-        ::core::ptr::null_mut(),
     );
     cmdq_set_cancel_callback(
         &mut *item,

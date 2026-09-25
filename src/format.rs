@@ -117,7 +117,7 @@ use crate::src::shared::format::{
     FORMAT_WINDOW, FORMAT_WINDOWS, FORMAT_WINDOW_NAME,
 };
 use crate::src::shared::grid::*;
-use crate::src::shared::job::job;
+use crate::src::shared::job::{job, job_update_callback};
 use crate::src::shared::job::JOB_NOWAIT;
 use crate::src::shared::key::key_event;
 use crate::src::shared::layout::layout_cell;

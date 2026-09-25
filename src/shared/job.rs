@@ -2,7 +2,7 @@
 
 use super::abi::pid_t;
 use super::event::bufferevent;
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::rc::Rc;
 pub const JOB_NOWAIT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
@@ -26,8 +26,6 @@ pub struct job {
     pub updatecb: job_update_cb,
     pub completecb: job_complete_cb,
     pub freecb: job_free_cb,
-    /// Shared liveness state for callbacks that may release the job reentrantly.
-    pub alive: Rc<Cell<bool>>,
     pub entry: job_entry,
 }
 
@@ -45,13 +43,18 @@ impl job {
             updatecb: Default::default(),
             completecb: Default::default(),
             freecb: Default::default(),
-            alive: Rc::new(Cell::new(true)),
             entry: Default::default(),
         }
     }
 }
 
-pub type job_update_cb = Option<Box<dyn FnMut(*mut job)>>;
+pub type job_update_cb = Option<
+    Rc<RefCell<Option<Box<dyn FnMut(*mut job)>>>>,
+>;
+
+pub fn job_update_callback(callback: impl FnMut(*mut job) + 'static) -> job_update_cb {
+    Some(Rc::new(RefCell::new(Some(Box::new(callback)))))
+}
 
 pub type job_complete_cb = Option<Box<dyn FnOnce(*mut job)>>;
 

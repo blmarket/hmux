@@ -6,7 +6,6 @@ use super::display::screen_cursor_style;
 use super::grid::{grid_cell, utf8_data};
 use super::screen_write::screen_write_ctx;
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
 pub type prompt_type = ::core::ffi::c_uint;
 pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
 pub const PROMPT_TYPE_INVALID: prompt_type = 255;
@@ -74,7 +73,6 @@ pub struct prompt {
     pub index: size_t,
     pub inputcb: prompt_input_cb,
     pub freecb: prompt_free_cb,
-    pub alive: Rc<()>,
     pub message_format: CString,
     pub keys: ::core::ffi::c_int,
     pub word_separators: CString,

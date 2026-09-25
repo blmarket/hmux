@@ -399,7 +399,6 @@ pub unsafe extern "C" fn job_transfer(
     mut ttylen: size_t,
 ) -> ::core::ffi::c_int {
     let mut fd: ::core::ffi::c_int = (*job).fd;
-    (*job).alive.set(false);
     log_debug(
         b"transfer job %p: %s\0" as *const u8 as *const ::core::ffi::c_char,
         job,
@@ -428,7 +427,6 @@ pub unsafe extern "C" fn job_transfer(
 }
 #[no_mangle]
 pub unsafe extern "C" fn job_free(mut job: *mut job) {
-    (*job).alive.set(false);
     log_debug(
         b"free job %p: %s\0" as *const u8 as *const ::core::ffi::c_char,
         job,
@@ -489,12 +487,16 @@ unsafe fn job_read_callback(
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut job: *mut job = data as *mut job;
-    let alive = (*job).alive.clone();
-    if let Some(mut callback) = (*job).updatecb.take() {
-        callback(job);
-        if alive.get() && (*job).updatecb.is_none() {
-            (*job).updatecb = Some(callback);
-        }
+    let Some(callback_slot) = (*job).updatecb.as_ref().cloned() else {
+        return;
+    };
+    let Some(mut callback) = callback_slot.borrow_mut().take() else {
+        return;
+    };
+    callback(job);
+    let mut callback_owner = callback_slot.borrow_mut();
+    if callback_owner.is_none() {
+        *callback_owner = Some(callback);
     }
 }
 unsafe fn job_write_callback(

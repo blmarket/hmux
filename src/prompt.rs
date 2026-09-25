@@ -53,6 +53,10 @@ use crate::src::text::utf8::{
 use crate::src::tmux::{global_options, global_s_options};
 use std::ffi::{CStr, CString};
 
+const PROMPT_CALLBACK_ACTIVE: ::core::ffi::c_int = 0x2000;
+const PROMPT_FREE_PENDING: ::core::ffi::c_int = 0x4000;
+const PROMPT_FREEING: ::core::ffi::c_int = 0x8000;
+
 unsafe fn prompt_buffer_cells(pr: *mut prompt) -> *mut utf8_data {
     (*pr).buffer.as_mut_ptr()
 }
@@ -335,13 +339,22 @@ pub unsafe extern "C" fn prompt_create(mut pd: *mut prompt_create_data) -> *mut 
 }
 #[no_mangle]
 pub unsafe extern "C" fn prompt_free(mut pr: *mut prompt) {
-    if !pr.is_null() {
-        if let Some(callback) = (*pr).freecb.take() {
-            callback();
-        }
-        prompt_clear_complete(pr);
-        drop(Box::from_raw(pr));
+    if pr.is_null() {
+        return;
     }
+    if (*pr).flags & PROMPT_FREEING != 0 {
+        return;
+    }
+    if (*pr).flags & PROMPT_CALLBACK_ACTIVE != 0 {
+        (*pr).flags |= PROMPT_FREE_PENDING;
+        return;
+    }
+    (*pr).flags |= PROMPT_FREEING;
+    if let Some(callback) = (*pr).freecb.take() {
+        callback();
+    }
+    prompt_clear_complete(pr);
+    drop(Box::from_raw(pr));
 }
 fn prompt_last(pr: &prompt) -> &CStr {
     pr.last
@@ -355,11 +368,14 @@ unsafe extern "C" fn prompt_fire_callback(
     mut type_0: prompt_key_result,
     mut redraw: *mut ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let alive = (*pr).alive.clone();
     let mut callback = (*pr).inputcb.take().expect("non-null prompt callback");
+    (*pr).flags |= PROMPT_CALLBACK_ACTIVE;
     let text = (!s.is_null()).then(|| CStr::from_ptr(s));
     let result = callback(text, type_0);
-    if ::std::rc::Rc::strong_count(&alive) == 1 {
+    let free_pending = (*pr).flags & PROMPT_FREE_PENDING != 0;
+    (*pr).flags &= !PROMPT_CALLBACK_ACTIVE;
+    if free_pending {
+        prompt_free(pr);
         return 1 as ::core::ffi::c_int;
     }
     if (*pr).inputcb.is_none() {

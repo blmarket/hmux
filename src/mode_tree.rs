@@ -1536,7 +1536,6 @@ pub unsafe fn mode_tree_set_prompt(
             Some(Box::new(move |item| unsafe {
                 mode_tree_prompt_accept(item, mtd)
             })),
-            ::core::ptr::null_mut(),
         );
         cmdq_set_cancel_callback(
             &mut *item,

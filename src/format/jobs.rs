@@ -183,9 +183,9 @@ pub(super) unsafe fn format_job_get(
                 let cwd = server_client_get_cwd((*ft).client, ::core::ptr::null_mut::<session>());
                 (!cwd.is_null()).then(|| CStr::from_ptr(cwd))
             },
-            Some(Box::new(move |job| unsafe {
+            job_update_callback(move |job| unsafe {
                 format_job_update(job, fj)
-            })),
+            }),
             Some(Box::new(move |job| unsafe {
                 format_job_complete(job, fj)
             })),
