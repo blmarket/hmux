@@ -1806,7 +1806,7 @@ unsafe extern "C" fn mode_tree_display_menu(
                 {
                     (*mtd).current = line;
                     if let Some(callback) = (*mtd).menucb.as_mut() {
-                        callback(c, key);
+                        callback(std::ptr::NonNull::new(c), key);
                     }
                 }
             }

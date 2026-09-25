@@ -2983,7 +2983,11 @@ unsafe fn window_customize_init(
         })),
         None,
         Some(Box::new(move |client, key| {
-            window_customize_menu(data as *mut ::core::ffi::c_void, client, key)
+            window_customize_menu(
+                data as *mut ::core::ffi::c_void,
+                client.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                key,
+            )
         })),
         Some(Box::new(move |height| {
             window_customize_height(data as *mut ::core::ffi::c_void, height)

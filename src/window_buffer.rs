@@ -660,7 +660,11 @@ unsafe fn window_buffer_init(
             ) != 0
         })),
         Some(Box::new(move |client, key| {
-            window_buffer_menu(data as *mut ::core::ffi::c_void, client, key)
+            window_buffer_menu(
+                data as *mut ::core::ffi::c_void,
+                client.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                key,
+            )
         })),
         None,
         Some(Box::new(move |itemdata, line| {
