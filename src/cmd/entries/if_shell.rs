@@ -67,7 +67,7 @@ pub static mut cmd_if_shell_entry: cmd_entry = unsafe {
         },
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
-            cmd_if_shell_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_if_shell_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -77,7 +77,7 @@ fn cmd_if_shell_args_parse(_args: &mut args, idx: u_int) -> args_parse_type {
     }
     return ARGS_PARSE_STRING;
 }
-unsafe extern "C" fn cmd_if_shell_exec(
+unsafe fn cmd_if_shell_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

@@ -92,7 +92,7 @@ pub static mut cmd_wait_for_entry: cmd_entry = unsafe {
         },
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
-            cmd_wait_for_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_wait_for_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -265,7 +265,7 @@ unsafe extern "C" fn cmd_wait_for_client_name(
 ) -> *const ::core::ffi::c_char {
     return cmd_wait_for_item_client_name((*wei).item);
 }
-unsafe extern "C" fn cmd_wait_for_exec(
+unsafe fn cmd_wait_for_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

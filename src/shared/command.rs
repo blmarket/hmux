@@ -281,7 +281,7 @@ pub struct cmd_entry {
     pub source: cmd_entry_flag,
     pub target: cmd_entry_flag,
     pub flags: ::core::ffi::c_int,
-    pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
+    pub exec: Option<unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
 
 #[repr(C)]

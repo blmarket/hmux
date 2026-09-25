@@ -63,7 +63,7 @@ pub static mut cmd_capture_pane_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_capture_pane_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_capture_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -91,7 +91,7 @@ pub static mut cmd_clear_history_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_capture_pane_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_capture_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -607,7 +607,7 @@ unsafe fn cmd_capture_pane_history(
     }
     Some(buf)
 }
-unsafe extern "C" fn cmd_capture_pane_exec(
+unsafe fn cmd_capture_pane_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

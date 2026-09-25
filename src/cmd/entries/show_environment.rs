@@ -38,7 +38,7 @@ pub static mut cmd_show_environment_entry: cmd_entry = unsafe {
         flags: CMD_AFTERHOOK,
         exec: Some(
             cmd_show_environment_exec
-                as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -108,7 +108,7 @@ unsafe extern "C" fn cmd_show_environment_print(
         );
     };
 }
-unsafe extern "C" fn cmd_show_environment_exec(
+unsafe fn cmd_show_environment_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

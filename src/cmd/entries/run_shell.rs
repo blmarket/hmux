@@ -95,7 +95,7 @@ pub static mut cmd_run_shell_entry: cmd_entry = unsafe {
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
             cmd_run_shell_exec
-                as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -176,7 +176,7 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
     CString::new(message).expect("run-shell command and status text contain no NUL")
 }
 
-unsafe extern "C" fn cmd_run_shell_exec(
+unsafe fn cmd_run_shell_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

@@ -58,7 +58,7 @@ pub static mut cmd_attach_session_entry: cmd_entry = unsafe {
         },
         flags: CMD_STARTSERVER | CMD_READONLY,
         exec: Some(
-            cmd_attach_session_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_attach_session_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -232,7 +232,7 @@ pub unsafe extern "C" fn cmd_attach_session(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_attach_session_exec(
+unsafe fn cmd_attach_session_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

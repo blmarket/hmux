@@ -48,7 +48,7 @@ pub static mut cmd_swap_pane_entry: cmd_entry = unsafe {
         },
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
-            cmd_swap_pane_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_swap_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -64,7 +64,7 @@ unsafe extern "C" fn cmd_swap_pane_prev_tiled_pane(mut wp: *mut window_pane) -> 
     }
     return wp;
 }
-unsafe extern "C" fn cmd_swap_pane_exec(
+unsafe fn cmd_swap_pane_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

@@ -68,7 +68,7 @@ pub static mut cmd_select_pane_entry: cmd_entry = unsafe {
         },
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
-            cmd_select_pane_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -96,7 +96,7 @@ pub static mut cmd_last_pane_entry: cmd_entry = unsafe {
         },
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
-            cmd_select_pane_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -228,7 +228,7 @@ unsafe extern "C" fn cmd_select_pane_marked_pane(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_select_pane_exec(
+unsafe fn cmd_select_pane_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

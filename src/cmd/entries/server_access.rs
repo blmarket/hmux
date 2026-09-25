@@ -45,7 +45,7 @@ pub static mut cmd_server_access_entry: cmd_entry = unsafe {
         },
         flags: CMD_CLIENT_CANFAIL,
         exec: Some(
-            cmd_server_access_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_server_access_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -68,7 +68,7 @@ unsafe extern "C" fn cmd_server_access_deny(
     server_acl_deny(id, flags);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_server_access_exec(
+unsafe fn cmd_server_access_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

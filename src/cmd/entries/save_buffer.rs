@@ -43,7 +43,7 @@ pub static mut cmd_save_buffer_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_save_buffer_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_save_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -71,7 +71,7 @@ pub static mut cmd_show_buffer_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_save_buffer_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_save_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -94,7 +94,7 @@ unsafe fn cmd_save_buffer_done(
     }
     cmdq_continue(item);
 }
-unsafe extern "C" fn cmd_save_buffer_exec(
+unsafe fn cmd_save_buffer_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

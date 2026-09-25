@@ -67,7 +67,7 @@ pub static mut cmd_list_keys_entry: cmd_entry = unsafe {
         },
         flags: CMD_STARTSERVER | CMD_AFTERHOOK,
         exec: Some(
-            cmd_list_keys_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_list_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -201,7 +201,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         command.as_ptr(),
     );
 }
-unsafe extern "C" fn cmd_list_keys_exec(
+unsafe fn cmd_list_keys_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

@@ -75,7 +75,7 @@ pub static mut cmd_display_menu_entry: cmd_entry = unsafe {
         flags: CMD_AFTERHOOK | CMD_CLIENT_CFLAG,
         exec: Some(
             cmd_display_menu_exec
-                as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -106,7 +106,7 @@ pub static mut cmd_display_popup_entry: cmd_entry = unsafe {
         flags: CMD_AFTERHOOK | CMD_CLIENT_CFLAG,
         exec: Some(
             cmd_display_popup_exec
-                as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -964,7 +964,7 @@ unsafe extern "C" fn cmd_display_menu_get_menu_pos(
     format_free(ft);
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn cmd_display_menu_exec(
+unsafe fn cmd_display_menu_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
@@ -1171,7 +1171,7 @@ unsafe extern "C" fn cmd_display_menu_exec(
     menu_free(menu);
     return CMD_RETURN_ERROR;
 }
-unsafe extern "C" fn cmd_display_popup_exec(
+unsafe fn cmd_display_popup_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

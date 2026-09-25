@@ -44,11 +44,11 @@ pub static mut cmd_kill_pane_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_kill_pane_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_kill_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
-unsafe extern "C" fn cmd_kill_pane_exec(
+unsafe fn cmd_kill_pane_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

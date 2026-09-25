@@ -34,7 +34,7 @@ pub static mut cmd_lock_server_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_lock_server_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -62,7 +62,7 @@ pub static mut cmd_lock_session_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_lock_server_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -90,11 +90,11 @@ pub static mut cmd_lock_client_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG,
         exec: Some(
-            cmd_lock_server_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
-unsafe extern "C" fn cmd_lock_server_exec(
+unsafe fn cmd_lock_server_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

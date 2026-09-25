@@ -66,7 +66,7 @@ pub static mut cmd_source_file_entry: cmd_entry = unsafe {
         },
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
-            cmd_source_file_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_source_file_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -233,7 +233,7 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     }
     CString::new(quoted).expect("C string path has no interior NUL")
 }
-unsafe extern "C" fn cmd_source_file_exec(
+unsafe fn cmd_source_file_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

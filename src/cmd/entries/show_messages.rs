@@ -47,7 +47,7 @@ pub static mut cmd_show_messages_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG | CMD_CLIENT_CANFAIL,
         exec: Some(
-            cmd_show_messages_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_show_messages_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -98,7 +98,7 @@ unsafe extern "C" fn cmd_show_messages_terminals(
     }
     return (n != 0 as u_int) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn cmd_show_messages_exec(
+unsafe fn cmd_show_messages_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

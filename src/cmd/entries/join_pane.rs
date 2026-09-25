@@ -72,7 +72,7 @@ pub static mut cmd_join_pane_entry: cmd_entry = unsafe {
         },
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
-            cmd_join_pane_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_join_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -103,7 +103,7 @@ pub static mut cmd_move_pane_entry: cmd_entry = unsafe {
         flags: 0 as ::core::ffi::c_int,
         exec: Some(
             cmd_join_pane_exec
-                as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -648,7 +648,7 @@ unsafe extern "C" fn cmd_join_pane_tile(
     server_redraw_window(w);
     return CMD_RETURN_NORMAL;
 }
-unsafe extern "C" fn cmd_join_pane_exec(
+unsafe fn cmd_join_pane_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

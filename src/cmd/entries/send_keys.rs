@@ -57,7 +57,7 @@ pub static mut cmd_send_keys_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_CFLAG | CMD_CLIENT_CANFAIL | CMD_READONLY,
         exec: Some(
-            cmd_send_keys_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_send_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -85,7 +85,7 @@ pub static mut cmd_send_prefix_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_send_keys_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_send_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -209,7 +209,7 @@ unsafe extern "C" fn cmd_send_keys_inject_string(
     }
     return after;
 }
-unsafe extern "C" fn cmd_send_keys_exec(
+unsafe fn cmd_send_keys_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

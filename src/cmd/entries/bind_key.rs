@@ -39,14 +39,14 @@ pub static mut cmd_bind_key_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_bind_key_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_bind_key_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
 fn cmd_bind_key_args_parse(_args: &mut args, _idx: u_int) -> args_parse_type {
     return ARGS_PARSE_COMMANDS_OR_STRING;
 }
-unsafe extern "C" fn cmd_bind_key_exec(
+unsafe fn cmd_bind_key_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

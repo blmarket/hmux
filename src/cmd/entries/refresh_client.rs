@@ -60,7 +60,7 @@ pub static mut cmd_refresh_client_entry: cmd_entry = unsafe {
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG,
         exec: Some(
             cmd_refresh_client_exec
-                as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -243,7 +243,7 @@ unsafe extern "C" fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi
     }
 }
 
-unsafe extern "C" fn cmd_refresh_client_exec(
+unsafe fn cmd_refresh_client_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

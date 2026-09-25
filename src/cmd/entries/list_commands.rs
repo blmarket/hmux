@@ -49,7 +49,7 @@ pub static mut cmd_list_commands_entry: cmd_entry = unsafe {
         },
         flags: CMD_STARTSERVER | CMD_AFTERHOOK,
         exec: Some(
-            cmd_list_commands as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_list_commands as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -97,7 +97,7 @@ unsafe extern "C" fn cmd_list_single_command(
         );
     }
 }
-unsafe extern "C" fn cmd_list_commands(
+unsafe fn cmd_list_commands(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

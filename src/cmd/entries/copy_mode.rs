@@ -45,7 +45,7 @@ pub static mut cmd_copy_mode_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK | CMD_READONLY,
         exec: Some(
-            cmd_copy_mode_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_copy_mode_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -73,11 +73,11 @@ pub static mut cmd_clock_mode_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_copy_mode_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_copy_mode_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
-unsafe extern "C" fn cmd_copy_mode_exec(
+unsafe fn cmd_copy_mode_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {

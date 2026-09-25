@@ -42,7 +42,7 @@ pub static mut cmd_paste_buffer_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_paste_buffer_exec as unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_paste_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -50,7 +50,7 @@ unsafe fn cmd_paste_buffer_paste(wp: &window_pane, buf: &[u8]) {
     let escaped = utf8_stravisx_bytes(buf, VIS_SAFE | VIS_NOSLASH);
     bufferevent_write(wp.event, escaped.as_ptr().cast(), escaped.len());
 }
-unsafe extern "C" fn cmd_paste_buffer_exec(
+unsafe fn cmd_paste_buffer_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
 ) -> cmd_retval {
