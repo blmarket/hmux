@@ -724,7 +724,7 @@ unsafe extern "C" fn control_check_reply_buffer(
         size,
     );
     if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {
-        server_client_set_exit_message(c, Some(CString::new("too far behind").unwrap()));
+        server_client_set_exit_message(&mut *c, Some(CString::new("too far behind").unwrap()));
         (*c).flags |= CLIENT_EXIT as uint64_t;
         control_discard(c);
     }
@@ -890,7 +890,7 @@ unsafe extern "C" fn control_check_age(
         if age < CONTROL_MAXIMUM_AGE as uint64_t {
             return 0 as ::core::ffi::c_int;
         }
-        server_client_set_exit_message(c, Some(CString::new("too far behind").unwrap()));
+        server_client_set_exit_message(&mut *c, Some(CString::new("too far behind").unwrap()));
         (*c).flags |= CLIENT_EXIT as uint64_t;
         control_discard(c);
     }

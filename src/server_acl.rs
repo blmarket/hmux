@@ -180,7 +180,7 @@ unsafe extern "C" fn server_acl_update() {
     while !c.is_null() {
         entry = server_acl_check(c);
         if entry.is_null() {
-            server_client_set_exit_message(c, Some(CString::new("access not allowed").unwrap()));
+            server_client_set_exit_message(&mut *c, Some(CString::new("access not allowed").unwrap()));
             (*c).flags |= CLIENT_EXIT as uint64_t;
         } else if (*entry).flags & SERVER_ACL_READONLY != 0 {
             (*c).flags |= CLIENT_READONLY as uint64_t;

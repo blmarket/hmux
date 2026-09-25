@@ -447,7 +447,7 @@ unsafe fn server_start_inner(
     }
     if let Some(cause) = cause {
         if !c.is_null() {
-            server_client_set_exit_message(c, Some(cause));
+            server_client_set_exit_message(&mut *c, Some(cause));
             (*c).retval = 1 as ::core::ffi::c_int;
             (*c).flags |= CLIENT_EXIT as uint64_t;
         } else {
@@ -673,7 +673,7 @@ unsafe extern "C" fn server_accept(
     }
     c = server_client_create(newfd);
     if server_acl_join(c) == 0 {
-        server_client_set_exit_message(c, Some(CString::new("access not allowed").unwrap()));
+        server_client_set_exit_message(&mut *c, Some(CString::new("access not allowed").unwrap()));
         (*c).retval = 1 as ::core::ffi::c_int;
         (*c).flags |= CLIENT_EXIT as uint64_t;
     }
