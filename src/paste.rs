@@ -156,14 +156,11 @@ fn paste_time_tree_minmax(head: &paste_time_tree, val: ::core::ffi::c_int) -> *m
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 
-unsafe fn paste_time_tree_next(
-    head: *mut paste_time_tree,
-    elm: *mut paste_buffer,
-) -> *mut paste_buffer {
-    (*head)
+fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
+    head
         .entries
         .range((
-            std::ops::Bound::Excluded(paste_time_key(&*elm)),
+            std::ops::Bound::Excluded(paste_time_key(elm)),
             std::ops::Bound::Unbounded,
         ))
         .next()
@@ -171,15 +168,12 @@ unsafe fn paste_time_tree_next(
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 
-unsafe fn paste_time_tree_prev(
-    head: *mut paste_time_tree,
-    elm: *mut paste_buffer,
-) -> *mut paste_buffer {
-    (*head)
+fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> *mut paste_buffer {
+    head
         .entries
         .range((
             std::ops::Bound::Unbounded,
-            std::ops::Bound::Excluded(paste_time_key(&*elm)),
+            std::ops::Bound::Excluded(paste_time_key(elm)),
         ))
         .next_back()
         .map(|(_, entry)| *entry)
@@ -231,17 +225,17 @@ unsafe fn paste_time_tree_minmax_local(val: ::core::ffi::c_int) -> *mut paste_bu
     })
 }
 
-unsafe fn paste_time_tree_next_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+fn paste_time_tree_next_local(elm: &paste_buffer) -> *mut paste_buffer {
     paste_by_time.with(|head| {
-        let mut head = head.borrow_mut();
-        paste_time_tree_next(&mut *head, elm)
+        let head = head.borrow();
+        paste_time_tree_next(&head, elm)
     })
 }
 
-unsafe fn paste_time_tree_prev_local(elm: *mut paste_buffer) -> *mut paste_buffer {
+fn paste_time_tree_prev_local(elm: &paste_buffer) -> *mut paste_buffer {
     paste_by_time.with(|head| {
-        let mut head = head.borrow_mut();
-        paste_time_tree_prev(&mut *head, elm)
+        let head = head.borrow();
+        paste_time_tree_prev(&head, elm)
     })
 }
 
@@ -339,7 +333,7 @@ pub unsafe extern "C" fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buf
     if pb.is_null() {
         return paste_time_tree_minmax_local(RB_NEGINF);
     }
-    return paste_time_tree_next_local(pb);
+    return paste_time_tree_next_local(&*pb);
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_is_empty() -> ::core::ffi::c_int {
@@ -349,7 +343,7 @@ pub(crate) unsafe fn paste_get_top(name: Option<&mut Option<CString>>) -> *mut p
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     pb = paste_time_tree_minmax_local(RB_NEGINF);
     while !pb.is_null() && (*pb).automatic == 0 {
-        pb = paste_time_tree_next_local(pb);
+        pb = paste_time_tree_next_local(&*pb);
     }
     if pb.is_null() {
         return ::core::ptr::null_mut::<paste_buffer>();
@@ -415,7 +409,7 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     ) as u_int;
     pb = paste_time_tree_minmax_local(RB_INF);
     while !pb.is_null() && {
-        pb1 = paste_time_tree_prev_local(pb);
+        pb1 = paste_time_tree_prev_local(&*pb);
         1 as ::core::ffi::c_int != 0
     } {
         if paste_automatic_count() < limit {
@@ -952,17 +946,17 @@ mod tests {
                 (*paste_time_tree_minmax(&tree, RB_NEGINF)).order,
                 12
             );
-            assert_eq!((*paste_time_tree_next(&raw mut tree, newest)).order, 7);
-            assert_eq!((*paste_time_tree_next(&raw mut tree, middle)).order, 4);
-            assert!(paste_time_tree_next(&raw mut tree, oldest).is_null());
+            assert_eq!((*paste_time_tree_next(&tree, &*newest)).order, 7);
+            assert_eq!((*paste_time_tree_next(&tree, &*middle)).order, 4);
+            assert!(paste_time_tree_next(&tree, &*oldest).is_null());
 
             assert_eq!((*paste_time_tree_minmax(&tree, RB_INF)).order, 4);
-            assert_eq!((*paste_time_tree_prev(&raw mut tree, oldest)).order, 7);
-            assert_eq!((*paste_time_tree_prev(&raw mut tree, middle)).order, 12);
-            assert!(paste_time_tree_prev(&raw mut tree, newest).is_null());
+            assert_eq!((*paste_time_tree_prev(&tree, &*oldest)).order, 7);
+            assert_eq!((*paste_time_tree_prev(&tree, &*middle)).order, 12);
+            assert!(paste_time_tree_prev(&tree, &*newest).is_null());
 
             assert_eq!(paste_time_tree_remove(&raw mut tree, middle), middle);
-            assert_eq!((*paste_time_tree_next(&raw mut tree, newest)).order, 4);
+            assert_eq!((*paste_time_tree_next(&tree, &*newest)).order, 4);
         }
     }
 }
