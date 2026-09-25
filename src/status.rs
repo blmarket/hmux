@@ -291,7 +291,7 @@ unsafe extern "C" fn status_pop_screen(mut c: *mut client) {
     (*sl).references -= 1;
     if (*sl).references == 0 as ::core::ffi::c_int {
         screen_free((*sl).active);
-        server_client_clear_saved_status_screen(c);
+        server_client_clear_saved_status_screen(&mut *c);
     }
 }
 #[no_mangle]
@@ -331,7 +331,7 @@ pub unsafe extern "C" fn status_free(mut c: *mut client) {
     }
     if (*sl).active != &raw mut (*sl).screen {
         screen_free((*sl).active);
-        server_client_clear_saved_status_screen(c);
+        server_client_clear_saved_status_screen(&mut *c);
     }
     screen_free(&raw mut (*sl).screen);
 }
