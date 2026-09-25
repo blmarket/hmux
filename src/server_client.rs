@@ -245,8 +245,8 @@ unsafe fn server_client_set_cwd(c: *mut client, cwd: Option<CString>) {
     (*c).cwd = cwd;
 }
 
-unsafe fn server_client_replace_title(c: *mut client, title: Option<CString>) {
-    (*c).title = title;
+fn server_client_replace_title(c: &mut client, title: Option<CString>) {
+    c.title = title;
 }
 
 unsafe fn server_client_replace_path(c: *mut client, path: Option<CString>) {
@@ -522,7 +522,7 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).title.is_none());
 
-            server_client_replace_title(c, Some(CString::new(b"title-\xff".to_vec()).unwrap()));
+            server_client_replace_title(&mut *c, Some(CString::new(b"title-\xff".to_vec()).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).title)
@@ -534,7 +534,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_replace_title(c, Some(CString::new("").unwrap()));
+            server_client_replace_title(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).title.is_none());
             assert_eq!(
                 CStr::from_ptr(
@@ -546,7 +546,7 @@ mod client_message_owner_tests {
                 b""
             );
 
-            server_client_replace_title(c, None);
+            server_client_replace_title(&mut *c, None);
             assert!((*c).title.is_none());
             assert!(owner.title.is_none());
         }
@@ -1555,7 +1555,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     server_client_clear_term_caps(c);
     status_free(c);
     input_cancel_requests(c);
-    server_client_replace_title(c, None);
+    server_client_replace_title(&mut *c, None);
     server_client_replace_path(c, None);
     server_client_set_cwd(c, None);
     server_client_set_exit_session(c, None);
@@ -4363,7 +4363,7 @@ unsafe extern "C" fn server_client_set_title(mut c: *mut client) {
     );
     let title = format_expand_time_cstring(ft, template);
     if (*c).title.as_ref().is_none_or(|old| old != &title) {
-        server_client_replace_title(c, Some(title));
+        server_client_replace_title(&mut *c, Some(title));
         tty_set_title(
             &raw mut (*c).tty,
             ((*c).title)
