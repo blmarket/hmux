@@ -413,7 +413,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
 unsafe fn cmd_capture_pane_history(
     mut args: *mut args,
     mut item: *mut cmdq_item,
-    mut wp: *mut window_pane,
+    wp: &mut window_pane,
 ) -> Option<Vec<u8>> {
     let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut gl: *const grid_line = ::core::ptr::null::<grid_line>();
@@ -438,9 +438,9 @@ unsafe fn cmd_capture_pane_history(
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    sx = (*(*wp).base.grid).sx;
+    sx = (*wp.base.grid).sx;
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        gd = (*wp).base.saved_grid;
+        gd = wp.base.saved_grid;
         if gd.is_null() {
             if args_has(args, 'q' as i32 as u_char) == 0 {
                 cmdq_error(
@@ -451,21 +451,21 @@ unsafe fn cmd_capture_pane_history(
             }
             return Some(buf);
         }
-        s = &raw mut (*wp).base;
+        s = &raw mut wp.base;
     } else if args_has(args, 'M' as i32 as u_char) != 0 {
-        wme = (*wp).modes.active;
+        wme = wp.modes.active;
         if !wme.is_null() && (*(*wme).mode).get_screen.is_some() {
             s = (*(*wme).mode)
                 .get_screen
                 .expect("non-null function pointer")(wme);
             gd = (*s).grid;
         } else {
-            s = &raw mut (*wp).base;
-            gd = (*wp).base.grid;
+            s = &raw mut wp.base;
+            gd = wp.base.grid;
         }
     } else {
-        s = &raw mut (*wp).base;
-        gd = (*wp).base.grid;
+        s = &raw mut wp.base;
+        gd = wp.base.grid;
     }
     Sflag = args_get(args, 'S' as i32 as u_char);
     if !Sflag.is_null()
@@ -676,7 +676,7 @@ unsafe extern "C" fn cmd_capture_pane_exec(
     {
         buf = cmd_capture_pane_pending(args, &*wp);
     } else {
-        match cmd_capture_pane_history(args, item, wp) {
+        match cmd_capture_pane_history(args, item, &mut *wp) {
             Some(history) => buf = history,
             None => return CMD_RETURN_ERROR,
         }
