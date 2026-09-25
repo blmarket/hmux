@@ -57,17 +57,17 @@ macro_rules! format_options_cause {
     ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
         let cause = $cause;
         if !cause.is_null() {
-            *cause = Some(options_string_cause($fmt, &[$($arg),*]));
+            *cause = Some(options_string_cause(CStr::from_ptr($fmt), &[$($arg),*]));
         }
     }};
 }
 
 /// The option diagnostics use only literal text and `%s` substitutions.
 unsafe fn options_string_cause(
-    fmt: *const ::core::ffi::c_char,
+    fmt: &CStr,
     args: &[*const ::core::ffi::c_char],
 ) -> CString {
-    let fmt = CStr::from_ptr(fmt).to_bytes();
+    let fmt = fmt.to_bytes();
     let mut message = Vec::with_capacity(fmt.len());
     let mut at = 0;
     let mut arg = 0;
@@ -2062,7 +2062,7 @@ mod array_string_owner_tests {
     fn formatted_diagnostic_preserves_non_utf8_arguments() {
         unsafe {
             let message = options_string_cause(
-                c"value is %s: %s".as_ptr(),
+                c"value is %s: %s",
                 &[c"invalid".as_ptr(), c"\xff".as_ptr()],
             );
             assert_eq!(message.to_bytes(), b"value is invalid: \xff");
