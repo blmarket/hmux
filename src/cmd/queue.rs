@@ -163,10 +163,9 @@ pub(crate) fn cmdq_set_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
     item.wait_file = cf;
 }
 
-pub(crate) unsafe fn cmdq_clear_wait_file(item: *mut cmdq_item, cf: *mut client_file) {
-    let owner = &mut *item;
-    if owner.wait_file == cf {
-        owner.wait_file = ::core::ptr::null_mut();
+pub(crate) fn cmdq_clear_wait_file(item: &mut cmdq_item, cf: *mut client_file) {
+    if item.wait_file == cf {
+        item.wait_file = ::core::ptr::null_mut();
     }
 }
 

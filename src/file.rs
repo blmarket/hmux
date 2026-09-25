@@ -184,7 +184,7 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(cf: *mut client_file) {
     if owner.wait_item.is_null() {
         return;
     }
-    cmdq_clear_wait_file(owner.wait_item, cf);
+    cmdq_clear_wait_file(&mut *owner.wait_item, cf);
     owner.wait_item = std::ptr::null_mut();
     owner.wait_client = std::ptr::null_mut();
     (*cf).cb = None;
@@ -310,7 +310,7 @@ unsafe extern "C" fn file_fire_done_cb(
     } else {
         let owner = &mut *cf;
         if !owner.wait_item.is_null() {
-            cmdq_clear_wait_file(owner.wait_item, cf);
+            cmdq_clear_wait_file(&mut *owner.wait_item, cf);
             owner.wait_item = std::ptr::null_mut();
             owner.wait_client = std::ptr::null_mut();
             owner.cancel_data = None;
