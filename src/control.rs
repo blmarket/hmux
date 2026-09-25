@@ -1571,8 +1571,8 @@ pub unsafe extern "C" fn control_remove_sub(
     monitor_remove((*cs).subs, name);
 }
 
-unsafe fn control_panes_key(elm: *mut control_pane) -> u32 {
-    (*elm).pane
+fn control_panes_key(elm: &control_pane) -> u32 {
+    elm.pane
 }
 pub unsafe fn control_panes_find(
     head: *mut control_panes,
@@ -1581,7 +1581,7 @@ pub unsafe fn control_panes_find(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_panes_key(elm);
+    let key = control_panes_key(&*elm);
     map.get(&key).map_or(std::ptr::null_mut(), |node| {
         &**node as *const control_pane as *mut control_pane
     })
@@ -1593,7 +1593,7 @@ pub unsafe fn control_panes_nfind(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_panes_key(elm);
+    let key = control_panes_key(&*elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| {
@@ -1604,7 +1604,7 @@ pub unsafe fn control_panes_insert(
     head: *mut control_panes,
     elm: *mut control_pane,
 ) -> *mut control_pane {
-    let key = control_panes_key(elm);
+    let key = control_panes_key(&*elm);
     if (*head).storage.is_null() {
         (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
@@ -1628,7 +1628,7 @@ pub unsafe fn control_panes_remove(
     if elm.is_null() {
         return None;
     }
-    let key = control_panes_key(elm);
+    let key = control_panes_key(&*elm);
     let Some(map) = (*head).storage.as_mut() else {
         return None;
     };
@@ -1667,7 +1667,7 @@ pub unsafe fn control_panes_next(elm: *mut control_pane) -> *mut control_pane {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_panes_key(elm);
+    let key = control_panes_key(&*elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| {
@@ -1678,7 +1678,7 @@ pub unsafe fn control_panes_prev(elm: *mut control_pane) -> *mut control_pane {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = control_panes_key(elm);
+    let key = control_panes_key(&*elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| {
