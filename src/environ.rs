@@ -350,7 +350,7 @@ use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 unsafe fn environ_insert(
-    env: *mut environ,
+    env: &mut environ,
     name: CString,
     flags: ::core::ffi::c_int,
     value: Option<CString>,
@@ -360,10 +360,10 @@ unsafe fn environ_insert(
         name,
         value,
         flags,
-        owner: env,
+        owner: env as *mut environ,
     });
     // Callers first look up the name and update existing entries in place.
-    (*(*env).entries).entries.insert(key, owned);
+    (*env.entries).entries.insert(key, owned);
 }
 
 #[no_mangle]
@@ -451,7 +451,7 @@ pub unsafe extern "C" fn environ_set(
         owned.flags = flags;
         owned.value = Some(value);
     } else {
-        environ_insert(env, CStr::from_ptr(name).to_owned(), flags, Some(value));
+        environ_insert(&mut *env, CStr::from_ptr(name).to_owned(), flags, Some(value));
     };
 }
 #[no_mangle]
@@ -463,7 +463,7 @@ pub unsafe extern "C" fn environ_clear(
     if let Some(owned) = entries.get_mut(CStr::from_ptr(name).to_bytes()) {
         owned.value = None;
     } else {
-        environ_insert(env, CStr::from_ptr(name).to_owned(), 0, None);
+        environ_insert(&mut *env, CStr::from_ptr(name).to_owned(), 0, None);
     };
 }
 #[no_mangle]
