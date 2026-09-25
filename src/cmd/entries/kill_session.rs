@@ -159,7 +159,7 @@ unsafe extern "C" fn cmd_kill_session_all(
 ) -> cmd_retval {
     let mut s: *mut session = (*cmdq_get_target(item)).s;
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
-    sloop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    sloop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !sloop.is_null() {
         let name = sessions_key(&*sloop);
         if !(sloop == s) {
@@ -172,7 +172,7 @@ unsafe extern "C" fn cmd_kill_session_all(
                 );
             }
         }
-        sloop = sessions_after(&raw mut sessions, &name);
+        sloop = sessions_after(&*std::ptr::addr_of!(sessions), &name);
     }
     return CMD_RETURN_NORMAL;
 }

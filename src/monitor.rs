@@ -100,7 +100,7 @@ unsafe extern "C" fn monitor_get_session(mut ms: *mut monitor_set) -> *mut sessi
     }
     s = (*ms).session;
     if s.is_null() {
-        return sessions_minmax(&raw mut sessions, RB_NEGINF);
+        return sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     }
     if session_find_by_id((*s).id) != s {
         return ::core::ptr::null_mut::<session>();

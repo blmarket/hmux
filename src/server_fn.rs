@@ -270,7 +270,7 @@ pub unsafe extern "C" fn server_redraw_window_borders(mut w: *mut window) {
 #[no_mangle]
 pub unsafe extern "C" fn server_status_window(mut w: *mut window) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         if session_has(s, w) != 0 {
             server_status_session(s);
@@ -361,7 +361,7 @@ pub unsafe extern "C" fn server_kill_window(mut w: *mut window, mut renumber: ::
         w,
         b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         // Destroying a group may remove both s and its next session.
         let name = sessions_key(&*s);
@@ -383,7 +383,7 @@ pub unsafe extern "C" fn server_kill_window(mut w: *mut window, mut renumber: ::
                 server_renumber_session(s);
             }
         }
-        s = sessions_after(&raw mut sessions, &name);
+        s = sessions_after(&*std::ptr::addr_of!(sessions), &name);
     }
     recalculate_sizes();
     window_remove_ref(
@@ -412,7 +412,7 @@ pub unsafe extern "C" fn server_renumber_session(mut s: *mut session) {
 #[no_mangle]
 pub unsafe extern "C" fn server_renumber_all() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         server_renumber_session(s);
         s = sessions_next(&*s);
@@ -656,7 +656,7 @@ unsafe extern "C" fn server_find_session(
 ) -> *mut session {
     let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
     let mut s_out: *mut session = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s_loop.is_null() {
         if s_loop != s && f.expect("non-null function pointer")(s_loop, s_out) != 0 {
             s_out = s_loop;
@@ -764,7 +764,7 @@ pub unsafe extern "C" fn server_check_unattached() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current_block_4: u64;
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         let name = sessions_key(&*s);
         if !((*s).attached != 0 as u_int) {
@@ -877,7 +877,7 @@ pub unsafe extern "C" fn server_check_unattached() {
                 }
             }
         }
-        s = sessions_after(&raw mut sessions, &name);
+        s = sessions_after(&*std::ptr::addr_of!(sessions), &name);
     }
 }
 #[no_mangle]

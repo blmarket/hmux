@@ -6,7 +6,7 @@ use std::ffi::{CStr, CString};
 fn byte_order_duplicates_neighbors_and_owner_removal() {
     unsafe {
         let mut head = session_groups { storage: None };
-        assert!(session_groups_minmax(&mut head, -1).is_null());
+        assert!(session_groups_minmax(&head, -1).is_null());
         let names = [c"z", c"\xff", c"a", c""];
         let mut pointers = Vec::new();
         for name in names {
@@ -22,24 +22,24 @@ fn byte_order_duplicates_neighbors_and_owner_removal() {
         let outsider = session_group::new(c"a");
         assert!(!session_groups_remove(&mut *head, outsider.node_ptr()));
         let mut lookup = *session_group::new(c"a");
-        assert_eq!(session_groups_find(&mut *head, &mut lookup), pointers[2]);
+        assert_eq!(session_groups_find(&*head, &lookup), pointers[2]);
         lookup.name = c"b".to_owned();
-        assert!(session_groups_find(&mut *head, &mut lookup).is_null());
-        assert_eq!(session_groups_nfind(&mut *head, &mut lookup), pointers[0]);
-        let mut node = session_groups_minmax(&mut *head, -1);
+        assert!(session_groups_find(&*head, &lookup).is_null());
+        assert_eq!(session_groups_nfind(&*head, &lookup), pointers[0]);
+        let mut node = session_groups_minmax(&*head, -1);
         for name in [c"", c"a", c"z", c"\xff"] {
             assert_eq!((*node).name.as_c_str(), name);
             node = session_groups_next(&*node);
         }
         assert!(node.is_null());
-        node = session_groups_minmax(&mut *head, 1);
+        node = session_groups_minmax(&*head, 1);
         for name in [c"\xff", c"z", c"a", c""] {
             assert_eq!((*node).name.as_c_str(), name);
             node = session_groups_prev(&*node);
         }
         assert!(node.is_null());
         // Cache the successor before the index drops the current owner.
-        node = session_groups_minmax(&mut *head, -1);
+        node = session_groups_minmax(&*head, -1);
         while !node.is_null() {
             let next = session_groups_next(&*node);
             assert!(session_groups_remove(&mut *head, node));
@@ -49,7 +49,7 @@ fn byte_order_duplicates_neighbors_and_owner_removal() {
         let replacement = session_group::new(c"a");
         let replacement_ptr = replacement.node_ptr();
         assert!(session_groups_insert(&mut *head, replacement).is_null());
-        assert_eq!(session_groups_minmax(&mut *head, -1), replacement_ptr);
+        assert_eq!(session_groups_minmax(&*head, -1), replacement_ptr);
         assert!(session_groups_remove(&mut *head, replacement_ptr));
         assert!(head.storage.is_none());
     }

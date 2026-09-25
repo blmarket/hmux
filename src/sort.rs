@@ -649,7 +649,7 @@ pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<*mut client
 }
 pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut session> {
     let mut l = Vec::new();
-    let mut s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    let mut s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         l.push(s);
         s = sessions_next(&*s);
@@ -696,7 +696,7 @@ pub unsafe fn sort_get_panes_window(
 }
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winlink> {
     let mut links = Vec::new();
-    let mut s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    let mut s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         let mut wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
         while !wl.is_null() {

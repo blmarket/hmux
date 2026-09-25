@@ -129,18 +129,18 @@ pub unsafe extern "C" fn session_cmp(
 pub(crate) fn sessions_key(elm: &session) -> Vec<u8> {
     elm.name.as_bytes().to_vec()
 }
-pub unsafe fn sessions_find(head: *mut sessions, elm: *mut session) -> *mut session {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn sessions_find(head: &sessions, elm: &session) -> *mut session {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_c_str().to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn sessions_nfind(head: *mut sessions, elm: *mut session) -> *mut session {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn sessions_nfind(head: &sessions, elm: &session) -> *mut session {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_c_str().to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -178,8 +178,8 @@ pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut se
     }
     elm
 }
-pub unsafe fn sessions_minmax(head: *mut sessions, direction: ::core::ffi::c_int) -> *mut session {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn sessions_minmax(head: &sessions, direction: ::core::ffi::c_int) -> *mut session {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -191,8 +191,8 @@ pub unsafe fn sessions_minmax(head: *mut sessions, direction: ::core::ffi::c_int
 }
 /// Resume a potentially destructive walk using a saved name and the live index.
 /// The named session and any of its successors may already have been removed.
-pub unsafe fn sessions_after(head: *mut sessions, name: &[u8]) -> *mut session {
-    let Some(map) = (*head).storage.as_deref() else {
+pub fn sessions_after(head: &sessions, name: &[u8]) -> *mut session {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
     map.range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
@@ -231,25 +231,25 @@ pub unsafe extern "C" fn session_group_cmp(
         ((*s2).name).as_ptr().cast_mut(),
     );
 }
-pub unsafe fn session_groups_find(
-    head: *mut session_groups,
-    elm: *mut session_group,
+pub fn session_groups_find(
+    head: &session_groups,
+    elm: &session_group,
 ) -> *mut session_group {
-    let Some(map) = (*head).storage.as_deref() else {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_c_str().to_bytes();
     map.get(key)
         .map_or(std::ptr::null_mut(), |owner| owner.node_ptr())
 }
-pub unsafe fn session_groups_nfind(
-    head: *mut session_groups,
-    elm: *mut session_group,
+pub fn session_groups_nfind(
+    head: &session_groups,
+    elm: &session_group,
 ) -> *mut session_group {
-    let Some(map) = (*head).storage.as_deref() else {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_c_str().to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
@@ -315,11 +315,11 @@ pub unsafe fn session_groups_remove(head: *mut session_groups, elm: *mut session
     drop(owner);
     true
 }
-pub unsafe fn session_groups_minmax(
-    head: *mut session_groups,
+pub fn session_groups_minmax(
+    head: &session_groups,
     direction: ::core::ffi::c_int,
 ) -> *mut session_group {
-    let Some(map) = (*head).storage.as_deref() else {
+    let Some(map) = head.storage.as_deref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -351,7 +351,7 @@ pub unsafe fn session_groups_prev(elm: &session_group) -> *mut session_group {
 #[no_mangle]
 pub unsafe extern "C" fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
     let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s_loop.is_null() {
         if s_loop == s {
             return 1 as ::core::ffi::c_int;
@@ -402,7 +402,7 @@ pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *
         },
     };
     s.name = ::std::ffi::CStr::from_ptr(name as *mut ::core::ffi::c_char).to_owned();
-    return sessions_find(&raw mut sessions, &raw mut s);
+    return sessions_find(&*std::ptr::addr_of!(sessions), &s);
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut session {
@@ -425,7 +425,7 @@ pub unsafe extern "C" fn session_find_by_id_str(mut s: *const ::core::ffi::c_cha
 #[no_mangle]
 pub unsafe extern "C" fn session_find_by_id(mut id: u_int) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         if (*s).id == id {
             return s;
@@ -489,7 +489,7 @@ pub unsafe extern "C" fn session_create(
                 &mut *s,
                 CString::new(generated).expect("generated name has no NUL"),
             ));
-            if sessions_find(&raw mut sessions, s).is_null() {
+            if sessions_find(&*std::ptr::addr_of!(sessions), &*s).is_null() {
                 break;
             }
         }
@@ -1002,7 +1002,7 @@ pub unsafe extern "C" fn session_set_current(
 #[no_mangle]
 pub unsafe extern "C" fn session_group_contains(mut target: *mut session) -> *mut session_group {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_groups_minmax(&raw mut session_groups, RB_NEGINF);
+    sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups), RB_NEGINF);
     while !sg.is_null() {
         if (*sg).members.contains(&target) {
             return sg;
@@ -1023,7 +1023,7 @@ pub unsafe extern "C" fn session_group_find(
         ..session_group::empty()
     };
     sg.name = ::std::ffi::CStr::from_ptr(name).to_owned();
-    return session_groups_find(&raw mut session_groups, &raw mut sg);
+    return session_groups_find(&*std::ptr::addr_of!(session_groups), &sg);
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_group_new(

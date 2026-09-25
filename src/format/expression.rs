@@ -1006,7 +1006,7 @@ pub(super) unsafe fn format_session_name(
 ) -> CString {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let name = format_expand1_cstring(es, fmt);
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         if strcmp(((*s).name).as_ptr().cast_mut(), name.as_ptr()) == 0 as ::core::ffi::c_int {
             return c"1".to_owned();

@@ -314,7 +314,7 @@ unsafe extern "C" fn cmd_find_best_session(
             i = i.wrapping_add(1);
         }
     } else {
-        s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+        s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
         while !s_loop.is_null() {
             if !(cmd_find_session_valid(s_loop) == 0) {
                 if cmd_find_session_better(s_loop, s, flags) != 0 {
@@ -336,7 +336,7 @@ unsafe extern "C" fn cmd_find_best_session_with_window(
         b"cmd_find_best_session_with_window\0" as *const u8 as *const ::core::ffi::c_char,
         (*(*fs).w).id,
     );
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         if !(session_has(s, (*fs).w) == 0) {
             slist.push(s);
@@ -447,7 +447,7 @@ unsafe extern "C" fn cmd_find_get_session(
         return -(1 as ::core::ffi::c_int);
     }
     s = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s_loop.is_null() {
         if strncmp(
             session,
@@ -467,7 +467,7 @@ unsafe extern "C" fn cmd_find_get_session(
         return 0 as ::core::ffi::c_int;
     }
     s = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s_loop.is_null() {
         if fnmatch(
             session,

@@ -551,7 +551,7 @@ unsafe extern "C" fn server_send_exit() {
         (*c).session = ::core::ptr::null_mut::<session>();
         c = c1;
     }
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         let name = sessions_key(&*s);
         session_destroy(
@@ -559,7 +559,7 @@ unsafe extern "C" fn server_send_exit() {
             1 as ::core::ffi::c_int,
             b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        s = sessions_after(&raw mut sessions, &name);
+        s = sessions_after(&*std::ptr::addr_of!(sessions), &name);
     }
 }
 #[no_mangle]
@@ -595,7 +595,7 @@ pub unsafe extern "C" fn server_update_socket() {
         __glibc_reserved: [0; 3],
     };
     n = 0 as ::core::ffi::c_int;
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         if (*s).attached != 0 as u_int {
             n += 1;

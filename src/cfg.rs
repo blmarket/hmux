@@ -429,7 +429,7 @@ pub unsafe extern "C" fn cfg_show_causes(mut s: *mut session) {
             if !c.is_null() && !(*c).session.is_null() {
                 s = (*c).session;
             } else {
-                s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+                s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
             }
         }
         if s.is_null() || (*s).attached == 0 as u_int {

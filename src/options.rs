@@ -2006,13 +2006,13 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+        s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
         while !s.is_null() {
             session_update_history(s);
             s = sessions_next(&*s);
         }
     }
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s.is_null() {
         status_update_cache(s);
         s = sessions_next(&*s);

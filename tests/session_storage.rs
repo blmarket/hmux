@@ -12,7 +12,7 @@ fn node(name: &CStr) -> Box<session> {
 fn byte_order_duplicates_neighbors_and_removal() {
     unsafe {
         let mut head = sessions { storage: None };
-        assert!(sessions_minmax(&mut head, -1).is_null());
+        assert!(sessions_minmax(&head, -1).is_null());
         let mut nodes: Vec<_> = [c"z", c"\xff", c"a", c""].into_iter().map(node).collect();
         for node in &mut nodes {
             assert!(sessions_insert(&mut head, &mut **node).is_null());
@@ -24,27 +24,27 @@ fn byte_order_duplicates_neighbors_and_removal() {
         assert_eq!(sessions_insert(&mut *head, &mut *duplicate), a);
         assert!(duplicate.entry.owner.is_null());
         assert!(sessions_remove(&mut *head, &mut *duplicate).is_null());
-        assert_eq!(sessions_find(&mut *head, &mut *duplicate), a);
+        assert_eq!(sessions_find(&*head, &*duplicate), a);
         let mut missing = node(c"b");
-        assert!(sessions_find(&mut *head, &mut *missing).is_null());
+        assert!(sessions_find(&*head, &*missing).is_null());
         assert_eq!(
-            sessions_nfind(&mut *head, &mut *missing),
+            sessions_nfind(&*head, &*missing),
             &mut *nodes[0] as *mut session
         );
-        let mut node = sessions_minmax(&mut *head, -1);
+        let mut node = sessions_minmax(&*head, -1);
         for name in [c"", c"a", c"z", c"\xff"] {
             assert_eq!(CStr::from_ptr(((*node).name).as_ptr().cast_mut()), name);
             node = sessions_next(&*node);
         }
         assert!(node.is_null());
-        node = sessions_minmax(&mut *head, 1);
+        node = sessions_minmax(&*head, 1);
         for name in [c"\xff", c"z", c"a", c""] {
             assert_eq!(CStr::from_ptr(((*node).name).as_ptr().cast_mut()), name);
             node = sessions_prev(&*node);
         }
         assert!(node.is_null());
         // Cache the successor before removing the current record, as callers do.
-        node = sessions_minmax(&mut *head, -1);
+        node = sessions_minmax(&*head, -1);
         while !node.is_null() {
             let next = sessions_next(&*node);
             assert_eq!(sessions_remove(&mut *head, node), node);
@@ -80,7 +80,7 @@ fn rename_preserves_identity_and_updates_name_order() {
         assert!(session_find(c"a".as_ptr()).is_null());
         assert_eq!(session_find(c"z".as_ptr()), first_ptr);
         assert_eq!(session_find_by_id(42), first_ptr);
-        assert_eq!(sessions_minmax(head, -1), second_ptr);
+        assert_eq!(sessions_minmax(&*head, -1), second_ptr);
         assert_eq!(sessions_next(&*second_ptr), first_ptr);
         assert_eq!(sessions_prev(&*first_ptr), second_ptr);
         assert_eq!(sessions_remove(head, first_ptr), first_ptr);
@@ -109,7 +109,7 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         sessions_remove(&mut head, &mut *second);
         drop(first);
         drop(second);
-        assert_eq!(sessions_after(&mut head, &name), &mut *last as *mut _);
+        assert_eq!(sessions_after(&head, &name), &mut *last as *mut _);
 
         let last_name = CStr::from_ptr((last.name).as_ptr().cast_mut())
             .to_bytes()
@@ -117,13 +117,13 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         sessions_remove(&mut head, &mut *last);
         drop(last);
         assert!(head.storage.is_none());
-        assert!(sessions_after(&mut head, &last_name).is_null());
+        assert!(sessions_after(&head, &last_name).is_null());
 
         // Resuming reads the head afresh even after its previous map was freed.
         let mut replacement = node(c"z1");
         sessions_insert(&mut head, &mut *replacement);
         assert_eq!(
-            sessions_after(&mut head, &last_name),
+            sessions_after(&head, &last_name),
             &mut *replacement as *mut _
         );
         sessions_remove(&mut head, &mut *replacement);
