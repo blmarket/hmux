@@ -627,6 +627,7 @@ unsafe fn window_buffer_init(
         item_list: Vec::new(),
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
+    let data_handle = std::ptr::NonNull::new(data).expect("live buffer mode data");
     (*data).wp = wp;
     cmd_find_copy_state(&raw mut (*data).fs, fs);
     (*data).data = mode_tree_start(
@@ -635,7 +636,7 @@ unsafe fn window_buffer_init(
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
             window_buffer_build(
-                data as *mut ::core::ffi::c_void,
+                data_handle.as_ptr().cast(),
                 sort as *mut sort_criteria,
                 &mut selected,
                 filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
@@ -644,7 +645,7 @@ unsafe fn window_buffer_init(
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
             window_buffer_draw(
-                data as *mut ::core::ffi::c_void,
+                data_handle.as_ptr().cast(),
                 itemdata,
                 ctx as *mut screen_write_ctx,
                 sx,
@@ -653,7 +654,7 @@ unsafe fn window_buffer_init(
         })),
         Some(Box::new(move |itemdata, search, icase| {
             window_buffer_search(
-                data as *mut ::core::ffi::c_void,
+                data_handle.as_ptr().cast(),
                 itemdata,
                 search.as_ptr(),
                 icase as ::core::ffi::c_int,
@@ -661,14 +662,14 @@ unsafe fn window_buffer_init(
         })),
         Some(Box::new(move |client, key| {
             window_buffer_menu(
-                data as *mut ::core::ffi::c_void,
+                data_handle.as_ptr().cast(),
                 client.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
                 key,
             )
         })),
         None,
         Some(Box::new(move |itemdata, line| {
-            window_buffer_get_key(data as *mut ::core::ffi::c_void, itemdata, line)
+            window_buffer_get_key(data_handle.as_ptr().cast(), itemdata, line)
         })),
         None,
         Some(window_buffer_sort),

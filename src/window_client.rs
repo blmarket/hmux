@@ -708,6 +708,7 @@ unsafe fn window_client_init(
         items: Vec::new(),
     }));
     (*wme).data = data as *mut ::core::ffi::c_void;
+    let data_handle = std::ptr::NonNull::new(data).expect("live client mode data");
     (*data).wp = wp;
     (*data).hide_preview_this_pane =
         (!args.is_null() && args_has(args, 'h' as i32 as u_char) != 0) as ::core::ffi::c_int;
@@ -719,7 +720,7 @@ unsafe fn window_client_init(
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
             window_client_build(
-                data as *mut ::core::ffi::c_void,
+                data_handle.as_ptr().cast(),
                 sort as *mut sort_criteria,
                 &mut selected,
                 filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
@@ -728,7 +729,7 @@ unsafe fn window_client_init(
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
             window_client_draw(
-                data as *mut ::core::ffi::c_void,
+                data_handle.as_ptr().cast(),
                 itemdata,
                 ctx as *mut screen_write_ctx,
                 sx,
@@ -738,14 +739,14 @@ unsafe fn window_client_init(
         None,
         Some(Box::new(move |client, key| {
             window_client_menu(
-                data as *mut ::core::ffi::c_void,
+                data_handle.as_ptr().cast(),
                 client.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
                 key,
             )
         })),
         None,
         Some(Box::new(move |itemdata, line| {
-            window_client_get_key(data as *mut ::core::ffi::c_void, itemdata, line)
+            window_client_get_key(data_handle.as_ptr().cast(), itemdata, line)
         })),
         None,
         Some(window_client_sort),
