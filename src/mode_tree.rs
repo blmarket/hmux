@@ -43,7 +43,7 @@ use crate::src::shared::layout::*;
 use crate::src::shared::menu::{menu, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_build_fn, mode_tree_data, mode_tree_draw_cb,
-    mode_tree_height_cb,
+    mode_tree_height_cb, mode_tree_height_fn,
     mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line,
     mode_tree_list, mode_tree_menu_cb, mode_tree_menu_fn, mode_tree_prompt,
     mode_tree_prompt_input_cb,
@@ -560,7 +560,7 @@ pub unsafe extern "C" fn mode_tree_start(
     mut drawcb: mode_tree_draw_cb,
     mut searchcb: mode_tree_search_cb,
     mut menucb: mode_tree_menu_fn,
-    mut heightcb: mode_tree_height_cb,
+    mut heightcb: mode_tree_height_fn,
     mut keycb: mode_tree_key_cb,
     mut swapcb: mode_tree_swap_cb,
     mut sortcb: mode_tree_sort_cb,
@@ -612,7 +612,11 @@ pub unsafe extern "C" fn mode_tree_start(
         Box::new(move |client, key| callback(data, client, key))
             as Box<dyn FnMut(*mut client, key_code)>
     });
-    (*mtd).heightcb = heightcb;
+    (*mtd).heightcb = heightcb.map(|mut callback| {
+        let data = modedata;
+        Box::new(move |height| callback(data, height))
+            as Box<dyn FnMut(u_int) -> u_int>
+    });
     (*mtd).keycb = keycb;
     (*mtd).swapcb = swapcb;
     (*mtd).sortcb = sortcb;
@@ -638,8 +642,7 @@ unsafe extern "C" fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let mut height: u_int = 0;
     if (*mtd).heightcb.is_some() {
-        height = (*mtd).heightcb.expect("non-null function pointer")(
-            mtd as *mut ::core::ffi::c_void,
+        height = (*mtd).heightcb.as_mut().expect("non-null height callback")(
             (*(*s).grid).sy,
         );
         if height < (*(*s).grid).sy {

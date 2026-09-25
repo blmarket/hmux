@@ -2898,7 +2898,7 @@ unsafe extern "C" fn window_customize_menu(
         ::core::ptr::null_mut::<mouse_event>(),
     );
 }
-unsafe extern "C" fn window_customize_height(
+unsafe fn window_customize_height(
     _modedata: *mut ::core::ffi::c_void,
     _height: u_int,
 ) -> u_int {
@@ -2988,7 +2988,7 @@ unsafe extern "C" fn window_customize_init(
         ),
         Some(
             window_customize_height
-                as unsafe extern "C" fn(*mut ::core::ffi::c_void, u_int) -> u_int,
+                as unsafe fn(*mut ::core::ffi::c_void, u_int) -> u_int,
         ),
         None,
         None,
