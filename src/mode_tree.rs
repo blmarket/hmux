@@ -333,8 +333,8 @@ unsafe fn mode_tree_alloc_data() -> *mut mode_tree_data {
 }
 
 #[inline]
-unsafe fn mode_tree_line_count(mtd: *mut mode_tree_data) -> u_int {
-    (*mtd).lines.len() as u_int
+unsafe fn mode_tree_line_count(mtd: &mode_tree_data) -> u_int {
+    mtd.lines.len() as u_int
 }
 
 unsafe extern "C" fn mode_tree_clear_lines(mut mtd: *mut mode_tree_data) {
@@ -360,7 +360,7 @@ unsafe extern "C" fn mode_tree_build_lines(
                 as ::core::ffi::c_int,
             flat: 0,
         });
-        (*mti).line = mode_tree_line_count(mtd).wrapping_sub(1 as u_int);
+        (*mti).line = mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int);
         if !(*mti).children.first().is_null() {
             flat = 0 as ::core::ffi::c_int;
         }
@@ -397,7 +397,7 @@ unsafe extern "C" fn mode_tree_build_lines(
     }
     for mti in (*mtl).pointers() {
         i = 0 as u_int;
-        while i < mode_tree_line_count(mtd) {
+        while i < mode_tree_line_count(&*mtd) {
             line = (*mtd).lines.as_mut_ptr().offset(i as isize) as *mut mode_tree_line
                 as *mut mode_tree_line;
             if (*line).item == mti {
@@ -415,14 +415,14 @@ unsafe extern "C" fn mode_tree_clear_tagged(mut mtl: *mut mode_tree_list) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn mode_tree_up(mut mtd: *mut mode_tree_data, mut wrap: ::core::ffi::c_int) {
-    if mode_tree_line_count(mtd) == 0 as u_int {
+    if mode_tree_line_count(&*mtd) == 0 as u_int {
         return;
     }
     if (*mtd).current == 0 as u_int {
         if wrap != 0 {
-            (*mtd).current = mode_tree_line_count(mtd).wrapping_sub(1 as u_int);
-            if mode_tree_line_count(mtd) >= (*mtd).height {
-                (*mtd).offset = mode_tree_line_count(mtd).wrapping_sub((*mtd).height);
+            (*mtd).current = mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int);
+            if mode_tree_line_count(&*mtd) >= (*mtd).height {
+                (*mtd).offset = mode_tree_line_count(&*mtd).wrapping_sub((*mtd).height);
             }
         }
     } else {
@@ -437,10 +437,10 @@ pub unsafe extern "C" fn mode_tree_down(
     mut mtd: *mut mode_tree_data,
     mut wrap: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    if mode_tree_line_count(mtd) == 0 as u_int {
+    if mode_tree_line_count(&*mtd) == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    if (*mtd).current == mode_tree_line_count(mtd).wrapping_sub(1 as u_int) {
+    if (*mtd).current == mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
         if wrap != 0 {
             (*mtd).current = 0 as u_int;
             (*mtd).offset = 0 as u_int;
@@ -477,7 +477,7 @@ unsafe extern "C" fn mode_tree_swap(
             return;
         }
         if direction > 0 as ::core::ffi::c_int
-            && swap_with.wrapping_add(direction as u_int) >= mode_tree_line_count(mtd)
+            && swap_with.wrapping_add(direction as u_int) >= mode_tree_line_count(&*mtd)
         {
             return;
         }
@@ -504,7 +504,7 @@ unsafe extern "C" fn mode_tree_swap(
 pub unsafe extern "C" fn mode_tree_get_current(
     mut mtd: *mut mode_tree_data,
 ) -> *mut ::core::ffi::c_void {
-    if mode_tree_line_count(mtd) == 0 as u_int {
+    if mode_tree_line_count(&*mtd) == 0 as u_int {
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     return (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).itemdata;
@@ -545,13 +545,13 @@ unsafe extern "C" fn mode_tree_get_tag(
 ) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     i = 0 as u_int;
-    while i < mode_tree_line_count(mtd) {
+    while i < mode_tree_line_count(&*mtd) {
         if (*(*(*mtd).lines.as_mut_ptr().offset(i as isize)).item).tag == tag {
             break;
         }
         i = i.wrapping_add(1);
     }
-    if i != mode_tree_line_count(mtd) {
+    if i != mode_tree_line_count(&*mtd) {
         *found = i;
         return 1 as ::core::ffi::c_int;
     }
@@ -587,11 +587,11 @@ pub unsafe extern "C" fn mode_tree_set_current(
         }
         return 1 as ::core::ffi::c_int;
     }
-    if (*mtd).current >= mode_tree_line_count(mtd) {
-        if mode_tree_line_count(mtd) == 0 as u_int {
+    if (*mtd).current >= mode_tree_line_count(&*mtd) {
+        if mode_tree_line_count(&*mtd) == 0 as u_int {
             return 0 as ::core::ffi::c_int;
         }
-        (*mtd).current = mode_tree_line_count(mtd).wrapping_sub(1 as u_int);
+        (*mtd).current = mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int);
         if (*mtd).current > (*mtd).height.wrapping_sub(1 as u_int) {
             (*mtd).offset = (*mtd)
                 .current
@@ -610,7 +610,7 @@ pub unsafe extern "C" fn mode_tree_count_tagged(mut mtd: *mut mode_tree_data) ->
     let mut tagged: u_int = 0;
     tagged = 0 as u_int;
     i = 0 as u_int;
-    while i < mode_tree_line_count(mtd) {
+    while i < mode_tree_line_count(&*mtd) {
         mti = (*(*mtd).lines.as_mut_ptr().offset(i as isize)).item;
         if (*mti).tagged != 0 {
             tagged = tagged.wrapping_add(1);
@@ -632,7 +632,7 @@ pub unsafe extern "C" fn mode_tree_each_tagged(
     let mut fired: ::core::ffi::c_int = 0;
     fired = 0 as ::core::ffi::c_int;
     i = 0 as u_int;
-    while i < mode_tree_line_count(mtd) {
+    while i < mode_tree_line_count(&*mtd) {
         mti = (*(*mtd).lines.as_mut_ptr().offset(i as isize)).item;
         if (*mti).tagged != 0 {
             fired = 1 as ::core::ffi::c_int;
@@ -725,7 +725,7 @@ unsafe extern "C" fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
             .sy
             .wrapping_div(3 as u_int)
             .wrapping_mul(2 as u_int);
-        if (*mtd).height > mode_tree_line_count(mtd) {
+        if (*mtd).height > mode_tree_line_count(&*mtd) {
             (*mtd).height = (*(*s).grid).sy.wrapping_div(2 as u_int);
         }
         if (*mtd).height < 10 as u_int {
@@ -733,8 +733,8 @@ unsafe extern "C" fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
         }
     } else if (*mtd).preview == MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int {
         (*mtd).height = (*(*s).grid).sy.wrapping_div(4 as u_int);
-        if (*mtd).height > mode_tree_line_count(mtd) {
-            (*mtd).height = mode_tree_line_count(mtd);
+        if (*mtd).height > mode_tree_line_count(&*mtd) {
+            (*mtd).height = mode_tree_line_count(&*mtd);
         }
         if (*mtd).height < 2 as u_int {
             (*mtd).height = 2 as u_int;
@@ -995,7 +995,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     let mut alignlen: Vec<::core::ffi::c_int> = ::std::vec::from_elem(0, vla);
     let mut dfg: ::core::ffi::c_int = 0;
     let mut dfg0: ::core::ffi::c_int = 0;
-    if mode_tree_line_count(mtd) == 0 as u_int {
+    if mode_tree_line_count(&*mtd) == 0 as u_int {
         return;
     }
     w = (*mtd).width;
@@ -1043,7 +1043,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
     );
     keylen = 0 as ::core::ffi::c_int;
     i = 0 as u_int;
-    while i < mode_tree_line_count(mtd) {
+    while i < mode_tree_line_count(&*mtd) {
         mti = (*(*mtd).lines.as_mut_ptr().offset(i as isize)).item;
         if !((*mti).key == KEYC_NONE as ::core::ffi::c_ulong as key_code) {
             if (*mti).keylen as ::core::ffi::c_int + 3 as ::core::ffi::c_int > keylen {
@@ -1058,7 +1058,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
         i = i.wrapping_add(1);
     }
     i = 0 as u_int;
-    while i < mode_tree_line_count(mtd) {
+    while i < mode_tree_line_count(&*mtd) {
         line = (*mtd).lines.as_mut_ptr().offset(i as isize) as *mut mode_tree_line
             as *mut mode_tree_line;
         mti = (*line).item;
@@ -1072,7 +1072,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
         i = i.wrapping_add(1);
     }
     i = 0 as u_int;
-    while i < mode_tree_line_count(mtd) {
+    while i < mode_tree_line_count(&*mtd) {
         if !(i < (*mtd).offset) {
             if i > (*mtd).offset.wrapping_add(h).wrapping_sub(1 as u_int) {
                 break;
@@ -1915,7 +1915,7 @@ unsafe extern "C" fn mode_tree_menu_callback(
     let mtm = Box::from_raw(data as *mut mode_tree_menu);
     let mtd = mtm.data;
     if !((*mtd).dead != 0 || key == KEYC_NONE as ::core::ffi::c_ulong as key_code) {
-        if !(mtm.line >= mode_tree_line_count(mtd)) {
+        if !(mtm.line >= mode_tree_line_count(&*mtd)) {
             (*mtd).current = mtm.line;
             (*mtd).menucb.expect("non-null function pointer")((*mtd).modedata, mtm.c, key);
         }
@@ -1934,7 +1934,7 @@ unsafe extern "C" fn mode_tree_display_menu(
     let mut items: *const menu_item = ::core::ptr::null::<menu_item>();
     let mut mtm: *mut mode_tree_menu = ::core::ptr::null_mut::<mode_tree_menu>();
     let mut line: u_int = 0;
-    if (*mtd).offset.wrapping_add(y) > mode_tree_line_count(mtd).wrapping_sub(1 as u_int) {
+    if (*mtd).offset.wrapping_add(y) > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
         line = (*mtd).current;
     } else {
         line = (*mtd).offset.wrapping_add(y);
@@ -2201,7 +2201,7 @@ pub unsafe extern "C" fn mode_tree_key(
     let mut redraw: ::core::ffi::c_int = 0;
     let mut prompt: *mut prompt = ::core::ptr::null_mut::<prompt>();
     let mut mtp: *mut mode_tree_prompt = ::core::ptr::null_mut::<mode_tree_prompt>();
-    if mode_tree_line_count(mtd) == 0 as u_int {
+    if mode_tree_line_count(&*mtd) == 0 as u_int {
         *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         return 1 as ::core::ffi::c_int;
     }
@@ -2329,7 +2329,7 @@ pub unsafe extern "C" fn mode_tree_key(
             }
             return 0 as ::core::ffi::c_int;
         }
-        if (*mtd).offset.wrapping_add(y) < mode_tree_line_count(mtd) {
+        if (*mtd).offset.wrapping_add(y) < mode_tree_line_count(&*mtd) {
             if *key == KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code
                 || *key == KEYC_MOUSEDOWN3_PANE as ::core::ffi::c_ulong as key_code
                 || *key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code
@@ -2357,7 +2357,7 @@ pub unsafe extern "C" fn mode_tree_key(
     current = (*line).item;
     choice = -(1 as ::core::ffi::c_int);
     i = 0 as u_int;
-    while i < mode_tree_line_count(mtd) {
+    while i < mode_tree_line_count(&*mtd) {
         if *key == (*(*(*mtd).lines.as_mut_ptr().offset(i as isize)).item).key {
             choice = i as ::core::ffi::c_int;
             break;
@@ -2366,7 +2366,7 @@ pub unsafe extern "C" fn mode_tree_key(
         }
     }
     if choice != -(1 as ::core::ffi::c_int) {
-        if choice as u_int > mode_tree_line_count(mtd).wrapping_sub(1 as u_int) {
+        if choice as u_int > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
             *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
             return 0 as ::core::ffi::c_int;
         }
@@ -2404,7 +2404,7 @@ pub unsafe extern "C" fn mode_tree_key(
         8589934616 | 35184372088934 => {
             i = 0 as u_int;
             while i < (*mtd).height {
-                if (*mtd).current == mode_tree_line_count(mtd).wrapping_sub(1 as u_int) {
+                if (*mtd).current == mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
                     break;
                 }
                 mode_tree_down(mtd, 1 as ::core::ffi::c_int);
@@ -2416,7 +2416,7 @@ pub unsafe extern "C" fn mode_tree_key(
             (*mtd).offset = 0 as u_int;
         }
         71 | 8589934615 => {
-            (*mtd).current = mode_tree_line_count(mtd).wrapping_sub(1 as u_int);
+            (*mtd).current = mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int);
             if (*mtd).current > (*mtd).height.wrapping_sub(1 as u_int) {
                 (*mtd).offset = (*mtd)
                     .current
@@ -2446,7 +2446,7 @@ pub unsafe extern "C" fn mode_tree_key(
         }
         84 => {
             i = 0 as u_int;
-            while i < mode_tree_line_count(mtd) {
+            while i < mode_tree_line_count(&*mtd) {
                 (*(*(*mtd).lines.as_mut_ptr().offset(i as isize)).item).tagged =
                     0 as ::core::ffi::c_int;
                 i = i.wrapping_add(1);
@@ -2454,7 +2454,7 @@ pub unsafe extern "C" fn mode_tree_key(
         }
         35184372088948 => {
             i = 0 as u_int;
-            while i < mode_tree_line_count(mtd) {
+            while i < mode_tree_line_count(&*mtd) {
                 if (*(*(*mtd).lines.as_mut_ptr().offset(i as isize)).item)
                     .parent
                     .is_null()
