@@ -1113,11 +1113,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     (*c).peer = proc_add_peer(
         server_proc,
         fd,
-        Some(
-            server_client_dispatch
-                as unsafe extern "C" fn(*mut imsg, *mut ::core::ffi::c_void) -> (),
-        ),
-        c as *mut ::core::ffi::c_void,
+        Box::new(move |imsg| unsafe { server_client_dispatch(c, imsg) }),
     );
     if gettimeofday(&raw mut (*c).creation_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
@@ -4378,12 +4374,8 @@ unsafe extern "C" fn server_client_set_progress_bar(mut c: *mut client) {
     );
     tty_set_progress_bar(&raw mut (*c).tty, &raw mut (*c).progress_bar);
 }
-unsafe extern "C" fn server_client_dispatch(
-    mut imsg: *mut imsg,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn server_client_dispatch(mut c: *mut client, mut imsg: *mut imsg) {
     let mut current_block: u64;
-    let mut c: *mut client = arg as *mut client;
     let mut datalen: ssize_t = 0;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut old_sx: u_int = 0;

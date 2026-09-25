@@ -387,8 +387,7 @@ pub unsafe fn client_main(
     client_peer = proc_add_peer(
         client_proc,
         fd,
-        Some(client_dispatch as unsafe extern "C" fn(*mut imsg, *mut ::core::ffi::c_void) -> ()),
-        NULL,
+        Box::new(|imsg| unsafe { client_dispatch(imsg) }),
     );
     cwd = find_cwd();
     if cwd.is_null() {
@@ -839,7 +838,7 @@ unsafe extern "C" fn client_file_check_cb(
         client_exit();
     }
 }
-unsafe extern "C" fn client_dispatch(mut imsg: *mut imsg, _arg: *mut ::core::ffi::c_void) {
+unsafe fn client_dispatch(mut imsg: *mut imsg) {
     if imsg.is_null() {
         if client_exitflag == 0 {
             client_exitreason = CLIENT_EXIT_LOST_SERVER;

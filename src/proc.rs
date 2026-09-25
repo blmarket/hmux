@@ -38,6 +38,23 @@ pub const NCURSES_VERSION: [::core::ffi::c_char; 4] =
 pub const EVLOOP_ONCE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 pub const PEER_BAD: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+unsafe fn proc_dispatch(peer: *mut tmuxpeer, imsg: *mut imsg) -> bool {
+    let Some(mut dispatchcb) = (*peer).dispatchcb.take() else {
+        return false;
+    };
+    let tp = (*peer).parent;
+    dispatchcb(imsg);
+    if (*tp)
+        .peers
+        .iter()
+        .any(|owned_peer| std::ptr::eq(&**owned_peer, peer))
+    {
+        (*peer).dispatchcb = Some(dispatchcb);
+        true
+    } else {
+        false
+    }
+}
 unsafe extern "C" fn proc_event_cb(
     _fd: ::core::ffi::c_int,
     mut events: ::core::ffi::c_short,
@@ -57,19 +74,13 @@ unsafe extern "C" fn proc_event_cb(
     };
     if (*peer).flags & PEER_BAD == 0 && events as ::core::ffi::c_int & EV_READ != 0 {
         if imsgbuf_read(&raw mut (*peer).ibuf) != 1 as ::core::ffi::c_int {
-            (*peer).dispatchcb.expect("non-null function pointer")(
-                ::core::ptr::null_mut::<imsg>(),
-                (*peer).arg,
-            );
+            proc_dispatch(peer, ::core::ptr::null_mut::<imsg>());
             return;
         }
         loop {
             n = imsgbuf_get(&raw mut (*peer).ibuf, &raw mut imsg);
             if n == -(1 as ::core::ffi::c_int) {
-                (*peer).dispatchcb.expect("non-null function pointer")(
-                    ::core::ptr::null_mut::<imsg>(),
-                    (*peer).arg,
-                );
+                proc_dispatch(peer, ::core::ptr::null_mut::<imsg>());
                 return;
             }
             if n == 0 as ::core::ffi::c_int {
@@ -86,26 +97,23 @@ unsafe extern "C" fn proc_event_cb(
                 imsg.buf = ::core::ptr::null_mut::<ibuf>();
                 break;
             } else {
-                (*peer).dispatchcb.expect("non-null function pointer")(&raw mut imsg, (*peer).arg);
+                let peer_alive = proc_dispatch(peer, &raw mut imsg);
                 drop(owned_buf);
                 imsg.buf = ::core::ptr::null_mut::<ibuf>();
+                if !peer_alive {
+                    return;
+                }
             }
         }
     }
     if events as ::core::ffi::c_int & EV_WRITE != 0 {
         if imsgbuf_write(&raw mut (*peer).ibuf) == -(1 as ::core::ffi::c_int) {
-            (*peer).dispatchcb.expect("non-null function pointer")(
-                ::core::ptr::null_mut::<imsg>(),
-                (*peer).arg,
-            );
+            proc_dispatch(peer, ::core::ptr::null_mut::<imsg>());
             return;
         }
     }
     if (*peer).flags & PEER_BAD != 0 && imsgbuf_queuelen(&raw mut (*peer).ibuf) == 0 as uint32_t {
-        (*peer).dispatchcb.expect("non-null function pointer")(
-            ::core::ptr::null_mut::<imsg>(),
-            (*peer).arg,
-        );
+        proc_dispatch(peer, ::core::ptr::null_mut::<imsg>());
         return;
     }
     proc_update_event(peer);
@@ -497,18 +505,15 @@ pub unsafe extern "C" fn proc_clear_signals(
         sigaction(SIGWINCH, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn proc_add_peer(
+pub unsafe fn proc_add_peer(
     mut tp: *mut tmuxproc,
     mut fd: ::core::ffi::c_int,
-    mut dispatchcb: Option<unsafe extern "C" fn(*mut imsg, *mut ::core::ffi::c_void) -> ()>,
-    mut arg: *mut ::core::ffi::c_void,
+    mut dispatchcb: Box<dyn FnMut(*mut imsg)>,
 ) -> *mut tmuxpeer {
     let mut owned_peer = Box::new(tmuxpeer::default());
     let peer: *mut tmuxpeer = &mut *owned_peer;
     (*peer).parent = tp;
-    (*peer).dispatchcb = dispatchcb;
-    (*peer).arg = arg;
+    (*peer).dispatchcb = Some(dispatchcb);
     if imsgbuf_init(&raw mut (*peer).ibuf, fd) == -(1 as ::core::ffi::c_int) {
         fatal(b"imsgbuf_init\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -532,10 +537,9 @@ pub unsafe extern "C" fn proc_add_peer(
         (*peer).gid = -(1 as ::core::ffi::c_int) as gid_t;
     }
     log_debug(
-        b"add peer %p: %d (%p)\0" as *const u8 as *const ::core::ffi::c_char,
+        b"add peer %p: %d\0" as *const u8 as *const ::core::ffi::c_char,
         peer,
         fd,
-        arg,
     );
     (*tp).peers.push(owned_peer);
     proc_update_event(peer);

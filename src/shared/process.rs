@@ -4,8 +4,6 @@ use super::abi::{gid_t, uid_t};
 use super::event::event;
 use super::message::{imsg, imsgbuf};
 
-#[derive(Default)]
-#[repr(C)]
 /// Owned by the parent process's peer list until `proc_remove_peer`.
 pub struct tmuxpeer {
     pub parent: *mut tmuxproc,
@@ -14,8 +12,21 @@ pub struct tmuxpeer {
     pub uid: uid_t,
     pub gid: gid_t,
     pub flags: ::core::ffi::c_int,
-    pub dispatchcb: Option<unsafe extern "C" fn(*mut imsg, *mut ::core::ffi::c_void) -> ()>,
-    pub arg: *mut ::core::ffi::c_void,
+    pub dispatchcb: Option<Box<dyn FnMut(*mut imsg)>>,
+}
+
+impl Default for tmuxpeer {
+    fn default() -> Self {
+        Self {
+            parent: std::ptr::null_mut(),
+            ibuf: imsgbuf::default(),
+            event: event::default(),
+            uid: 0,
+            gid: 0,
+            flags: 0,
+            dispatchcb: None,
+        }
+    }
 }
 
 #[repr(C)]
