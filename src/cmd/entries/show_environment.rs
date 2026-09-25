@@ -92,10 +92,10 @@ pub static mut cmd_show_environment_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe fn cmd_show_environment_escape(envent: *const environ_entry) -> CString {
+unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
     // The entry value is a C string: only bytes before its first NUL are visible.
     let value = CStr::from_ptr(
-        ((*envent).value)
+        envent.value
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     )
@@ -139,7 +139,7 @@ unsafe extern "C" fn cmd_show_environment_print(
         return;
     }
     if !(*envent).value.is_none() {
-        let escaped = cmd_show_environment_escape(envent);
+        let escaped = cmd_show_environment_escape(&*envent);
         cmdq_print(
             item,
             b"%s=\"%s\"; export %s;\0" as *const u8 as *const ::core::ffi::c_char,
