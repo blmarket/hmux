@@ -256,13 +256,10 @@ pub unsafe fn layout_cells_replace(
 /// The children collection owns its boxes. Callers must first remove and free
 /// or move every child; silently draining the collection would leak them.
 ///
-/// # Safety
-/// `parent` must point to a valid `layout_cell` whose children have already
-/// been detached or freed.
 #[inline]
-pub unsafe fn layout_cells_require_empty(parent: *mut layout_cell) {
+pub fn layout_cells_require_empty(parent: &layout_cell) {
     assert!(
-        (*parent).cells.children.is_empty(),
+        parent.cells.children.is_empty(),
         "layout cell children must be detached before clearing"
     );
 }
