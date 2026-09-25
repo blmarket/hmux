@@ -1175,8 +1175,8 @@ pub unsafe fn monitor_panes_prev(elm: *mut monitor_pane) -> *mut monitor_pane {
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
-unsafe fn monitor_windows_key(elm: *mut monitor_window) -> (u32, u32) {
-    ((*elm).window, (*elm).idx)
+fn monitor_windows_key(elm: &monitor_window) -> (u32, u32) {
+    (elm.window, elm.idx)
 }
 pub unsafe fn monitor_windows_find(
     head: *mut monitor_windows,
@@ -1185,7 +1185,7 @@ pub unsafe fn monitor_windows_find(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_windows_key(elm);
+    let key = monitor_windows_key(&*elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_windows_nfind(
@@ -1195,7 +1195,7 @@ pub unsafe fn monitor_windows_nfind(
     let Some(map) = (*head).storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_windows_key(elm);
+    let key = monitor_windows_key(&*elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1204,7 +1204,7 @@ pub unsafe fn monitor_windows_insert(
     head: *mut monitor_windows,
     elm: *mut monitor_window,
 ) -> *mut monitor_window {
-    let key = monitor_windows_key(elm);
+    let key = monitor_windows_key(&*elm);
     if (*head).storage.is_null() {
         (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
@@ -1225,7 +1225,7 @@ pub unsafe fn monitor_windows_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = monitor_windows_key(elm);
+    let key = monitor_windows_key(&*elm);
     let Some(map) = (*head).storage.as_mut() else {
         return std::ptr::null_mut();
     };
@@ -1258,7 +1258,7 @@ pub unsafe fn monitor_windows_next(elm: *mut monitor_window) -> *mut monitor_win
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_windows_key(elm);
+    let key = monitor_windows_key(&*elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1267,7 +1267,7 @@ pub unsafe fn monitor_windows_prev(elm: *mut monitor_window) -> *mut monitor_win
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_windows_key(elm);
+    let key = monitor_windows_key(&*elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
