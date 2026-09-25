@@ -115,11 +115,8 @@ pub(crate) unsafe fn session_set_cwd_from_c_owned(
 }
 
 /// Replace the borrowed public name after callers remove the old map key.
-pub(crate) unsafe fn session_replace_name(s: *mut session, name: CString) -> CString {
-    let owner = s;
-    let previous = std::mem::replace(&mut (*owner).name, name);
-
-    previous
+pub(crate) fn session_replace_name(s: &mut session, name: CString) -> CString {
+    std::mem::replace(&mut s.name, name)
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_cmp(
@@ -466,7 +463,7 @@ pub unsafe extern "C" fn session_create(
     (*s).options = oo;
     status_update_cache(s);
     if !name.is_null() {
-        drop(session_replace_name(s, CStr::from_ptr(name).to_owned()));
+        drop(session_replace_name(&mut *s, CStr::from_ptr(name).to_owned()));
         let fresh0 = next_session_id;
         next_session_id = next_session_id.wrapping_add(1);
         (*s).id = fresh0;
@@ -484,7 +481,7 @@ pub unsafe extern "C" fn session_create(
             };
             generated.extend_from_slice((*s).id.to_string().as_bytes());
             drop(session_replace_name(
-                s,
+                &mut *s,
                 CString::new(generated).expect("generated name has no NUL"),
             ));
             if sessions_find(&raw mut sessions, s).is_null() {

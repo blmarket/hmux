@@ -160,7 +160,7 @@ unsafe extern "C" fn cmd_rename_session_exec(
         newname.as_ptr(),
     );
     sessions_remove(&raw mut sessions, s);
-    drop(session_replace_name(s, newname));
+    drop(session_replace_name(&mut *s, newname));
     sessions_insert(&raw mut sessions, s);
     server_status_session(s);
     events_fire(
