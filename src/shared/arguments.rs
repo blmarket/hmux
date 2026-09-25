@@ -2,6 +2,7 @@
 
 use super::abi::{u_char, u_int};
 use super::command::{cmd_list, cmd_parse_input};
+use refbox::{RefBox, Weak};
 use std::collections::BTreeMap;
 use std::ffi::CString;
 pub type args_type = ::core::ffi::c_uint;
@@ -81,7 +82,7 @@ impl args_value {
             payload,
             cached: None,
             entry: args_value_entry {
-                owner: ::core::ptr::null_mut(),
+                owner: None,
                 index: 0,
             },
         }
@@ -135,11 +136,11 @@ impl args_value {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct args_value_entry {
     /// Owner collection used by args_next_value; this is not a neighbor link.
-    pub owner: *mut args_values_storage,
+    pub owner: Option<Weak<args_values_storage>>,
     /// Stable position in the owner's append-only value collection.
     pub index: usize,
 }
@@ -156,10 +157,8 @@ pub struct args_tree_storage {
     pub(crate) entries: BTreeMap<u_char, *mut args_entry>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
-/// Box-owned by the enclosing args tree. Its value-list tail may point into
-/// this stable record; `args_free` unlinks values before dropping the Box.
+/// Box-owned by the enclosing args tree; dropping it also drops its values.
 pub struct args_entry {
     pub flag: u_char,
     pub values: args_values,
@@ -169,13 +168,13 @@ pub struct args_entry {
     pub(crate) owner: *mut args_tree_storage,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
-/// ABI-sized head view for an argument entry's flag values. The head stores a
-/// first-element view and owns the collection through its storage pointer.
+/// Rust-owned head for an argument entry's flag values. The first-element view
+/// remains a raw pointer for translated callers; storage is owned by RefBox.
+/// This internal layout is not a C ABI contract.
 pub struct args_values {
     pub first: *mut args_value,
-    pub storage: *mut args_values_storage,
+    pub storage: RefBox<args_values_storage>,
 }
 
 /// Owns stable flag-value records for one args_entry.

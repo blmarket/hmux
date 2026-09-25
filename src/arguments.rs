@@ -171,7 +171,7 @@ mod args_tree_tests {
             flag,
             values: args_values {
                 first: ::core::ptr::null_mut::<args_value>(),
-                storage: ::core::ptr::null_mut::<args_values_storage>(),
+                storage: refbox::RefBox::default(),
             },
             count: 0,
             flags: 0,
@@ -233,48 +233,45 @@ unsafe extern "C" fn args_find(args: *mut args, flag: u_char) -> *mut args_entry
     args_tree_find(&raw mut (*args).tree, flag)
 }
 
-unsafe fn args_values_owner(entry: *mut args_entry) -> *mut args_values_storage {
-    if entry.is_null() {
-        return ::core::ptr::null_mut::<args_values_storage>();
-    }
-    (*entry).values.storage
-}
-
-unsafe fn args_values_ensure_owner(entry: *mut args_entry) -> *mut args_values_storage {
-    let mut owner = args_values_owner(entry);
-    if owner.is_null() {
-        owner = Box::into_raw(Box::new(args_values_storage::default()));
-        (*entry).values.first = ::core::ptr::null_mut::<args_value>();
-        (*entry).values.storage = owner;
-    }
-    owner
-}
-
 unsafe fn args_value_at(entry: *mut args_entry, index: usize) -> *mut args_value {
-    let owner = args_values_owner(entry);
-    if owner.is_null() {
-        return ::core::ptr::null_mut::<args_value>();
-    }
-    (&(*owner).values)
+    let Some(entry) = entry.as_ref() else {
+        return ::core::ptr::null_mut();
+    };
+    entry
+        .values
+        .storage
+        .try_borrow_mut()
+        .expect("argument values already borrowed")
+        .values
         .get(index)
         .map(|value| (&**value as *const args_value).cast_mut())
-        .unwrap_or(::core::ptr::null_mut::<args_value>())
+        .unwrap_or(::core::ptr::null_mut())
 }
 
 unsafe fn args_value_count(entry: *mut args_entry) -> usize {
-    let owner = args_values_owner(entry);
-    if owner.is_null() {
-        0
-    } else {
-        (*owner).values.len()
-    }
+    let Some(entry) = entry.as_ref() else {
+        return 0;
+    };
+    entry
+        .values
+        .storage
+        .try_borrow_mut()
+        .expect("argument values already borrowed")
+        .values
+        .len()
 }
 
 unsafe fn args_last_value<'a>(args: &'a args, flag: u_char) -> Option<&'a args_value> {
     let tree = args.tree.entries.as_ref()?;
     let entry = tree.entries.get(&flag)?.as_ref()?;
-    let owner = entry.values.storage.as_ref()?;
-    owner.values.last().map(|value| value.as_ref())
+    let owner = entry
+        .values
+        .storage
+        .try_borrow_mut()
+        .expect("argument values already borrowed");
+    let value = &**owner.values.last()? as *const args_value;
+    // The boxed record is stable and remains owned by args after the guard ends.
+    Some(&*value)
 }
 
 unsafe fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
@@ -704,10 +701,6 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         1 as ::core::ffi::c_int != 0
     } {
         args_tree_remove(&raw mut (*args).tree, entry);
-        let values_owner = args_values_owner(entry);
-        if !values_owner.is_null() {
-            drop(Box::from_raw(values_owner));
-        }
         drop(Box::from_raw(entry));
         entry = entry1;
     }
@@ -929,12 +922,16 @@ unsafe fn args_set_value(
 ) {
     let mut entry = args_find(args, flag);
     if entry.is_null() {
-        entry = Box::into_raw(Box::new(::core::mem::zeroed::<args_entry>()));
-        (*entry).flag = flag;
-        (*entry).count = 1;
-        (*entry).flags = flags;
-        (*entry).values.first = ::core::ptr::null_mut();
-        (*entry).values.storage = Box::into_raw(Box::new(args_values_storage::default()));
+        entry = Box::into_raw(Box::new(args_entry {
+            flag,
+            values: args_values {
+                first: ::core::ptr::null_mut(),
+                storage: refbox::RefBox::default(),
+            },
+            count: 1,
+            flags,
+            owner: ::core::ptr::null_mut(),
+        }));
         args_tree_insert(&raw mut (*args).tree, entry);
     } else {
         (*entry).count = (*entry).count.wrapping_add(1);
@@ -944,15 +941,18 @@ unsafe fn args_set_value(
             != ARGS_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             let mut boxed_value = Box::new(value);
-            let values_owner = args_values_ensure_owner(entry);
+            let values_owner = &(*entry).values.storage;
+            let mut storage = values_owner
+                .try_borrow_mut()
+                .expect("argument values already borrowed");
             let value_ptr = &mut *boxed_value as *mut args_value;
-            let index = (*values_owner).values.len();
-            boxed_value.entry.owner = values_owner;
+            let index = storage.values.len();
+            boxed_value.entry.owner = Some(values_owner.downgrade());
             boxed_value.entry.index = index;
             if index == 0 {
                 (*entry).values.first = value_ptr;
             }
-            (*values_owner).values.push(boxed_value);
+            storage.values.push(boxed_value);
         }
     }
 }
@@ -1263,11 +1263,20 @@ pub unsafe extern "C" fn args_first_value(
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_next_value(mut value: *mut args_value) -> *mut args_value {
-    if value.is_null() || (*value).entry.owner.is_null() {
-        return ::core::ptr::null_mut::<args_value>();
-    }
-    let next_index = (*value).entry.index.saturating_add(1);
-    return (&(*(*value).entry.owner).values)
+    let Some(value) = value.as_ref() else {
+        return ::core::ptr::null_mut();
+    };
+    let Some(owner) = value.entry.owner.as_ref() else {
+        return ::core::ptr::null_mut();
+    };
+    let storage = match owner.try_borrow_mut() {
+        Ok(storage) => storage,
+        Err(refbox::BorrowError::Dropped) => return ::core::ptr::null_mut(),
+        Err(refbox::BorrowError::Borrowed) => panic!("argument values already borrowed"),
+    };
+    let next_index = value.entry.index.saturating_add(1);
+    return storage
+        .values
         .get(next_index)
         .map(|next| (&**next as *const args_value).cast_mut())
         .unwrap_or(::core::ptr::null_mut::<args_value>());

@@ -456,3 +456,46 @@ fn rejected_command_argument_keeps_source_value_ownership() {
         cmd_list_free(command_list);
     }
 }
+
+#[test]
+fn flag_value_backpointers_survive_growth_and_expire_with_owner() {
+    unsafe {
+        let args = args_create();
+        args_set_owned_string(args, b'n', c"first".to_owned(), 0);
+        let first = args_first_value(args, b'n');
+        let observer = (*first).entry.owner.as_ref().unwrap().clone();
+        let mut detached = args_value::empty();
+        detached.entry = (*first).entry.clone();
+
+        for index in 1..128 {
+            args_set_owned_string(args, b'n', cstring(&index.to_string()), 0);
+        }
+        assert_eq!(args_first_value(args, b'n'), first);
+        let mut value = first;
+        for index in 0..128 {
+            assert!(!value.is_null());
+            let expected = if index == 0 {
+                "first".to_owned()
+            } else {
+                index.to_string()
+            };
+            assert_eq!(
+                CStr::from_ptr((*value).string_ptr()).to_str().unwrap(),
+                expected
+            );
+            value = args_next_value(value);
+        }
+        assert!(value.is_null());
+        assert_eq!(args_next_value(&mut detached), args_next_value(first));
+
+        args_free(args);
+        assert_eq!(
+            observer.try_borrow_mut().err(),
+            Some(refbox::BorrowError::Dropped)
+        );
+        // The detached record is still alive, but its storage back-pointer expired.
+        assert!(args_next_value(&mut detached).is_null());
+        assert!(args_next_value(&mut args_value::empty()).is_null());
+        assert!(args_next_value(ptr::null_mut()).is_null());
+    }
+}
