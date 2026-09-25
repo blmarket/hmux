@@ -79,8 +79,8 @@ use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
 use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
-unsafe fn tty_term_replace_string(term: *mut tty_term, index: usize, value: Option<CString>) {
-    let owner = &mut *term;
+unsafe fn tty_term_replace_string(term: &mut tty_term, index: usize, value: Option<CString>) {
+    let owner = term;
     assert!(index < owner.strings.len());
     let code = owner.codes.add(index);
     if owner.strings[index].is_some() {
@@ -1206,13 +1206,13 @@ pub unsafe extern "C" fn tty_term_apply(
             if !(strcmp(s, (*ent).name.as_ptr()) != 0 as ::core::ffi::c_int) {
                 code = (*term).codes.offset(i as isize) as *mut tty_code;
                 if remove != 0 {
-                    tty_term_replace_string(term, i as usize, None);
+                    tty_term_replace_string(&mut *term, i as usize, None);
                     (*code).type_0 = TTYCODE_NONE;
                 } else {
                     match (*ent).type_0 as ::core::ffi::c_uint {
                         1 => {
                             tty_term_replace_string(
-                                term,
+                                &mut *term,
                                 i as usize,
                                 Some(CStr::from_ptr(value).to_owned()),
                             );
@@ -1226,13 +1226,13 @@ pub unsafe extern "C" fn tty_term_apply(
                                 &raw mut errstr,
                             ) as ::core::ffi::c_int;
                             if errstr.is_null() {
-                                tty_term_replace_string(term, i as usize, None);
+                                tty_term_replace_string(&mut *term, i as usize, None);
                                 (*code).value.number = n;
                                 (*code).type_0 = (*ent).type_0;
                             }
                         }
                         3 => {
-                            tty_term_replace_string(term, i as usize, None);
+                            tty_term_replace_string(&mut *term, i as usize, None);
                             (*code).value.flag = 1 as ::core::ffi::c_int;
                             (*code).type_0 = (*ent).type_0;
                         }
@@ -1351,7 +1351,7 @@ unsafe extern "C" fn tty_term_validate(mut term: *mut tty_term) {
     }
     log_debug(b"removing invalid Ms capability\0" as *const u8 as *const ::core::ffi::c_char);
     (*term).flags |= TERM_INVALIDMS;
-    tty_term_replace_string(term, TTYC_MS as usize, None);
+    tty_term_replace_string(&mut *term, TTYC_MS as usize, None);
     (*code).type_0 = TTYCODE_NONE;
 }
 pub unsafe fn tty_term_create(
@@ -1419,13 +1419,13 @@ pub unsafe fn tty_term_create(
                     if !(*(*ent).name.as_ptr().offset(namelen as isize) as ::core::ffi::c_int != '\0' as i32)
                     {
                         code = (*term).codes.offset(j as isize) as *mut tty_code;
-                        tty_term_replace_string(term, j as usize, None);
+                        tty_term_replace_string(&mut *term, j as usize, None);
                         (*code).type_0 = TTYCODE_NONE;
                         match (*ent).type_0 as ::core::ffi::c_uint {
                             1 => {
                                 (*code).type_0 = TTYCODE_STRING;
                                 tty_term_replace_string(
-                                    term,
+                                    &mut *term,
                                     j as usize,
                                     Some(tty_term_strip(CStr::from_ptr(value))),
                                 );
@@ -1577,7 +1577,7 @@ pub unsafe extern "C" fn tty_term_free(mut term: *mut tty_term) {
     );
     i = 0 as u_int;
     while i < tty_term_ncodes() {
-        tty_term_replace_string(term, i as usize, None);
+        tty_term_replace_string(&mut *term, i as usize, None);
         i = i.wrapping_add(1);
     }
     drop(Box::from_raw(::core::ptr::slice_from_raw_parts_mut(
