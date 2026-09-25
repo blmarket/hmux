@@ -139,12 +139,12 @@ pub(crate) fn cmdq_set_cancel_data(
     item.cancel_data = Some(cancel);
 }
 
-unsafe fn cmdq_cancel_unfired_data(item: *mut cmdq_item) {
-    if (*item).flags & CMDQ_FIRED != 0 {
+unsafe fn cmdq_cancel_unfired_data(item: &mut cmdq_item) {
+    if item.flags & CMDQ_FIRED != 0 {
         return;
     }
-    if let Some(cancel) = (&mut *item).cancel_data.take() {
-        cancel((*item).data);
+    if let Some(cancel) = item.cancel_data.take() {
+        cancel(item.data);
     }
 }
 
@@ -188,8 +188,8 @@ pub(crate) unsafe fn cmdq_abort_file_wait(c: *mut client) {
 
 /// Release an item that has not been linked into a command queue.
 pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
-    let owner = Box::from_raw(item);
-    cmdq_cancel_unfired_data(item);
+    let mut owner = Box::from_raw(item);
+    cmdq_cancel_unfired_data(&mut *owner);
     if !(*item).client.is_null() {
         server_client_unref((*item).client);
     }
@@ -589,7 +589,7 @@ unsafe extern "C" fn cmdq_remove(mut item: *mut cmdq_item) {
         (*item).wait_file.is_null(),
         "file wait must finish or cancel before queue item removal"
     );
-    cmdq_cancel_unfired_data(item);
+    cmdq_cancel_unfired_data(&mut *item);
     if !(*item).client.is_null() {
         server_client_unref((*item).client);
     }
