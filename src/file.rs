@@ -1321,10 +1321,7 @@ unsafe extern "C" fn file_read_error_callback(
     client_files_remove((*cf).tree as *mut client_files, cf);
     file_free(cf);
 }
-unsafe extern "C" fn file_read_callback(
-    _bev: *mut bufferevent,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe extern "C" fn file_read_callback(_bev: *mut bufferevent, mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
     let mut bdata: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut bsize: size_t = 0;

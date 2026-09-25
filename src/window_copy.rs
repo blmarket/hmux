@@ -698,11 +698,7 @@ pub unsafe extern "C" fn window_copy_add(
     ap = args.clone();
     window_copy_vadd(wp, parse, fmt, ap);
 }
-unsafe extern "C" fn window_copy_init_ctx_cb(
-    _ctx: *mut screen_write_ctx,
-    _ttyctx: *mut tty_ctx,
-) {
-}
+unsafe extern "C" fn window_copy_init_ctx_cb(_ctx: *mut screen_write_ctx, _ttyctx: *mut tty_ctx) {}
 #[no_mangle]
 pub unsafe extern "C" fn window_copy_vadd(
     mut wp: *mut window_pane,
