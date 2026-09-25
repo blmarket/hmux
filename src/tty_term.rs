@@ -1055,33 +1055,30 @@ pub unsafe extern "C" fn tty_term_ncodes() -> u_int {
     return (::core::mem::size_of::<[tty_term_code_entry; 234]>() as usize)
         .wrapping_div(::core::mem::size_of::<tty_term_code_entry>() as usize) as u_int;
 }
-unsafe fn tty_term_strip(s: *const ::core::ffi::c_char) -> CString {
-    if strchr(s, '$' as i32).is_null() {
-        return CStr::from_ptr(s).to_owned();
+fn tty_term_strip(s: &CStr) -> CString {
+    let bytes = s.to_bytes();
+    if !bytes.contains(&b'$') {
+        return s.to_owned();
     }
     let mut stripped = Vec::with_capacity(8191);
-    let mut ptr = s;
-    while *ptr as ::core::ffi::c_int != '\0' as i32 {
-        if *ptr as ::core::ffi::c_int == '$' as i32
-            && *ptr.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '<' as i32
-        {
-            while *ptr as ::core::ffi::c_int != '\0' as i32
-                && *ptr as ::core::ffi::c_int != '>' as i32
-            {
-                ptr = ptr.offset(1);
+    let mut offset = 0;
+    while offset < bytes.len() {
+        if bytes[offset] == b'$' && bytes.get(offset + 1) == Some(&b'<') {
+            while offset < bytes.len() && bytes[offset] != b'>' {
+                offset += 1;
             }
-            if *ptr as ::core::ffi::c_int == '>' as i32 {
-                ptr = ptr.offset(1);
+            if offset < bytes.len() {
+                offset += 1;
             }
-            if *ptr as ::core::ffi::c_int == '\0' as i32 {
+            if offset == bytes.len() {
                 break;
             }
         }
-        stripped.push(*ptr as u8);
+        stripped.push(bytes[offset]);
         if stripped.len() == 8191 {
             break;
         }
-        ptr = ptr.offset(1);
+        offset += 1;
     }
     CString::new(stripped).expect("terminal capability C string contains no NUL")
 }
@@ -1430,7 +1427,7 @@ pub unsafe fn tty_term_create(
                                 tty_term_replace_string(
                                     term,
                                     j as usize,
-                                    Some(tty_term_strip(value)),
+                                    Some(tty_term_strip(CStr::from_ptr(value))),
                                 );
                             }
                             2 => {
@@ -1937,17 +1934,15 @@ mod term_string_owner_tests {
 
     #[test]
     fn strip_preserves_bytes_and_delay_path_limit() {
-        unsafe {
-            assert_eq!(tty_term_strip(c"ab$<5>cd".as_ptr()).as_bytes(), b"abcd");
-            let high = CString::new(b"a\xff$<10>b".as_slice()).unwrap();
-            assert_eq!(tty_term_strip(high.as_ptr()).as_bytes(), b"a\xffb");
+        assert_eq!(tty_term_strip(c"ab$<5>cd").as_bytes(), b"abcd");
+        let high = CString::new(b"a\xff$<10>b".as_slice()).unwrap();
+        assert_eq!(tty_term_strip(high.as_c_str()).as_bytes(), b"a\xffb");
 
-            let mut long = b"$<1>".to_vec();
-            long.extend(std::iter::repeat_n(b'x', 9000));
-            let long = CString::new(long).unwrap();
-            let stripped = tty_term_strip(long.as_ptr());
-            assert_eq!(stripped.as_bytes().len(), 8191);
-            assert!(stripped.as_bytes().iter().all(|byte| *byte == b'x'));
-        }
+        let mut long = b"$<1>".to_vec();
+        long.extend(std::iter::repeat_n(b'x', 9000));
+        let long = CString::new(long).unwrap();
+        let stripped = tty_term_strip(long.as_c_str());
+        assert_eq!(stripped.as_bytes().len(), 8191);
+        assert!(stripped.as_bytes().iter().all(|byte| *byte == b'x'));
     }
 }
