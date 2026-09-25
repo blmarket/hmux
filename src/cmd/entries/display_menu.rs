@@ -1146,7 +1146,6 @@ unsafe extern "C" fn cmd_display_menu_exec(
                                         border_style,
                                         target,
                                         None,
-                                        NULL,
                                     ) != 0 as ::core::ffi::c_int
                                     {
                                         current_block = 14896172439631163786;
@@ -1431,7 +1430,6 @@ unsafe extern "C" fn cmd_display_popup_exec(
                         style,
                         border_style,
                         None,
-                        NULL,
                     ) != 0 as ::core::ffi::c_int)
                     {
                         environ_free(env);

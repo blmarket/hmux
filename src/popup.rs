@@ -82,7 +82,6 @@ pub struct popup_data {
     pub ictx: *mut input_ctx,
     pub status: ::core::ffi::c_int,
     pub cb: popup_close_cb,
-    pub arg: *mut ::core::ffi::c_void,
     pub close: ::core::ffi::c_int,
     pub px: u_int,
     pub py: u_int,
@@ -119,7 +118,6 @@ impl popup_data {
             ictx: Default::default(),
             status: Default::default(),
             cb: Default::default(),
-            arg: Default::default(),
             close: Default::default(),
             px: Default::default(),
             py: Default::default(),
@@ -475,8 +473,8 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
 unsafe extern "C" fn popup_free_cb(_c: *mut client, mut data: *mut ::core::ffi::c_void) {
     let mut pd: *mut popup_data = data as *mut popup_data;
     let mut item: *mut cmdq_item = (*pd).item;
-    if (*pd).cb.is_some() {
-        (*pd).cb.expect("non-null function pointer")((*pd).status, (*pd).arg);
+    if let Some(callback) = (*pd).cb.take() {
+        callback((*pd).status);
     }
     if !item.is_null() {
         if !cmdq_get_client(item).is_null() && (*cmdq_get_client(item)).session.is_null() {
@@ -957,8 +955,7 @@ pub unsafe fn popup_display(
     mut s: *mut session,
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
-    mut cb: popup_close_cb,
-    mut arg: *mut ::core::ffi::c_void,
+    cb: popup_close_cb,
 ) -> ::core::ffi::c_int {
     let mut pd: *mut popup_data = ::core::ptr::null_mut::<popup_data>();
     let mut jx: u_int = 0;
@@ -1044,7 +1041,6 @@ pub unsafe fn popup_display(
     (*pd).c = c;
     (*(*pd).c).references += 1;
     (*pd).cb = cb;
-    (*pd).arg = arg;
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
     (*pd).border_lines = lines;
     memcpy(

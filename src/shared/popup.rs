@@ -6,5 +6,4 @@ pub const POPUP_CLOSEEXITZERO: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 
 pub const POPUP_CLOSEANYKEY: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 
-pub type popup_close_cb =
-    Option<unsafe extern "C" fn(::core::ffi::c_int, *mut ::core::ffi::c_void) -> ()>;
+pub type popup_close_cb = Option<Box<dyn FnOnce(::core::ffi::c_int)>>;

@@ -40,7 +40,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::menu::{menu, menu_item};
+use crate::src::shared::menu::{menu, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_each_cb, mode_tree_height_cb,
     mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line,
@@ -73,14 +73,6 @@ use std::ffi::{CStr, CString};
 
 pub const MODE_TREE_SEARCH_BACKWARD: mode_tree_search_dir = 1;
 pub const MODE_TREE_SEARCH_FORWARD: mode_tree_search_dir = 0;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct mode_tree_menu {
-    pub data: *mut mode_tree_data,
-    pub c: *mut client,
-    pub line: u_int,
-}
 
 impl mode_tree_item {
     unsafe fn from_item(item: *mut mode_tree_item) -> *mut Self {
@@ -1827,22 +1819,6 @@ unsafe extern "C" fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
 }
-unsafe extern "C" fn mode_tree_menu_callback(
-    _menu: *mut menu,
-    _idx: u_int,
-    mut key: key_code,
-    mut data: *mut ::core::ffi::c_void,
-) {
-    let mtm = Box::from_raw(data as *mut mode_tree_menu);
-    let mtd = mtm.data;
-    if !((*mtd).dead != 0 || key == KEYC_NONE as ::core::ffi::c_ulong as key_code) {
-        if !(mtm.line >= mode_tree_line_count(&*mtd)) {
-            (*mtd).current = mtm.line;
-            (*mtd).menucb.expect("non-null function pointer")((*mtd).modedata, mtm.c, key);
-        }
-    }
-    mode_tree_remove_ref(mtd);
-}
 unsafe extern "C" fn mode_tree_display_menu(
     mut mtd: *mut mode_tree_data,
     mut c: *mut client,
@@ -1853,7 +1829,6 @@ unsafe extern "C" fn mode_tree_display_menu(
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut menu: *mut menu = ::core::ptr::null_mut::<menu>();
     let mut items: *const menu_item = ::core::ptr::null::<menu_item>();
-    let mut mtm: *mut mode_tree_menu = ::core::ptr::null_mut::<mode_tree_menu>();
     let mut line: u_int = 0;
     if (*mtd).offset.wrapping_add(y) > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
         line = (*mtd).current;
@@ -1879,7 +1854,6 @@ unsafe extern "C" fn mode_tree_display_menu(
         ::core::ptr::null_mut::<cmd_find_state>(),
     );
     drop(title);
-    mtm = Box::into_raw(Box::new(mode_tree_menu { data: mtd, c, line }));
     (*mtd).references = (*mtd).references.wrapping_add(1);
     if x >= (*menu)
         .width
@@ -1910,15 +1884,20 @@ unsafe extern "C" fn mode_tree_display_menu(
         ::core::ptr::null::<::core::ffi::c_char>(),
         ::core::ptr::null::<::core::ffi::c_char>(),
         ::core::ptr::null_mut::<cmd_find_state>(),
-        Some(
-            mode_tree_menu_callback
-                as unsafe extern "C" fn(*mut menu, u_int, key_code, *mut ::core::ffi::c_void) -> (),
-        ),
-        mtm as *mut ::core::ffi::c_void,
+        Some(Box::new(move |selection| {
+            if let MenuSelection::Selected { key, .. } = selection {
+                if !((*mtd).dead != 0 || key == KEYC_NONE as ::core::ffi::c_ulong as key_code)
+                    && line < mode_tree_line_count(&*mtd)
+                {
+                    (*mtd).current = line;
+                    (*mtd).menucb.expect("non-null function pointer")((*mtd).modedata, c, key);
+                }
+            }
+            mode_tree_remove_ref(mtd);
+        })),
     ) != 0 as ::core::ffi::c_int
     {
         mode_tree_remove_ref(mtd);
-        drop(Box::from_raw(mtm));
         menu_free(menu);
     }
 }

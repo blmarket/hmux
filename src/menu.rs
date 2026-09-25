@@ -27,8 +27,9 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::menu::{menu, menu_item, MENU_NOMOUSE, MENU_STAYOPEN, MENU_TAB};
+use crate::src::shared::menu::{
+    menu, menu_item, MenuSelection, MENU_NOMOUSE, MENU_STAYOPEN, MENU_TAB,
+};
 use crate::src::shared::menu::{menu_choice_cb, menu_data};
 use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, MOUSE_WHEEL_DOWN,
@@ -386,13 +387,8 @@ pub unsafe extern "C" fn menu_update(mut md: *mut menu_data) {
 }
 unsafe extern "C" fn menu_free_data(mut md: *mut menu_data) {
     if !md.is_null() {
-        if (*md).cb.is_some() {
-            (*md).cb.expect("non-null function pointer")(
-                (*md).menu,
-                UINT_MAX,
-                KEYC_NONE as ::core::ffi::c_ulong as key_code,
-                (*md).data,
-            );
+        if let Some(callback) = (*md).cb.take() {
+            callback(MenuSelection::Cancelled);
         }
         screen_free(&raw mut (*md).s);
         menu_free((*md).menu);
@@ -2126,14 +2122,11 @@ pub unsafe extern "C" fn menu_key(
         }
         return 1 as ::core::ffi::c_int;
     }
-    if (*md).cb.is_some() {
-        (*md).cb.expect("non-null function pointer")(
-            (*md).menu,
-            (*md).choice as u_int,
-            (*item).key,
-            (*md).data,
-        );
-        (*md).cb = None;
+    if let Some(callback) = (*md).cb.take() {
+        callback(MenuSelection::Selected {
+            index: (*md).choice as u_int,
+            key: (*item).key,
+        });
         return 1 as ::core::ffi::c_int;
     }
     if (*md).key != KEYC_NONE as ::core::ffi::c_ulong as key_code {
@@ -2192,8 +2185,7 @@ pub unsafe extern "C" fn menu_resize(mut md: *mut menu_data, mut w: *mut window)
     (*md).px = nx;
     (*md).py = ny;
 }
-#[no_mangle]
-pub unsafe extern "C" fn menu_display(
+pub unsafe fn menu_display(
     mut menu: *mut menu,
     mut flags: ::core::ffi::c_int,
     mut starting_choice: ::core::ffi::c_int,
@@ -2206,8 +2198,7 @@ pub unsafe extern "C" fn menu_display(
     mut selected_style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
-    mut cb: menu_choice_cb,
-    mut data: *mut ::core::ffi::c_void,
+    cb: menu_choice_cb,
 ) -> ::core::ffi::c_int {
     let mut md: *mut menu_data = ::core::ptr::null_mut::<menu_data>();
     let mut event: *mut key_event = ::core::ptr::null_mut::<key_event>();
@@ -2282,7 +2273,6 @@ pub unsafe extern "C" fn menu_display(
     (*md).menu = menu;
     (*md).choice = -(1 as ::core::ffi::c_int);
     (*md).cb = cb;
-    (*md).data = data;
     if (*md).flags & MENU_NOMOUSE != 0 {
         if starting_choice >= (*menu).count as ::core::ffi::c_int {
             starting_choice = (*menu).count.wrapping_sub(1 as u_int) as ::core::ffi::c_int;

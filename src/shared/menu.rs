@@ -61,7 +61,6 @@ pub struct menu_data {
     pub menu: *mut menu,
     pub choice: ::core::ffi::c_int,
     pub cb: menu_choice_cb,
-    pub data: *mut ::core::ffi::c_void,
 }
 
 impl menu_data {
@@ -85,10 +84,14 @@ impl menu_data {
             menu: Default::default(),
             choice: Default::default(),
             cb: Default::default(),
-            data: Default::default(),
         }
     }
 }
 
-pub type menu_choice_cb =
-    Option<unsafe extern "C" fn(*mut menu, u_int, key_code, *mut ::core::ffi::c_void) -> ()>;
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MenuSelection {
+    Selected { index: u_int, key: key_code },
+    Cancelled,
+}
+
+pub type menu_choice_cb = Option<Box<dyn FnOnce(MenuSelection)>>;
