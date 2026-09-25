@@ -176,7 +176,7 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
     let mut mp1: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
     let mut mw: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
     let mut mw1: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
-    mp = monitor_panes_minmax(&raw mut (*me).panes, RB_NEGINF);
+    mp = monitor_panes_minmax(&(*me).panes, RB_NEGINF);
     while !mp.is_null() && {
         mp1 = monitor_panes_next(&*mp);
         1 as ::core::ffi::c_int != 0
@@ -185,7 +185,7 @@ unsafe extern "C" fn monitor_free_item(mut ms: *mut monitor_set, mut me: *mut mo
         drop(Box::from_raw(mp));
         mp = mp1;
     }
-    mw = monitor_windows_minmax(&raw mut (*me).windows, RB_NEGINF);
+    mw = monitor_windows_minmax(&(*me).windows, RB_NEGINF);
     while !mw.is_null() && {
         mw1 = monitor_windows_next(&*mw);
         1 as ::core::ffi::c_int != 0
@@ -319,7 +319,7 @@ unsafe extern "C" fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut m
             format_free(ft);
             find.pane = (*wp).id;
             find.idx = (*wl).idx as u_int;
-            mp = monitor_panes_find(&raw mut (*me).panes, &raw mut find);
+            mp = monitor_panes_find(&(*me).panes, &find);
             if mp.is_null() {
                 mp = monitor_pane_new();
                 (*mp).pane = (*wp).id;
@@ -352,7 +352,7 @@ unsafe extern "C" fn monitor_check_all_panes_one(
     let value = format_expand_cstring(ft, ((*me).format).as_ptr());
     find.pane = (*wp).id;
     find.idx = (*wl).idx as u_int;
-    mp = monitor_panes_find(&raw mut (*me).panes, &raw mut find);
+    mp = monitor_panes_find(&(*me).panes, &find);
     if mp.is_null() {
         mp = monitor_pane_new();
         (*mp).pane = (*wp).id;
@@ -365,7 +365,7 @@ unsafe extern "C" fn monitor_check_all_panes_one(
 unsafe extern "C" fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_int) {
     let mut mp: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
     let mut mp1: *mut monitor_pane = ::core::ptr::null_mut::<monitor_pane>();
-    mp = monitor_panes_minmax(&raw mut (*me).panes, RB_NEGINF);
+    mp = monitor_panes_minmax(&(*me).panes, RB_NEGINF);
     while !mp.is_null() && {
         mp1 = monitor_panes_next(&*mp);
         1 as ::core::ffi::c_int != 0
@@ -405,7 +405,7 @@ unsafe extern "C" fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut
             format_free(ft);
             find.window = (*w).id;
             find.idx = (*wl).idx as u_int;
-            mw = monitor_windows_find(&raw mut (*me).windows, &raw mut find);
+            mw = monitor_windows_find(&(*me).windows, &find);
             if mw.is_null() {
                 mw = monitor_window_new();
                 (*mw).window = (*w).id;
@@ -446,7 +446,7 @@ unsafe extern "C" fn monitor_check_all_windows_one(
     let value = format_expand_cstring(ft, ((*me).format).as_ptr());
     find.window = (*w).id;
     find.idx = (*wl).idx as u_int;
-    mw = monitor_windows_find(&raw mut (*me).windows, &raw mut find);
+    mw = monitor_windows_find(&(*me).windows, &find);
     if mw.is_null() {
         mw = monitor_window_new();
         (*mw).window = (*w).id;
@@ -467,7 +467,7 @@ unsafe extern "C" fn monitor_check_all_windows_one(
 unsafe extern "C" fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u_int) {
     let mut mw: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
     let mut mw1: *mut monitor_window = ::core::ptr::null_mut::<monitor_window>();
-    mw = monitor_windows_minmax(&raw mut (*me).windows, RB_NEGINF);
+    mw = monitor_windows_minmax(&(*me).windows, RB_NEGINF);
     while !mw.is_null() && {
         mw1 = monitor_windows_next(&*mw);
         1 as ::core::ffi::c_int != 0
@@ -491,7 +491,7 @@ unsafe extern "C" fn monitor_check_sessions(mut ms: *mut monitor_set) {
         ::core::ptr::null_mut::<winlink>(),
         ::core::ptr::null_mut::<window_pane>(),
     );
-    me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
+    me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
     while !me.is_null() && {
         me1 = monitor_items_next(&*me);
         1 as ::core::ffi::c_int != 0
@@ -508,7 +508,7 @@ unsafe extern "C" fn monitor_check_sessions(mut ms: *mut monitor_set) {
 unsafe extern "C" fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut me1: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
-    me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
+    me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
     while !me.is_null() && {
         me1 = monitor_items_next(&*me);
         1 as ::core::ffi::c_int != 0
@@ -542,7 +542,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
         wp = window_pane_first((*wl).window);
         while !wp.is_null() {
             ft = monitor_create_formats(c, s, wl, wp);
-            me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
+            me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
             while !me.is_null() && {
                 me1 = monitor_items_next(&*me);
                 1 as ::core::ffi::c_int != 0
@@ -559,7 +559,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
         }
         wl = winlinks_next(wl);
     }
-    me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
+    me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
     while !me.is_null() && {
         me1 = monitor_items_next(&*me);
         1 as ::core::ffi::c_int != 0
@@ -586,7 +586,7 @@ unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
-        me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
+        me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
         while !me.is_null() && {
             me1 = monitor_items_next(&*me);
             1 as ::core::ffi::c_int != 0
@@ -601,7 +601,7 @@ unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
         format_free(ft);
         wl = winlinks_next(wl);
     }
-    me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
+    me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
     while !me.is_null() && {
         me1 = monitor_items_next(&*me);
         1 as ::core::ffi::c_int != 0
@@ -636,7 +636,7 @@ unsafe extern "C" fn monitor_timer(
     if monitor_get_session(ms).is_null() {
         return;
     }
-    me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
+    me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
     while !me.is_null() {
         match (*me).type_0 as ::core::ffi::c_uint {
             0 => {
@@ -710,7 +710,7 @@ pub unsafe extern "C" fn monitor_destroy(mut ms: *mut monitor_set) {
         if event_initialized(&(*ms).timer) != 0 {
             event_del(&raw mut (*ms).timer);
         }
-        me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
+        me = monitor_items_minmax(&(*ms).items, RB_NEGINF);
         while !me.is_null() && {
             me1 = monitor_items_next(&*me);
             1 as ::core::ffi::c_int != 0
@@ -827,7 +827,7 @@ pub unsafe extern "C" fn monitor_add(
         tv_sec: 1 as __time_t,
         tv_usec: 0,
     };
-    me = monitor_items_find(&raw mut (*ms).items, &raw mut find);
+    me = monitor_items_find(&(*ms).items, &find);
     if !me.is_null() {
         monitor_free_item(ms, me);
     }
@@ -895,7 +895,7 @@ pub unsafe extern "C" fn monitor_remove(
             owner: std::ptr::null_mut(),
         },
     };
-    me = monitor_items_find(&raw mut (*ms).items, &raw mut find);
+    me = monitor_items_find(&(*ms).items, &find);
     if !me.is_null() {
         monitor_free_item(ms, me);
     }
@@ -928,7 +928,7 @@ pub unsafe extern "C" fn monitor_get_fire_count(
             owner: std::ptr::null_mut(),
         },
     };
-    me = monitor_items_find(&raw mut (*ms).items, &raw mut find);
+    me = monitor_items_find(&(*ms).items, &find);
     if me.is_null() {
         return 0 as u_int;
     }
@@ -959,7 +959,7 @@ pub unsafe extern "C" fn monitor_get_fire_time(
             owner: std::ptr::null_mut(),
         },
     };
-    me = monitor_items_find(&raw mut (*ms).items, &raw mut find);
+    me = monitor_items_find(&(*ms).items, &find);
     if me.is_null() {
         return 0 as time_t;
     }
@@ -967,23 +967,23 @@ pub unsafe extern "C" fn monitor_get_fire_time(
 }
 
 pub unsafe fn monitor_items_find(
-    head: *mut monitor_items,
-    elm: *mut monitor_item,
+    head: &monitor_items,
+    elm: &monitor_item,
 ) -> *mut monitor_item {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_c_str().to_bytes();
     map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_items_nfind(
-    head: *mut monitor_items,
-    elm: *mut monitor_item,
+    head: &monitor_items,
+    elm: &monitor_item,
 ) -> *mut monitor_item {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = std::ffi::CStr::from_ptr(((*elm).name).as_ptr().cast_mut()).to_bytes();
+    let key = elm.name.as_c_str().to_bytes();
     map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1029,10 +1029,10 @@ pub unsafe fn monitor_items_remove(
     elm
 }
 pub unsafe fn monitor_items_minmax(
-    head: *mut monitor_items,
+    head: &monitor_items,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_item {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -1065,23 +1065,23 @@ fn monitor_panes_key(elm: &monitor_pane) -> (u32, u32) {
     (elm.pane, elm.idx)
 }
 pub unsafe fn monitor_panes_find(
-    head: *mut monitor_panes,
-    elm: *mut monitor_pane,
+    head: &monitor_panes,
+    elm: &monitor_pane,
 ) -> *mut monitor_pane {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_panes_key(&*elm);
+    let key = monitor_panes_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_panes_nfind(
-    head: *mut monitor_panes,
-    elm: *mut monitor_pane,
+    head: &monitor_panes,
+    elm: &monitor_pane,
 ) -> *mut monitor_pane {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_panes_key(&*elm);
+    let key = monitor_panes_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1127,10 +1127,10 @@ pub unsafe fn monitor_panes_remove(
     elm
 }
 pub unsafe fn monitor_panes_minmax(
-    head: *mut monitor_panes,
+    head: &monitor_panes,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_pane {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -1163,23 +1163,23 @@ fn monitor_windows_key(elm: &monitor_window) -> (u32, u32) {
     (elm.window, elm.idx)
 }
 pub unsafe fn monitor_windows_find(
-    head: *mut monitor_windows,
-    elm: *mut monitor_window,
+    head: &monitor_windows,
+    elm: &monitor_window,
 ) -> *mut monitor_window {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_windows_key(&*elm);
+    let key = monitor_windows_key(elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_windows_nfind(
-    head: *mut monitor_windows,
-    elm: *mut monitor_window,
+    head: &monitor_windows,
+    elm: &monitor_window,
 ) -> *mut monitor_window {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = monitor_windows_key(&*elm);
+    let key = monitor_windows_key(elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1225,10 +1225,10 @@ pub unsafe fn monitor_windows_remove(
     elm
 }
 pub unsafe fn monitor_windows_minmax(
-    head: *mut monitor_windows,
+    head: &monitor_windows,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_window {
-    let Some(map) = (*head).storage.as_ref() else {
+    let Some(map) = head.storage.as_ref() else {
         return std::ptr::null_mut();
     };
     let pair = if direction < 0 {
@@ -1302,7 +1302,7 @@ mod last_owner_tests {
                 c"value".as_ptr(),
                 0,
             );
-            let item = monitor_items_minmax(&raw mut (*set).items, RB_NEGINF);
+            let item = monitor_items_minmax(&(*set).items, RB_NEGINF);
             let owner = item;
             let first = CString::from_vec_with_nul(b"\xffold\0".to_vec()).unwrap();
             monitor_check_value(
@@ -1347,7 +1347,7 @@ mod last_owner_tests {
             assert_eq!(capture.value, second.to_bytes());
             assert_eq!(capture.last, first.to_bytes());
             assert_eq!(capture.name, b"reentrant-last");
-            assert!(monitor_items_minmax(&raw mut (*set).items, RB_NEGINF).is_null());
+            assert!(monitor_items_minmax(&(*set).items, RB_NEGINF).is_null());
             monitor_destroy(set);
         }
     }

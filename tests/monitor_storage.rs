@@ -5,7 +5,7 @@ use std::{ffi::CStr, ptr::null_mut};
 unsafe fn find_item(set: *mut monitor_set, name: &CStr) -> *mut monitor_item {
     let mut key = monitor_item::empty();
     key.name = ::std::ffi::CStr::from_ptr(name.as_ptr().cast_mut()).to_owned();
-    monitor_items_find(&raw mut (*set).items, &raw mut key)
+    monitor_items_find(&(*set).items, &key)
 }
 
 #[test]
@@ -67,8 +67,8 @@ fn byte_names_composite_keys_and_nested_cleanup() {
                 (*window).idx = idx;
                 monitor_windows_insert(&raw mut (*item).windows, window);
             }
-            let mut pane = monitor_panes_minmax(&raw mut (*item).panes, -1);
-            let mut window = monitor_windows_minmax(&raw mut (*item).windows, -1);
+            let mut pane = monitor_panes_minmax(&(*item).panes, -1);
+            let mut window = monitor_windows_minmax(&(*item).windows, -1);
             for pair in [(1, 0), (1, 9), (2, 1), (u32::MAX, 0)] {
                 assert_eq!(((*pane).pane, (*pane).idx), pair);
                 assert_eq!(((*window).window, (*window).idx), pair);
@@ -77,7 +77,7 @@ fn byte_names_composite_keys_and_nested_cleanup() {
             }
             assert!(pane.is_null() && window.is_null());
         }
-        let mut item = monitor_items_minmax(&raw mut (*set).items, -1);
+        let mut item = monitor_items_minmax(&(*set).items, -1);
         for name in [c"a", c"z", c"\xff"] {
             assert_eq!(CStr::from_ptr(((*item).name).as_ptr().cast_mut()), name);
             item = monitor_items_next(&*item);
