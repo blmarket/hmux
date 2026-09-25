@@ -5331,7 +5331,7 @@ pub unsafe extern "C" fn server_client_print(
     if !c.is_null() {
         if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
-                let sanitized = utf8_sanitize_cstring(msg);
+                let sanitized = utf8_sanitize_cstring(CStr::from_ptr(msg));
                 if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                     control_write(
                         c,

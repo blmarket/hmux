@@ -1788,7 +1788,7 @@ pub unsafe extern "C" fn utf8_isvalid(mut s: *const ::core::ffi::c_char) -> ::co
 }
 /// The input is a NUL-terminated C string. The result is ASCII and retains
 /// the old sanitizer's first-NUL view and underscore width for UTF-8 cells.
-pub(crate) unsafe fn utf8_sanitize_cstring(mut src: *const ::core::ffi::c_char) -> CString {
+pub(crate) fn utf8_sanitize_cstring(src: &CStr) -> CString {
     let mut dst = Vec::new();
     let mut more: utf8_state = UTF8_MORE;
     let mut ud: utf8_data = utf8_data {
@@ -1797,26 +1797,25 @@ pub(crate) unsafe fn utf8_sanitize_cstring(mut src: *const ::core::ffi::c_char) 
         size: 0,
         width: 0,
     };
-    while *src as ::core::ffi::c_int != '\0' as i32 {
-        let candidate_start = src;
-        more = utf8_open(&raw mut ud, *src as u_char);
+    let source = src.to_bytes();
+    let mut offset = 0;
+    while offset < source.len() {
+        let candidate_start = offset;
+        more = unsafe { utf8_open(&raw mut ud, source[offset]) };
         if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
             loop {
-                src = src.offset(1);
-                if !(*src as ::core::ffi::c_int != '\0' as i32
-                    && more as ::core::ffi::c_uint
-                        == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
+                offset += 1;
+                if offset >= source.len() || more != UTF8_MORE {
                     break;
                 }
-                more = utf8_append(&raw mut ud, *src as u_char);
+                more = unsafe { utf8_append(&raw mut ud, source[offset]) };
             }
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 // xreallocarray rejected the old zero-sized request when a
                 // leading zero-width UTF-8 cell had produced no bytes yet.
                 if dst.is_empty() && ud.width == 0 {
-                    fatalx(b"xreallocarray: zero size\0".as_ptr().cast());
+                    unsafe { fatalx(b"xreallocarray: zero size\0".as_ptr().cast()) };
                 }
                 dst.resize(dst.len() + ud.width as usize, b'_');
                 continue;
@@ -1824,17 +1823,15 @@ pub(crate) unsafe fn utf8_sanitize_cstring(mut src: *const ::core::ffi::c_char) 
                 // Retry each byte after an invalid or truncated candidate.
                 // Rewinding by `have` could step before the input for a
                 // complete-length invalid sequence.
-                src = candidate_start;
+                offset = candidate_start;
             }
         }
-        if *src as ::core::ffi::c_int > 0x1f as ::core::ffi::c_int
-            && (*src as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
-        {
-            dst.push(*src as u8);
+        if source[offset] > 0x1f && source[offset] < 0x7f {
+            dst.push(source[offset]);
         } else {
             dst.push(b'_');
         }
-        src = src.offset(1);
+        offset += 1;
     }
     CString::new(dst).expect("sanitized bytes contain no interior NUL")
 }
@@ -2039,7 +2036,8 @@ mod tests {
                 (&b"\xe2(\xa1\0"[..], &b"_(_"[..]),
                 (&b"A\0B\0"[..], &b"A"[..]),
             ] {
-                let input = input.as_ptr().cast();
+                let nul = input.iter().position(|&byte| byte == 0).unwrap();
+                let input = CStr::from_bytes_with_nul(&input[..=nul]).unwrap();
                 assert_eq!(utf8_sanitize_cstring(input).as_bytes(), expected);
             }
         }

@@ -1155,7 +1155,7 @@ pub unsafe extern "C" fn cmdq_error(
             msg.as_ptr(),
         );
         if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
-            msg = utf8_sanitize_cstring(msg.as_ptr());
+            msg = utf8_sanitize_cstring(msg.as_c_str());
         }
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_write(
