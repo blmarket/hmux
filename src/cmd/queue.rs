@@ -885,8 +885,10 @@ pub unsafe extern "C" fn cmdq_get_callback1(
     data: *mut ::core::ffi::c_void,
 ) -> *mut cmdq_item {
     let callback = cb.map(|callback| {
-        Box::new(move |item| unsafe { callback(item, data) })
-            as Box<dyn FnOnce(*mut cmdq_item) -> cmd_retval>
+        Box::new(move |item: std::ptr::NonNull<cmdq_item>| unsafe {
+            callback(item.as_ptr(), data)
+        })
+            as Box<dyn FnOnce(std::ptr::NonNull<cmdq_item>) -> cmd_retval>
     });
     let item = cmdq_get_callback_owned(name, callback);
     (*item).data = data;
@@ -901,7 +903,7 @@ pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -
         b"cmdq_error_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(Box::new(move |item| unsafe {
             cmdq_error(
-                item,
+                item.as_ptr(),
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
                 error.as_ptr(),
             );
@@ -913,7 +915,12 @@ pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -
 }
 unsafe extern "C" fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
     (*item).flags |= CMDQ_FIRED;
-    return (*item).cb.take().expect("non-null queue callback")(item);
+    return (*item)
+        .cb
+        .take()
+        .expect("non-null queue callback")(
+        std::ptr::NonNull::new(item).expect("queue callback item is non-null"),
+    );
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_next(mut c: *mut client) -> u_int {

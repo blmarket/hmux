@@ -3345,7 +3345,7 @@ unsafe fn server_client_handle_key0(
     item = cmdq_get_callback_owned(
         b"server_client_key_callback\0" as *const u8 as *const ::core::ffi::c_char,
         Some(Box::new(move |item| unsafe {
-            server_client_key_callback(item, queued_event)
+            server_client_key_callback(item.as_ptr(), queued_event)
         })),
     );
     if !after.is_null() {
@@ -4503,7 +4503,7 @@ unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval 
     {
         new_item = cmdq_get_callback_owned(
             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(Box::new(|item| unsafe { server_client_read_only(item) })),
+            Some(Box::new(|item| unsafe { server_client_read_only(item.as_ptr()) })),
         );
     } else {
         new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
@@ -4572,7 +4572,7 @@ unsafe extern "C" fn server_client_dispatch_command(
         if argc == 0 as ::core::ffi::c_int {
             new_item = cmdq_get_callback_owned(
                 b"server_client_default_command\0" as *const u8 as *const ::core::ffi::c_char,
-                Some(Box::new(|item| unsafe { server_client_default_command(item) })),
+                Some(Box::new(|item| unsafe { server_client_default_command(item.as_ptr()) })),
             );
             current_block = 13472856163611868459;
         } else {
@@ -4589,7 +4589,7 @@ unsafe extern "C" fn server_client_dispatch_command(
                     {
                         new_item = cmdq_get_callback_owned(
                             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-                            Some(Box::new(|item| unsafe { server_client_read_only(item) })),
+                            Some(Box::new(|item| unsafe { server_client_read_only(item.as_ptr()) })),
                         );
                     } else {
                         new_item =
@@ -4608,7 +4608,7 @@ unsafe extern "C" fn server_client_dispatch_command(
                     c,
                     cmdq_get_callback_owned(
                         b"server_client_command_done\0" as *const u8 as *const ::core::ffi::c_char,
-                        Some(Box::new(|item| unsafe { server_client_command_done(item) })),
+                        Some(Box::new(|item| unsafe { server_client_command_done(item.as_ptr()) })),
                     ),
                 );
                 return 0 as ::core::ffi::c_int;

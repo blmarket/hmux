@@ -1057,7 +1057,7 @@ pub unsafe extern "C" fn key_bindings_dispatch(
     if readonly == 0 {
         new_item = cmdq_get_callback_owned(
             b"key_bindings_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(Box::new(|item| unsafe { key_bindings_read_only(item) })),
+            Some(Box::new(|item| unsafe { key_bindings_read_only(item.as_ptr()) })),
         );
     } else {
         if (*bd).flags & KEY_BINDING_REPEAT != 0 {

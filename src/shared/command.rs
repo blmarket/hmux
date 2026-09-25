@@ -295,7 +295,7 @@ pub struct cmdq_state {
     pub current: cmd_find_state,
 }
 
-pub type cmdq_cb = Option<Box<dyn FnOnce(*mut cmdq_item) -> cmd_retval>>;
+pub type cmdq_cb = Option<Box<dyn FnOnce(std::ptr::NonNull<cmdq_item>) -> cmd_retval>>;
 
 pub type cmdq_type = ::core::ffi::c_uint;
 

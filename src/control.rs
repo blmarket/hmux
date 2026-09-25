@@ -1046,7 +1046,7 @@ unsafe fn control_read_callback(
                     let error_item = cmdq_get_callback_owned(
                         b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
                         Some(Box::new(move |item| unsafe {
-                            control_error(item, error)
+                                control_error(item.as_ptr(), error)
                         })),
                     );
                     cmdq_append(c, error_item);

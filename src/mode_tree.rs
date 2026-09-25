@@ -1534,7 +1534,7 @@ pub unsafe fn mode_tree_set_prompt(
         let item = cmdq_get_callback_owned(
             b"mode_tree_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(move |item| unsafe {
-                mode_tree_prompt_accept(item, mtd)
+                mode_tree_prompt_accept(item.as_ptr(), mtd)
             })),
         );
         cmdq_set_cancel_callback(
