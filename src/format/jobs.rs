@@ -5,10 +5,9 @@
 use super::*;
 use std::ffi::{CStr, CString};
 
-unsafe fn format_job_set_expanded(fj: *mut format_job, value: CString) {
-    let owner = &mut *fj;
-    owner.expanded = Default::default();
-    owner.expanded = Some(value);
+fn format_job_set_expanded(fj: &mut format_job, value: CString) {
+    fj.expanded = Default::default();
+    fj.expanded = Some(value);
 }
 
 unsafe fn format_job_set_out(fj: *mut format_job, value: CString) {
@@ -168,7 +167,7 @@ pub(super) unsafe fn format_job_get(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ) != 0 as ::core::ffi::c_int
     {
-        format_job_set_expanded(fj, expanded.clone());
+        format_job_set_expanded(&mut *fj, expanded.clone());
         force = 1 as ::core::ffi::c_int;
     } else {
         force = (*ft).flags & FORMAT_FORCE;
@@ -392,7 +391,7 @@ mod tests {
                 let cmd = CString::new(format!("job-{index}")).unwrap();
                 let fj = format_job_find_or_insert(&mut cache, null_mut(), 0, cmd.as_ptr());
                 (*fj).last = last;
-                format_job_set_expanded(fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
+                format_job_set_expanded(&mut *fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
                 format_job_set_out(fj, CStr::from_ptr(cmd.as_ptr()).to_owned());
                 if last > now || now - last < 3600 {
                     survivors.push((cmd, fj));
@@ -434,7 +433,7 @@ mod tests {
                 .to_bytes(),
                 b"first"
             );
-            format_job_set_expanded(fj, CString::new(b"expanded\xff".to_vec()).unwrap());
+            format_job_set_expanded(&mut *fj, CString::new(b"expanded\xff".to_vec()).unwrap());
             format_job_set_out(fj, format_job_message(&*fj, b"' not ready>"));
             assert_eq!(
                 CStr::from_ptr(
