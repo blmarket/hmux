@@ -20,37 +20,37 @@ use crate::src::window::{window_count_panes, window_pane_first, window_pane_next
 #[repr(C)]
 pub struct C2RustUnnamed_35 {
     pub name: *const ::core::ffi::c_char,
-    pub arrange: Option<unsafe fn(*mut window)>,
+    pub arrange: Option<unsafe fn(&mut window)>,
 }
 static mut layout_sets: [C2RustUnnamed_35; 7] = unsafe {
     [
         C2RustUnnamed_35 {
             name: b"even-horizontal\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_even_h),
+            arrange: Some(layout_set_even_h_callback),
         },
         C2RustUnnamed_35 {
             name: b"even-vertical\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_even_v),
+            arrange: Some(layout_set_even_v_callback),
         },
         C2RustUnnamed_35 {
             name: b"main-horizontal\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_main_h),
+            arrange: Some(layout_set_main_h_callback),
         },
         C2RustUnnamed_35 {
             name: b"main-horizontal-mirrored\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_main_h_mirrored),
+            arrange: Some(layout_set_main_h_mirrored_callback),
         },
         C2RustUnnamed_35 {
             name: b"main-vertical\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_main_v),
+            arrange: Some(layout_set_main_v_callback),
         },
         C2RustUnnamed_35 {
             name: b"main-vertical-mirrored\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_main_v_mirrored),
+            arrange: Some(layout_set_main_v_mirrored_callback),
         },
         C2RustUnnamed_35 {
             name: b"tiled\0" as *const u8 as *const ::core::ffi::c_char,
-            arrange: Some(layout_set_tiled),
+            arrange: Some(layout_set_tiled_callback),
         },
     ]
 };
@@ -99,7 +99,7 @@ pub unsafe extern "C" fn layout_set_select(mut w: *mut window, mut layout: u_int
     if layout_sets[layout as usize].arrange.is_some() {
         layout_sets[layout as usize]
             .arrange
-            .expect("non-null function pointer")(w);
+            .expect("non-null function pointer")(&mut *w);
     }
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
@@ -122,7 +122,7 @@ pub unsafe extern "C" fn layout_set_next(mut w: *mut window) -> u_int {
     if layout_sets[layout as usize].arrange.is_some() {
         layout_sets[layout as usize]
             .arrange
-            .expect("non-null function pointer")(w);
+            .expect("non-null function pointer")(&mut *w);
     }
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
@@ -147,7 +147,7 @@ pub unsafe extern "C" fn layout_set_previous(mut w: *mut window) -> u_int {
     if layout_sets[layout as usize].arrange.is_some() {
         layout_sets[layout as usize]
             .arrange
-            .expect("non-null function pointer")(w);
+            .expect("non-null function pointer")(&mut *w);
     }
     (*w).lastlayout = layout as ::core::ffi::c_int;
     return layout;
@@ -260,6 +260,27 @@ unsafe fn layout_set_even_h(mut w: *mut window) {
 }
 unsafe fn layout_set_even_v(mut w: *mut window) {
     layout_set_even(w, LAYOUT_TOPBOTTOM);
+}
+unsafe fn layout_set_even_h_callback(w: &mut window) {
+    layout_set_even_h(w as *mut window);
+}
+unsafe fn layout_set_even_v_callback(w: &mut window) {
+    layout_set_even_v(w as *mut window);
+}
+unsafe fn layout_set_main_h_callback(w: &mut window) {
+    layout_set_main_h(w as *mut window);
+}
+unsafe fn layout_set_main_h_mirrored_callback(w: &mut window) {
+    layout_set_main_h_mirrored(w as *mut window);
+}
+unsafe fn layout_set_main_v_callback(w: &mut window) {
+    layout_set_main_v(w as *mut window);
+}
+unsafe fn layout_set_main_v_mirrored_callback(w: &mut window) {
+    layout_set_main_v_mirrored(w as *mut window);
+}
+unsafe fn layout_set_tiled_callback(w: &mut window) {
+    layout_set_tiled(w as *mut window);
 }
 unsafe fn layout_set_main_h(mut w: *mut window) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
