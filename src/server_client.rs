@@ -233,8 +233,8 @@ pub(crate) unsafe fn server_client_set_status_expanded(
     (*c).status.entries[index].expanded = expanded;
 }
 
-unsafe fn server_client_set_ttyname(c: *mut client, ttyname: Option<CString>) {
-    (*c).ttyname = ttyname;
+fn server_client_set_ttyname(c: &mut client, ttyname: Option<CString>) {
+    c.ttyname = ttyname;
 }
 
 fn server_client_set_term_name(c: &mut client, term_name: Option<CString>) {
@@ -365,7 +365,7 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             assert!((*c).ttyname.is_none());
 
-            server_client_set_ttyname(c, Some(CString::new(b"/dev/\xff".to_vec()).unwrap()));
+            server_client_set_ttyname(&mut *c, Some(CString::new(b"/dev/\xff".to_vec()).unwrap()));
             assert_eq!(
                 CStr::from_ptr(
                     ((*c).ttyname)
@@ -377,7 +377,7 @@ mod client_message_owner_tests {
             );
             assert_eq!(c, &raw mut *owner);
 
-            server_client_set_ttyname(c, Some(CString::new("").unwrap()));
+            server_client_set_ttyname(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).ttyname.is_none());
             assert_eq!(
                 CStr::from_ptr(
@@ -389,7 +389,7 @@ mod client_message_owner_tests {
                 b""
             );
 
-            server_client_set_ttyname(c, None);
+            server_client_set_ttyname(&mut *c, None);
             assert!((*c).ttyname.is_none());
             assert!(owner.ttyname.is_none());
         }
@@ -1548,7 +1548,7 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     if (*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
         tty_free(&raw mut (*c).tty);
     }
-    server_client_set_ttyname(c, None);
+    server_client_set_ttyname(&mut *c, None);
     free((*c).clipboard_panes as *mut ::core::ffi::c_void);
     server_client_set_term_name(&mut *c, None);
     server_client_set_term_type(&mut *c, None);
@@ -4839,7 +4839,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
             {
                 return -(1 as ::core::ffi::c_int);
             }
-            server_client_set_ttyname(c, Some(CStr::from_ptr(data).to_owned()));
+            server_client_set_ttyname(&mut *c, Some(CStr::from_ptr(data).to_owned()));
             log_debug(
                 b"client %p IDENTIFY_TTYNAME %s\0" as *const u8 as *const ::core::ffi::c_char,
                 c,
