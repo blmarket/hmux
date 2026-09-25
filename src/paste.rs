@@ -122,10 +122,10 @@ fn paste_time_key(pb: &paste_buffer) -> std::cmp::Reverse<u_int> {
 }
 
 unsafe fn paste_time_tree_insert(
-    head: *mut paste_time_tree,
+    head: &mut paste_time_tree,
     elm: *mut paste_buffer,
 ) -> *mut paste_buffer {
-    match (*head).entries.entry(paste_time_key(&*elm)) {
+    match head.entries.entry(paste_time_key(&*elm)) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
@@ -922,10 +922,10 @@ mod tests {
             let newest = items[2].as_mut() as *mut paste_buffer;
             let duplicate = duplicate.as_mut() as *mut paste_buffer;
 
-            assert!(paste_time_tree_insert(&raw mut tree, oldest).is_null());
-            assert!(paste_time_tree_insert(&raw mut tree, newest).is_null());
-            assert!(paste_time_tree_insert(&raw mut tree, middle).is_null());
-            assert_eq!(paste_time_tree_insert(&raw mut tree, duplicate), middle);
+            assert!(paste_time_tree_insert(&mut tree, oldest).is_null());
+            assert!(paste_time_tree_insert(&mut tree, newest).is_null());
+            assert!(paste_time_tree_insert(&mut tree, middle).is_null());
+            assert_eq!(paste_time_tree_insert(&mut tree, duplicate), middle);
 
             assert_eq!((*paste_time_tree_minmax(&tree, RB_NEGINF)).order, 12);
             assert_eq!((*paste_time_tree_next(&tree, &*newest)).order, 7);
