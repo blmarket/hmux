@@ -3817,7 +3817,7 @@ unsafe extern "C" fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
                     }
                 }
                 3 => {
-                    screen_clear_tabs(s);
+                    screen_clear_tabs(&mut *s);
                 }
                 _ => {
                     log_debug(

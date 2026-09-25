@@ -202,8 +202,8 @@ pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
         *byte &= !mask;
     }
 }
-pub(crate) unsafe fn screen_clear_tabs(s: *mut screen) {
-    (*s).tabs.fill(0);
+pub(crate) fn screen_clear_tabs(s: &mut screen) {
+    s.tabs.fill(0);
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_set_default_cursor(mut s: *mut screen, mut oo: *mut options) {
@@ -1138,7 +1138,7 @@ mod text_owner_tests {
             assert!(screen_has_tab(&raw const current, 3));
             screen_set_tab(&mut current, 8, false);
             assert!(!screen_has_tab(&raw const current, 8));
-            screen_clear_tabs(&raw mut current);
+            screen_clear_tabs(&mut current);
             assert!((0..10).all(|x| !screen_has_tab(&raw const current, x)));
             screen_resize(&raw mut current, 17, 2, 0);
             assert!(screen_has_tab(&raw const current, 8));
@@ -1309,7 +1309,7 @@ mod text_owner_tests {
                 MODEKEY_EMACS,
                 &raw mut cell,
             );
-            screen_clear_tabs(&raw mut current);
+            screen_clear_tabs(&mut current);
             screen_reinit(&raw mut current, 0);
             assert_eq!(current.titles.len(), 0);
             assert!(current.sel.is_none());
