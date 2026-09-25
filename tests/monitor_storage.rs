@@ -1,5 +1,5 @@
-use hmux2::src::shared::monitor::{monitor_item, monitor_set, MONITOR_SESSION};
 use hmux2::src::monitor::*;
+use hmux2::src::shared::monitor::{monitor_item, monitor_set, MONITOR_SESSION};
 use std::{ffi::CStr, ptr::null_mut};
 
 unsafe fn find_item(set: *mut monitor_set, name: &CStr) -> *mut monitor_item {
@@ -72,15 +72,15 @@ fn byte_names_composite_keys_and_nested_cleanup() {
             for pair in [(1, 0), (1, 9), (2, 1), (u32::MAX, 0)] {
                 assert_eq!(((*pane).pane, (*pane).idx), pair);
                 assert_eq!(((*window).window, (*window).idx), pair);
-                pane = monitor_panes_next(pane);
-                window = monitor_windows_next(window);
+                pane = monitor_panes_next(&*pane);
+                window = monitor_windows_next(&*window);
             }
             assert!(pane.is_null() && window.is_null());
         }
         let mut item = monitor_items_minmax(&raw mut (*set).items, -1);
         for name in [c"a", c"z", c"\xff"] {
             assert_eq!(CStr::from_ptr(((*item).name).as_ptr().cast_mut()), name);
-            item = monitor_items_next(item);
+            item = monitor_items_next(&*item);
         }
         assert!(item.is_null());
         for name in [c"a", c"\xff", c"z"] {
