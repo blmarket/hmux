@@ -1429,7 +1429,6 @@ unsafe fn cmd_display_popup_exec(
                         s,
                         style,
                         border_style,
-                        None,
                     ) != 0 as ::core::ffi::c_int)
                     {
                         environ_free(env);

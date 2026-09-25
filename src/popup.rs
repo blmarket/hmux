@@ -47,7 +47,6 @@ use crate::src::shared::mouse::{
 };
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::popup::popup_close_cb;
 use crate::src::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -82,7 +81,6 @@ pub struct popup_data {
     pub job: *mut job,
     pub ictx: *mut input_ctx,
     pub status: ::core::ffi::c_int,
-    pub cb: popup_close_cb,
     pub close: ::core::ffi::c_int,
     pub px: u_int,
     pub py: u_int,
@@ -117,7 +115,6 @@ impl popup_data {
             job: Default::default(),
             ictx: Default::default(),
             status: Default::default(),
-            cb: Default::default(),
             close: Default::default(),
             px: Default::default(),
             py: Default::default(),
@@ -458,9 +455,6 @@ unsafe fn popup_draw(c: *mut client, pd: *mut popup_data) {
 }
 unsafe fn popup_free_callback(pd: *mut popup_data, _c: &mut client) {
     let mut item: *mut cmdq_item = (*pd).item;
-    if let Some(callback) = (*pd).cb.take() {
-        callback((*pd).status);
-    }
     if !item.is_null() {
         if !cmdq_get_client(item).is_null() && (*cmdq_get_client(item)).session.is_null() {
             (*cmdq_get_client(item)).retval = (*pd).status;
@@ -923,7 +917,6 @@ pub unsafe fn popup_display(
     mut s: *mut session,
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
-    cb: popup_close_cb,
 ) -> ::core::ffi::c_int {
     let mut pd: *mut popup_data = ::core::ptr::null_mut::<popup_data>();
     let mut jx: u_int = 0;
@@ -1008,7 +1001,6 @@ pub unsafe fn popup_display(
     (*pd).flags = flags;
     (*pd).c = c;
     (*(*pd).c).references += 1;
-    (*pd).cb = cb;
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
     (*pd).border_lines = lines;
     memcpy(
