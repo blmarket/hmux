@@ -1105,7 +1105,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     (*c).peer = proc_add_peer(
         server_proc,
         fd,
-        Box::new(move |imsg| unsafe { server_client_dispatch(c, imsg) }),
+        Box::new(move |message| unsafe { server_client_dispatch(c, message) }),
     );
     if gettimeofday(&raw mut (*c).creation_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
@@ -4324,7 +4324,10 @@ unsafe extern "C" fn server_client_set_progress_bar(mut c: *mut client) {
     );
     tty_set_progress_bar(&raw mut (*c).tty, &raw mut (*c).progress_bar);
 }
-unsafe fn server_client_dispatch(mut c: *mut client, mut imsg: *mut imsg) {
+unsafe fn server_client_dispatch(
+    mut c: *mut client,
+    message: crate::src::shared::process::PeerMessage<'_>,
+) {
     let mut current_block: u64;
     let mut datalen: ssize_t = 0;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -4333,10 +4336,13 @@ unsafe fn server_client_dispatch(mut c: *mut client, mut imsg: *mut imsg) {
     if (*c).flags & CLIENT_DEAD as uint64_t != 0 {
         return;
     }
-    if imsg.is_null() {
-        server_client_lost(c);
-        return;
-    }
+    let imsg = match message {
+        crate::src::shared::process::PeerMessage::Disconnected => {
+            server_client_lost(c);
+            return;
+        }
+        crate::src::shared::process::PeerMessage::Message(imsg) => imsg as *mut imsg,
+    };
     datalen = ((*imsg).hdr.len as usize).wrapping_sub(IMSG_HEADER_SIZE) as ssize_t;
     match (*imsg).hdr.type_0 {
         107 | 108 | 105 | 109 | 100 | 111 | 104 | 110 | 101 | 112 | 102 | 106 => {

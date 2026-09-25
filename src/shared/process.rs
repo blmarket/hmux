@@ -4,6 +4,11 @@ use super::abi::{gid_t, uid_t};
 use super::event::event;
 use super::message::{imsg, imsgbuf};
 
+pub enum PeerMessage<'a> {
+    Disconnected,
+    Message(&'a mut imsg),
+}
+
 /// Owned by the parent process's peer list until `proc_remove_peer`.
 pub struct tmuxpeer {
     pub parent: *mut tmuxproc,
@@ -12,7 +17,7 @@ pub struct tmuxpeer {
     pub uid: uid_t,
     pub gid: gid_t,
     pub flags: ::core::ffi::c_int,
-    pub dispatchcb: Option<Box<dyn FnMut(*mut imsg)>>,
+    pub dispatchcb: Option<Box<dyn for<'a> FnMut(PeerMessage<'a>)>>,
 }
 
 impl Default for tmuxpeer {

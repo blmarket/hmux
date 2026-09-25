@@ -20,6 +20,7 @@ use crate::src::shared::message::*;
 use crate::src::shared::message::{ibuf, imsg, imsgbuf};
 use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
+use crate::src::shared::process::PeerMessage;
 use crate::src::shared::signal::ProcessSignal;
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, SA_RESTART, SIGCHLD,
@@ -39,12 +40,12 @@ pub const NCURSES_VERSION: [::core::ffi::c_char; 4] =
 pub const EVLOOP_ONCE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 pub const PEER_BAD: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-unsafe fn proc_dispatch(peer: *mut tmuxpeer, imsg: *mut imsg) -> bool {
+unsafe fn proc_dispatch(peer: *mut tmuxpeer, message: PeerMessage<'_>) -> bool {
     let Some(mut dispatchcb) = (*peer).dispatchcb.take() else {
         return false;
     };
     let tp = (*peer).parent;
-    dispatchcb(imsg);
+    dispatchcb(message);
     if (*tp)
         .peers
         .iter()
@@ -75,13 +76,13 @@ unsafe fn proc_event_cb(
     };
     if (*peer).flags & PEER_BAD == 0 && events as ::core::ffi::c_int & EV_READ != 0 {
         if imsgbuf_read(&raw mut (*peer).ibuf) != 1 as ::core::ffi::c_int {
-            proc_dispatch(peer, ::core::ptr::null_mut::<imsg>());
+            proc_dispatch(peer, PeerMessage::Disconnected);
             return;
         }
         loop {
             n = imsgbuf_get(&raw mut (*peer).ibuf, &raw mut imsg);
             if n == -(1 as ::core::ffi::c_int) {
-                proc_dispatch(peer, ::core::ptr::null_mut::<imsg>());
+                proc_dispatch(peer, PeerMessage::Disconnected);
                 return;
             }
             if n == 0 as ::core::ffi::c_int {
@@ -98,7 +99,7 @@ unsafe fn proc_event_cb(
                 imsg.buf = ::core::ptr::null_mut::<ibuf>();
                 break;
             } else {
-                let peer_alive = proc_dispatch(peer, &raw mut imsg);
+                let peer_alive = proc_dispatch(peer, PeerMessage::Message(&mut imsg));
                 drop(owned_buf);
                 imsg.buf = ::core::ptr::null_mut::<ibuf>();
                 if !peer_alive {
@@ -109,12 +110,12 @@ unsafe fn proc_event_cb(
     }
     if events as ::core::ffi::c_int & EV_WRITE != 0 {
         if imsgbuf_write(&raw mut (*peer).ibuf) == -(1 as ::core::ffi::c_int) {
-            proc_dispatch(peer, ::core::ptr::null_mut::<imsg>());
+            proc_dispatch(peer, PeerMessage::Disconnected);
             return;
         }
     }
     if (*peer).flags & PEER_BAD != 0 && imsgbuf_queuelen(&raw mut (*peer).ibuf) == 0 as uint32_t {
-        proc_dispatch(peer, ::core::ptr::null_mut::<imsg>());
+        proc_dispatch(peer, PeerMessage::Disconnected);
         return;
     }
     proc_update_event(peer);
@@ -437,7 +438,7 @@ pub unsafe extern "C" fn proc_clear_signals(
 pub unsafe fn proc_add_peer(
     mut tp: *mut tmuxproc,
     mut fd: ::core::ffi::c_int,
-    mut dispatchcb: Box<dyn FnMut(*mut imsg)>,
+    mut dispatchcb: Box<dyn for<'a> FnMut(PeerMessage<'a>)>,
 ) -> *mut tmuxpeer {
     let mut owned_peer = Box::new(tmuxpeer::default());
     let peer: *mut tmuxpeer = &mut *owned_peer;

@@ -387,7 +387,7 @@ pub unsafe fn client_main(
     client_peer = proc_add_peer(
         client_proc,
         fd,
-        Box::new(|imsg| unsafe { client_dispatch(imsg) }),
+        Box::new(|message| unsafe { client_dispatch(message) }),
     );
     cwd = find_cwd();
     if cwd.is_null() {
@@ -831,15 +831,18 @@ unsafe fn client_file_check_cb() {
         client_exit();
     }
 }
-unsafe fn client_dispatch(mut imsg: *mut imsg) {
-    if imsg.is_null() {
-        if client_exitflag == 0 {
-            client_exitreason = CLIENT_EXIT_LOST_SERVER;
-            client_exitval = 1 as ::core::ffi::c_int;
+unsafe fn client_dispatch(message: crate::src::shared::process::PeerMessage<'_>) {
+    let imsg = match message {
+        crate::src::shared::process::PeerMessage::Disconnected => {
+            if client_exitflag == 0 {
+                client_exitreason = CLIENT_EXIT_LOST_SERVER;
+                client_exitval = 1 as ::core::ffi::c_int;
+            }
+            proc_exit(client_proc);
+            return;
         }
-        proc_exit(client_proc);
-        return;
-    }
+        crate::src::shared::process::PeerMessage::Message(imsg) => imsg as *mut imsg,
+    };
     if client_attached != 0 {
         client_dispatch_attached(imsg);
     } else {
