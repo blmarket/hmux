@@ -2980,9 +2980,9 @@ pub(crate) fn window_pane_set_searchstr(wp: &mut window_pane, searchstr: Option<
 }
 
 /// `pane.shell` is a borrowed view, invalidated on replacement or clear.
-pub(crate) unsafe fn window_pane_set_shell(wp: *mut window_pane, shell: Option<CString>) {
-    (*wp).shell_owner = shell;
-    (*wp).shell = (*wp)
+pub(crate) fn window_pane_set_shell(wp: &mut window_pane, shell: Option<CString>) {
+    wp.shell_owner = shell;
+    wp.shell = wp
         .shell_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
@@ -3201,7 +3201,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     screen_free(&raw mut (*wp).base);
     options_free((*wp).options);
     window_pane_set_cwd(wp, None);
-    window_pane_set_shell(wp, None);
+    window_pane_set_shell(&mut *wp, None);
     colour_palette_free(&raw mut (*wp).palette);
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);
     let owner = window_pane_owners

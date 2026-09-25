@@ -719,7 +719,7 @@ pub unsafe fn spawn_pane(
         if checkshell(tmp) == 0 {
             tmp = _PATH_BSHELL.as_ptr();
         }
-        window_pane_set_shell(new_wp, Some(CStr::from_ptr(tmp).to_owned()));
+        window_pane_set_shell(&mut *new_wp, Some(CStr::from_ptr(tmp).to_owned()));
     }
     environ_set(
         child,
