@@ -260,13 +260,13 @@ unsafe extern "C" fn cmd_source_file_done(
         cmdq_continue(item);
     };
 }
-unsafe fn cmd_source_file_add(cdata: *mut cmd_source_file_data, path: &CStr) {
+unsafe fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmd_source_file_add\0" as *const u8 as *const ::core::ffi::c_char,
         path.as_ptr(),
     );
-    (*cdata).files.push(path.to_owned());
+    cdata.files.push(path.to_owned());
 }
 unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     let mut quoted = Vec::new();
@@ -367,7 +367,7 @@ unsafe extern "C" fn cmd_source_file_exec(
         if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            cmd_source_file_add(cdata, c"-");
+            cmd_source_file_add(&mut *cdata, c"-");
         } else {
             let pattern = if *path as ::core::ffi::c_int == '/' as i32 {
                 CStr::from_ptr(path).to_owned()
@@ -408,7 +408,7 @@ unsafe extern "C" fn cmd_source_file_exec(
                 drop(pattern);
                 j = 0 as u_int;
                 while (j as __size_t) < matches.len() {
-                    cmd_source_file_add(cdata, CStr::from_ptr(matches.path(j as usize)));
+                    cmd_source_file_add(&mut *cdata, CStr::from_ptr(matches.path(j as usize)));
                     j = j.wrapping_add(1);
                 }
             }
