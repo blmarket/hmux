@@ -172,12 +172,8 @@ impl popup_data {
     }
 }
 
-unsafe fn popup_optional_string(value: *const ::core::ffi::c_char) -> Option<CString> {
-    if value.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(value).to_owned())
-    }
+fn popup_optional_string(value: Option<&CStr>) -> Option<CString> {
+    value.map(CStr::to_owned)
 }
 pub type C2RustUnnamed_39 = ::core::ffi::c_uint;
 pub const SIZE: C2RustUnnamed_39 = 2;
@@ -902,12 +898,12 @@ pub unsafe extern "C" fn popup_modify(
         link: 0,
     };
     if !title.is_null() {
-        let updated = popup_optional_string(title);
+        let updated = popup_optional_string(Some(CStr::from_ptr(title)));
         let owner = &mut *pd;
         owner.title = updated;
     }
     if !border_style.is_null() {
-        let updated = popup_optional_string(border_style);
+        let updated = popup_optional_string(Some(CStr::from_ptr(border_style)));
         let owner = &mut *pd;
         owner.border_style = updated;
 
@@ -925,7 +921,7 @@ pub unsafe extern "C" fn popup_modify(
         }
     }
     if !style.is_null() {
-        let updated = popup_optional_string(style);
+        let updated = popup_optional_string(Some(CStr::from_ptr(style)));
         let owner = &mut *pd;
         owner.style = updated;
 
@@ -1058,9 +1054,21 @@ pub unsafe fn popup_display(
         return -(1 as ::core::ffi::c_int);
     }
     let owner = Box::new(popup_data {
-        title: popup_optional_string(title),
-        style: popup_optional_string(style),
-        border_style: popup_optional_string(border_style),
+        title: popup_optional_string(if title.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(title))
+        }),
+        style: popup_optional_string(if style.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(style))
+        }),
+        border_style: popup_optional_string(if border_style.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(border_style))
+        }),
         ..popup_data::empty()
     });
     pd = Box::into_raw(owner).cast::<popup_data>();
