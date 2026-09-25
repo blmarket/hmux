@@ -214,22 +214,22 @@ pub static mut window_tree_mode: window_mode = unsafe {
         flags: 0,
         init: Some(
             window_tree_init
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut cmdq_item,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_tree_free as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        free: Some(window_tree_free as unsafe fn(*mut window_mode_entry) -> ()),
         resize: Some(
-            window_tree_resize as unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> (),
+            window_tree_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
         ),
-        update: Some(window_tree_update as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        update: Some(window_tree_update as unsafe fn(*mut window_mode_entry) -> ()),
         style_changed: None,
         key: Some(
             window_tree_key
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut client,
                     *mut session,
@@ -1727,7 +1727,7 @@ fn window_tree_help() -> mode_tree_help_info {
         lines: window_tree_help_lines,
     }
 }
-unsafe extern "C" fn window_tree_init(
+unsafe fn window_tree_init(
     mut wme: *mut window_mode_entry,
     _item: *mut cmdq_item,
     mut fs: *mut cmd_find_state,
@@ -1869,7 +1869,7 @@ unsafe extern "C" fn window_tree_destroy(mut data: *mut window_tree_modedata) {
     }
     drop(Box::from_raw(data));
 }
-unsafe extern "C" fn window_tree_free(mut wme: *mut window_mode_entry) {
+unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
     if data.is_null() {
         return;
@@ -1878,7 +1878,7 @@ unsafe extern "C" fn window_tree_free(mut wme: *mut window_mode_entry) {
     mode_tree_free((*data).data);
     window_tree_destroy(data);
 }
-unsafe extern "C" fn window_tree_resize(
+unsafe fn window_tree_resize(
     mut wme: *mut window_mode_entry,
     mut sx: u_int,
     mut sy: u_int,
@@ -1886,7 +1886,7 @@ unsafe extern "C" fn window_tree_resize(
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
     mode_tree_resize((*data).data, sx, sy);
 }
-unsafe extern "C" fn window_tree_update(mut wme: *mut window_mode_entry) {
+unsafe fn window_tree_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
@@ -2232,7 +2232,7 @@ unsafe extern "C" fn window_tree_mouse(
     }
     return KEYC_NONE as ::core::ffi::c_ulong as key_code;
 }
-unsafe extern "C" fn window_tree_key(
+unsafe fn window_tree_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
     _s: *mut session,

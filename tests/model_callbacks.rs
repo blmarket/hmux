@@ -13,7 +13,7 @@ fn parse(
     }
 }
 
-unsafe extern "C" fn mode_screen(_: *mut window::window_mode_entry) -> *mut screen::screen {
+unsafe fn mode_screen(_: *mut window::window_mode_entry) -> *mut screen::screen {
     null_mut()
 }
 

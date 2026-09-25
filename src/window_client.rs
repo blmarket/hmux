@@ -201,23 +201,23 @@ pub static mut window_client_mode: window_mode = unsafe {
         flags: 0,
         init: Some(
             window_client_init
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut cmdq_item,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_client_free as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        free: Some(window_client_free as unsafe fn(*mut window_mode_entry) -> ()),
         resize: Some(
             window_client_resize
-                as unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> (),
+                as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
         ),
-        update: Some(window_client_update as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        update: Some(window_client_update as unsafe fn(*mut window_mode_entry) -> ()),
         style_changed: None,
         key: Some(
             window_client_key
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut client,
                     *mut session,
@@ -673,7 +673,7 @@ fn window_client_help() -> mode_tree_help_info {
         lines: window_client_help_lines,
     }
 }
-unsafe extern "C" fn window_client_init(
+unsafe fn window_client_init(
     mut wme: *mut window_mode_entry,
     _item: *mut cmdq_item,
     _fs: *mut cmd_find_state,
@@ -772,7 +772,7 @@ unsafe extern "C" fn window_client_init(
     mode_tree_draw((*data).data);
     return s;
 }
-unsafe extern "C" fn window_client_free(mut wme: *mut window_mode_entry) {
+unsafe fn window_client_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
     if data.is_null() {
         return;
@@ -781,7 +781,7 @@ unsafe extern "C" fn window_client_free(mut wme: *mut window_mode_entry) {
     (*data).items.clear();
     drop(Box::from_raw(data));
 }
-unsafe extern "C" fn window_client_resize(
+unsafe fn window_client_resize(
     mut wme: *mut window_mode_entry,
     mut sx: u_int,
     mut sy: u_int,
@@ -789,7 +789,7 @@ unsafe extern "C" fn window_client_resize(
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
     mode_tree_resize((*data).data, sx, sy);
 }
-unsafe extern "C" fn window_client_update(mut wme: *mut window_mode_entry) {
+unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
     mode_tree_build((*data).data);
     mode_tree_draw((*data).data);
@@ -812,7 +812,7 @@ unsafe fn window_client_do_detach(
         server_client_suspend((*item).c);
     }
 }
-unsafe extern "C" fn window_client_key(
+unsafe fn window_client_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
     _s: *mut session,

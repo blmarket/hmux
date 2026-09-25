@@ -114,23 +114,23 @@ pub static mut window_switch_mode: window_mode = unsafe {
         flags: 0,
         init: Some(
             window_switch_init
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut cmdq_item,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_switch_free as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        free: Some(window_switch_free as unsafe fn(*mut window_mode_entry) -> ()),
         resize: Some(
             window_switch_resize
-                as unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> (),
+                as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
         ),
         update: None,
         style_changed: None,
         key: Some(
             window_switch_key
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut client,
                     *mut session,
@@ -476,7 +476,7 @@ unsafe extern "C" fn window_switch_draw_screen(mut wme: *mut window_mode_entry) 
     }
     screen_write_stop(&raw mut ctx);
 }
-unsafe extern "C" fn window_switch_init(
+unsafe fn window_switch_init(
     mut wme: *mut window_mode_entry,
     _item: *mut cmdq_item,
     mut fs: *mut cmd_find_state,
@@ -548,7 +548,7 @@ unsafe extern "C" fn window_switch_init(
     window_switch_draw_screen(wme);
     return s;
 }
-unsafe extern "C" fn window_switch_free(mut wme: *mut window_mode_entry) {
+unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window((*(*wme).wp).window as *mut window);
@@ -559,7 +559,7 @@ unsafe extern "C" fn window_switch_free(mut wme: *mut window_mode_entry) {
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
 }
-unsafe extern "C" fn window_switch_resize(
+unsafe fn window_switch_resize(
     mut wme: *mut window_mode_entry,
     mut sx: u_int,
     mut sy: u_int,
@@ -684,7 +684,7 @@ unsafe fn window_switch_prompt_callback(
     (*data).offset = 0 as u_int;
     return PROMPT_CONTINUE;
 }
-unsafe extern "C" fn window_switch_key(
+unsafe fn window_switch_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
     _s: *mut session,

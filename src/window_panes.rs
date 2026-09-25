@@ -98,22 +98,22 @@ pub static mut window_panes_mode: window_mode = unsafe {
             | WINDOW_MODE_HIDE_SCROLLBARS,
         init: Some(
             window_panes_init
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut cmdq_item,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_panes_free as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        free: Some(window_panes_free as unsafe fn(*mut window_mode_entry) -> ()),
         resize: Some(
-            window_panes_resize as unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> (),
+            window_panes_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
         ),
         update: None,
         style_changed: None,
         key: Some(
             window_panes_key
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut client,
                     *mut session,
@@ -1538,7 +1538,7 @@ unsafe extern "C" fn window_panes_timer_callback(
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
     window_pane_reset_mode((*wme).wp);
 }
-unsafe extern "C" fn window_panes_init(
+unsafe fn window_panes_init(
     mut wme: *mut window_mode_entry,
     mut item: *mut cmdq_item,
     _fs: *mut cmd_find_state,
@@ -1663,7 +1663,7 @@ unsafe extern "C" fn window_panes_init(
     window_panes_draw_screen(wme);
     return &raw mut (*data).screen;
 }
-unsafe extern "C" fn window_panes_free(mut wme: *mut window_mode_entry) {
+unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
     let mut w: *mut window = (*(*wme).wp).window as *mut window;
     event_del(&raw mut (*data).timer);
@@ -1683,7 +1683,7 @@ unsafe extern "C" fn window_panes_free(mut wme: *mut window_mode_entry) {
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
 }
-unsafe extern "C" fn window_panes_resize(
+unsafe fn window_panes_resize(
     mut wme: *mut window_mode_entry,
     mut sx: u_int,
     mut sy: u_int,
@@ -1798,7 +1798,7 @@ unsafe extern "C" fn window_panes_get_target(
     }
     return window_panes_key_pane(data, key);
 }
-unsafe extern "C" fn window_panes_key(
+unsafe fn window_panes_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
     _s: *mut session,

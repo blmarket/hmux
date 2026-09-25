@@ -317,23 +317,23 @@ pub static mut window_customize_mode: window_mode = unsafe {
         flags: 0,
         init: Some(
             window_customize_init
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut cmdq_item,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_customize_free as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        free: Some(window_customize_free as unsafe fn(*mut window_mode_entry) -> ()),
         resize: Some(
             window_customize_resize
-                as unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> (),
+                as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
         ),
-        update: Some(window_customize_update as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        update: Some(window_customize_update as unsafe fn(*mut window_mode_entry) -> ()),
         style_changed: None,
         key: Some(
             window_customize_key
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut client,
                     *mut session,
@@ -2925,7 +2925,7 @@ fn window_customize_help() -> mode_tree_help_info {
         lines: window_customize_help_lines,
     }
 }
-unsafe extern "C" fn window_customize_init(
+unsafe fn window_customize_init(
     mut wme: *mut window_mode_entry,
     _item: *mut cmdq_item,
     mut fs: *mut cmd_find_state,
@@ -3013,7 +3013,7 @@ unsafe extern "C" fn window_customize_destroy(mut data: *mut window_customize_mo
     }
     drop(Box::from_raw(data));
 }
-unsafe extern "C" fn window_customize_free(mut wme: *mut window_mode_entry) {
+unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
     if data.is_null() {
         return;
@@ -3026,7 +3026,7 @@ unsafe extern "C" fn window_customize_free(mut wme: *mut window_mode_entry) {
     mode_tree_free((*data).data);
     window_customize_destroy(data);
 }
-unsafe extern "C" fn window_customize_resize(
+unsafe fn window_customize_resize(
     mut wme: *mut window_mode_entry,
     mut sx: u_int,
     mut sy: u_int,
@@ -3034,7 +3034,7 @@ unsafe extern "C" fn window_customize_resize(
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
     mode_tree_resize((*data).data, sx, sy);
 }
-unsafe extern "C" fn window_customize_update(mut wme: *mut window_mode_entry) {
+unsafe fn window_customize_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
     window_customize_draw_waiting(data);
 }
@@ -4763,7 +4763,7 @@ unsafe extern "C" fn window_customize_add_current(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_customize_key(
+unsafe fn window_customize_key(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
     _s: *mut session,

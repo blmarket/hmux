@@ -308,29 +308,29 @@ pub static mut window_copy_mode: window_mode = unsafe {
         flags: 0,
         init: Some(
             window_copy_init
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut cmdq_item,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_copy_free as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        free: Some(window_copy_free as unsafe fn(*mut window_mode_entry) -> ()),
         resize: Some(
-            window_copy_resize as unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> (),
+            window_copy_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
         ),
         update: None,
         style_changed: Some(
-            window_copy_style_changed as unsafe extern "C" fn(*mut window_mode_entry) -> (),
+            window_copy_style_changed as unsafe fn(*mut window_mode_entry) -> (),
         ),
         key: None,
         key_table: Some(
             window_copy_key_table
-                as unsafe extern "C" fn(*mut window_mode_entry) -> *const ::core::ffi::c_char,
+                as unsafe fn(*mut window_mode_entry) -> *const ::core::ffi::c_char,
         ),
         command: Some(
             window_copy_command
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut client,
                     *mut session,
@@ -341,10 +341,10 @@ pub static mut window_copy_mode: window_mode = unsafe {
         ),
         formats: Some(
             window_copy_formats
-                as unsafe extern "C" fn(*mut window_mode_entry, *mut format_tree) -> (),
+                as unsafe fn(*mut window_mode_entry, *mut format_tree) -> (),
         ),
         get_screen: Some(
-            window_copy_get_screen as unsafe extern "C" fn(*mut window_mode_entry) -> *mut screen,
+            window_copy_get_screen as unsafe fn(*mut window_mode_entry) -> *mut screen,
         ),
     }
 };
@@ -356,29 +356,29 @@ pub static mut window_view_mode: window_mode = unsafe {
         flags: 0,
         init: Some(
             window_copy_view_init
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut cmdq_item,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_copy_free as unsafe extern "C" fn(*mut window_mode_entry) -> ()),
+        free: Some(window_copy_free as unsafe fn(*mut window_mode_entry) -> ()),
         resize: Some(
-            window_copy_resize as unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> (),
+            window_copy_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
         ),
         update: None,
         style_changed: Some(
-            window_copy_style_changed as unsafe extern "C" fn(*mut window_mode_entry) -> (),
+            window_copy_style_changed as unsafe fn(*mut window_mode_entry) -> (),
         ),
         key: None,
         key_table: Some(
             window_copy_key_table
-                as unsafe extern "C" fn(*mut window_mode_entry) -> *const ::core::ffi::c_char,
+                as unsafe fn(*mut window_mode_entry) -> *const ::core::ffi::c_char,
         ),
         command: Some(
             window_copy_command
-                as unsafe extern "C" fn(
+                as unsafe fn(
                     *mut window_mode_entry,
                     *mut client,
                     *mut session,
@@ -389,10 +389,10 @@ pub static mut window_view_mode: window_mode = unsafe {
         ),
         formats: Some(
             window_copy_formats
-                as unsafe extern "C" fn(*mut window_mode_entry, *mut format_tree) -> (),
+                as unsafe fn(*mut window_mode_entry, *mut format_tree) -> (),
         ),
         get_screen: Some(
-            window_copy_get_screen as unsafe extern "C" fn(*mut window_mode_entry) -> *mut screen,
+            window_copy_get_screen as unsafe fn(*mut window_mode_entry) -> *mut screen,
         ),
     }
 };
@@ -629,7 +629,7 @@ unsafe extern "C" fn window_copy_common_init(
     );
     return data;
 }
-unsafe extern "C" fn window_copy_init(
+unsafe fn window_copy_init(
     mut wme: *mut window_mode_entry,
     _item: *mut cmdq_item,
     _fs: *mut cmd_find_state,
@@ -697,7 +697,7 @@ unsafe extern "C" fn window_copy_init(
     (*data).recentre_line = 0 as u_int;
     return &raw mut (*data).screen;
 }
-unsafe extern "C" fn window_copy_view_init(
+unsafe fn window_copy_view_init(
     mut wme: *mut window_mode_entry,
     _item: *mut cmdq_item,
     _fs: *mut cmd_find_state,
@@ -726,7 +726,7 @@ unsafe extern "C" fn window_copy_view_init(
     (*data).showmark = 0 as ::core::ffi::c_int;
     return &raw mut (*data).screen;
 }
-unsafe extern "C" fn window_copy_free(mut wme: *mut window_mode_entry) {
+unsafe fn window_copy_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     event_del(&raw mut (*data).dragtimer);
     event_del(&raw mut (*data).refresh_timer);
@@ -1214,7 +1214,7 @@ unsafe fn window_copy_search_match_cb(mut ft: *mut format_tree) -> Option<CStrin
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return window_copy_match_at_cursor_cstring(data);
 }
-unsafe extern "C" fn window_copy_formats(
+unsafe fn window_copy_formats(
     mut wme: *mut window_mode_entry,
     mut ft: *mut format_tree,
 ) {
@@ -1417,7 +1417,7 @@ unsafe extern "C" fn window_copy_formats(
         |ft| unsafe { window_copy_cursor_hyperlink_cb(ft) },
     );
 }
-unsafe extern "C" fn window_copy_get_screen(mut wme: *mut window_mode_entry) -> *mut screen {
+unsafe fn window_copy_get_screen(mut wme: *mut window_mode_entry) -> *mut screen {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     return (*data).backing;
 }
@@ -1452,7 +1452,7 @@ unsafe extern "C" fn window_copy_size_changed(mut wme: *mut window_mode_entry) {
     (*data).searchy = (*data).cy as ::core::ffi::c_int;
     (*data).searcho = (*data).oy as ::core::ffi::c_int;
 }
-unsafe extern "C" fn window_copy_resize(
+unsafe fn window_copy_resize(
     mut wme: *mut window_mode_entry,
     mut sx: u_int,
     mut sy: u_int,
@@ -1500,7 +1500,7 @@ unsafe extern "C" fn window_copy_resize(
     window_copy_size_changed(wme);
     window_copy_redraw_screen(wme);
 }
-unsafe extern "C" fn window_copy_key_table(
+unsafe fn window_copy_key_table(
     mut wme: *mut window_mode_entry,
 ) -> *const ::core::ffi::c_char {
     let mut wp: *mut window_pane = (*wme).wp;
@@ -5180,7 +5180,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
     ]
 };
 pub const WINDOW_COPY_CMD_FLAG_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-unsafe extern "C" fn window_copy_command(
+unsafe fn window_copy_command(
     mut wme: *mut window_mode_entry,
     mut c: *mut client,
     mut s: *mut session,
@@ -7623,7 +7623,7 @@ unsafe extern "C" fn window_copy_redraw_screen(mut wme: *mut window_mode_entry) 
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     window_copy_redraw_lines(wme, 0 as u_int, (*(*data).screen.grid).sy);
 }
-unsafe extern "C" fn window_copy_style_changed(mut wme: *mut window_mode_entry) {
+unsafe fn window_copy_style_changed(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     if !(*data).screen.sel.is_none() {
         window_copy_set_selection(wme, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);

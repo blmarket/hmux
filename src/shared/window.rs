@@ -155,19 +155,19 @@ pub struct window_mode {
     pub default_format: *const ::core::ffi::c_char,
     pub flags: ::core::ffi::c_int,
     pub init: Option<
-        unsafe extern "C" fn(
+        unsafe fn(
             *mut window_mode_entry,
             *mut cmdq_item,
             *mut cmd_find_state,
             *mut args,
         ) -> *mut screen,
     >,
-    pub free: Option<unsafe extern "C" fn(*mut window_mode_entry) -> ()>,
-    pub resize: Option<unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> ()>,
-    pub update: Option<unsafe extern "C" fn(*mut window_mode_entry) -> ()>,
-    pub style_changed: Option<unsafe extern "C" fn(*mut window_mode_entry) -> ()>,
+    pub free: Option<unsafe fn(*mut window_mode_entry) -> ()>,
+    pub resize: Option<unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()>,
+    pub update: Option<unsafe fn(*mut window_mode_entry) -> ()>,
+    pub style_changed: Option<unsafe fn(*mut window_mode_entry) -> ()>,
     pub key: Option<
-        unsafe extern "C" fn(
+        unsafe fn(
             *mut window_mode_entry,
             *mut client,
             *mut session,
@@ -176,10 +176,9 @@ pub struct window_mode {
             *mut mouse_event,
         ) -> (),
     >,
-    pub key_table:
-        Option<unsafe extern "C" fn(*mut window_mode_entry) -> *const ::core::ffi::c_char>,
+    pub key_table: Option<unsafe fn(*mut window_mode_entry) -> *const ::core::ffi::c_char>,
     pub command: Option<
-        unsafe extern "C" fn(
+        unsafe fn(
             *mut window_mode_entry,
             *mut client,
             *mut session,
@@ -188,8 +187,8 @@ pub struct window_mode {
             *mut mouse_event,
         ) -> (),
     >,
-    pub formats: Option<unsafe extern "C" fn(*mut window_mode_entry, *mut format_tree) -> ()>,
-    pub get_screen: Option<unsafe extern "C" fn(*mut window_mode_entry) -> *mut screen>,
+    pub formats: Option<unsafe fn(*mut window_mode_entry, *mut format_tree) -> ()>,
+    pub get_screen: Option<unsafe fn(*mut window_mode_entry) -> *mut screen>,
 }
 
 impl Default for window_mode {
