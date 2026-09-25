@@ -909,11 +909,11 @@ pub unsafe extern "C" fn mode_tree_remove(
     let position = siblings.position(mti);
     siblings.items.remove(position);
 }
-unsafe fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: *const ::core::ffi::c_char) {
-    if value.is_null() {
-        bytes.extend_from_slice(b"(null)");
+fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: Option<&CStr>) {
+    if let Some(value) = value {
+        bytes.extend_from_slice(value.to_bytes());
     } else {
-        bytes.extend_from_slice(CStr::from_ptr(value).to_bytes());
+        bytes.extend_from_slice(b"(null)");
     }
 }
 
@@ -1218,7 +1218,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
             }
             let field_width = (*mti).align * *alignlen.as_mut_ptr().offset((*line).depth as isize);
             let mut name = Vec::new();
-            mode_tree_append_printf_string(&mut name, ((*mti).name).as_ptr().cast_mut());
+            mode_tree_append_printf_string(&mut name, Some((*mti).name.as_c_str()));
             let padding = (field_width.unsigned_abs() as usize).saturating_sub(name.len());
             let mut row = Vec::with_capacity(
                 name.len()
@@ -1376,12 +1376,18 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 ::core::ptr::null::<::core::ffi::c_char>(),
             );
             let mut label_bytes = b" ".to_vec();
-            mode_tree_append_printf_string(&mut label_bytes, ((*mti).name).as_ptr().cast_mut());
+            mode_tree_append_printf_string(&mut label_bytes, Some((*mti).name.as_c_str()));
             if !(*mtd).sort_crit.order_seq.is_null() {
                 label_bytes.extend_from_slice(b" (sort: ");
+                let order = sort_order_to_string((*mtd).sort_crit.order);
+                let order = if order.is_null() {
+                    None
+                } else {
+                    Some(CStr::from_ptr(order))
+                };
                 mode_tree_append_printf_string(
                     &mut label_bytes,
-                    sort_order_to_string((*mtd).sort_crit.order),
+                    order,
                 );
                 if (*mtd).sort_crit.reversed != 0 {
                     label_bytes.extend_from_slice(b", reversed");
@@ -1389,7 +1395,7 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                 label_bytes.push(b')');
                 if let Some(view_name) = (*mtd).view_name {
                     label_bytes.extend_from_slice(b" (view: ");
-                    mode_tree_append_printf_string(&mut label_bytes, view_name.as_ptr());
+                    mode_tree_append_printf_string(&mut label_bytes, Some(view_name));
                     label_bytes.push(b')');
                 }
             }
