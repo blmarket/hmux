@@ -95,11 +95,8 @@ fn paste_name_key(name: &CStr) -> Vec<u8> {
     name.to_bytes().to_vec()
 }
 
-unsafe fn paste_name_tree_find(
-    head: *mut paste_name_tree,
-    name: &CStr,
-) -> *mut paste_buffer {
-    (*head)
+fn paste_name_tree_find(head: &paste_name_tree, name: &CStr) -> *mut paste_buffer {
+    head
         .entries
         .get(&paste_name_key(name))
         .copied()
@@ -204,8 +201,8 @@ unsafe fn paste_time_tree_remove(
 
 unsafe fn paste_name_tree_find_local(name: &CStr) -> *mut paste_buffer {
     paste_by_name.with(|head| {
-        let mut head = head.borrow_mut();
-        paste_name_tree_find(&mut *head, name)
+        let head = head.borrow();
+        paste_name_tree_find(&head, name)
     })
 }
 
@@ -913,17 +910,17 @@ mod tests {
                 vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
             );
             assert_eq!(
-                paste_name_tree_find(&raw mut tree, names[2].as_c_str()),
+                paste_name_tree_find(&tree, names[2].as_c_str()),
                 a_high
             );
             assert!(paste_name_tree_find(
-                &raw mut tree,
+                &tree,
                 CStr::from_bytes_with_nul(b"missing\0").unwrap()
             )
             .is_null());
 
             assert_eq!(paste_name_tree_remove(&raw mut tree, a_high), a_high);
-            assert!(paste_name_tree_find(&raw mut tree, names[2].as_c_str()).is_null());
+            assert!(paste_name_tree_find(&tree, names[2].as_c_str()).is_null());
         }
     }
 
