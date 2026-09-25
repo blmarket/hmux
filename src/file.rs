@@ -1728,8 +1728,8 @@ pub unsafe extern "C" fn file_read_done(
     return 0 as ::core::ffi::c_int;
 }
 
-unsafe fn client_files_key(elm: *mut client_file) -> i32 {
-    (*elm).stream
+fn client_files_key(elm: &client_file) -> i32 {
+    elm.stream
 }
 pub unsafe fn client_files_find(
     head: *mut client_files,
@@ -1738,7 +1738,7 @@ pub unsafe fn client_files_find(
     let Some(map) = (*head).storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = client_files_key(elm);
+    let key = client_files_key(&*elm);
     map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn client_files_nfind(
@@ -1748,7 +1748,7 @@ pub unsafe fn client_files_nfind(
     let Some(map) = (*head).storage.as_deref() else {
         return std::ptr::null_mut();
     };
-    let key = client_files_key(elm);
+    let key = client_files_key(&*elm);
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1757,7 +1757,7 @@ pub unsafe fn client_files_insert(
     head: *mut client_files,
     elm: *mut client_file,
 ) -> *mut client_file {
-    let key = client_files_key(elm);
+    let key = client_files_key(&*elm);
     let map = (*head)
         .storage
         .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
@@ -1778,7 +1778,7 @@ pub unsafe fn client_files_remove(
     if elm.is_null() {
         return std::ptr::null_mut();
     }
-    let key = client_files_key(elm);
+    let key = client_files_key(&*elm);
     let Some(map) = (*head).storage.as_deref_mut() else {
         return std::ptr::null_mut();
     };
@@ -1810,7 +1810,7 @@ pub unsafe fn client_files_next(elm: *mut client_file) -> *mut client_file {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = client_files_key(elm);
+    let key = client_files_key(&*elm);
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
@@ -1819,7 +1819,7 @@ pub unsafe fn client_files_prev(elm: *mut client_file) -> *mut client_file {
     let Some(map) = (*elm).entry.owner.as_ref() else {
         return std::ptr::null_mut();
     };
-    let key = client_files_key(elm);
+    let key = client_files_key(&*elm);
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
         .map_or(std::ptr::null_mut(), |(_, node)| *node)
