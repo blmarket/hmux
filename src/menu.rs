@@ -92,14 +92,6 @@ use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-unsafe fn menu_optional_style(style: *const ::core::ffi::c_char) -> Option<CString> {
-    if style.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(style).to_owned())
-    }
-}
-
 #[derive(Default)]
 pub(crate) struct MenuRowStrings {
     name: Option<CString>,
@@ -2184,9 +2176,10 @@ pub unsafe extern "C" fn menu_display(
         ) as box_lines;
     }
     let mut owner = Box::new(menu_data {
-        style: menu_optional_style(style),
-        selected_style: menu_optional_style(selected_style),
-        border_style: menu_optional_style(border_style),
+        style: (!style.is_null()).then(|| CStr::from_ptr(style).to_owned()),
+        selected_style: (!selected_style.is_null())
+            .then(|| CStr::from_ptr(selected_style).to_owned()),
+        border_style: (!border_style.is_null()).then(|| CStr::from_ptr(border_style).to_owned()),
         ..menu_data::empty()
     });
 
