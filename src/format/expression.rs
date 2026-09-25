@@ -494,9 +494,9 @@ unsafe fn format_unescape_cstring(
 
 unsafe fn format_strip_cstring(
     es: *mut format_expand_state,
-    s: *const ::core::ffi::c_char,
+    s: &CStr,
 ) -> CString {
-    let input = CStr::from_ptr(s).to_bytes();
+    let input = s.to_bytes();
     let mut out = Vec::with_capacity(input.len());
     let mut brackets: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut check: u_int = 0 as u_int;
@@ -2548,7 +2548,10 @@ pub(super) unsafe fn format_replace(
                         } else if (*fm).argc() >= 2 as ::core::ffi::c_int
                             && !strchr((*fm).arg(0), 'f' as i32).is_null()
                         {
-                            time_format = Some(format_strip_cstring(es, (*fm).arg(1)));
+                            time_format = Some(format_strip_cstring(
+                                es,
+                                CStr::from_ptr((*fm).arg(1)),
+                            ));
                         }
                     }
                 }
