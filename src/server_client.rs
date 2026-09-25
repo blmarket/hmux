@@ -294,9 +294,9 @@ pub(crate) unsafe fn server_client_clear_saved_status_screen(c: *mut client) {
     (*owner).saved_status_screen = None;
 }
 
-unsafe fn server_client_add_term_cap(c: *mut client, data: &CStr) {
-    assert!((*c).term_caps.len() < u_int::MAX as usize);
-    (*c).term_caps.push(data.to_owned());
+fn server_client_add_term_cap(c: &mut client, data: &CStr) {
+    assert!(c.term_caps.len() < u_int::MAX as usize);
+    c.term_caps.push(data.to_owned());
 }
 
 fn server_client_clear_term_caps(c: &mut client) {
@@ -755,7 +755,7 @@ mod client_message_owner_tests {
                 } else {
                     CString::new(format!("cap{i}=value")).unwrap()
                 };
-                server_client_add_term_cap(c, value.as_c_str());
+                server_client_add_term_cap(&mut *c, value.as_c_str());
                 expected.push(value);
                 assert_eq!((*c).term_caps.len(), expected.len());
                 for (index, cap) in expected.iter().enumerate() {
@@ -4825,7 +4825,7 @@ unsafe extern "C" fn server_client_dispatch_identify(
             {
                 return -(1 as ::core::ffi::c_int);
             }
-            server_client_add_term_cap(c, CStr::from_ptr(data));
+            server_client_add_term_cap(&mut *c, CStr::from_ptr(data));
             log_debug(
                 b"client %p IDENTIFY_TERMINFO %s\0" as *const u8 as *const ::core::ffi::c_char,
                 c,
