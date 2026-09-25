@@ -219,14 +219,10 @@ unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) 
             );
         }
         8 => {
-            if (*epi).c2rust_unnamed.pointer.free_cb.is_some() {
-                (*epi)
-                    .c2rust_unnamed
-                    .pointer
-                    .free_cb
-                    .expect("non-null function pointer")(
-                    (*epi).c2rust_unnamed.pointer.ptr
-                );
+            if let Some(mut callbacks) = (*epi).pointer_callbacks.take() {
+                if let Some(free) = callbacks.free_cb.take() {
+                    free();
+                }
             }
         }
         2 | 3 | 1 | _ => {}
@@ -522,20 +518,21 @@ pub unsafe extern "C" fn event_payload_set_pane(
     (*epi).c2rust_unnamed.pane = wp;
     event_payload_set_item(ep, name, epi);
 }
-#[no_mangle]
-pub unsafe extern "C" fn event_payload_set_pointer(
+pub unsafe fn event_payload_set_pointer(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
-    mut ptr: *mut ::core::ffi::c_void,
-    mut free_cb: event_payload_free_cb,
-    mut print_cb: event_payload_print_cb,
+    ptr: *mut ::core::ffi::c_void,
+    free_cb: event_payload_free_cb,
+    print_cb: event_payload_print_cb,
 ) {
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     epi = event_payload_new_item();
     (*epi).type_0 = EVENT_PAYLOAD_POINTER;
     (*epi).c2rust_unnamed.pointer.ptr = ptr;
-    (*epi).c2rust_unnamed.pointer.free_cb = free_cb;
-    (*epi).c2rust_unnamed.pointer.print_cb = print_cb;
+    (*epi).pointer_callbacks = Some(crate::src::shared::events::event_payload_pointer_callbacks {
+        free_cb,
+        print_cb,
+    });
     event_payload_set_item(ep, name, epi);
 }
 #[no_mangle]
@@ -617,14 +614,12 @@ unsafe extern "C" fn event_payload_add_item(
             );
         }
         8 => {
-            if (*epi).c2rust_unnamed.pointer.print_cb.is_some() {
-                (*epi)
-                    .c2rust_unnamed
-                    .pointer
-                    .print_cb
-                    .expect("non-null function pointer")(
-                    (*epi).c2rust_unnamed.pointer.ptr, evb
-                );
+            let callback = (*epi)
+                .pointer_callbacks
+                .as_mut()
+                .and_then(|callbacks| callbacks.print_cb.as_mut());
+            if let Some(callback) = callback {
+                callback(evb);
             } else {
                 evbuffer_add_printf(
                     evb,
@@ -917,15 +912,6 @@ mod tests {
     use crate::src::shared::events::event_payload_item_c2rust_unnamed;
     use std::ffi::{CStr, CString};
 
-    unsafe extern "C" fn count_pointer_release(ptr: *mut ::core::ffi::c_void) {
-        *(ptr as *mut usize) += 1;
-    }
-
-    unsafe extern "C" fn print_binary_pointer(_ptr: *mut ::core::ffi::c_void, evb: *mut evbuffer) {
-        let bytes = b"A\0B";
-        evbuffer_add(evb, bytes.as_ptr().cast(), bytes.len());
-    }
-
     #[test]
     fn printed_pointer_bytes_keep_an_interior_nul() {
         unsafe {
@@ -935,7 +921,10 @@ mod tests {
                 c"binary".as_ptr(),
                 ::core::ptr::null_mut(),
                 None,
-                Some(print_binary_pointer),
+                Some(Box::new(|evb| {
+                    let bytes = b"A\0B";
+                    unsafe { evbuffer_add(evb, bytes.as_ptr().cast(), bytes.len()) };
+                })),
             );
             let item = event_payload_first(ep);
             assert_eq!(event_payload_item_print_owned(item), b"A\0B\0");
@@ -978,16 +967,19 @@ mod tests {
             assert!(event_payload_get_string(ep, name.as_ptr()).is_null());
             assert_eq!((*event_payload_first(ep)).type_0, EVENT_PAYLOAD_INT);
 
-            let mut releases = 0usize;
+            let releases = std::rc::Rc::new(std::cell::Cell::new(0usize));
+            let release_counter = releases.clone();
             event_payload_set_pointer(
                 ep,
                 name.as_ptr(),
-                (&raw mut releases).cast(),
-                Some(count_pointer_release),
+                ::core::ptr::null_mut(),
+                Some(Box::new(move || {
+                    release_counter.set(release_counter.get() + 1);
+                })),
                 None,
             );
             event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), c"".as_ptr());
-            assert_eq!(releases, 1);
+            assert_eq!(releases.get(), 1);
             assert_eq!(
                 CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())),
                 c""

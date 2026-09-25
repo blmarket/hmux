@@ -17,10 +17,9 @@ pub struct event_payload {
     pub target: cmd_find_state,
 }
 
-pub type event_payload_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
+pub type event_payload_free_cb = Option<Box<dyn FnOnce()>>;
 
-pub type event_payload_print_cb =
-    Option<unsafe extern "C" fn(*mut ::core::ffi::c_void, *mut evbuffer) -> ()>;
+pub type event_payload_print_cb = Option<Box<dyn FnMut(*mut evbuffer)>>;
 
 #[repr(C)]
 pub struct event_payload_item {
@@ -29,9 +28,12 @@ pub struct event_payload_item {
     pub c2rust_unnamed: event_payload_item_c2rust_unnamed,
     /// Weak traversal handle into the payload's ordered item map.
     pub(crate) owner: Option<refbox::Weak<event_payload_tree_storage>>,
-    // The Copy payload union also stores borrowed object pointers and callbacks.
-    // Its string variant borrows this allocation until this item is freed.
+    // The Copy payload union also stores borrowed object pointers. Its string
+    // variant borrows this allocation until this item is freed.
     pub(crate) string: Option<std::ffi::CString>,
+    /// Owns local Rust hooks for an opaque pointer payload. The pointer itself
+    /// stays in the Copy union for consumers that retrieve the payload value.
+    pub(crate) pointer_callbacks: Option<event_payload_pointer_callbacks>,
 }
 
 impl event_payload_item {
@@ -42,6 +44,7 @@ impl event_payload_item {
             c2rust_unnamed: Default::default(),
             owner: None,
             string: Default::default(),
+            pointer_callbacks: None,
         }
     }
 }
@@ -119,6 +122,9 @@ impl Default for event_payload_item_c2rust_unnamed {
 #[repr(C)]
 pub struct event_payload_item_c2rust_unnamed_pointer {
     pub ptr: *mut ::core::ffi::c_void,
+}
+
+pub struct event_payload_pointer_callbacks {
     pub free_cb: event_payload_free_cb,
     pub print_cb: event_payload_print_cb,
 }
