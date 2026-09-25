@@ -185,25 +185,25 @@ unsafe extern "C" fn hooks_insert_one(
     return cmdq_append(::core::ptr::null_mut::<client>(), new_item);
 }
 unsafe fn hooks_parse(
-    hd: *mut hooks_data,
-    fs: *mut cmd_find_state,
-    value: *const ::core::ffi::c_char,
+    hd: &hooks_data,
+    fs: &cmd_find_state,
+    value: &CStr,
 ) -> cmd_parse_result {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    if (*hd).expand == 0 {
-        return cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
+    if hd.expand == 0 {
+        return cmd_parse_from_string(value.as_ptr(), ::core::ptr::null_mut::<cmd_parse_input>());
     }
     ft = format_create_defaults(
         ::core::ptr::null_mut::<cmdq_item>(),
-        (*hd).client,
-        (*fs).s,
-        (*fs).wl,
-        (*fs).wp,
+        hd.client,
+        fs.s,
+        fs.wl,
+        fs.wp,
     );
-    if !(*hd).formats.is_null() {
-        format_merge(ft, (*hd).formats);
+    if !hd.formats.is_null() {
+        format_merge(ft, hd.formats);
     }
-    let expanded = format_expand_cstring(ft, value);
+    let expanded = format_expand_cstring(ft, value.as_ptr());
     format_free(ft);
     let pr = cmd_parse_from_string(expanded.as_ptr(), ::core::ptr::null_mut::<cmd_parse_input>());
     return pr;
@@ -277,7 +277,7 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
     cmdq_add_formats(state, (*hd).formats);
     if *(*hd).name as ::core::ffi::c_int == '@' as i32 {
         value = options_get_string(oo, (*hd).name);
-        pr = hooks_parse(hd, &raw mut fs, value);
+        pr = hooks_parse(&*hd, &fs, CStr::from_ptr(value));
         match pr.status as ::core::ffi::c_uint {
             0 => {
                 log_debug(
@@ -297,7 +297,7 @@ unsafe extern "C" fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_d
         while !a.is_null() {
             if (*hd).expand != 0 {
                 value = (*options_array_item_value(a)).string_ptr();
-                pr = hooks_parse(hd, &raw mut fs, value);
+                pr = hooks_parse(&*hd, &fs, CStr::from_ptr(value));
                 match pr.status as ::core::ffi::c_uint {
                     0 => {
                         if let Some(error) = pr.error.as_ref() {
