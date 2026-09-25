@@ -70,20 +70,6 @@ pub static mut cmd_display_message_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_display_message_each(
-    mut key: *const ::core::ffi::c_char,
-    mut value: *const ::core::ffi::c_char,
-    mut arg: *mut ::core::ffi::c_void,
-) {
-    let mut item: *mut cmdq_item = arg as *mut cmdq_item;
-    cmdq_print(
-        item,
-        b"%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-        key,
-        value,
-    );
-}
-
 unsafe extern "C" fn cmd_display_message_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
@@ -174,18 +160,14 @@ unsafe extern "C" fn cmd_display_message_exec(
     ft = format_create(cmdq_get_client(item), item, FORMAT_NONE, flags);
     format_defaults(ft, c, s, wl, wp);
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
-        format_each(
-            ft,
-            Some(
-                cmd_display_message_each
-                    as unsafe extern "C" fn(
-                        *const ::core::ffi::c_char,
-                        *const ::core::ffi::c_char,
-                        *mut ::core::ffi::c_void,
-                    ) -> (),
-            ),
-            item as *mut ::core::ffi::c_void,
-        );
+        format_each(ft, |key, value| unsafe {
+            cmdq_print(
+                item,
+                b"%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
+                key.as_ptr(),
+                value.as_ptr(),
+            );
+        });
         format_free(ft);
         return CMD_RETURN_NORMAL;
     }

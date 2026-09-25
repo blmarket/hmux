@@ -10,6 +10,13 @@ use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
 
+#[derive(Copy, Clone)]
+pub struct mode_tree_help_info {
+    pub width: u_int,
+    pub item: &'static ::std::ffi::CStr,
+    pub lines: &'static [&'static ::std::ffi::CStr],
+}
+
 #[repr(C)]
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
@@ -221,12 +228,7 @@ impl mode_tree_list {
     }
 }
 
-pub type mode_tree_help_cb = Option<
-    unsafe extern "C" fn(
-        *mut u_int,
-        *mut *const ::core::ffi::c_char,
-    ) -> *mut *const ::core::ffi::c_char,
->;
+pub type mode_tree_help_cb = Option<fn() -> mode_tree_help_info>;
 
 pub type mode_tree_sort_cb = Option<unsafe extern "C" fn(*mut sort_criteria) -> ()>;
 

@@ -188,21 +188,11 @@ unsafe extern "C" fn clients_with_window(mut w: *mut window) -> u_int {
     }
     return n;
 }
-unsafe extern "C" fn clients_calculate_size(
+unsafe fn clients_calculate_size(
     mut type_0: ::core::ffi::c_int,
-    mut current: ::core::ffi::c_int,
     mut c: *mut client,
-    mut s: *mut session,
     mut w: *mut window,
-    mut skip_client: Option<
-        unsafe extern "C" fn(
-            *mut client,
-            ::core::ffi::c_int,
-            ::core::ffi::c_int,
-            *mut session,
-            *mut window,
-        ) -> ::core::ffi::c_int,
-    >,
+    mut skip_client: impl FnMut(&client) -> bool,
     mut sx: *mut u_int,
     mut sy: *mut u_int,
     mut xpixel: *mut u_int,
@@ -244,10 +234,7 @@ unsafe extern "C" fn clients_calculate_size(
                         .as_ref()
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 );
-            } else if loop_0 != c
-                && skip_client.expect("non-null function pointer")(loop_0, type_0, current, s, w)
-                    != 0
-            {
+            } else if loop_0 != c && skip_client(&*loop_0) {
                 log_debug(
                     b"%s: skipping %s (1)\0" as *const u8 as *const ::core::ffi::c_char,
                     b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
@@ -327,11 +314,7 @@ unsafe extern "C" fn clients_calculate_size(
         loop_0 = clients.first();
         while !loop_0.is_null() {
             if !(loop_0 != c && ignore_client_size(loop_0) != 0) {
-                if !(loop_0 != c
-                    && skip_client.expect("non-null function pointer")(
-                        loop_0, type_0, current, s, w,
-                    ) != 0)
-                {
+                if !(loop_0 != c && skip_client(&*loop_0)) {
                     if !(!(*loop_0).flags as ::core::ffi::c_ulonglong & CLIENT_WINDOWSIZECHANGED
                         != 0)
                     {
@@ -405,21 +388,6 @@ unsafe extern "C" fn clients_calculate_size(
     }
     return (*sx != UINT_MAX && *sy != UINT_MAX) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn default_window_size_skip_client(
-    mut loop_0: *mut client,
-    _type_0: ::core::ffi::c_int,
-    _current: ::core::ffi::c_int,
-    mut s: *mut session,
-    mut w: *mut window,
-) -> ::core::ffi::c_int {
-    if !w.is_null() && session_has((*loop_0).session, w) == 0 {
-        return 1 as ::core::ffi::c_int;
-    }
-    if w.is_null() && (*loop_0).session != s {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
 #[no_mangle]
 pub unsafe extern "C" fn default_window_size(
     mut c: *mut client,
@@ -458,20 +426,12 @@ pub unsafe extern "C" fn default_window_size(
         }
         if clients_calculate_size(
             type_0,
-            0 as ::core::ffi::c_int,
             c,
-            s,
             w,
-            Some(
-                default_window_size_skip_client
-                    as unsafe extern "C" fn(
-                        *mut client,
-                        ::core::ffi::c_int,
-                        ::core::ffi::c_int,
-                        *mut session,
-                        *mut window,
-                    ) -> ::core::ffi::c_int,
-            ),
+            |candidate| unsafe {
+                (!w.is_null() && session_has(candidate.session, w) == 0)
+                    || (w.is_null() && candidate.session != s)
+            },
             sx,
             sy,
             xpixel,
@@ -519,21 +479,6 @@ pub unsafe extern "C" fn default_window_size(
         *sy,
     );
 }
-unsafe extern "C" fn recalculate_size_skip_client(
-    mut loop_0: *mut client,
-    _type_0: ::core::ffi::c_int,
-    mut current: ::core::ffi::c_int,
-    _s: *mut session,
-    mut w: *mut window,
-) -> ::core::ffi::c_int {
-    if (*(*loop_0).session).curw.is_null() {
-        return 1 as ::core::ffi::c_int;
-    }
-    if current != 0 {
-        return ((*(*(*loop_0).session).curw).window != w) as ::core::ffi::c_int;
-    }
-    return (session_has((*loop_0).session, w) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-}
 #[no_mangle]
 pub unsafe extern "C" fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) {
     let mut sx: u_int = 0;
@@ -563,20 +508,19 @@ pub unsafe extern "C" fn recalculate_size(mut w: *mut window, mut now: ::core::f
     ) as ::core::ffi::c_int;
     changed = clients_calculate_size(
         type_0,
-        current,
         ::core::ptr::null_mut::<client>(),
-        ::core::ptr::null_mut::<session>(),
         w,
-        Some(
-            recalculate_size_skip_client
-                as unsafe extern "C" fn(
-                    *mut client,
-                    ::core::ffi::c_int,
-                    ::core::ffi::c_int,
-                    *mut session,
-                    *mut window,
-                ) -> ::core::ffi::c_int,
-        ),
+        |candidate| unsafe {
+            let session = candidate.session;
+            if session.is_null() || (*session).curw.is_null() {
+                return true;
+            }
+            if current != 0 {
+                (*(*session).curw).window != w
+            } else {
+                session_has(session, w) == 0
+            }
+        },
         &raw mut sx,
         &raw mut sy,
         &raw mut xpixel,

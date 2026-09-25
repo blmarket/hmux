@@ -51,14 +51,7 @@ pub static mut cmd_if_shell_entry: cmd_entry = unsafe {
             template: b"bFt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 2 as ::core::ffi::c_int,
             upper: 3 as ::core::ffi::c_int,
-            cb: Some(
-                cmd_if_shell_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
-            ),
+            cb: Some(cmd_if_shell_args_parse),
         },
         usage: b"[-bF] [-t target-pane] shell-command command [command]\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -78,11 +71,7 @@ pub static mut cmd_if_shell_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_if_shell_args_parse(
-    _args: *mut args,
-    mut idx: u_int,
-    _cause: *mut *mut ::core::ffi::c_char,
-) -> args_parse_type {
+fn cmd_if_shell_args_parse(_args: &mut args, idx: u_int) -> args_parse_type {
     if idx == 1 as u_int || idx == 2 as u_int {
         return ARGS_PARSE_COMMANDS_OR_STRING;
     }

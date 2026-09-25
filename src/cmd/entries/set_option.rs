@@ -44,14 +44,7 @@ pub static mut cmd_set_option_entry: cmd_entry = unsafe {
             template: b"aFgopqst:uUw\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
-            cb: Some(
-                cmd_set_option_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
-            ),
+            cb: Some(cmd_set_option_args_parse),
         },
         usage: b"[-aFgopqsuUw] [-t target-pane] option [value]\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -80,14 +73,7 @@ pub static mut cmd_set_window_option_entry: cmd_entry = unsafe {
             template: b"aFgoqt:u\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
-            cb: Some(
-                cmd_set_option_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
-            ),
+            cb: Some(cmd_set_option_args_parse),
         },
         usage: b"[-aFgoqu] [-t target-window] option [value]\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -116,14 +102,7 @@ pub static mut cmd_set_hook_entry: cmd_entry = unsafe {
             template: b"agpERTt:uB:w\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
-            cb: Some(
-                cmd_set_option_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
-            ),
+            cb: Some(cmd_set_option_args_parse),
         },
         usage: b"[-agpERTuw] [-B name:what:format] [-t target-pane] [hook] [command]\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -143,12 +122,8 @@ pub static mut cmd_set_hook_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_set_option_args_parse(
-    mut args: *mut args,
-    mut idx: u_int,
-    _cause: *mut *mut ::core::ffi::c_char,
-) -> args_parse_type {
-    if args_has(args, 'B' as i32 as u_char) != 0 {
+fn cmd_set_option_args_parse(args: &mut args, idx: u_int) -> args_parse_type {
+    if unsafe { args_has(args as *mut args, 'B' as i32 as u_char) } != 0 {
         return ARGS_PARSE_COMMANDS_OR_STRING;
     }
     if idx == 1 as u_int {

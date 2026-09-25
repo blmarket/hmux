@@ -97,11 +97,6 @@ pub static mut cmd_command_prompt_entry: cmd_entry = unsafe {
             upper: 1 as ::core::ffi::c_int,
             cb: Some(
                 cmd_command_prompt_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
             ),
         },
         usage: b"[-1CbeFiklNP] [-I inputs] [-p prompts] [-t target-client] [-T prompt-type] [template]\0"
@@ -123,11 +118,7 @@ pub static mut cmd_command_prompt_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_command_prompt_args_parse(
-    _args: *mut args,
-    _idx: u_int,
-    _cause: *mut *mut ::core::ffi::c_char,
-) -> args_parse_type {
+fn cmd_command_prompt_args_parse(_args: &mut args, _idx: u_int) -> args_parse_type {
     return ARGS_PARSE_COMMANDS_OR_STRING;
 }
 unsafe extern "C" fn cmd_command_prompt_exec(

@@ -23,14 +23,7 @@ pub static mut cmd_bind_key_entry: cmd_entry = unsafe {
             template: b"nrN:T:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
-            cb: Some(
-                cmd_bind_key_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
-            ),
+            cb: Some(cmd_bind_key_args_parse),
         },
         usage: b"[-nr] [-T key-table] [-N note] key [command [argument ...]]\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -50,11 +43,7 @@ pub static mut cmd_bind_key_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_bind_key_args_parse(
-    _args: *mut args,
-    _idx: u_int,
-    _cause: *mut *mut ::core::ffi::c_char,
-) -> args_parse_type {
+fn cmd_bind_key_args_parse(_args: &mut args, _idx: u_int) -> args_parse_type {
     return ARGS_PARSE_COMMANDS_OR_STRING;
 }
 unsafe extern "C" fn cmd_bind_key_exec(

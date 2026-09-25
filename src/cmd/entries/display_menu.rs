@@ -58,11 +58,6 @@ pub static mut cmd_display_menu_entry: cmd_entry = unsafe {
             upper: -(1 as ::core::ffi::c_int),
             cb: Some(
                 cmd_display_menu_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
             ),
         },
         usage: b"[-MO] [-b border-lines] [-c target-client] [-C starting-choice] [-H selected-style] [-s style] [-S border-style] [-t target-pane] [-T title] [-x position] [-y position] name [key] [command] ...\0"
@@ -115,11 +110,7 @@ pub static mut cmd_display_popup_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_display_menu_args_parse(
-    mut args: *mut args,
-    mut idx: u_int,
-    _cause: *mut *mut ::core::ffi::c_char,
-) -> args_parse_type {
+fn cmd_display_menu_args_parse(args: &mut args, idx: u_int) -> args_parse_type {
     let mut i: u_int = 0 as u_int;
     let mut type_0: args_parse_type = ARGS_PARSE_STRING;
     loop {
@@ -129,7 +120,7 @@ unsafe extern "C" fn cmd_display_menu_args_parse(
         }
         let fresh0 = i;
         i = i.wrapping_add(1);
-        if *args_string(args, fresh0) as ::core::ffi::c_int == '\0' as i32 {
+        if unsafe { *args_string(args as *mut args, fresh0) } as ::core::ffi::c_int == '\0' as i32 {
             continue;
         }
         type_0 = ARGS_PARSE_STRING;

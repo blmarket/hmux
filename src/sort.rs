@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{qsort, strcasecmp, strcmp};
+use crate::src::ffi::libc::{strcasecmp, strcmp};
 use crate::src::key_bindings::{
     key_bindings_first, key_bindings_first_table, key_bindings_next, key_bindings_next_table,
 };
@@ -6,7 +6,6 @@ use crate::src::paste::paste_walk;
 use crate::src::server::clients;
 use crate::src::session::sessions;
 use crate::src::session::{sessions_minmax, sessions_next};
-use crate::src::shared::abi::__compar_fn_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_UNATTACHEDFLAGS};
@@ -19,66 +18,46 @@ use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, winlink};
+use std::cmp::Ordering;
+
 use crate::src::window::{
     window_pane_first, window_pane_index, window_pane_next, window_pane_zindex, winlinks_minmax,
     winlinks_next,
 };
 
-static mut sort_criteria: *mut sort_criteria =
-    ::core::ptr::null::<sort_criteria>() as *mut sort_criteria;
-unsafe extern "C" fn sort_qsort(
-    mut l: *mut ::core::ffi::c_void,
-    mut len: u_int,
-    mut size: u_int,
-    mut cmp: Option<
-        unsafe extern "C" fn(
-            *const ::core::ffi::c_void,
-            *const ::core::ffi::c_void,
-        ) -> ::core::ffi::c_int,
-    >,
-    mut sort_crit: *mut sort_criteria,
+fn sort_ordering(result: ::core::ffi::c_int, reversed: ::core::ffi::c_int) -> Ordering {
+    let ordering = result.cmp(&0);
+    if reversed != 0 {
+        ordering.reverse()
+    } else {
+        ordering
+    }
+}
+
+fn sort_by_criteria<T>(
+    values: &mut [T],
+    sort_crit: &sort_criteria,
+    mut compare: impl FnMut(&T, &T, &sort_criteria) -> Ordering,
 ) {
-    let mut i: u_int = 0;
-    let mut tmp: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-    let mut ll: *mut *mut ::core::ffi::c_void = ::core::ptr::null_mut::<*mut ::core::ffi::c_void>();
-    if len < 2 as u_int
-        || (*sort_crit).order as ::core::ffi::c_uint
-            == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
+    if values.len() < 2 || sort_crit.order == SORT_END {
         return;
     }
-    if (*sort_crit).order as ::core::ffi::c_uint
-        == SORT_ORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if (*sort_crit).reversed != 0 {
-            ll = l as *mut *mut ::core::ffi::c_void;
-            i = 0 as u_int;
-            while i < len.wrapping_div(2 as u_int) {
-                tmp = *ll.offset(i as isize);
-                let ref mut fresh2 = *ll.offset(i as isize);
-                *fresh2 = *ll.offset(len.wrapping_sub(1 as u_int).wrapping_sub(i) as isize);
-                let ref mut fresh3 =
-                    *ll.offset(len.wrapping_sub(1 as u_int).wrapping_sub(i) as isize);
-                *fresh3 = tmp;
-                i = i.wrapping_add(1);
-            }
+    if sort_crit.order == SORT_ORDER {
+        if sort_crit.reversed != 0 {
+            values.reverse();
         }
-    } else {
-        sort_criteria = sort_crit;
-        qsort(l, len as size_t, size as size_t, cmp as __compar_fn_t);
-    };
+        return;
+    }
+    values.sort_unstable_by(|a, b| compare(a, b, sort_crit));
 }
-unsafe extern "C" fn sort_buffer_cmp(
-    mut a0: *const ::core::ffi::c_void,
-    mut b0: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut sort_crit: *mut sort_criteria = sort_criteria;
-    let mut a: *const *const paste_buffer = a0 as *const *const paste_buffer;
-    let mut b: *const *const paste_buffer = b0 as *const *const paste_buffer;
-    let mut pa: *const paste_buffer = *a;
-    let mut pb: *const paste_buffer = *b;
+
+unsafe fn sort_buffer_cmp(
+    pa: *mut paste_buffer,
+    pb: *mut paste_buffer,
+    sort_crit: &sort_criteria,
+) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match (*sort_crit).order as ::core::ffi::c_uint {
+    match sort_crit.order as ::core::ffi::c_uint {
         4 => {
             result = strcmp(
                 ((*pa).name).as_ptr().cast_mut(),
@@ -105,22 +84,11 @@ unsafe extern "C" fn sort_buffer_cmp(
             ((*pb).name).as_ptr().cast_mut(),
         );
     }
-    if (*sort_crit).reversed != 0 {
-        result = -result;
-    }
-    return result;
+    return sort_ordering(result, sort_crit.reversed);
 }
-unsafe extern "C" fn sort_client_cmp(
-    mut a0: *const ::core::ffi::c_void,
-    mut b0: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut sort_crit: *mut sort_criteria = sort_criteria;
-    let mut a: *const *const client = a0 as *const *const client;
-    let mut b: *const *const client = b0 as *const *const client;
-    let mut ca: *const client = *a;
-    let mut cb: *const client = *b;
+unsafe fn sort_client_cmp(ca: *mut client, cb: *mut client, sort_crit: &sort_criteria) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match (*sort_crit).order as ::core::ffi::c_uint {
+    match sort_crit.order as ::core::ffi::c_uint {
         4 => {
             result = strcmp(
                 ((*ca).name)
@@ -183,22 +151,15 @@ unsafe extern "C" fn sort_client_cmp(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
     }
-    if (*sort_crit).reversed != 0 {
-        result = -result;
-    }
-    return result;
+    return sort_ordering(result, sort_crit.reversed);
 }
-unsafe extern "C" fn sort_session_cmp(
-    mut a0: *const ::core::ffi::c_void,
-    mut b0: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut sort_crit: *mut sort_criteria = sort_criteria;
-    let mut a: *const *const session = a0 as *const *const session;
-    let mut b: *const *const session = b0 as *const *const session;
-    let mut sa: *const session = *a;
-    let mut sb: *const session = *b;
+unsafe fn sort_session_cmp(
+    sa: *mut session,
+    sb: *mut session,
+    sort_crit: &sort_criteria,
+) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match (*sort_crit).order as ::core::ffi::c_uint {
+    match sort_crit.order as ::core::ffi::c_uint {
         2 => {
             result = (*sa).id.wrapping_sub((*sb).id) as ::core::ffi::c_int;
         }
@@ -250,22 +211,17 @@ unsafe extern "C" fn sort_session_cmp(
             ((*sb).name).as_ptr().cast_mut(),
         );
     }
-    if (*sort_crit).reversed != 0 {
-        result = -result;
-    }
-    return result;
+    return sort_ordering(result, sort_crit.reversed);
 }
-unsafe extern "C" fn sort_pane_cmp(
-    mut a0: *const ::core::ffi::c_void,
-    mut b0: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut sort_crit: *mut sort_criteria = sort_criteria;
-    let mut a: *mut window_pane = *(a0 as *mut *mut window_pane);
-    let mut b: *mut window_pane = *(b0 as *mut *mut window_pane);
+unsafe fn sort_pane_cmp(
+    a: *mut window_pane,
+    b: *mut window_pane,
+    sort_crit: &sort_criteria,
+) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut ai: u_int = 0;
     let mut bi: u_int = 0;
-    match (*sort_crit).order as ::core::ffi::c_uint {
+    match sort_crit.order as ::core::ffi::c_uint {
         0 => {
             result = (*a).active_point.wrapping_sub((*b).active_point) as ::core::ffi::c_int;
         }
@@ -297,24 +253,17 @@ unsafe extern "C" fn sort_pane_cmp(
     if result == 0 as ::core::ffi::c_int {
         result = strcmp((*(*a).screen).title.as_ptr(), (*(*b).screen).title.as_ptr());
     }
-    if (*sort_crit).reversed != 0 {
-        result = -result;
-    }
-    return result;
+    return sort_ordering(result, sort_crit.reversed);
 }
-unsafe extern "C" fn sort_winlink_cmp(
-    mut a0: *const ::core::ffi::c_void,
-    mut b0: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut sort_crit: *mut sort_criteria = sort_criteria;
-    let mut a: *const *const winlink = a0 as *const *const winlink;
-    let mut b: *const *const winlink = b0 as *const *const winlink;
-    let mut wla: *const winlink = *a;
-    let mut wlb: *const winlink = *b;
+unsafe fn sort_winlink_cmp(
+    wla: *mut winlink,
+    wlb: *mut winlink,
+    sort_crit: &sort_criteria,
+) -> Ordering {
     let mut wa: *mut window = (*wla).window;
     let mut wb: *mut window = (*wlb).window;
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match (*sort_crit).order as ::core::ffi::c_uint {
+    match sort_crit.order as ::core::ffi::c_uint {
         2 => {
             result = (*wla).idx - (*wlb).idx;
         }
@@ -367,20 +316,15 @@ unsafe extern "C" fn sort_winlink_cmp(
     if result == 0 as ::core::ffi::c_int {
         result = strcmp((*wa).name.as_ptr(), (*wb).name.as_ptr());
     }
-    if (*sort_crit).reversed != 0 {
-        result = -result;
-    }
-    return result;
+    return sort_ordering(result, sort_crit.reversed);
 }
-unsafe extern "C" fn sort_key_binding_cmp(
-    mut a0: *const ::core::ffi::c_void,
-    mut b0: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut sort_crit: *mut sort_criteria = sort_criteria;
-    let mut a: *const key_binding = *(a0 as *mut *mut key_binding);
-    let mut b: *const key_binding = *(b0 as *mut *mut key_binding);
+unsafe fn sort_key_binding_cmp(
+    a: *mut key_binding,
+    b: *mut key_binding,
+    sort_crit: &sort_criteria,
+) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match (*sort_crit).order as ::core::ffi::c_uint {
+    match sort_crit.order as ::core::ffi::c_uint {
         2 => {
             result = (*a).key.wrapping_sub((*b).key) as ::core::ffi::c_int;
         }
@@ -411,10 +355,7 @@ unsafe extern "C" fn sort_key_binding_cmp(
                 .map_or(::core::ptr::null(), |s| s.as_ptr()),
         ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     }
-    if (*sort_crit).reversed != 0 {
-        result = -result;
-    }
-    return result;
+    return sort_ordering(result, sort_crit.reversed);
 }
 #[no_mangle]
 pub unsafe extern "C" fn sort_next_order(mut sort_crit: *mut sort_criteria) {
@@ -544,11 +485,7 @@ pub unsafe extern "C" fn sort_would_window_tree_swap(
     {
         return 0 as ::core::ffi::c_int;
     }
-    sort_criteria = sort_crit;
-    return (sort_winlink_cmp(
-        &raw mut wla as *const ::core::ffi::c_void,
-        &raw mut wlb as *const ::core::ffi::c_void,
-    ) != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+    return (sort_winlink_cmp(wla, wlb, &*sort_crit) != Ordering::Equal) as ::core::ffi::c_int;
 }
 pub unsafe fn sort_get_buffers(sort_crit: *mut sort_criteria) -> Vec<*mut paste_buffer> {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
@@ -560,19 +497,9 @@ pub unsafe fn sort_get_buffers(sort_crit: *mut sort_criteria) -> Vec<*mut paste_
         }
         buffers.push(pb);
     }
-    sort_qsort(
-        buffers.as_mut_ptr() as *mut ::core::ffi::c_void,
-        u_int::try_from(buffers.len()).expect("too many paste buffers to sort"),
-        ::core::mem::size_of::<*mut paste_buffer>() as u_int,
-        Some(
-            sort_buffer_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
+    sort_by_criteria(&mut buffers, &*sort_crit, |a, b, criteria| unsafe {
+        sort_buffer_cmp(*a, *b, criteria)
+    });
     buffers
 }
 pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<*mut client> {
@@ -586,19 +513,9 @@ pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<*mut client
         }
         c = clients.next(c);
     }
-    sort_qsort(
-        clients_sorted.as_mut_ptr() as *mut ::core::ffi::c_void,
-        u_int::try_from(clients_sorted.len()).expect("too many clients to sort"),
-        ::core::mem::size_of::<*mut client>() as u_int,
-        Some(
-            sort_client_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
+    sort_by_criteria(&mut clients_sorted, &*sort_crit, |a, b, criteria| unsafe {
+        sort_client_cmp(*a, *b, criteria)
+    });
     clients_sorted
 }
 pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut session> {
@@ -608,19 +525,9 @@ pub unsafe fn sort_get_sessions(sort_crit: *mut sort_criteria) -> Vec<*mut sessi
         l.push(s);
         s = sessions_next(&*s);
     }
-    sort_qsort(
-        l.as_mut_ptr() as *mut ::core::ffi::c_void,
-        u_int::try_from(l.len()).expect("too many sessions to sort"),
-        ::core::mem::size_of::<*mut session>() as u_int,
-        Some(
-            sort_session_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
+    sort_by_criteria(&mut l, &*sort_crit, |a, b, criteria| unsafe {
+        sort_session_cmp(*a, *b, criteria)
+    });
     l
 }
 pub unsafe fn sort_get_panes_window(
@@ -633,19 +540,9 @@ pub unsafe fn sort_get_panes_window(
         panes.push(wp);
         wp = window_pane_next(wp);
     }
-    sort_qsort(
-        panes.as_mut_ptr() as *mut ::core::ffi::c_void,
-        u_int::try_from(panes.len()).expect("too many panes to sort"),
-        ::core::mem::size_of::<*mut window_pane>() as u_int,
-        Some(
-            sort_pane_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
+    sort_by_criteria(&mut panes, &*sort_crit, |a, b, criteria| unsafe {
+        sort_pane_cmp(*a, *b, criteria)
+    });
     panes
 }
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winlink> {
@@ -659,19 +556,9 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<*mut winli
         }
         s = sessions_next(&*s);
     }
-    sort_qsort(
-        links.as_mut_ptr() as *mut ::core::ffi::c_void,
-        u_int::try_from(links.len()).expect("too many winlinks to sort"),
-        ::core::mem::size_of::<*mut winlink>() as u_int,
-        Some(
-            sort_winlink_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
+    sort_by_criteria(&mut links, &*sort_crit, |a, b, criteria| unsafe {
+        sort_winlink_cmp(*a, *b, criteria)
+    });
     links
 }
 pub unsafe fn sort_get_winlinks_session(
@@ -684,19 +571,9 @@ pub unsafe fn sort_get_winlinks_session(
         l.push(wl);
         wl = winlinks_next(&*wl);
     }
-    sort_qsort(
-        l.as_mut_ptr() as *mut ::core::ffi::c_void,
-        u_int::try_from(l.len()).expect("too many winlinks to sort"),
-        ::core::mem::size_of::<*mut winlink>() as u_int,
-        Some(
-            sort_winlink_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
+    sort_by_criteria(&mut l, &*sort_crit, |a, b, criteria| unsafe {
+        sort_winlink_cmp(*a, *b, criteria)
+    });
     l
 }
 pub unsafe fn sort_get_key_bindings(sort_crit: *mut sort_criteria) -> Vec<*mut key_binding> {
@@ -710,19 +587,9 @@ pub unsafe fn sort_get_key_bindings(sort_crit: *mut sort_criteria) -> Vec<*mut k
         }
         table = key_bindings_next_table(table);
     }
-    sort_qsort(
-        bindings.as_mut_ptr() as *mut ::core::ffi::c_void,
-        u_int::try_from(bindings.len()).expect("too many key bindings to sort"),
-        ::core::mem::size_of::<*mut key_binding>() as u_int,
-        Some(
-            sort_key_binding_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
+    sort_by_criteria(&mut bindings, &*sort_crit, |a, b, criteria| unsafe {
+        sort_key_binding_cmp(*a, *b, criteria)
+    });
     bindings
 }
 pub unsafe fn sort_get_key_bindings_table(
@@ -738,18 +605,8 @@ pub unsafe fn sort_get_key_bindings_table(
         bindings.push(bd);
         bd = key_bindings_next(table, bd);
     }
-    sort_qsort(
-        bindings.as_mut_ptr() as *mut ::core::ffi::c_void,
-        u_int::try_from(bindings.len()).expect("too many key bindings to sort"),
-        ::core::mem::size_of::<*mut key_binding>() as u_int,
-        Some(
-            sort_key_binding_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-        sort_crit,
-    );
+    sort_by_criteria(&mut bindings, &*sort_crit, |a, b, criteria| unsafe {
+        sort_key_binding_cmp(*a, *b, criteria)
+    });
     bindings
 }

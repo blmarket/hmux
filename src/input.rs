@@ -66,7 +66,6 @@ use crate::src::xmalloc::{xsnprintf, xvasprintf_cstring};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
-use crate::src::shared::abi::__compar_fn_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
@@ -448,40 +447,11 @@ pub const INPUT_CSI_CBT: input_csi_type = 0;
 pub type input_esc_type = ::core::ffi::c_uint;
 pub type input_csi_type = ::core::ffi::c_uint;
 
-#[inline]
-unsafe extern "C" fn bsearch(
-    mut __key: *const ::core::ffi::c_void,
-    mut __base: *const ::core::ffi::c_void,
-    mut __nmemb: size_t,
-    mut __size: size_t,
-    mut __compar: __compar_fn_t,
-) -> *mut ::core::ffi::c_void {
-    let mut __p: *const ::core::ffi::c_void = ::core::ptr::null::<::core::ffi::c_void>();
-    let mut __comparison: ::core::ffi::c_int = 0;
-    while __nmemb != 0 {
-        __p = (__base as *const ::core::ffi::c_char)
-            .offset((__nmemb >> 1 as ::core::ffi::c_int).wrapping_mul(__size) as isize)
-            as *const ::core::ffi::c_void;
-        __comparison = Some(__compar.expect("non-null function pointer"))
-            .expect("non-null function pointer")(__key, __p);
-        if __comparison == 0 as ::core::ffi::c_int {
-            return __p as *mut ::core::ffi::c_void;
-        }
-        if __comparison > 0 as ::core::ffi::c_int {
-            __base = (__p as *const ::core::ffi::c_char).offset(__size as isize)
-                as *const ::core::ffi::c_void;
-            __nmemb = __nmemb.wrapping_sub(1);
-        }
-        __nmemb >>= 1 as ::core::ffi::c_int;
-    }
-    return NULL;
-}
-
 pub const INPUT_REQUEST_TIMEOUT: ::core::ffi::c_int = 500 as ::core::ffi::c_int;
 pub const INPUT_BUF_START: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
 pub const INPUT_DISCARD: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const INPUT_LAST: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-static mut input_esc_table: [input_table_entry; 15] = [
+static input_esc_table: [input_table_entry; 15] = [
     input_table_entry {
         ch: '0' as i32,
         interm: c"(",
@@ -558,7 +528,7 @@ static mut input_esc_table: [input_table_entry; 15] = [
         type_0: INPUT_ESC_RIS as ::core::ffi::c_int,
     },
 ];
-static mut input_csi_table: [input_table_entry; 43] = [
+static input_csi_table: [input_table_entry; 43] = [
     input_table_entry {
         ch: '@' as i32,
         interm: c"",
@@ -775,6 +745,21 @@ static mut input_csi_table: [input_table_entry; 43] = [
         type_0: INPUT_CSI_RCP as ::core::ffi::c_int,
     },
 ];
+unsafe fn input_table_find<'a>(
+    table: &'a [input_table_entry],
+    ictx: &input_ctx,
+) -> Option<&'a input_table_entry> {
+    let interm = CStr::from_ptr(ictx.interm_buf.as_ptr().cast());
+    table
+        .binary_search_by(|entry| {
+            entry
+                .ch
+                .cmp(&ictx.ch)
+                .then_with(|| entry.interm.to_bytes().cmp(interm.to_bytes()))
+        })
+        .ok()
+        .map(|index| &table[index])
+}
 static mut input_state_ground: input_state = unsafe {
     input_state {
         name: c"ground",
@@ -2258,20 +2243,6 @@ static mut input_state_consume_st_table: [input_transition; 8] = unsafe {
     ]
 };
 static mut input_buffer_size: size_t = INPUT_BUF_DEFAULT_SIZE as size_t;
-unsafe extern "C" fn input_table_compare(
-    mut key: *const ::core::ffi::c_void,
-    mut value: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut ictx: *const input_ctx = key as *const input_ctx;
-    let mut entry: *const input_table_entry = value as *const input_table_entry;
-    if (*ictx).ch != (*entry).ch {
-        return (*ictx).ch - (*entry).ch;
-    }
-    return strcmp(
-        &raw const (*ictx).interm_buf as *const u_char as *const ::core::ffi::c_char,
-        (*entry).interm.as_ptr(),
-    );
-}
 unsafe extern "C" fn input_stop_utf8(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     static mut rc: utf8_data = unsafe {
@@ -2951,20 +2922,9 @@ unsafe extern "C" fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
         (*ictx).ch,
         &raw mut (*ictx).interm_buf as *mut u_char,
     );
-    entry = bsearch(
-        ictx as *const ::core::ffi::c_void,
-        &raw const input_esc_table as *const input_table_entry as *const ::core::ffi::c_void,
-        (::core::mem::size_of::<[input_table_entry; 15]>() as size_t)
-            .wrapping_div(::core::mem::size_of::<input_table_entry>() as size_t),
-        ::core::mem::size_of::<input_table_entry>() as size_t,
-        Some(
-            input_table_compare
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    ) as *const input_table_entry;
+    entry = input_table_find(&input_esc_table, &*ictx).map_or(::core::ptr::null(), |entry| {
+        entry as *const input_table_entry
+    });
     if entry.is_null() {
         log_debug(
             b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3054,20 +3014,9 @@ unsafe extern "C" fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi
     if input_split(ictx) != 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    entry = bsearch(
-        ictx as *const ::core::ffi::c_void,
-        &raw const input_csi_table as *const input_table_entry as *const ::core::ffi::c_void,
-        (::core::mem::size_of::<[input_table_entry; 43]>() as size_t)
-            .wrapping_div(::core::mem::size_of::<input_table_entry>() as size_t),
-        ::core::mem::size_of::<input_table_entry>() as size_t,
-        Some(
-            input_table_compare
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    ) as *const input_table_entry;
+    entry = input_table_find(&input_csi_table, &*ictx).map_or(::core::ptr::null(), |entry| {
+        entry as *const input_table_entry
+    });
     if entry.is_null() {
         log_debug(
             b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,

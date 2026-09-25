@@ -49,18 +49,52 @@ pub(super) unsafe fn format_entry_ensure_value(ft: *mut format_tree, fe: *mut fo
     if !(*fe).value.is_none() {
         return;
     }
-    let owned_cb = (*(fe as *mut format_entry)).owned_cb;
+    let key = (*fe).key.clone();
+    let owned_cb = (*fe).owned_cb;
+    let legacy_cb = (*fe).cb;
     if let Some(callback) = owned_cb {
         let value = callback(ft).unwrap_or_default();
-        format_entry_set_value(&mut *fe, Some(value));
-    } else if let Some(callback) = (*fe).cb {
+        let current = format_entry_tree_find_key(&mut (*ft).tree, key.as_c_str());
+        if current == fe
+            && !current.is_null()
+            && (*current).owned_cb == Some(callback)
+            && (*current).value.is_none()
+        {
+            format_entry_set_value(&mut *current, Some(value));
+        }
+    } else if let Some(callback) = legacy_cb {
         let value = callback(ft) as *mut ::core::ffi::c_char;
-        format_entry_cache_callback(fe, value);
+        let current = format_entry_tree_find_key(&mut (*ft).tree, key.as_c_str());
+        if current != fe
+            || current.is_null()
+            || (*current).cb != Some(callback)
+            || !(*current).value.is_none()
+        {
+            if !value.is_null() {
+                free(value.cast());
+            }
+            return;
+        }
+        format_entry_cache_callback(current, value);
     }
 }
 
 fn format_entry_tree_key(elm: &format_entry) -> Vec<u8> {
     elm.key.as_bytes().to_vec()
+}
+
+unsafe fn format_entry_tree_find_key(
+    head: *mut format_entry_tree,
+    key: &CStr,
+) -> *mut format_entry {
+    if head.is_null() || (*head).entries.is_null() {
+        return ::core::ptr::null_mut();
+    }
+    (*(*head).entries)
+        .entries
+        .get(key.to_bytes())
+        .copied()
+        .unwrap_or(::core::ptr::null_mut())
 }
 
 pub(super) unsafe fn format_entry_tree_find(
@@ -229,19 +263,6 @@ pub unsafe extern "C" fn format_free(mut ft: *mut format_tree) {
     }
     drop(Box::from_raw(ft));
 }
-pub(super) unsafe extern "C" fn format_log_debug_cb(
-    mut key: *const ::core::ffi::c_char,
-    mut value: *const ::core::ffi::c_char,
-    mut arg: *mut ::core::ffi::c_void,
-) {
-    let mut prefix: *const ::core::ffi::c_char = arg as *const ::core::ffi::c_char;
-    log_debug(
-        b"%s: %s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-        prefix,
-        key,
-        value,
-    );
-}
 #[no_mangle]
 pub unsafe extern "C" fn format_log_debug(
     mut ft: *mut format_tree,
@@ -250,31 +271,16 @@ pub unsafe extern "C" fn format_log_debug(
     if log_get_level() == 0 as ::core::ffi::c_int {
         return;
     }
-    format_each(
-        ft,
-        Some(
-            format_log_debug_cb
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_char,
-                    *const ::core::ffi::c_char,
-                    *mut ::core::ffi::c_void,
-                ) -> (),
-        ),
-        prefix as *mut ::core::ffi::c_void,
-    );
+    format_each(ft, |key, value| {
+        log_debug(
+            b"%s: %s=%s\0" as *const u8 as *const ::core::ffi::c_char,
+            prefix,
+            key.as_ptr(),
+            value.as_ptr(),
+        );
+    });
 }
-#[no_mangle]
-pub unsafe extern "C" fn format_each(
-    mut ft: *mut format_tree,
-    mut cb: Option<
-        unsafe extern "C" fn(
-            *const ::core::ffi::c_char,
-            *const ::core::ffi::c_char,
-            *mut ::core::ffi::c_void,
-        ) -> (),
-    >,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)) {
     let mut fe: *mut format_entry;
     let mut s: [::core::ffi::c_char; 64] = [0; 64];
     for entry in &FORMAT_TABLE {
@@ -285,10 +291,20 @@ pub unsafe extern "C" fn format_each(
                 CString::new(value.to_string()).expect("timestamp contains no NUL")
             }
         };
-        cb.expect("non-null function pointer")(entry.key.as_ptr(), value.as_ptr(), arg);
+        cb(entry.key, value.as_c_str());
     }
+    let mut values = Vec::new();
     fe = format_entry_tree_minmax(&raw mut (*ft).tree, RB_NEGINF);
+    let mut keys = Vec::new();
     while !fe.is_null() {
+        keys.push((*fe).key.clone());
+        fe = format_entry_tree_next(&raw mut (*ft).tree, fe);
+    }
+    for key in keys {
+        fe = format_entry_tree_find_key(&raw mut (*ft).tree, key.as_c_str());
+        if fe.is_null() {
+            continue;
+        }
         if (*fe).time != 0 as time_t {
             xsnprintf(
                 &raw mut s as *mut ::core::ffi::c_char,
@@ -296,22 +312,19 @@ pub unsafe extern "C" fn format_each(
                 b"%lld\0" as *const u8 as *const ::core::ffi::c_char,
                 (*fe).time as ::core::ffi::c_longlong,
             );
-            cb.expect("non-null function pointer")(
-                ((*fe).key).as_ptr().cast_mut(),
-                &raw mut s as *mut ::core::ffi::c_char,
-                arg,
-            );
+            values.push((key, CStr::from_ptr((&raw const s).cast()).to_owned()));
         } else {
             format_entry_ensure_value(ft, fe);
-            cb.expect("non-null function pointer")(
-                ((*fe).key).as_ptr().cast_mut(),
-                ((*fe).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                arg,
-            );
+            fe = format_entry_tree_find_key(&raw mut (*ft).tree, key.as_c_str());
+            if !fe.is_null() {
+                if let Some(value) = (*fe).value.as_ref() {
+                    values.push(((*fe).key.clone(), value.clone()));
+                }
+            }
         }
-        fe = format_entry_tree_next(&raw mut (*ft).tree, fe);
+    }
+    for (key, value) in values {
+        cb(key.as_c_str(), value.as_c_str());
     }
 }
 #[no_mangle]

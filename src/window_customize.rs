@@ -65,7 +65,7 @@ use crate::src::shared::key::{key_binding, key_table};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_item};
+use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
 use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
@@ -2903,40 +2903,26 @@ unsafe extern "C" fn window_customize_height(
 ) -> u_int {
     return 12 as u_int;
 }
-static mut window_customize_help_lines: [*const ::core::ffi::c_char; 13] = [
-    b"#[fg=themelightgrey]   Enter, s #[#{E:tree-mode-border-style},acs]x#[default] Set %1 value\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          S #[#{E:tree-mode-border-style},acs]x#[default] Set global %1 value\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          w #[#{E:tree-mode-border-style},acs]x#[default] Set window %1 value\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          d #[#{E:tree-mode-border-style},acs]x#[default] Set to default value\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          D #[#{E:tree-mode-border-style},acs]x#[default] Set tagged %1s to default value\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          u #[#{E:tree-mode-border-style},acs]x#[default] Unset an %1\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          U #[#{E:tree-mode-border-style},acs]x#[default] Unset tagged %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          a #[#{E:tree-mode-border-style},acs]x#[default] Change array key\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          e #[#{E:tree-mode-border-style},acs]x#[default] Open %1 value in editor\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          f #[#{E:tree-mode-border-style},acs]x#[default] Enter a filter\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          C #[#{E:tree-mode-border-style},acs]x#[default] Toggle only changed items\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          v #[#{E:tree-mode-border-style},acs]x#[default] Toggle information\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    ::core::ptr::null::<::core::ffi::c_char>(),
+static window_customize_help_lines: &[&'static CStr] = &[
+    c"#[fg=themelightgrey]   Enter, s #[#{E:tree-mode-border-style},acs]x#[default] Set %1 value",
+    c"#[fg=themelightgrey]          S #[#{E:tree-mode-border-style},acs]x#[default] Set global %1 value",
+    c"#[fg=themelightgrey]          w #[#{E:tree-mode-border-style},acs]x#[default] Set window %1 value",
+    c"#[fg=themelightgrey]          d #[#{E:tree-mode-border-style},acs]x#[default] Set to default value",
+    c"#[fg=themelightgrey]          D #[#{E:tree-mode-border-style},acs]x#[default] Set tagged %1s to default value",
+    c"#[fg=themelightgrey]          u #[#{E:tree-mode-border-style},acs]x#[default] Unset an %1",
+    c"#[fg=themelightgrey]          U #[#{E:tree-mode-border-style},acs]x#[default] Unset tagged %1s",
+    c"#[fg=themelightgrey]          a #[#{E:tree-mode-border-style},acs]x#[default] Change array key",
+    c"#[fg=themelightgrey]          e #[#{E:tree-mode-border-style},acs]x#[default] Open %1 value in editor",
+    c"#[fg=themelightgrey]          f #[#{E:tree-mode-border-style},acs]x#[default] Enter a filter",
+    c"#[fg=themelightgrey]          C #[#{E:tree-mode-border-style},acs]x#[default] Toggle only changed items",
+    c"#[fg=themelightgrey]          v #[#{E:tree-mode-border-style},acs]x#[default] Toggle information",
 ];
-unsafe extern "C" fn window_customize_help(
-    mut width: *mut u_int,
-    mut item: *mut *const ::core::ffi::c_char,
-) -> *mut *const ::core::ffi::c_char {
-    *width = 52 as u_int;
-    *item = b"item\0" as *const u8 as *const ::core::ffi::c_char;
-    return &raw mut window_customize_help_lines as *mut *const ::core::ffi::c_char;
+fn window_customize_help() -> mode_tree_help_info {
+    mode_tree_help_info {
+        width: 52 as u_int,
+        item: c"item",
+        lines: window_customize_help_lines,
+    }
 }
 unsafe extern "C" fn window_customize_init(
     mut wme: *mut window_mode_entry,
@@ -3006,13 +2992,7 @@ unsafe extern "C" fn window_customize_init(
         None,
         None,
         None,
-        Some(
-            window_customize_help
-                as unsafe extern "C" fn(
-                    *mut u_int,
-                    *mut *const ::core::ffi::c_char,
-                ) -> *mut *const ::core::ffi::c_char,
-        ),
+        Some(window_customize_help),
         data as *mut ::core::ffi::c_void,
         &raw const window_customize_menu_items as *const menu_item,
         &raw mut s,

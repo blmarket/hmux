@@ -44,7 +44,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_item};
+use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
@@ -1530,8 +1530,7 @@ unsafe extern "C" fn window_tree_search(
                     as ::core::ffi::c_int;
             }
             return (strstr((*(*wl).window).name.as_ptr().cast_mut(), ss)
-                != NULL as *mut ::core::ffi::c_char)
-                as ::core::ffi::c_int;
+                != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
         }
         3 => {
             if !(s.is_null() || wl.is_null() || wp.is_null()) {
@@ -1704,42 +1703,27 @@ unsafe extern "C" fn window_tree_sort(mut sort_crit: *mut sort_criteria) {
             .offset(0 as ::core::ffi::c_int as isize);
     }
 }
-static mut window_tree_help_lines: [*const ::core::ffi::c_char; 14] = [
-    b"#[fg=themelightgrey]      Enter #[#{E:tree-mode-border-style},acs]x#[default] Choose selected item\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]       S-Up #[#{E:tree-mode-border-style},acs]x#[default] Swap current and previous window\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]     S-Down #[#{E:tree-mode-border-style},acs]x#[default] Swap current and next window\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          x #[#{E:tree-mode-border-style},acs]x#[default] Kill selected item\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          X #[#{E:tree-mode-border-style},acs]x#[default] Kill tagged items\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          < #[#{E:tree-mode-border-style},acs]x#[default] Scroll previews left\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          > #[#{E:tree-mode-border-style},acs]x#[default] Scroll previews right\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          m #[#{E:tree-mode-border-style},acs]x#[default] Set the marked pane\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          M #[#{E:tree-mode-border-style},acs]x#[default] Clear the marked pane\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          i #[#{E:tree-mode-border-style},acs]x#[default] Toggle session, window and pane information\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          : #[#{E:tree-mode-border-style},acs]x#[default] Run a command for each tagged item\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          f #[#{E:tree-mode-border-style},acs]x#[default] Enter a format\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          H #[#{E:tree-mode-border-style},acs]x#[default] Jump to the starting pane\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    ::core::ptr::null::<::core::ffi::c_char>(),
+static window_tree_help_lines: &[&'static CStr] = &[
+    c"#[fg=themelightgrey]      Enter #[#{E:tree-mode-border-style},acs]x#[default] Choose selected item",
+    c"#[fg=themelightgrey]       S-Up #[#{E:tree-mode-border-style},acs]x#[default] Swap current and previous window",
+    c"#[fg=themelightgrey]     S-Down #[#{E:tree-mode-border-style},acs]x#[default] Swap current and next window",
+    c"#[fg=themelightgrey]          x #[#{E:tree-mode-border-style},acs]x#[default] Kill selected item",
+    c"#[fg=themelightgrey]          X #[#{E:tree-mode-border-style},acs]x#[default] Kill tagged items",
+    c"#[fg=themelightgrey]          < #[#{E:tree-mode-border-style},acs]x#[default] Scroll previews left",
+    c"#[fg=themelightgrey]          > #[#{E:tree-mode-border-style},acs]x#[default] Scroll previews right",
+    c"#[fg=themelightgrey]          m #[#{E:tree-mode-border-style},acs]x#[default] Set the marked pane",
+    c"#[fg=themelightgrey]          M #[#{E:tree-mode-border-style},acs]x#[default] Clear the marked pane",
+    c"#[fg=themelightgrey]          i #[#{E:tree-mode-border-style},acs]x#[default] Toggle session, window and pane information",
+    c"#[fg=themelightgrey]          : #[#{E:tree-mode-border-style},acs]x#[default] Run a command for each tagged item",
+    c"#[fg=themelightgrey]          f #[#{E:tree-mode-border-style},acs]x#[default] Enter a format",
+    c"#[fg=themelightgrey]          H #[#{E:tree-mode-border-style},acs]x#[default] Jump to the starting pane",
 ];
-unsafe extern "C" fn window_tree_help(
-    mut width: *mut u_int,
-    mut item: *mut *const ::core::ffi::c_char,
-) -> *mut *const ::core::ffi::c_char {
-    *width = 51 as u_int;
-    *item = b"item\0" as *const u8 as *const ::core::ffi::c_char;
-    return &raw mut window_tree_help_lines as *mut *const ::core::ffi::c_char;
+fn window_tree_help() -> mode_tree_help_info {
+    mode_tree_help_info {
+        width: 51 as u_int,
+        item: c"item",
+        lines: window_tree_help_lines,
+    }
 }
 unsafe extern "C" fn window_tree_init(
     mut wme: *mut window_mode_entry,
@@ -1861,13 +1845,7 @@ unsafe extern "C" fn window_tree_init(
                 ) -> ::core::ffi::c_int,
         ),
         Some(window_tree_sort as unsafe extern "C" fn(*mut sort_criteria) -> ()),
-        Some(
-            window_tree_help
-                as unsafe extern "C" fn(
-                    *mut u_int,
-                    *mut *const ::core::ffi::c_char,
-                ) -> *mut *const ::core::ffi::c_char,
-        ),
+        Some(window_tree_help),
         data as *mut ::core::ffi::c_void,
         &raw const window_tree_menu_items as *const menu_item,
         &raw mut s,

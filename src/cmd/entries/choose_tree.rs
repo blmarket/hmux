@@ -33,11 +33,6 @@ pub static mut cmd_choose_tree_entry: cmd_entry = unsafe {
             upper: 1 as ::core::ffi::c_int,
             cb: Some(
                 cmd_choose_tree_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
             ),
         },
         usage: b"[-GhkNrswZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]\0"
@@ -70,11 +65,6 @@ pub static mut cmd_choose_client_entry: cmd_entry = unsafe {
             upper: 1 as ::core::ffi::c_int,
             cb: Some(
                 cmd_choose_tree_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
             ),
         },
         usage: b"[-hikNrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]\0"
@@ -107,11 +97,6 @@ pub static mut cmd_choose_buffer_entry: cmd_entry = unsafe {
             upper: 1 as ::core::ffi::c_int,
             cb: Some(
                 cmd_choose_tree_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
             ),
         },
         usage: b"[-kNrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]\0"
@@ -171,14 +156,7 @@ pub static mut cmd_switch_mode_entry: cmd_entry = unsafe {
             template: b"F:kst:wZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
-            cb: Some(
-                cmd_choose_tree_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
-            ),
+            cb: Some(cmd_choose_tree_args_parse),
         },
         usage: b"[-kswZ] [-F format] [-t target-pane] [command]\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -207,14 +185,7 @@ pub static mut cmd_display_panes_entry: cmd_entry = unsafe {
             template: b"d:kNs:t:Z\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
-            cb: Some(
-                cmd_choose_tree_args_parse
-                    as unsafe extern "C" fn(
-                        *mut args,
-                        u_int,
-                        *mut *mut ::core::ffi::c_char,
-                    ) -> args_parse_type,
-            ),
+            cb: Some(cmd_choose_tree_args_parse),
         },
         usage: b"[-kNZ] [-d duration] [-s source-window] [-t target-pane] [template]\0" as *const u8
             as *const ::core::ffi::c_char,
@@ -234,11 +205,7 @@ pub static mut cmd_display_panes_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_choose_tree_args_parse(
-    _args: *mut args,
-    _idx: u_int,
-    _cause: *mut *mut ::core::ffi::c_char,
-) -> args_parse_type {
+fn cmd_choose_tree_args_parse(_args: &mut args, _idx: u_int) -> args_parse_type {
     return ARGS_PARSE_COMMANDS_OR_STRING;
 }
 unsafe extern "C" fn cmd_choose_tree_exec(

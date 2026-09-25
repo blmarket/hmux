@@ -31,7 +31,7 @@ use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
 use crate::src::shared::message::*;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_item};
+use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
@@ -655,34 +655,23 @@ unsafe extern "C" fn window_client_sort(mut sort_crit: *mut sort_criteria) {
             .offset(0 as ::core::ffi::c_int as isize);
     }
 }
-static mut window_client_help_lines: [*const ::core::ffi::c_char; 10] = [
-    b"#[fg=themelightgrey]          i #[#{E:tree-mode-border-style},acs]x#[default] Toggle info view\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]      Enter #[#{E:tree-mode-border-style},acs]x#[default] Choose selected %1\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          d #[#{E:tree-mode-border-style},acs]x#[default] Detach selected %1\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          D #[#{E:tree-mode-border-style},acs]x#[default] Detach tagged %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          x #[#{E:tree-mode-border-style},acs]x#[default] Detach selected %1\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          X #[#{E:tree-mode-border-style},acs]x#[default] Detach tagged %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          z #[#{E:tree-mode-border-style},acs]x#[default] Suspend selected %1\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          Z #[#{E:tree-mode-border-style},acs]x#[default] Suspend tagged %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          f #[#{E:tree-mode-border-style},acs]x#[default] Enter a filter\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    ::core::ptr::null::<::core::ffi::c_char>(),
+static window_client_help_lines: &[&'static CStr] = &[
+    c"#[fg=themelightgrey]          i #[#{E:tree-mode-border-style},acs]x#[default] Toggle info view",
+    c"#[fg=themelightgrey]      Enter #[#{E:tree-mode-border-style},acs]x#[default] Choose selected %1",
+    c"#[fg=themelightgrey]          d #[#{E:tree-mode-border-style},acs]x#[default] Detach selected %1",
+    c"#[fg=themelightgrey]          D #[#{E:tree-mode-border-style},acs]x#[default] Detach tagged %1s",
+    c"#[fg=themelightgrey]          x #[#{E:tree-mode-border-style},acs]x#[default] Detach selected %1",
+    c"#[fg=themelightgrey]          X #[#{E:tree-mode-border-style},acs]x#[default] Detach tagged %1s",
+    c"#[fg=themelightgrey]          z #[#{E:tree-mode-border-style},acs]x#[default] Suspend selected %1",
+    c"#[fg=themelightgrey]          Z #[#{E:tree-mode-border-style},acs]x#[default] Suspend tagged %1s",
+    c"#[fg=themelightgrey]          f #[#{E:tree-mode-border-style},acs]x#[default] Enter a filter",
 ];
-unsafe extern "C" fn window_client_help(
-    mut width: *mut u_int,
-    mut item: *mut *const ::core::ffi::c_char,
-) -> *mut *const ::core::ffi::c_char {
-    *width = 0 as u_int;
-    *item = b"client\0" as *const u8 as *const ::core::ffi::c_char;
-    return &raw mut window_client_help_lines as *mut *const ::core::ffi::c_char;
+fn window_client_help() -> mode_tree_help_info {
+    mode_tree_help_info {
+        width: 0 as u_int,
+        item: c"client",
+        lines: window_client_help_lines,
+    }
 }
 unsafe extern "C" fn window_client_init(
     mut wme: *mut window_mode_entry,
@@ -762,13 +751,7 @@ unsafe extern "C" fn window_client_init(
         ),
         None,
         Some(window_client_sort as unsafe extern "C" fn(*mut sort_criteria) -> ()),
-        Some(
-            window_client_help
-                as unsafe extern "C" fn(
-                    *mut u_int,
-                    *mut *const ::core::ffi::c_char,
-                ) -> *mut *const ::core::ffi::c_char,
-        ),
+        Some(window_client_help),
         data as *mut ::core::ffi::c_void,
         &raw const window_client_menu_items as *const menu_item,
         &raw mut s,

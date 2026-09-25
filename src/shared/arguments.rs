@@ -190,9 +190,7 @@ pub struct args_values_storage {
     pub(crate) values: Vec<Box<args_value>>,
 }
 
-pub type args_parse_cb = Option<
-    unsafe extern "C" fn(*mut args, u_int, *mut *mut ::core::ffi::c_char) -> args_parse_type,
->;
+pub type args_parse_cb = Option<fn(&mut args, u_int) -> args_parse_type>;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

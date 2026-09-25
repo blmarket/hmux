@@ -613,25 +613,13 @@ pub unsafe fn args_parse(
                 args_type_to_string((*value).type_0()),
             );
             if (*parse).cb.is_some() {
-                let mut callback_error = ::core::ptr::null_mut::<::core::ffi::c_char>();
-                type_0 = (*parse).cb.expect("non-null function pointer")(
-                    args,
-                    (*args).count,
-                    &raw mut callback_error,
-                );
+                let idx = (*args).count;
+                type_0 = (*parse).cb.expect("non-null function pointer")(&mut *args, idx);
                 if type_0 as ::core::ffi::c_uint
                     == ARGS_PARSE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     args_free(args);
-                    if callback_error.is_null() {
-                        return Err(ArgsParseError::Usage);
-                    }
-                    let error = CStr::from_ptr(callback_error).to_owned();
-                    free(callback_error.cast());
-                    return Err(ArgsParseError::Message(error));
-                }
-                if !callback_error.is_null() {
-                    free(callback_error.cast());
+                    return Err(ArgsParseError::Usage);
                 }
             } else {
                 type_0 = ARGS_PARSE_STRING;

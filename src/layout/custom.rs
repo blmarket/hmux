@@ -1,5 +1,5 @@
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::{__ctype_b_loc, qsort, sscanf, strcmp};
+use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcmp};
 use crate::src::json::{
     json_array_first, json_array_next, json_destroy_node, json_find, json_find_array,
     json_find_boolean, json_find_number, json_find_object, json_find_string, json_get_object,
@@ -97,51 +97,6 @@ pub struct layout_parse_cell_ctx {
     pub zindex: ::core::ffi::c_int,
 }
 
-unsafe extern "C" fn layout_parse_index_cmp(
-    mut a: *const ::core::ffi::c_void,
-    mut b: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut cca: *const layout_parse_cell_ctx = a as *const layout_parse_cell_ctx;
-    let mut ccb: *const layout_parse_cell_ctx = b as *const layout_parse_cell_ctx;
-    let mut retval: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*cca).index < (*ccb).index {
-        retval = -(1 as ::core::ffi::c_int);
-    }
-    if (*cca).index > (*ccb).index {
-        retval = 1 as ::core::ffi::c_int;
-    }
-    return retval;
-}
-unsafe extern "C" fn layout_parse_zindex_cmp(
-    mut a: *const ::core::ffi::c_void,
-    mut b: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut cca: *const layout_parse_cell_ctx = a as *const layout_parse_cell_ctx;
-    let mut ccb: *const layout_parse_cell_ctx = b as *const layout_parse_cell_ctx;
-    let mut retval: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*cca).zindex > (*ccb).zindex {
-        retval = -(1 as ::core::ffi::c_int);
-    }
-    if (*cca).zindex < (*ccb).zindex {
-        retval = 1 as ::core::ffi::c_int;
-    }
-    return retval;
-}
-unsafe extern "C" fn layout_parse_last_cmp(
-    mut a: *const ::core::ffi::c_void,
-    mut b: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut cca: *const layout_parse_cell_ctx = a as *const layout_parse_cell_ctx;
-    let mut ccb: *const layout_parse_cell_ctx = b as *const layout_parse_cell_ctx;
-    let mut retval: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*cca).last > (*ccb).last {
-        retval = -(1 as ::core::ffi::c_int);
-    }
-    if (*cca).last < (*ccb).last {
-        retval = 1 as ::core::ffi::c_int;
-    }
-    return retval;
-}
 unsafe extern "C" fn layout_string_write(
     ls: &mut LayoutString,
     mut fmt: *const ::core::ffi::c_char,
@@ -741,18 +696,7 @@ pub unsafe fn layout_parse(
 }
 unsafe extern "C" fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    qsort(
-        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
-        (*pctx).cctxs.len() as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_index_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
+    (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
     wp = window_pane_first(w);
     for cctx in &(*pctx).cctxs {
         layout_make_leaf(cctx.lc, wp);
@@ -1442,18 +1386,9 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
         }
         wp = wpnext;
     }
-    qsort(
-        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
-        (*pctx).cctxs.len() as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_zindex_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
+    (*pctx)
+        .cctxs
+        .sort_unstable_by(|a, b| b.zindex.cmp(&a.zindex));
     for cctx in &(*pctx).cctxs {
         wp = (*cctx.lc).wp;
         if window_pane_is_floating(wp) != 0 {
@@ -1470,18 +1405,7 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
         wp = window_pane_stack_first(w);
         window_pane_stack_remove(&raw mut (*w).last_panes, wp);
     }
-    qsort(
-        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
-        (*pctx).cctxs.len() as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_last_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
+    (*pctx).cctxs.sort_unstable_by(|a, b| b.last.cmp(&a.last));
     for cctx in &(*pctx).cctxs {
         wp = (*cctx.lc).wp;
         if !(cctx.last < 0 as ::core::ffi::c_int || cctx.active == 1 as ::core::ffi::c_int) {
@@ -1492,18 +1416,7 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
 unsafe extern "C" fn layout_parse_ctx_check_indexes(
     mut pctx: *mut layout_parse_ctx,
 ) -> ::core::ffi::c_int {
-    qsort(
-        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
-        (*pctx).cctxs.len() as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_index_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
+    (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
     if (*pctx)
         .cctxs
         .windows(2)
@@ -1515,18 +1428,9 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
         );
         return 0 as ::core::ffi::c_int;
     }
-    qsort(
-        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
-        (*pctx).cctxs.len() as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_zindex_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
+    (*pctx)
+        .cctxs
+        .sort_unstable_by(|a, b| b.zindex.cmp(&a.zindex));
     let n = (*pctx)
         .cctxs
         .iter()
@@ -1542,18 +1446,7 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
         );
         return 0 as ::core::ffi::c_int;
     }
-    qsort(
-        (*pctx).cctxs.as_mut_ptr() as *mut ::core::ffi::c_void,
-        (*pctx).cctxs.len() as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_last_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
+    (*pctx).cctxs.sort_unstable_by(|a, b| b.last.cmp(&a.last));
     let n = (*pctx)
         .cctxs
         .iter()

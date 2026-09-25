@@ -1,11 +1,10 @@
-use crate::src::ffi::libc::strcmp;
-use crate::src::shared::abi::__compar_fn_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_UTF8;
 use crate::src::shared::grid::*;
 use crate::src::shared::tty::tty;
 use crate::src::shared::tty::*;
 use crate::src::tty_term::{tty_term_has, tty_term_number};
+use std::ffi::CStr;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -20,35 +19,7 @@ pub struct tty_acs_reverse_entry {
     pub key: u_char,
 }
 
-#[inline]
-unsafe extern "C" fn bsearch(
-    mut __key: *const ::core::ffi::c_void,
-    mut __base: *const ::core::ffi::c_void,
-    mut __nmemb: size_t,
-    mut __size: size_t,
-    mut __compar: __compar_fn_t,
-) -> *mut ::core::ffi::c_void {
-    let mut __p: *const ::core::ffi::c_void = ::core::ptr::null::<::core::ffi::c_void>();
-    let mut __comparison: ::core::ffi::c_int = 0;
-    while __nmemb != 0 {
-        __p = (__base as *const ::core::ffi::c_char)
-            .offset((__nmemb >> 1 as ::core::ffi::c_int).wrapping_mul(__size) as isize)
-            as *const ::core::ffi::c_void;
-        __comparison = Some(__compar.expect("non-null function pointer"))
-            .expect("non-null function pointer")(__key, __p);
-        if __comparison == 0 as ::core::ffi::c_int {
-            return __p as *mut ::core::ffi::c_void;
-        }
-        if __comparison > 0 as ::core::ffi::c_int {
-            __base = (__p as *const ::core::ffi::c_char).offset(__size as isize)
-                as *const ::core::ffi::c_void;
-            __nmemb = __nmemb.wrapping_sub(1);
-        }
-        __nmemb >>= 1 as ::core::ffi::c_int;
-    }
-    return NULL;
-}
-static mut tty_acs_table: [tty_acs_entry; 36] = [
+static tty_acs_table: [tty_acs_entry; 36] = [
     tty_acs_entry {
         key: '+' as i32 as u_char,
         string: c"\xE2\x86\x92",
@@ -194,11 +165,11 @@ static mut tty_acs_table: [tty_acs_entry; 36] = [
         string: c"\xC2\xB7",
     },
 ];
-static mut tty_acs_reverse2: [tty_acs_reverse_entry; 1] = [tty_acs_reverse_entry {
+static tty_acs_reverse2: [tty_acs_reverse_entry; 1] = [tty_acs_reverse_entry {
     string: c"\xC2\xB7",
     key: '~' as i32 as u_char,
 }];
-static mut tty_acs_reverse3: [tty_acs_reverse_entry; 32] = [
+static tty_acs_reverse3: [tty_acs_reverse_entry; 32] = [
     tty_acs_reverse_entry {
         string: c"\xE2\x94\x80",
         key: 'q' as i32 as u_char,
@@ -673,22 +644,6 @@ pub unsafe extern "C" fn tty_acs_rounded_borders(
     return (&raw const tty_acs_rounded_borders_list as *const utf8_data).offset(cell_type as isize)
         as *const utf8_data;
 }
-unsafe extern "C" fn tty_acs_cmp(
-    mut key: *const ::core::ffi::c_void,
-    mut value: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut entry: *const tty_acs_entry = value as *const tty_acs_entry;
-    let mut test: ::core::ffi::c_int = *(key as *mut u_char) as ::core::ffi::c_int;
-    return test - (*entry).key as ::core::ffi::c_int;
-}
-unsafe extern "C" fn tty_acs_reverse_cmp(
-    mut key: *const ::core::ffi::c_void,
-    mut value: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut entry: *const tty_acs_reverse_entry = value as *const tty_acs_reverse_entry;
-    let mut test: *const ::core::ffi::c_char = key as *const ::core::ffi::c_char;
-    return strcmp(test, (*entry).string.as_ptr());
-}
 #[no_mangle]
 pub unsafe extern "C" fn tty_acs_needed(mut tty: *mut tty) -> ::core::ffi::c_int {
     if tty.is_null() {
@@ -720,20 +675,12 @@ pub unsafe extern "C" fn tty_acs_get(
             .offset(ch as isize) as *mut ::core::ffi::c_char)
             .offset(0 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_char;
     }
-    entry = bsearch(
-        &raw mut ch as *const ::core::ffi::c_void,
-        &raw const tty_acs_table as *const tty_acs_entry as *const ::core::ffi::c_void,
-        (::core::mem::size_of::<[tty_acs_entry; 36]>() as size_t)
-            .wrapping_div(::core::mem::size_of::<tty_acs_entry>() as size_t),
-        ::core::mem::size_of::<tty_acs_entry>() as size_t,
-        Some(
-            tty_acs_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    ) as *const tty_acs_entry;
+    entry = tty_acs_table
+        .binary_search_by_key(&ch, |entry| entry.key)
+        .ok()
+        .map_or(::core::ptr::null(), |index| {
+            &tty_acs_table[index] as *const tty_acs_entry
+        });
     if entry.is_null() {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
@@ -745,37 +692,19 @@ pub unsafe extern "C" fn tty_acs_reverse_get(
     mut s: *const ::core::ffi::c_char,
     mut slen: size_t,
 ) -> ::core::ffi::c_int {
-    let mut table: *const tty_acs_reverse_entry = ::core::ptr::null::<tty_acs_reverse_entry>();
-    let mut entry: *const tty_acs_reverse_entry = ::core::ptr::null::<tty_acs_reverse_entry>();
-    let mut items: u_int = 0;
-    if slen == 2 as size_t {
-        table = &raw const tty_acs_reverse2 as *const tty_acs_reverse_entry;
-        items = (::core::mem::size_of::<[tty_acs_reverse_entry; 1]>() as usize)
-            .wrapping_div(::core::mem::size_of::<tty_acs_reverse_entry>() as usize)
-            as u_int;
+    let needle = CStr::from_ptr(s).to_bytes();
+    let entry = if slen == 2 as size_t {
+        tty_acs_reverse2
+            .binary_search_by(|entry| entry.string.to_bytes().cmp(needle))
+            .ok()
+            .map(|index| &tty_acs_reverse2[index])
     } else if slen == 3 as size_t {
-        table = &raw const tty_acs_reverse3 as *const tty_acs_reverse_entry;
-        items = (::core::mem::size_of::<[tty_acs_reverse_entry; 32]>() as usize)
-            .wrapping_div(::core::mem::size_of::<tty_acs_reverse_entry>() as usize)
-            as u_int;
+        tty_acs_reverse3
+            .binary_search_by(|entry| entry.string.to_bytes().cmp(needle))
+            .ok()
+            .map(|index| &tty_acs_reverse3[index])
     } else {
         return -(1 as ::core::ffi::c_int);
-    }
-    entry = bsearch(
-        s as *const ::core::ffi::c_void,
-        table as *const ::core::ffi::c_void,
-        items as size_t,
-        ::core::mem::size_of::<tty_acs_reverse_entry>() as size_t,
-        Some(
-            tty_acs_reverse_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    ) as *const tty_acs_reverse_entry;
-    if entry.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    return (*entry).key as ::core::ffi::c_int;
+    };
+    entry.map_or(-1, |entry| entry.key as ::core::ffi::c_int)
 }

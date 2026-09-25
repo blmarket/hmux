@@ -602,40 +602,34 @@ unsafe extern "C" fn server_destroy_session_group(mut s: *mut session) {
         }
     };
 }
-unsafe extern "C" fn server_find_session(
-    mut s: *mut session,
-    mut f: Option<unsafe extern "C" fn(*mut session, *mut session) -> ::core::ffi::c_int>,
+unsafe fn server_find_session(
+    s: *mut session,
+    mut choose: impl FnMut(&session, Option<&session>) -> bool,
 ) -> *mut session {
     let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
     let mut s_out: *mut session = ::core::ptr::null_mut::<session>();
     s_loop = sessions_minmax(&*std::ptr::addr_of!(sessions), RB_NEGINF);
     while !s_loop.is_null() {
-        if s_loop != s && f.expect("non-null function pointer")(s_loop, s_out) != 0 {
+        if s_loop != s && choose(&*s_loop, (!s_out.is_null()).then(|| &*s_out)) {
             s_out = s_loop;
         }
         s_loop = sessions_next(&*s_loop);
     }
     return s_out;
 }
-unsafe extern "C" fn server_newer_session(
-    mut s_loop: *mut session,
-    mut s_out: *mut session,
-) -> ::core::ffi::c_int {
-    if s_out.is_null() {
-        return 1 as ::core::ffi::c_int;
-    }
-    return if (*s_loop).activity_time.tv_sec == (*s_out).activity_time.tv_sec {
-        ((*s_loop).activity_time.tv_usec > (*s_out).activity_time.tv_usec) as ::core::ffi::c_int
-    } else {
-        ((*s_loop).activity_time.tv_sec > (*s_out).activity_time.tv_sec) as ::core::ffi::c_int
+fn server_newer_session(s_loop: &session, s_out: Option<&session>) -> bool {
+    let Some(s_out) = s_out else {
+        return true;
     };
+    if s_loop.activity_time.tv_sec == s_out.activity_time.tv_sec {
+        s_loop.activity_time.tv_usec > s_out.activity_time.tv_usec
+    } else {
+        s_loop.activity_time.tv_sec > s_out.activity_time.tv_sec
+    }
 }
-unsafe extern "C" fn server_newer_detached_session(
-    mut s_loop: *mut session,
-    mut s_out: *mut session,
-) -> ::core::ffi::c_int {
-    if (*s_loop).attached != 0 {
-        return 0 as ::core::ffi::c_int;
+fn server_newer_detached_session(s_loop: &session, s_out: Option<&session>) -> bool {
+    if s_loop.attached != 0 {
+        return false;
     }
     return server_newer_session(s_loop, s_out);
 }
@@ -656,21 +650,9 @@ pub unsafe extern "C" fn server_destroy_session(mut s: *mut session) {
         b"detach-on-destroy\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     if detach_on_destroy == 0 as ::core::ffi::c_int {
-        s_new = server_find_session(
-            s,
-            Some(
-                server_newer_session
-                    as unsafe extern "C" fn(*mut session, *mut session) -> ::core::ffi::c_int,
-            ),
-        );
+        s_new = server_find_session(s, server_newer_session);
     } else if detach_on_destroy == 2 as ::core::ffi::c_int {
-        s_new = server_find_session(
-            s,
-            Some(
-                server_newer_detached_session
-                    as unsafe extern "C" fn(*mut session, *mut session) -> ::core::ffi::c_int,
-            ),
-        );
+        s_new = server_find_session(s, server_newer_detached_session);
     } else if detach_on_destroy == 3 as ::core::ffi::c_int {
         s_new = session_previous_session(s, &raw mut sort_crit);
     } else if detach_on_destroy == 4 as ::core::ffi::c_int {
@@ -683,13 +665,7 @@ pub unsafe extern "C" fn server_destroy_session(mut s: *mut session) {
         && (detach_on_destroy == 1 as ::core::ffi::c_int
             || detach_on_destroy == 2 as ::core::ffi::c_int)
     {
-        cs_new = server_find_session(
-            s,
-            Some(
-                server_newer_session
-                    as unsafe extern "C" fn(*mut session, *mut session) -> ::core::ffi::c_int,
-            ),
-        );
+        cs_new = server_find_session(s, server_newer_session);
     }
     c = clients.first();
     while !c.is_null() {

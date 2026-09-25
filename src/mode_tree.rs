@@ -43,9 +43,9 @@ use crate::src::shared::layout::*;
 use crate::src::shared::menu::{menu, menu_item};
 use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_each_cb, mode_tree_height_cb,
-    mode_tree_help_cb, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
-    mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
-    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
+    mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line,
+    mode_tree_list, mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb,
+    mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
@@ -141,54 +141,30 @@ static mut mode_tree_menu_items: [menu_item; 5] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-static mut mode_tree_help_start: [*const ::core::ffi::c_char; 21] = [
-    b"#[fg=themelightgrey]      Up, k #[#{E:tree-mode-border-style},acs]x#[default] Move cursor up\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]    Down, j #[#{E:tree-mode-border-style},acs]x#[default] Move cursor down\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          g #[#{E:tree-mode-border-style},acs]x#[default] Go to top\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          G #[#{E:tree-mode-border-style},acs]x#[default] Go to bottom\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey] PPage, C-b #[#{E:tree-mode-border-style},acs]x#[default] Page up\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey] NPage, C-f #[#{E:tree-mode-border-style},acs]x#[default] Page down\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]    Left, h #[#{E:tree-mode-border-style},acs]x#[default] Collapse %1\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]   Right, l #[#{E:tree-mode-border-style},acs]x#[default] Expand %1\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]        M-- #[#{E:tree-mode-border-style},acs]x#[default] Collapse all %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]        M-+ #[#{E:tree-mode-border-style},acs]x#[default] Expand all %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          t #[#{E:tree-mode-border-style},acs]x#[default] Toggle %1 tag\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          T #[#{E:tree-mode-border-style},acs]x#[default] Untag all %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]        C-t #[#{E:tree-mode-border-style},acs]x#[default] Tag all %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]        C-s #[#{E:tree-mode-border-style},acs]x#[default] Search forward\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          n #[#{E:tree-mode-border-style},acs]x#[default] Repeat search forward\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          N #[#{E:tree-mode-border-style},acs]x#[default] Repeat search backward\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          f #[#{E:tree-mode-border-style},acs]x#[default] Filter %1s\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          O #[#{E:tree-mode-border-style},acs]x#[default] Change sort order\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          r #[#{E:tree-mode-border-style},acs]x#[default] Reverse sort order\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]          v #[#{E:tree-mode-border-style},acs]x#[default] Toggle preview\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    ::core::ptr::null::<::core::ffi::c_char>(),
+static mode_tree_help_start: &[&'static CStr] = &[
+    c"#[fg=themelightgrey]      Up, k #[#{E:tree-mode-border-style},acs]x#[default] Move cursor up",
+    c"#[fg=themelightgrey]    Down, j #[#{E:tree-mode-border-style},acs]x#[default] Move cursor down",
+    c"#[fg=themelightgrey]          g #[#{E:tree-mode-border-style},acs]x#[default] Go to top",
+    c"#[fg=themelightgrey]          G #[#{E:tree-mode-border-style},acs]x#[default] Go to bottom",
+    c"#[fg=themelightgrey] PPage, C-b #[#{E:tree-mode-border-style},acs]x#[default] Page up",
+    c"#[fg=themelightgrey] NPage, C-f #[#{E:tree-mode-border-style},acs]x#[default] Page down",
+    c"#[fg=themelightgrey]    Left, h #[#{E:tree-mode-border-style},acs]x#[default] Collapse %1",
+    c"#[fg=themelightgrey]   Right, l #[#{E:tree-mode-border-style},acs]x#[default] Expand %1",
+    c"#[fg=themelightgrey]        M-- #[#{E:tree-mode-border-style},acs]x#[default] Collapse all %1s",
+    c"#[fg=themelightgrey]        M-+ #[#{E:tree-mode-border-style},acs]x#[default] Expand all %1s",
+    c"#[fg=themelightgrey]          t #[#{E:tree-mode-border-style},acs]x#[default] Toggle %1 tag",
+    c"#[fg=themelightgrey]          T #[#{E:tree-mode-border-style},acs]x#[default] Untag all %1s",
+    c"#[fg=themelightgrey]        C-t #[#{E:tree-mode-border-style},acs]x#[default] Tag all %1s",
+    c"#[fg=themelightgrey]        C-s #[#{E:tree-mode-border-style},acs]x#[default] Search forward",
+    c"#[fg=themelightgrey]          n #[#{E:tree-mode-border-style},acs]x#[default] Repeat search forward",
+    c"#[fg=themelightgrey]          N #[#{E:tree-mode-border-style},acs]x#[default] Repeat search backward",
+    c"#[fg=themelightgrey]          f #[#{E:tree-mode-border-style},acs]x#[default] Filter %1s",
+    c"#[fg=themelightgrey]          O #[#{E:tree-mode-border-style},acs]x#[default] Change sort order",
+    c"#[fg=themelightgrey]          r #[#{E:tree-mode-border-style},acs]x#[default] Reverse sort order",
+    c"#[fg=themelightgrey]          v #[#{E:tree-mode-border-style},acs]x#[default] Toggle preview",
 ];
-static mut mode_tree_help_end: [*const ::core::ffi::c_char; 2] = [
-    b"#[fg=themelightgrey]  q, Escape #[#{E:tree-mode-border-style},acs]x#[default] Exit mode\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    ::core::ptr::null::<::core::ffi::c_char>(),
-];
+static mode_tree_help_end: &[&'static CStr] =
+    &[c"#[fg=themelightgrey]  q, Escape #[#{E:tree-mode-border-style},acs]x#[default] Exit mode"];
 pub const MODE_TREE_HELP_DEFAULT_WIDTH: ::core::ffi::c_int = 39 as ::core::ffi::c_int;
 unsafe extern "C" fn mode_tree_is_lowercase(
     mut ptr: *const ::core::ffi::c_char,
@@ -1950,17 +1926,13 @@ unsafe extern "C" fn mode_tree_draw_help_line(
     mut ctx: *mut screen_write_ctx,
     mut gc: *const grid_cell,
     mut ft: *mut format_tree,
-    mut line: *const ::core::ffi::c_char,
-    mut item: *const ::core::ffi::c_char,
+    line: &CStr,
+    item: &CStr,
     mut x: u_int,
     mut y: u_int,
     mut w: u_int,
 ) {
-    let replaced = cmd_template_replace_cstring(
-        CStr::from_ptr(line),
-        CStr::from_ptr(item),
-        1 as ::core::ffi::c_int,
-    );
+    let replaced = cmd_template_replace_cstring(line, item, 1 as ::core::ffi::c_int);
     let expanded = format_expand_cstring(ft, replaced.as_ptr());
     drop(replaced);
     screen_write_cursormove(
@@ -2020,42 +1992,19 @@ unsafe extern "C" fn mode_tree_draw_help(
         link: 0,
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut line: *mut *const ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
-    let mut lines: *mut *const ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
-    let mut item: *const ::core::ffi::c_char = b"item\0" as *const u8 as *const ::core::ffi::c_char;
+    let help = (*mtd).helpcb.map(|callback| callback());
+    let lines: &[&'static CStr] = help.map_or(&[], |info| info.lines);
+    let item = help.map_or(c"item", |info| info.item);
     let mut sx: u_int = (*(*s).grid).sx;
     let mut sy: u_int = (*(*s).grid).sy;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let mut w: u_int = 0;
-    let mut h: u_int = 0 as u_int;
+    let mut w = help
+        .map_or(MODE_TREE_HELP_DEFAULT_WIDTH as u_int, |info| info.width)
+        .max(MODE_TREE_HELP_DEFAULT_WIDTH as u_int);
+    let h = (mode_tree_help_start.len() + lines.len() + mode_tree_help_end.len()) as u_int;
     let mut box_w: u_int = 0;
     let mut box_h: u_int = 0;
-    if (*mtd).helpcb.is_none() {
-        w = MODE_TREE_HELP_DEFAULT_WIDTH as u_int;
-    } else {
-        lines = (*mtd).helpcb.expect("non-null function pointer")(&raw mut w, &raw mut item);
-        if w < MODE_TREE_HELP_DEFAULT_WIDTH as u_int {
-            w = MODE_TREE_HELP_DEFAULT_WIDTH as u_int;
-        }
-    }
-    line = &raw mut mode_tree_help_start as *mut *const ::core::ffi::c_char;
-    while !(*line).is_null() {
-        h = h.wrapping_add(1);
-        line = line.offset(1);
-    }
-    line = lines;
-    while !line.is_null() && !(*line).is_null() {
-        h = h.wrapping_add(1);
-        line = line.offset(1);
-    }
-    line = &raw mut mode_tree_help_end as *mut *const ::core::ffi::c_char;
-    while !(*line).is_null() {
-        h = h.wrapping_add(1);
-        line = line.offset(1);
-    }
     box_w = w.wrapping_add(2 as u_int);
     box_h = h.wrapping_add(2 as u_int);
     if sx < box_w || sy < box_h {
@@ -2102,22 +2051,16 @@ unsafe extern "C" fn mode_tree_draw_help(
     );
     y = y.wrapping_add(1);
     x = x.wrapping_add(1);
-    line = &raw mut mode_tree_help_start as *mut *const ::core::ffi::c_char;
-    while !(*line).is_null() {
-        mode_tree_draw_help_line(ctx, &raw mut gc, ft, *line, item, x, y, w);
-        line = line.offset(1);
+    for line in mode_tree_help_start.iter().copied() {
+        mode_tree_draw_help_line(ctx, &gc, ft, line, item, x, y, w);
         y = y.wrapping_add(1);
     }
-    line = lines;
-    while !line.is_null() && !(*line).is_null() {
-        mode_tree_draw_help_line(ctx, &raw mut gc, ft, *line, item, x, y, w);
-        line = line.offset(1);
+    for line in lines.iter().copied() {
+        mode_tree_draw_help_line(ctx, &gc, ft, line, item, x, y, w);
         y = y.wrapping_add(1);
     }
-    line = &raw mut mode_tree_help_end as *mut *const ::core::ffi::c_char;
-    while !(*line).is_null() {
-        mode_tree_draw_help_line(ctx, &raw mut gc, ft, *line, item, x, y, w);
-        line = line.offset(1);
+    for line in mode_tree_help_end.iter().copied() {
+        mode_tree_draw_help_line(ctx, &gc, ft, line, item, x, y, w);
         y = y.wrapping_add(1);
     }
     format_free(ft);

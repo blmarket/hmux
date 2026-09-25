@@ -3,7 +3,7 @@ use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_session, cmd_fin
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{cmdq_free_state, cmdq_new_state};
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::ffi::libc::{__ctype_toupper_loc, memset, qsort};
+use crate::src::ffi::libc::{__ctype_toupper_loc, memset};
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::format_draw;
 use crate::src::fuzzy::fuzzy_match_owned;
@@ -221,26 +221,6 @@ unsafe extern "C" fn window_switch_add_window(
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
     format_free(ft);
 }
-unsafe extern "C" fn window_switch_compare(
-    mut a0: *const ::core::ffi::c_void,
-    mut b0: *const ::core::ffi::c_void,
-) -> ::core::ffi::c_int {
-    let mut a: *const *mut window_switch_itemdata = a0 as *const *mut window_switch_itemdata;
-    let mut b: *const *mut window_switch_itemdata = b0 as *const *mut window_switch_itemdata;
-    if (**a).score > (**b).score {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (**a).score < (**b).score {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (**a).order < (**b).order {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (**a).order > (**b).order {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
 unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) {
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut m: Vec<*mut window_switch_itemdata> = Vec::new();
@@ -292,20 +272,12 @@ unsafe extern "C" fn window_switch_build(mut data: *mut window_switch_modedata) 
         }
         i = i.wrapping_add(1);
     }
-    if m.len() > 1 {
-        qsort(
-            m.as_mut_ptr() as *mut ::core::ffi::c_void,
-            m.len() as size_t,
-            ::core::mem::size_of::<*mut window_switch_itemdata>() as size_t,
-            Some(
-                window_switch_compare
-                    as unsafe extern "C" fn(
-                        *const ::core::ffi::c_void,
-                        *const ::core::ffi::c_void,
-                    ) -> ::core::ffi::c_int,
-            ),
-        );
-    }
+    m.sort_unstable_by(|a, b| unsafe {
+        (**b)
+            .score
+            .cmp(&(**a).score)
+            .then_with(|| (**a).order.cmp(&(**b).order))
+    });
     (*data).matches = m;
 }
 unsafe extern "C" fn window_switch_visible(mut data: *mut window_switch_modedata) -> u_int {
