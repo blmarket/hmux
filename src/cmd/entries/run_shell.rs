@@ -13,10 +13,10 @@ use crate::src::ffi::libc::{__ctype_toupper_loc, strtod};
 use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_free,
 };
-use crate::src::job::{job_get_event, job_get_status, job_run};
+use crate::src::job::job_run;
 use crate::src::reactor::{
-    evbuffer_get_length, evbuffer_pullup, evbuffer_readln, event_active, event_add, event_del,
-    event_set,
+    evbuffer_add, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+    evbuffer_readln, event_active, event_add, event_del, event_set,
 };
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
 use crate::src::session::{session_add_ref, session_remove_ref};
@@ -35,8 +35,7 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EVBUFFER_EOL_LF, EV_TIMEOUT};
 use crate::src::shared::format::format_tree;
-use crate::src::shared::job::job;
-use crate::src::shared::job::{JOB_NOWAIT, JOB_SHOWSTDERR};
+use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOWSTDERR};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
@@ -106,7 +105,6 @@ fn cmd_run_shell_args_parse(args: &mut args, _idx: u_int) -> Result<args_parse_t
     Ok(ARGS_PARSE_STRING)
 }
 unsafe fn cmd_run_shell_print(
-    mut job: *mut job,
     mut cdata: *mut cmd_run_shell_data,
     mut msg: *const ::core::ffi::c_char,
 ) {
@@ -339,8 +337,8 @@ unsafe fn cmd_run_shell_timer(
             (*cdata).s,
             Some((*cdata).cwd.as_c_str()),
             None,
-            Some(Box::new(move |job| unsafe {
-                cmd_run_shell_callback(job, cdata)
+            Some(Box::new(move |completion| unsafe {
+                cmd_run_shell_callback(completion, cdata)
             })),
             Some(Box::new(move || unsafe {
                 cmd_run_shell_free(cdata)
@@ -415,8 +413,11 @@ unsafe fn cmd_run_shell_timer(
     }
     cmd_run_shell_free(cdata);
 }
-unsafe fn cmd_run_shell_callback(mut job: *mut job, mut cdata: *mut cmd_run_shell_data) {
-    let mut event: *mut bufferevent = job_get_event(job);
+unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_run_shell_data) {
+    let event = evbuffer_new();
+    if !completion.output.is_empty() {
+        evbuffer_add(event, completion.output.as_ptr().cast(), completion.output.len());
+    }
     let mut item: *mut cmdq_item = (*cdata).item;
     let cmd = (*cdata)
         .cmd
@@ -426,47 +427,46 @@ unsafe fn cmd_run_shell_callback(mut job: *mut job, mut cdata: *mut cmd_run_shel
     let mut msg: Option<CString> = None;
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
-    let mut status: ::core::ffi::c_int = 0;
     loop {
         let Some(line) = evbuffer_readln(
-            (*event).input,
+            event,
             ::core::ptr::null_mut::<size_t>(),
             EVBUFFER_EOL_LF,
         ) else {
             break;
         };
-        cmd_run_shell_print(job, cdata, line.as_ptr().cast());
+        cmd_run_shell_print(cdata, line.as_ptr().cast());
     }
-    size = evbuffer_get_length(&*((*event).input));
+    size = evbuffer_get_length(&*event);
     if size != 0 as size_t {
-        let input = evbuffer_pullup((*event).input, -(1 as ::core::ffi::c_int) as ssize_t);
+        let input = evbuffer_pullup(event, -(1 as ::core::ffi::c_int) as ssize_t);
         let mut partial_line = ::core::slice::from_raw_parts(input as *const u8, size).to_vec();
         partial_line.push(0);
-        cmd_run_shell_print(job, cdata, partial_line.as_ptr().cast());
+        cmd_run_shell_print(cdata, partial_line.as_ptr().cast());
     }
-    status = job_get_status(job);
-    if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-        retcode = (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int;
-        if retcode != 0 as ::core::ffi::c_int {
-            msg = Some(cmd_run_shell_status_message(cmd, b"' returned ", retcode));
+    match completion.status {
+        JobExitStatus::Exited(code) => {
+            retcode = code;
+            if retcode != 0 as ::core::ffi::c_int {
+                msg = Some(cmd_run_shell_status_message(cmd, b"' returned ", retcode));
+            }
         }
-    } else if ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
-        as ::core::ffi::c_schar as ::core::ffi::c_int
-        >> 1 as ::core::ffi::c_int
-        > 0 as ::core::ffi::c_int
-    {
-        retcode = status & 0x7f as ::core::ffi::c_int;
-        msg = Some(cmd_run_shell_status_message(
-            cmd,
-            b"' terminated by signal ",
-            retcode,
-        ));
-        retcode += 128 as ::core::ffi::c_int;
-    } else {
-        retcode = 0 as ::core::ffi::c_int;
+        JobExitStatus::Signaled(signal) => {
+            retcode = signal;
+            msg = Some(cmd_run_shell_status_message(
+                cmd,
+                b"' terminated by signal ",
+                retcode,
+            ));
+            retcode += 128 as ::core::ffi::c_int;
+        }
+        JobExitStatus::Other(_) => {
+            retcode = 0;
+        }
     }
+    evbuffer_free(event);
     if let Some(msg) = msg.as_ref() {
-        cmd_run_shell_print(job, cdata, msg.as_ptr());
+        cmd_run_shell_print(cdata, msg.as_ptr());
     }
     if !item.is_null() {
         if !cmdq_get_client(item).is_null() && (*cmdq_get_client(item)).session.is_null() {

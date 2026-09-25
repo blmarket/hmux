@@ -14,7 +14,7 @@ use crate::src::options::options_get_string;
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_get_output,
-    bufferevent_new, evbuffer_get_length,
+    bufferevent_new, evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
 use crate::src::shared::abi::*;
@@ -22,7 +22,9 @@ use crate::src::shared::command::cmdq_item;
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
-use crate::src::shared::job::{job, job_complete_cb, job_free_cb, job_state, job_update_cb};
+use crate::src::shared::job::{
+    job, job_complete_cb, job_free_cb, job_state, job_update_cb, JobCompletion, JobExitStatus,
+};
 use crate::src::shared::job::{
     JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, JOB_SHOWSTDERR,
 };
@@ -50,6 +52,25 @@ pub const SHUT_RD: C2RustUnnamed = 0;
 pub const JOB_CLOSED: job_state = 2;
 pub const JOB_DEAD: job_state = 1;
 pub const JOB_RUNNING: job_state = 0;
+
+unsafe fn job_completion(job: *mut job) -> JobCompletion {
+    let input = (*(*job).event).input;
+    let len = evbuffer_get_length(&*input);
+    let output = if len == 0 {
+        Vec::new()
+    } else {
+        let bytes = evbuffer_pullup(input, -(1 as ::core::ffi::c_int) as ssize_t);
+        if bytes.is_null() {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(bytes, len).to_vec()
+        }
+    };
+    JobCompletion {
+        status: JobExitStatus::from_wait_status((*job).status),
+        output,
+    }
+}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct joblist {
@@ -536,7 +557,7 @@ unsafe fn job_error_callback(
     if (*job).state as ::core::ffi::c_uint == JOB_DEAD as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if let Some(callback) = (*job).completecb.take() {
-            callback(job);
+            callback(job_completion(job));
         }
         job_free(job);
     } else {
@@ -579,7 +600,7 @@ pub unsafe extern "C" fn job_check_died(mut pid: pid_t, mut status: ::core::ffi:
         == JOB_CLOSED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if let Some(callback) = (*job).completecb.take() {
-            callback(job);
+            callback(job_completion(job));
         }
         job_free(job);
     } else {

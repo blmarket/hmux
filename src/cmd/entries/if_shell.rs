@@ -10,7 +10,7 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_get_args, cmd_list_free};
 use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::format_single_from_target_cstring;
-use crate::src::job::{job_get_status, job_run};
+use crate::src::job::job_run;
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
@@ -23,7 +23,7 @@ use crate::src::shared::command::{
     cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_state,
 };
 use crate::src::shared::environment::environ;
-use crate::src::shared::job::job;
+use crate::src::shared::job::{JobCompletion, JobExitStatus};
 use crate::src::shared::session::session;
 use crate::src::status::status_message_set;
 
@@ -155,8 +155,8 @@ unsafe fn cmd_if_shell_exec(
             (!cwd.is_null()).then(|| std::ffi::CStr::from_ptr(cwd))
         },
         None,
-        Some(Box::new(move |job| unsafe {
-            cmd_if_shell_callback(job, cdata)
+        Some(Box::new(move |completion| unsafe {
+            cmd_if_shell_callback(completion, cdata)
         })),
         Some(Box::new(move || unsafe {
             cmd_if_shell_free(cdata)
@@ -180,20 +180,15 @@ unsafe fn cmd_if_shell_exec(
     }
     return CMD_RETURN_WAIT;
 }
-unsafe fn cmd_if_shell_callback(mut job: *mut job, mut cdata: *mut cmd_if_shell_data) {
+unsafe fn cmd_if_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_if_shell_data) {
     let mut c: *mut client = (*cdata).client;
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut state: *mut args_command_state = ::core::ptr::null_mut::<args_command_state>();
-    let mut status: ::core::ffi::c_int = 0;
-    status = job_get_status(job);
-    if !(status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int)
-        || (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int
-            != 0 as ::core::ffi::c_int
-    {
-        state = (*cdata).cmd_else;
-    } else {
+    if completion.status == JobExitStatus::Exited(0) {
         state = (*cdata).cmd_if;
+    } else {
+        state = (*cdata).cmd_else;
     }
     if !state.is_null() {
         match args_make_commands(state, &Vec::new()) {

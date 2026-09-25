@@ -69,8 +69,11 @@ pub(super) unsafe fn format_job_update(mut job: *mut job, mut fj: *mut format_jo
         (*fj).last = t;
     }
 }
-pub(super) unsafe fn format_job_complete(mut job: *mut job, mut fj: *mut format_job) {
-    let mut evb: *mut evbuffer = (*job_get_event(job)).input;
+pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut format_job) {
+    let evb = evbuffer_new();
+    if !completion.output.is_empty() {
+        evbuffer_add(evb, completion.output.as_ptr().cast(), completion.output.len());
+    }
     (*fj).job = ::core::ptr::null_mut::<job>();
     let line = evbuffer_readline(evb);
     let output = if let Some(line) = line {
@@ -94,6 +97,7 @@ pub(super) unsafe fn format_job_complete(mut job: *mut job, mut fj: *mut format_
         let visible = bytes.iter().position(|&byte| byte == 0).unwrap_or(len);
         CString::new(&bytes[..visible]).expect("visible job output contains no NUL")
     };
+    evbuffer_free(evb);
     log_debug(
         b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"format_job_complete\0" as *const u8 as *const ::core::ffi::c_char,
@@ -186,8 +190,8 @@ pub(super) unsafe fn format_job_get(
             job_update_callback(move |job| unsafe {
                 format_job_update(job, fj)
             }),
-            Some(Box::new(move |job| unsafe {
-                format_job_complete(job, fj)
+            Some(Box::new(move |completion| unsafe {
+                format_job_complete(completion, fj)
             })),
             None,
             JOB_NOWAIT,

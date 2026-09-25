@@ -4,7 +4,7 @@ use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::input_keys::{input_key, input_key_get_mouse};
-use crate::src::job::{job_free, job_get_event, job_get_status, job_resize, job_run};
+use crate::src::job::{job_free, job_get_event, job_resize, job_run};
 use crate::src::options::options_get_number;
 use crate::src::reactor::{
     bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
@@ -36,7 +36,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks;
 use crate::src::shared::input::input_ctx;
-use crate::src::shared::job::{job, job_update_callback};
+use crate::src::shared::job::{job, job_update_callback, JobCompletion, JobExitStatus};
 use crate::src::shared::job::{JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY};
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
@@ -762,20 +762,12 @@ unsafe fn popup_job_update_cb(mut job: *mut job, mut pd: *mut popup_data) {
     }));
     evbuffer_drain(evb, size);
 }
-unsafe fn popup_job_complete_cb(mut job: *mut job, mut pd: *mut popup_data) {
-    let mut status: ::core::ffi::c_int = 0;
-    status = job_get_status(job);
-    if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-        (*pd).status = (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int;
-    } else if ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
-        as ::core::ffi::c_schar as ::core::ffi::c_int
-        >> 1 as ::core::ffi::c_int
-        > 0 as ::core::ffi::c_int
-    {
-        (*pd).status = status & 0x7f as ::core::ffi::c_int;
-    } else {
-        (*pd).status = 0 as ::core::ffi::c_int;
-    }
+unsafe fn popup_job_complete_cb(completion: JobCompletion, mut pd: *mut popup_data) {
+    (*pd).status = match completion.status {
+        JobExitStatus::Exited(code) => code,
+        JobExitStatus::Signaled(signal) => signal,
+        JobExitStatus::Other(_) => 0,
+    };
     (*pd).job = ::core::ptr::null_mut::<job>();
     if (*pd).flags & POPUP_CLOSEEXIT != 0
         || (*pd).flags & POPUP_CLOSEEXITZERO != 0 && (*pd).status == 0 as ::core::ffi::c_int
@@ -1090,8 +1082,8 @@ pub unsafe fn popup_display(
         job_update_callback(move |job| unsafe {
             popup_job_update_cb(job, pd)
         }),
-        Some(Box::new(move |job| unsafe {
-            popup_job_complete_cb(job, pd)
+        Some(Box::new(move |completion| unsafe {
+            popup_job_complete_cb(completion, pd)
         })),
         None,
         JOB_NOWAIT | JOB_PTY | JOB_KEEPWRITE | JOB_DEFAULTSHELL,
