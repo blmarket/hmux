@@ -14,7 +14,7 @@ fn filename_survives_input_mutation_and_original_command_free() {
     unsafe {
         let mut filename = *b"source-\xff.conf\0";
         let command = parse_display_message(Some(CStr::from_bytes_with_nul(&filename).unwrap()));
-        let copied = cmd_copy(command, &Vec::new());
+        let copied = cmd_copy(&*command, &Vec::new());
 
         assert!(!copied.is_null());
         assert_ne!(
@@ -66,7 +66,7 @@ fn filename_survives_input_mutation_and_original_command_free() {
 fn absent_filename_stays_null_in_copy() {
     unsafe {
         let command = parse_display_message(None);
-        let copied = cmd_copy(command, &Vec::new());
+        let copied = cmd_copy(&*command, &Vec::new());
         assert!((*command).file.is_none());
         assert!((*copied).file.is_none());
         cmd_free(command);

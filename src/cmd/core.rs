@@ -520,12 +520,12 @@ pub unsafe extern "C" fn cmd_free(mut cmd: *mut cmd) {
     args_free((*cmd).args);
     drop(Box::from_raw(cmd));
 }
-pub unsafe fn cmd_copy(mut cmd: *mut cmd, argv: &Vec<CString>) -> *mut cmd {
+pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> *mut cmd {
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
-    new_cmd = cmd_new_owned((*cmd).file.as_deref());
-    (*new_cmd).entry = (*cmd).entry;
-    (*new_cmd).args = args_copy((*cmd).args, argv);
-    (*new_cmd).line = (*cmd).line;
+    new_cmd = cmd_new_owned(cmd.file.as_deref());
+    (*new_cmd).entry = cmd.entry;
+    (*new_cmd).args = args_copy(cmd.args, argv);
+    (*new_cmd).line = cmd.line;
     return new_cmd;
 }
 pub unsafe fn cmd_print(cmd: *mut cmd) -> CString {
@@ -649,7 +649,7 @@ pub unsafe fn cmd_list_copy(
             (*new_cmdlist).group = fresh7;
             group = (*cmd).group;
         }
-        new_cmd = cmd_copy(cmd, argv);
+        new_cmd = cmd_copy(&*cmd, argv);
         cmd_list_append(new_cmdlist, new_cmd);
     }
     let s = cmd_list_print_cstring(&*new_cmdlist, 0);
