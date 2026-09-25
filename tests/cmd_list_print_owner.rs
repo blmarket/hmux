@@ -18,7 +18,7 @@ unsafe fn display_message_command() -> *mut cmd {
 fn command_printer_keeps_exported_c_buffer_and_empty_arguments() {
     unsafe {
         let command = display_message_command();
-        let printed = cmd_print(command);
+        let printed = cmd_print(&*command);
         assert_eq!(printed.as_bytes(), b"display-message");
         cmd_free(command);
     }

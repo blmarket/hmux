@@ -528,8 +528,8 @@ pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> *mut cmd {
     (*new_cmd).line = cmd.line;
     return new_cmd;
 }
-pub unsafe fn cmd_print(cmd: *mut cmd) -> CString {
-    cmd_print_cstring(&*cmd)
+pub unsafe fn cmd_print(cmd: &cmd) -> CString {
+    cmd_print_cstring(cmd)
 }
 
 pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
