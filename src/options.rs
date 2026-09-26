@@ -97,8 +97,8 @@ use crate::src::shared::key::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::*;
 use crate::src::shared::options::{
-    options, options_array_item, options_array_storage, options_entry, options_storage,
-    options_table_entry, options_value, OptionCommand, OptionsArrayKey,
+    options, options_array_item, options_array_storage, options_entry, options_table_entry,
+    options_value, OptionCommand, OptionsArrayKey,
 };
 use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_NONE,
@@ -230,11 +230,10 @@ unsafe fn options_value_to_cstring(
     c"".to_owned()
 }
 pub unsafe fn options_create(mut parent: *mut options) -> *mut options {
-    let mut oo = Box::new(options {
-        tree: ::core::ptr::null_mut(),
+    let oo = Box::new(options {
+        tree: Default::default(),
         parent,
     });
-    oo.tree = Box::into_raw(Box::new(options_storage::default()));
     Box::into_raw(oo)
 }
 pub unsafe fn options_free(mut oo: *mut options) {
@@ -248,7 +247,6 @@ pub unsafe fn options_free(mut oo: *mut options) {
         options_remove(o);
         o = tmp;
     }
-    drop(Box::from_raw((*oo).tree));
     drop(Box::from_raw(oo));
 }
 pub unsafe fn options_get_parent(mut oo: *mut options) -> *mut options {
@@ -258,8 +256,8 @@ pub unsafe fn options_set_parent(mut oo: *mut options, mut parent: *mut options)
     (*oo).parent = parent;
 }
 pub unsafe fn options_first(mut oo: *mut options) -> *mut options_entry {
-    (*(*oo).tree)
-        .entries
+    (*oo)
+        .tree
         .values()
         .next()
         .copied()
@@ -267,8 +265,8 @@ pub unsafe fn options_first(mut oo: *mut options) -> *mut options_entry {
 }
 pub unsafe fn options_next(mut o: *mut options_entry) -> *mut options_entry {
     let key = (*o).name.as_bytes();
-    (*(*(*o).owner).tree)
-        .entries
+    (*(*o).owner)
+        .tree
         .range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map(|(_, entry)| *entry)
@@ -278,7 +276,7 @@ pub unsafe fn options_get_only(
     mut oo: *mut options,
     mut name: *const ::core::ffi::c_char,
 ) -> *mut options_entry {
-    let entries = &(*(*oo).tree).entries;
+    let entries = &(*oo).tree;
     entries
         .get(CStr::from_ptr(name).to_bytes())
         .or_else(|| entries.get(CStr::from_ptr(options_map_name(name)).to_bytes()))
@@ -308,7 +306,7 @@ pub unsafe fn options_empty(
     o = options_add(oo, (*oe).name);
     (*o).tableentry = oe;
     if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        (*o).value = options_value::Array(Box::new(options_array_storage::default()));
+        (*o).value = options_value::Array(options_array_storage::default());
     }
     return o;
 }
@@ -413,8 +411,8 @@ unsafe fn options_add(
         fire_time: 0,
     });
     o = Box::into_raw(owned);
-    (*(*oo).tree)
-        .entries
+    (*oo)
+        .tree
         .insert((*o).name.as_bytes().to_vec(), o);
     return o;
 }
@@ -429,7 +427,7 @@ unsafe fn options_remove(mut o: *mut options_entry) {
     if !(*o).monitor_data.is_null() {
         hooks_monitor_free((*o).monitor_data);
     }
-    (*(*oo).tree).entries.remove((*o).name.as_bytes());
+    (*oo).tree.remove((*o).name.as_bytes());
     drop(Box::from_raw(o));
 }
 pub unsafe fn options_name(mut o: *mut options_entry) -> *const ::core::ffi::c_char {
@@ -464,7 +462,9 @@ unsafe fn options_array_item(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
-    (*(*o).value.array_storage())
+    (*o)
+        .value
+        .array_storage()
         .entries
         .get(&options_array_index(CStr::from_ptr(key)))
         .copied()
@@ -480,14 +480,18 @@ unsafe fn options_array_new(
         owner: o,
     });
     let a = Box::into_raw(owner);
-    (*(*o).value.array_storage())
+    (*o)
+        .value
+        .array_storage()
         .entries
         .insert(options_array_index(CStr::from_ptr(key)), a);
     return a;
 }
 unsafe fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
     options_value_free(o, &raw mut (*a).value);
-    (*(*o).value.array_storage())
+    (*o)
+        .value
+        .array_storage()
         .entries
         .remove(&options_array_index((*a).key.as_c_str()));
     drop(Box::from_raw(a));
@@ -729,14 +733,18 @@ pub unsafe fn options_array_first(mut o: *mut options_entry) -> *mut options_arr
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return ::core::ptr::null_mut::<options_array_item>();
     }
-    (*(*o).value.array_storage())
+    (*o)
+        .value
+        .array_storage()
         .entries
         .first_key_value()
         .map_or(::core::ptr::null_mut(), |(_, &item)| item)
 }
 pub unsafe fn options_array_next(mut a: *mut options_array_item) -> *mut options_array_item {
     let key = options_array_index((*a).key.as_c_str());
-    (*(*(*a).owner).value.array_storage())
+    (*(*a).owner)
+        .value
+        .array_storage()
         .entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()

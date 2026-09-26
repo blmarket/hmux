@@ -64,10 +64,9 @@ mod tests {
 }
 
 /// Box-owned by options_create; parent and entry back-pointers are borrowed.
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options {
-    pub tree: *mut options_storage,
+    pub(crate) tree: BTreeMap<Vec<u8>, *mut options_entry>,
     pub parent: *mut options,
 }
 
@@ -93,12 +92,6 @@ pub struct options_entry {
     pub fire_time: time_t,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_array {
-    pub storage: *mut options_array_storage,
-}
-
 pub struct OptionCommand(pub *mut cmd_list);
 
 impl Drop for OptionCommand {
@@ -116,7 +109,7 @@ pub enum options_value {
     String(CString),
     Number(::core::ffi::c_longlong),
     Style(style),
-    Array(Box<options_array_storage>),
+    Array(options_array_storage),
     Command(OptionCommand),
 }
 
@@ -144,9 +137,9 @@ impl options_value {
         }
     }
 
-    pub fn array_storage(&mut self) -> *mut options_array_storage {
+    pub fn array_storage(&mut self) -> &mut options_array_storage {
         match self {
-            Self::Array(value) => &mut **value,
+            Self::Array(value) => value,
             _ => panic!("option value is not an array"),
         }
     }
@@ -170,12 +163,6 @@ pub struct options_table_entry {
     pub pattern: *const ::core::ffi::c_char,
     pub text: *const ::core::ffi::c_char,
     pub unit: *const ::core::ffi::c_char,
-}
-
-/// Rust-owned name index; entries and their values retain their C allocation contract.
-#[derive(Default)]
-pub struct options_storage {
-    pub(crate) entries: BTreeMap<Vec<u8>, *mut options_entry>,
 }
 
 /// Numeric indices precede bytewise-ordered text keys.

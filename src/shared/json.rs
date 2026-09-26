@@ -92,15 +92,9 @@ pub struct json_members_storage {
     pub(crate) indices: HashMap<*mut json_node, usize>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct json_fields {
-    pub entries: *mut json_fields_storage,
-}
-
-/// Rust-owned ordering storage for an object's Box-owned field nodes.
+/// Ordered index for an object's separately Box-owned field nodes.
 #[derive(Default)]
-pub struct json_fields_storage {
+pub struct json_fields {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut json_node>,
 }
 

@@ -9,7 +9,7 @@ use crate::src::shared::abi::{int64_t, ssize_t};
 use crate::src::shared::ctype::{_ISdigit, _ISspace, _ISxdigit};
 use crate::src::shared::event::*;
 use crate::src::shared::json::{
-    json_fields, json_fields_storage, json_members_storage, json_node, json_node_type, JsonValue,
+    json_fields, json_members_storage, json_node, json_node_type, JsonValue,
 };
 use crate::src::shared::tree::RB_NEGINF;
 use std::ffi::CStr;
@@ -83,11 +83,8 @@ unsafe fn json_fields_insert(head: &mut json_fields, elm: &mut json_node) -> *mu
     if elm.key.is_none() {
         return ::core::ptr::null_mut::<json_node>();
     }
-    if head.entries.is_null() {
-        head.entries = Box::into_raw(Box::new(json_fields_storage::default()));
-    }
     let key = elm.key.as_ref().unwrap().as_bytes().to_vec();
-    match (*head.entries).entries.entry(key) {
+    match head.entries.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(&raw mut *elm);
@@ -97,11 +94,11 @@ unsafe fn json_fields_insert(head: &mut json_fields, elm: &mut json_node) -> *mu
 }
 
 unsafe fn json_fields_remove(head: &mut json_fields, elm: &json_node) -> *mut json_node {
-    if head.entries.is_null() || elm.key.is_none() {
+    if elm.key.is_none() {
         return ::core::ptr::null_mut::<json_node>();
     }
     let key = elm.key.as_ref().unwrap().as_bytes();
-    let entries = &mut (*head.entries).entries;
+    let entries = &mut head.entries;
     if entries.get(key).copied() != Some(elm as *const json_node as *mut json_node) {
         return ::core::ptr::null_mut::<json_node>();
     }
@@ -111,13 +108,10 @@ unsafe fn json_fields_remove(head: &mut json_fields, elm: &json_node) -> *mut js
 }
 
 unsafe fn json_fields_minmax(head: &json_fields, val: ::core::ffi::c_int) -> *mut json_node {
-    if head.entries.is_null() {
-        return ::core::ptr::null_mut::<json_node>();
-    }
     let entry = if val < 0 {
-        (*head.entries).entries.values().next()
+        head.entries.values().next()
     } else {
-        (*head.entries).entries.values().next_back()
+        head.entries.values().next_back()
     };
     entry
         .copied()
@@ -125,23 +119,18 @@ unsafe fn json_fields_minmax(head: &json_fields, val: ::core::ffi::c_int) -> *mu
 }
 
 unsafe fn json_fields_find(head: &json_fields, key: &CStr) -> *mut json_node {
-    if head.entries.is_null() {
-        return ::core::ptr::null_mut::<json_node>();
-    }
-    (*head.entries)
-        .entries
+    head.entries
         .get(key.to_bytes())
         .copied()
         .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
 
 unsafe fn json_fields_next(head: &json_fields, elm: &json_node) -> *mut json_node {
-    if head.entries.is_null() || elm.key.is_none() {
+    if elm.key.is_none() {
         return ::core::ptr::null_mut::<json_node>();
     }
     let key = elm.key.as_ref().unwrap().as_bytes().to_vec();
-    (*head.entries)
-        .entries
+    head.entries
         .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map(|(_, entry)| *entry)
@@ -655,9 +644,7 @@ unsafe fn json_create_node(
         NODE_STRING => JsonValue::String(Default::default()),
         NODE_NUMBER => JsonValue::Number(0),
         NODE_BOOLEAN => JsonValue::Boolean(0),
-        NODE_OBJECT => JsonValue::Object(json_fields {
-            entries: Box::into_raw(Box::new(json_fields_storage::default())),
-        }),
+        NODE_OBJECT => JsonValue::Object(json_fields::default()),
         NODE_ARRAY => JsonValue::Array(Default::default()),
         _ => fatalx(c"unknown node type".as_ptr()),
     };
@@ -684,10 +671,6 @@ pub unsafe fn json_destroy_node(mut node: *mut json_node) {
                 json_fields_remove((*node).value.fields_mut(), &*field);
                 json_destroy_node(field);
                 field = field1;
-            }
-            if !(*node).value.fields().entries.is_null() {
-                drop(Box::from_raw((*node).value.fields().entries));
-                (*node).value.fields_mut().entries = ::core::ptr::null_mut::<json_fields_storage>();
             }
         }
         4 => {
@@ -1320,8 +1303,6 @@ mod json_fields_tests {
             json_destroy_node(item);
             item = next;
         }
-        drop(Box::from_raw(head.entries));
-        head.entries = ::core::ptr::null_mut::<json_fields_storage>();
     }
 
     #[test]
@@ -1334,9 +1315,7 @@ mod json_fields_tests {
                 .collect();
             assert!(crate::src::ffi::libc::strcmp(keys[1].as_ptr(), keys[2].as_ptr()) < 0);
             assert!(crate::src::ffi::libc::strcmp(keys[3].as_ptr(), keys[0].as_ptr()) > 0);
-            let mut head = json_fields {
-                entries: Box::into_raw(Box::new(json_fields_storage::default())),
-            };
+            let mut head = json_fields::default();
             let mut items = Vec::new();
             for key in &keys {
                 let item = new_node(key);
