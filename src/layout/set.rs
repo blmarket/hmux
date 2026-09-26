@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use crate::src::arguments::args_string_percentage_result;
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::{strcmp, strlen, strncmp};
@@ -19,37 +20,37 @@ use crate::src::window::{window_count_panes, window_pane_first, window_pane_next
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_35 {
-    pub name: *const ::core::ffi::c_char,
+    pub name: &'static CStr,
     pub arrange: Option<fn(&mut window)>,
 }
-static mut layout_sets: [C2RustUnnamed_35; 7] =  {
+static layout_sets: [C2RustUnnamed_35; 7] =  {
     [
         C2RustUnnamed_35 {
-            name: b"even-horizontal\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"even-horizontal",
             arrange: Some(layout_set_even_h_callback),
         },
         C2RustUnnamed_35 {
-            name: b"even-vertical\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"even-vertical",
             arrange: Some(layout_set_even_v_callback),
         },
         C2RustUnnamed_35 {
-            name: b"main-horizontal\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"main-horizontal",
             arrange: Some(layout_set_main_h_callback),
         },
         C2RustUnnamed_35 {
-            name: b"main-horizontal-mirrored\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"main-horizontal-mirrored",
             arrange: Some(layout_set_main_h_mirrored_callback),
         },
         C2RustUnnamed_35 {
-            name: b"main-vertical\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"main-vertical",
             arrange: Some(layout_set_main_v_callback),
         },
         C2RustUnnamed_35 {
-            name: b"main-vertical-mirrored\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"main-vertical-mirrored",
             arrange: Some(layout_set_main_v_mirrored_callback),
         },
         C2RustUnnamed_35 {
-            name: b"tiled\0" as *const u8 as *const ::core::ffi::c_char,
+            name: c"tiled",
             arrange: Some(layout_set_tiled_callback),
         },
     ]
@@ -62,7 +63,7 @@ pub unsafe fn layout_set_lookup(mut name: *const ::core::ffi::c_char) -> ::core:
         < (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
-        if strcmp(layout_sets[i as usize].name, name) == 0 as ::core::ffi::c_int {
+        if strcmp(layout_sets[i as usize].name.as_ptr(), name) == 0 as ::core::ffi::c_int {
             return i as ::core::ffi::c_int;
         }
         i = i.wrapping_add(1);
@@ -72,7 +73,7 @@ pub unsafe fn layout_set_lookup(mut name: *const ::core::ffi::c_char) -> ::core:
         < (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
-        if strncmp(layout_sets[i as usize].name, name, strlen(name)) == 0 as ::core::ffi::c_int {
+        if strncmp(layout_sets[i as usize].name.as_ptr(), name, strlen(name)) == 0 as ::core::ffi::c_int {
             if matched != -(1 as ::core::ffi::c_int) {
                 return -(1 as ::core::ffi::c_int);
             }

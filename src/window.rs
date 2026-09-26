@@ -2416,8 +2416,8 @@ pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
         palette: colour_palette {
             fg: 0,
             bg: 0,
-            palette: ::core::ptr::null_mut::<::core::ffi::c_int>(),
-            default_palette: ::core::ptr::null_mut::<::core::ffi::c_int>(),
+            palette: None,
+            default_palette: None,
         },
         last_theme: THEME_UNKNOWN,
         border_status_line: style_line_entry {

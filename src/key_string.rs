@@ -17,7 +17,7 @@ use std::ffi::{CStr, CString};
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_1 {
-    pub string: *const ::core::ffi::c_char,
+    pub string: &'static CStr,
     pub key: key_code,
 }
 #[inline]
@@ -29,5521 +29,5521 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     };
 }
 pub const MB_LEN_MAX: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
-static mut key_string_table: [C2RustUnnamed_1; 1379] = [
+static key_string_table: [C2RustUnnamed_1; 1379] = [
     C2RustUnnamed_1 {
-        string: b"F1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F1",
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F2",
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F3",
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F4",
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F5",
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F6",
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F7",
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F8",
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F9",
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F10\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F10",
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F11\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F11",
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"F12\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"F12",
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"IC\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"IC",
         key: KEYC_IC as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"Insert\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Insert",
         key: KEYC_IC as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"DC\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DC",
         key: KEYC_DC as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"Delete\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Delete",
         key: KEYC_DC as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"Home\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Home",
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"End\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"End",
         key: KEYC_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"NPage\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"NPage",
         key: KEYC_NPAGE as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"PageDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"PageDown",
         key: KEYC_NPAGE as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"PgDn\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"PgDn",
         key: KEYC_NPAGE as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"PPage\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"PPage",
         key: KEYC_PPAGE as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"PageUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"PageUp",
         key: KEYC_PPAGE as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"PgUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"PgUp",
         key: KEYC_PPAGE as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"BTab\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"BTab",
         key: KEYC_BTAB as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"Space\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Space",
         key: ' ' as i32 as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"BSpace\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"BSpace",
         key: KEYC_BSPACE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[NUL]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[NUL]",
         key: C0_NUL as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[SOH]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[SOH]",
         key: C0_SOH as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[STX]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[STX]",
         key: C0_STX as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[ETX]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[ETX]",
         key: C0_ETX as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[EOT]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[EOT]",
         key: C0_EOT as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[ENQ]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[ENQ]",
         key: C0_ENQ as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[ASC]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[ASC]",
         key: C0_ASC as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[BEL]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[BEL]",
         key: C0_BEL as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[BS]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[BS]",
         key: C0_BS as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"Tab\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Tab",
         key: C0_HT as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[LF]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[LF]",
         key: C0_LF as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[VT]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[VT]",
         key: C0_VT as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[FF]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[FF]",
         key: C0_FF as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"Enter\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Enter",
         key: C0_CR as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[SO]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[SO]",
         key: C0_SO as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[SI]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[SI]",
         key: C0_SI as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[DLE]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[DLE]",
         key: C0_DLE as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[DC1]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[DC1]",
         key: C0_DC1 as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[DC2]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[DC2]",
         key: C0_DC2 as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[DC3]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[DC3]",
         key: C0_DC3 as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[DC4]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[DC4]",
         key: C0_DC4 as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[NAK]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[NAK]",
         key: C0_NAK as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[SYN]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[SYN]",
         key: C0_SYN as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[ETB]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[ETB]",
         key: C0_ETB as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[CAN]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[CAN]",
         key: C0_CAN as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[EM]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[EM]",
         key: C0_EM as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[SUB]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[SUB]",
         key: C0_SUB as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"Escape\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Escape",
         key: C0_ESC as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[FS]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[FS]",
         key: C0_FS as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[GS]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[GS]",
         key: C0_GS as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[RS]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[RS]",
         key: C0_RS as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"[US]\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"[US]",
         key: C0_US as ::core::ffi::c_int as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"Up\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Up",
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"Down\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Down",
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"Left\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Left",
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"Right\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"Right",
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR | KEYC_IMPLIED_META,
     },
     C2RustUnnamed_1 {
-        string: b"KP/\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP/",
         key: KEYC_KP_SLASH as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP*\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP*",
         key: KEYC_KP_STAR as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP-\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP-",
         key: KEYC_KP_MINUS as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP7",
         key: KEYC_KP_SEVEN as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP8",
         key: KEYC_KP_EIGHT as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP9",
         key: KEYC_KP_NINE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP+\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP+",
         key: KEYC_KP_PLUS as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP4",
         key: KEYC_KP_FOUR as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP5",
         key: KEYC_KP_FIVE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP6",
         key: KEYC_KP_SIX as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP1",
         key: KEYC_KP_ONE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP2",
         key: KEYC_KP_TWO as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP3",
         key: KEYC_KP_THREE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KPEnter\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KPEnter",
         key: KEYC_KP_ENTER as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP0",
         key: KEYC_KP_ZERO as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"KP.\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"KP.",
         key: KEYC_KP_PERIOD as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Pane",
         key: KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Status",
         key: KEYC_MOUSEDOWN1_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1StatusLeft",
         key: KEYC_MOUSEDOWN1_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1StatusRight",
         key: KEYC_MOUSEDOWN1_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1StatusDefault",
         key: KEYC_MOUSEDOWN1_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1ScrollbarUp",
         key: KEYC_MOUSEDOWN1_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1ScrollbarSlider",
         key: KEYC_MOUSEDOWN1_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1ScrollbarDown",
         key: KEYC_MOUSEDOWN1_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Empty",
         key: KEYC_MOUSEDOWN1_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Border",
         key: KEYC_MOUSEDOWN1_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control0",
         key: KEYC_MOUSEDOWN1_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control1",
         key: KEYC_MOUSEDOWN1_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control2",
         key: KEYC_MOUSEDOWN1_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control3",
         key: KEYC_MOUSEDOWN1_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control4",
         key: KEYC_MOUSEDOWN1_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control5",
         key: KEYC_MOUSEDOWN1_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control6",
         key: KEYC_MOUSEDOWN1_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control7",
         key: KEYC_MOUSEDOWN1_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control8",
         key: KEYC_MOUSEDOWN1_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown1Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown1Control9",
         key: KEYC_MOUSEDOWN1_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Pane",
         key: KEYC_MOUSEDOWN2_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Status",
         key: KEYC_MOUSEDOWN2_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2StatusLeft",
         key: KEYC_MOUSEDOWN2_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2StatusRight",
         key: KEYC_MOUSEDOWN2_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2StatusDefault",
         key: KEYC_MOUSEDOWN2_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2ScrollbarUp",
         key: KEYC_MOUSEDOWN2_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2ScrollbarSlider",
         key: KEYC_MOUSEDOWN2_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2ScrollbarDown",
         key: KEYC_MOUSEDOWN2_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Empty",
         key: KEYC_MOUSEDOWN2_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Border",
         key: KEYC_MOUSEDOWN2_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control0",
         key: KEYC_MOUSEDOWN2_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control1",
         key: KEYC_MOUSEDOWN2_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control2",
         key: KEYC_MOUSEDOWN2_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control3",
         key: KEYC_MOUSEDOWN2_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control4",
         key: KEYC_MOUSEDOWN2_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control5",
         key: KEYC_MOUSEDOWN2_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control6",
         key: KEYC_MOUSEDOWN2_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control7",
         key: KEYC_MOUSEDOWN2_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control8",
         key: KEYC_MOUSEDOWN2_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown2Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown2Control9",
         key: KEYC_MOUSEDOWN2_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Pane",
         key: KEYC_MOUSEDOWN3_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Status",
         key: KEYC_MOUSEDOWN3_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3StatusLeft",
         key: KEYC_MOUSEDOWN3_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3StatusRight",
         key: KEYC_MOUSEDOWN3_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3StatusDefault",
         key: KEYC_MOUSEDOWN3_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3ScrollbarUp",
         key: KEYC_MOUSEDOWN3_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3ScrollbarSlider",
         key: KEYC_MOUSEDOWN3_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3ScrollbarDown",
         key: KEYC_MOUSEDOWN3_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Empty",
         key: KEYC_MOUSEDOWN3_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Border",
         key: KEYC_MOUSEDOWN3_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control0",
         key: KEYC_MOUSEDOWN3_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control1",
         key: KEYC_MOUSEDOWN3_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control2",
         key: KEYC_MOUSEDOWN3_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control3",
         key: KEYC_MOUSEDOWN3_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control4",
         key: KEYC_MOUSEDOWN3_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control5",
         key: KEYC_MOUSEDOWN3_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control6",
         key: KEYC_MOUSEDOWN3_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control7",
         key: KEYC_MOUSEDOWN3_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control8",
         key: KEYC_MOUSEDOWN3_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown3Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown3Control9",
         key: KEYC_MOUSEDOWN3_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Pane",
         key: KEYC_MOUSEDOWN6_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Status",
         key: KEYC_MOUSEDOWN6_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6StatusLeft",
         key: KEYC_MOUSEDOWN6_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6StatusRight",
         key: KEYC_MOUSEDOWN6_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6StatusDefault",
         key: KEYC_MOUSEDOWN6_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6ScrollbarUp",
         key: KEYC_MOUSEDOWN6_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6ScrollbarSlider",
         key: KEYC_MOUSEDOWN6_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6ScrollbarDown",
         key: KEYC_MOUSEDOWN6_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Empty",
         key: KEYC_MOUSEDOWN6_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Border",
         key: KEYC_MOUSEDOWN6_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control0",
         key: KEYC_MOUSEDOWN6_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control1",
         key: KEYC_MOUSEDOWN6_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control2",
         key: KEYC_MOUSEDOWN6_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control3",
         key: KEYC_MOUSEDOWN6_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control4",
         key: KEYC_MOUSEDOWN6_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control5",
         key: KEYC_MOUSEDOWN6_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control6",
         key: KEYC_MOUSEDOWN6_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control7",
         key: KEYC_MOUSEDOWN6_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control8",
         key: KEYC_MOUSEDOWN6_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown6Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown6Control9",
         key: KEYC_MOUSEDOWN6_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Pane",
         key: KEYC_MOUSEDOWN7_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Status",
         key: KEYC_MOUSEDOWN7_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7StatusLeft",
         key: KEYC_MOUSEDOWN7_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7StatusRight",
         key: KEYC_MOUSEDOWN7_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7StatusDefault",
         key: KEYC_MOUSEDOWN7_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7ScrollbarUp",
         key: KEYC_MOUSEDOWN7_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7ScrollbarSlider",
         key: KEYC_MOUSEDOWN7_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7ScrollbarDown",
         key: KEYC_MOUSEDOWN7_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Empty",
         key: KEYC_MOUSEDOWN7_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Border",
         key: KEYC_MOUSEDOWN7_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control0",
         key: KEYC_MOUSEDOWN7_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control1",
         key: KEYC_MOUSEDOWN7_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control2",
         key: KEYC_MOUSEDOWN7_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control3",
         key: KEYC_MOUSEDOWN7_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control4",
         key: KEYC_MOUSEDOWN7_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control5",
         key: KEYC_MOUSEDOWN7_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control6",
         key: KEYC_MOUSEDOWN7_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control7",
         key: KEYC_MOUSEDOWN7_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control8",
         key: KEYC_MOUSEDOWN7_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown7Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown7Control9",
         key: KEYC_MOUSEDOWN7_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Pane",
         key: KEYC_MOUSEDOWN8_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Status",
         key: KEYC_MOUSEDOWN8_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8StatusLeft",
         key: KEYC_MOUSEDOWN8_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8StatusRight",
         key: KEYC_MOUSEDOWN8_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8StatusDefault",
         key: KEYC_MOUSEDOWN8_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8ScrollbarUp",
         key: KEYC_MOUSEDOWN8_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8ScrollbarSlider",
         key: KEYC_MOUSEDOWN8_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8ScrollbarDown",
         key: KEYC_MOUSEDOWN8_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Empty",
         key: KEYC_MOUSEDOWN8_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Border",
         key: KEYC_MOUSEDOWN8_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control0",
         key: KEYC_MOUSEDOWN8_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control1",
         key: KEYC_MOUSEDOWN8_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control2",
         key: KEYC_MOUSEDOWN8_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control3",
         key: KEYC_MOUSEDOWN8_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control4",
         key: KEYC_MOUSEDOWN8_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control5",
         key: KEYC_MOUSEDOWN8_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control6",
         key: KEYC_MOUSEDOWN8_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control7",
         key: KEYC_MOUSEDOWN8_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control8",
         key: KEYC_MOUSEDOWN8_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown8Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown8Control9",
         key: KEYC_MOUSEDOWN8_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Pane",
         key: KEYC_MOUSEDOWN9_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Status",
         key: KEYC_MOUSEDOWN9_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9StatusLeft",
         key: KEYC_MOUSEDOWN9_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9StatusRight",
         key: KEYC_MOUSEDOWN9_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9StatusDefault",
         key: KEYC_MOUSEDOWN9_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9ScrollbarUp",
         key: KEYC_MOUSEDOWN9_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9ScrollbarSlider",
         key: KEYC_MOUSEDOWN9_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9ScrollbarDown",
         key: KEYC_MOUSEDOWN9_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Empty",
         key: KEYC_MOUSEDOWN9_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Border",
         key: KEYC_MOUSEDOWN9_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control0",
         key: KEYC_MOUSEDOWN9_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control1",
         key: KEYC_MOUSEDOWN9_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control2",
         key: KEYC_MOUSEDOWN9_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control3",
         key: KEYC_MOUSEDOWN9_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control4",
         key: KEYC_MOUSEDOWN9_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control5",
         key: KEYC_MOUSEDOWN9_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control6",
         key: KEYC_MOUSEDOWN9_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control7",
         key: KEYC_MOUSEDOWN9_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control8",
         key: KEYC_MOUSEDOWN9_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown9Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown9Control9",
         key: KEYC_MOUSEDOWN9_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Pane",
         key: KEYC_MOUSEDOWN10_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Status",
         key: KEYC_MOUSEDOWN10_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10StatusLeft",
         key: KEYC_MOUSEDOWN10_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10StatusRight",
         key: KEYC_MOUSEDOWN10_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10StatusDefault",
         key: KEYC_MOUSEDOWN10_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10ScrollbarUp",
         key: KEYC_MOUSEDOWN10_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10ScrollbarSlider",
         key: KEYC_MOUSEDOWN10_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10ScrollbarDown",
         key: KEYC_MOUSEDOWN10_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Empty",
         key: KEYC_MOUSEDOWN10_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Border",
         key: KEYC_MOUSEDOWN10_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control0",
         key: KEYC_MOUSEDOWN10_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control1",
         key: KEYC_MOUSEDOWN10_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control2",
         key: KEYC_MOUSEDOWN10_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control3",
         key: KEYC_MOUSEDOWN10_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control4",
         key: KEYC_MOUSEDOWN10_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control5",
         key: KEYC_MOUSEDOWN10_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control6",
         key: KEYC_MOUSEDOWN10_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control7",
         key: KEYC_MOUSEDOWN10_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control8",
         key: KEYC_MOUSEDOWN10_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown10Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown10Control9",
         key: KEYC_MOUSEDOWN10_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Pane",
         key: KEYC_MOUSEDOWN11_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Status",
         key: KEYC_MOUSEDOWN11_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11StatusLeft",
         key: KEYC_MOUSEDOWN11_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11StatusRight",
         key: KEYC_MOUSEDOWN11_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11StatusDefault",
         key: KEYC_MOUSEDOWN11_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11ScrollbarUp",
         key: KEYC_MOUSEDOWN11_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11ScrollbarSlider",
         key: KEYC_MOUSEDOWN11_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11ScrollbarDown",
         key: KEYC_MOUSEDOWN11_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Empty",
         key: KEYC_MOUSEDOWN11_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Border",
         key: KEYC_MOUSEDOWN11_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control0",
         key: KEYC_MOUSEDOWN11_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control1",
         key: KEYC_MOUSEDOWN11_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control2",
         key: KEYC_MOUSEDOWN11_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control3",
         key: KEYC_MOUSEDOWN11_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control4",
         key: KEYC_MOUSEDOWN11_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control5",
         key: KEYC_MOUSEDOWN11_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control6",
         key: KEYC_MOUSEDOWN11_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control7",
         key: KEYC_MOUSEDOWN11_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control8",
         key: KEYC_MOUSEDOWN11_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDown11Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDown11Control9",
         key: KEYC_MOUSEDOWN11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Pane",
         key: KEYC_MOUSEUP1_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Status",
         key: KEYC_MOUSEUP1_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1StatusLeft",
         key: KEYC_MOUSEUP1_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1StatusRight",
         key: KEYC_MOUSEUP1_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1StatusDefault",
         key: KEYC_MOUSEUP1_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1ScrollbarUp",
         key: KEYC_MOUSEUP1_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1ScrollbarSlider",
         key: KEYC_MOUSEUP1_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1ScrollbarDown",
         key: KEYC_MOUSEUP1_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Empty",
         key: KEYC_MOUSEUP1_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Border",
         key: KEYC_MOUSEUP1_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control0",
         key: KEYC_MOUSEUP1_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control1",
         key: KEYC_MOUSEUP1_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control2",
         key: KEYC_MOUSEUP1_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control3",
         key: KEYC_MOUSEUP1_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control4",
         key: KEYC_MOUSEUP1_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control5",
         key: KEYC_MOUSEUP1_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control6",
         key: KEYC_MOUSEUP1_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control7",
         key: KEYC_MOUSEUP1_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control8",
         key: KEYC_MOUSEUP1_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp1Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp1Control9",
         key: KEYC_MOUSEUP1_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Pane",
         key: KEYC_MOUSEUP2_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Status",
         key: KEYC_MOUSEUP2_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2StatusLeft",
         key: KEYC_MOUSEUP2_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2StatusRight",
         key: KEYC_MOUSEUP2_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2StatusDefault",
         key: KEYC_MOUSEUP2_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2ScrollbarUp",
         key: KEYC_MOUSEUP2_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2ScrollbarSlider",
         key: KEYC_MOUSEUP2_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2ScrollbarDown",
         key: KEYC_MOUSEUP2_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Empty",
         key: KEYC_MOUSEUP2_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Border",
         key: KEYC_MOUSEUP2_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control0",
         key: KEYC_MOUSEUP2_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control1",
         key: KEYC_MOUSEUP2_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control2",
         key: KEYC_MOUSEUP2_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control3",
         key: KEYC_MOUSEUP2_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control4",
         key: KEYC_MOUSEUP2_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control5",
         key: KEYC_MOUSEUP2_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control6",
         key: KEYC_MOUSEUP2_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control7",
         key: KEYC_MOUSEUP2_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control8",
         key: KEYC_MOUSEUP2_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp2Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp2Control9",
         key: KEYC_MOUSEUP2_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Pane",
         key: KEYC_MOUSEUP3_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Status",
         key: KEYC_MOUSEUP3_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3StatusLeft",
         key: KEYC_MOUSEUP3_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3StatusRight",
         key: KEYC_MOUSEUP3_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3StatusDefault",
         key: KEYC_MOUSEUP3_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3ScrollbarUp",
         key: KEYC_MOUSEUP3_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3ScrollbarSlider",
         key: KEYC_MOUSEUP3_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3ScrollbarDown",
         key: KEYC_MOUSEUP3_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Empty",
         key: KEYC_MOUSEUP3_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Border",
         key: KEYC_MOUSEUP3_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control0",
         key: KEYC_MOUSEUP3_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control1",
         key: KEYC_MOUSEUP3_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control2",
         key: KEYC_MOUSEUP3_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control3",
         key: KEYC_MOUSEUP3_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control4",
         key: KEYC_MOUSEUP3_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control5",
         key: KEYC_MOUSEUP3_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control6",
         key: KEYC_MOUSEUP3_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control7",
         key: KEYC_MOUSEUP3_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control8",
         key: KEYC_MOUSEUP3_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp3Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp3Control9",
         key: KEYC_MOUSEUP3_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Pane",
         key: KEYC_MOUSEUP6_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Status",
         key: KEYC_MOUSEUP6_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6StatusLeft",
         key: KEYC_MOUSEUP6_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6StatusRight",
         key: KEYC_MOUSEUP6_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6StatusDefault",
         key: KEYC_MOUSEUP6_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6ScrollbarUp",
         key: KEYC_MOUSEUP6_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6ScrollbarSlider",
         key: KEYC_MOUSEUP6_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6ScrollbarDown",
         key: KEYC_MOUSEUP6_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Empty",
         key: KEYC_MOUSEUP6_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Border",
         key: KEYC_MOUSEUP6_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control0",
         key: KEYC_MOUSEUP6_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control1",
         key: KEYC_MOUSEUP6_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control2",
         key: KEYC_MOUSEUP6_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control3",
         key: KEYC_MOUSEUP6_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control4",
         key: KEYC_MOUSEUP6_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control5",
         key: KEYC_MOUSEUP6_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control6",
         key: KEYC_MOUSEUP6_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control7",
         key: KEYC_MOUSEUP6_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control8",
         key: KEYC_MOUSEUP6_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp6Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp6Control9",
         key: KEYC_MOUSEUP6_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Pane",
         key: KEYC_MOUSEUP7_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Status",
         key: KEYC_MOUSEUP7_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7StatusLeft",
         key: KEYC_MOUSEUP7_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7StatusRight",
         key: KEYC_MOUSEUP7_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7StatusDefault",
         key: KEYC_MOUSEUP7_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7ScrollbarUp",
         key: KEYC_MOUSEUP7_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7ScrollbarSlider",
         key: KEYC_MOUSEUP7_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7ScrollbarDown",
         key: KEYC_MOUSEUP7_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Empty",
         key: KEYC_MOUSEUP7_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Border",
         key: KEYC_MOUSEUP7_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control0",
         key: KEYC_MOUSEUP7_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control1",
         key: KEYC_MOUSEUP7_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control2",
         key: KEYC_MOUSEUP7_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control3",
         key: KEYC_MOUSEUP7_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control4",
         key: KEYC_MOUSEUP7_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control5",
         key: KEYC_MOUSEUP7_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control6",
         key: KEYC_MOUSEUP7_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control7",
         key: KEYC_MOUSEUP7_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control8",
         key: KEYC_MOUSEUP7_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp7Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp7Control9",
         key: KEYC_MOUSEUP7_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Pane",
         key: KEYC_MOUSEUP8_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Status",
         key: KEYC_MOUSEUP8_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8StatusLeft",
         key: KEYC_MOUSEUP8_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8StatusRight",
         key: KEYC_MOUSEUP8_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8StatusDefault",
         key: KEYC_MOUSEUP8_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8ScrollbarUp",
         key: KEYC_MOUSEUP8_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8ScrollbarSlider",
         key: KEYC_MOUSEUP8_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8ScrollbarDown",
         key: KEYC_MOUSEUP8_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Empty",
         key: KEYC_MOUSEUP8_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Border",
         key: KEYC_MOUSEUP8_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control0",
         key: KEYC_MOUSEUP8_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control1",
         key: KEYC_MOUSEUP8_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control2",
         key: KEYC_MOUSEUP8_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control3",
         key: KEYC_MOUSEUP8_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control4",
         key: KEYC_MOUSEUP8_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control5",
         key: KEYC_MOUSEUP8_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control6",
         key: KEYC_MOUSEUP8_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control7",
         key: KEYC_MOUSEUP8_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control8",
         key: KEYC_MOUSEUP8_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp8Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp8Control9",
         key: KEYC_MOUSEUP8_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Pane",
         key: KEYC_MOUSEUP9_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Status",
         key: KEYC_MOUSEUP9_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9StatusLeft",
         key: KEYC_MOUSEUP9_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9StatusRight",
         key: KEYC_MOUSEUP9_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9StatusDefault",
         key: KEYC_MOUSEUP9_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9ScrollbarUp",
         key: KEYC_MOUSEUP9_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9ScrollbarSlider",
         key: KEYC_MOUSEUP9_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9ScrollbarDown",
         key: KEYC_MOUSEUP9_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Empty",
         key: KEYC_MOUSEUP9_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Border",
         key: KEYC_MOUSEUP9_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control0",
         key: KEYC_MOUSEUP9_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control1",
         key: KEYC_MOUSEUP9_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control2",
         key: KEYC_MOUSEUP9_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control3",
         key: KEYC_MOUSEUP9_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control4",
         key: KEYC_MOUSEUP9_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control5",
         key: KEYC_MOUSEUP9_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control6",
         key: KEYC_MOUSEUP9_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control7",
         key: KEYC_MOUSEUP9_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control8",
         key: KEYC_MOUSEUP9_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp9Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp9Control9",
         key: KEYC_MOUSEUP9_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Pane",
         key: KEYC_MOUSEUP10_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Status",
         key: KEYC_MOUSEUP10_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10StatusLeft",
         key: KEYC_MOUSEUP10_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10StatusRight",
         key: KEYC_MOUSEUP10_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10StatusDefault",
         key: KEYC_MOUSEUP10_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10ScrollbarUp",
         key: KEYC_MOUSEUP10_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10ScrollbarSlider",
         key: KEYC_MOUSEUP10_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10ScrollbarDown",
         key: KEYC_MOUSEUP10_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Empty",
         key: KEYC_MOUSEUP10_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Border",
         key: KEYC_MOUSEUP10_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control0",
         key: KEYC_MOUSEUP10_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control1",
         key: KEYC_MOUSEUP10_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control2",
         key: KEYC_MOUSEUP10_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control3",
         key: KEYC_MOUSEUP10_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control4",
         key: KEYC_MOUSEUP10_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control5",
         key: KEYC_MOUSEUP10_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control6",
         key: KEYC_MOUSEUP10_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control7",
         key: KEYC_MOUSEUP10_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control8",
         key: KEYC_MOUSEUP10_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp10Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp10Control9",
         key: KEYC_MOUSEUP10_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Pane",
         key: KEYC_MOUSEUP11_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Status",
         key: KEYC_MOUSEUP11_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11StatusLeft",
         key: KEYC_MOUSEUP11_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11StatusRight",
         key: KEYC_MOUSEUP11_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11StatusDefault",
         key: KEYC_MOUSEUP11_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11ScrollbarUp",
         key: KEYC_MOUSEUP11_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11ScrollbarSlider",
         key: KEYC_MOUSEUP11_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11ScrollbarDown",
         key: KEYC_MOUSEUP11_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Empty",
         key: KEYC_MOUSEUP11_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Border",
         key: KEYC_MOUSEUP11_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control0",
         key: KEYC_MOUSEUP11_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control1",
         key: KEYC_MOUSEUP11_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control2",
         key: KEYC_MOUSEUP11_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control3",
         key: KEYC_MOUSEUP11_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control4",
         key: KEYC_MOUSEUP11_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control5",
         key: KEYC_MOUSEUP11_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control6",
         key: KEYC_MOUSEUP11_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control7",
         key: KEYC_MOUSEUP11_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control8",
         key: KEYC_MOUSEUP11_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseUp11Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseUp11Control9",
         key: KEYC_MOUSEUP11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Pane",
         key: KEYC_MOUSEDRAG1_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Status",
         key: KEYC_MOUSEDRAG1_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1StatusLeft",
         key: KEYC_MOUSEDRAG1_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1StatusRight",
         key: KEYC_MOUSEDRAG1_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1StatusDefault",
         key: KEYC_MOUSEDRAG1_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1ScrollbarUp",
         key: KEYC_MOUSEDRAG1_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1ScrollbarSlider",
         key: KEYC_MOUSEDRAG1_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1ScrollbarDown",
         key: KEYC_MOUSEDRAG1_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Empty",
         key: KEYC_MOUSEDRAG1_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Border",
         key: KEYC_MOUSEDRAG1_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control0",
         key: KEYC_MOUSEDRAG1_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control1",
         key: KEYC_MOUSEDRAG1_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control2",
         key: KEYC_MOUSEDRAG1_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control3",
         key: KEYC_MOUSEDRAG1_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control4",
         key: KEYC_MOUSEDRAG1_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control5",
         key: KEYC_MOUSEDRAG1_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control6",
         key: KEYC_MOUSEDRAG1_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control7",
         key: KEYC_MOUSEDRAG1_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control8",
         key: KEYC_MOUSEDRAG1_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag1Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag1Control9",
         key: KEYC_MOUSEDRAG1_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Pane",
         key: KEYC_MOUSEDRAG2_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Status",
         key: KEYC_MOUSEDRAG2_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2StatusLeft",
         key: KEYC_MOUSEDRAG2_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2StatusRight",
         key: KEYC_MOUSEDRAG2_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2StatusDefault",
         key: KEYC_MOUSEDRAG2_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2ScrollbarUp",
         key: KEYC_MOUSEDRAG2_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2ScrollbarSlider",
         key: KEYC_MOUSEDRAG2_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2ScrollbarDown",
         key: KEYC_MOUSEDRAG2_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Empty",
         key: KEYC_MOUSEDRAG2_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Border",
         key: KEYC_MOUSEDRAG2_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control0",
         key: KEYC_MOUSEDRAG2_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control1",
         key: KEYC_MOUSEDRAG2_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control2",
         key: KEYC_MOUSEDRAG2_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control3",
         key: KEYC_MOUSEDRAG2_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control4",
         key: KEYC_MOUSEDRAG2_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control5",
         key: KEYC_MOUSEDRAG2_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control6",
         key: KEYC_MOUSEDRAG2_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control7",
         key: KEYC_MOUSEDRAG2_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control8",
         key: KEYC_MOUSEDRAG2_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag2Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag2Control9",
         key: KEYC_MOUSEDRAG2_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Pane",
         key: KEYC_MOUSEDRAG3_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Status",
         key: KEYC_MOUSEDRAG3_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3StatusLeft",
         key: KEYC_MOUSEDRAG3_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3StatusRight",
         key: KEYC_MOUSEDRAG3_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3StatusDefault",
         key: KEYC_MOUSEDRAG3_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3ScrollbarUp",
         key: KEYC_MOUSEDRAG3_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3ScrollbarSlider",
         key: KEYC_MOUSEDRAG3_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3ScrollbarDown",
         key: KEYC_MOUSEDRAG3_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Empty",
         key: KEYC_MOUSEDRAG3_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Border",
         key: KEYC_MOUSEDRAG3_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control0",
         key: KEYC_MOUSEDRAG3_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control1",
         key: KEYC_MOUSEDRAG3_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control2",
         key: KEYC_MOUSEDRAG3_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control3",
         key: KEYC_MOUSEDRAG3_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control4",
         key: KEYC_MOUSEDRAG3_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control5",
         key: KEYC_MOUSEDRAG3_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control6",
         key: KEYC_MOUSEDRAG3_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control7",
         key: KEYC_MOUSEDRAG3_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control8",
         key: KEYC_MOUSEDRAG3_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag3Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag3Control9",
         key: KEYC_MOUSEDRAG3_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Pane",
         key: KEYC_MOUSEDRAG6_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Status",
         key: KEYC_MOUSEDRAG6_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6StatusLeft",
         key: KEYC_MOUSEDRAG6_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6StatusRight",
         key: KEYC_MOUSEDRAG6_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6StatusDefault",
         key: KEYC_MOUSEDRAG6_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6ScrollbarUp",
         key: KEYC_MOUSEDRAG6_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6ScrollbarSlider",
         key: KEYC_MOUSEDRAG6_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6ScrollbarDown",
         key: KEYC_MOUSEDRAG6_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Empty",
         key: KEYC_MOUSEDRAG6_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Border",
         key: KEYC_MOUSEDRAG6_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control0",
         key: KEYC_MOUSEDRAG6_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control1",
         key: KEYC_MOUSEDRAG6_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control2",
         key: KEYC_MOUSEDRAG6_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control3",
         key: KEYC_MOUSEDRAG6_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control4",
         key: KEYC_MOUSEDRAG6_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control5",
         key: KEYC_MOUSEDRAG6_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control6",
         key: KEYC_MOUSEDRAG6_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control7",
         key: KEYC_MOUSEDRAG6_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control8",
         key: KEYC_MOUSEDRAG6_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag6Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag6Control9",
         key: KEYC_MOUSEDRAG6_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Pane",
         key: KEYC_MOUSEDRAG7_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Status",
         key: KEYC_MOUSEDRAG7_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7StatusLeft",
         key: KEYC_MOUSEDRAG7_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7StatusRight",
         key: KEYC_MOUSEDRAG7_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7StatusDefault",
         key: KEYC_MOUSEDRAG7_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7ScrollbarUp",
         key: KEYC_MOUSEDRAG7_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7ScrollbarSlider",
         key: KEYC_MOUSEDRAG7_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7ScrollbarDown",
         key: KEYC_MOUSEDRAG7_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Empty",
         key: KEYC_MOUSEDRAG7_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Border",
         key: KEYC_MOUSEDRAG7_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control0",
         key: KEYC_MOUSEDRAG7_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control1",
         key: KEYC_MOUSEDRAG7_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control2",
         key: KEYC_MOUSEDRAG7_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control3",
         key: KEYC_MOUSEDRAG7_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control4",
         key: KEYC_MOUSEDRAG7_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control5",
         key: KEYC_MOUSEDRAG7_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control6",
         key: KEYC_MOUSEDRAG7_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control7",
         key: KEYC_MOUSEDRAG7_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control8",
         key: KEYC_MOUSEDRAG7_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag7Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag7Control9",
         key: KEYC_MOUSEDRAG7_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Pane",
         key: KEYC_MOUSEDRAG8_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Status",
         key: KEYC_MOUSEDRAG8_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8StatusLeft",
         key: KEYC_MOUSEDRAG8_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8StatusRight",
         key: KEYC_MOUSEDRAG8_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8StatusDefault",
         key: KEYC_MOUSEDRAG8_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8ScrollbarUp",
         key: KEYC_MOUSEDRAG8_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8ScrollbarSlider",
         key: KEYC_MOUSEDRAG8_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8ScrollbarDown",
         key: KEYC_MOUSEDRAG8_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Empty",
         key: KEYC_MOUSEDRAG8_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Border",
         key: KEYC_MOUSEDRAG8_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control0",
         key: KEYC_MOUSEDRAG8_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control1",
         key: KEYC_MOUSEDRAG8_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control2",
         key: KEYC_MOUSEDRAG8_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control3",
         key: KEYC_MOUSEDRAG8_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control4",
         key: KEYC_MOUSEDRAG8_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control5",
         key: KEYC_MOUSEDRAG8_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control6",
         key: KEYC_MOUSEDRAG8_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control7",
         key: KEYC_MOUSEDRAG8_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control8",
         key: KEYC_MOUSEDRAG8_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag8Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag8Control9",
         key: KEYC_MOUSEDRAG8_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Pane",
         key: KEYC_MOUSEDRAG9_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Status",
         key: KEYC_MOUSEDRAG9_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9StatusLeft",
         key: KEYC_MOUSEDRAG9_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9StatusRight",
         key: KEYC_MOUSEDRAG9_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9StatusDefault",
         key: KEYC_MOUSEDRAG9_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9ScrollbarUp",
         key: KEYC_MOUSEDRAG9_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9ScrollbarSlider",
         key: KEYC_MOUSEDRAG9_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9ScrollbarDown",
         key: KEYC_MOUSEDRAG9_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Empty",
         key: KEYC_MOUSEDRAG9_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Border",
         key: KEYC_MOUSEDRAG9_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control0",
         key: KEYC_MOUSEDRAG9_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control1",
         key: KEYC_MOUSEDRAG9_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control2",
         key: KEYC_MOUSEDRAG9_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control3",
         key: KEYC_MOUSEDRAG9_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control4",
         key: KEYC_MOUSEDRAG9_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control5",
         key: KEYC_MOUSEDRAG9_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control6",
         key: KEYC_MOUSEDRAG9_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control7",
         key: KEYC_MOUSEDRAG9_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control8",
         key: KEYC_MOUSEDRAG9_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag9Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag9Control9",
         key: KEYC_MOUSEDRAG9_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Pane",
         key: KEYC_MOUSEDRAG10_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Status",
         key: KEYC_MOUSEDRAG10_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10StatusLeft",
         key: KEYC_MOUSEDRAG10_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10StatusRight",
         key: KEYC_MOUSEDRAG10_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10StatusDefault",
         key: KEYC_MOUSEDRAG10_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10ScrollbarUp",
         key: KEYC_MOUSEDRAG10_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10ScrollbarSlider",
         key: KEYC_MOUSEDRAG10_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10ScrollbarDown",
         key: KEYC_MOUSEDRAG10_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Empty",
         key: KEYC_MOUSEDRAG10_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Border",
         key: KEYC_MOUSEDRAG10_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control0",
         key: KEYC_MOUSEDRAG10_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control1",
         key: KEYC_MOUSEDRAG10_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control2",
         key: KEYC_MOUSEDRAG10_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control3",
         key: KEYC_MOUSEDRAG10_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control4",
         key: KEYC_MOUSEDRAG10_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control5",
         key: KEYC_MOUSEDRAG10_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control6",
         key: KEYC_MOUSEDRAG10_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control7",
         key: KEYC_MOUSEDRAG10_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control8",
         key: KEYC_MOUSEDRAG10_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag10Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag10Control9",
         key: KEYC_MOUSEDRAG10_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Pane",
         key: KEYC_MOUSEDRAG11_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Status",
         key: KEYC_MOUSEDRAG11_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11StatusLeft",
         key: KEYC_MOUSEDRAG11_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11StatusRight",
         key: KEYC_MOUSEDRAG11_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11StatusDefault",
         key: KEYC_MOUSEDRAG11_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11ScrollbarUp",
         key: KEYC_MOUSEDRAG11_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11ScrollbarSlider",
         key: KEYC_MOUSEDRAG11_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11ScrollbarDown",
         key: KEYC_MOUSEDRAG11_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Empty",
         key: KEYC_MOUSEDRAG11_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Border",
         key: KEYC_MOUSEDRAG11_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control0",
         key: KEYC_MOUSEDRAG11_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control1",
         key: KEYC_MOUSEDRAG11_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control2",
         key: KEYC_MOUSEDRAG11_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control3",
         key: KEYC_MOUSEDRAG11_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control4",
         key: KEYC_MOUSEDRAG11_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control5",
         key: KEYC_MOUSEDRAG11_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control6",
         key: KEYC_MOUSEDRAG11_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control7",
         key: KEYC_MOUSEDRAG11_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control8",
         key: KEYC_MOUSEDRAG11_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDrag11Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDrag11Control9",
         key: KEYC_MOUSEDRAG11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Pane",
         key: KEYC_MOUSEDRAGEND1_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Status",
         key: KEYC_MOUSEDRAGEND1_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1StatusLeft",
         key: KEYC_MOUSEDRAGEND1_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1StatusRight",
         key: KEYC_MOUSEDRAGEND1_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1StatusDefault",
         key: KEYC_MOUSEDRAGEND1_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1ScrollbarUp",
         key: KEYC_MOUSEDRAGEND1_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND1_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1ScrollbarDown",
         key: KEYC_MOUSEDRAGEND1_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Empty",
         key: KEYC_MOUSEDRAGEND1_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Border",
         key: KEYC_MOUSEDRAGEND1_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control0",
         key: KEYC_MOUSEDRAGEND1_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control1",
         key: KEYC_MOUSEDRAGEND1_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control2",
         key: KEYC_MOUSEDRAGEND1_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control3",
         key: KEYC_MOUSEDRAGEND1_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control4",
         key: KEYC_MOUSEDRAGEND1_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control5",
         key: KEYC_MOUSEDRAGEND1_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control6",
         key: KEYC_MOUSEDRAGEND1_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control7",
         key: KEYC_MOUSEDRAGEND1_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control8",
         key: KEYC_MOUSEDRAGEND1_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd1Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd1Control9",
         key: KEYC_MOUSEDRAGEND1_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Pane",
         key: KEYC_MOUSEDRAGEND2_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Status",
         key: KEYC_MOUSEDRAGEND2_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2StatusLeft",
         key: KEYC_MOUSEDRAGEND2_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2StatusRight",
         key: KEYC_MOUSEDRAGEND2_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2StatusDefault",
         key: KEYC_MOUSEDRAGEND2_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2ScrollbarUp",
         key: KEYC_MOUSEDRAGEND2_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND2_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2ScrollbarDown",
         key: KEYC_MOUSEDRAGEND2_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Empty",
         key: KEYC_MOUSEDRAGEND2_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Border",
         key: KEYC_MOUSEDRAGEND2_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control0",
         key: KEYC_MOUSEDRAGEND2_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control1",
         key: KEYC_MOUSEDRAGEND2_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control2",
         key: KEYC_MOUSEDRAGEND2_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control3",
         key: KEYC_MOUSEDRAGEND2_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control4",
         key: KEYC_MOUSEDRAGEND2_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control5",
         key: KEYC_MOUSEDRAGEND2_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control6",
         key: KEYC_MOUSEDRAGEND2_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control7",
         key: KEYC_MOUSEDRAGEND2_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control8",
         key: KEYC_MOUSEDRAGEND2_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd2Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd2Control9",
         key: KEYC_MOUSEDRAGEND2_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Pane",
         key: KEYC_MOUSEDRAGEND3_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Status",
         key: KEYC_MOUSEDRAGEND3_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3StatusLeft",
         key: KEYC_MOUSEDRAGEND3_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3StatusRight",
         key: KEYC_MOUSEDRAGEND3_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3StatusDefault",
         key: KEYC_MOUSEDRAGEND3_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3ScrollbarUp",
         key: KEYC_MOUSEDRAGEND3_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND3_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3ScrollbarDown",
         key: KEYC_MOUSEDRAGEND3_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Empty",
         key: KEYC_MOUSEDRAGEND3_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Border",
         key: KEYC_MOUSEDRAGEND3_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control0",
         key: KEYC_MOUSEDRAGEND3_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control1",
         key: KEYC_MOUSEDRAGEND3_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control2",
         key: KEYC_MOUSEDRAGEND3_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control3",
         key: KEYC_MOUSEDRAGEND3_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control4",
         key: KEYC_MOUSEDRAGEND3_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control5",
         key: KEYC_MOUSEDRAGEND3_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control6",
         key: KEYC_MOUSEDRAGEND3_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control7",
         key: KEYC_MOUSEDRAGEND3_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control8",
         key: KEYC_MOUSEDRAGEND3_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd3Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd3Control9",
         key: KEYC_MOUSEDRAGEND3_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Pane",
         key: KEYC_MOUSEDRAGEND6_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Status",
         key: KEYC_MOUSEDRAGEND6_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6StatusLeft",
         key: KEYC_MOUSEDRAGEND6_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6StatusRight",
         key: KEYC_MOUSEDRAGEND6_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6StatusDefault",
         key: KEYC_MOUSEDRAGEND6_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6ScrollbarUp",
         key: KEYC_MOUSEDRAGEND6_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND6_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6ScrollbarDown",
         key: KEYC_MOUSEDRAGEND6_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Empty",
         key: KEYC_MOUSEDRAGEND6_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Border",
         key: KEYC_MOUSEDRAGEND6_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control0",
         key: KEYC_MOUSEDRAGEND6_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control1",
         key: KEYC_MOUSEDRAGEND6_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control2",
         key: KEYC_MOUSEDRAGEND6_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control3",
         key: KEYC_MOUSEDRAGEND6_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control4",
         key: KEYC_MOUSEDRAGEND6_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control5",
         key: KEYC_MOUSEDRAGEND6_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control6",
         key: KEYC_MOUSEDRAGEND6_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control7",
         key: KEYC_MOUSEDRAGEND6_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control8",
         key: KEYC_MOUSEDRAGEND6_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd6Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd6Control9",
         key: KEYC_MOUSEDRAGEND6_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Pane",
         key: KEYC_MOUSEDRAGEND7_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Status",
         key: KEYC_MOUSEDRAGEND7_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7StatusLeft",
         key: KEYC_MOUSEDRAGEND7_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7StatusRight",
         key: KEYC_MOUSEDRAGEND7_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7StatusDefault",
         key: KEYC_MOUSEDRAGEND7_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7ScrollbarUp",
         key: KEYC_MOUSEDRAGEND7_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND7_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7ScrollbarDown",
         key: KEYC_MOUSEDRAGEND7_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Empty",
         key: KEYC_MOUSEDRAGEND7_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Border",
         key: KEYC_MOUSEDRAGEND7_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control0",
         key: KEYC_MOUSEDRAGEND7_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control1",
         key: KEYC_MOUSEDRAGEND7_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control2",
         key: KEYC_MOUSEDRAGEND7_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control3",
         key: KEYC_MOUSEDRAGEND7_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control4",
         key: KEYC_MOUSEDRAGEND7_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control5",
         key: KEYC_MOUSEDRAGEND7_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control6",
         key: KEYC_MOUSEDRAGEND7_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control7",
         key: KEYC_MOUSEDRAGEND7_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control8",
         key: KEYC_MOUSEDRAGEND7_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd7Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd7Control9",
         key: KEYC_MOUSEDRAGEND7_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Pane",
         key: KEYC_MOUSEDRAGEND8_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Status",
         key: KEYC_MOUSEDRAGEND8_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8StatusLeft",
         key: KEYC_MOUSEDRAGEND8_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8StatusRight",
         key: KEYC_MOUSEDRAGEND8_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8StatusDefault",
         key: KEYC_MOUSEDRAGEND8_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8ScrollbarUp",
         key: KEYC_MOUSEDRAGEND8_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND8_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8ScrollbarDown",
         key: KEYC_MOUSEDRAGEND8_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Empty",
         key: KEYC_MOUSEDRAGEND8_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Border",
         key: KEYC_MOUSEDRAGEND8_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control0",
         key: KEYC_MOUSEDRAGEND8_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control1",
         key: KEYC_MOUSEDRAGEND8_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control2",
         key: KEYC_MOUSEDRAGEND8_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control3",
         key: KEYC_MOUSEDRAGEND8_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control4",
         key: KEYC_MOUSEDRAGEND8_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control5",
         key: KEYC_MOUSEDRAGEND8_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control6",
         key: KEYC_MOUSEDRAGEND8_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control7",
         key: KEYC_MOUSEDRAGEND8_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control8",
         key: KEYC_MOUSEDRAGEND8_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd8Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd8Control9",
         key: KEYC_MOUSEDRAGEND8_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Pane",
         key: KEYC_MOUSEDRAGEND9_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Status",
         key: KEYC_MOUSEDRAGEND9_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9StatusLeft",
         key: KEYC_MOUSEDRAGEND9_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9StatusRight",
         key: KEYC_MOUSEDRAGEND9_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9StatusDefault",
         key: KEYC_MOUSEDRAGEND9_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9ScrollbarUp",
         key: KEYC_MOUSEDRAGEND9_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND9_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9ScrollbarDown",
         key: KEYC_MOUSEDRAGEND9_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Empty",
         key: KEYC_MOUSEDRAGEND9_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Border",
         key: KEYC_MOUSEDRAGEND9_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control0",
         key: KEYC_MOUSEDRAGEND9_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control1",
         key: KEYC_MOUSEDRAGEND9_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control2",
         key: KEYC_MOUSEDRAGEND9_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control3",
         key: KEYC_MOUSEDRAGEND9_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control4",
         key: KEYC_MOUSEDRAGEND9_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control5",
         key: KEYC_MOUSEDRAGEND9_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control6",
         key: KEYC_MOUSEDRAGEND9_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control7",
         key: KEYC_MOUSEDRAGEND9_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control8",
         key: KEYC_MOUSEDRAGEND9_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd9Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd9Control9",
         key: KEYC_MOUSEDRAGEND9_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Pane",
         key: KEYC_MOUSEDRAGEND10_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Status",
         key: KEYC_MOUSEDRAGEND10_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10StatusLeft",
         key: KEYC_MOUSEDRAGEND10_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10StatusRight",
         key: KEYC_MOUSEDRAGEND10_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10StatusDefault",
         key: KEYC_MOUSEDRAGEND10_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10ScrollbarUp",
         key: KEYC_MOUSEDRAGEND10_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND10_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10ScrollbarDown",
         key: KEYC_MOUSEDRAGEND10_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Empty",
         key: KEYC_MOUSEDRAGEND10_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Border",
         key: KEYC_MOUSEDRAGEND10_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control0",
         key: KEYC_MOUSEDRAGEND10_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control1",
         key: KEYC_MOUSEDRAGEND10_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control2",
         key: KEYC_MOUSEDRAGEND10_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control3",
         key: KEYC_MOUSEDRAGEND10_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control4",
         key: KEYC_MOUSEDRAGEND10_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control5",
         key: KEYC_MOUSEDRAGEND10_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control6",
         key: KEYC_MOUSEDRAGEND10_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control7",
         key: KEYC_MOUSEDRAGEND10_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control8",
         key: KEYC_MOUSEDRAGEND10_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd10Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd10Control9",
         key: KEYC_MOUSEDRAGEND10_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Pane",
         key: KEYC_MOUSEDRAGEND11_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Status",
         key: KEYC_MOUSEDRAGEND11_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11StatusLeft",
         key: KEYC_MOUSEDRAGEND11_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11StatusRight",
         key: KEYC_MOUSEDRAGEND11_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11StatusDefault",
         key: KEYC_MOUSEDRAGEND11_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11ScrollbarUp",
         key: KEYC_MOUSEDRAGEND11_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11ScrollbarSlider",
         key: KEYC_MOUSEDRAGEND11_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11ScrollbarDown",
         key: KEYC_MOUSEDRAGEND11_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Empty",
         key: KEYC_MOUSEDRAGEND11_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Border",
         key: KEYC_MOUSEDRAGEND11_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control0",
         key: KEYC_MOUSEDRAGEND11_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control1",
         key: KEYC_MOUSEDRAGEND11_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control2",
         key: KEYC_MOUSEDRAGEND11_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control3",
         key: KEYC_MOUSEDRAGEND11_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control4",
         key: KEYC_MOUSEDRAGEND11_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control5",
         key: KEYC_MOUSEDRAGEND11_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control6",
         key: KEYC_MOUSEDRAGEND11_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control7",
         key: KEYC_MOUSEDRAGEND11_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control8",
         key: KEYC_MOUSEDRAGEND11_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"MouseDragEnd11Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"MouseDragEnd11Control9",
         key: KEYC_MOUSEDRAGEND11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpPane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpPane",
         key: KEYC_WHEELUP_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpStatus\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpStatus",
         key: KEYC_WHEELUP_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpStatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpStatusLeft",
         key: KEYC_WHEELUP_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpStatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpStatusRight",
         key: KEYC_WHEELUP_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpStatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpStatusDefault",
         key: KEYC_WHEELUP_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpScrollbarUp",
         key: KEYC_WHEELUP_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpScrollbarSlider",
         key: KEYC_WHEELUP_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpScrollbarDown",
         key: KEYC_WHEELUP_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpEmpty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpEmpty",
         key: KEYC_WHEELUP_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpBorder\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpBorder",
         key: KEYC_WHEELUP_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl0",
         key: KEYC_WHEELUP_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl1",
         key: KEYC_WHEELUP_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl2",
         key: KEYC_WHEELUP_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl3",
         key: KEYC_WHEELUP_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl4",
         key: KEYC_WHEELUP_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl5",
         key: KEYC_WHEELUP_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl6",
         key: KEYC_WHEELUP_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl7",
         key: KEYC_WHEELUP_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl8",
         key: KEYC_WHEELUP_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelUpControl9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelUpControl9",
         key: KEYC_WHEELUP_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownPane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownPane",
         key: KEYC_WHEELDOWN_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownStatus\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownStatus",
         key: KEYC_WHEELDOWN_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownStatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownStatusLeft",
         key: KEYC_WHEELDOWN_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownStatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownStatusRight",
         key: KEYC_WHEELDOWN_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownStatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownStatusDefault",
         key: KEYC_WHEELDOWN_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownScrollbarUp",
         key: KEYC_WHEELDOWN_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownScrollbarSlider",
         key: KEYC_WHEELDOWN_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownScrollbarDown",
         key: KEYC_WHEELDOWN_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownEmpty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownEmpty",
         key: KEYC_WHEELDOWN_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownBorder\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownBorder",
         key: KEYC_WHEELDOWN_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl0",
         key: KEYC_WHEELDOWN_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl1",
         key: KEYC_WHEELDOWN_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl2",
         key: KEYC_WHEELDOWN_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl3",
         key: KEYC_WHEELDOWN_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl4",
         key: KEYC_WHEELDOWN_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl5",
         key: KEYC_WHEELDOWN_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl6",
         key: KEYC_WHEELDOWN_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl7",
         key: KEYC_WHEELDOWN_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl8",
         key: KEYC_WHEELDOWN_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"WheelDownControl9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"WheelDownControl9",
         key: KEYC_WHEELDOWN_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Pane",
         key: KEYC_SECONDCLICK1_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Status",
         key: KEYC_SECONDCLICK1_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1StatusLeft",
         key: KEYC_SECONDCLICK1_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1StatusRight",
         key: KEYC_SECONDCLICK1_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1StatusDefault",
         key: KEYC_SECONDCLICK1_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1ScrollbarUp",
         key: KEYC_SECONDCLICK1_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1ScrollbarSlider",
         key: KEYC_SECONDCLICK1_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1ScrollbarDown",
         key: KEYC_SECONDCLICK1_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Empty",
         key: KEYC_SECONDCLICK1_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Border",
         key: KEYC_SECONDCLICK1_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control0",
         key: KEYC_SECONDCLICK1_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control1",
         key: KEYC_SECONDCLICK1_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control2",
         key: KEYC_SECONDCLICK1_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control3",
         key: KEYC_SECONDCLICK1_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control4",
         key: KEYC_SECONDCLICK1_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control5",
         key: KEYC_SECONDCLICK1_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control6",
         key: KEYC_SECONDCLICK1_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control7",
         key: KEYC_SECONDCLICK1_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control8",
         key: KEYC_SECONDCLICK1_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick1Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick1Control9",
         key: KEYC_SECONDCLICK1_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Pane",
         key: KEYC_SECONDCLICK2_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Status",
         key: KEYC_SECONDCLICK2_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2StatusLeft",
         key: KEYC_SECONDCLICK2_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2StatusRight",
         key: KEYC_SECONDCLICK2_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2StatusDefault",
         key: KEYC_SECONDCLICK2_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2ScrollbarUp",
         key: KEYC_SECONDCLICK2_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2ScrollbarSlider",
         key: KEYC_SECONDCLICK2_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2ScrollbarDown",
         key: KEYC_SECONDCLICK2_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Empty",
         key: KEYC_SECONDCLICK2_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Border",
         key: KEYC_SECONDCLICK2_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control0",
         key: KEYC_SECONDCLICK2_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control1",
         key: KEYC_SECONDCLICK2_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control2",
         key: KEYC_SECONDCLICK2_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control3",
         key: KEYC_SECONDCLICK2_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control4",
         key: KEYC_SECONDCLICK2_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control5",
         key: KEYC_SECONDCLICK2_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control6",
         key: KEYC_SECONDCLICK2_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control7",
         key: KEYC_SECONDCLICK2_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control8",
         key: KEYC_SECONDCLICK2_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick2Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick2Control9",
         key: KEYC_SECONDCLICK2_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Pane",
         key: KEYC_SECONDCLICK3_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Status",
         key: KEYC_SECONDCLICK3_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3StatusLeft",
         key: KEYC_SECONDCLICK3_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3StatusRight",
         key: KEYC_SECONDCLICK3_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3StatusDefault",
         key: KEYC_SECONDCLICK3_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3ScrollbarUp",
         key: KEYC_SECONDCLICK3_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3ScrollbarSlider",
         key: KEYC_SECONDCLICK3_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3ScrollbarDown",
         key: KEYC_SECONDCLICK3_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Empty",
         key: KEYC_SECONDCLICK3_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Border",
         key: KEYC_SECONDCLICK3_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control0",
         key: KEYC_SECONDCLICK3_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control1",
         key: KEYC_SECONDCLICK3_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control2",
         key: KEYC_SECONDCLICK3_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control3",
         key: KEYC_SECONDCLICK3_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control4",
         key: KEYC_SECONDCLICK3_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control5",
         key: KEYC_SECONDCLICK3_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control6",
         key: KEYC_SECONDCLICK3_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control7",
         key: KEYC_SECONDCLICK3_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control8",
         key: KEYC_SECONDCLICK3_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick3Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick3Control9",
         key: KEYC_SECONDCLICK3_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Pane",
         key: KEYC_SECONDCLICK6_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Status",
         key: KEYC_SECONDCLICK6_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6StatusLeft",
         key: KEYC_SECONDCLICK6_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6StatusRight",
         key: KEYC_SECONDCLICK6_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6StatusDefault",
         key: KEYC_SECONDCLICK6_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6ScrollbarUp",
         key: KEYC_SECONDCLICK6_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6ScrollbarSlider",
         key: KEYC_SECONDCLICK6_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6ScrollbarDown",
         key: KEYC_SECONDCLICK6_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Empty",
         key: KEYC_SECONDCLICK6_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Border",
         key: KEYC_SECONDCLICK6_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control0",
         key: KEYC_SECONDCLICK6_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control1",
         key: KEYC_SECONDCLICK6_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control2",
         key: KEYC_SECONDCLICK6_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control3",
         key: KEYC_SECONDCLICK6_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control4",
         key: KEYC_SECONDCLICK6_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control5",
         key: KEYC_SECONDCLICK6_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control6",
         key: KEYC_SECONDCLICK6_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control7",
         key: KEYC_SECONDCLICK6_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control8",
         key: KEYC_SECONDCLICK6_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick6Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick6Control9",
         key: KEYC_SECONDCLICK6_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Pane",
         key: KEYC_SECONDCLICK7_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Status",
         key: KEYC_SECONDCLICK7_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7StatusLeft",
         key: KEYC_SECONDCLICK7_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7StatusRight",
         key: KEYC_SECONDCLICK7_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7StatusDefault",
         key: KEYC_SECONDCLICK7_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7ScrollbarUp",
         key: KEYC_SECONDCLICK7_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7ScrollbarSlider",
         key: KEYC_SECONDCLICK7_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7ScrollbarDown",
         key: KEYC_SECONDCLICK7_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Empty",
         key: KEYC_SECONDCLICK7_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Border",
         key: KEYC_SECONDCLICK7_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control0",
         key: KEYC_SECONDCLICK7_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control1",
         key: KEYC_SECONDCLICK7_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control2",
         key: KEYC_SECONDCLICK7_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control3",
         key: KEYC_SECONDCLICK7_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control4",
         key: KEYC_SECONDCLICK7_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control5",
         key: KEYC_SECONDCLICK7_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control6",
         key: KEYC_SECONDCLICK7_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control7",
         key: KEYC_SECONDCLICK7_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control8",
         key: KEYC_SECONDCLICK7_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick7Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick7Control9",
         key: KEYC_SECONDCLICK7_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Pane",
         key: KEYC_SECONDCLICK8_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Status",
         key: KEYC_SECONDCLICK8_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8StatusLeft",
         key: KEYC_SECONDCLICK8_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8StatusRight",
         key: KEYC_SECONDCLICK8_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8StatusDefault",
         key: KEYC_SECONDCLICK8_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8ScrollbarUp",
         key: KEYC_SECONDCLICK8_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8ScrollbarSlider",
         key: KEYC_SECONDCLICK8_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8ScrollbarDown",
         key: KEYC_SECONDCLICK8_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Empty",
         key: KEYC_SECONDCLICK8_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Border",
         key: KEYC_SECONDCLICK8_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control0",
         key: KEYC_SECONDCLICK8_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control1",
         key: KEYC_SECONDCLICK8_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control2",
         key: KEYC_SECONDCLICK8_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control3",
         key: KEYC_SECONDCLICK8_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control4",
         key: KEYC_SECONDCLICK8_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control5",
         key: KEYC_SECONDCLICK8_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control6",
         key: KEYC_SECONDCLICK8_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control7",
         key: KEYC_SECONDCLICK8_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control8",
         key: KEYC_SECONDCLICK8_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick8Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick8Control9",
         key: KEYC_SECONDCLICK8_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Pane",
         key: KEYC_SECONDCLICK9_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Status",
         key: KEYC_SECONDCLICK9_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9StatusLeft",
         key: KEYC_SECONDCLICK9_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9StatusRight",
         key: KEYC_SECONDCLICK9_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9StatusDefault",
         key: KEYC_SECONDCLICK9_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9ScrollbarUp",
         key: KEYC_SECONDCLICK9_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9ScrollbarSlider",
         key: KEYC_SECONDCLICK9_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9ScrollbarDown",
         key: KEYC_SECONDCLICK9_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Empty",
         key: KEYC_SECONDCLICK9_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Border",
         key: KEYC_SECONDCLICK9_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control0",
         key: KEYC_SECONDCLICK9_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control1",
         key: KEYC_SECONDCLICK9_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control2",
         key: KEYC_SECONDCLICK9_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control3",
         key: KEYC_SECONDCLICK9_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control4",
         key: KEYC_SECONDCLICK9_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control5",
         key: KEYC_SECONDCLICK9_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control6",
         key: KEYC_SECONDCLICK9_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control7",
         key: KEYC_SECONDCLICK9_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control8",
         key: KEYC_SECONDCLICK9_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick9Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick9Control9",
         key: KEYC_SECONDCLICK9_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Pane",
         key: KEYC_SECONDCLICK10_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Status",
         key: KEYC_SECONDCLICK10_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10StatusLeft",
         key: KEYC_SECONDCLICK10_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10StatusRight",
         key: KEYC_SECONDCLICK10_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10StatusDefault",
         key: KEYC_SECONDCLICK10_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10ScrollbarUp",
         key: KEYC_SECONDCLICK10_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10ScrollbarSlider",
         key: KEYC_SECONDCLICK10_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10ScrollbarDown",
         key: KEYC_SECONDCLICK10_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Empty",
         key: KEYC_SECONDCLICK10_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Border",
         key: KEYC_SECONDCLICK10_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control0",
         key: KEYC_SECONDCLICK10_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control1",
         key: KEYC_SECONDCLICK10_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control2",
         key: KEYC_SECONDCLICK10_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control3",
         key: KEYC_SECONDCLICK10_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control4",
         key: KEYC_SECONDCLICK10_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control5",
         key: KEYC_SECONDCLICK10_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control6",
         key: KEYC_SECONDCLICK10_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control7",
         key: KEYC_SECONDCLICK10_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control8",
         key: KEYC_SECONDCLICK10_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick10Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick10Control9",
         key: KEYC_SECONDCLICK10_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Pane",
         key: KEYC_SECONDCLICK11_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Status",
         key: KEYC_SECONDCLICK11_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11StatusLeft",
         key: KEYC_SECONDCLICK11_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11StatusRight",
         key: KEYC_SECONDCLICK11_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11StatusDefault",
         key: KEYC_SECONDCLICK11_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11ScrollbarUp",
         key: KEYC_SECONDCLICK11_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11ScrollbarSlider",
         key: KEYC_SECONDCLICK11_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11ScrollbarDown",
         key: KEYC_SECONDCLICK11_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Empty",
         key: KEYC_SECONDCLICK11_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Border",
         key: KEYC_SECONDCLICK11_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control0",
         key: KEYC_SECONDCLICK11_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control1",
         key: KEYC_SECONDCLICK11_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control2",
         key: KEYC_SECONDCLICK11_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control3",
         key: KEYC_SECONDCLICK11_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control4",
         key: KEYC_SECONDCLICK11_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control5",
         key: KEYC_SECONDCLICK11_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control6",
         key: KEYC_SECONDCLICK11_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control7",
         key: KEYC_SECONDCLICK11_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control8",
         key: KEYC_SECONDCLICK11_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"SecondClick11Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"SecondClick11Control9",
         key: KEYC_SECONDCLICK11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Pane",
         key: KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Status",
         key: KEYC_DOUBLECLICK1_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1StatusLeft",
         key: KEYC_DOUBLECLICK1_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1StatusRight",
         key: KEYC_DOUBLECLICK1_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1StatusDefault",
         key: KEYC_DOUBLECLICK1_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1ScrollbarUp",
         key: KEYC_DOUBLECLICK1_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1ScrollbarSlider",
         key: KEYC_DOUBLECLICK1_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1ScrollbarDown",
         key: KEYC_DOUBLECLICK1_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Empty",
         key: KEYC_DOUBLECLICK1_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Border",
         key: KEYC_DOUBLECLICK1_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control0",
         key: KEYC_DOUBLECLICK1_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control1",
         key: KEYC_DOUBLECLICK1_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control2",
         key: KEYC_DOUBLECLICK1_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control3",
         key: KEYC_DOUBLECLICK1_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control4",
         key: KEYC_DOUBLECLICK1_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control5",
         key: KEYC_DOUBLECLICK1_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control6",
         key: KEYC_DOUBLECLICK1_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control7",
         key: KEYC_DOUBLECLICK1_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control8",
         key: KEYC_DOUBLECLICK1_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick1Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick1Control9",
         key: KEYC_DOUBLECLICK1_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Pane",
         key: KEYC_DOUBLECLICK2_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Status",
         key: KEYC_DOUBLECLICK2_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2StatusLeft",
         key: KEYC_DOUBLECLICK2_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2StatusRight",
         key: KEYC_DOUBLECLICK2_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2StatusDefault",
         key: KEYC_DOUBLECLICK2_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2ScrollbarUp",
         key: KEYC_DOUBLECLICK2_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2ScrollbarSlider",
         key: KEYC_DOUBLECLICK2_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2ScrollbarDown",
         key: KEYC_DOUBLECLICK2_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Empty",
         key: KEYC_DOUBLECLICK2_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Border",
         key: KEYC_DOUBLECLICK2_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control0",
         key: KEYC_DOUBLECLICK2_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control1",
         key: KEYC_DOUBLECLICK2_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control2",
         key: KEYC_DOUBLECLICK2_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control3",
         key: KEYC_DOUBLECLICK2_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control4",
         key: KEYC_DOUBLECLICK2_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control5",
         key: KEYC_DOUBLECLICK2_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control6",
         key: KEYC_DOUBLECLICK2_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control7",
         key: KEYC_DOUBLECLICK2_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control8",
         key: KEYC_DOUBLECLICK2_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick2Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick2Control9",
         key: KEYC_DOUBLECLICK2_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Pane",
         key: KEYC_DOUBLECLICK3_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Status",
         key: KEYC_DOUBLECLICK3_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3StatusLeft",
         key: KEYC_DOUBLECLICK3_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3StatusRight",
         key: KEYC_DOUBLECLICK3_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3StatusDefault",
         key: KEYC_DOUBLECLICK3_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3ScrollbarUp",
         key: KEYC_DOUBLECLICK3_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3ScrollbarSlider",
         key: KEYC_DOUBLECLICK3_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3ScrollbarDown",
         key: KEYC_DOUBLECLICK3_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Empty",
         key: KEYC_DOUBLECLICK3_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Border",
         key: KEYC_DOUBLECLICK3_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control0",
         key: KEYC_DOUBLECLICK3_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control1",
         key: KEYC_DOUBLECLICK3_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control2",
         key: KEYC_DOUBLECLICK3_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control3",
         key: KEYC_DOUBLECLICK3_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control4",
         key: KEYC_DOUBLECLICK3_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control5",
         key: KEYC_DOUBLECLICK3_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control6",
         key: KEYC_DOUBLECLICK3_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control7",
         key: KEYC_DOUBLECLICK3_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control8",
         key: KEYC_DOUBLECLICK3_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick3Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick3Control9",
         key: KEYC_DOUBLECLICK3_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Pane",
         key: KEYC_DOUBLECLICK6_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Status",
         key: KEYC_DOUBLECLICK6_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6StatusLeft",
         key: KEYC_DOUBLECLICK6_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6StatusRight",
         key: KEYC_DOUBLECLICK6_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6StatusDefault",
         key: KEYC_DOUBLECLICK6_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6ScrollbarUp",
         key: KEYC_DOUBLECLICK6_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6ScrollbarSlider",
         key: KEYC_DOUBLECLICK6_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6ScrollbarDown",
         key: KEYC_DOUBLECLICK6_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Empty",
         key: KEYC_DOUBLECLICK6_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Border",
         key: KEYC_DOUBLECLICK6_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control0",
         key: KEYC_DOUBLECLICK6_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control1",
         key: KEYC_DOUBLECLICK6_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control2",
         key: KEYC_DOUBLECLICK6_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control3",
         key: KEYC_DOUBLECLICK6_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control4",
         key: KEYC_DOUBLECLICK6_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control5",
         key: KEYC_DOUBLECLICK6_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control6",
         key: KEYC_DOUBLECLICK6_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control7",
         key: KEYC_DOUBLECLICK6_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control8",
         key: KEYC_DOUBLECLICK6_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick6Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick6Control9",
         key: KEYC_DOUBLECLICK6_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Pane",
         key: KEYC_DOUBLECLICK7_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Status",
         key: KEYC_DOUBLECLICK7_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7StatusLeft",
         key: KEYC_DOUBLECLICK7_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7StatusRight",
         key: KEYC_DOUBLECLICK7_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7StatusDefault",
         key: KEYC_DOUBLECLICK7_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7ScrollbarUp",
         key: KEYC_DOUBLECLICK7_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7ScrollbarSlider",
         key: KEYC_DOUBLECLICK7_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7ScrollbarDown",
         key: KEYC_DOUBLECLICK7_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Empty",
         key: KEYC_DOUBLECLICK7_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Border",
         key: KEYC_DOUBLECLICK7_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control0",
         key: KEYC_DOUBLECLICK7_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control1",
         key: KEYC_DOUBLECLICK7_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control2",
         key: KEYC_DOUBLECLICK7_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control3",
         key: KEYC_DOUBLECLICK7_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control4",
         key: KEYC_DOUBLECLICK7_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control5",
         key: KEYC_DOUBLECLICK7_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control6",
         key: KEYC_DOUBLECLICK7_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control7",
         key: KEYC_DOUBLECLICK7_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control8",
         key: KEYC_DOUBLECLICK7_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick7Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick7Control9",
         key: KEYC_DOUBLECLICK7_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Pane",
         key: KEYC_DOUBLECLICK8_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Status",
         key: KEYC_DOUBLECLICK8_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8StatusLeft",
         key: KEYC_DOUBLECLICK8_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8StatusRight",
         key: KEYC_DOUBLECLICK8_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8StatusDefault",
         key: KEYC_DOUBLECLICK8_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8ScrollbarUp",
         key: KEYC_DOUBLECLICK8_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8ScrollbarSlider",
         key: KEYC_DOUBLECLICK8_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8ScrollbarDown",
         key: KEYC_DOUBLECLICK8_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Empty",
         key: KEYC_DOUBLECLICK8_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Border",
         key: KEYC_DOUBLECLICK8_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control0",
         key: KEYC_DOUBLECLICK8_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control1",
         key: KEYC_DOUBLECLICK8_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control2",
         key: KEYC_DOUBLECLICK8_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control3",
         key: KEYC_DOUBLECLICK8_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control4",
         key: KEYC_DOUBLECLICK8_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control5",
         key: KEYC_DOUBLECLICK8_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control6",
         key: KEYC_DOUBLECLICK8_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control7",
         key: KEYC_DOUBLECLICK8_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control8",
         key: KEYC_DOUBLECLICK8_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick8Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick8Control9",
         key: KEYC_DOUBLECLICK8_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Pane",
         key: KEYC_DOUBLECLICK9_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Status",
         key: KEYC_DOUBLECLICK9_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9StatusLeft",
         key: KEYC_DOUBLECLICK9_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9StatusRight",
         key: KEYC_DOUBLECLICK9_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9StatusDefault",
         key: KEYC_DOUBLECLICK9_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9ScrollbarUp",
         key: KEYC_DOUBLECLICK9_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9ScrollbarSlider",
         key: KEYC_DOUBLECLICK9_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9ScrollbarDown",
         key: KEYC_DOUBLECLICK9_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Empty",
         key: KEYC_DOUBLECLICK9_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Border",
         key: KEYC_DOUBLECLICK9_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control0",
         key: KEYC_DOUBLECLICK9_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control1",
         key: KEYC_DOUBLECLICK9_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control2",
         key: KEYC_DOUBLECLICK9_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control3",
         key: KEYC_DOUBLECLICK9_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control4",
         key: KEYC_DOUBLECLICK9_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control5",
         key: KEYC_DOUBLECLICK9_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control6",
         key: KEYC_DOUBLECLICK9_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control7",
         key: KEYC_DOUBLECLICK9_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control8",
         key: KEYC_DOUBLECLICK9_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick9Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick9Control9",
         key: KEYC_DOUBLECLICK9_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Pane",
         key: KEYC_DOUBLECLICK10_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Status",
         key: KEYC_DOUBLECLICK10_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10StatusLeft",
         key: KEYC_DOUBLECLICK10_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10StatusRight",
         key: KEYC_DOUBLECLICK10_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10StatusDefault",
         key: KEYC_DOUBLECLICK10_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10ScrollbarUp",
         key: KEYC_DOUBLECLICK10_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10ScrollbarSlider",
         key: KEYC_DOUBLECLICK10_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10ScrollbarDown",
         key: KEYC_DOUBLECLICK10_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Empty",
         key: KEYC_DOUBLECLICK10_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Border",
         key: KEYC_DOUBLECLICK10_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control0",
         key: KEYC_DOUBLECLICK10_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control1",
         key: KEYC_DOUBLECLICK10_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control2",
         key: KEYC_DOUBLECLICK10_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control3",
         key: KEYC_DOUBLECLICK10_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control4",
         key: KEYC_DOUBLECLICK10_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control5",
         key: KEYC_DOUBLECLICK10_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control6",
         key: KEYC_DOUBLECLICK10_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control7",
         key: KEYC_DOUBLECLICK10_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control8",
         key: KEYC_DOUBLECLICK10_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick10Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick10Control9",
         key: KEYC_DOUBLECLICK10_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Pane",
         key: KEYC_DOUBLECLICK11_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Status",
         key: KEYC_DOUBLECLICK11_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11StatusLeft",
         key: KEYC_DOUBLECLICK11_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11StatusRight",
         key: KEYC_DOUBLECLICK11_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11StatusDefault",
         key: KEYC_DOUBLECLICK11_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11ScrollbarUp",
         key: KEYC_DOUBLECLICK11_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11ScrollbarSlider",
         key: KEYC_DOUBLECLICK11_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11ScrollbarDown",
         key: KEYC_DOUBLECLICK11_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Empty",
         key: KEYC_DOUBLECLICK11_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Border",
         key: KEYC_DOUBLECLICK11_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control0",
         key: KEYC_DOUBLECLICK11_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control1",
         key: KEYC_DOUBLECLICK11_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control2",
         key: KEYC_DOUBLECLICK11_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control3",
         key: KEYC_DOUBLECLICK11_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control4",
         key: KEYC_DOUBLECLICK11_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control5",
         key: KEYC_DOUBLECLICK11_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control6",
         key: KEYC_DOUBLECLICK11_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control7",
         key: KEYC_DOUBLECLICK11_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control8",
         key: KEYC_DOUBLECLICK11_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"DoubleClick11Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"DoubleClick11Control9",
         key: KEYC_DOUBLECLICK11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Pane",
         key: KEYC_TRIPLECLICK1_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Status",
         key: KEYC_TRIPLECLICK1_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1StatusLeft",
         key: KEYC_TRIPLECLICK1_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1StatusRight",
         key: KEYC_TRIPLECLICK1_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1StatusDefault",
         key: KEYC_TRIPLECLICK1_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1ScrollbarUp",
         key: KEYC_TRIPLECLICK1_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1ScrollbarSlider",
         key: KEYC_TRIPLECLICK1_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1ScrollbarDown",
         key: KEYC_TRIPLECLICK1_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Empty",
         key: KEYC_TRIPLECLICK1_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Border",
         key: KEYC_TRIPLECLICK1_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control0",
         key: KEYC_TRIPLECLICK1_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control1",
         key: KEYC_TRIPLECLICK1_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control2",
         key: KEYC_TRIPLECLICK1_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control3",
         key: KEYC_TRIPLECLICK1_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control4",
         key: KEYC_TRIPLECLICK1_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control5",
         key: KEYC_TRIPLECLICK1_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control6",
         key: KEYC_TRIPLECLICK1_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control7",
         key: KEYC_TRIPLECLICK1_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control8",
         key: KEYC_TRIPLECLICK1_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick1Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick1Control9",
         key: KEYC_TRIPLECLICK1_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Pane",
         key: KEYC_TRIPLECLICK2_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Status",
         key: KEYC_TRIPLECLICK2_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2StatusLeft",
         key: KEYC_TRIPLECLICK2_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2StatusRight",
         key: KEYC_TRIPLECLICK2_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2StatusDefault",
         key: KEYC_TRIPLECLICK2_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2ScrollbarUp",
         key: KEYC_TRIPLECLICK2_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2ScrollbarSlider",
         key: KEYC_TRIPLECLICK2_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2ScrollbarDown",
         key: KEYC_TRIPLECLICK2_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Empty",
         key: KEYC_TRIPLECLICK2_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Border",
         key: KEYC_TRIPLECLICK2_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control0",
         key: KEYC_TRIPLECLICK2_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control1",
         key: KEYC_TRIPLECLICK2_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control2",
         key: KEYC_TRIPLECLICK2_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control3",
         key: KEYC_TRIPLECLICK2_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control4",
         key: KEYC_TRIPLECLICK2_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control5",
         key: KEYC_TRIPLECLICK2_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control6",
         key: KEYC_TRIPLECLICK2_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control7",
         key: KEYC_TRIPLECLICK2_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control8",
         key: KEYC_TRIPLECLICK2_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick2Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick2Control9",
         key: KEYC_TRIPLECLICK2_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Pane",
         key: KEYC_TRIPLECLICK3_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Status",
         key: KEYC_TRIPLECLICK3_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3StatusLeft",
         key: KEYC_TRIPLECLICK3_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3StatusRight",
         key: KEYC_TRIPLECLICK3_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3StatusDefault",
         key: KEYC_TRIPLECLICK3_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3ScrollbarUp",
         key: KEYC_TRIPLECLICK3_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3ScrollbarSlider",
         key: KEYC_TRIPLECLICK3_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3ScrollbarDown",
         key: KEYC_TRIPLECLICK3_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Empty",
         key: KEYC_TRIPLECLICK3_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Border",
         key: KEYC_TRIPLECLICK3_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control0",
         key: KEYC_TRIPLECLICK3_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control1",
         key: KEYC_TRIPLECLICK3_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control2",
         key: KEYC_TRIPLECLICK3_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control3",
         key: KEYC_TRIPLECLICK3_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control4",
         key: KEYC_TRIPLECLICK3_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control5",
         key: KEYC_TRIPLECLICK3_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control6",
         key: KEYC_TRIPLECLICK3_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control7",
         key: KEYC_TRIPLECLICK3_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control8",
         key: KEYC_TRIPLECLICK3_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick3Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick3Control9",
         key: KEYC_TRIPLECLICK3_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Pane",
         key: KEYC_TRIPLECLICK6_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Status",
         key: KEYC_TRIPLECLICK6_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6StatusLeft",
         key: KEYC_TRIPLECLICK6_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6StatusRight",
         key: KEYC_TRIPLECLICK6_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6StatusDefault",
         key: KEYC_TRIPLECLICK6_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6ScrollbarUp",
         key: KEYC_TRIPLECLICK6_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6ScrollbarSlider",
         key: KEYC_TRIPLECLICK6_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6ScrollbarDown",
         key: KEYC_TRIPLECLICK6_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Empty",
         key: KEYC_TRIPLECLICK6_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Border",
         key: KEYC_TRIPLECLICK6_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control0",
         key: KEYC_TRIPLECLICK6_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control1",
         key: KEYC_TRIPLECLICK6_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control2",
         key: KEYC_TRIPLECLICK6_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control3",
         key: KEYC_TRIPLECLICK6_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control4",
         key: KEYC_TRIPLECLICK6_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control5",
         key: KEYC_TRIPLECLICK6_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control6",
         key: KEYC_TRIPLECLICK6_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control7",
         key: KEYC_TRIPLECLICK6_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control8",
         key: KEYC_TRIPLECLICK6_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick6Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick6Control9",
         key: KEYC_TRIPLECLICK6_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Pane",
         key: KEYC_TRIPLECLICK7_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Status",
         key: KEYC_TRIPLECLICK7_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7StatusLeft",
         key: KEYC_TRIPLECLICK7_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7StatusRight",
         key: KEYC_TRIPLECLICK7_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7StatusDefault",
         key: KEYC_TRIPLECLICK7_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7ScrollbarUp",
         key: KEYC_TRIPLECLICK7_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7ScrollbarSlider",
         key: KEYC_TRIPLECLICK7_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7ScrollbarDown",
         key: KEYC_TRIPLECLICK7_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Empty",
         key: KEYC_TRIPLECLICK7_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Border",
         key: KEYC_TRIPLECLICK7_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control0",
         key: KEYC_TRIPLECLICK7_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control1",
         key: KEYC_TRIPLECLICK7_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control2",
         key: KEYC_TRIPLECLICK7_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control3",
         key: KEYC_TRIPLECLICK7_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control4",
         key: KEYC_TRIPLECLICK7_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control5",
         key: KEYC_TRIPLECLICK7_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control6",
         key: KEYC_TRIPLECLICK7_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control7",
         key: KEYC_TRIPLECLICK7_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control8",
         key: KEYC_TRIPLECLICK7_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick7Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick7Control9",
         key: KEYC_TRIPLECLICK7_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Pane",
         key: KEYC_TRIPLECLICK8_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Status",
         key: KEYC_TRIPLECLICK8_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8StatusLeft",
         key: KEYC_TRIPLECLICK8_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8StatusRight",
         key: KEYC_TRIPLECLICK8_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8StatusDefault",
         key: KEYC_TRIPLECLICK8_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8ScrollbarUp",
         key: KEYC_TRIPLECLICK8_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8ScrollbarSlider",
         key: KEYC_TRIPLECLICK8_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8ScrollbarDown",
         key: KEYC_TRIPLECLICK8_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Empty",
         key: KEYC_TRIPLECLICK8_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Border",
         key: KEYC_TRIPLECLICK8_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control0",
         key: KEYC_TRIPLECLICK8_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control1",
         key: KEYC_TRIPLECLICK8_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control2",
         key: KEYC_TRIPLECLICK8_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control3",
         key: KEYC_TRIPLECLICK8_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control4",
         key: KEYC_TRIPLECLICK8_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control5",
         key: KEYC_TRIPLECLICK8_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control6",
         key: KEYC_TRIPLECLICK8_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control7",
         key: KEYC_TRIPLECLICK8_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control8",
         key: KEYC_TRIPLECLICK8_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick8Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick8Control9",
         key: KEYC_TRIPLECLICK8_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Pane",
         key: KEYC_TRIPLECLICK9_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Status",
         key: KEYC_TRIPLECLICK9_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9StatusLeft",
         key: KEYC_TRIPLECLICK9_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9StatusRight",
         key: KEYC_TRIPLECLICK9_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9StatusDefault",
         key: KEYC_TRIPLECLICK9_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9ScrollbarUp",
         key: KEYC_TRIPLECLICK9_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9ScrollbarSlider",
         key: KEYC_TRIPLECLICK9_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9ScrollbarDown",
         key: KEYC_TRIPLECLICK9_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Empty",
         key: KEYC_TRIPLECLICK9_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Border",
         key: KEYC_TRIPLECLICK9_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control0",
         key: KEYC_TRIPLECLICK9_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control1",
         key: KEYC_TRIPLECLICK9_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control2",
         key: KEYC_TRIPLECLICK9_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control3",
         key: KEYC_TRIPLECLICK9_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control4",
         key: KEYC_TRIPLECLICK9_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control5",
         key: KEYC_TRIPLECLICK9_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control6",
         key: KEYC_TRIPLECLICK9_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control7",
         key: KEYC_TRIPLECLICK9_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control8",
         key: KEYC_TRIPLECLICK9_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick9Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick9Control9",
         key: KEYC_TRIPLECLICK9_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Pane",
         key: KEYC_TRIPLECLICK10_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Status",
         key: KEYC_TRIPLECLICK10_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10StatusLeft",
         key: KEYC_TRIPLECLICK10_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10StatusRight",
         key: KEYC_TRIPLECLICK10_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10StatusDefault",
         key: KEYC_TRIPLECLICK10_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10ScrollbarUp",
         key: KEYC_TRIPLECLICK10_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10ScrollbarSlider",
         key: KEYC_TRIPLECLICK10_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10ScrollbarDown",
         key: KEYC_TRIPLECLICK10_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Empty",
         key: KEYC_TRIPLECLICK10_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Border",
         key: KEYC_TRIPLECLICK10_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control0",
         key: KEYC_TRIPLECLICK10_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control1",
         key: KEYC_TRIPLECLICK10_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control2",
         key: KEYC_TRIPLECLICK10_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control3",
         key: KEYC_TRIPLECLICK10_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control4",
         key: KEYC_TRIPLECLICK10_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control5",
         key: KEYC_TRIPLECLICK10_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control6",
         key: KEYC_TRIPLECLICK10_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control7",
         key: KEYC_TRIPLECLICK10_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control8",
         key: KEYC_TRIPLECLICK10_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick10Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick10Control9",
         key: KEYC_TRIPLECLICK10_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Pane\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Pane",
         key: KEYC_TRIPLECLICK11_PANE as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Status\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Status",
         key: KEYC_TRIPLECLICK11_STATUS as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11StatusLeft\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11StatusLeft",
         key: KEYC_TRIPLECLICK11_STATUS_LEFT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11StatusRight\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11StatusRight",
         key: KEYC_TRIPLECLICK11_STATUS_RIGHT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11StatusDefault\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11StatusDefault",
         key: KEYC_TRIPLECLICK11_STATUS_DEFAULT as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11ScrollbarUp\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11ScrollbarUp",
         key: KEYC_TRIPLECLICK11_SCROLLBAR_UP as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11ScrollbarSlider\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11ScrollbarSlider",
         key: KEYC_TRIPLECLICK11_SCROLLBAR_SLIDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11ScrollbarDown\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11ScrollbarDown",
         key: KEYC_TRIPLECLICK11_SCROLLBAR_DOWN as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Empty\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Empty",
         key: KEYC_TRIPLECLICK11_EMPTY as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Border\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Border",
         key: KEYC_TRIPLECLICK11_BORDER as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control0\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control0",
         key: KEYC_TRIPLECLICK11_CONTROL0 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control1\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control1",
         key: KEYC_TRIPLECLICK11_CONTROL1 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control2\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control2",
         key: KEYC_TRIPLECLICK11_CONTROL2 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control3\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control3",
         key: KEYC_TRIPLECLICK11_CONTROL3 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control4\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control4",
         key: KEYC_TRIPLECLICK11_CONTROL4 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control5\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control5",
         key: KEYC_TRIPLECLICK11_CONTROL5 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control6\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control6",
         key: KEYC_TRIPLECLICK11_CONTROL6 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control7\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control7",
         key: KEYC_TRIPLECLICK11_CONTROL7 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control8\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control8",
         key: KEYC_TRIPLECLICK11_CONTROL8 as ::core::ffi::c_ulong as key_code,
     },
     C2RustUnnamed_1 {
-        string: b"TripleClick11Control9\0" as *const u8 as *const ::core::ffi::c_char,
+        string: c"TripleClick11Control9",
         key: KEYC_TRIPLECLICK11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
 ];
@@ -5553,23 +5553,16 @@ fn key_string_cstr_suffix(input: &CStr, offset: usize) -> &CStr {
         .expect("a suffix of a NUL-terminated key name remains NUL-terminated")
 }
 
-/// Search the generated table without exposing its raw storage to callers.
-///
-/// The table is generated as raw pointers to static, NUL-terminated literals
-/// and is private to this module. Keep the pointer reads and libc calls here;
-/// the parser itself only deals in `CStr` and byte slices.
+/// Search the static key names using libc's case-insensitive comparison.
 fn key_string_search_table(input: &CStr) -> key_code {
     let mut user: u_int = 0;
 
-    // SAFETY: every table entry is initialized with a pointer to a static
-    // NUL-terminated literal, and the private table is never mutated after
-    // initialization. `input` is a valid NUL-terminated string by type.
+    // SAFETY: input and table names are NUL-terminated strings by type.
+    // `user` is valid writable storage for sscanf's unsigned integer result.
     unsafe {
-        let table = ::core::ptr::addr_of!(key_string_table) as *const C2RustUnnamed_1;
-        for index in 0..1379 {
-            let entry = table.add(index);
-            if strcasecmp(input.as_ptr(), (*entry).string) == 0 as ::core::ffi::c_int {
-                return (*entry).key;
+        for entry in &key_string_table {
+            if strcasecmp(input.as_ptr(), entry.string.as_ptr()) == 0 as ::core::ffi::c_int {
+                return entry.key;
             }
         }
         if sscanf(
@@ -5809,13 +5802,9 @@ fn key_string_named_name(key: key_code) -> Option<&'static [u8]> {
 }
 
 fn key_string_table_name(key: key_code) -> Option<Vec<u8>> {
-    unsafe {
-        let table = ::core::ptr::addr_of!(key_string_table) as *const C2RustUnnamed_1;
-        for index in 0..1379 {
-            let entry = &*table.add(index);
-            if entry.key & KEYC_MASK_KEY == key {
-                return Some(CStr::from_ptr(entry.string).to_bytes().to_vec());
-            }
+    for entry in &key_string_table {
+        if entry.key & KEYC_MASK_KEY == key {
+            return Some(entry.string.to_bytes().to_vec());
         }
     }
     None

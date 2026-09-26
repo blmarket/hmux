@@ -5,15 +5,15 @@ pub const THEME_DARK: client_theme = 2;
 pub const THEME_LIGHT: client_theme = 1;
 pub const THEME_UNKNOWN: client_theme = 0;
 
-#[derive(Copy, Clone, Default)]
+#[derive(Default)]
 #[repr(C)]
 pub struct colour_palette {
     pub fg: ::core::ffi::c_int,
     pub bg: ::core::ffi::c_int,
     /// Box-owned fixed array, borrowed by palette lookup until clear/free.
-    pub palette: *mut ::core::ffi::c_int,
+    pub palette: Option<Box<[::core::ffi::c_int; 256]>>,
     /// Box-owned fixed array, rebuilt from `pane-colours` options.
-    pub default_palette: *mut ::core::ffi::c_int,
+    pub default_palette: Option<Box<[::core::ffi::c_int; 256]>>,
 }
 
 pub const COLOUR_FLAG_256: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;

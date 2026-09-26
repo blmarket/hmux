@@ -22,7 +22,7 @@ use crate::src::shared::window::{window, winlink};
 
 #[derive(Copy, Clone)]
 pub struct C2RustUnnamed_35 {
-    pub name: *const ::core::ffi::c_char,
+    pub name: &'static CStr,
     pub cb: unsafe fn(&CStr, &mut event_payload),
 }
 
@@ -454,62 +454,62 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
     }
 }
 pub unsafe fn control_build_events() {
-    static mut events: [C2RustUnnamed_35; 14] =  {
+    static events: [C2RustUnnamed_35; 14] =  {
         [
             C2RustUnnamed_35 {
-                name: b"pane-mode-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"pane-mode-changed",
                 cb: control_pane_mode_changed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"window-layout-changed",
                 cb: control_window_layout_changed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"window-pane-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"window-pane-changed",
                 cb: control_window_pane_changed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"window-unlinked",
                 cb: control_window_unlinked_cb,
             },
             C2RustUnnamed_35 {
-                name: b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"window-linked",
                 cb: control_window_linked_cb,
             },
             C2RustUnnamed_35 {
-                name: b"window-renamed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"window-renamed",
                 cb: control_window_renamed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"client-session-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"client-session-changed",
                 cb: control_client_session_changed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"client-detached\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"client-detached",
                 cb: control_client_detached_cb,
             },
             C2RustUnnamed_35 {
-                name: b"session-renamed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"session-renamed",
                 cb: control_session_renamed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"session-created\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"session-created",
                 cb: control_session_created_cb,
             },
             C2RustUnnamed_35 {
-                name: b"session-closed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"session-closed",
                 cb: control_session_closed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"session-window-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"session-window-changed",
                 cb: control_session_window_changed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"paste-buffer-changed",
                 cb: control_paste_buffer_changed_cb,
             },
             C2RustUnnamed_35 {
-                name: b"paste-buffer-deleted\0" as *const u8 as *const ::core::ffi::c_char,
+                name: c"paste-buffer-deleted",
                 cb: control_paste_buffer_deleted_cb,
             },
         ]
@@ -522,7 +522,7 @@ pub unsafe fn control_build_events() {
     {
         let callback = events[i as usize].cb;
         events_add_sink(
-            CStr::from_ptr(events[i as usize].name),
+            events[i as usize].name,
             events_callback(move |name, payload| unsafe { callback(name, payload) }),
         );
         i = i.wrapping_add(1);

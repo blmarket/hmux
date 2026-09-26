@@ -1480,7 +1480,6 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
         tty_free(&raw mut (*c).tty);
     }
     server_client_set_ttyname(&mut *c, None);
-    free((*c).clipboard_panes as *mut ::core::ffi::c_void);
     server_client_set_term_name(&mut *c, None);
     server_client_set_term_type(&mut *c, None);
     server_client_clear_term_caps(&mut *c);

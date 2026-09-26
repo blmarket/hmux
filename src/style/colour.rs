@@ -3734,120 +3734,83 @@ unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     }
     return colour;
 }
-pub unsafe fn colour_palette_init(mut p: *mut colour_palette) {
-    (*p).fg = 8 as ::core::ffi::c_int;
-    (*p).bg = 8 as ::core::ffi::c_int;
-    (*p).palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
-    (*p).default_palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
+pub unsafe fn colour_palette_init(p: *mut colour_palette) {
+    *p = colour_palette {
+        fg: 8,
+        bg: 8,
+        palette: None,
+        default_palette: None,
+    };
 }
-pub unsafe fn colour_palette_clear(mut p: *mut colour_palette) {
-    if !p.is_null() {
-        (*p).fg = 8 as ::core::ffi::c_int;
-        (*p).bg = 8 as ::core::ffi::c_int;
-        if !(*p).palette.is_null() {
-            drop(Box::from_raw(
-                (*p).palette.cast::<[::core::ffi::c_int; 256]>(),
-            ));
-        }
-        (*p).palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
+pub unsafe fn colour_palette_clear(p: *mut colour_palette) {
+    if let Some(p) = p.as_mut() {
+        p.fg = 8;
+        p.bg = 8;
+        p.palette = None;
     }
 }
-pub unsafe fn colour_palette_free(mut p: *mut colour_palette) {
-    if !p.is_null() {
-        if !(*p).palette.is_null() {
-            drop(Box::from_raw(
-                (*p).palette.cast::<[::core::ffi::c_int; 256]>(),
-            ));
-        }
-        (*p).palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
-        if !(*p).default_palette.is_null() {
-            drop(Box::from_raw(
-                (*p).default_palette.cast::<[::core::ffi::c_int; 256]>(),
-            ));
-        }
-        (*p).default_palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
+pub unsafe fn colour_palette_free(p: *mut colour_palette) {
+    if let Some(p) = p.as_mut() {
+        p.palette = None;
+        p.default_palette = None;
     }
 }
 pub unsafe fn colour_palette_get(
-    mut p: *mut colour_palette,
+    p: *mut colour_palette,
     mut n: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    if p.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if n >= 90 as ::core::ffi::c_int && n <= 97 as ::core::ffi::c_int {
-        n = 8 as ::core::ffi::c_int + n - 90 as ::core::ffi::c_int;
+    let Some(p) = p.as_ref() else {
+        return -1;
+    };
+    if (90..=97).contains(&n) {
+        n = 8 + n - 90;
     } else if n & COLOUR_FLAG_256 != 0 {
         n &= !COLOUR_FLAG_256;
-    } else if n >= 8 as ::core::ffi::c_int {
-        return -(1 as ::core::ffi::c_int);
+    } else if n >= 8 {
+        return -1;
     }
-    if !(*p).palette.is_null() && *(*p).palette.offset(n as isize) != -(1 as ::core::ffi::c_int) {
-        return *(*p).palette.offset(n as isize);
-    }
-    if !(*p).default_palette.is_null()
-        && *(*p).default_palette.offset(n as isize) != -(1 as ::core::ffi::c_int)
-    {
-        return *(*p).default_palette.offset(n as isize);
-    }
-    return -(1 as ::core::ffi::c_int);
+    let lookup = |palette: &Option<Box<[::core::ffi::c_int; 256]>>| {
+        palette
+            .as_ref()
+            .and_then(|colours| colours.get(n as usize))
+            .copied()
+            .filter(|&colour| colour != -1)
+    };
+    lookup(&p.palette)
+        .or_else(|| lookup(&p.default_palette))
+        .unwrap_or(-1)
 }
 pub unsafe fn colour_palette_set(
-    mut p: *mut colour_palette,
-    mut n: ::core::ffi::c_int,
-    mut c: ::core::ffi::c_int,
+    p: *mut colour_palette,
+    n: ::core::ffi::c_int,
+    c: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    if p.is_null() || n < 0 as ::core::ffi::c_int || n > 255 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
+    let Some(p) = p.as_mut() else {
+        return 0;
+    };
+    if !(0..=255).contains(&n) || (c == -1 && p.palette.is_none()) {
+        return 0;
     }
-    if c == -(1 as ::core::ffi::c_int) && (*p).palette.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    if (*p).palette.is_null() {
-        (*p).palette = Box::into_raw(Box::new([-(1 as ::core::ffi::c_int); 256])).cast();
-    }
-    *(*p).palette.offset(n as isize) = c;
-    return 1 as ::core::ffi::c_int;
+    let palette = p.palette.get_or_insert_with(|| Box::new([-1; 256]));
+    palette[n as usize] = c;
+    1
 }
-pub unsafe fn colour_palette_from_option(mut p: *mut colour_palette, mut oo: *mut options) {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
-    let mut i: u_int = 0;
-    let mut c: ::core::ffi::c_int = 0;
-    if p.is_null() {
+pub unsafe fn colour_palette_from_option(p: *mut colour_palette, oo: *mut options) {
+    let Some(p) = p.as_mut() else {
+        return;
+    };
+    let o = options_get(oo, c"pane-colours".as_ptr());
+    if options_array_first(o).is_null() {
+        p.default_palette = None;
         return;
     }
-    o = options_get(
-        oo,
-        b"pane-colours\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    a = options_array_first(o);
-    if a.is_null() {
-        if !(*p).default_palette.is_null() {
-            drop(Box::from_raw(
-                (*p).default_palette.cast::<[::core::ffi::c_int; 256]>(),
-            ));
-            (*p).default_palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
-        }
-        return;
-    }
-    if (*p).default_palette.is_null() {
-        (*p).default_palette = Box::into_raw(Box::new([-(1 as ::core::ffi::c_int); 256])).cast();
-    }
-    i = 0 as u_int;
-    while i < 256 as u_int {
-        *(*p).default_palette.offset(i as isize) = -(1 as ::core::ffi::c_int);
-        i = i.wrapping_add(1);
-    }
-    i = 0 as u_int;
-    while i < 256 as u_int {
-        ov = options_array_getv(o, b"%u\0" as *const u8 as *const ::core::ffi::c_char, i);
+    let palette = p.default_palette.get_or_insert_with(|| Box::new([-1; 256]));
+    palette.fill(-1);
+    for (i, colour) in palette.iter_mut().enumerate() {
+        let ov = options_array_getv(o, c"%u".as_ptr(), i as u_int);
         if !ov.is_null() {
-            c = (*ov).number() as ::core::ffi::c_int;
-            *(*p).default_palette.offset(i as isize) = c;
+            *colour = (*ov).number() as ::core::ffi::c_int;
         }
-        i = i.wrapping_add(1);
     }
 }
 
