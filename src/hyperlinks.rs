@@ -9,32 +9,20 @@ use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 use crate::src::text::utf8::utf8_stravis_cstring;
 use std::{collections::VecDeque, ffi::CString};
 
-/// One retained reference to the mutable hyperlink table. The legacy table
-/// remains behind the raw C API; this owner never creates an aliased Rust
-/// reference to it. Clone/drop preserve the existing C retain/release contract.
-pub(crate) struct HyperlinksRef(std::ptr::NonNull<hyperlinks>);
+/// One strong Rc reference to the mutable hyperlink table.
+pub(crate) struct HyperlinksRef(std::rc::Rc<crate::src::shared::rc::Allocation<hyperlinks>>);
 
 impl HyperlinksRef {
     pub(crate) unsafe fn new() -> Self {
-        Self(std::ptr::NonNull::new(hyperlinks_init()).expect("allocated hyperlink table"))
+        Self(crate::src::shared::rc::take(hyperlinks_init()))
     }
     pub(crate) fn as_ptr(&self) -> *mut hyperlinks {
-        self.0.as_ptr()
+        crate::src::shared::rc::as_ptr(&self.0)
     }
 }
 impl Clone for HyperlinksRef {
     fn clone(&self) -> Self {
-        unsafe {
-            hyperlinks_copy(self.as_ptr());
-        }
-        Self(self.0)
-    }
-}
-impl Drop for HyperlinksRef {
-    fn drop(&mut self) {
-        unsafe {
-            hyperlinks_free(self.as_ptr());
-        }
+        Self(self.0.clone())
     }
 }
 
@@ -152,13 +140,12 @@ pub unsafe fn hyperlinks_get(
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn hyperlinks_init() -> *mut hyperlinks {
-    let mut owner = Box::new(hyperlinks::empty());
-    owner.next_inner = 1;
-    owner.references = 1;
-    Box::into_raw(owner)
+    let mut value = hyperlinks::empty();
+    value.next_inner = 1;
+    crate::src::shared::rc::new(value, hyperlinks_reset)
 }
 pub unsafe fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperlinks {
-    (*hl).references = (*hl).references.wrapping_add(1);
+    crate::src::shared::rc::retain(hl);
     return hl;
 }
 pub unsafe fn hyperlinks_reset(mut hl: *mut hyperlinks) {
@@ -174,11 +161,7 @@ pub unsafe fn hyperlinks_reset(mut hl: *mut hyperlinks) {
     }
 }
 pub unsafe fn hyperlinks_free(mut hl: *mut hyperlinks) {
-    (*hl).references = (*hl).references.wrapping_sub(1);
-    if (*hl).references == 0 as u_int {
-        hyperlinks_reset(hl);
-        drop(Box::from_raw(hl));
-    }
+    crate::src::shared::rc::release(hl);
 }
 fn hyperlinks_by_inner_tree_key(elm: &hyperlinks_uri) -> u32 {
     elm.inner

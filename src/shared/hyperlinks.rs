@@ -8,7 +8,6 @@ pub struct hyperlinks {
     pub next_inner: u_int,
     pub by_inner: hyperlinks_by_inner_tree,
     pub by_uri: hyperlinks_by_uri_tree,
-    pub references: u_int,
 }
 impl hyperlinks {
     pub fn empty() -> Self {
@@ -16,7 +15,6 @@ impl hyperlinks {
             next_inner: 0,
             by_inner: hyperlinks_by_inner_tree { storage: None },
             by_uri: hyperlinks_by_uri_tree { storage: None },
-            references: 0,
         }
     }
 }
