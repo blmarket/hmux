@@ -46,7 +46,9 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
+use crate::src::shared::mode_tree::{
+    mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemId,
+};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
@@ -109,6 +111,7 @@ pub const WINDOW_TREE_NONE: window_tree_type = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_tree_itemdata {
+    pub mode_tree_id: Option<ModeTreeItemId>,
     pub type_0: window_tree_type,
     pub session: ::core::ffi::c_int,
     pub winlink: ::core::ffi::c_int,
@@ -341,13 +344,28 @@ unsafe extern "C" fn window_tree_pull_item(
 unsafe extern "C" fn window_tree_add_item(
     mut data: *mut window_tree_modedata,
 ) -> *mut window_tree_itemdata {
+    let item_id = ModeTreeItemId::from_index((*data).item_list.len());
     (*data).item_list.push(Box::new(window_tree_itemdata {
+        mode_tree_id: Some(item_id),
         type_0: 0,
         session: 0,
         winlink: 0,
         pane: 0,
     }));
     (*data).item_list.last_mut().unwrap().as_mut() as *mut window_tree_itemdata
+}
+
+unsafe fn window_tree_item_from_id(
+    data: *mut window_tree_modedata,
+    item_id: Option<ModeTreeItemId>,
+) -> *mut window_tree_itemdata {
+    item_id
+        .and_then(|id| {
+            (&mut (*data).item_list)
+                .get_mut(id.index())
+                .map(|item| &mut **item as *mut window_tree_itemdata)
+        })
+        .unwrap_or(::core::ptr::null_mut())
 }
 unsafe extern "C" fn window_tree_remove_last_item(
     data: *mut window_tree_modedata,
@@ -395,7 +413,7 @@ unsafe extern "C" fn window_tree_build_pane(
     mti = mode_tree_add(
         (*data).data,
         parent,
-        item as *mut ::core::ffi::c_void,
+        (*item).mode_tree_id,
         wp as uint64_t,
         name.as_ptr(),
         text.as_ptr(),
@@ -476,7 +494,7 @@ unsafe extern "C" fn window_tree_build_window(
     mti = mode_tree_add(
         (*data).data,
         parent,
-        item as *mut ::core::ffi::c_void,
+        (*item).mode_tree_id,
         wl as uint64_t,
         name.as_ptr(),
         text.as_ptr(),
@@ -550,7 +568,7 @@ unsafe extern "C" fn window_tree_build_session(
     mti = mode_tree_add(
         (*data).data,
         ::core::ptr::null_mut::<mode_tree_item>(),
-        item as *mut ::core::ffi::c_void,
+        (*item).mode_tree_id,
         s as uint64_t,
         ((*s).name).as_ptr().cast_mut(),
         text.as_ptr(),
@@ -1297,12 +1315,11 @@ unsafe extern "C" fn window_tree_draw_window(
 }
 unsafe extern "C" fn window_tree_draw_info(
     mut data: *mut window_tree_modedata,
-    mut itemdata: *mut ::core::ffi::c_void,
+    mut item: *mut window_tree_itemdata,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
     let mut s: *mut screen = (*ctx).s;
     let mut sp: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -1462,14 +1479,13 @@ unsafe extern "C" fn window_tree_draw_info(
     format_free(ft);
 }
 unsafe fn window_tree_draw(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+    mut modedata: *mut window_tree_modedata,
+    mut item: *mut window_tree_itemdata,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
-    let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
+    let mut data: *mut window_tree_modedata = modedata;
     let mut sp: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1478,7 +1494,7 @@ unsafe fn window_tree_draw(
         return;
     }
     if (*data).preview_is_info != 0 {
-        window_tree_draw_info(data, item as *mut ::core::ffi::c_void, ctx, sx, sy);
+        window_tree_draw_info(data, item, ctx, sx, sy);
         return;
     }
     match (*item).type_0 as ::core::ffi::c_uint {
@@ -1497,12 +1513,10 @@ unsafe fn window_tree_draw(
     };
 }
 unsafe fn window_tree_search(
-    _modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+    mut item: *mut window_tree_itemdata,
     mut ss: *const ::core::ffi::c_char,
     mut icase: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1578,12 +1592,11 @@ unsafe fn window_tree_menu(
     );
 }
 unsafe fn window_tree_get_key(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+    mut modedata: *mut window_tree_modedata,
+    mut item: *mut window_tree_itemdata,
     mut line: u_int,
 ) -> key_code {
-    let mut data: *mut window_tree_modedata = modedata as *mut window_tree_modedata;
-    let mut item: *mut window_tree_itemdata = itemdata as *mut window_tree_itemdata;
+    let mut data: *mut window_tree_modedata = modedata;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -1631,12 +1644,10 @@ unsafe fn window_tree_get_key(
     return key;
 }
 unsafe fn window_tree_swap(
-    mut cur_itemdata: *mut ::core::ffi::c_void,
-    mut other_itemdata: *mut ::core::ffi::c_void,
+    mut cur: *mut window_tree_itemdata,
+    mut other: *mut window_tree_itemdata,
     mut sort_crit: *mut sort_criteria,
 ) -> ::core::ffi::c_int {
-    let mut cur: *mut window_tree_itemdata = cur_itemdata as *mut window_tree_itemdata;
-    let mut other: *mut window_tree_itemdata = other_itemdata as *mut window_tree_itemdata;
     let mut cur_session: *mut session = ::core::ptr::null_mut::<session>();
     let mut other_session: *mut session = ::core::ptr::null_mut::<session>();
     let mut cur_winlink: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -1808,22 +1819,16 @@ unsafe fn window_tree_init(
             );
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
-        Some(Box::new(move |itemdata, ctx, sx, sy| {
-            window_tree_draw(
-                data_handle.as_ptr().cast(),
-                itemdata,
-                ctx as *mut screen_write_ctx,
-                sx,
-                sy,
-            )
+        Some(Box::new(move |item_id, ctx, sx, sy| unsafe {
+            let item = window_tree_item_from_id(data_handle.as_ptr(), item_id);
+            if !item.is_null() {
+                window_tree_draw(data_handle.as_ptr(), item, ctx, sx, sy);
+            }
         })),
-        Some(Box::new(move |itemdata, search, icase| {
-            window_tree_search(
-                data_handle.as_ptr().cast(),
-                itemdata,
-                search.as_ptr(),
-                icase as ::core::ffi::c_int,
-            ) != 0
+        Some(Box::new(move |item_id, search, icase| unsafe {
+            let item = window_tree_item_from_id(data_handle.as_ptr(), item_id);
+            !item.is_null()
+                && window_tree_search(item, search.as_ptr(), icase as ::core::ffi::c_int) != 0
         })),
         Some(Box::new(move |client, key| {
             window_tree_menu(
@@ -1833,15 +1838,20 @@ unsafe fn window_tree_init(
             )
         })),
         None,
-        Some(Box::new(move |itemdata, line| {
-            window_tree_get_key(data_handle.as_ptr().cast(), itemdata, line)
+        Some(Box::new(move |item_id, line| unsafe {
+            let item = window_tree_item_from_id(data_handle.as_ptr(), item_id);
+            if item.is_null() {
+                KEYC_NONE as ::core::ffi::c_ulong as key_code
+            } else {
+                window_tree_get_key(data_handle.as_ptr(), item, line)
+            }
         })),
-        Some(Box::new(move |current, other, sort| {
-            window_tree_swap(
-                current,
-                other,
-                sort as *mut sort_criteria,
-            ) != 0
+        Some(Box::new(move |current, other, sort| unsafe {
+            let current = window_tree_item_from_id(data_handle.as_ptr(), current);
+            let other = window_tree_item_from_id(data_handle.as_ptr(), other);
+            !current.is_null()
+                && !other.is_null()
+                && window_tree_swap(current, other, sort as *mut sort_criteria) != 0
         })),
         Some(window_tree_sort),
         Some(window_tree_help),
@@ -2000,7 +2010,7 @@ unsafe fn window_tree_command_callback(
     mode_tree_each_tagged(
         (*data).data,
         |row, c, key| unsafe {
-            window_tree_command_each(data, (*row).itemdata.cast(), c, key)
+            window_tree_command_each(data, window_tree_item_from_id(data, (*row).item_id), c, key)
         },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
@@ -2088,7 +2098,7 @@ unsafe fn window_tree_kill_current_callback(
         return PROMPT_CLOSE;
     }
     window_tree_kill_each(
-        mode_tree_get_current(mtd) as *mut window_tree_itemdata,
+        window_tree_item_from_id(data, mode_tree_get_current(mtd)),
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
     );
@@ -2140,7 +2150,7 @@ unsafe fn window_tree_kill_tagged_callback(
     mode_tree_each_tagged(
         mtd,
         |row, c, key| unsafe {
-            window_tree_kill_each((*row).itemdata.cast(), c, key)
+            window_tree_kill_each(window_tree_item_from_id(data, (*row).item_id), c, key)
         },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
@@ -2257,10 +2267,10 @@ unsafe fn window_tree_key(
     let mut ns: *mut session = ::core::ptr::null_mut::<session>();
     let mut nwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut nwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    item = mode_tree_get_current((*data).data) as *mut window_tree_itemdata;
+    item = window_tree_item_from_id(data, mode_tree_get_current((*data).data));
     finished = mode_tree_key((*data).data, c, &raw mut key, m, &raw mut x, &raw mut y);
     loop {
-        new_item = mode_tree_get_current((*data).data) as *mut window_tree_itemdata;
+        new_item = window_tree_item_from_id(data, mode_tree_get_current((*data).data));
         if item != new_item {
             item = new_item;
             (*data).offset = 0 as ::core::ffi::c_int;

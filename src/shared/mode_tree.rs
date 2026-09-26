@@ -9,6 +9,23 @@ use super::prompt::{prompt, prompt_free_cb, prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
+use std::num::NonZeroUsize;
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ModeTreeItemId(NonZeroUsize);
+
+impl ModeTreeItemId {
+    pub fn from_index(index: usize) -> Self {
+        Self(
+            NonZeroUsize::new(index.checked_add(1).expect("mode tree has too many items"))
+                .expect("mode tree item index is nonzero"),
+        )
+    }
+
+    pub fn index(self) -> usize {
+        self.0.get() - 1
+    }
+}
 
 #[derive(Copy, Clone)]
 pub struct mode_tree_help_info {
@@ -136,7 +153,7 @@ pub struct mode_tree_line {
 #[repr(C)]
 pub struct mode_tree_item {
     pub parent: *mut mode_tree_item,
-    pub itemdata: *mut ::core::ffi::c_void,
+    pub item_id: Option<ModeTreeItemId>,
     pub line: u_int,
     pub key: key_code,
     pub keystr: Option<std::ffi::CString>,
@@ -156,7 +173,7 @@ impl mode_tree_item {
     pub fn empty() -> Self {
         Self {
             parent: Default::default(),
-            itemdata: Default::default(),
+            item_id: None,
             line: Default::default(),
             key: Default::default(),
             keystr: Default::default(),
@@ -228,11 +245,10 @@ pub type mode_tree_help_cb = Option<fn() -> mode_tree_help_info>;
 pub type mode_tree_sort_cb = Option<fn(&mut sort_criteria)>;
 
 pub type mode_tree_swap_cb = Option<
-    Box<dyn FnMut(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, &mut sort_criteria) -> bool>,
+    Box<dyn FnMut(Option<ModeTreeItemId>, Option<ModeTreeItemId>, &mut sort_criteria) -> bool>,
 >;
 
-pub type mode_tree_key_cb =
-    Option<Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>>;
+pub type mode_tree_key_cb = Option<Box<dyn FnMut(Option<ModeTreeItemId>, u_int) -> key_code>>;
 
 pub type mode_tree_height_cb = Option<Box<dyn FnMut(u_int) -> u_int>>;
 
@@ -240,11 +256,10 @@ pub type mode_tree_menu_cb =
     Option<Box<dyn FnMut(Option<std::ptr::NonNull<client>>, key_code)>>;
 
 pub type mode_tree_search_cb =
-    Option<Box<dyn FnMut(*mut ::core::ffi::c_void, &std::ffi::CStr, bool) -> bool>>;
+    Option<Box<dyn FnMut(Option<ModeTreeItemId>, &std::ffi::CStr, bool) -> bool>>;
 
-pub type mode_tree_draw_cb = Option<
-    Box<dyn FnMut(*mut ::core::ffi::c_void, &mut screen_write_ctx, u_int, u_int)>,
->;
+pub type mode_tree_draw_cb =
+    Option<Box<dyn FnMut(Option<ModeTreeItemId>, &mut screen_write_ctx, u_int, u_int)>>;
 
 pub type mode_tree_build_cb = Option<
     Box<

@@ -31,7 +31,9 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
+use crate::src::shared::mode_tree::{
+    mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemId,
+};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
@@ -65,6 +67,7 @@ pub struct window_buffer_modedata {
 }
 #[repr(C)]
 pub struct window_buffer_itemdata {
+    pub mode_tree_id: Option<ModeTreeItemId>,
     pub name: std::ffi::CString,
     pub order: u_int,
     pub size: size_t,
@@ -73,6 +76,7 @@ pub struct window_buffer_itemdata {
 impl window_buffer_itemdata {
     pub fn empty() -> Self {
         Self {
+            mode_tree_id: None,
             name: Default::default(),
             order: Default::default(),
             size: Default::default(),
@@ -222,6 +226,7 @@ fn window_buffer_add_item(
 ) -> *mut window_buffer_itemdata {
     let name = name.to_owned();
     let mut owned = Box::new(window_buffer_itemdata {
+        mode_tree_id: Some(ModeTreeItemId::from_index(items.len())),
         name: name,
         order: 0,
         size: 0,
@@ -229,6 +234,19 @@ fn window_buffer_add_item(
     let item = &mut *owned as *mut window_buffer_itemdata;
     items.push(owned);
     item
+}
+
+unsafe fn window_buffer_item_from_id(
+    data: *mut window_buffer_modedata,
+    item_id: Option<ModeTreeItemId>,
+) -> *mut window_buffer_itemdata {
+    item_id
+        .and_then(|id| {
+            (&mut (*data).item_list)
+                .get_mut(id.index())
+                .map(|item| &mut **item as *mut window_buffer_itemdata)
+        })
+        .unwrap_or(::core::ptr::null_mut())
 }
 
 fn window_buffer_clear_items(items: &mut Vec<Box<window_buffer_itemdata>>) {
@@ -298,7 +316,7 @@ unsafe fn window_buffer_build(
                     mode_tree_add(
                         (*data).data,
                         ::core::ptr::null_mut::<mode_tree_item>(),
-                        item as *mut ::core::ffi::c_void,
+                        (*item).mode_tree_id,
                         (*item).order as uint64_t,
                         ((*item).name).as_ptr().cast_mut(),
                         text.as_ptr(),
@@ -312,13 +330,11 @@ unsafe fn window_buffer_build(
     }
 }
 unsafe fn window_buffer_draw(
-    _modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+    mut item: *mut window_buffer_itemdata,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut pdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut start: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -457,12 +473,10 @@ unsafe extern "C" fn window_buffer_find(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn window_buffer_search(
-    _modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+    mut item: *mut window_buffer_itemdata,
     mut ss: *const ::core::ffi::c_char,
     mut icase: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     let mut bufdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufsize: size_t = 0;
@@ -518,12 +532,11 @@ unsafe fn window_buffer_menu(
     );
 }
 unsafe fn window_buffer_get_key(
-    mut modedata: *mut ::core::ffi::c_void,
-    mut itemdata: *mut ::core::ffi::c_void,
+    mut modedata: *mut window_buffer_modedata,
+    mut item: *mut window_buffer_itemdata,
     mut line: u_int,
 ) -> key_code {
-    let mut data: *mut window_buffer_modedata = modedata as *mut window_buffer_modedata;
-    let mut item: *mut window_buffer_itemdata = itemdata as *mut window_buffer_itemdata;
+    let mut data: *mut window_buffer_modedata = modedata;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
@@ -643,22 +656,16 @@ unsafe fn window_buffer_init(
             );
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
-        Some(Box::new(move |itemdata, ctx, sx, sy| {
-            window_buffer_draw(
-                data_handle.as_ptr().cast(),
-                itemdata,
-                ctx as *mut screen_write_ctx,
-                sx,
-                sy,
-            )
+        Some(Box::new(move |item_id, ctx, sx, sy| unsafe {
+            let item = window_buffer_item_from_id(data_handle.as_ptr(), item_id);
+            if !item.is_null() {
+                window_buffer_draw(item, ctx, sx, sy);
+            }
         })),
-        Some(Box::new(move |itemdata, search, icase| {
-            window_buffer_search(
-                data_handle.as_ptr().cast(),
-                itemdata,
-                search.as_ptr(),
-                icase as ::core::ffi::c_int,
-            ) != 0
+        Some(Box::new(move |item_id, search, icase| unsafe {
+            let item = window_buffer_item_from_id(data_handle.as_ptr(), item_id);
+            !item.is_null()
+                && window_buffer_search(item, search.as_ptr(), icase as ::core::ffi::c_int) != 0
         })),
         Some(Box::new(move |client, key| {
             window_buffer_menu(
@@ -668,8 +675,13 @@ unsafe fn window_buffer_init(
             )
         })),
         None,
-        Some(Box::new(move |itemdata, line| {
-            window_buffer_get_key(data_handle.as_ptr().cast(), itemdata, line)
+        Some(Box::new(move |item_id, line| unsafe {
+            let item = window_buffer_item_from_id(data_handle.as_ptr(), item_id);
+            if item.is_null() {
+                KEYC_NONE as ::core::ffi::c_ulong as key_code
+            } else {
+                window_buffer_get_key(data_handle.as_ptr(), item, line)
+            }
         })),
         None,
         Some(window_buffer_sort),
@@ -717,7 +729,7 @@ unsafe fn window_buffer_do_delete(
     _key: key_code,
 ) {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    if item == mode_tree_get_current((*data).data) as *mut window_buffer_itemdata
+    if (*item).mode_tree_id == mode_tree_get_current((*data).data)
         && mode_tree_down((*data).data, 0 as ::core::ffi::c_int) == 0
     {
         mode_tree_up((*data).data, 0 as ::core::ffi::c_int);
@@ -997,24 +1009,24 @@ unsafe fn window_buffer_key(
         );
         match key {
             101 => {
-                item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
+                item = window_buffer_item_from_id(data, mode_tree_get_current(mtd));
                 window_buffer_start_edit(data, item, c);
             }
             100 => {
-                item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
-                window_buffer_do_delete(
-                    data,
-                    item,
-                    c,
-                    key,
-                );
+                item = window_buffer_item_from_id(data, mode_tree_get_current(mtd));
+                window_buffer_do_delete(data, item, c, key);
                 mode_tree_build(mtd);
             }
             68 => {
                 mode_tree_each_tagged(
                     mtd,
                     |row, c, key| unsafe {
-                        window_buffer_do_delete(data, (*row).itemdata.cast(), c, key)
+                        window_buffer_do_delete(
+                            data,
+                            window_buffer_item_from_id(data, (*row).item_id),
+                            c,
+                            key,
+                        )
                     },
                     c,
                     key,
@@ -1026,7 +1038,12 @@ unsafe fn window_buffer_key(
                 mode_tree_each_tagged(
                     mtd,
                     |row, c, key| unsafe {
-                        window_buffer_do_paste(data, (*row).itemdata.cast(), c, key)
+                        window_buffer_do_paste(
+                            data,
+                            window_buffer_item_from_id(data, (*row).item_id),
+                            c,
+                            key,
+                        )
                     },
                     c,
                     key,
@@ -1035,13 +1052,8 @@ unsafe fn window_buffer_key(
                 finished = 1 as ::core::ffi::c_int;
             }
             112 | 13 => {
-                item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
-                window_buffer_do_paste(
-                    data,
-                    item,
-                    c,
-                    key,
-                );
+                item = window_buffer_item_from_id(data, mode_tree_get_current(mtd));
+                window_buffer_do_paste(data, item, c, key);
                 finished = 1 as ::core::ffi::c_int;
             }
             _ => {}
