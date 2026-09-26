@@ -78,6 +78,7 @@ use crate::src::window::{
 };
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
 use crate::src::xmalloc::xvasprintf_cstring;
+use std::ffi::CStr;
 
 pub const PADDED_BORDERS: [::core::ffi::c_char; 14] =
     unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b"             \0") };
@@ -530,11 +531,8 @@ pub unsafe fn screen_write_putc(
     utf8_set(&raw mut gc.data, ch);
     screen_write_cell(ctx, &raw mut gc);
 }
-pub unsafe extern "C" fn screen_write_strlen(
-    mut fmt: *const ::core::ffi::c_char,
-    mut args: ...
-) -> size_t {
-    let mut ap: ::core::ffi::VaList;
+/// Measure literal C-string bytes using the screen's display-width rules.
+pub unsafe fn screen_write_strlen(msg: &CStr) -> size_t {
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -544,8 +542,6 @@ pub unsafe extern "C" fn screen_write_strlen(
     let mut left: size_t = 0;
     let mut size: size_t = 0 as size_t;
     let mut more: utf8_state = UTF8_MORE;
-    ap = args.clone();
-    let msg = xvasprintf_cstring(fmt, ap);
     let mut ptr = msg.as_ptr() as *const u_char;
     while *ptr as ::core::ffi::c_int != '\0' as i32 {
         if *ptr as ::core::ffi::c_int > 0x7f as ::core::ffi::c_int

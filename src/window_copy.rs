@@ -6199,7 +6199,7 @@ unsafe fn window_copy_search(
         .hsize
         .wrapping_sub((*data).oy)
         .wrapping_add((*data).cy);
-    ssx = screen_write_strlen(b"%s\0" as *const u8 as *const ::core::ffi::c_char, str) as u_int;
+    ssx = screen_write_strlen(CStr::from_ptr(str)) as u_int;
     if ssx == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -6485,10 +6485,8 @@ unsafe fn window_copy_search_marks(
     let mut tstart: uint64_t = 0;
     let mut t: uint64_t = 0;
     if ssp.is_null() {
-        width = screen_write_strlen(
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            window_copy_searchstr(&*data),
-        ) as u_int;
+        // Preserve the previous libc %s rendering for an absent search string.
+        width = screen_write_strlen((*data).searchstr.as_deref().unwrap_or(c"(null)")) as u_int;
         screen_init(&raw mut ss, width, 1 as u_int, 0 as u_int);
         screen_write_start(&raw mut ctx, &raw mut ss);
         screen_write_nputs(

@@ -1,11 +1,9 @@
 use hmux2::src::screen_write::screen_write_strlen;
-use std::ffi::CString;
-
-const STRING_FORMAT: &[u8] = b"%s\0";
+use std::ffi::{CStr, CString};
 
 fn display_width(bytes: &[u8]) -> usize {
     let input = CString::new(bytes).unwrap();
-    unsafe { screen_write_strlen(STRING_FORMAT.as_ptr().cast(), input.as_ptr()) }
+    unsafe { screen_write_strlen(input.as_c_str()) }
 }
 
 #[test]
@@ -22,13 +20,8 @@ fn scans_display_bytes_without_requiring_utf8() {
 }
 
 #[test]
-fn formatted_input_stops_at_first_nul() {
+fn input_stops_at_first_nul() {
     let input = b"ab\0hidden\0";
-    let width = unsafe {
-        screen_write_strlen(
-            STRING_FORMAT.as_ptr().cast(),
-            input.as_ptr().cast::<std::ffi::c_char>(),
-        )
-    };
+    let width = unsafe { screen_write_strlen(CStr::from_bytes_until_nul(input).unwrap()) };
     assert_eq!(width, 2);
 }
