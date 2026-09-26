@@ -42,7 +42,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_INPUTOFF, PANE_REDRAW, PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
-pub static mut cmd_select_pane_entry: cmd_entry = unsafe {
+pub static mut cmd_select_pane_entry: cmd_entry =  {
     cmd_entry {
         name: b"select-pane\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"selectp\0" as *const u8 as *const ::core::ffi::c_char,
@@ -68,7 +68,7 @@ pub static mut cmd_select_pane_entry: cmd_entry = unsafe {
         exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_last_pane_entry: cmd_entry = unsafe {
+pub static mut cmd_last_pane_entry: cmd_entry =  {
     cmd_entry {
         name: b"last-pane\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lastp\0" as *const u8 as *const ::core::ffi::c_char,

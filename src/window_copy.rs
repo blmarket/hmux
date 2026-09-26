@@ -299,7 +299,7 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
 }
 
 pub const REG_NOTBOL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub static mut window_copy_mode: window_mode = unsafe {
+pub static mut window_copy_mode: window_mode =  {
     window_mode {
         name: c"copy-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -341,7 +341,7 @@ pub static mut window_copy_mode: window_mode = unsafe {
         ),
     }
 };
-pub static mut window_view_mode: window_mode = unsafe {
+pub static mut window_view_mode: window_mode =  {
     window_mode {
         name: c"view-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -3695,7 +3695,7 @@ unsafe fn window_copy_cmd_line_numbers_toggle(
     );
     return WINDOW_COPY_CMD_NOTHING;
 }
-static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = unsafe {
+static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] =  {
     [
         C2RustUnnamed_46 {
             command: b"append-selection\0" as *const u8 as *const ::core::ffi::c_char,

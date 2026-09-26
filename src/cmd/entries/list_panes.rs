@@ -22,7 +22,7 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::sort::{sort_get_panes_window, sort_order_from_string};
 use crate::src::window::{winlinks_minmax, winlinks_next};
-pub static mut cmd_list_panes_entry: cmd_entry = unsafe {
+pub static mut cmd_list_panes_entry: cmd_entry =  {
     cmd_entry {
         name: b"list-panes\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lsp\0" as *const u8 as *const ::core::ffi::c_char,

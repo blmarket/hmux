@@ -23,7 +23,7 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::shared::window::{WINDOW_ALERTFLAGS, WINLINK_ALERTFLAGS};
 use crate::src::window::{winlinks_minmax, winlinks_next};
-pub static mut cmd_kill_session_entry: cmd_entry = unsafe {
+pub static mut cmd_kill_session_entry: cmd_entry =  {
     cmd_entry {
         name: b"kill-session\0" as *const u8 as *const ::core::ffi::c_char,
         alias: ::core::ptr::null::<::core::ffi::c_char>(),

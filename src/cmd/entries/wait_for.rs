@@ -66,7 +66,7 @@ impl wait_event_item {
         }
     }
 }
-pub static mut cmd_wait_for_entry: cmd_entry = unsafe {
+pub static mut cmd_wait_for_entry: cmd_entry =  {
     cmd_entry {
         name: b"wait-for\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"wait\0" as *const u8 as *const ::core::ffi::c_char,

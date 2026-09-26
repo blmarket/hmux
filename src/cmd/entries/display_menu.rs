@@ -45,7 +45,7 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::tmux::checkshell;
 use crate::src::tty::tty_window_offset;
-pub static mut cmd_display_menu_entry: cmd_entry = unsafe {
+pub static mut cmd_display_menu_entry: cmd_entry =  {
     cmd_entry {
         name: b"display-menu\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"menu\0" as *const u8 as *const ::core::ffi::c_char,
@@ -77,7 +77,7 @@ pub static mut cmd_display_menu_entry: cmd_entry = unsafe {
         ),
     }
 };
-pub static mut cmd_display_popup_entry: cmd_entry = unsafe {
+pub static mut cmd_display_popup_entry: cmd_entry =  {
     cmd_entry {
         name: b"display-popup\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"popup\0" as *const u8 as *const ::core::ffi::c_char,

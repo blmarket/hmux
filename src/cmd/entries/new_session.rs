@@ -58,7 +58,7 @@ use std::ffi::{CStr, CString};
 pub const NEW_SESSION_TEMPLATE: [::core::ffi::c_char; 17] = unsafe {
     ::core::mem::transmute::<[u8; 17], [::core::ffi::c_char; 17]>(*b"#{session_name}:\0")
 };
-pub static mut cmd_new_session_entry: cmd_entry = unsafe {
+pub static mut cmd_new_session_entry: cmd_entry =  {
     cmd_entry {
         name: b"new-session\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"new\0" as *const u8 as *const ::core::ffi::c_char,
@@ -88,7 +88,7 @@ pub static mut cmd_new_session_entry: cmd_entry = unsafe {
         ),
     }
 };
-pub static mut cmd_has_session_entry: cmd_entry = unsafe {
+pub static mut cmd_has_session_entry: cmd_entry =  {
     cmd_entry {
         name: b"has-session\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"has\0" as *const u8 as *const ::core::ffi::c_char,

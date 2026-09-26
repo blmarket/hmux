@@ -27,7 +27,7 @@ pub const LIST_WINDOWS_WITH_SESSION_TEMPLATE: [::core::ffi::c_char; 127] = unsaf
         *b"#{session_name}:#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] \0",
     )
 };
-pub static mut cmd_list_windows_entry: cmd_entry = unsafe {
+pub static mut cmd_list_windows_entry: cmd_entry =  {
     cmd_entry {
         name: b"list-windows\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lsw\0" as *const u8 as *const ::core::ffi::c_char,

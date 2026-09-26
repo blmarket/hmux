@@ -32,7 +32,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_set_active_pane;
-pub static mut cmd_attach_session_entry: cmd_entry = unsafe {
+pub static mut cmd_attach_session_entry: cmd_entry =  {
     cmd_entry {
         name: b"attach-session\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"attach\0" as *const u8 as *const ::core::ffi::c_char,

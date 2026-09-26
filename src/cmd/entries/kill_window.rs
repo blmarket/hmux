@@ -19,7 +19,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{winlinks_minmax, winlinks_next, winlinks_prev};
-pub static mut cmd_kill_window_entry: cmd_entry = unsafe {
+pub static mut cmd_kill_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"kill-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"killw\0" as *const u8 as *const ::core::ffi::c_char,
@@ -44,7 +44,7 @@ pub static mut cmd_kill_window_entry: cmd_entry = unsafe {
         exec: Some(cmd_kill_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_unlink_window_entry: cmd_entry = unsafe {
+pub static mut cmd_unlink_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"unlink-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"unlinkw\0" as *const u8 as *const ::core::ffi::c_char,

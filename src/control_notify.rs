@@ -454,7 +454,7 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
     }
 }
 pub unsafe fn control_build_events() {
-    static mut events: [C2RustUnnamed_35; 14] = unsafe {
+    static mut events: [C2RustUnnamed_35; 14] =  {
         [
             C2RustUnnamed_35 {
                 name: b"pane-mode-changed\0" as *const u8 as *const ::core::ffi::c_char,

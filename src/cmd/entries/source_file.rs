@@ -42,7 +42,7 @@ pub struct cmd_source_file_data {
 pub const GLOB_NOSPACE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const GLOB_NOMATCH: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 static mut cmd_source_file_depth: u_int = 0;
-pub static mut cmd_source_file_entry: cmd_entry = unsafe {
+pub static mut cmd_source_file_entry: cmd_entry =  {
     cmd_entry {
         name: b"source-file\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"source\0" as *const u8 as *const ::core::ffi::c_char,

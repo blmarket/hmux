@@ -106,7 +106,7 @@ pub const WINDOW_SWITCH_DEFAULT_FORMAT: [::core::ffi::c_char; 350] = unsafe {
         *b"#{?window_format,#{window_name} #[dim]#{session_name}:#{window_index}#{window_flags}#[default] #[dim]#{pane_current_command}#[default] #[dim]#{?#{!=:#{pane_title},#{host_short}},#{pane_title},}#[default],#{session_name} #[dim]#{session_windows} windows#[default] #{?session_attached,attached,#[dim]detached#[default]} #[dim]#{window_name}#[default]}\0",
     )
 };
-pub static mut window_switch_mode: window_mode = unsafe {
+pub static mut window_switch_mode: window_mode =  {
     window_mode {
         name: c"switch-mode",
         default_format: WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr(),

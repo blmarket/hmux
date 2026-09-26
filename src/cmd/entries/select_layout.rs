@@ -21,7 +21,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_replace_old_layout;
 use std::ffi::CString;
-pub static mut cmd_select_layout_entry: cmd_entry = unsafe {
+pub static mut cmd_select_layout_entry: cmd_entry =  {
     cmd_entry {
         name: b"select-layout\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"selectl\0" as *const u8 as *const ::core::ffi::c_char,
@@ -47,7 +47,7 @@ pub static mut cmd_select_layout_entry: cmd_entry = unsafe {
         exec: Some(cmd_select_layout_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_next_layout_entry: cmd_entry = unsafe {
+pub static mut cmd_next_layout_entry: cmd_entry =  {
     cmd_entry {
         name: b"next-layout\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"nextl\0" as *const u8 as *const ::core::ffi::c_char,
@@ -72,7 +72,7 @@ pub static mut cmd_next_layout_entry: cmd_entry = unsafe {
         exec: Some(cmd_select_layout_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_previous_layout_entry: cmd_entry = unsafe {
+pub static mut cmd_previous_layout_entry: cmd_entry =  {
     cmd_entry {
         name: b"previous-layout\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"prevl\0" as *const u8 as *const ::core::ffi::c_char,

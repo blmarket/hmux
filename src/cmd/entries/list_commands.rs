@@ -25,7 +25,7 @@ pub const LIST_COMMANDS_TEMPLATE: [::core::ffi::c_char; 91] = unsafe {
         *b"#{command_list_name}#{?command_list_alias, (#{command_list_alias}),} #{command_list_usage}\0",
     )
 };
-pub static mut cmd_list_commands_entry: cmd_entry = unsafe {
+pub static mut cmd_list_commands_entry: cmd_entry =  {
     cmd_entry {
         name: b"list-commands\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lscm\0" as *const u8 as *const ::core::ffi::c_char,

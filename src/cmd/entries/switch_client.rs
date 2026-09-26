@@ -34,7 +34,7 @@ use crate::src::window::{
     window_pane_is_visible, window_pop_zoom, window_push_zoom, window_redraw_active_switch,
     window_set_active_pane,
 };
-pub static mut cmd_switch_client_entry: cmd_entry = unsafe {
+pub static mut cmd_switch_client_entry: cmd_entry =  {
     cmd_entry {
         name: b"switch-client\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"switchc\0" as *const u8 as *const ::core::ffi::c_char,

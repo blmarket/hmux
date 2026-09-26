@@ -193,7 +193,7 @@ static mut window_client_menu_items: [menu_item; 9] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-pub static mut window_client_mode: window_mode = unsafe {
+pub static mut window_client_mode: window_mode =  {
     window_mode {
         name: c"client-mode",
         default_format: WINDOW_CLIENT_DEFAULT_FORMAT.as_ptr(),

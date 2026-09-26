@@ -18,7 +18,7 @@ use crate::src::shared::event::*;
 use crate::src::shared::paste::paste_buffer;
 use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
 use std::ffi::CStr;
-pub static mut cmd_save_buffer_entry: cmd_entry = unsafe {
+pub static mut cmd_save_buffer_entry: cmd_entry =  {
     cmd_entry {
         name: b"save-buffer\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"saveb\0" as *const u8 as *const ::core::ffi::c_char,
@@ -43,7 +43,7 @@ pub static mut cmd_save_buffer_entry: cmd_entry = unsafe {
         exec: Some(cmd_save_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_show_buffer_entry: cmd_entry = unsafe {
+pub static mut cmd_show_buffer_entry: cmd_entry =  {
     cmd_entry {
         name: b"show-buffer\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"showb\0" as *const u8 as *const ::core::ffi::c_char,

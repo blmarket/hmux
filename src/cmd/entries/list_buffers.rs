@@ -20,7 +20,7 @@ pub const LIST_BUFFERS_TEMPLATE: [::core::ffi::c_char; 57] = unsafe {
         *b"#{buffer_name}: #{buffer_size} bytes: \"#{buffer_sample}\"\0",
     )
 };
-pub static mut cmd_list_buffers_entry: cmd_entry = unsafe {
+pub static mut cmd_list_buffers_entry: cmd_entry =  {
     cmd_entry {
         name: b"list-buffers\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lsb\0" as *const u8 as *const ::core::ffi::c_char,

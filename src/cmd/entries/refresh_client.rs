@@ -32,7 +32,7 @@ use crate::src::tty::{tty_clipboard_query, tty_set_size, tty_update_client_offse
 use crate::src::tty_keys::tty_keys_colours;
 use crate::src::window::window_pane_find_by_id;
 use std::ffi::{CStr, CString};
-pub static mut cmd_refresh_client_entry: cmd_entry = unsafe {
+pub static mut cmd_refresh_client_entry: cmd_entry =  {
     cmd_entry {
         name: b"refresh-client\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"refresh\0" as *const u8 as *const ::core::ffi::c_char,

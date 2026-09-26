@@ -36,7 +36,7 @@ pub struct window_clock_mode_data {
     pub tim: time_t,
     pub timer: event,
 }
-pub static mut window_clock_mode: window_mode = unsafe {
+pub static mut window_clock_mode: window_mode =  {
     window_mode {
         name: c"clock-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),

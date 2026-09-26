@@ -11,7 +11,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::window::window_pane_set_mode;
 use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
-pub static mut cmd_find_window_entry: cmd_entry = unsafe {
+pub static mut cmd_find_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"find-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"findw\0" as *const u8 as *const ::core::ffi::c_char,

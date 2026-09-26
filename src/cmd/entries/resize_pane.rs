@@ -36,7 +36,7 @@ use crate::src::window::{
     window_get_pane_status, window_pane_is_floating, window_pane_scrollbar_reserve,
     window_redraw_active_switch, window_set_active_pane, window_unzoom, window_zoom,
 };
-pub static mut cmd_resize_pane_entry: cmd_entry = unsafe {
+pub static mut cmd_resize_pane_entry: cmd_entry =  {
     cmd_entry {
         name: b"resize-pane\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"resizep\0" as *const u8 as *const ::core::ffi::c_char,

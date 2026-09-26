@@ -1700,7 +1700,7 @@ mod client_files_index_tests {
             assert_eq!(client_files_insert(&mut head, duplicate), first);
             assert!((*duplicate).entry.owner.is_none());
             assert!(client_files_remove(&mut other, first).is_null());
-            assert!(unsafe { (*first).entry.owner.is_some() });
+            assert!( { (*first).entry.owner.is_some() });
 
             let mut moved = head;
             assert_eq!(client_files_minmax(&moved, -1), first);

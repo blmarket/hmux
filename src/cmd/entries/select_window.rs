@@ -15,7 +15,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
-pub static mut cmd_select_window_entry: cmd_entry = unsafe {
+pub static mut cmd_select_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"select-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"selectw\0" as *const u8 as *const ::core::ffi::c_char,
@@ -40,7 +40,7 @@ pub static mut cmd_select_window_entry: cmd_entry = unsafe {
         exec: Some(cmd_select_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_next_window_entry: cmd_entry = unsafe {
+pub static mut cmd_next_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"next-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"next\0" as *const u8 as *const ::core::ffi::c_char,
@@ -65,7 +65,7 @@ pub static mut cmd_next_window_entry: cmd_entry = unsafe {
         exec: Some(cmd_select_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_previous_window_entry: cmd_entry = unsafe {
+pub static mut cmd_previous_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"previous-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"prev\0" as *const u8 as *const ::core::ffi::c_char,
@@ -90,7 +90,7 @@ pub static mut cmd_previous_window_entry: cmd_entry = unsafe {
         exec: Some(cmd_select_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_last_window_entry: cmd_entry = unsafe {
+pub static mut cmd_last_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"last-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"last\0" as *const u8 as *const ::core::ffi::c_char,

@@ -4637,7 +4637,7 @@ mod name_tests {
                 c"window-renamed",
                 events_callback(move |_, payload| {
                     let payload = payload as *mut event_payload;
-                    let (window, reenter) = unsafe {
+                    let (window, reenter) =  {
                         let old =
                             CStr::from_ptr(event_payload_get_string(payload, c"old_name".as_ptr()))
                                 .to_bytes()
@@ -4653,7 +4653,7 @@ mod name_tests {
                         (state.window, reenter)
                     };
                     if reenter {
-                        unsafe { window_set_name(window, c"inner".as_ptr(), 0) };
+                         { window_set_name(window, c"inner".as_ptr(), 0) };
                     }
                 }),
             );

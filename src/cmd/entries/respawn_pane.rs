@@ -19,7 +19,7 @@ use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::src::shared::window::{window, winlink};
 use crate::src::spawn::spawn_pane;
-pub static mut cmd_respawn_pane_entry: cmd_entry = unsafe {
+pub static mut cmd_respawn_pane_entry: cmd_entry =  {
     cmd_entry {
         name: b"respawn-pane\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"respawnp\0" as *const u8 as *const ::core::ffi::c_char,

@@ -175,7 +175,7 @@ static mut window_buffer_menu_items: [menu_item; 12] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-pub static mut window_buffer_mode: window_mode = unsafe {
+pub static mut window_buffer_mode: window_mode =  {
     window_mode {
         name: c"buffer-mode",
         default_format: WINDOW_BUFFER_DEFAULT_FORMAT.as_ptr(),

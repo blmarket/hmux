@@ -34,7 +34,7 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_first, window_pane_next};
 use std::ffi::{CStr, CString};
-pub static mut cmd_set_option_entry: cmd_entry = unsafe {
+pub static mut cmd_set_option_entry: cmd_entry =  {
     cmd_entry {
         name: b"set-option\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"set\0" as *const u8 as *const ::core::ffi::c_char,
@@ -60,7 +60,7 @@ pub static mut cmd_set_option_entry: cmd_entry = unsafe {
         exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_set_window_option_entry: cmd_entry = unsafe {
+pub static mut cmd_set_window_option_entry: cmd_entry =  {
     cmd_entry {
         name: b"set-window-option\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"setw\0" as *const u8 as *const ::core::ffi::c_char,
@@ -86,7 +86,7 @@ pub static mut cmd_set_window_option_entry: cmd_entry = unsafe {
         exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_set_hook_entry: cmd_entry = unsafe {
+pub static mut cmd_set_hook_entry: cmd_entry =  {
     cmd_entry {
         name: b"set-hook\0" as *const u8 as *const ::core::ffi::c_char,
         alias: ::core::ptr::null::<::core::ffi::c_char>(),

@@ -309,7 +309,7 @@ static mut window_customize_menu_items: [menu_item; 12] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-pub static mut window_customize_mode: window_mode = unsafe {
+pub static mut window_customize_mode: window_mode =  {
     window_mode {
         name: c"options-mode",
         default_format: WINDOW_CUSTOMIZE_DEFAULT_FORMAT.as_ptr(),

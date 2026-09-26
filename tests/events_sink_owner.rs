@@ -29,13 +29,13 @@ fn sink_owns_its_name_and_defers_removal_until_dispatch_ends() {
                     state.calls.push(b'A');
                     (state.first, state.second)
                 };
-                unsafe {
+                 {
                     events_remove_sink(first);
                     assert_eq!((*first).dead, 1);
                     events_remove_sink(second);
                 }
                 let later_state = first_state.clone();
-                let later = unsafe {
+                let later =  {
                     events_add_sink(
                         c"owner-event",
                         events_callback(move |_, _| later_state.borrow_mut().calls.push(b'C')),

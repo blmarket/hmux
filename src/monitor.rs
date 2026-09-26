@@ -1242,7 +1242,7 @@ mod last_owner_tests {
             let callback_capture = capture.clone();
             let set = monitor_create_client(
                 ::core::ptr::null_mut(),
-                crate::src::shared::monitor::monitor_callback(move |change| unsafe {
+                crate::src::shared::monitor::monitor_callback(move |change|  {
                     let mut capture = callback_capture.borrow_mut();
                     capture.value = CStr::from_ptr(change.value).to_bytes().to_vec();
                     capture.last = CStr::from_ptr(change.last).to_bytes().to_vec();

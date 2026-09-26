@@ -114,7 +114,7 @@ pub const IEXTEN: ::core::ffi::c_int = 0o100000 as ::core::ffi::c_int;
 pub const TCOFLUSH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 static mut tty_log_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-static mut tty_default_style_ctx: tty_style_ctx = unsafe {
+static mut tty_default_style_ctx: tty_style_ctx =  {
     tty_style_ctx {
         defaults: &raw const grid_default_cell,
         palette: ::core::ptr::null::<colour_palette>() as *mut colour_palette,

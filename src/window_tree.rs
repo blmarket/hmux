@@ -204,7 +204,7 @@ static mut window_tree_menu_items: [menu_item; 13] = [
         command: ::core::ptr::null::<::core::ffi::c_char>(),
     },
 ];
-pub static mut window_tree_mode: window_mode = unsafe {
+pub static mut window_tree_mode: window_mode =  {
     window_mode {
         name: c"tree-mode",
         default_format: WINDOW_TREE_DEFAULT_FORMAT.as_ptr(),

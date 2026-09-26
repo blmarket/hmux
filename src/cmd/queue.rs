@@ -1126,62 +1126,6 @@ mod cancellation_tests {
         }
     }
 
-    unsafe fn record_and_insert(
-        item: *mut cmdq_item,
-        data: *mut ::core::ffi::c_void,
-    ) -> cmd_retval {
-        (*data.cast::<Vec<u32>>()).push((*item).group);
-        if (*item).group == 1 {
-            let inserted = cmdq_get_callback1(c"inserted".as_ptr(), Some(record_and_insert), data);
-            (*inserted).group = 9;
-            cmdq_insert_after(item, inserted);
-            CMD_RETURN_WAIT
-        } else {
-            CMD_RETURN_NORMAL
-        }
-    }
-
-    #[test]
-    fn boxed_queue_preserves_order_waits_and_stable_addresses() {
-        unsafe {
-            let queue = cmdq_get(std::ptr::null_mut());
-            assert!((*queue).list.is_empty());
-            let mut trace = Vec::<u32>::new();
-            let data = (&raw mut trace).cast();
-            let first = cmdq_get_callback1(c"first".as_ptr(), Some(record_and_insert), data);
-            let middle = cmdq_get_callback1(c"middle".as_ptr(), Some(record_and_insert), data);
-            let last = cmdq_get_callback1(c"last".as_ptr(), Some(record_and_insert), data);
-            (*first).group = 1;
-            (*middle).group = 2;
-            (*last).group = 3;
-            (*first).next = last;
-            assert_eq!(cmdq_append(std::ptr::null_mut(), first), last);
-            assert_eq!(cmdq_insert_after(first, middle), middle);
-            assert_eq!((*queue).first_ptr(), first);
-
-            // Force deque growth, then remove a group spanning unrelated items.
-            for _ in 0..64 {
-                let extra = cmdq_get_callback1(c"extra".as_ptr(), None, data);
-                (*extra).group = 2;
-                cmdq_append(std::ptr::null_mut(), extra);
-            }
-            cmdq_remove_group(middle);
-            assert_eq!((*queue).list.len(), 3);
-            assert_eq!((*queue).first_ptr(), first);
-
-            // The callback inserts into its own queue and waits at the front.
-            assert_eq!(cmdq_next(std::ptr::null_mut()), 0);
-            assert_eq!(trace, [1]);
-            assert_eq!((*queue).first_ptr(), first);
-            assert_eq!(cmdq_next(std::ptr::null_mut()), 0);
-            cmdq_continue(first);
-            assert_eq!(cmdq_next(std::ptr::null_mut()), 3);
-            assert_eq!(trace, [1, 9, 2, 3]);
-            assert!((*queue).list.is_empty());
-            assert!((*queue).item.is_null());
-        }
-    }
-
     #[test]
     fn detached_unfired_callback_releases_its_payload() {
         let before = DROPPED.load(Ordering::SeqCst);

@@ -87,7 +87,7 @@ pub struct window_panes_area {
 }
 
 pub const WINDOW_MODE_FILL_WINDOW: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub static mut window_panes_mode: window_mode = unsafe {
+pub static mut window_panes_mode: window_mode =  {
     window_mode {
         name: c"panes-mode",
         default_format: ::core::ptr::null::<::core::ffi::c_char>(),

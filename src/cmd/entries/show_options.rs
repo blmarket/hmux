@@ -45,7 +45,7 @@ pub const SHOW_HOOKS_MONITOR_TEMPLATE: [::core::ffi::c_char; 61] = unsafe {
         *b"#{option_name}:#{hook_monitor_target}:#{hook_monitor_format}\0",
     )
 };
-pub static mut cmd_show_options_entry: cmd_entry = unsafe {
+pub static mut cmd_show_options_entry: cmd_entry =  {
     cmd_entry {
         name: b"show-options\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"show\0" as *const u8 as *const ::core::ffi::c_char,
@@ -71,7 +71,7 @@ pub static mut cmd_show_options_entry: cmd_entry = unsafe {
         exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_show_window_options_entry: cmd_entry = unsafe {
+pub static mut cmd_show_window_options_entry: cmd_entry =  {
     cmd_entry {
         name: b"show-window-options\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"showw\0" as *const u8 as *const ::core::ffi::c_char,
@@ -97,7 +97,7 @@ pub static mut cmd_show_window_options_entry: cmd_entry = unsafe {
         exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_show_hooks_entry: cmd_entry = unsafe {
+pub static mut cmd_show_hooks_entry: cmd_entry =  {
     cmd_entry {
         name: b"show-hooks\0" as *const u8 as *const ::core::ffi::c_char,
         alias: ::core::ptr::null::<::core::ffi::c_char>(),

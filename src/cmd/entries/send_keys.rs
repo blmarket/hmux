@@ -31,7 +31,7 @@ use crate::src::shared::window::{window_mode_entry, winlink};
 use crate::src::style::colour::colour_palette_clear;
 use crate::src::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use crate::src::window::window_pane_key;
-pub static mut cmd_send_keys_entry: cmd_entry = unsafe {
+pub static mut cmd_send_keys_entry: cmd_entry =  {
     cmd_entry {
         name: b"send-keys\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"send\0" as *const u8 as *const ::core::ffi::c_char,
@@ -57,7 +57,7 @@ pub static mut cmd_send_keys_entry: cmd_entry = unsafe {
         exec: Some(cmd_send_keys_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_send_prefix_entry: cmd_entry = unsafe {
+pub static mut cmd_send_prefix_entry: cmd_entry =  {
     cmd_entry {
         name: b"send-prefix\0" as *const u8 as *const ::core::ffi::c_char,
         alias: ::core::ptr::null::<::core::ffi::c_char>(),

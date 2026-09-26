@@ -9,7 +9,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_TARGET_CLIENT_USAGE, CMD_TARGET_SESSION_USAGE,
 };
-pub static mut cmd_lock_server_entry: cmd_entry = unsafe {
+pub static mut cmd_lock_server_entry: cmd_entry =  {
     cmd_entry {
         name: b"lock-server\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lock\0" as *const u8 as *const ::core::ffi::c_char,
@@ -34,7 +34,7 @@ pub static mut cmd_lock_server_entry: cmd_entry = unsafe {
         exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_lock_session_entry: cmd_entry = unsafe {
+pub static mut cmd_lock_session_entry: cmd_entry =  {
     cmd_entry {
         name: b"lock-session\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"locks\0" as *const u8 as *const ::core::ffi::c_char,
@@ -59,7 +59,7 @@ pub static mut cmd_lock_session_entry: cmd_entry = unsafe {
         exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_lock_client_entry: cmd_entry = unsafe {
+pub static mut cmd_lock_client_entry: cmd_entry =  {
     cmd_entry {
         name: b"lock-client\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"lockc\0" as *const u8 as *const ::core::ffi::c_char,

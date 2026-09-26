@@ -1988,7 +1988,7 @@ mod tests {
 
     #[test]
     fn sanitize_owns_printable_ascii_and_preserves_legacy_widths() {
-        unsafe {
+         {
             for (input, expected) in [
                 (&b"\0"[..], &b""[..]),
                 (&b"A\x01 \x7fB\0"[..], &b"A_ _B"[..]),
@@ -2054,7 +2054,7 @@ mod tests {
 
     #[test]
     fn owned_vis_helpers_preserve_multibyte_and_explicit_length_bytes() {
-        unsafe {
+         {
             let input = CString::new(&b"a\xc3\xa9\xff"[..]).unwrap();
             let escaped =
                 utf8_stravis_cstring(input.as_c_str(), crate::src::shared::vis::VIS_OCTAL);

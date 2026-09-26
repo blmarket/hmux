@@ -41,7 +41,7 @@ pub const NEW_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
         *b"#{session_name}:#{window_index}.#{pane_index}\0",
     )
 };
-pub static mut cmd_new_window_entry: cmd_entry = unsafe {
+pub static mut cmd_new_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"new-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"neww\0" as *const u8 as *const ::core::ffi::c_char,

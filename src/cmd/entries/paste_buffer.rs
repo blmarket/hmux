@@ -16,7 +16,7 @@ use crate::src::shared::screen::MODE_BRACKETPASTE;
 use crate::src::shared::vis::{VIS_NOSLASH, VIS_SAFE};
 use crate::src::text::utf8::utf8_stravisx_bytes;
 use crate::src::window::window_pane_exited;
-pub static mut cmd_paste_buffer_entry: cmd_entry = unsafe {
+pub static mut cmd_paste_buffer_entry: cmd_entry =  {
     cmd_entry {
         name: b"paste-buffer\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"pasteb\0" as *const u8 as *const ::core::ffi::c_char,

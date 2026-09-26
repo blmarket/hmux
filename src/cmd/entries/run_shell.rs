@@ -65,7 +65,7 @@ unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
         __c
     };
 }
-pub static mut cmd_run_shell_entry: cmd_entry = unsafe {
+pub static mut cmd_run_shell_entry: cmd_entry =  {
     cmd_entry {
         name: b"run-shell\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"run\0" as *const u8 as *const ::core::ffi::c_char,

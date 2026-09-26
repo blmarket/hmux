@@ -22,7 +22,7 @@ pub struct C2RustUnnamed_35 {
     pub name: *const ::core::ffi::c_char,
     pub arrange: Option<fn(&mut window)>,
 }
-static mut layout_sets: [C2RustUnnamed_35; 7] = unsafe {
+static mut layout_sets: [C2RustUnnamed_35; 7] =  {
     [
         C2RustUnnamed_35 {
             name: b"even-horizontal\0" as *const u8 as *const ::core::ffi::c_char,

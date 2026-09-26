@@ -46,7 +46,7 @@ use crate::src::window::{
     window_pane_z_next, window_pane_z_previous, window_pane_z_remove, window_redraw_active_switch,
     window_set_active_pane,
 };
-pub static mut cmd_join_pane_entry: cmd_entry = unsafe {
+pub static mut cmd_join_pane_entry: cmd_entry =  {
     cmd_entry {
         name: b"join-pane\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"joinp\0" as *const u8 as *const ::core::ffi::c_char,
@@ -72,7 +72,7 @@ pub static mut cmd_join_pane_entry: cmd_entry = unsafe {
         exec: Some(cmd_join_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_move_pane_entry: cmd_entry = unsafe {
+pub static mut cmd_move_pane_entry: cmd_entry =  {
     cmd_entry {
         name: b"move-pane\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"movep\0" as *const u8 as *const ::core::ffi::c_char,

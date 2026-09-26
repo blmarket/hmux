@@ -14,7 +14,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{window_winlinks_append, window_winlinks_remove};
-pub static mut cmd_swap_window_entry: cmd_entry = unsafe {
+pub static mut cmd_swap_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"swap-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"swapw\0" as *const u8 as *const ::core::ffi::c_char,

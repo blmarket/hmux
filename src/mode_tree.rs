@@ -2430,7 +2430,7 @@ mod mode_tree_tests {
             let mtd = mode_tree_alloc_data();
             let mut key = b'x' as key_code;
             let key_ptr = &raw const key;
-            (*mtd).keycb = Some(Box::new(move |_, _| unsafe { *key_ptr }));
+            (*mtd).keycb = Some(Box::new(move |_, _|  { *key_ptr }));
             let item = mode_tree_add(
                 mtd,
                 ::core::ptr::null_mut(),
@@ -2512,7 +2512,7 @@ mod mode_tree_tests {
             let mtd = mode_tree_alloc_data();
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
             let state = Box::into_raw(Box::new(NestedBuildState { mtd, empty: false }));
-            (*mtd).buildcb = Some(Box::new(move |_, _, _| unsafe {
+            (*mtd).buildcb = Some(Box::new(move |_, _, _|  {
                 nested_build(&mut *state);
                 None
             }));

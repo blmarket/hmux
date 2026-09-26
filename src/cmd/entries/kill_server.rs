@@ -5,7 +5,7 @@ use crate::src::shared::command::CMD_STARTSERVER;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::signal::SIGTERM;
-pub static mut cmd_kill_server_entry: cmd_entry = unsafe {
+pub static mut cmd_kill_server_entry: cmd_entry =  {
     cmd_entry {
         name: b"kill-server\0" as *const u8 as *const ::core::ffi::c_char,
         alias: ::core::ptr::null::<::core::ffi::c_char>(),
@@ -30,7 +30,7 @@ pub static mut cmd_kill_server_entry: cmd_entry = unsafe {
         exec: Some(cmd_kill_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_start_server_entry: cmd_entry = unsafe {
+pub static mut cmd_start_server_entry: cmd_entry =  {
     cmd_entry {
         name: b"start-server\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"start\0" as *const u8 as *const ::core::ffi::c_char,

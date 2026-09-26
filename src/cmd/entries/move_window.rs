@@ -15,7 +15,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::winlink_shuffle_up;
-pub static mut cmd_move_window_entry: cmd_entry = unsafe {
+pub static mut cmd_move_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"move-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"movew\0" as *const u8 as *const ::core::ffi::c_char,
@@ -41,7 +41,7 @@ pub static mut cmd_move_window_entry: cmd_entry = unsafe {
         exec: Some(cmd_move_window_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-pub static mut cmd_link_window_entry: cmd_entry = unsafe {
+pub static mut cmd_link_window_entry: cmd_entry =  {
     cmd_entry {
         name: b"link-window\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"linkw\0" as *const u8 as *const ::core::ffi::c_char,

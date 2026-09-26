@@ -11,7 +11,7 @@ use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::tmux::global_environ;
 use std::ffi::{CStr, CString};
-pub static mut cmd_show_environment_entry: cmd_entry = unsafe {
+pub static mut cmd_show_environment_entry: cmd_entry =  {
     cmd_entry {
         name: b"show-environment\0" as *const u8 as *const ::core::ffi::c_char,
         alias: b"showenv\0" as *const u8 as *const ::core::ffi::c_char,

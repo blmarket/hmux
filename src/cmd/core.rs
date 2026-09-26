@@ -118,7 +118,7 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub static mut cmd_table: [*const cmd_entry; 93] = unsafe {
+pub static mut cmd_table: [*const cmd_entry; 93] =  {
     [
         &raw const cmd_attach_session_entry,
         &raw const cmd_bind_key_entry,

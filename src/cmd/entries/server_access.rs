@@ -19,7 +19,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
-pub static mut cmd_server_access_entry: cmd_entry = unsafe {
+pub static mut cmd_server_access_entry: cmd_entry =  {
     cmd_entry {
         name: b"server-access\0" as *const u8 as *const ::core::ffi::c_char,
         alias: ::core::ptr::null::<::core::ffi::c_char>(),
