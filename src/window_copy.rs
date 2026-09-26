@@ -9,7 +9,7 @@ use crate::src::ffi::libc::{
 };
 use crate::src::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring, format_free,
-    format_get_pane, format_grid_hyperlink_cstring, format_single_cstring,
+    format_grid_hyperlink_cstring, format_single_cstring, FormatContext,
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::reader::{
@@ -1168,35 +1168,43 @@ pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
         (*wp).screen,
     );
 }
-unsafe fn window_copy_cursor_hyperlink_cb(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wp: *mut window_pane = format_get_pane(ft);
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
-    let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut gd: *mut grid = (*data).screen.grid;
-    return format_grid_hyperlink_cstring(
-        gd,
-        (*data).cx,
-        (*gd).hsize.wrapping_add((*data).cy),
-        &raw mut (*data).screen,
-    );
+fn window_copy_cursor_hyperlink_cb(context: &mut FormatContext) -> Option<CString> {
+    let wp = context.pane()?.as_ptr();
+    unsafe {
+        let mut wme: *mut window_mode_entry = (*wp).modes.active;
+        let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
+        let mut gd: *mut grid = (*data).screen.grid;
+        return format_grid_hyperlink_cstring(
+            gd,
+            (*data).cx,
+            (*gd).hsize.wrapping_add((*data).cy),
+            &raw mut (*data).screen,
+        );
+    }
 }
-unsafe fn window_copy_cursor_word_cb(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wp: *mut window_pane = format_get_pane(ft);
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
-    let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    return window_copy_get_word_cstring(wp, (*data).cx, (*data).cy);
+fn window_copy_cursor_word_cb(context: &mut FormatContext) -> Option<CString> {
+    let wp = context.pane()?.as_ptr();
+    unsafe {
+        let mut wme: *mut window_mode_entry = (*wp).modes.active;
+        let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
+        return window_copy_get_word_cstring(wp, (*data).cx, (*data).cy);
+    }
 }
-unsafe fn window_copy_cursor_line_cb(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wp: *mut window_pane = format_get_pane(ft);
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
-    let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    return window_copy_get_line_cstring(wp, (*data).cy);
+fn window_copy_cursor_line_cb(context: &mut FormatContext) -> Option<CString> {
+    let wp = context.pane()?.as_ptr();
+    unsafe {
+        let mut wme: *mut window_mode_entry = (*wp).modes.active;
+        let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
+        return window_copy_get_line_cstring(wp, (*data).cy);
+    }
 }
-unsafe fn window_copy_search_match_cb(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wp: *mut window_pane = format_get_pane(ft);
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
-    let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    return window_copy_match_at_cursor_cstring(data);
+fn window_copy_search_match_cb(context: &mut FormatContext) -> Option<CString> {
+    let wp = context.pane()?.as_ptr();
+    unsafe {
+        let mut wme: *mut window_mode_entry = (*wp).modes.active;
+        let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
+        return window_copy_match_at_cursor_cstring(data);
+    }
 }
 unsafe fn window_copy_formats(
     mut wme: *mut window_mode_entry,
@@ -1386,19 +1394,13 @@ unsafe fn window_copy_formats(
             (*data).searchmore,
         );
     }
-    format_add_owned_cb(ft, c"search_match", |ft| unsafe {
-        window_copy_search_match_cb(ft.as_ptr())
-    });
-    format_add_owned_cb(ft, c"copy_cursor_word", |ft| unsafe {
-        window_copy_cursor_word_cb(ft.as_ptr())
-    });
-    format_add_owned_cb(ft, c"copy_cursor_line", |ft| unsafe {
-        window_copy_cursor_line_cb(ft.as_ptr())
-    });
+    format_add_owned_cb(ft, c"search_match", window_copy_search_match_cb);
+    format_add_owned_cb(ft, c"copy_cursor_word", window_copy_cursor_word_cb);
+    format_add_owned_cb(ft, c"copy_cursor_line", window_copy_cursor_line_cb);
     format_add_owned_cb(
         ft,
         c"copy_cursor_hyperlink",
-        |ft| unsafe { window_copy_cursor_hyperlink_cb(ft.as_ptr()) },
+        window_copy_cursor_hyperlink_cb,
     );
 }
 unsafe fn window_copy_get_screen(mut wme: *mut window_mode_entry) -> *mut screen {
