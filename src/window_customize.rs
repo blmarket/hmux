@@ -108,7 +108,6 @@ fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
 pub struct window_customize_modedata {
     pub wp: *mut window_pane,
     pub dead: ::core::ffi::c_int,
-    pub references: ::core::ffi::c_int,
     pub data: *mut mode_tree_data,
     pub editor: *mut spawn_editor_state,
     pub edit: *mut window_customize_editdata,
@@ -2897,10 +2896,9 @@ unsafe fn window_customize_init(
     } else {
         CStr::from_ptr(args_get(args, 'F' as i32 as u_char)).to_owned()
     };
-    data = Box::into_raw(Box::new(window_customize_modedata {
+    data = crate::src::shared::rc::new(window_customize_modedata {
         wp,
         dead: 0,
-        references: 1,
         data: ::core::ptr::null_mut(),
         editor: ::core::ptr::null_mut(),
         edit: ::core::ptr::null_mut(),
@@ -2911,7 +2909,7 @@ unsafe fn window_customize_init(
         item_list: Vec::new(),
         fs: ::core::ptr::read(fs),
         change: WINDOW_CUSTOMIZE_UNSET,
-    }));
+    }, window_customize_drop);
     (*wme).data = data as *mut ::core::ffi::c_void;
     let data_handle = std::ptr::NonNull::new(data).expect("live customize mode data");
     if args_has(args, 'y' as i32 as u_char) != 0 {
@@ -2958,15 +2956,13 @@ unsafe fn window_customize_init(
     mode_tree_draw((*data).data);
     return s;
 }
-unsafe fn window_customize_destroy(mut data: *mut window_customize_modedata) {
-    (*data).references -= 1;
-    if (*data).references != 0 as ::core::ffi::c_int {
-        return;
-    }
+unsafe fn window_customize_destroy(data: *mut window_customize_modedata) {
+    crate::src::shared::rc::release(data);
+}
+unsafe fn window_customize_drop(data: *mut window_customize_modedata) {
     for item in (*data).item_list.drain(..) {
         drop(item);
     }
-    drop(Box::from_raw(data));
 }
 unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
@@ -3230,7 +3226,7 @@ unsafe fn window_customize_set_environment(
     (*new_item).environ = env;
     (*new_item).environ_flags = (*envent).flags;
     window_customize_set_name(&mut *new_item, (*item).name.as_deref());
-    (*data).references += 1;
+    crate::src::shared::rc::retain(data);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -3362,7 +3358,7 @@ unsafe fn window_customize_add_option(
     (*new_item).option_type = type_0;
     (*new_item).scope = scope;
     (*new_item).oo = oo;
-    (*data).references += 1;
+    crate::src::shared::rc::retain(data);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -3450,7 +3446,7 @@ unsafe fn window_customize_add_environment(
     (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT;
     (*new_item).scope = scope;
     (*new_item).environ = env;
-    (*data).references += 1;
+    crate::src::shared::rc::retain(data);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -3830,7 +3826,7 @@ unsafe fn window_customize_set_option(
         if !array_key.is_null() {
             window_customize_set_item_array_key(&mut *new_item, Some(CStr::from_ptr(array_key)));
         }
-        (*data).references += 1;
+        crate::src::shared::rc::retain(data);
         mode_tree_set_prompt(
             (*data).data,
             c,
@@ -3965,7 +3961,7 @@ unsafe fn window_customize_set_array_key(
     (*new_item).oo = (*item).oo;
     window_customize_set_name(&mut *new_item, (*item).name.as_deref());
     window_customize_set_item_array_key(&mut *new_item, (*item).array_key.as_deref());
-    (*data).references += 1;
+    crate::src::shared::rc::retain(data);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -4186,7 +4182,7 @@ unsafe fn window_customize_set_key(
         (*new_item).scope = (*item).scope;
         window_customize_set_table(&mut *new_item, (*item).table.as_deref());
         (*new_item).key = key;
-        (*data).references += 1;
+        crate::src::shared::rc::retain(data);
         mode_tree_set_prompt(
             (*data).data,
             c,
@@ -4208,7 +4204,7 @@ unsafe fn window_customize_set_key(
         (*new_item).scope = (*item).scope;
         window_customize_set_table(&mut *new_item, (*item).table.as_deref());
         (*new_item).key = key;
-        (*data).references += 1;
+        crate::src::shared::rc::retain(data);
         mode_tree_set_prompt(
             (*data).data,
             c,
@@ -4343,7 +4339,7 @@ unsafe fn window_customize_add_key(
     (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
     (*new_item).scope = WINDOW_CUSTOMIZE_KEY;
     window_customize_set_table(&mut *new_item, Some(CStr::from_ptr(table)));
-    (*data).references += 1;
+    crate::src::shared::rc::retain(data);
     mode_tree_set_prompt(
         (*data).data,
         c,
@@ -4869,7 +4865,7 @@ unsafe fn window_customize_key(
                     prompt_bytes.extend_from_slice(b" to default? ");
                     let reset_prompt =
                         CString::new(prompt_bytes).expect("C string parts have no NUL");
-                    (*data).references += 1;
+                    crate::src::shared::rc::retain(data);
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
                         (*data).data,
@@ -4891,7 +4887,7 @@ unsafe fn window_customize_key(
                 if !(tagged == 0 as u_int) {
                     let reset_prompt = CString::new(format!("Reset {tagged} tagged to default? "))
                         .expect("formatted number has no NUL");
-                    (*data).references += 1;
+                    crate::src::shared::rc::retain(data);
                     (*data).change = WINDOW_CUSTOMIZE_RESET;
                     mode_tree_set_prompt(
                         (*data).data,
@@ -4936,7 +4932,7 @@ unsafe fn window_customize_key(
                     prompt_bytes.extend_from_slice(b"? ");
                     let prompt =
                         CString::new(prompt_bytes).expect("C strings have no interior NUL");
-                    (*data).references += 1;
+                    crate::src::shared::rc::retain(data);
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
                         (*data).data,
@@ -4957,7 +4953,7 @@ unsafe fn window_customize_key(
                 tagged = mode_tree_count_tagged((*data).data);
                 if !(tagged == 0 as u_int) {
                     let prompt = CString::new(format!("Unset {tagged} tagged? ")).unwrap();
-                    (*data).references += 1;
+                    crate::src::shared::rc::retain(data);
                     (*data).change = WINDOW_CUSTOMIZE_UNSET;
                     mode_tree_set_prompt(
                         (*data).data,
@@ -5063,11 +5059,10 @@ mod item_owner_tests {
     #[test]
     fn mode_list_keeps_items_stable_until_last_callback_reference() {
         unsafe {
-            let data = Box::into_raw(Box::new(window_customize_modedata {
+            let data = crate::src::shared::rc::new(window_customize_modedata {
                 wp: ::core::ptr::null_mut(),
                 dead: 0,
-                references: 1,
-                data: ::core::ptr::null_mut(),
+                        data: ::core::ptr::null_mut(),
                 editor: ::core::ptr::null_mut(),
                 edit: ::core::ptr::null_mut(),
                 format: CString::new(Vec::new()).unwrap(),
@@ -5085,7 +5080,7 @@ mod item_owner_tests {
                     idx: 0,
                 },
                 change: WINDOW_CUSTOMIZE_UNSET,
-            }));
+            }, window_customize_drop);
             let first = window_customize_add_item(data);
             (*first).data = data;
             window_customize_set_name(&mut *first, Some(c"stable"));
@@ -5098,10 +5093,10 @@ mod item_owner_tests {
             };
             assert_eq!(first_address, first);
             let detached = window_customize_copy_item(first);
-            (*data).references += 1;
+            crate::src::shared::rc::retain(data);
 
             window_customize_destroy(data);
-            assert_eq!((*data).references, 1);
+            assert_eq!(crate::src::shared::rc::strong_count(data), 1);
             assert_eq!(
                 CStr::from_ptr(
                     ((*detached).name)
