@@ -59,10 +59,10 @@ unsafe fn format_entry_tree_find_key(
     head: *mut format_entry_tree,
     key: &CStr,
 ) -> *mut format_entry {
-    if head.is_null() || (*head).entries.is_null() {
+    if head.is_null() {
         return ::core::ptr::null_mut();
     }
-    (*(*head).entries)
+    (*head)
         .entries
         .get(key.to_bytes())
         .copied()
@@ -73,10 +73,10 @@ pub(super) unsafe fn format_entry_tree_find(
     head: *mut format_entry_tree,
     elm: *mut format_entry,
 ) -> *mut format_entry {
-    if head.is_null() || (*head).entries.is_null() || elm.is_null() || false {
+    if head.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<format_entry>();
     }
-    (*(*head).entries)
+    (*head)
         .entries
         .get(&format_entry_tree_key(&*elm))
         .copied()
@@ -87,16 +87,10 @@ unsafe fn format_entry_tree_insert(
     head: *mut format_entry_tree,
     elm: *mut format_entry,
 ) -> *mut format_entry {
-    if head.is_null() || elm.is_null() || false {
+    if head.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<format_entry>();
     }
-    if (*head).entries.is_null() {
-        (*head).entries = Box::into_raw(Box::new(format_entry_tree_storage::default()));
-    }
-    match (*(*head).entries)
-        .entries
-        .entry(format_entry_tree_key(&*elm))
-    {
+    match (*head).entries.entry(format_entry_tree_key(&*elm)) {
         std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
@@ -109,14 +103,14 @@ unsafe fn format_entry_tree_remove(
     head: *mut format_entry_tree,
     elm: *mut format_entry,
 ) -> *mut format_entry {
-    if head.is_null() || (*head).entries.is_null() || elm.is_null() || false {
+    if head.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<format_entry>();
     }
     let key = format_entry_tree_key(&*elm);
-    if (*(*head).entries).entries.get(&key).copied() != Some(elm) {
+    if (*head).entries.get(&key).copied() != Some(elm) {
         return ::core::ptr::null_mut::<format_entry>();
     }
-    (*(*head).entries)
+    (*head)
         .entries
         .remove(&key)
         .unwrap_or(::core::ptr::null_mut::<format_entry>())
@@ -126,13 +120,13 @@ unsafe fn format_entry_tree_minmax(
     head: *mut format_entry_tree,
     val: ::core::ffi::c_int,
 ) -> *mut format_entry {
-    if head.is_null() || (*head).entries.is_null() {
+    if head.is_null() {
         return ::core::ptr::null_mut::<format_entry>();
     }
     let item = if val < 0 {
-        (*(*head).entries).entries.values().next()
+        (*head).entries.values().next()
     } else {
-        (*(*head).entries).entries.values().next_back()
+        (*head).entries.values().next_back()
     };
     item.copied()
         .unwrap_or(::core::ptr::null_mut::<format_entry>())
@@ -142,10 +136,10 @@ unsafe fn format_entry_tree_next(
     head: *mut format_entry_tree,
     elm: *mut format_entry,
 ) -> *mut format_entry {
-    if head.is_null() || (*head).entries.is_null() || elm.is_null() || false {
+    if head.is_null() || elm.is_null() {
         return ::core::ptr::null_mut::<format_entry>();
     }
-    (*(*head).entries)
+    (*head)
         .entries
         .range((
             std::ops::Bound::Excluded(format_entry_tree_key(&*elm)),
@@ -193,7 +187,6 @@ pub unsafe fn format_create(
 ) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = Box::into_raw(Box::new(format_tree::default()));
-    (*ft).tree.entries = Box::into_raw(Box::new(format_entry_tree_storage::default()));
     if !c.is_null() {
         (*ft).client = c;
         (*(*ft).client).references += 1;
@@ -217,10 +210,6 @@ pub unsafe fn format_free(mut ft: *mut format_tree) {
         format_entry_tree_remove(&raw mut (*ft).tree, fe);
         drop(Box::from_raw(fe as *mut format_entry));
         fe = fe1;
-    }
-    if !(*ft).tree.entries.is_null() {
-        drop(Box::from_raw((*ft).tree.entries));
-        (*ft).tree.entries = ::core::ptr::null_mut::<format_entry_tree_storage>();
     }
     if !(*ft).client.is_null() {
         server_client_unref((*ft).client);
@@ -558,8 +547,6 @@ mod tests {
             drop(Box::from_raw(item));
             item = next;
         }
-        drop(Box::from_raw(head.entries));
-        head.entries = ::core::ptr::null_mut::<format_entry_tree_storage>();
     }
 
     #[test]
@@ -572,9 +559,7 @@ mod tests {
                 .collect();
             assert!(crate::src::ffi::libc::strcmp(keys[1].as_ptr(), keys[2].as_ptr()) < 0);
             assert!(crate::src::ffi::libc::strcmp(keys[3].as_ptr(), keys[0].as_ptr()) > 0);
-            let mut head = format_entry_tree {
-                entries: Box::into_raw(Box::new(format_entry_tree_storage::default())),
-            };
+            let mut head = format_entry_tree::default();
             let mut items = Vec::new();
             for key in &keys {
                 let item = new_entry(key);

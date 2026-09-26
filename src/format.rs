@@ -100,8 +100,7 @@ use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
-    format_entry, format_entry_tree, format_entry_tree_storage, format_job, format_job_tree,
-    format_tree, format_type,
+    format_entry, format_entry_tree, format_job, format_job_tree, format_tree, format_type,
 };
 use crate::src::shared::format::{
     FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENTS, FORMAT_CLIENT_ENVIRON,

@@ -113,7 +113,7 @@ pub const FORMAT_EXPAND_NOJOBS: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 
 /// Box-owned by format_create; borrowed pointers are invalid after format_free.
-#[derive(Copy, Clone, Default)]
+#[derive(Default)]
 #[repr(C)]
 pub struct format_tree {
     pub type_0: format_type,
@@ -138,16 +138,10 @@ pub struct format_job_tree {
     pub(crate) entries: std::collections::BTreeMap<(u_int, Vec<u8>), *mut format_job>,
 }
 
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct format_entry_tree {
-    pub entries: *mut format_entry_tree_storage,
-}
-
-/// Rust-owned ordering storage for a format tree's C-allocated entries.
+/// Ordered index for a format tree's separately Box-owned entries.
 /// Keys retain the original C string bytes so ordering matches `strcmp`.
 #[derive(Default)]
-pub struct format_entry_tree_storage {
+pub struct format_entry_tree {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut format_entry>,
 }
 
