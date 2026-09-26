@@ -256,23 +256,16 @@ impl Default for window_pane_modes {
     }
 }
 
-/// Ordered, non-owning pane handles. The pane owner registry keeps the
-/// allocation alive; this collection only records order.
+/// Ordered, non-owning pane handles. Retained Rc references keep allocations
+/// alive; this collection only records order.
 #[derive(Default)]
 pub struct window_panes {
-    pub storage: Option<Box<Vec<refbox::Weak<window_pane>>>>,
+    pub storage: Option<Box<Vec<std::rc::Weak<super::rc::Allocation<window_pane>>>>>,
 }
 
-fn checked_window_pane_ptr(weak: &refbox::Weak<window_pane>) -> *mut window_pane {
-    match weak.try_access_mut(|pane| pane as *mut window_pane) {
-        Ok(pointer) => pointer,
-        Err(refbox::BorrowError::Dropped) => {
-            panic!("window pane collection contains an expired owner")
-        }
-        Err(refbox::BorrowError::Borrowed) => {
-            panic!("window pane collection entry is already borrowed")
-        }
-    }
+fn checked_window_pane_ptr(weak: &std::rc::Weak<super::rc::Allocation<window_pane>>) -> *mut window_pane {
+    let owner = weak.upgrade().expect("window pane collection contains an expired owner");
+    super::rc::as_ptr(&owner)
 }
 
 impl window_panes {
@@ -319,7 +312,7 @@ impl window_panes {
             .position(|weak| checked_window_pane_ptr(weak) == pane)
     }
 
-    pub fn push_front(&mut self, pane: refbox::Weak<window_pane>) {
+    pub fn push_front(&mut self, pane: std::rc::Weak<super::rc::Allocation<window_pane>>) {
         unsafe {
             self.remove_ptr(checked_window_pane_ptr(&pane));
         }
@@ -328,7 +321,7 @@ impl window_panes {
             .insert(0, pane);
     }
 
-    pub fn push_back(&mut self, pane: refbox::Weak<window_pane>) {
+    pub fn push_back(&mut self, pane: std::rc::Weak<super::rc::Allocation<window_pane>>) {
         unsafe {
             self.remove_ptr(checked_window_pane_ptr(&pane));
         }
@@ -340,7 +333,7 @@ impl window_panes {
     pub unsafe fn insert_before(
         &mut self,
         before: *mut window_pane,
-        pane: refbox::Weak<window_pane>,
+        pane: std::rc::Weak<super::rc::Allocation<window_pane>>,
     ) {
         let pointer = checked_window_pane_ptr(&pane);
         self.remove_ptr(pointer);
@@ -356,7 +349,7 @@ impl window_panes {
     pub unsafe fn insert_after(
         &mut self,
         after: *mut window_pane,
-        pane: refbox::Weak<window_pane>,
+        pane: std::rc::Weak<super::rc::Allocation<window_pane>>,
     ) {
         let pointer = checked_window_pane_ptr(&pane);
         self.remove_ptr(pointer);
@@ -399,7 +392,7 @@ impl window_panes {
             .swap(first_position, second_position);
     }
 
-    pub unsafe fn remove_at(&mut self, pane: *mut window_pane) -> refbox::Weak<window_pane> {
+    pub unsafe fn remove_at(&mut self, pane: *mut window_pane) -> std::rc::Weak<super::rc::Allocation<window_pane>> {
         let position = self.position(pane).expect("pane is not in collection");
         self.storage
             .as_mut()
@@ -407,7 +400,7 @@ impl window_panes {
             .remove(position)
     }
 
-    pub unsafe fn insert_at(&mut self, position: usize, pane: refbox::Weak<window_pane>) {
+    pub unsafe fn insert_at(&mut self, position: usize, pane: std::rc::Weak<super::rc::Allocation<window_pane>>) {
         self.storage
             .as_mut()
             .expect("pane collection is present")
@@ -418,7 +411,7 @@ impl window_panes {
 /// Most-recently-visited pane handles, with the newest pane at the front.
 #[derive(Default)]
 pub struct window_pane_history {
-    pub storage: Option<Box<VecDeque<refbox::Weak<window_pane>>>>,
+    pub storage: Option<Box<VecDeque<std::rc::Weak<super::rc::Allocation<window_pane>>>>>,
 }
 
 impl window_pane_history {
@@ -460,7 +453,7 @@ impl window_pane_history {
         old_len != self.storage.as_ref().map_or(0, |value| value.len())
     }
 
-    pub fn push_front(&mut self, pane: refbox::Weak<window_pane>) {
+    pub fn push_front(&mut self, pane: std::rc::Weak<super::rc::Allocation<window_pane>>) {
         let pointer = checked_window_pane_ptr(&pane);
         unsafe {
             self.remove_ptr(pointer);
@@ -473,6 +466,6 @@ impl window_pane_history {
 
 #[repr(C)]
 pub struct window_pane_tree {
-    /// The global pane index owns its map; the pane registry owns pane records.
+    /// The global pane index owns its map; retained Rc references own pane records.
     pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, *mut window_pane>>>,
 }

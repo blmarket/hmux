@@ -1,14 +1,20 @@
 use hmux2::src::shared::pane::{window_pane, window_pane_history, window_panes};
+use hmux2::src::shared::rc::{self, Allocation};
 use hmux2::src::window::*;
-use refbox::{BorrowError, RefBox};
+use std::rc::Rc;
+
+fn pane_owner() -> Rc<Allocation<window_pane>> {
+    // Collection fixtures have no display resources requiring model cleanup.
+    unsafe { rc::take(rc::new(window_pane::empty(), |_| {})) }
+}
 
 #[test]
 fn removing_from_another_history_preserves_membership_and_cleanup() {
-    let owner = RefBox::new(window_pane::empty());
-    let pane = owner.as_ptr() as *mut window_pane;
+    let owner = pane_owner();
+    let pane = rc::as_ptr(&owner);
     let mut source = window_pane_history::default();
     let mut destination = window_pane_history::default();
-    source.push_front(owner.downgrade());
+    source.push_front(Rc::downgrade(&owner));
     unsafe {
         (*pane).flags |= hmux2::src::shared::pane::PANE_VISITED;
         window_pane_stack_remove(&mut destination, pane);
@@ -18,7 +24,7 @@ fn removing_from_another_history_preserves_membership_and_cleanup() {
         assert_eq!((*pane).flags & hmux2::src::shared::pane::PANE_VISITED, 0);
 
         // Cleanup must also make progress if an entry has lost its flag.
-        source.push_front(owner.downgrade());
+        source.push_front(Rc::downgrade(&owner));
         window_pane_stack_remove(&mut source, pane);
         assert!(source.is_empty());
     }
@@ -26,23 +32,19 @@ fn removing_from_another_history_preserves_membership_and_cleanup() {
 
 #[test]
 fn pane_order_and_visit_history_preserve_stable_weak_entries() {
-    let owners: Vec<RefBox<window_pane>> =
-        (0..4).map(|_| RefBox::new(window_pane::empty())).collect();
-    let panes: Vec<*mut window_pane> = owners
-        .iter()
-        .map(|owner| owner.as_ptr() as *mut window_pane)
-        .collect();
+    let owners: Vec<Rc<Allocation<window_pane>>> = (0..4).map(|_| pane_owner()).collect();
+    let panes: Vec<*mut window_pane> = owners.iter().map(rc::as_ptr).collect();
 
     unsafe {
         let mut order = window_panes::default();
         for owner in &owners {
-            order.push_back(owner.downgrade());
+            order.push_back(Rc::downgrade(owner));
         }
         assert_eq!(order.first(), panes[0]);
         assert_eq!(order.next(panes[0]), panes[1]);
         assert_eq!(order.previous(panes[3]), panes[2]);
 
-        order.insert_before(panes[2], owners[3].downgrade());
+        order.insert_before(panes[2], Rc::downgrade(&owners[3]));
         assert_eq!(order.first(), panes[0]);
         assert_eq!(order.next(panes[0]), panes[1]);
         order.swap_ptrs(panes[1], panes[3]);
@@ -51,18 +53,18 @@ fn pane_order_and_visit_history_preserve_stable_weak_entries() {
         assert_eq!(order.next(panes[0]), panes[1]);
 
         let mut history = window_pane_history::default();
-        history.push_front(owners[1].downgrade());
-        history.push_front(owners[2].downgrade());
-        history.push_front(owners[1].downgrade());
+        history.push_front(Rc::downgrade(&owners[1]));
+        history.push_front(Rc::downgrade(&owners[2]));
+        history.push_front(Rc::downgrade(&owners[1]));
         assert_eq!(history.first(), panes[1]);
         assert_eq!(history.next(panes[1]), panes[2]);
         assert!(history.remove_ptr(panes[2]));
         assert_eq!(history.next(panes[1]), std::ptr::null_mut());
     }
 
-    let weak = owners[0].downgrade();
+    let weak = Rc::downgrade(&owners[0]);
     drop(owners);
-    assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
+    assert!(weak.upgrade().is_none());
 }
 
 #[test]
