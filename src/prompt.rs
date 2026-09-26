@@ -8,7 +8,7 @@ use crate::src::format::{
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_number,
     options_get_only, options_get_string,
@@ -10892,11 +10892,11 @@ unsafe fn prompt_complete(mut pr: *mut prompt, word: &CStr, mut offset: u_int) -
     list.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
     i = 0 as u_int;
     while (i as usize) < list.len() {
-        log_debug(
-            b"complete %u: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            i,
-            list[i as usize].as_ptr(),
-        );
+        log_debug(format_args!(
+            "complete {}: {}",
+            (i) as u32,
+            log_cstr((list[i as usize].as_ptr()) as *const _)
+        ));
         i = i.wrapping_add(1);
     }
     let out = if list.len() == 1 {

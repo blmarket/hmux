@@ -10,7 +10,7 @@ use crate::src::grid::{
     grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
 };
 use crate::src::layout::layout_fix_panes;
-use crate::src::log::{fatal, fatalx, log_debug, log_get_level};
+use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::screen::{
@@ -191,11 +191,11 @@ fn screen_write_set_client_cb(wp: *mut window_pane) -> tty_ctx_set_client_cb {
             return -1;
         }
         if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-            log_debug(
-                b"%s: adding %%%u to deferred redraw\0" as *const u8 as *const ::core::ffi::c_char,
-                b"screen_write_set_client_cb\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            log_debug(format_args!(
+                "{}: adding %{} to deferred redraw",
+                "screen_write_set_client_cb",
+                ((*wp).id) as u32
+            ));
             (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
             return -1;
         }
@@ -442,15 +442,15 @@ pub unsafe fn screen_write_start_pane(
     screen_write_init(ctx, s);
     (*ctx).wp = wp as *mut window_pane;
     if log_get_level() != 0 as ::core::ffi::c_int {
-        log_debug(
-            b"%s: size %ux%u, pane %%%u (at %u,%u)\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_start_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*(*ctx).s).grid).sx,
-            (*(*(*ctx).s).grid).sy,
-            (*wp).id,
-            (*wp).xoff,
-            (*wp).yoff,
-        );
+        log_debug(format_args!(
+            "{}: size {}x{}, pane %{} (at {},{})",
+            "screen_write_start_pane",
+            ((*(*(*ctx).s).grid).sx) as u32,
+            ((*(*(*ctx).s).grid).sy) as u32,
+            ((*wp).id) as u32,
+            ((*wp).xoff) as u32,
+            ((*wp).yoff) as u32
+        ));
     }
 }
 pub unsafe fn screen_write_start_callback(
@@ -461,23 +461,23 @@ pub unsafe fn screen_write_start_callback(
     screen_write_init(ctx, s);
     (*ctx).init_ctx_cb = cb;
     if log_get_level() != 0 as ::core::ffi::c_int {
-        log_debug(
-            b"%s: size %ux%u, with callback\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_start_callback\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*(*ctx).s).grid).sx,
-            (*(*(*ctx).s).grid).sy,
-        );
+        log_debug(format_args!(
+            "{}: size {}x{}, with callback",
+            "screen_write_start_callback",
+            ((*(*(*ctx).s).grid).sx) as u32,
+            ((*(*(*ctx).s).grid).sy) as u32
+        ));
     }
 }
 pub unsafe fn screen_write_start(mut ctx: *mut screen_write_ctx, mut s: *mut screen) {
     screen_write_init(ctx, s);
     if log_get_level() != 0 as ::core::ffi::c_int {
-        log_debug(
-            b"%s: size %ux%u, no pane\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_start\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*(*ctx).s).grid).sx,
-            (*(*(*ctx).s).grid).sy,
-        );
+        log_debug(format_args!(
+            "{}: size {}x{}, no pane",
+            "screen_write_start",
+            ((*(*(*ctx).s).grid).sx) as u32,
+            ((*(*(*ctx).s).grid).sy) as u32
+        ));
     }
 }
 pub unsafe fn screen_write_stop(mut ctx: *mut screen_write_ctx) {
@@ -1408,11 +1408,11 @@ pub unsafe fn screen_write_mode_set(mut ctx: *mut screen_write_ctx, mut mode: ::
     let mut s: *mut screen = (*ctx).s;
     (*s).mode |= mode;
     if log_get_level() != 0 as ::core::ffi::c_int {
-        log_debug(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_mode_set\0" as *const u8 as *const ::core::ffi::c_char,
-            screen_mode_to_string(mode),
-        );
+        log_debug(format_args!(
+            "{}: {}",
+            "screen_write_mode_set",
+            log_cstr((screen_mode_to_string(mode)) as *const _)
+        ));
     }
 }
 pub unsafe fn screen_write_mode_clear(
@@ -1422,20 +1422,20 @@ pub unsafe fn screen_write_mode_clear(
     let mut s: *mut screen = (*ctx).s;
     (*s).mode &= !mode;
     if log_get_level() != 0 as ::core::ffi::c_int {
-        log_debug(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_mode_clear\0" as *const u8 as *const ::core::ffi::c_char,
-            screen_mode_to_string(mode),
-        );
+        log_debug(format_args!(
+            "{}: {}",
+            "screen_write_mode_clear",
+            log_cstr((screen_mode_to_string(mode)) as *const _)
+        ));
     }
 }
 unsafe fn screen_write_sync_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = arg as *mut window_pane;
-    log_debug(
-        b"%s: %%%u sync timer expired\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_sync_callback\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!(
+        "{}: %{} sync timer expired",
+        "screen_write_sync_callback",
+        ((*wp).id) as u32
+    ));
     event_del(&raw mut (*wp).sync_timer);
     if (*wp).base.mode & MODE_SYNC != 0 {
         (*wp).base.mode &= !MODE_SYNC;
@@ -1460,11 +1460,11 @@ pub unsafe fn screen_write_start_sync(mut wp: *mut window_pane) {
         );
     }
     event_add(&raw mut (*wp).sync_timer, &raw mut tv);
-    log_debug(
-        b"%s: %%%u started sync mode\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_start_sync\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!(
+        "{}: %{} started sync mode",
+        "screen_write_start_sync",
+        ((*wp).id) as u32
+    ));
 }
 pub unsafe fn screen_write_stop_sync(mut wp: *mut window_pane) {
     if wp.is_null() || !(*wp).base.mode & MODE_SYNC != 0 {
@@ -1475,11 +1475,11 @@ pub unsafe fn screen_write_stop_sync(mut wp: *mut window_pane) {
     }
     (*wp).base.mode &= !MODE_SYNC;
     screen_write_flush_dirty(wp);
-    log_debug(
-        b"%s: %%%u stopped sync mode\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_stop_sync\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!(
+        "{}: %{} stopped sync mode",
+        "screen_write_stop_sync",
+        ((*wp).id) as u32
+    ));
 }
 pub unsafe fn screen_write_end_sync(mut ctx: *mut screen_write_ctx) {
     let mut wp: *mut window_pane = (*ctx).wp as *mut window_pane;
@@ -1791,12 +1791,12 @@ unsafe fn screen_write_flush_dirty(mut wp: *mut window_pane) {
         }
         y = y.wrapping_add(1);
     }
-    log_debug(
-        b"%s: %%%u had %u dirty lines\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_flush_dirty\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        lines,
-    );
+    log_debug(format_args!(
+        "{}: %{} had {} dirty lines",
+        "screen_write_flush_dirty",
+        ((*wp).id) as u32,
+        (lines) as u32
+    ));
     screen_write_stop(&raw mut ctx);
     screen_write_clear_dirty(wp);
 }
@@ -2556,14 +2556,14 @@ pub unsafe fn screen_write_cursormove(
     if py != -(1 as ::core::ffi::c_int) && py as u_int > (*(*s).grid).sy.wrapping_sub(1 as u_int) {
         py = (*(*s).grid).sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
     }
-    log_debug(
-        b"%s: from %u,%u to %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_cursormove\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).cx,
-        (*s).cy,
-        px,
-        py,
-    );
+    log_debug(format_args!(
+        "{}: from {},{} to {},{}",
+        "screen_write_cursormove",
+        ((*s).cx) as u32,
+        ((*s).cy) as u32,
+        (px) as u32,
+        (py) as u32
+    ));
     screen_write_set_cursor(ctx, px, py);
 }
 pub unsafe fn screen_write_reverseindex(mut ctx: *mut screen_write_ctx, mut bg: u_int) {
@@ -2689,14 +2689,14 @@ pub unsafe fn screen_write_linefeed(
     if wrapped != 0 {
         (*gl).flags = ((*gl).flags as ::core::ffi::c_int | GRID_LINE_WRAPPED) as u_short;
     }
-    log_debug(
-        b"%s: at %u,%u (region %u-%u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_linefeed\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).cx,
-        (*s).cy,
-        rupper,
-        rlower,
-    );
+    log_debug(format_args!(
+        "{}: at {},{} (region {}-{})",
+        "screen_write_linefeed",
+        ((*s).cx) as u32,
+        ((*s).cy) as u32,
+        (rupper) as u32,
+        (rlower) as u32
+    ));
     if bg != (*ctx).bg {
         screen_write_collect_flush(
             ctx,
@@ -3395,14 +3395,14 @@ unsafe fn screen_write_collect_scroll(mut ctx: *mut screen_write_ctx, mut bg: u_
     let mut cl: *mut screen_write_cline = ::core::ptr::null_mut::<screen_write_cline>();
     let mut y: u_int = 0;
     let mut ci: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
-    log_debug(
-        b"%s: at %u,%u (region %u-%u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_collect_scroll\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).cx,
-        (*s).cy,
-        (*s).rupper,
-        (*s).rlower,
-    );
+    log_debug(format_args!(
+        "{}: at {},{} (region {}-{})",
+        "screen_write_collect_scroll",
+        ((*s).cx) as u32,
+        ((*s).cy) as u32,
+        ((*s).rupper) as u32,
+        ((*s).rlower) as u32
+    ));
     screen_write_collect_clear(ctx, (*s).rupper, 1 as u_int);
     let saved = std::mem::take(&mut (*(*(*ctx).s).write_list.offset((*s).rupper as isize)).data);
     y = (*s).rupper;
@@ -3491,13 +3491,13 @@ unsafe fn screen_write_collect_flush_scrolled(
         (*wp).flags |= PANE_REDRAW;
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"%s: scrolled %u (region %u-%u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_collect_flush_scrolled\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ctx).scrolled,
-        (*s).rupper,
-        (*s).rlower,
-    );
+    log_debug(format_args!(
+        "{}: scrolled {} (region {}-{})",
+        "screen_write_collect_flush_scrolled",
+        ((*ctx).scrolled) as u32,
+        ((*s).rupper) as u32,
+        ((*s).rlower) as u32
+    ));
     if (*ctx).scrolled
         > (*s)
             .rlower
@@ -3619,14 +3619,13 @@ unsafe fn screen_write_collect_flush_line(mut ctx: *mut screen_write_ctx, mut y:
         if ci.is_null() {
             break;
         }
-        log_debug(
-            b"collect list: x=%u (last %u), y=%u, used=%u\0" as *const u8
-                as *const ::core::ffi::c_char,
-            (*ci).x,
-            last,
-            y,
-            (*ci).used,
-        );
+        log_debug(format_args!(
+            "collect list: x={} (last {}), y={}, used={}",
+            ((*ci).x) as u32,
+            (last) as u32,
+            (y) as u32,
+            ((*ci).used) as u32
+        ));
         if last != UINT_MAX && (*ci).x <= last {
             fatalx(
                 b"collect list bad order: %u <= %u\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3774,12 +3773,12 @@ unsafe fn screen_write_collect_flush(
                     }
                     (*s).cx = cx;
                     (*s).cy = cy;
-                    log_debug(
-                        b"%s: flushed %u items (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"screen_write_collect_flush\0" as *const u8 as *const ::core::ffi::c_char,
-                        items,
-                        from,
-                    );
+                    log_debug(format_args!(
+                        "{}: flushed {} items ({})",
+                        "screen_write_collect_flush",
+                        (items) as u32,
+                        log_cstr((from) as *const _)
+                    ));
                     return;
                 }
             }
@@ -3879,24 +3878,24 @@ unsafe fn screen_write_insert_clears(mut ctx: *mut screen_write_ctx, mut px: u_i
             bg = gc.bg;
         } else if gc.bg != bg {
             n = xx.wrapping_sub(start);
-            log_debug(
-                b"%s: from %u, size %u\0" as *const u8 as *const ::core::ffi::c_char,
-                b"screen_write_insert_clears\0" as *const u8 as *const ::core::ffi::c_char,
-                start,
-                n,
-            );
+            log_debug(format_args!(
+                "{}: from {}, size {}",
+                "screen_write_insert_clears",
+                (start) as u32,
+                (n) as u32
+            ));
             screen_write_collect_insert_clear(ctx, start, n, bg as u_int);
             start = xx;
             bg = gc.bg;
         }
         xx = xx.wrapping_add(1);
     }
-    log_debug(
-        b"%s: from %u, size %u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_insert_clears\0" as *const u8 as *const ::core::ffi::c_char,
-        start,
-        xx.wrapping_sub(start),
-    );
+    log_debug(format_args!(
+        "{}: from {}, size {}",
+        "screen_write_insert_clears",
+        (start) as u32,
+        (xx.wrapping_sub(start)) as u32
+    ));
     screen_write_collect_insert_clear(ctx, start, xx.wrapping_sub(start), bg as u_int);
 }
 pub unsafe fn screen_write_collect_end(mut ctx: *mut screen_write_ctx) {
@@ -3926,15 +3925,17 @@ pub unsafe fn screen_write_collect_end(mut ctx: *mut screen_write_ctx) {
     }
     (*ci).x = (*s).cx;
     screen_write_collect_insert(ctx, ci);
-    log_debug(
-        b"%s: %u %.*s (at %u,%u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_collect_end\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ci).used,
-        (*ci).used as ::core::ffi::c_int,
-        (*cl).data.as_mut_ptr().offset((*ci).x as isize),
-        (*s).cx,
-        (*s).cy,
-    );
+    log_debug(format_args!(
+        "{}: {} {} (at {},{})",
+        "screen_write_collect_end",
+        ((*ci).used) as u32,
+        log_cstr_n(
+            ((*cl).data.as_mut_ptr().offset((*ci).x as isize)) as *const _,
+            (*ci).used as ::core::ffi::c_int
+        ),
+        ((*s).cx) as u32,
+        ((*s).cy) as u32
+    ));
     if (*s).cx != 0 as u_int {
         xx = (*s).cx;
         while xx > 0 as u_int {
@@ -3943,13 +3944,12 @@ pub unsafe fn screen_write_collect_end(mut ctx: *mut screen_write_ctx) {
                 break;
             }
             screen_write_clear_cell((*s).grid, xx, (*s).cy);
-            log_debug(
-                b"%s: padding erased (before) at %u (cx %u)\0" as *const u8
-                    as *const ::core::ffi::c_char,
-                b"screen_write_collect_end\0" as *const u8 as *const ::core::ffi::c_char,
-                xx,
-                (*s).cx,
-            );
+            log_debug(format_args!(
+                "{}: padding erased (before) at {} (cx {})",
+                "screen_write_collect_end",
+                (xx) as u32,
+                ((*s).cx) as u32
+            ));
             xx = xx.wrapping_sub(1);
         }
         if xx != (*s).cx {
@@ -3960,13 +3960,12 @@ pub unsafe fn screen_write_collect_end(mut ctx: *mut screen_write_ctx) {
                 || gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
             {
                 screen_write_clear_cell((*s).grid, xx, (*s).cy);
-                log_debug(
-                    b"%s: padding erased (before) at %u (cx %u)\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                    b"screen_write_collect_end\0" as *const u8 as *const ::core::ffi::c_char,
-                    xx,
-                    (*s).cx,
-                );
+                log_debug(format_args!(
+                    "{}: padding erased (before) at {} (cx {})",
+                    "screen_write_collect_end",
+                    (xx) as u32,
+                    ((*s).cx) as u32
+                ));
             }
             bx = xx;
             bnx = (*s).cx.wrapping_sub(xx);
@@ -3995,13 +3994,12 @@ pub unsafe fn screen_write_collect_end(mut ctx: *mut screen_write_ctx) {
             break;
         }
         screen_write_clear_cell((*s).grid, xx, (*s).cy);
-        log_debug(
-            b"%s: padding erased (after) at %u (cx %u)\0" as *const u8
-                as *const ::core::ffi::c_char,
-            b"screen_write_collect_end\0" as *const u8 as *const ::core::ffi::c_char,
-            xx,
-            (*s).cx,
-        );
+        log_debug(format_args!(
+            "{}: padding erased (after) at {} (cx {})",
+            "screen_write_collect_end",
+            (xx) as u32,
+            ((*s).cx) as u32
+        ));
         xx = xx.wrapping_add(1);
     }
     if xx != (*s).cx {
@@ -4049,12 +4047,12 @@ pub unsafe fn screen_write_collect_add(mut ctx: *mut screen_write_ctx, mut gc: *
     }
     ci = screen_write_current_item(ctx);
     if (*s).cx > sx.wrapping_sub(1 as u_int) {
-        log_debug(
-            b"%s: wrapped at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_collect_add\0" as *const u8 as *const ::core::ffi::c_char,
-            (*s).cx,
-            (*s).cy,
-        );
+        log_debug(format_args!(
+            "{}: wrapped at {},{}",
+            "screen_write_collect_add",
+            ((*s).cx) as u32,
+            ((*s).cy) as u32
+        ));
         (*ci).wrapped = 1 as ::core::ffi::c_int;
         screen_write_linefeed(ctx, 1 as ::core::ffi::c_int, 8 as u_int);
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
@@ -4197,12 +4195,12 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
         skip = 0 as ::core::ffi::c_int;
     }
     if (*s).mode & MODE_WRAP != 0 && (*s).cx > sx.wrapping_sub(width) {
-        log_debug(
-            b"%s: wrapped at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_cell\0" as *const u8 as *const ::core::ffi::c_char,
-            (*s).cx,
-            (*s).cy,
-        );
+        log_debug(format_args!(
+            "{}: wrapped at {},{}",
+            "screen_write_cell",
+            ((*s).cx) as u32,
+            ((*s).cy) as u32
+        ));
         screen_write_linefeed(ctx, 1 as ::core::ffi::c_int, 8 as u_int);
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
         screen_write_collect_flush(
@@ -4230,12 +4228,12 @@ pub unsafe fn screen_write_cell(mut ctx: *mut screen_write_ctx, mut gc: *const g
     }
     xx = (*s).cx.wrapping_add(1 as u_int);
     while xx < (*s).cx.wrapping_add(width) {
-        log_debug(
-            b"%s: new padding at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_cell\0" as *const u8 as *const ::core::ffi::c_char,
-            xx,
-            (*s).cy,
-        );
+        log_debug(format_args!(
+            "{}: new padding at {},{}",
+            "screen_write_cell",
+            (xx) as u32,
+            ((*s).cy) as u32
+        ));
         grid_view_set_padding(gd, xx, (*s).cy, (*gc).bg);
         skip = 0 as ::core::ffi::c_int;
         xx = xx.wrapping_add(1);
@@ -4479,15 +4477,17 @@ unsafe fn screen_write_combine(
     if ((*ud).size as ::core::ffi::c_int) < 2 as ::core::ffi::c_int || cx == 0 as u_int {
         return zero_width;
     }
-    log_debug(
-        b"%s: character %.*s at %u,%u (width %u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_write_combine\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ud).size as ::core::ffi::c_int,
-        &raw const (*ud).data as *const u_char,
-        cx,
-        cy,
-        (*ud).width as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "{}: character {} at {},{} (width {})",
+        "screen_write_combine",
+        log_cstr_n(
+            (&raw const (*ud).data as *const u_char) as *const _,
+            (*ud).size as ::core::ffi::c_int
+        ),
+        (cx) as u32,
+        (cy) as u32,
+        ((*ud).width as ::core::ffi::c_int) as u32
+    ));
     n = 1 as u_int;
     grid_view_get_cell(gd, cx.wrapping_sub(n), cy, &raw mut last);
     if cx != 1 as u_int && last.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
@@ -4523,19 +4523,22 @@ unsafe fn screen_write_combine(
         0 as ::core::ffi::c_int,
         b"screen_write_combine\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    log_debug(
-        b"%s: %.*s -> %.*s at %u,%u (offset %u, width %u)\0" as *const u8
-            as *const ::core::ffi::c_char,
-        b"screen_write_combine\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ud).size as ::core::ffi::c_int,
-        &raw const (*ud).data as *const u_char,
-        last.data.size as ::core::ffi::c_int,
-        &raw mut last.data.data as *mut u_char,
-        cx.wrapping_sub(n),
-        cy,
-        n,
-        last.data.width as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "{}: {} -> {} at {},{} (offset {}, width {})",
+        "screen_write_combine",
+        log_cstr_n(
+            (&raw const (*ud).data as *const u_char) as *const _,
+            (*ud).size as ::core::ffi::c_int
+        ),
+        log_cstr_n(
+            (&raw mut last.data.data as *mut u_char) as *const _,
+            last.data.size as ::core::ffi::c_int
+        ),
+        (cx.wrapping_sub(n)) as u32,
+        (cy) as u32,
+        (n) as u32,
+        (last.data.width as ::core::ffi::c_int) as u32
+    ));
     memcpy(
         (&raw mut last.data.data as *mut u_char)
             .offset(last.data.size as ::core::ffi::c_int as isize)
@@ -4633,20 +4636,20 @@ unsafe fn screen_write_overwrite(
             if !(tmp_gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
-            log_debug(
-                b"%s: padding at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-                b"screen_write_overwrite\0" as *const u8 as *const ::core::ffi::c_char,
-                xx,
-                (*s).cy,
-            );
+            log_debug(format_args!(
+                "{}: padding at {},{}",
+                "screen_write_overwrite",
+                (xx) as u32,
+                ((*s).cy) as u32
+            ));
             screen_write_clear_cell(gd, xx, (*s).cy);
         }
-        log_debug(
-            b"%s: character at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_write_overwrite\0" as *const u8 as *const ::core::ffi::c_char,
-            xx,
-            (*s).cy,
-        );
+        log_debug(format_args!(
+            "{}: character at {},{}",
+            "screen_write_overwrite",
+            (xx) as u32,
+            ((*s).cy) as u32
+        ));
         screen_write_clear_cell(gd, xx, (*s).cy);
         done = 1 as ::core::ffi::c_int;
     }
@@ -4664,12 +4667,12 @@ unsafe fn screen_write_overwrite(
             if !(tmp_gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
-            log_debug(
-                b"%s: overwrite at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-                b"screen_write_overwrite\0" as *const u8 as *const ::core::ffi::c_char,
-                xx,
-                (*s).cy,
-            );
+            log_debug(format_args!(
+                "{}: overwrite at {},{}",
+                "screen_write_overwrite",
+                (xx) as u32,
+                ((*s).cy) as u32
+            ));
             screen_write_clear_cell(gd, xx, (*s).cy);
             done = 1 as ::core::ffi::c_int;
         }

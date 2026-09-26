@@ -1,5 +1,5 @@
 use crate::src::events::events_fire_winlink;
-use crate::src::log::log_debug;
+use crate::src::log::{log_debug, log_hex};
 use crate::src::options::options_get_number;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
 use crate::src::server::clients;
@@ -47,10 +47,7 @@ fn alerts_enqueue<T>(queue: &mut VecDeque<T>, queued: &mut ::core::ffi::c_int, i
 
 unsafe fn alerts_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut w: *mut window = arg as *mut window;
-    log_debug(
-        b"@%u alerts timer expired\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-    );
+    log_debug(format_args!("@{} alerts timer expired", ((*w).id) as u32));
     alerts_queue(w, WINDOW_SILENCE);
 }
 unsafe fn alerts_callback() {
@@ -65,11 +62,11 @@ unsafe fn alerts_callback() {
         };
         // Keep the membership flag set during checks to suppress duplicate requeues.
         alerts = alerts_check_all(w);
-        log_debug(
-            b"@%u alerts check, alerts %#x\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-            alerts,
-        );
+        log_debug(format_args!(
+            "@{} alerts check, alerts {}",
+            ((*w).id) as u32,
+            log_hex(((alerts) as u32) as u64)
+        ));
         (*w).alerts_queued = 0 as ::core::ffi::c_int;
         (*w).flags &= !WINDOW_ALERTFLAGS;
         window_remove_ref(
@@ -173,11 +170,11 @@ unsafe fn alerts_reset(mut w: *mut window) {
         (*w).options,
         b"monitor-silence\0" as *const u8 as *const ::core::ffi::c_char,
     ) as __time_t;
-    log_debug(
-        b"@%u alerts timer reset %u\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        tv.tv_sec as u_int,
-    );
+    log_debug(format_args!(
+        "@{} alerts timer reset {}",
+        ((*w).id) as u32,
+        tv.tv_sec as u_int
+    ));
     if tv.tv_sec != 0 as __time_t {
         event_add(&raw mut (*w).alerts_timer, &raw mut tv);
     }
@@ -186,11 +183,11 @@ pub unsafe fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
     alerts_reset(w);
     if (*w).flags & flags != flags {
         (*w).flags |= flags;
-        log_debug(
-            b"@%u alerts flags added %#x\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-            flags,
-        );
+        log_debug(format_args!(
+            "@{} alerts flags added {}",
+            ((*w).id) as u32,
+            log_hex(((flags) as u32) as u64)
+        ));
     }
     if alerts_enabled(w, flags) != 0 {
         let enqueued = {
@@ -204,10 +201,10 @@ pub unsafe fn alerts_queue(mut w: *mut window, mut flags: ::core::ffi::c_int) {
             );
         }
         if alerts_fired == 0 {
-            log_debug(
-                b"alerts check queued (by @%u)\0" as *const u8 as *const ::core::ffi::c_char,
-                (*w).id,
-            );
+            log_debug(format_args!(
+                "alerts check queued (by @{})",
+                ((*w).id) as u32
+            ));
             event_once(move |_, _| unsafe { alerts_callback() });
             alerts_fired = 1 as ::core::ffi::c_int;
         }

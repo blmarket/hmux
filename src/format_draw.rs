@@ -2,7 +2,7 @@ use crate::src::ffi::libc::{memcpy, strcmp, strlcpy, strlen};
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::hyperlinks_put;
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_write::{
     screen_write_cell, screen_write_clearendofline, screen_write_cursormove,
@@ -1061,11 +1061,11 @@ pub unsafe fn format_draw(
     );
     base = &raw mut base_default;
     style_set(&raw mut sy, &raw mut current_default);
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-        expanded,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "format_draw",
+        log_cstr((expanded) as *const _)
+    ));
     i = 0 as u_int;
     while i < TOTAL as ::core::ffi::c_int as u_int {
         screen_init(
@@ -1185,11 +1185,11 @@ pub unsafe fn format_draw(
         } else {
             end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
             if end.is_null() {
-                log_debug(
-                    b"%s: no terminating ] at '%s'\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                    cp.offset(2 as ::core::ffi::c_int as isize),
-                );
+                log_debug(format_args!(
+                    "{}: no terminating ] at '{}'",
+                    "format_draw",
+                    log_cstr((cp.offset(2 as ::core::ffi::c_int as isize)) as *const _)
+                ));
                 frs.clear();
                 i = 0 as u_int;
                 while i < TOTAL as ::core::ffi::c_int as u_int {
@@ -1213,20 +1213,20 @@ pub unsafe fn format_draw(
                 if style_parse(&raw mut sy, &raw mut current_default, style_text.as_ptr())
                     != 0 as ::core::ffi::c_int
                 {
-                    log_debug(
-                        b"%s: invalid style '%s'\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                        style_text.as_ptr(),
-                    );
+                    log_debug(format_args!(
+                        "{}: invalid style '{}'",
+                        "format_draw",
+                        log_cstr((style_text.as_ptr()) as *const _)
+                    ));
                     drop(style_text);
                     cp = end.offset(1 as ::core::ffi::c_int as isize);
                 } else {
-                    log_debug(
-                        b"%s: style '%s' -> '%s'\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                        style_text.as_ptr(),
-                        style_tostring(&raw mut sy),
-                    );
+                    log_debug(format_args!(
+                        "{}: style '{}' -> '{}'",
+                        "format_draw",
+                        log_cstr((style_text.as_ptr()) as *const _),
+                        log_cstr((style_tostring(&raw mut sy)) as *const _)
+                    ));
                     drop(style_text);
                     if default_colours != 0 {
                         sy.gc.bg = (*base).bg;
@@ -1349,12 +1349,12 @@ pub unsafe fn format_draw(
                         _ => {}
                     }
                     if current as ::core::ffi::c_uint != last as ::core::ffi::c_uint {
-                        log_debug(
-                            b"%s: change %s -> %s\0" as *const u8 as *const ::core::ffi::c_char,
-                            b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            names[last as usize],
-                            names[current as usize],
-                        );
+                        log_debug(format_args!(
+                            "{}: change {} -> {}",
+                            "format_draw",
+                            log_cstr((names[last as usize]) as *const _),
+                            log_cstr((names[current as usize]) as *const _)
+                        ));
                         last = current;
                     }
                     if !srs.is_null() {
@@ -1401,33 +1401,33 @@ pub unsafe fn format_draw(
             while i < TOTAL as ::core::ffi::c_int as u_int {
                 screen_write_stop((&raw mut ctx as *mut screen_write_ctx).offset(i as isize)
                     as *mut screen_write_ctx);
-                log_debug(
-                    b"%s: width %s is %u\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                    names[i as usize],
-                    width[i as usize],
-                );
+                log_debug(format_args!(
+                    "{}: width {} is {}",
+                    "format_draw",
+                    log_cstr((names[i as usize]) as *const _),
+                    (width[i as usize]) as u32
+                ));
                 i = i.wrapping_add(1);
             }
             if focus_start != -(1 as ::core::ffi::c_int) && focus_end != -(1 as ::core::ffi::c_int)
             {
-                log_debug(
-                    b"%s: focus %d-%d\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                    focus_start,
-                    focus_end,
-                );
+                log_debug(format_args!(
+                    "{}: focus {}-{}",
+                    "format_draw",
+                    (focus_start) as i32,
+                    (focus_end) as i32
+                ));
             }
             for fr in &frs {
-                log_debug(
-                    b"%s: range %d|%u is %s %u-%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                    fr.type_0 as ::core::ffi::c_uint,
-                    fr.argument,
-                    names[fr.index as usize],
-                    fr.start,
-                    fr.end,
-                );
+                log_debug(format_args!(
+                    "{}: range {}|{} is {} {}-{}",
+                    "format_draw",
+                    (fr.type_0 as ::core::ffi::c_uint) as i32,
+                    (fr.argument) as u32,
+                    log_cstr((names[fr.index as usize]) as *const _),
+                    (fr.start) as u32,
+                    (fr.end) as u32
+                ));
             }
             if fill != -(1 as ::core::ffi::c_int) {
                 memcpy(
@@ -1595,71 +1595,65 @@ pub unsafe fn format_draw(
                 );
                 match owned.type_0 as ::core::ffi::c_uint {
                     1 => {
-                        log_debug(
-                            b"%s: range left at %u-%u\0" as *const u8 as *const ::core::ffi::c_char,
-                            b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            owned.start,
-                            owned.end,
-                        );
+                        log_debug(format_args!(
+                            "{}: range left at {}-{}",
+                            "format_draw",
+                            (owned.start) as u32,
+                            (owned.end) as u32
+                        ));
                     }
                     2 => {
-                        log_debug(
-                            b"%s: range right at %u-%u\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            owned.start,
-                            owned.end,
-                        );
+                        log_debug(format_args!(
+                            "{}: range right at {}-{}",
+                            "format_draw",
+                            (owned.start) as u32,
+                            (owned.end) as u32
+                        ));
                     }
                     3 => {
-                        log_debug(
-                            b"%s: range pane|%%%u at %u-%u\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            owned.argument,
-                            owned.start,
-                            owned.end,
-                        );
+                        log_debug(format_args!(
+                            "{}: range pane|%{} at {}-{}",
+                            "format_draw",
+                            (owned.argument) as u32,
+                            (owned.start) as u32,
+                            (owned.end) as u32
+                        ));
                     }
                     4 => {
-                        log_debug(
-                            b"%s: range window|%u at %u-%u\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            owned.argument,
-                            owned.start,
-                            owned.end,
-                        );
+                        log_debug(format_args!(
+                            "{}: range window|{} at {}-{}",
+                            "format_draw",
+                            (owned.argument) as u32,
+                            (owned.start) as u32,
+                            (owned.end) as u32
+                        ));
                     }
                     5 => {
-                        log_debug(
-                            b"%s: range session|$%u at %u-%u\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            owned.argument,
-                            owned.start,
-                            owned.end,
-                        );
+                        log_debug(format_args!(
+                            "{}: range session|${} at {}-{}",
+                            "format_draw",
+                            (owned.argument) as u32,
+                            (owned.start) as u32,
+                            (owned.end) as u32
+                        ));
                     }
                     6 => {
-                        log_debug(
-                            b"%s: range user|%u at %u-%u\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            owned.argument,
-                            owned.start,
-                            owned.end,
-                        );
+                        log_debug(format_args!(
+                            "{}: range user|{} at {}-{}",
+                            "format_draw",
+                            (owned.argument) as u32,
+                            (owned.start) as u32,
+                            (owned.end) as u32
+                        ));
                     }
                     7 => {
-                        log_debug(
-                            b"%s: range control|%u at %u-%u\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            b"format_draw\0" as *const u8 as *const ::core::ffi::c_char,
-                            owned.argument,
-                            owned.start,
-                            owned.end,
-                        );
+                        log_debug(format_args!(
+                            "{}: range control|{} at {}-{}",
+                            "format_draw",
+                            (owned.argument) as u32,
+                            (owned.start) as u32,
+                            (owned.end) as u32
+                        ));
                     }
                     0 | _ => {}
                 }

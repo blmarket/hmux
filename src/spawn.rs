@@ -25,7 +25,7 @@ use crate::src::input::input_free;
 use crate::src::layout::{
     layout_assign_pane, layout_close_pane, layout_floating_pane, layout_free, layout_init,
 };
-use crate::src::log::{log_close, log_debug};
+use crate::src::log::{log_close, log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_get_string, options_set_number};
 use crate::src::proc::proc_clear_signals;
@@ -136,12 +136,12 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_con
         (*sc).name
     };
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
-    log_debug(
-        b"%s: name=%s, flags=%#x\0" as *const u8 as *const ::core::ffi::c_char,
-        from,
-        name,
-        (*sc).flags,
-    );
+    log_debug(format_args!(
+        "{}: name={}, flags={}",
+        log_cstr((from) as *const _),
+        log_cstr((name) as *const _),
+        log_hex((((*sc).flags) as u32) as u64)
+    ));
     if !wl.is_null() && !wp0.is_null() {
         xsnprintf(
             &raw mut tmp as *mut ::core::ffi::c_char,
@@ -171,13 +171,13 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_con
             b"wl=none wp0=none\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    log_debug(
-        b"%s: s=$%u %s idx=%d\0" as *const u8 as *const ::core::ffi::c_char,
-        from,
-        (*s).id,
-        &raw mut tmp as *mut ::core::ffi::c_char,
-        (*sc).idx,
-    );
+    log_debug(format_args!(
+        "{}: s=${} {} idx={}",
+        log_cstr((from) as *const _),
+        ((*s).id) as u32,
+        log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _),
+        ((*sc).idx) as i32
+    ));
 }
 unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut window_pane) {
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
@@ -699,32 +699,38 @@ pub unsafe fn spawn_pane(
             .as_ref()
             .map_or(::core::ptr::null(), |value| value.as_ptr()),
     );
-    log_debug(
-        b"%s: shell=%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*new_wp)
-            .shell
-            .as_ref()
-            .map_or(::core::ptr::null(), |value| value.as_ptr()),
-    );
+    log_debug(format_args!(
+        "{}: shell={}",
+        "spawn_pane",
+        log_cstr(
+            ((*new_wp)
+                .shell
+                .as_ref()
+                .map_or(::core::ptr::null(), |value| value.as_ptr())) as *const _
+        )
+    ));
     if !(*new_wp).argv.is_empty() {
         let command = cmd_stringify_argv_cstring(&(*new_wp).argv);
-        log_debug(
-            b"%s: cmd=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            command
-                .as_ref()
-                .map_or(::core::ptr::null(), |text| text.as_ptr()),
-        );
+        log_debug(format_args!(
+            "{}: cmd={}",
+            "spawn_pane",
+            log_cstr(
+                (command
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |text| text.as_ptr())) as *const _
+            )
+        ));
     }
-    log_debug(
-        b"%s: cwd=%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*new_wp)
-            .cwd
-            .as_ref()
-            .map_or(::core::ptr::null(), |value| value.as_ptr()),
-    );
+    log_debug(format_args!(
+        "{}: cwd={}",
+        "spawn_pane",
+        log_cstr(
+            ((*new_wp)
+                .cwd
+                .as_ref()
+                .map_or(::core::ptr::null(), |value| value.as_ptr())) as *const _
+        )
+    ));
     cmd_log_argv(&(*new_wp).argv, c"spawn_pane");
     environ_log(
         child,
@@ -811,14 +817,15 @@ pub unsafe fn spawn_pane(
         } else {
             let (systemd_status, systemd_error) = systemd_move_to_new_cgroup();
             if systemd_status < 0 as ::core::ffi::c_int {
-                log_debug(
-                    b"%s: moving pane to new cgroup failed: %s\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                    b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
-                    systemd_error
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |error| error.as_ptr()),
-                );
+                log_debug(format_args!(
+                    "{}: moving pane to new cgroup failed: {}",
+                    "spawn_pane",
+                    log_cstr(
+                        (systemd_error
+                            .as_ref()
+                            .map_or(::core::ptr::null(), |error| error.as_ptr())) as *const _
+                    )
+                ));
             }
             drop(systemd_error);
             if !actual_cwd.is_null() {

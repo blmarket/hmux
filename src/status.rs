@@ -6,7 +6,7 @@ use crate::src::format::{
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{grid_cells_equal, grid_compare};
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
 use crate::src::options::{
     options_array_get_index, options_get, options_get_number, options_get_string,
     options_string_to_style,
@@ -88,11 +88,11 @@ unsafe fn status_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     if tv.tv_sec != 0 as __time_t {
         event_add(&raw mut (*c).status.timer, &raw mut tv);
     }
-    log_debug(
-        b"client %p, status interval %d\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-        tv.tv_sec as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "client {}, status interval {}",
+        log_pointer((c) as *const ::core::ffi::c_void),
+        tv.tv_sec as ::core::ffi::c_int
+    ));
 }
 pub unsafe fn status_timer_start(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
@@ -294,10 +294,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    log_debug(
-        b"%s enter\0" as *const u8 as *const ::core::ffi::c_char,
-        b"status_redraw\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    log_debug(format_args!("{} enter", "status_redraw"));
     if (*sl).active.is_some() {
         fatalx(b"not the active screen\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -413,12 +410,12 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     }
     screen_write_stop(&raw mut ctx);
     format_free(ft);
-    log_debug(
-        b"%s exit: force=%d, changed=%d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"status_redraw\0" as *const u8 as *const ::core::ffi::c_char,
-        force,
-        changed,
-    );
+    log_debug(format_args!(
+        "{} exit: force={}, changed={}",
+        "status_redraw",
+        (force) as i32,
+        (changed) as i32
+    ));
     return (force != 0 || changed != 0) as ::core::ffi::c_int;
 }
 fn status_message_escape(s: &CStr) -> CString {
@@ -462,11 +459,11 @@ pub unsafe extern "C" fn status_message_set(
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();
     let s = xvasprintf_cstring(fmt, ap);
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"status_message_set\0" as *const u8 as *const ::core::ffi::c_char,
-        s.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "status_message_set",
+        log_cstr((s.as_ptr()) as *const _)
+    ));
     if c.is_null() {
         server_add_message(
             b"message: %s\0" as *const u8 as *const ::core::ffi::c_char,

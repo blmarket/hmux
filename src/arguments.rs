@@ -8,7 +8,7 @@ use crate::src::cmd::{
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn};
 use crate::src::format::format_single_from_target_cstring;
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_byte, log_cstr, log_debug};
 use crate::src::server_client::server_client_unref;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
@@ -373,11 +373,11 @@ unsafe fn args_parse_flag_argument(
         }
         if argument.is_null() {
             if optional_argument != 0 {
-                log_debug(
-                    b"%s: -%c (optional)\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
-                    flag,
-                );
+                log_debug(format_args!(
+                    "{}: -{} (optional)",
+                    "args_parse_flag_argument",
+                    log_byte((flag) as u8)
+                ));
                 args_set_flag(args, flag as u_char, ARGS_ENTRY_OPTIONAL_VALUE);
                 return Ok(());
             }
@@ -397,11 +397,11 @@ unsafe fn args_parse_flag_argument(
                             as ::core::ffi::c_int
                         != 0)
             {
-                log_debug(
-                    b"%s: -%c (optional)\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
-                    flag,
-                );
+                log_debug(format_args!(
+                    "{}: -{} (optional)",
+                    "args_parse_flag_argument",
+                    log_byte((flag) as u8)
+                ));
                 args_set_flag(args, flag as u_char, ARGS_ENTRY_OPTIONAL_VALUE);
                 return Ok(());
             }
@@ -410,12 +410,12 @@ unsafe fn args_parse_flag_argument(
         args_copy_value(&*argument)
     };
     let printed = args_value_for_log(&new);
-    log_debug(
-        b"%s: -%c = %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
-        flag,
-        printed.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: -{} = {}",
+        "args_parse_flag_argument",
+        log_byte((flag) as u8),
+        log_cstr((printed.as_ptr()) as *const _)
+    ));
     args_set_value(args, flag as u_char, Some(new), 0);
     Ok(())
 }
@@ -438,11 +438,11 @@ unsafe fn args_parse_flags(
         return Ok(1 as ::core::ffi::c_int);
     }
     string = (*value).string_ptr();
-    log_debug(
-        b"%s: next %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"args_parse_flags\0" as *const u8 as *const ::core::ffi::c_char,
-        string,
-    );
+    log_debug(format_args!(
+        "{}: next {}",
+        "args_parse_flags",
+        log_cstr((string) as *const _)
+    ));
     let fresh1 = string;
     string = string.offset(1);
     if *fresh1 as ::core::ffi::c_int != '-' as i32 || *string as ::core::ffi::c_int == '\0' as i32 {
@@ -483,11 +483,11 @@ unsafe fn args_parse_flags(
             )));
         }
         if *found.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != ':' as i32 {
-            log_debug(
-                b"%s: -%c\0" as *const u8 as *const ::core::ffi::c_char,
-                b"args_parse_flags\0" as *const u8 as *const ::core::ffi::c_char,
-                flag as ::core::ffi::c_int,
-            );
+            log_debug(format_args!(
+                "{}: -{}",
+                "args_parse_flags",
+                log_byte((flag as ::core::ffi::c_int) as u8)
+            ));
             args_set_flag(args, flag, 0);
         } else {
             optional_argument = (*found.offset(2 as ::core::ffi::c_int as isize)
@@ -535,24 +535,24 @@ pub unsafe fn args_parse(
             break;
         }
     }
-    log_debug(
-        b"%s: flags end at %u of %u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"args_parse\0" as *const u8 as *const ::core::ffi::c_char,
-        i,
-        count,
-    );
+    log_debug(format_args!(
+        "{}: flags end at {} of {}",
+        "args_parse",
+        (i) as u32,
+        (count) as u32
+    ));
     if i != count {
         while i < count {
             value = values.offset(i as isize) as *mut args_value;
             let printed = args_value_for_log(&*value);
             s = printed.as_ptr();
-            log_debug(
-                b"%s: %u = %s (type %s)\0" as *const u8 as *const ::core::ffi::c_char,
-                b"args_parse\0" as *const u8 as *const ::core::ffi::c_char,
-                i,
-                s,
-                args_type_to_string((*value).type_0()),
-            );
+            log_debug(format_args!(
+                "{}: {} = {} (type {})",
+                "args_parse",
+                (i) as u32,
+                log_cstr((s) as *const _),
+                log_cstr((args_type_to_string((*value).type_0())) as *const _)
+            ));
             if (*parse).cb.is_some() {
                 let idx = (*args).count;
                 type_0 = match (*parse).cb.expect("non-null function pointer")(&mut *args, idx) {
@@ -1068,13 +1068,16 @@ pub unsafe fn args_make_commands_prepare(
         (*state).cmd = Some(CStr::from_ptr(cmd).to_owned());
     }
 
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"args_make_commands_prepare\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*state).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "args_make_commands_prepare",
+        log_cstr(
+            (((*state).cmd)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        )
+    ));
     if wait != 0 {
         (*state).pi.item = item;
     }
@@ -1108,11 +1111,11 @@ pub unsafe fn args_make_commands(
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
     )
     .to_owned();
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "args_make_commands",
+        log_cstr((cmd.as_ptr()) as *const _)
+    ));
     cmd_log_argv(argv, c"args_make_commands");
     i = 0 as ::core::ffi::c_int;
     while (i as usize) < argv.len() {
@@ -1121,21 +1124,21 @@ pub unsafe fn args_make_commands(
             argv[i as usize].as_c_str(),
             i + 1 as ::core::ffi::c_int,
         );
-        log_debug(
-            b"%s: %%%u %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
-            i + 1 as ::core::ffi::c_int,
-            argv[i as usize].as_ptr(),
-            next.as_ptr(),
-        );
+        log_debug(format_args!(
+            "{}: %{} {}: {}",
+            "args_make_commands",
+            (i + 1 as ::core::ffi::c_int) as u32,
+            log_cstr((argv[i as usize].as_ptr()) as *const _),
+            log_cstr((next.as_ptr()) as *const _)
+        ));
         cmd = next;
         i += 1;
     }
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"args_make_commands\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "args_make_commands",
+        log_cstr((cmd.as_ptr()) as *const _)
+    ));
     let pr = cmd_parse_from_string(cmd.as_c_str(), &raw mut (*state).pi);
     drop(cmd);
     match pr.status as ::core::ffi::c_uint {

@@ -3,7 +3,7 @@ use crate::src::arguments::{
 };
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::memcpy;
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_cstr_width, log_debug, log_pointer};
 use crate::src::screen_redraw::redraw_invalidate_scene;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -124,21 +124,22 @@ pub unsafe fn layout_print_cell(
             type_0 = b"UNKNOWN\0" as *const u8 as *const ::core::ffi::c_char;
         }
     }
-    log_debug(
-        b"%s:%*s%p type %s [parent %p] wp=%p [%d,%d %ux%u]\0" as *const u8
-            as *const ::core::ffi::c_char,
-        hdr,
-        n,
-        b" \0" as *const u8 as *const ::core::ffi::c_char,
-        lc,
-        type_0,
-        (*lc).parent,
-        (*lc).wp,
-        (*lc).g.xoff,
-        (*lc).g.yoff,
-        (*lc).g.sx,
-        (*lc).g.sy,
-    );
+    log_debug(format_args!(
+        "{}:{}{} type {} [parent {}] wp={} [{},{} {}x{}]",
+        log_cstr((hdr) as *const _),
+        log_cstr_width(
+            (b" \0" as *const u8 as *const ::core::ffi::c_char) as *const _,
+            n as i32
+        ),
+        log_pointer((lc) as *const ::core::ffi::c_void),
+        log_cstr((type_0) as *const _),
+        log_pointer(((*lc).parent) as *const ::core::ffi::c_void),
+        log_pointer(((*lc).wp) as *const ::core::ffi::c_void),
+        ((*lc).g.xoff) as i32,
+        ((*lc).g.yoff) as i32,
+        ((*lc).g.sx) as u32,
+        ((*lc).g.sy) as u32
+    ));
     match (*lc).type_0 as ::core::ffi::c_uint {
         0 | 1 => {
             let children = (*lc)

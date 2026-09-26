@@ -19,7 +19,7 @@ use crate::src::ffi::libc::{
     getenv, getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale, stderr,
     stdout, strcasecmp, strcasestr, strcmp, strerror, strrchr, strsep, strstr, tzset,
 };
-use crate::src::log::{log_add_level, log_debug};
+use crate::src::log::{log_add_level, log_cstr, log_debug};
 use crate::src::options::{
     options_create, options_default, options_set_number, options_set_string,
 };
@@ -526,13 +526,12 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
                 )
                 .is_null()
                 {
-                    log_debug(
-                        b"%s: realpath(\"%s\") failed: %s\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                        b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
-                        expanded.as_ptr(),
-                        strerror(*__errno_location()),
-                    );
+                    log_debug(format_args!(
+                        "{}: realpath(\"{}\") failed: {}",
+                        "expand_paths",
+                        log_cstr((expanded.as_ptr()) as *const _),
+                        log_cstr((strerror(*__errno_location())) as *const _)
+                    ));
                     None
                 } else {
                     Some(CStr::from_ptr(resolved.as_ptr()).to_owned())
@@ -542,21 +541,21 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
             };
             if let Some(path) = path {
                 if paths.iter().any(|existing| existing == &path) {
-                    log_debug(
-                        b"%s: duplicate path: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
-                        path.as_ptr(),
-                    );
+                    log_debug(format_args!(
+                        "{}: duplicate path: {}",
+                        "expand_paths",
+                        log_cstr((path.as_ptr()) as *const _)
+                    ));
                 } else {
                     paths.push(path);
                 }
             }
         } else {
-            log_debug(
-                b"%s: invalid path: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
-                next,
-            );
+            log_debug(format_args!(
+                "{}: invalid path: {}",
+                "expand_paths",
+                log_cstr((next) as *const _)
+            ));
         }
     }
     paths

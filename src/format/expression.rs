@@ -1954,6 +1954,17 @@ fn format_float(value: f64, precision: ::core::ffi::c_int) -> CString {
     format_cstring(format_args!("{value:.precision$}")).expect("formatted number contains no NUL")
 }
 
+fn format_expression_integer(value: f64) -> ::core::ffi::c_longlong {
+    // Match the x86-64 tmux build's signed conversion (CVTTSD2SI): invalid
+    // conversions produce LLONG_MIN, whereas Rust saturates or returns zero.
+    // LLONG_MAX rounds up to 2^63 as f64, so the upper bound is exclusive.
+    #[cfg(target_arch = "x86_64")]
+    if !(i64::MIN as f64..-(i64::MIN as f64)).contains(&value) {
+        return i64::MIN;
+    }
+    value as ::core::ffi::c_longlong
+}
+
 pub(super) unsafe fn format_replace_expression(
     mut mexp: *mut format_modifier,
     mut es: *mut format_expand_state,
@@ -2123,10 +2134,8 @@ pub(super) unsafe fn format_replace_expression(
                                 );
                             } else {
                                 if use_fp == 0 {
-                                    mleft =
-                                        mleft as ::core::ffi::c_longlong as ::core::ffi::c_double;
-                                    mright =
-                                        mright as ::core::ffi::c_longlong as ::core::ffi::c_double;
+                                    mleft = format_expression_integer(mleft) as f64;
+                                    mright = format_expression_integer(mright) as f64;
                                 }
                                 format_log1(
                                     es,
@@ -2194,7 +2203,7 @@ pub(super) unsafe fn format_replace_expression(
                                     if use_fp != 0 {
                                         result
                                     } else {
-                                        result as ::core::ffi::c_longlong as f64
+                                        format_expression_integer(result) as f64
                                     },
                                     prec as ::core::ffi::c_int,
                                 );

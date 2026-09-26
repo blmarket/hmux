@@ -26,7 +26,7 @@ use crate::src::grid::{
 };
 use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
-use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
 use crate::src::reactor::{bufferevent_write, event_add, event_del, event_set};
@@ -429,14 +429,14 @@ unsafe fn window_copy_clone_screen(
             sy = sy.wrapping_sub(1);
         }
     }
-    log_debug(
-        b"%s: target screen is %ux%u, source %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_copy_clone_screen\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(*src).grid).sx,
-        sy,
-        (*(*hint).grid).sx,
-        (*(*src).grid).hsize.wrapping_add((*(*src).grid).sy),
-    );
+    log_debug(format_args!(
+        "{}: target screen is {}x{}, source {}x{}",
+        "window_copy_clone_screen",
+        ((*(*src).grid).sx) as u32,
+        (sy) as u32,
+        ((*(*hint).grid).sx) as u32,
+        ((*(*src).grid).hsize.wrapping_add((*(*src).grid).sy)) as u32
+    ));
     screen_init(dst, (*(*src).grid).sx, sy, (*(*src).grid).hlimit);
     (*(*dst).grid).flags |= GRID_HISTORY;
     grid_duplicate_lines((*dst).grid, 0 as u_int, (*src).grid, 0 as u_int, sy);
@@ -3350,11 +3350,11 @@ unsafe fn window_copy_cmd_search_backward_incremental(
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_copy_cmd_search_backward_incremental\0" as *const u8 as *const ::core::ffi::c_char,
-        arg0,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "window_copy_cmd_search_backward_incremental",
+        log_cstr((arg0) as *const _)
+    ));
     let fresh3 = arg0;
     arg0 = arg0.offset(1);
     prefix = *fresh3;
@@ -3415,11 +3415,11 @@ unsafe fn window_copy_cmd_search_forward_incremental(
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_copy_cmd_search_forward_incremental\0" as *const u8 as *const ::core::ffi::c_char,
-        arg0,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "window_copy_cmd_search_forward_incremental",
+        log_cstr((arg0) as *const _)
+    ));
     let fresh2 = arg0;
     arg0 = arg0.offset(1);
     prefix = *fresh2;

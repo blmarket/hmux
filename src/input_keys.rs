@@ -1,7 +1,7 @@
 use crate::src::cmd::cmd_mouse_at;
 use crate::src::ffi::libc::{strchr, strlen};
 use crate::src::key_string::key_string_format;
-use crate::src::log::{log_debug, log_get_level};
+use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::reactor::bufferevent_write;
 use crate::src::shared::abi::*;
@@ -524,13 +524,13 @@ pub unsafe fn input_key_build() {
     ike = input_key_tree_minmax(&*(&raw const input_key_tree));
     while !ike.is_null() {
         let key_string = key_string_format((*ike).key, true);
-        log_debug(
-            b"%s: 0x%llx (%s) is %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_key_build\0" as *const u8 as *const ::core::ffi::c_char,
-            (*ike).key,
-            key_string.as_ptr(),
-            (*ike).data,
-        );
+        log_debug(format_args!(
+            "{}: 0x{:x} ({}) is {}",
+            "input_key_build",
+            ((*ike).key) as u64,
+            log_cstr((key_string.as_ptr()) as *const _),
+            log_cstr(((*ike).data) as *const _)
+        ));
         ike = input_key_tree_next(&*(&raw const input_key_tree), &*ike);
     }
 }
@@ -541,12 +541,12 @@ pub unsafe fn input_key_pane(
 ) -> ::core::ffi::c_int {
     if log_get_level() != 0 as ::core::ffi::c_int {
         let key_string = key_string_format(key, true);
-        log_debug(
-            b"writing key 0x%llx (%s) to %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            key,
-            key_string.as_ptr(),
-            (*wp).id,
-        );
+        log_debug(format_args!(
+            "writing key 0x{:x} ({}) to %{}",
+            (key) as u64,
+            log_cstr((key_string.as_ptr()) as *const _),
+            ((*wp).id) as u32
+        ));
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -570,12 +570,11 @@ unsafe fn input_key_write(
     mut data: *const ::core::ffi::c_char,
     mut size: size_t,
 ) {
-    log_debug(
-        b"%s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        from,
-        size as ::core::ffi::c_int,
-        data,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        log_cstr((from) as *const _),
+        log_cstr_n((data) as *const _, size as ::core::ffi::c_int)
+    ));
     bufferevent_write(bev, data as *const ::core::ffi::c_void, size);
 }
 unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
@@ -673,11 +672,11 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
         b"1!9(0)=+;:'\",<.>/-8? 2\0" as *const u8 as *const ::core::ffi::c_char,
         b"119900=+;;'',,..\x1F\x1F\x7F\x7F\0\0\0" as *const u8 as *const ::core::ffi::c_char,
     ];
-    log_debug(
-        b"%s: key in %llx\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
-        key,
-    );
+    log_debug(format_args!(
+        "{}: key in {:x}",
+        "input_key_vt10x",
+        (key) as u64
+    ));
     if key as ::core::ffi::c_ulonglong & KEYC_META != 0 {
         input_key_write(
             b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
@@ -725,11 +724,11 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
             return -(1 as ::core::ffi::c_int);
         }
     }
-    log_debug(
-        b"%s: key out %llx\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
-        key,
-    );
+    log_debug(format_args!(
+        "{}: key out {:x}",
+        "input_key_vt10x",
+        (key) as u64
+    ));
     ud.data[0 as ::core::ffi::c_int as usize] = (key & 0x7f as key_code) as u_char;
     input_key_write(
         b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
@@ -742,11 +741,11 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
 }
 unsafe fn input_key_mode1(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut onlykey: key_code = 0;
-    log_debug(
-        b"%s: key in %llx\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_key_mode1\0" as *const u8 as *const ::core::ffi::c_char,
-        key,
-    );
+    log_debug(format_args!(
+        "{}: key in {:x}",
+        "input_key_mode1",
+        (key) as u64
+    ));
     if key as ::core::ffi::c_ulonglong & (KEYC_CTRL | KEYC_META) == KEYC_META {
         return input_key_vt10x(bev, key);
     }
@@ -805,12 +804,12 @@ pub unsafe fn input_key(
             global_options,
             b"backspace\0" as *const u8 as *const ::core::ffi::c_char,
         ) as key_code;
-        log_debug(
-            b"%s: key 0x%llx is backspace -> 0x%llx\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
-            key,
-            newkey,
-        );
+        log_debug(format_args!(
+            "{}: key 0x{:x} is backspace -> 0x{:x}",
+            "input_key",
+            (key) as u64,
+            (newkey) as u64
+        ));
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS == 0 as ::core::ffi::c_ulonglong {
             ud.data[0 as ::core::ffi::c_int as usize] = 255 as u_char;
             if newkey as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS
@@ -910,12 +909,12 @@ pub unsafe fn input_key(
         ike = input_key_get(key & !KEYC_KEYPAD);
     }
     if !ike.is_null() {
-        log_debug(
-            b"%s: found key 0x%llx: \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
-            key,
-            (*ike).data,
-        );
+        log_debug(format_args!(
+            "{}: found key 0x{:x}: \"{}\"",
+            "input_key",
+            (key) as u64,
+            log_cstr(((*ike).data) as *const _)
+        ));
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
             == (KEYC_TYPE_FUNCTION as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                 << 32 as ::core::ffi::c_int
@@ -960,11 +959,11 @@ pub unsafe fn input_key(
                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                         << 32 as ::core::ffi::c_int)
     {
-        log_debug(
-            b"%s: ignoring key 0x%llx\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
-            key,
-        );
+        log_debug(format_args!(
+            "{}: ignoring key 0x{:x}",
+            "input_key",
+            (key) as u64
+        ));
         return 0 as ::core::ffi::c_int;
     }
     match (*s).mode & EXTENDED_KEY_MODES {
@@ -1107,12 +1106,11 @@ unsafe fn input_key_mouse(mut wp: *mut window_pane, mut m: *mut mouse_event) {
     if input_key_get_mouse(s, m, x, y, &raw mut buf, &raw mut len) == 0 {
         return;
     }
-    log_debug(
-        b"writing mouse %.*s to %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-        len as ::core::ffi::c_int,
-        buf,
-        (*wp).id,
-    );
+    log_debug(format_args!(
+        "writing mouse {} to %{}",
+        log_cstr_n((buf) as *const _, len as ::core::ffi::c_int),
+        ((*wp).id) as u32
+    ));
     input_key_write(
         b"input_key_mouse\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).event,

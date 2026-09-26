@@ -8,7 +8,7 @@ use crate::src::cmd::queue::{
 use crate::src::compat::stdio::CFile;
 use crate::src::control::control_notify_write;
 use crate::src::ffi::libc::{__errno_location, fopen, strerror};
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::prompt_history::prompt_load_history;
 use crate::src::server::clients;
 use crate::src::session::sessions;
@@ -127,10 +127,7 @@ pub unsafe fn load_cfg(
     let mut new_item0: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
 
-    log_debug(
-        b"loading %s\0" as *const u8 as *const ::core::ffi::c_char,
-        path,
-    );
+    log_debug(format_args!("loading {}", log_cstr((path) as *const _)));
     f = fopen(path, b"rb\0" as *const u8 as *const ::core::ffi::c_char) as *mut FILE;
     if f.is_null() {
         if *__errno_location() == ENOENT && flags & CMD_PARSE_QUIET != 0 {
@@ -220,10 +217,7 @@ pub unsafe fn load_cfg_from_buffer(
     if !new_item.is_null() {
         *new_item = ::core::ptr::null_mut::<cmdq_item>();
     }
-    log_debug(
-        b"loading %s\0" as *const u8 as *const ::core::ffi::c_char,
-        path,
-    );
+    log_debug(format_args!("loading {}", log_cstr((path) as *const _)));
     pi.flags = flags;
     pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;

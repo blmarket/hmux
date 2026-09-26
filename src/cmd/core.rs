@@ -79,7 +79,7 @@ use crate::src::cmd::entries::switch_client::cmd_switch_client_entry;
 use crate::src::cmd::entries::unbind_key::cmd_unbind_key_entry;
 use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
 use crate::src::ffi::libc::{strchr, strcmp, strlcat, strlcpy, strlen, strncmp};
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_only,
 };
@@ -219,12 +219,12 @@ pub static mut cmd_table: [*const cmd_entry; 93] = {
 static mut cmd_list_next_group: u_int = 1 as u_int;
 pub unsafe fn cmd_log_argv(argv: &Vec<CString>, prefix: &CStr) {
     for (i, arg) in argv.iter().enumerate() {
-        log_debug(
-            b"%s: argv[%d]=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            prefix.as_ptr(),
+        log_debug(format_args!(
+            "{}: argv[{}]={}",
+            log_cstr((prefix.as_ptr()) as *const _),
             i as ::core::ffi::c_int,
-            arg.as_ptr(),
-        );
+            log_cstr((arg.as_ptr()) as *const _)
+        ));
     }
 }
 pub(crate) fn cmd_append_argv(argv: &mut Vec<CString>, arg: &CStr) {
@@ -259,13 +259,13 @@ pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &Vec<CString>) -> Option<C
     let mut bytes = Vec::new();
     for (i, argument) in argv.iter().enumerate() {
         let escaped = args_escape_cstring(argument);
-        log_debug(
-            b"%s: %u %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmd_stringify_argv\0" as *const u8 as *const ::core::ffi::c_char,
-            i,
-            argument.as_ptr(),
-            escaped.as_ptr(),
-        );
+        log_debug(format_args!(
+            "{}: {} {} = {}",
+            "cmd_stringify_argv",
+            (i) as u32,
+            log_cstr((argument.as_ptr()) as *const _),
+            log_cstr((escaped.as_ptr()) as *const _)
+        ));
         if i != 0 {
             bytes.push(b' ');
         }
@@ -562,11 +562,11 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd
     let mut new_cmd: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut group: u_int = cmdlist.group;
     let s = cmd_list_print_cstring(cmdlist, 0);
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_list_copy\0" as *const u8 as *const ::core::ffi::c_char,
-        s.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "cmd_list_copy",
+        log_cstr((s.as_ptr()) as *const _)
+    ));
     new_cmdlist = cmd_list_new();
     for &cmd in &cmdlist.list {
         if (*cmd).group != group {
@@ -579,11 +579,11 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd
         cmd_list_append(new_cmdlist, new_cmd);
     }
     let s = cmd_list_print_cstring(&*new_cmdlist, 0);
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_list_copy\0" as *const u8 as *const ::core::ffi::c_char,
-        s.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "cmd_list_copy",
+        log_cstr((s.as_ptr()) as *const _)
+    ));
     return new_cmdlist;
 }
 pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString {
@@ -668,17 +668,19 @@ pub unsafe fn cmd_mouse_at(
         x = (*m).x.wrapping_add((*m).ox);
         y = (*m).y.wrapping_add((*m).oy);
     }
-    log_debug(
-        b"%s: x=%u, y=%u%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_mouse_at\0" as *const u8 as *const ::core::ffi::c_char,
-        x,
-        y,
-        if last != 0 {
-            b" (last)\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-    );
+    log_debug(format_args!(
+        "{}: x={}, y={}{}",
+        "cmd_mouse_at",
+        (x) as u32,
+        (y) as u32,
+        log_cstr(
+            (if last != 0 {
+                b" (last)\0" as *const u8 as *const ::core::ffi::c_char
+            } else {
+                b"\0" as *const u8 as *const ::core::ffi::c_char
+            }) as *const _
+        )
+    ));
     if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines {
         y = y.wrapping_sub((*m).statuslines);
     }
@@ -826,12 +828,12 @@ pub(crate) unsafe fn cmd_template_replace_cstring(
         output.push(ch);
     }
     let text = CString::new(output).expect("C string template contains no embedded NUL");
-    log_debug(
-        b"%s: %s -> %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_template_replace\0" as *const u8 as *const ::core::ffi::c_char,
-        template.as_ptr(),
-        text.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {} -> {}",
+        "cmd_template_replace",
+        log_cstr((template.as_ptr()) as *const _),
+        log_cstr((text.as_ptr()) as *const _)
+    ));
     text
 }
 

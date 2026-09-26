@@ -5,7 +5,7 @@ use crate::src::ffi::libc::{
 use crate::src::format::{format_create, format_free, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::{options_get, options_get_string, options_string_to_style};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::client::client;
@@ -172,11 +172,11 @@ pub unsafe fn style_parse(
         return 0 as ::core::ffi::c_int;
     }
     style_copy(&raw mut saved, sy);
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"style_parse\0" as *const u8 as *const ::core::ffi::c_char,
-        in_0,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "style_parse",
+        log_cstr((in_0) as *const _)
+    ));
     loop {
         while *in_0 as ::core::ffi::c_int != '\0' as i32
             && !strchr(
@@ -205,11 +205,11 @@ pub unsafe fn style_parse(
             end,
         );
         tmp[end as usize] = '\0' as i32 as ::core::ffi::c_char;
-        log_debug(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"style_parse\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut tmp as *mut ::core::ffi::c_char,
-        );
+        log_debug(format_args!(
+            "{}: {}",
+            "style_parse",
+            log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _)
+        ));
         if strcasecmp(
             &raw mut tmp as *mut ::core::ffi::c_char,
             b"default\0" as *const u8 as *const ::core::ffi::c_char,

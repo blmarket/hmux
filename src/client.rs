@@ -18,7 +18,7 @@ use crate::src::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
     file_write_open,
 };
-use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
 use crate::src::options::options_free;
 use crate::src::proc::{
     proc_add_peer, proc_clear_signals, proc_exit, proc_flush_peer, proc_loop, proc_send,
@@ -87,23 +87,23 @@ static mut client_attached: ::core::ffi::c_int = 0;
 static mut client_files: client_files = client_files { storage: None };
 unsafe fn client_get_lock(mut lockfile: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut lockfd: ::core::ffi::c_int = 0;
-    log_debug(
-        b"lock file is %s\0" as *const u8 as *const ::core::ffi::c_char,
-        lockfile,
-    );
+    log_debug(format_args!(
+        "lock file is {}",
+        log_cstr((lockfile) as *const _)
+    ));
     lockfd = open(lockfile, O_WRONLY | O_CREAT, 0o600 as ::core::ffi::c_int);
     if lockfd == -(1 as ::core::ffi::c_int) {
-        log_debug(
-            b"open failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            strerror(*__errno_location()),
-        );
+        log_debug(format_args!(
+            "open failed: {}",
+            log_cstr((strerror(*__errno_location())) as *const _)
+        ));
         return -(1 as ::core::ffi::c_int);
     }
     if flock(lockfd, LOCK_EX | LOCK_NB) == -(1 as ::core::ffi::c_int) {
-        log_debug(
-            b"flock failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            strerror(*__errno_location()),
-        );
+        log_debug(format_args!(
+            "flock failed: {}",
+            log_cstr((strerror(*__errno_location())) as *const _)
+        ));
         if *__errno_location() != EAGAIN {
             return lockfd;
         }
@@ -112,7 +112,7 @@ unsafe fn client_get_lock(mut lockfile: *const ::core::ffi::c_char) -> ::core::f
         close(lockfd);
         return -(2 as ::core::ffi::c_int);
     }
-    log_debug(b"flock succeeded\0" as *const u8 as *const ::core::ffi::c_char);
+    log_debug(format_args!("flock succeeded"));
     return lockfd;
 }
 unsafe fn client_connect(
@@ -144,10 +144,7 @@ unsafe fn client_connect(
         *__errno_location() = ENAMETOOLONG;
         return -(1 as ::core::ffi::c_int);
     }
-    log_debug(
-        b"socket is %s\0" as *const u8 as *const ::core::ffi::c_char,
-        path,
-    );
+    log_debug(format_args!("socket is {}", log_cstr((path) as *const _)));
     loop {
         fd = socket(
             AF_UNIX,
@@ -157,7 +154,7 @@ unsafe fn client_connect(
         if fd == -(1 as ::core::ffi::c_int) {
             return -(1 as ::core::ffi::c_int);
         }
-        log_debug(b"trying connect\0" as *const u8 as *const ::core::ffi::c_char);
+        log_debug(format_args!("trying connect"));
         if !(connect(
             fd,
             __CONST_SOCKADDR_ARG {
@@ -169,10 +166,10 @@ unsafe fn client_connect(
             current_block = 7172762164747879670;
             break;
         }
-        log_debug(
-            b"connect failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            strerror(*__errno_location()),
-        );
+        log_debug(format_args!(
+            "connect failed: {}",
+            log_cstr((strerror(*__errno_location())) as *const _)
+        ));
         if *__errno_location() != ECONNREFUSED && *__errno_location() != ENOENT {
             current_block = 16524389688364091157;
             break;
@@ -192,19 +189,13 @@ unsafe fn client_connect(
             lockfile = Some(CString::new(name).expect("socket path has no interior NUL"));
             lockfd = client_get_lock(lockfile.as_ref().unwrap().as_ptr());
             if lockfd < 0 as ::core::ffi::c_int {
-                log_debug(
-                    b"didn't get lock (%d)\0" as *const u8 as *const ::core::ffi::c_char,
-                    lockfd,
-                );
+                log_debug(format_args!("didn't get lock ({})", (lockfd) as i32));
                 lockfile = None;
                 if lockfd == -(2 as ::core::ffi::c_int) {
                     continue;
                 }
             }
-            log_debug(
-                b"got lock (%d)\0" as *const u8 as *const ::core::ffi::c_char,
-                lockfd,
-            );
+            log_debug(format_args!("got lock ({})", (lockfd) as i32));
             locked = 1 as ::core::ffi::c_int;
         } else {
             if lockfd >= 0 as ::core::ffi::c_int
@@ -348,10 +339,10 @@ pub unsafe fn client_main(
         Some(Box::new(|sig| unsafe { client_signal(sig) })),
     );
     client_flags = (flags as ::core::ffi::c_ulonglong | CLIENT_WRITE_ACK) as uint64_t;
-    log_debug(
-        b"flags are %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-        client_flags as ::core::ffi::c_ulonglong,
-    );
+    log_debug(format_args!(
+        "flags are {}",
+        log_hex(client_flags as ::core::ffi::c_ulonglong)
+    ));
     if systemd_activated() != 0 {
         fd = server_start(client_proc, flags, -1, &mut None);
     } else {
@@ -685,11 +676,11 @@ unsafe fn client_exec(
     mut shell: *const ::core::ffi::c_char,
     mut shellcmd: *const ::core::ffi::c_char,
 ) -> ! {
-    log_debug(
-        b"shell %s, command %s\0" as *const u8 as *const ::core::ffi::c_char,
-        shell,
-        shellcmd,
-    );
+    log_debug(format_args!(
+        "shell {}, command {}",
+        log_cstr((shell) as *const _),
+        log_cstr((shellcmd) as *const _)
+    ));
     let argv0 = shell_argv0_cstring(
         std::ffi::CStr::from_ptr(shell),
         client_flags & CLIENT_LOGIN as uint64_t != 0,
@@ -722,11 +713,11 @@ unsafe fn client_signal(sig: ProcessSignal) {
     };
     let mut status: ::core::ffi::c_int = 0;
     let mut pid: pid_t = 0;
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"client_signal\0" as *const u8 as *const ::core::ffi::c_char,
-        strsignal(sig.as_raw()),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "client_signal",
+        log_cstr((strsignal(sig.as_raw())) as *const _)
+    ));
     if sig == ProcessSignal::Child {
         loop {
             pid = waitpid(WAIT_ANY, &raw mut status, WNOHANG) as pid_t;
@@ -739,10 +730,10 @@ unsafe fn client_signal(sig: ProcessSignal) {
             if *__errno_location() == ECHILD {
                 break;
             }
-            log_debug(
-                b"waitpid failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                strerror(*__errno_location()),
-            );
+            log_debug(format_args!(
+                "waitpid failed: {}",
+                log_cstr((strerror(*__errno_location())) as *const _)
+            ));
         }
     } else if client_attached == 0 {
         if sig == ProcessSignal::Terminate || sig == ProcessSignal::Hangup {
@@ -918,10 +909,10 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
                 data as *const ::core::ffi::c_void,
                 ::core::mem::size_of::<uint64_t>() as size_t,
             );
-            log_debug(
-                b"new flags are %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-                client_flags as ::core::ffi::c_ulonglong,
-            );
+            log_debug(format_args!(
+                "new flags are {}",
+                log_hex(client_flags as ::core::ffi::c_ulonglong)
+            ));
         }
         209 => {
             if datalen == 0 as ssize_t
@@ -980,10 +971,10 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             proc_exit(client_proc);
         }
         _ => {
-            log_debug(
-                b"unknown message type %u\0" as *const u8 as *const ::core::ffi::c_char,
-                imsg.hdr.type_0,
-            );
+            log_debug(format_args!(
+                "unknown message type {}",
+                (imsg.hdr.type_0) as u32
+            ));
         }
     };
 }
@@ -1008,10 +999,10 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                 data as *const ::core::ffi::c_void,
                 ::core::mem::size_of::<uint64_t>() as size_t,
             );
-            log_debug(
-                b"new flags are %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-                client_flags as ::core::ffi::c_ulonglong,
-            );
+            log_debug(format_args!(
+                "new flags are {}",
+                log_hex(client_flags as ::core::ffi::c_ulonglong)
+            ));
         }
         201 | 202 => {
             if datalen == 0 as ssize_t
@@ -1130,10 +1121,10 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             );
         }
         _ => {
-            log_debug(
-                b"unknown message type %u\0" as *const u8 as *const ::core::ffi::c_char,
-                imsg.hdr.type_0,
-            );
+            log_debug(format_args!(
+                "unknown message type {}",
+                (imsg.hdr.type_0) as u32
+            ));
         }
     };
 }

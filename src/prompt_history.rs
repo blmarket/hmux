@@ -1,6 +1,6 @@
 use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{__errno_location, fgetc, fopen, fputc, fputs, strcmp, strerror};
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::prompt_type_string;
 use crate::src::shared::abi::*;
@@ -75,20 +75,20 @@ pub unsafe fn prompt_load_history() {
         Some(path) => path,
         None => return,
     };
-    log_debug(
-        b"loading history from %s\0" as *const u8 as *const ::core::ffi::c_char,
-        history_file.as_ptr(),
-    );
+    log_debug(format_args!(
+        "loading history from {}",
+        log_cstr((history_file.as_ptr()) as *const _)
+    ));
     f = fopen(
         history_file.as_ptr(),
         b"r\0" as *const u8 as *const ::core::ffi::c_char,
     ) as *mut FILE;
     if f.is_null() {
-        log_debug(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            history_file.as_ptr(),
-            strerror(*__errno_location()),
-        );
+        log_debug(format_args!(
+            "{}: {}",
+            log_cstr((history_file.as_ptr()) as *const _),
+            log_cstr((strerror(*__errno_location())) as *const _)
+        ));
         return;
     }
     let mut stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
@@ -107,20 +107,20 @@ pub unsafe fn prompt_save_history() {
         Some(path) => path,
         None => return,
     };
-    log_debug(
-        b"saving history to %s\0" as *const u8 as *const ::core::ffi::c_char,
-        history_file.as_ptr(),
-    );
+    log_debug(format_args!(
+        "saving history to {}",
+        log_cstr((history_file.as_ptr()) as *const _)
+    ));
     f = fopen(
         history_file.as_ptr(),
         b"w\0" as *const u8 as *const ::core::ffi::c_char,
     ) as *mut FILE;
     if f.is_null() {
-        log_debug(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            history_file.as_ptr(),
-            strerror(*__errno_location()),
-        );
+        log_debug(format_args!(
+            "{}: {}",
+            log_cstr((history_file.as_ptr()) as *const _),
+            log_cstr((strerror(*__errno_location())) as *const _)
+        ));
         return;
     }
     let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");

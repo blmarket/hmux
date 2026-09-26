@@ -5,7 +5,7 @@ use crate::src::ffi::libc::{
 use crate::src::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring, format_free,
 };
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
@@ -26,10 +26,7 @@ pub const NAME_INTERVAL: ::core::ffi::c_int = 500000 as ::core::ffi::c_int;
 
 unsafe fn name_time_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut w: *mut window = arg as *mut window;
-    log_debug(
-        b"@%u name timer expired\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-    );
+    log_debug(format_args!("@{} name timer expired", ((*w).id) as u32));
 }
 unsafe fn name_time_expired(mut w: *mut window, mut tv: *mut timeval) -> ::core::ffi::c_int {
     let mut offset: timeval = timeval {
@@ -68,16 +65,13 @@ pub unsafe fn check_window_name(mut w: *mut window) {
         return;
     }
     if !(*(*w).active).flags & PANE_CHANGED != 0 {
-        log_debug(
-            b"@%u active pane not changed\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-        );
+        log_debug(format_args!(
+            "@{} active pane not changed",
+            ((*w).id) as u32
+        ));
         return;
     }
-    log_debug(
-        b"@%u active pane changed\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-    );
+    log_debug(format_args!("@{} active pane changed", ((*w).id) as u32));
     gettimeofday(&raw mut tv, NULL);
     left = name_time_expired(w, &raw mut tv);
     if left != 0 as ::core::ffi::c_int {
@@ -95,22 +89,21 @@ pub unsafe fn check_window_name(mut w: *mut window) {
             ::core::ptr::null_mut::<timeval>(),
         ) == 0
         {
-            log_debug(
-                b"@%u name timer queued (%d left)\0" as *const u8 as *const ::core::ffi::c_char,
-                (*w).id,
-                left,
-            );
+            log_debug(format_args!(
+                "@{} name timer queued ({} left)",
+                ((*w).id) as u32,
+                (left) as i32
+            ));
             next.tv_usec = 0 as __suseconds_t;
             next.tv_sec = next.tv_usec as __time_t;
             next.tv_usec = left as __suseconds_t;
             event_add(&raw mut (*w).name_event, &raw mut next);
         } else {
-            log_debug(
-                b"@%u name timer already queued (%d left)\0" as *const u8
-                    as *const ::core::ffi::c_char,
-                (*w).id,
-                left,
-            );
+            log_debug(format_args!(
+                "@{} name timer already queued ({} left)",
+                ((*w).id) as u32,
+                (left) as i32
+            ));
         }
         return;
     }
@@ -125,21 +118,21 @@ pub unsafe fn check_window_name(mut w: *mut window) {
     (*(*w).active).flags &= !PANE_CHANGED;
     let name = format_window_name(w);
     if strcmp(name.as_ptr().cast_mut(), (*w).name.as_ptr().cast_mut()) != 0 as ::core::ffi::c_int {
-        log_debug(
-            b"@%u new name %s (was %s)\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-            name.as_ptr(),
-            (*w).name.as_ptr(),
-        );
+        log_debug(format_args!(
+            "@{} new name {} (was {})",
+            ((*w).id) as u32,
+            log_cstr((name.as_ptr()) as *const _),
+            log_cstr(((*w).name.as_ptr()) as *const _)
+        ));
         window_set_name(w, name.as_ptr().cast_mut(), 1 as ::core::ffi::c_int);
         server_redraw_window_borders(w);
         server_status_window(w);
     } else {
-        log_debug(
-            b"@%u name not changed (still %s)\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-            (*w).name.as_ptr(),
-        );
+        log_debug(format_args!(
+            "@{} name not changed (still {})",
+            ((*w).id) as u32,
+            log_cstr(((*w).name.as_ptr()) as *const _)
+        ));
     }
 }
 

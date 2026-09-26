@@ -249,11 +249,11 @@ pub unsafe fn screen_set_path(
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn screen_push_title(mut s: *mut screen) {
-    log_debug(
-        b"%s: %u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_push_title\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).titles.len() as u_int,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "screen_push_title",
+        (*s).titles.len() as u_int
+    ));
     while (*s).titles.len() >= 10 {
         let Some(_title) = (*s).titles.pop_back() else {
             break;
@@ -265,11 +265,11 @@ pub unsafe fn screen_pop_title(mut s: *mut screen) {
     if (*s).titles.is_empty() {
         return;
     }
-    log_debug(
-        b"%s: %u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_pop_title\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).titles.len() as u_int,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "screen_pop_title",
+        (*s).titles.len() as u_int
+    ));
     if let Some(title) = (*s).titles.pop_front() {
         (*s).title = title;
     }
@@ -301,19 +301,18 @@ pub unsafe fn screen_resize_cursor(
     if had_write_list {
         screen_write_free_list(s);
     }
-    log_debug(
-        b"%s: new size %ux%u, now %ux%u (cursor %u,%u = %u,%u)\0" as *const u8
-            as *const ::core::ffi::c_char,
-        b"screen_resize_cursor\0" as *const u8 as *const ::core::ffi::c_char,
-        sx,
-        sy,
-        (*(*s).grid).sx,
-        (*(*s).grid).sy,
-        (*s).cx,
-        (*s).cy,
-        cx,
-        cy,
-    );
+    log_debug(format_args!(
+        "{}: new size {}x{}, now {}x{} (cursor {},{} = {},{})",
+        "screen_resize_cursor",
+        (sx) as u32,
+        (sy) as u32,
+        ((*(*s).grid).sx) as u32,
+        ((*(*s).grid).sy) as u32,
+        ((*s).cx) as u32,
+        ((*s).cy) as u32,
+        (cx) as u32,
+        (cy) as u32
+    ));
     if sx < 1 as u_int {
         sx = 1 as u_int;
     }
@@ -339,14 +338,14 @@ pub unsafe fn screen_resize_cursor(
         (*s).cx = 0 as u_int;
         (*s).cy = 0 as u_int;
     }
-    log_debug(
-        b"%s: cursor finished at %u,%u = %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_resize_cursor\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).cx,
-        (*s).cy,
-        cx,
-        cy,
-    );
+    log_debug(format_args!(
+        "{}: cursor finished at {},{} = {},{}",
+        "screen_resize_cursor",
+        ((*s).cx) as u32,
+        ((*s).cy) as u32,
+        (cx) as u32,
+        (cy) as u32
+    ));
     if had_write_list {
         screen_write_make_list(s);
     }
@@ -616,24 +615,24 @@ unsafe fn screen_reflow(
     let mut wy: u_int = 0;
     if cursor != 0 {
         grid_wrap_position((*s).grid, *cx, *cy, &raw mut wx, &raw mut wy);
-        log_debug(
-            b"%s: cursor %u,%u is %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_reflow\0" as *const u8 as *const ::core::ffi::c_char,
-            *cx,
-            *cy,
-            wx,
-            wy,
-        );
+        log_debug(format_args!(
+            "{}: cursor {},{} is {},{}",
+            "screen_reflow",
+            (*cx) as u32,
+            (*cy) as u32,
+            (wx) as u32,
+            (wy) as u32
+        ));
     }
     grid_reflow((*s).grid, new_x);
     if cursor != 0 {
         grid_unwrap_position((*s).grid, cx, cy, wx, wy);
-        log_debug(
-            b"%s: new cursor is %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"screen_reflow\0" as *const u8 as *const ::core::ffi::c_char,
-            *cx,
-            *cy,
-        );
+        log_debug(format_args!(
+            "{}: new cursor is {},{}",
+            "screen_reflow",
+            (*cx) as u32,
+            (*cy) as u32
+        ));
     } else {
         *cx = 0 as u_int;
         *cy = (*(*s).grid).hsize;

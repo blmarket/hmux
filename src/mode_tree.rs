@@ -12,7 +12,7 @@ use crate::src::format::{format_add, format_create_defaults, format_expand_cstri
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::menu::{menu_add_items, menu_create, menu_display, menu_free};
 use crate::src::options::options_get_number;
 use crate::src::prompt::{
@@ -680,17 +680,19 @@ pub unsafe fn mode_tree_add(
 ) -> *mut mode_tree_item {
     let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
     let mut saved: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-    log_debug(
-        b"%s: %llu, %s %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"mode_tree_add\0" as *const u8 as *const ::core::ffi::c_char,
+    log_debug(format_args!(
+        "{}: {}, {} {}",
+        "mode_tree_add",
         tag as ::core::ffi::c_ulonglong,
-        name,
-        if text.is_null() {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            text
-        },
-    );
+        log_cstr((name) as *const _),
+        log_cstr(
+            (if text.is_null() {
+                b"\0" as *const u8 as *const ::core::ffi::c_char
+            } else {
+                text
+            }) as *const _
+        )
+    ));
     let name = CStr::from_ptr(name).to_owned();
     let text = (!text.is_null()).then(|| CStr::from_ptr(text).to_owned());
     let mut owner = Box::new(mode_tree_item {

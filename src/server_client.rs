@@ -37,7 +37,7 @@ use crate::src::key_bindings::{
     key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_unref_table,
 };
 use crate::src::key_string::key_string_format;
-use crate::src::log::{fatal, log_debug, log_get_level};
+use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
 use crate::src::menu::{menu_close, menu_get_cursor, menu_key, menu_screen};
 use crate::src::names::check_window_name;
 use crate::src::options::{
@@ -1108,10 +1108,10 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> *mut client {
     );
     (*c).click_wp = -(1 as ::core::ffi::c_int);
     clients.push_back(owner);
-    log_debug(
-        b"new client %p\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-    );
+    log_debug(format_args!(
+        "new client {}",
+        log_pointer((c) as *const ::core::ffi::c_void)
+    ));
     return c;
 }
 pub unsafe fn server_client_open(mut c: *mut client) -> Result<(), CString> {
@@ -1179,10 +1179,10 @@ unsafe fn server_client_attached_lost(mut c: *mut client) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut found: *mut client = ::core::ptr::null_mut::<client>();
-    log_debug(
-        b"lost attached client %p\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-    );
+    log_debug(format_args!(
+        "lost attached client {}",
+        log_pointer((c) as *const ::core::ffi::c_void)
+    ));
     w = windows_minmax(&*std::ptr::addr_of!(windows));
     while !w.is_null() {
         if !((*w).latest != c as *mut ::core::ffi::c_void) {
@@ -1402,10 +1402,10 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
         cf = cf1;
     }
     clients.remove(c);
-    log_debug(
-        b"lost client %p\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-    );
+    log_debug(format_args!(
+        "lost client {}",
+        log_pointer((c) as *const ::core::ffi::c_void)
+    ));
     if (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         server_client_attached_lost(c);
         events_fire_client(
@@ -1468,11 +1468,17 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
     server_update_socket();
 }
 pub unsafe fn server_client_unref(c: *mut client) {
-    log_debug(c"unref client %p".as_ptr(), c);
+    log_debug(format_args!(
+        "unref client {}",
+        log_pointer((c) as *const ::core::ffi::c_void)
+    ));
     crate::src::shared::rc::release_later(crate::src::shared::rc::take(c));
 }
 unsafe fn server_client_free(c: *mut client) {
-    log_debug(c"free client %p".as_ptr(), c);
+    log_debug(format_args!(
+        "free client {}",
+        log_pointer((c) as *const ::core::ffi::c_void)
+    ));
     redraw_free_scene((*c).redraw_scene);
     if !(*c).queue.is_null() {
         cmdq_free((*c).queue);
@@ -1816,28 +1822,34 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut type_0: key_code_type = KEYC_TYPE_NOTYPE;
     let mut loc: key_code_mouse_location = KEYC_MOUSE_LOCATION_NOWHERE;
-    log_debug(
-        b"%s mouse %02x at %u,%u (last %u,%u) (%d)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        (*m).b,
-        (*m).x,
-        (*m).y,
-        (*m).lx,
-        (*m).ly,
-        (*c).tty.mouse_drag_flag,
-    );
+    log_debug(format_args!(
+        "{} mouse {:02x} at {},{} (last {},{}) ({})",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        ((*m).b) as u32,
+        ((*m).x) as u32,
+        ((*m).y) as u32,
+        ((*m).lx) as u32,
+        ((*m).ly) as u32,
+        ((*c).tty.mouse_drag_flag) as i32
+    ));
     if (*c).tty.mouse_last_pane != -(1 as ::core::ffi::c_int) {
         lwp = window_pane_find_by_id((*c).tty.mouse_last_pane as u_int);
         if !lwp.is_null() {
-            log_debug(
-                b"%s mouse last pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                (*lwp).id,
-            );
+            log_debug(format_args!(
+                "{} mouse last pane %{}",
+                log_cstr(
+                    (((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                ),
+                ((*lwp).id) as u32
+            ));
         }
     }
     if (*event).key == KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code {
@@ -1846,11 +1858,11 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         y = (*m).y;
         b = (*m).b;
         ignore = 1 as ::core::ffi::c_int;
-        log_debug(
-            b"double-click at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            x,
-            y,
-        );
+        log_debug(format_args!(
+            "double-click at {},{}",
+            (x) as u32,
+            (y) as u32
+        ));
     } else if (*m).sgr_type != ' ' as i32 as u_int
         && (*m).sgr_b & MOUSE_MASK_DRAG as u_int != 0
         && (*m).sgr_b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
@@ -1863,11 +1875,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         x = (*m).x;
         y = (*m).y;
         b = 0 as u_int;
-        log_debug(
-            b"move at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            x,
-            y,
-        );
+        log_debug(format_args!("move at {},{}", (x) as u32, (y) as u32));
     } else if (*m).b & MOUSE_MASK_DRAG as u_int != 0 {
         type_0 = KEYC_TYPE_MOUSEDRAG;
         if (*c).tty.mouse_drag_flag != 0 {
@@ -1877,20 +1885,12 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             if x == (*m).lx && y == (*m).ly {
                 return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
             }
-            log_debug(
-                b"drag update at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-                x,
-                y,
-            );
+            log_debug(format_args!("drag update at {},{}", (x) as u32, (y) as u32));
         } else {
             x = (*m).lx;
             y = (*m).ly;
             b = (*m).lb;
-            log_debug(
-                b"drag start at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-                x,
-                y,
-            );
+            log_debug(format_args!("drag start at {},{}", (x) as u32, (y) as u32));
         }
     } else if (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
         || (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_DOWN as u_int
@@ -1903,11 +1903,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         x = (*m).x;
         y = (*m).y;
         b = (*m).b;
-        log_debug(
-            b"wheel at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            x,
-            y,
-        );
+        log_debug(format_args!("wheel at {},{}", (x) as u32, (y) as u32));
     } else if (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int {
         type_0 = KEYC_TYPE_MOUSEUP;
         x = (*m).x;
@@ -1916,11 +1912,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         if (*m).sgr_type == 'm' as i32 as u_int {
             b = (*m).sgr_b;
         }
-        log_debug(
-            b"up at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            x,
-            y,
-        );
+        log_debug(format_args!("up at {},{}", (x) as u32, (y) as u32));
     } else {
         if (*c).flags & CLIENT_DOUBLECLICK as uint64_t != 0 {
             event_del(&raw mut (*c).click_timer);
@@ -1929,11 +1921,11 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             x = (*m).x;
             y = (*m).y;
             b = (*m).b;
-            log_debug(
-                b"second-click at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-                x,
-                y,
-            );
+            log_debug(format_args!(
+                "second-click at {},{}",
+                (x) as u32,
+                (y) as u32
+            ));
             (*c).flags |= CLIENT_TRIPLECLICK as uint64_t;
             current_block = 16799951812150840583;
         } else if (*c).flags & CLIENT_TRIPLECLICK as uint64_t != 0 {
@@ -1943,11 +1935,11 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             x = (*m).x;
             y = (*m).y;
             b = (*m).b;
-            log_debug(
-                b"triple-click at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-                x,
-                y,
-            );
+            log_debug(format_args!(
+                "triple-click at {},{}",
+                (x) as u32,
+                (y) as u32
+            ));
             current_block = 5614288427414743461;
         } else {
             current_block = 16799951812150840583;
@@ -1962,11 +1954,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                     x = (*m).x;
                     y = (*m).y;
                     b = (*m).b;
-                    log_debug(
-                        b"down at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-                        x,
-                        y,
-                    );
+                    log_debug(format_args!("down at {},{}", (x) as u32, (y) as u32));
                     (*c).flags |= CLIENT_DOUBLECLICK as uint64_t;
                 }
             }
@@ -1994,11 +1982,11 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             match (*sr).type_0 as ::core::ffi::c_uint {
                 0 => return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code,
                 1 => {
-                    log_debug(b"mouse range: left\0" as *const u8 as *const ::core::ffi::c_char);
+                    log_debug(format_args!("mouse range: left"));
                     loc = KEYC_MOUSE_LOCATION_STATUS_LEFT;
                 }
                 2 => {
-                    log_debug(b"mouse range: right\0" as *const u8 as *const ::core::ffi::c_char);
+                    log_debug(format_args!("mouse range: right"));
                     loc = KEYC_MOUSE_LOCATION_STATUS_RIGHT;
                 }
                 3 => {
@@ -2007,10 +1995,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     }
                     (*m).wp = (*sr).argument as ::core::ffi::c_int;
-                    log_debug(
-                        b"mouse range: pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*m).wp,
-                    );
+                    log_debug(format_args!("mouse range: pane %{}", ((*m).wp) as u32));
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
                 4 => {
@@ -2022,10 +2007,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     }
                     (*m).w = (*(*fwl).window).id as ::core::ffi::c_int;
-                    log_debug(
-                        b"mouse range: window @%u\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*m).w,
-                    );
+                    log_debug(format_args!("mouse range: window @{}", ((*m).w) as u32));
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
                 5 => {
@@ -2034,22 +2016,16 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     }
                     (*m).s = (*sr).argument as ::core::ffi::c_int;
-                    log_debug(
-                        b"mouse range: session $%u\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*m).s,
-                    );
+                    log_debug(format_args!("mouse range: session ${}", ((*m).s) as u32));
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
                 6 => {
-                    log_debug(b"mouse range: user\0" as *const u8 as *const ::core::ffi::c_char);
+                    log_debug(format_args!("mouse range: user"));
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
                 7 => {
                     n = (*sr).argument;
-                    log_debug(
-                        b"mouse range: control %u\0" as *const u8 as *const ::core::ffi::c_char,
-                        n,
-                    );
+                    log_debug(format_args!("mouse range: control {}", (n) as u32));
                     loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
                         .wrapping_add(n) as key_code_mouse_location;
                 }
@@ -2084,14 +2060,14 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             &raw mut sx,
             &raw mut sy,
         );
-        log_debug(
-            b"mouse window @%u at %u,%u (%ux%u)\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-            (*m).ox,
-            (*m).oy,
-            sx,
-            sy,
-        );
+        log_debug(format_args!(
+            "mouse window @{} at {},{} ({}x{})",
+            ((*w).id) as u32,
+            ((*m).ox) as u32,
+            ((*m).oy) as u32,
+            (sx) as u32,
+            (sy) as u32
+        ));
         if px > sx || py > sy {
             server_client_update_scrollbar_hover(
                 c,
@@ -2161,11 +2137,11 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         if wp.is_null() {
             loc = KEYC_MOUSE_LOCATION_EMPTY;
             (*m).w = (*w).id as ::core::ffi::c_int;
-            log_debug(
-                b"mouse %u,%u on empty area\0" as *const u8 as *const ::core::ffi::c_char,
-                x,
-                y,
-            );
+            log_debug(format_args!(
+                "mouse {},{} on empty area",
+                (x) as u32,
+                (y) as u32
+            ));
         } else {
             if modal_drag == 0 {
                 loc = server_client_check_mouse_in_pane(
@@ -2178,12 +2154,12 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             if loc as ::core::ffi::c_uint
                 == KEYC_MOUSE_LOCATION_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                log_debug(
-                    b"mouse %u,%u on pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    x,
-                    y,
-                    (*wp).id,
-                );
+                log_debug(format_args!(
+                    "mouse {},{} on pane %{}",
+                    (x) as u32,
+                    (y) as u32,
+                    ((*wp).id) as u32
+                ));
             } else if loc as ::core::ffi::c_uint
                 == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -2193,10 +2169,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                     loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
                         .wrapping_add(n) as key_code_mouse_location;
                 }
-                log_debug(
-                    b"mouse on pane %%%u border\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                log_debug(format_args!("mouse on pane %{} border", ((*wp).id) as u32));
             } else if loc as ::core::ffi::c_uint
                 == KEYC_MOUSE_LOCATION_SCROLLBAR_UP as ::core::ffi::c_int as ::core::ffi::c_uint
                 || loc as ::core::ffi::c_uint
@@ -2206,10 +2179,10 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                     == KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN as ::core::ffi::c_int
                         as ::core::ffi::c_uint
             {
-                log_debug(
-                    b"mouse on pane %%%u scrollbar\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                log_debug(format_args!(
+                    "mouse on pane %{} scrollbar",
+                    ((*wp).id) as u32
+                ));
             }
             (*m).wp = (*wp).id as ::core::ffi::c_int;
             (*m).w = (*(*wp).window).id as ::core::ffi::c_int;
@@ -2237,11 +2210,11 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                 || (*m).wp != (*c).click_wp)
         {
             type_0 = KEYC_TYPE_MOUSEDOWN;
-            log_debug(
-                b"click sequence reset at %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-                x,
-                y,
-            );
+            log_debug(format_args!(
+                "click sequence reset at {},{}",
+                (x) as u32,
+                (y) as u32
+            ));
             (*c).flags &= !CLIENT_TRIPLECLICK as uint64_t;
             (*c).flags |= CLIENT_DOUBLECLICK as uint64_t;
         }
@@ -2257,7 +2230,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             (*c).click_button = (*m).b;
             (*c).click_loc = loc as ::core::ffi::c_int;
             (*c).click_wp = (*m).wp;
-            log_debug(b"click timer started\0" as *const u8 as *const ::core::ffi::c_char);
+            log_debug(format_args!("click timer started"));
             tv.tv_sec = (KEYC_CLICK_TIMEOUT / 1000 as ::core::ffi::c_int) as __time_t;
             tv.tv_usec = ((KEYC_CLICK_TIMEOUT % 1000 as ::core::ffi::c_int) as ::core::ffi::c_long
                 * 1000 as ::core::ffi::c_long) as __suseconds_t;
@@ -2378,10 +2351,10 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
         let key_string = key_string_format(key, true);
-        log_debug(
-            b"mouse key is %s\0" as *const u8 as *const ::core::ffi::c_char,
-            key_string.as_ptr(),
-        );
+        log_debug(format_args!(
+            "mouse key is {}",
+            log_cstr((key_string.as_ptr()) as *const _)
+        ));
     }
     return key;
 }
@@ -2455,24 +2428,30 @@ unsafe fn server_client_is_bracket_paste(
     {
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_BRACKETPASTING) as uint64_t;
         (*c).paste_time = current_time;
-        log_debug(
-            b"%s: bracket paste on\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: bracket paste on",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         return 0 as ::core::ffi::c_int;
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
     {
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong & !CLIENT_BRACKETPASTING) as uint64_t;
-        log_debug(
-            b"%s: bracket paste off\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: bracket paste off",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         return 0 as ::core::ffi::c_int;
     }
     return ((*c).flags as ::core::ffi::c_ulonglong & CLIENT_BRACKETPASTING != 0)
@@ -2511,22 +2490,28 @@ unsafe fn server_client_is_assume_paste(mut c: *mut client) -> ::core::ffi::c_in
         }
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_ASSUMEPASTING) as uint64_t;
         (*c).paste_time = current_time;
-        log_debug(
-            b"%s: assume paste on\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: assume paste on",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         return 0 as ::core::ffi::c_int;
     }
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_ASSUMEPASTING != 0 {
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong & !CLIENT_ASSUMEPASTING) as uint64_t;
-        log_debug(
-            b"%s: assume paste off\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: assume paste off",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -2826,24 +2811,19 @@ unsafe fn server_client_key_callback(
                                 flags = (*c).flags;
                                 loop {
                                     if wp.is_null() {
-                                        log_debug(
-                                            b"key table %s (no pane)\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            ((*table).name).as_ptr().cast_mut(),
-                                        );
+                                        log_debug(format_args!(
+                                            "key table {} (no pane)",
+                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _)
+                                        ));
                                     } else {
-                                        log_debug(
-                                            b"key table %s (pane %%%u)\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            ((*table).name).as_ptr().cast_mut(),
-                                            (*wp).id,
-                                        );
+                                        log_debug(format_args!(
+                                            "key table {} (pane %{})",
+                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _),
+                                            ((*wp).id) as u32
+                                        ));
                                     }
                                     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
-                                        log_debug(
-                                            b"currently repeating\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                        );
+                                        log_debug(format_args!("currently repeating"));
                                     }
                                     bd = key_bindings_get(table, key0);
                                     prefix_delay = options_get_number(
@@ -2863,16 +2843,9 @@ unsafe fn server_client_key_callback(
                                             && (*c).flags & CLIENT_REPEAT as uint64_t != 0
                                             && (*bd).flags & KEY_BINDING_REPEAT != 0
                                         {
-                                            log_debug(
-                                                b"prefix timeout ignored, repeat is active\0"
-                                                    as *const u8
-                                                    as *const ::core::ffi::c_char,
-                                            );
+                                            log_debug(format_args!("prefix timeout ignored, repeat is active"));
                                         } else {
-                                            log_debug(
-                                                b"prefix timeout exceeded\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
-                                            );
+                                            log_debug(format_args!("prefix timeout exceeded"));
                                             server_client_set_key_table(
                                                 c,
                                                 ::core::ptr::null::<::core::ffi::c_char>(),
@@ -2921,11 +2894,10 @@ unsafe fn server_client_key_callback(
                                             current_block = 15469183920764600035;
                                             break '_table_changed;
                                         }
-                                        log_debug(
-                                            b"not found in key table %s\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            ((*table).name).as_ptr().cast_mut(),
-                                        );
+                                        log_debug(format_args!(
+                                            "not found in key table {}",
+                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _)
+                                        ));
                                         if server_client_is_default_key_table(c, table) == 0
                                             || (*c).flags & CLIENT_REPEAT as uint64_t != 0
                                         {
@@ -2949,11 +2921,10 @@ unsafe fn server_client_key_callback(
                                         }
                                     }
                                     13763002826403452995 => {
-                                        log_debug(
-                                            b"found in key table %s\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            ((*table).name).as_ptr().cast_mut(),
-                                        );
+                                        log_debug(format_args!(
+                                            "found in key table {}",
+                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _)
+                                        ));
                                         crate::src::shared::rc::retain(table);
                                         repeat = server_client_repeat_time(c, bd);
                                         if repeat != 0 as u_int {
@@ -2981,10 +2952,7 @@ unsafe fn server_client_key_callback(
                                         break;
                                     }
                                     13484060386966298149 => {
-                                        log_debug(
-                                            b"trying in root table\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                        );
+                                        log_debug(format_args!("trying in root table"));
                                         server_client_set_key_table(
                                             c,
                                             ::core::ptr::null::<::core::ffi::c_char>(),
@@ -2997,11 +2965,10 @@ unsafe fn server_client_key_callback(
                                         server_status_client(c);
                                     }
                                     _ => {
-                                        log_debug(
-                                            b"found in key table %s (not repeating)\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            ((*table).name).as_ptr().cast_mut(),
-                                        );
+                                        log_debug(format_args!(
+                                            "found in key table {} (not repeating)",
+                                            log_cstr((((*table).name).as_ptr().cast_mut()) as *const _)
+                                        ));
                                         server_client_set_key_table(
                                             c,
                                             ::core::ptr::null::<::core::ffi::c_char>(),
@@ -3358,11 +3325,11 @@ unsafe fn server_client_check_window_resize(mut w: *mut window) {
     if wl.is_null() {
         return;
     }
-    log_debug(
-        b"%s: resizing window @%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"server_client_check_window_resize\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-    );
+    log_debug(format_args!(
+        "{}: resizing window @{}",
+        "server_client_check_window_resize",
+        ((*w).id) as u32
+    ));
     resize_window(
         w,
         (*w).new_sx,
@@ -3373,11 +3340,11 @@ unsafe fn server_client_check_window_resize(mut w: *mut window) {
 }
 unsafe fn server_client_resize_timer(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
-    log_debug(
-        b"%s: %%%u resize timer expired\0" as *const u8 as *const ::core::ffi::c_char,
-        b"server_client_resize_timer\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!(
+        "{}: %{} resize timer expired",
+        "server_client_resize_timer",
+        ((*wp).id) as u32
+    ));
     event_del(&raw mut (*wp).resize_timer);
 }
 unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
@@ -3404,24 +3371,24 @@ unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
     {
         return;
     }
-    log_debug(
-        b"%s: %%%u needs to be resized\0" as *const u8 as *const ::core::ffi::c_char,
-        b"server_client_check_pane_resize\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!(
+        "{}: %{} needs to be resized",
+        "server_client_check_pane_resize",
+        ((*wp).id) as u32
+    ));
     let (queue_len, first_sx, first_sy, first_osx, first_osy, last_sx, last_sy, last_ptr, previous) = {
         let queue = (*wp)
             .resize_queue
             .as_ref()
             .expect("non-empty resize queue must have storage");
         for resize in queue {
-            log_debug(
-                b"queued resize: %ux%u -> %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-                resize.osx,
-                resize.osy,
-                resize.sx,
-                resize.sy,
-            );
+            log_debug(format_args!(
+                "queued resize: {}x{} -> {}x{}",
+                (resize.osx) as u32,
+                (resize.osy) as u32,
+                (resize.sx) as u32,
+                (resize.sy) as u32
+            ));
         }
         let first = queue.front().expect("non-empty resize queue");
         let last = queue.back().expect("non-empty resize queue");
@@ -3491,18 +3458,22 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                         off = 0 as ::core::ffi::c_int;
                     }
                     window_pane_get_new_data(wp, wpo, &raw mut new_size);
-                    log_debug(
-                        b"%s: %s has %zu bytes used and %zu left for %%%u\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                        b"server_client_check_pane_buffer\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                        ((*c).name)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        (*wpo).used.wrapping_sub((*wp).base_offset),
-                        new_size,
-                        (*wp).id,
-                    );
+                    log_debug(format_args!(
+                        "{}: {} has {} bytes used and {} left for %{}",
+                        log_cstr(
+                            (b"server_client_check_pane_buffer\0" as *const u8 as *const ::core::ffi::c_char)
+                                as *const _
+                        ),
+                        log_cstr(
+                            (((*c).name)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                                as *const _
+                        ),
+                        ((*wpo).used.wrapping_sub((*wp).base_offset)) as usize,
+                        (new_size) as usize,
+                        ((*wp).id) as u32
+                    ));
                     if (*wpo).used < minimum {
                         minimum = (*wpo).used;
                     }
@@ -3516,21 +3487,20 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
     }
     minimum = minimum.wrapping_sub((*wp).base_offset);
     if !(minimum == 0 as size_t) {
-        log_debug(
-            b"%s: %%%u has %zu minimum (of %zu) bytes used\0" as *const u8
-                as *const ::core::ffi::c_char,
-            b"server_client_check_pane_buffer\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).id,
-            minimum,
-            evbuffer_get_length(&*(evb)),
-        );
+        log_debug(format_args!(
+            "{}: %{} has {} minimum (of {}) bytes used",
+            "server_client_check_pane_buffer",
+            ((*wp).id) as u32,
+            (minimum) as usize,
+            (evbuffer_get_length(&*(evb))) as usize
+        ));
         evbuffer_drain(evb, minimum);
         if (*wp).base_offset > (SIZE_MAX as size_t).wrapping_sub(minimum) {
-            log_debug(
-                b"%s: %%%u base offset has wrapped\0" as *const u8 as *const ::core::ffi::c_char,
-                b"server_client_check_pane_buffer\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            log_debug(format_args!(
+                "{}: %{} base offset has wrapped",
+                "server_client_check_pane_buffer",
+                ((*wp).id) as u32
+            ));
             (*wp).offset.used = (*wp).offset.used.wrapping_sub((*wp).base_offset);
             if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
                 (*wp).pipe_offset.used = (*wp).pipe_offset.used.wrapping_sub((*wp).base_offset);
@@ -3550,16 +3520,18 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
             (*wp).base_offset = (*wp).base_offset.wrapping_add(minimum);
         }
     }
-    log_debug(
-        b"%s: pane %%%u is %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"server_client_check_pane_buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        if off != 0 {
-            b"off\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"on\0" as *const u8 as *const ::core::ffi::c_char
-        },
-    );
+    log_debug(format_args!(
+        "{}: pane %{} is {}",
+        "server_client_check_pane_buffer",
+        ((*wp).id) as u32,
+        log_cstr(
+            (if off != 0 {
+                b"off\0" as *const u8 as *const ::core::ffi::c_char
+            } else {
+                b"on\0" as *const u8 as *const ::core::ffi::c_char
+            }) as *const _
+        )
+    ));
     if off != 0 {
         bufferevent_disable((*wp).event, EV_READ as ::core::ffi::c_short);
     } else {
@@ -3666,14 +3638,17 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
         mode = (*s).mode;
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
-        log_debug(
-            b"%s: client %s mode %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"server_client_reset_state\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            screen_mode_to_string(mode),
-        );
+        log_debug(format_args!(
+            "{}: client {} mode {}",
+            "server_client_reset_state",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr((screen_mode_to_string(mode)) as *const _)
+        ));
     }
     tty_region_off(tty);
     tty_margin_off(tty);
@@ -3747,12 +3722,12 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
         mode &= !MODE_CURSOR;
     }
     if !pane_mode & MODE_SYNC != 0 {
-        log_debug(
-            b"%s: cursor to %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"server_client_reset_state\0" as *const u8 as *const ::core::ffi::c_char,
-            cx,
-            cy,
-        );
+        log_debug(format_args!(
+            "{}: cursor to {},{}",
+            "server_client_reset_state",
+            (cx) as u32,
+            (cy) as u32
+        ));
         tty_cursor(tty, cx, cy);
     } else {
         mode &= !CURSOR_MODES;
@@ -3800,7 +3775,7 @@ unsafe fn server_client_repeat_timer(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn server_client_click_timer(mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
-    log_debug(b"click timer expired\0" as *const u8 as *const ::core::ffi::c_char);
+    log_debug(format_args!("click timer expired"));
     if (*c).flags & CLIENT_TRIPLECLICK as uint64_t != 0 {
         let event = key_event::new(
             KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code,
@@ -3831,22 +3806,28 @@ unsafe fn server_client_exit_timer(mut data: *mut ::core::ffi::c_void) {
         return;
     }
     if (*c).flags & CLIENT_EXITED as uint64_t != 0 {
-        log_debug(
-            b"%s: %s took too long to exit\0" as *const u8 as *const ::core::ffi::c_char,
-            b"server_client_exit_timer\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: {} took too long to exit",
+            "server_client_exit_timer",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         server_client_lost(c);
     } else if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
-        log_debug(
-            b"%s: %s took too long to flush\0" as *const u8 as *const ::core::ffi::c_char,
-            b"server_client_exit_timer\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: {} took too long to flush",
+            "server_client_exit_timer",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         server_client_check_exit(c, 1 as ::core::ffi::c_int);
     }
 }
@@ -3928,7 +3909,7 @@ unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c
     };
 }
 unsafe fn server_client_redraw_timer() {
-    log_debug(b"redraw timer fired\0" as *const u8 as *const ::core::ffi::c_char);
+    log_debug(format_args!("redraw timer fired"));
 }
 unsafe fn server_client_check_modes(mut c: *mut client) {
     let mut w: *mut window = (*(*(*c).session).curw).window;
@@ -3983,37 +3964,50 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
         return;
     }
     if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
-        log_debug(
-            b"%s: redraw%s%s%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-                b" window\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
-            },
-            if (*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
-                b" status\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
-            },
-            if (*c).flags & CLIENT_REDRAWBORDERS as uint64_t != 0 {
-                b" borders\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
-            },
-            if (*c).flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
-                b" overlay\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
-            },
-            if (*c).flags & CLIENT_REDRAWMENU as uint64_t != 0 {
-                b" menu\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
-            },
-        );
+        log_debug(format_args!(
+            "{}: redraw{}{}{}{}{}",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr(
+                (if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
+                    b" window\0" as *const u8 as *const ::core::ffi::c_char
+                } else {
+                    b"\0" as *const u8 as *const ::core::ffi::c_char
+                }) as *const _
+            ),
+            log_cstr(
+                (if (*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
+                    b" status\0" as *const u8 as *const ::core::ffi::c_char
+                } else {
+                    b"\0" as *const u8 as *const ::core::ffi::c_char
+                }) as *const _
+            ),
+            log_cstr(
+                (if (*c).flags & CLIENT_REDRAWBORDERS as uint64_t != 0 {
+                    b" borders\0" as *const u8 as *const ::core::ffi::c_char
+                } else {
+                    b"\0" as *const u8 as *const ::core::ffi::c_char
+                }) as *const _
+            ),
+            log_cstr(
+                (if (*c).flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
+                    b" overlay\0" as *const u8 as *const ::core::ffi::c_char
+                } else {
+                    b"\0" as *const u8 as *const ::core::ffi::c_char
+                }) as *const _
+            ),
+            log_cstr(
+                (if (*c).flags & CLIENT_REDRAWMENU as uint64_t != 0 {
+                    b" menu\0" as *const u8 as *const ::core::ffi::c_char
+                } else {
+                    b"\0" as *const u8 as *const ::core::ffi::c_char
+                }) as *const _
+            )
+        ));
     }
     needed = 0 as ::core::ffi::c_int;
     if (*c).flags as ::core::ffi::c_ulonglong
@@ -4031,20 +4025,26 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
     n = evbuffer_get_length(&*((*tty).out));
     if n != 0 as size_t || (*tty).flags & TTY_BLOCK != 0 {
         if n != 0 as size_t {
-            log_debug(
-                b"%s: redraw deferred (%zu left)\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                n,
-            );
+            log_debug(format_args!(
+                "{}: redraw deferred ({} left)",
+                log_cstr(
+                    (((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                ),
+                (n) as usize
+            ));
         } else {
-            log_debug(
-                b"%s: redraw deferred (blocked)\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+            log_debug(format_args!(
+                "{}: redraw deferred (blocked)",
+                log_cstr(
+                    (((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                )
+            ));
         }
         if event_initialized(&ev) == 0 {
             event_set(
@@ -4060,7 +4060,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
             ::core::ptr::null_mut::<timeval>(),
         ) == 0
         {
-            log_debug(b"redraw timer started\0" as *const u8 as *const ::core::ffi::c_char);
+            log_debug(format_args!("redraw timer started"));
             event_add(&raw mut ev, &raw mut tv);
         }
         wp = window_pane_first(w);
@@ -4078,32 +4078,35 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
         }
         return;
     }
-    log_debug(
-        b"%s: redraw needed\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    log_debug(format_args!(
+        "{}: redraw needed",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        )
+    ));
     tflags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
     (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
     if !(*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
         wp = window_pane_first(w);
         while !wp.is_null() {
             if (*wp).flags & PANE_REDRAW != 0 {
-                log_debug(
-                    b"%s: redraw pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"server_client_check_redraw\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                log_debug(format_args!(
+                    "{}: redraw pane %{}",
+                    "server_client_check_redraw",
+                    ((*wp).id) as u32
+                ));
                 redraw_pane(c, wp);
             } else if (*wp).flags & PANE_REDRAWSCROLLBAR != 0
                 || (*c).flags as ::core::ffi::c_ulonglong & CLIENT_REDRAWSCROLLBARS != 0
             {
-                log_debug(
-                    b"%s: redraw scrollbar %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"server_client_check_redraw\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                log_debug(format_args!(
+                    "{}: redraw scrollbar %{}",
+                    "server_client_check_redraw",
+                    ((*wp).id) as u32
+                ));
                 redraw_pane_scrollbar(c, wp);
             }
             wp = window_pane_next(wp);
@@ -4129,13 +4132,16 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
             | CLIENT_REDRAWSCROLLBARS
             | CLIENT_STATUSFORCE as ::core::ffi::c_ulonglong)) as uint64_t;
     (*c).redraw = evbuffer_get_length(&*((*tty).out));
-    log_debug(
-        b"%s: redraw added %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        (*c).redraw,
-    );
+    log_debug(format_args!(
+        "{}: redraw added {} bytes",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        ((*c).redraw) as usize
+    ));
 }
 unsafe fn server_client_set_title(mut c: *mut client) {
     let mut s: *mut session = (*c).session;
@@ -4354,11 +4360,11 @@ unsafe fn server_client_dispatch(
     match current_block {
         14945149239039849694 => return,
         _ => {
-            log_debug(
-                b"client %p invalid message type %d\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                imsg.hdr.type_0,
-            );
+            log_debug(format_args!(
+                "client {} invalid message type {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                (imsg.hdr.type_0) as i32
+            ));
             proc_kill_peer((*c).peer);
             return;
         }
@@ -4525,11 +4531,11 @@ unsafe fn server_client_dispatch_identify(
                 ::core::mem::size_of::<::core::ffi::c_int>() as size_t,
             );
             (*c).term_features |= feat;
-            log_debug(
-                b"client %p IDENTIFY_FEATURES %s\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                tty_get_features(feat),
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_FEATURES {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                log_cstr((tty_get_features(feat)) as *const _)
+            ));
         }
         100 => {
             if datalen != ::core::mem::size_of::<::core::ffi::c_int>() as usize {
@@ -4541,11 +4547,11 @@ unsafe fn server_client_dispatch_identify(
                 ::core::mem::size_of::<::core::ffi::c_int>() as size_t,
             );
             (*c).flags |= flags as uint64_t;
-            log_debug(
-                b"client %p IDENTIFY_FLAGS %#x\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                flags,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_FLAGS {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                log_hex(((flags) as u32) as u64)
+            ));
         }
         111 => {
             if datalen != ::core::mem::size_of::<uint64_t>() as usize {
@@ -4557,11 +4563,11 @@ unsafe fn server_client_dispatch_identify(
                 ::core::mem::size_of::<uint64_t>() as size_t,
             );
             (*c).flags |= longflags;
-            log_debug(
-                b"client %p IDENTIFY_LONGFLAGS %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                longflags as ::core::ffi::c_ulonglong,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_LONGFLAGS {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                log_hex(longflags as ::core::ffi::c_ulonglong)
+            ));
         }
         101 => {
             if datalen == 0 as size_t
@@ -4571,11 +4577,11 @@ unsafe fn server_client_dispatch_identify(
                 return -(1 as ::core::ffi::c_int);
             }
             server_client_set_term_name(&mut *c, Some(CStr::from_ptr(data).to_owned()));
-            log_debug(
-                b"client %p IDENTIFY_TERM %s\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                data,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_TERM {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                log_cstr((data) as *const _)
+            ));
         }
         112 => {
             if datalen == 0 as size_t
@@ -4585,11 +4591,11 @@ unsafe fn server_client_dispatch_identify(
                 return -(1 as ::core::ffi::c_int);
             }
             server_client_add_term_cap(&mut *c, CStr::from_ptr(data));
-            log_debug(
-                b"client %p IDENTIFY_TERMINFO %s\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                data,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_TERMINFO {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                log_cstr((data) as *const _)
+            ));
         }
         102 => {
             if datalen == 0 as size_t
@@ -4599,11 +4605,11 @@ unsafe fn server_client_dispatch_identify(
                 return -(1 as ::core::ffi::c_int);
             }
             server_client_set_ttyname(&mut *c, Some(CStr::from_ptr(data).to_owned()));
-            log_debug(
-                b"client %p IDENTIFY_TTYNAME %s\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                data,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_TTYNAME {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                log_cstr((data) as *const _)
+            ));
         }
         108 => {
             if datalen == 0 as size_t
@@ -4621,11 +4627,11 @@ unsafe fn server_client_dispatch_identify(
                     server_client_set_cwd(&mut *c, Some(CString::new("/").unwrap()));
                 }
             }
-            log_debug(
-                b"client %p IDENTIFY_CWD %s\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                data,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_CWD {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                log_cstr((data) as *const _)
+            ));
         }
         104 => {
             if datalen != 0 as size_t {
@@ -4634,11 +4640,11 @@ unsafe fn server_client_dispatch_identify(
             (*c).fd = imsg_get_fd(imsg)
                 .map(std::os::fd::IntoRawFd::into_raw_fd)
                 .unwrap_or(-1);
-            log_debug(
-                b"client %p IDENTIFY_STDIN %d\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                (*c).fd,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_STDIN {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                ((*c).fd) as i32
+            ));
         }
         110 => {
             if datalen != 0 as size_t {
@@ -4647,11 +4653,11 @@ unsafe fn server_client_dispatch_identify(
             (*c).out_fd = imsg_get_fd(imsg)
                 .map(std::os::fd::IntoRawFd::into_raw_fd)
                 .unwrap_or(-1);
-            log_debug(
-                b"client %p IDENTIFY_STDOUT %d\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                (*c).out_fd,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_STDOUT {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                ((*c).out_fd) as i32
+            ));
         }
         105 => {
             if datalen == 0 as size_t
@@ -4663,11 +4669,11 @@ unsafe fn server_client_dispatch_identify(
             if !strchr(data, '=' as i32).is_null() {
                 environ_put((*c).environ, data, 0 as ::core::ffi::c_int);
             }
-            log_debug(
-                b"client %p IDENTIFY_ENVIRON %s\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                data,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_ENVIRON {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                log_cstr((data) as *const _)
+            ));
         }
         107 => {
             if datalen != ::core::mem::size_of::<pid_t>() as usize {
@@ -4678,11 +4684,11 @@ unsafe fn server_client_dispatch_identify(
                 data as *const ::core::ffi::c_void,
                 ::core::mem::size_of::<pid_t>() as size_t,
             );
-            log_debug(
-                b"client %p IDENTIFY_CLIENTPID %ld\0" as *const u8 as *const ::core::ffi::c_char,
-                c,
-                (*c).pid as ::core::ffi::c_long,
-            );
+            log_debug(format_args!(
+                "client {} IDENTIFY_CLIENTPID {}",
+                log_pointer((c) as *const ::core::ffi::c_void),
+                (*c).pid as ::core::ffi::c_long
+            ));
         }
         _ => {}
     }
@@ -4705,13 +4711,16 @@ unsafe fn server_client_dispatch_identify(
         let name = CString::new(format!("client-{}", (*c).pid as ::core::ffi::c_long)).unwrap();
         server_client_set_name(&mut *c, Some(name));
     }
-    log_debug(
-        b"client %p name is %s\0" as *const u8 as *const ::core::ffi::c_char,
-        c,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    log_debug(format_args!(
+        "client {} name is {}",
+        log_pointer((c) as *const ::core::ffi::c_void),
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        )
+    ));
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         control_start(c);
     } else if (*c).fd != -(1 as ::core::ffi::c_int) {
@@ -4738,12 +4747,15 @@ unsafe fn server_client_dispatch_identify(
     if (*c).flags as ::core::ffi::c_ulonglong & (CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING) != 0
         && current_time - (*c).paste_time > CLIENT_PASTE_TIME_LIMIT as time_t
     {
-        log_debug(
-            b"%s: paste time limit exceeded\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: paste time limit exceeded",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
             & !(CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING)) as uint64_t;
     }
@@ -4896,13 +4908,16 @@ pub unsafe fn server_client_set_flags(mut c: *mut client, mut flags: *const ::co
         if flag == 0 as uint64_t {
             continue;
         }
-        log_debug(
-            b"client %s set flag %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            next,
-        );
+        log_debug(format_args!(
+            "client {} set flag {}",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr((next) as *const _)
+        ));
         if not != 0 {
             if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
                 flag &= !CLIENT_READONLY as uint64_t;
@@ -5073,11 +5088,11 @@ pub unsafe fn server_client_print(
             );
         }
     }
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"server_client_print\0" as *const u8 as *const ::core::ffi::c_char,
-        msg,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "server_client_print",
+        log_cstr((msg) as *const _)
+    ));
     if !c.is_null() {
         if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {

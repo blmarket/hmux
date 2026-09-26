@@ -1,6 +1,6 @@
 use crate::src::ffi::libc::{memcmp, memcpy, memmove, memset, strchr, strlcat, strlen};
 use crate::src::hyperlinks::hyperlinks_get;
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::server::current_time;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
@@ -380,11 +380,11 @@ unsafe fn grid_check_y(
     mut py: u_int,
 ) -> ::core::ffi::c_int {
     if py >= (*gd).hsize.wrapping_add((*gd).sy) {
-        log_debug(
-            b"%s: y out of range: %u\0" as *const u8 as *const ::core::ffi::c_char,
-            from,
-            py,
-        );
+        log_debug(format_args!(
+            "{}: y out of range: {}",
+            log_cstr((from) as *const _),
+            (py) as u32
+        ));
         return -(1 as ::core::ffi::c_int);
     }
     return 0 as ::core::ffi::c_int;

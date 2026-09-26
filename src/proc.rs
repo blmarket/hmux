@@ -12,7 +12,7 @@ use crate::src::ffi::libc::{
     close, daemon, fork, getpid, memset, sigaction, sigemptyset, socketpair, uname,
 };
 use crate::src::ffi::utf8proc::utf8proc_version;
-use crate::src::log::{fatal, fatalx, log_debug, log_open, log_toggle};
+use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_open, log_pointer, log_toggle};
 use crate::src::reactor::{
     event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
 };
@@ -73,11 +73,11 @@ unsafe fn proc_event_cb(mut events: ::core::ffi::c_short, mut arg: *mut ::core::
                     return;
                 }
             };
-            log_debug(
-                b"peer %p message %d\0" as *const u8 as *const ::core::ffi::c_char,
-                peer,
-                imsg.hdr.type_0,
-            );
+            log_debug(format_args!(
+                "peer {} message {}",
+                log_pointer((peer) as *const ::core::ffi::c_void),
+                (imsg.hdr.type_0) as i32
+            ));
             if peer_check_version(peer, &imsg) != 0 as ::core::ffi::c_int {
                 break;
             } else {
@@ -113,11 +113,11 @@ unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c
     if imsg.hdr.type_0 != MSG_VERSION as ::core::ffi::c_int as uint32_t
         && version != PROTOCOL_VERSION
     {
-        log_debug(
-            b"peer %p bad version %d\0" as *const u8 as *const ::core::ffi::c_char,
-            peer,
-            version,
-        );
+        log_debug(format_args!(
+            "peer {} bad version {}",
+            log_pointer((peer) as *const ::core::ffi::c_void),
+            (version) as i32
+        ));
         proc_send(
             peer,
             MSG_VERSION,
@@ -163,12 +163,12 @@ pub unsafe fn proc_send(
     if (*peer).flags & PEER_BAD != 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    log_debug(
-        b"sending message %d to peer %p (%zu bytes)\0" as *const u8 as *const ::core::ffi::c_char,
-        type_0 as ::core::ffi::c_uint,
-        peer,
-        len,
-    );
+    log_debug(format_args!(
+        "sending message {} to peer {} ({} bytes)",
+        (type_0 as ::core::ffi::c_uint) as i32,
+        log_pointer((peer) as *const ::core::ffi::c_void),
+        (len) as usize
+    ));
     let Some(data) = (len == 0).then_some(&[][..]).or_else(|| {
         (!buf.is_null()).then(|| unsafe { std::slice::from_raw_parts(buf.cast::<u8>(), len) })
     }) else {
@@ -213,35 +213,34 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
             ::core::mem::size_of::<utsname>() as size_t,
         );
     }
-    log_debug(
-        b"%s started (%ld): version %s, socket %s, protocol %d\0" as *const u8
-            as *const ::core::ffi::c_char,
-        name,
+    log_debug(format_args!(
+        "{} started ({}): version {}, socket {}, protocol {}",
+        log_cstr((name) as *const _),
         getpid() as ::core::ffi::c_long,
-        getversion(),
-        socket_path,
-        PROTOCOL_VERSION,
-    );
-    log_debug(
-        b"on %s %s %s\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut u.sysname as *mut ::core::ffi::c_char,
-        &raw mut u.release as *mut ::core::ffi::c_char,
-        &raw mut u.version as *mut ::core::ffi::c_char,
-    );
-    log_debug(
-        b"using runtime %s %s\0" as *const u8 as *const ::core::ffi::c_char,
-        event_get_version(),
-        event_get_method(),
-    );
-    log_debug(
-        b"using utf8proc %s\0" as *const u8 as *const ::core::ffi::c_char,
-        utf8proc_version(),
-    );
-    log_debug(
-        b"using ncurses %s %06u\0" as *const u8 as *const ::core::ffi::c_char,
-        NCURSES_VERSION.as_ptr(),
-        NCURSES_VERSION_PATCH,
-    );
+        log_cstr((getversion()) as *const _),
+        log_cstr((socket_path) as *const _),
+        (PROTOCOL_VERSION) as i32
+    ));
+    log_debug(format_args!(
+        "on {} {} {}",
+        log_cstr((&raw mut u.sysname as *mut ::core::ffi::c_char) as *const _),
+        log_cstr((&raw mut u.release as *mut ::core::ffi::c_char) as *const _),
+        log_cstr((&raw mut u.version as *mut ::core::ffi::c_char) as *const _)
+    ));
+    log_debug(format_args!(
+        "using runtime {} {}",
+        log_cstr((event_get_version()) as *const _),
+        log_cstr((event_get_method()) as *const _)
+    ));
+    log_debug(format_args!(
+        "using utf8proc {}",
+        log_cstr((utf8proc_version()) as *const _)
+    ));
+    log_debug(format_args!(
+        "using ncurses {} {:06}",
+        log_cstr((NCURSES_VERSION.as_ptr()) as *const _),
+        (NCURSES_VERSION_PATCH) as u32
+    ));
     tp = Box::into_raw(Box::new(tmuxproc {
         name: CStr::from_ptr(name).to_owned(),
         exit: 0,
@@ -259,20 +258,20 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
     return tp;
 }
 pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut() -> bool>) {
-    log_debug(
-        b"%s loop enter\0" as *const u8 as *const ::core::ffi::c_char,
-        (*tp).name.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{} loop enter",
+        log_cstr(((*tp).name.as_ptr()) as *const _)
+    ));
     loop {
         event_loop();
         if (*tp).exit != 0 || loopcb.as_mut().is_some_and(|callback| !callback()) {
             break;
         }
     }
-    log_debug(
-        b"%s loop exit\0" as *const u8 as *const ::core::ffi::c_char,
-        (*tp).name.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{} loop exit",
+        log_cstr(((*tp).name.as_ptr()) as *const _)
+    ));
 }
 pub unsafe fn proc_exit(mut tp: *mut tmuxproc) {
     for peer in (*tp).peers.iter_mut() {
@@ -428,11 +427,11 @@ pub unsafe fn proc_add_peer(
         (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;
         (*peer).gid = -(1 as ::core::ffi::c_int) as gid_t;
     }
-    log_debug(
-        b"add peer %p: %d\0" as *const u8 as *const ::core::ffi::c_char,
-        peer,
-        fd,
-    );
+    log_debug(format_args!(
+        "add peer {}: {}",
+        log_pointer((peer) as *const ::core::ffi::c_void),
+        (fd) as i32
+    ));
     (*tp).peers.push(owned_peer);
     proc_update_event(peer);
     return peer;
@@ -444,10 +443,10 @@ pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
         .position(|owned_peer| std::ptr::eq(&**owned_peer, peer))
         .expect("peer must be owned by its parent process");
     let owned_peer = peers.remove(peer_index);
-    log_debug(
-        b"remove peer %p\0" as *const u8 as *const ::core::ffi::c_char,
-        peer,
-    );
+    log_debug(format_args!(
+        "remove peer {}",
+        log_pointer((peer) as *const ::core::ffi::c_void)
+    ));
     event_del(&raw mut (*peer).event);
     imsgbuf_clear(&mut (*peer).ibuf);
     close((*peer).ibuf.fd);

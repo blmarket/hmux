@@ -4,7 +4,7 @@ use crate::src::compat::vis::vis;
 use crate::src::ffi::libc::{
     __ctype_b_loc, __errno_location, memcpy, memset, strchr, strlen, strncmp, strtoull, wctomb,
 };
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr_n, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
 };
@@ -1013,11 +1013,11 @@ unsafe fn utf8_find_in_width_cache(mut wc: wchar_t) -> *mut utf8_width_item {
 unsafe fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) {
     let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
     let mut old: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    log_debug(
-        b"Unicode width cache: %08X=%u\0" as *const u8 as *const ::core::ffi::c_char,
+    log_debug(format_args!(
+        "Unicode width cache: {:08X}={}",
         wc as u_int,
-        width,
-    );
+        (width) as u32
+    ));
     uw = Box::into_raw(Box::new(utf8_width_item {
         wc,
         width,
@@ -1208,13 +1208,12 @@ unsafe fn utf8_put_item(
     ui = utf8_item_by_data(data, size);
     if !ui.is_null() {
         *index = (*ui).index;
-        log_debug(
-            b"%s: found %.*s = %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"utf8_put_item\0" as *const u8 as *const ::core::ffi::c_char,
-            size as ::core::ffi::c_int,
-            data,
-            *index,
-        );
+        log_debug(format_args!(
+            "{}: found {} = {}",
+            "utf8_put_item",
+            log_cstr_n((data) as *const _, size as ::core::ffi::c_int),
+            (*index) as u32
+        ));
         return 0 as ::core::ffi::c_int;
     }
     if utf8_next_index == (0xffffff as ::core::ffi::c_int + 1 as ::core::ffi::c_int) as u_int {
@@ -1237,13 +1236,12 @@ unsafe fn utf8_put_item(
     );
     utf8_data_tree_insert(&mut *(&raw mut utf8_data_tree), &mut *ui);
     *index = (*ui).index;
-    log_debug(
-        b"%s: added %.*s = %u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"utf8_put_item\0" as *const u8 as *const ::core::ffi::c_char,
-        size as ::core::ffi::c_int,
-        data,
-        *index,
-    );
+    log_debug(format_args!(
+        "{}: added {} = {}",
+        "utf8_put_item",
+        log_cstr_n((data) as *const _, size as ::core::ffi::c_int),
+        (*index) as u32
+    ));
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn utf8_from_data(mut ud: *const utf8_data, mut uc: *mut utf8_char) -> utf8_state {
@@ -1280,15 +1278,17 @@ pub unsafe fn utf8_from_data(mut ud: *const utf8_data, mut uc: *mut utf8_char) -
                 *uc = (((*ud).size as u_int) << 24 as ::core::ffi::c_int
                     | ((*ud).width as u_int).wrapping_add(1 as u_int) << 29 as ::core::ffi::c_int
                     | index) as utf8_char;
-                log_debug(
-                    b"%s: (%d %d %.*s) -> %08x\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"utf8_from_data\0" as *const u8 as *const ::core::ffi::c_char,
+                log_debug(format_args!(
+                    "{}: ({} {} {}) -> {:08x}",
+                    "utf8_from_data",
                     (*ud).width as ::core::ffi::c_int,
                     (*ud).size as ::core::ffi::c_int,
-                    (*ud).size as ::core::ffi::c_int,
-                    &raw const (*ud).data as *const u_char,
-                    *uc,
-                );
+                    log_cstr_n(
+                        (&raw const (*ud).data as *const u_char) as *const _,
+                        (*ud).size as ::core::ffi::c_int
+                    ),
+                    (*uc) as u32
+                ));
                 return UTF8_DONE;
             }
         }
@@ -1343,15 +1343,17 @@ pub unsafe fn utf8_to_data(mut uc: utf8_char, mut ud: *mut utf8_data) {
             );
         }
     }
-    log_debug(
-        b"%s: %08x -> (%d %d %.*s)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"utf8_to_data\0" as *const u8 as *const ::core::ffi::c_char,
-        uc,
+    log_debug(format_args!(
+        "{}: {:08x} -> ({} {} {})",
+        "utf8_to_data",
+        (uc) as u32,
         (*ud).width as ::core::ffi::c_int,
         (*ud).size as ::core::ffi::c_int,
-        (*ud).size as ::core::ffi::c_int,
-        &raw mut (*ud).data as *mut u_char,
-    );
+        log_cstr_n(
+            (&raw mut (*ud).data as *mut u_char) as *const _,
+            (*ud).size as ::core::ffi::c_int
+        )
+    ));
 }
 pub unsafe fn utf8_build_one(mut ch: u_char) -> utf8_char {
     return (1 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
@@ -1430,19 +1432,19 @@ unsafe fn utf8_width(mut ud: *mut utf8_data, mut width: *mut ::core::ffi::c_int)
     uw = utf8_find_in_width_cache(wc);
     if !uw.is_null() {
         *width = (*uw).width as ::core::ffi::c_int;
-        log_debug(
-            b"cached width for %08X is %d\0" as *const u8 as *const ::core::ffi::c_char,
+        log_debug(format_args!(
+            "cached width for {:08X} is {}",
             wc as u_int,
-            *width,
-        );
+            (*width) as i32
+        ));
         return UTF8_DONE;
     }
     *width = utf8proc_wcwidth(wc);
-    log_debug(
-        b"utf8proc_wcwidth(%05X) returned %d\0" as *const u8 as *const ::core::ffi::c_char,
+    log_debug(format_args!(
+        "utf8proc_wcwidth({:05X}) returned {}",
         wc as u_int,
-        *width,
-    );
+        (*width) as i32
+    ));
     if *width >= 0 as ::core::ffi::c_int && *width <= 0xff as ::core::ffi::c_int {
         return UTF8_DONE;
     }
@@ -1457,20 +1459,24 @@ pub unsafe fn utf8_towc(mut ud: *const utf8_data, mut wc: *mut wchar_t) -> utf8_
     match decode_utf8(bytes) {
         DecodeResult::Complete { codepoint, .. } => {
             *wc = codepoint as wchar_t;
-            log_debug(
-                b"UTF-8 %.*s is U+%06X\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ud).size as ::core::ffi::c_int,
-                &raw const (*ud).data as *const u_char,
-                *wc as u_int,
-            );
+            log_debug(format_args!(
+                "UTF-8 {} is U+{:06X}",
+                log_cstr_n(
+                    (&raw const (*ud).data as *const u_char) as *const _,
+                    (*ud).size as ::core::ffi::c_int
+                ),
+                *wc as u_int
+            ));
             UTF8_DONE
         }
         _ => {
-            log_debug(
-                b"UTF-8 %.*s is invalid\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ud).size as ::core::ffi::c_int,
-                &raw const (*ud).data as *const u_char,
-            );
+            log_debug(format_args!(
+                "UTF-8 {} is invalid",
+                log_cstr_n(
+                    (&raw const (*ud).data as *const u_char) as *const _,
+                    (*ud).size as ::core::ffi::c_int
+                )
+            ));
             UTF8_ERROR
         }
     }
@@ -1509,11 +1515,11 @@ pub unsafe fn utf8_fromwc(mut wc: wchar_t, mut ud: *mut utf8_data) -> utf8_state
         wc,
     );
     if size < 0 as ::core::ffi::c_int {
-        log_debug(
-            b"UTF-8 %d, wctomb() %d\0" as *const u8 as *const ::core::ffi::c_char,
-            wc,
-            *__errno_location(),
-        );
+        log_debug(format_args!(
+            "UTF-8 {}, wctomb() {}",
+            (wc) as i32,
+            (*__errno_location()) as i32
+        ));
         wctomb(::core::ptr::null_mut::<::core::ffi::c_char>(), 0 as wchar_t);
         return UTF8_ERROR;
     }

@@ -13,7 +13,7 @@ use crate::src::hooks::hooks_build_events;
 use crate::src::input_keys::input_key_build;
 use crate::src::job::{job_check_died, job_kill_all, job_still_running};
 use crate::src::key_bindings::key_bindings_init;
-use crate::src::log::{fatal, fatalx, log_debug, log_get_level};
+use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::options::{options_get_number, options_set_number};
 use crate::src::proc::{
     proc_clear_signals, proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start,
@@ -237,11 +237,11 @@ unsafe fn server_tidy_event() {
     let mut t: uint64_t = get_timer();
     format_tidy_jobs();
     malloc_trim(0 as size_t);
-    log_debug(
-        b"%s: took %llu milliseconds\0" as *const u8 as *const ::core::ffi::c_char,
-        b"server_tidy_event\0" as *const u8 as *const ::core::ffi::c_char,
-        get_timer().wrapping_sub(t) as ::core::ffi::c_ulonglong,
-    );
+    log_debug(format_args!(
+        "{}: took {} milliseconds",
+        "server_tidy_event",
+        get_timer().wrapping_sub(t) as ::core::ffi::c_ulonglong
+    ));
     event_add(&raw mut server_ev_tidy, &raw mut tv);
 }
 pub(crate) unsafe fn server_start(
@@ -577,11 +577,11 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
 }
 unsafe fn server_signal(sig: ProcessSignal) {
     let _fd: ::core::ffi::c_int = 0;
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"server_signal\0" as *const u8 as *const ::core::ffi::c_char,
-        strsignal(sig.as_raw()),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "server_signal",
+        log_cstr((strsignal(sig.as_raw())) as *const _)
+    ));
     match sig {
         ProcessSignal::Interrupt | ProcessSignal::Terminate => {
             server_exit = 1 as ::core::ffi::c_int;
@@ -646,10 +646,7 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
             if (*wp).pid == pid {
                 (*wp).status = status;
                 (*wp).flags |= PANE_STATUSREADY;
-                log_debug(
-                    b"%%%u exited\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                log_debug(format_args!("%{} exited", ((*wp).id) as u32));
                 (*wp).flags |= PANE_EXITED;
                 window_pane_wait_finish(wp);
                 spawn_editor_finish(wp);
@@ -693,10 +690,10 @@ pub unsafe extern "C" fn server_add_message(mut fmt: *const ::core::ffi::c_char,
     let mut limit: u_int = 0;
     ap = args.clone();
     let s = xvasprintf_cstring(fmt, ap);
-    log_debug(
-        b"message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        s.as_ptr(),
-    );
+    log_debug(format_args!(
+        "message: {}",
+        log_cstr((s.as_ptr()) as *const _)
+    ));
     let fresh0 = message_next;
     message_next = message_next.wrapping_add(1);
     let mut msg_time = timeval {

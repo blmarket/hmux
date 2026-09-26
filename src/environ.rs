@@ -1,5 +1,5 @@
 use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
     options_get_string,
@@ -450,14 +450,17 @@ pub unsafe extern "C" fn environ_log(
         if !(*envent).value.is_none()
             && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
         {
-            log_debug(
-                b"%s%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                prefix.as_ptr(),
-                ((*envent).name).as_ptr().cast_mut(),
-                ((*envent).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+            log_debug(format_args!(
+                "{}{}={}",
+                log_cstr((prefix.as_ptr()) as *const _),
+                log_cstr((((*envent).name).as_ptr().cast_mut()) as *const _),
+                log_cstr(
+                    (((*envent).value)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                )
+            ));
         }
     }
 }

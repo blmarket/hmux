@@ -9,7 +9,7 @@ use crate::src::ffi::ncurses::TERMINAL;
 use crate::src::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_only,
 };
@@ -1110,24 +1110,24 @@ pub unsafe fn tty_term_apply(
         let value = value.as_ref().map_or(::core::ptr::null(), |v| v.as_ptr());
         if quiet == 0 {
             if remove != 0 {
-                log_debug(
-                    b"%s override: %s@\0" as *const u8 as *const ::core::ffi::c_char,
-                    name,
-                    s,
-                );
+                log_debug(format_args!(
+                    "{} override: {}@",
+                    log_cstr((name) as *const _),
+                    log_cstr((s) as *const _)
+                ));
             } else if *value as ::core::ffi::c_int == '\0' as i32 {
-                log_debug(
-                    b"%s override: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    name,
-                    s,
-                );
+                log_debug(format_args!(
+                    "{} override: {}",
+                    log_cstr((name) as *const _),
+                    log_cstr((s) as *const _)
+                ));
             } else {
-                log_debug(
-                    b"%s override: %s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    name,
-                    s,
-                    value,
-                );
+                log_debug(format_args!(
+                    "{} override: {}={}",
+                    log_cstr((name) as *const _),
+                    log_cstr((s) as *const _),
+                    log_cstr((value) as *const _)
+                ));
             }
         }
         i = 0 as u_int;
@@ -1194,46 +1194,46 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         }
         a = options_array_next(a);
     }
-    log_debug(
-        b"SIXEL flag is %d\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*term).flags & TERM_SIXEL != 0) as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "SIXEL flag is {}",
+        ((*term).flags & TERM_SIXEL != 0) as ::core::ffi::c_int
+    ));
     if tty_term_has(term, TTYC_SETRGBF) != 0 && tty_term_has(term, TTYC_SETRGBB) != 0 {
         (*term).flags |= TERM_RGBCOLOURS;
     } else {
         (*term).flags &= !TERM_RGBCOLOURS;
     }
-    log_debug(
-        b"RGBCOLOURS flag is %d\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*term).flags & TERM_RGBCOLOURS != 0) as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "RGBCOLOURS flag is {}",
+        ((*term).flags & TERM_RGBCOLOURS != 0) as ::core::ffi::c_int
+    ));
     if tty_term_has(term, TTYC_CMG) != 0 && tty_term_has(term, TTYC_CLMG) != 0 {
         (*term).flags |= TERM_DECSLRM;
     } else {
         (*term).flags &= !TERM_DECSLRM;
     }
-    log_debug(
-        b"DECSLRM flag is %d\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*term).flags & TERM_DECSLRM != 0) as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "DECSLRM flag is {}",
+        ((*term).flags & TERM_DECSLRM != 0) as ::core::ffi::c_int
+    ));
     if tty_term_has(term, TTYC_RECT) != 0 {
         (*term).flags |= TERM_DECFRA;
     } else {
         (*term).flags &= !TERM_DECFRA;
     }
-    log_debug(
-        b"DECFRA flag is %d\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*term).flags & TERM_DECFRA != 0) as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "DECFRA flag is {}",
+        ((*term).flags & TERM_DECFRA != 0) as ::core::ffi::c_int
+    ));
     if tty_term_flag(term, TTYC_AM) == 0 {
         (*term).flags |= TERM_NOAM;
     } else {
         (*term).flags &= !TERM_NOAM;
     }
-    log_debug(
-        b"NOAM flag is %d\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*term).flags & TERM_NOAM != 0) as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "NOAM flag is {}",
+        ((*term).flags & TERM_NOAM != 0) as ::core::ffi::c_int
+    ));
     memset(
         &raw mut (*term).acs as *mut [::core::ffi::c_char; 2] as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -1269,7 +1269,7 @@ unsafe fn tty_term_validate(mut term: *mut tty_term) {
         (*term).flags &= !TERM_INVALIDMS;
         return;
     }
-    log_debug(b"removing invalid Ms capability\0" as *const u8 as *const ::core::ffi::c_char);
+    log_debug(format_args!("removing invalid Ms capability"));
     (*term).flags |= TERM_INVALIDMS;
     (&mut (*term).codes)[TTYC_MS as usize] = tty_code::None;
 }
@@ -1295,10 +1295,7 @@ pub unsafe fn tty_term_create(
     let mut first: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut n: ::core::ffi::c_int = 0;
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    log_debug(
-        b"adding term %s\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
-    );
+    log_debug(format_args!("adding term {}", log_cstr((name) as *const _)));
     // The global list and tty keep this address until tty_term_free.
     let mut owner = Box::new(tty_term {
         name: CStr::from_ptr(name).to_owned(),
@@ -1356,11 +1353,11 @@ pub unsafe fn tty_term_create(
                                     &raw mut errstr,
                                 ) as ::core::ffi::c_int;
                                 if !errstr.is_null() {
-                                    log_debug(
-                                        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                                        (*ent).name,
-                                        errstr,
-                                    );
+                                    log_debug(format_args!(
+                                        "{}: {}",
+                                        log_cstr((*ent).name.as_ptr()),
+                                        log_cstr((errstr) as *const _)
+                                    ));
                                 } else {
                                     (&mut (*term).codes)[j as usize] = tty_code::Number(n);
                                 }
@@ -1410,15 +1407,21 @@ pub unsafe fn tty_term_create(
         b"COLORTERM\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if !envent.is_null() {
-        log_debug(
-            b"%s COLORTERM=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ((*envent).value)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{} COLORTERM={}",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr(
+                (((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         if strcasecmp(
             ((*envent).value)
                 .as_ref()
@@ -1487,11 +1490,11 @@ pub unsafe fn tty_term_create(
         }
         i = 0 as u_int;
         while i < tty_term_ncodes() {
-            log_debug(
-                b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-                tty_term_describe(term, i as tty_code_code),
-            );
+            log_debug(format_args!(
+                "{}{}",
+                log_cstr((name) as *const _),
+                log_cstr((tty_term_describe(term, i as tty_code_code)) as *const _)
+            ));
             i = i.wrapping_add(1);
         }
         return Ok(term);
@@ -1500,10 +1503,10 @@ pub unsafe fn tty_term_create(
     Err(error.expect("unsupported terminal has an error message"))
 }
 pub unsafe fn tty_term_free(mut term: *mut tty_term) {
-    log_debug(
-        b"removing term %s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*term).name).as_ptr().cast_mut(),
-    );
+    log_debug(format_args!(
+        "removing term {}",
+        log_cstr((((*term).name).as_ptr().cast_mut()) as *const _)
+    ));
     if !(*term).entry.le_next.is_null() {
         (*(*term).entry.le_next).entry.le_prev = (*term).entry.le_prev;
     }
@@ -1648,10 +1651,10 @@ pub unsafe fn tty_term_string_i(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a);
     if s.is_null() {
-        log_debug(
-            b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name.as_ptr(),
-        );
+        log_debug(format_args!(
+            "could not expand {}",
+            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+        ));
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     return s;
@@ -1666,10 +1669,10 @@ pub unsafe fn tty_term_string_ii(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(2 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b);
     if s.is_null() {
-        log_debug(
-            b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name.as_ptr(),
-        );
+        log_debug(format_args!(
+            "could not expand {}",
+            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+        ));
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     return s;
@@ -1685,10 +1688,10 @@ pub unsafe fn tty_term_string_iii(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(3 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b, c);
     if s.is_null() {
-        log_debug(
-            b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name.as_ptr(),
-        );
+        log_debug(format_args!(
+            "could not expand {}",
+            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+        ));
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     return s;
@@ -1702,10 +1705,10 @@ pub unsafe fn tty_term_string_s(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(1 as ::core::ffi::c_int, 1 as ::core::ffi::c_int, x, a);
     if s.is_null() {
-        log_debug(
-            b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name.as_ptr(),
-        );
+        log_debug(format_args!(
+            "could not expand {}",
+            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+        ));
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     return s;
@@ -1720,10 +1723,10 @@ pub unsafe fn tty_term_string_ss(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(2 as ::core::ffi::c_int, 3 as ::core::ffi::c_int, x, a, b);
     if s.is_null() {
-        log_debug(
-            b"could not expand %s\0" as *const u8 as *const ::core::ffi::c_char,
-            tty_term_codes[code as usize].name.as_ptr(),
-        );
+        log_debug(format_args!(
+            "could not expand {}",
+            log_cstr((tty_term_codes[code as usize].name.as_ptr()) as *const _)
+        ));
         return b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     return s;

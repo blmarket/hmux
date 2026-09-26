@@ -8,7 +8,7 @@ use crate::src::ffi::libc::{
 use crate::src::ffi::resolv::__b64_pton;
 use crate::src::input::{input_client_has_requests, input_request_reply};
 use crate::src::key_string::key_string_format;
-use crate::src::log::{log_debug, log_get_level};
+use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
 use crate::src::options::{options_array_get_index, options_get, options_get_number};
 use crate::src::paste::paste_add_owned;
 use crate::src::reactor::{
@@ -1240,20 +1240,20 @@ unsafe fn tty_keys_add(tty: *mut tty, s: *const ::core::ffi::c_char, key: key_co
     let key_string = key_string_format(key, true);
     let mut size = 0;
     if let Some(tk) = tty_keys_find_mut((*tty).key_tree.as_deref_mut(), bytes, &mut size) {
-        log_debug(
-            c"replacing key %s: 0x%llx (%s)".as_ptr(),
-            s,
-            key,
-            key_string.as_ptr(),
-        );
+        log_debug(format_args!(
+            "replacing key {}: 0x{:x} ({})",
+            log_cstr((s) as *const _),
+            (key) as u64,
+            log_cstr((key_string.as_ptr()) as *const _)
+        ));
         tk.key = key;
     } else {
-        log_debug(
-            c"new key %s: 0x%llx (%s)".as_ptr(),
-            s,
-            key,
-            key_string.as_ptr(),
-        );
+        log_debug(format_args!(
+            "new key {}: 0x{:x} ({})",
+            log_cstr((s) as *const _),
+            (key) as u64,
+            log_cstr((key_string.as_ptr()) as *const _)
+        ));
         tty_keys_add1(&mut (*tty).key_tree, bytes, key);
     }
 }
@@ -1433,16 +1433,18 @@ unsafe fn tty_keys_next1(
     let mut more: utf8_state = UTF8_MORE;
     let mut uc: utf8_char = 0;
     let mut i: u_int = 0;
-    log_debug(
-        b"%s: next key is %zu (%.*s) (expired=%d)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        len,
-        len as ::core::ffi::c_int,
-        buf,
-        expired,
-    );
+    log_debug(format_args!(
+        "{}: next key is {} ({}) (expired={})",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        (len) as usize,
+        log_cstr_n((buf) as *const _, len as ::core::ffi::c_int),
+        (expired) as i32
+    ));
     *size = 0;
     let bytes = if len == 0 {
         &[]
@@ -1454,13 +1456,17 @@ unsafe fn tty_keys_next1(
     {
         let mut current = Some(tk);
         while let Some(node) = current {
-            log_debug(
-                c"%s: keys in list: %#llx".as_ptr(),
-                (*c).name
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                node.key,
-            );
+            log_debug(format_args!(
+                "{}: keys in list: {}",
+                log_cstr(
+                    ((*c)
+                        .name
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                ),
+                log_hex((node.key) as u64)
+            ));
             current = node.next.as_deref();
         }
         if tk.next.is_some() && expired == 0 {
@@ -1492,15 +1498,20 @@ unsafe fn tty_keys_next1(
             return -(1 as ::core::ffi::c_int);
         }
         *key = uc as key_code;
-        log_debug(
-            b"%s: UTF-8 key %.*s %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ud.size as ::core::ffi::c_int,
-            &raw mut ud.data as *mut u_char,
-            *key,
-        );
+        log_debug(format_args!(
+            "{}: UTF-8 key {} {}",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr_n(
+                (&raw mut ud.data as *mut u_char) as *const _,
+                ud.size as ::core::ffi::c_int
+            ),
+            log_hex((*key) as u64)
+        ));
         return 0 as ::core::ffi::c_int;
     }
     return -(1 as ::core::ffi::c_int);
@@ -1599,13 +1610,16 @@ unsafe fn tty_keys_winsz(
         *size = end.wrapping_add(1 as size_t);
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"%s: unrecognized window size sequence: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        &raw mut tmp as *mut ::core::ffi::c_char,
-    );
+    log_debug(format_args!(
+        "{}: unrecognized window size sequence: {}",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _)
+    ));
     return -(1 as ::core::ffi::c_int);
 }
 pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
@@ -1651,15 +1665,17 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
     if len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"%s: keys are %zu (%.*s)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        len,
-        len as ::core::ffi::c_int,
-        buf,
-    );
+    log_debug(format_args!(
+        "{}: keys are {} ({})",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        (len) as usize,
+        log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
+    ));
     match tty_keys_clipboard(tty, buf, len, &raw mut size) {
         0 => {
             key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -1841,14 +1857,17 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                                     key = KEYC_MOUSE
                                                                         as ::core::ffi::c_ulong
                                                                         as key_code;
-                                                                    log_debug(
-                                                                        b"%s: discard key %.*s %#llx\0" as *const u8
-                                                                            as *const ::core::ffi::c_char,
-                                                                        ((*c).name).as_ref().map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                                                                        size as ::core::ffi::c_int,
-                                                                        buf,
-                                                                        key,
-                                                                    );
+                                                                    log_debug(format_args!(
+                                                                        "{}: discard key {} {}",
+                                                                        log_cstr(
+                                                                            (((*c).name)
+                                                                                .as_ref()
+                                                                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                                                                                as *const _
+                                                                        ),
+                                                                        log_cstr_n((buf) as *const _, size as ::core::ffi::c_int),
+                                                                        log_hex((key) as u64)
+                                                                    ));
                                                                     evbuffer_drain(
                                                                         (*tty).in_0,
                                                                         size,
@@ -2006,24 +2025,29 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 bspace = (*tty).tio.c_cc[VERASE as usize];
                 if bspace as ::core::ffi::c_int != _POSIX_VDISABLE {
                     if key == bspace as key_code {
-                        log_debug(
-                            b"%s: key %#llx is BSpace\0" as *const u8 as *const ::core::ffi::c_char,
-                            ((*c).name)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                            key,
-                        );
+                        log_debug(format_args!(
+                            "{}: key {} is BSpace",
+                            log_cstr(
+                                (((*c).name)
+                                    .as_ref()
+                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                                    as *const _
+                            ),
+                            log_hex((key) as u64)
+                        ));
                         key = KEYC_BSPACE as ::core::ffi::c_ulong as key_code;
                     }
                     if key == bspace as ::core::ffi::c_ulonglong | KEYC_META {
-                        log_debug(
-                            b"%s: key %#llx is M-BSpace\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            ((*c).name)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                            key,
-                        );
+                        log_debug(format_args!(
+                            "{}: key {} is M-BSpace",
+                            log_cstr(
+                                (((*c).name)
+                                    .as_ref()
+                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                                    as *const _
+                            ),
+                            log_hex((key) as u64)
+                        ));
                         key = (KEYC_BSPACE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                             | KEYC_META) as key_code;
                     }
@@ -2046,15 +2070,17 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 current_block = 5025795842197473417;
             }
             5025795842197473417 => {
-                log_debug(
-                    b"%s: complete key %.*s %#llx\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*c).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    size as ::core::ffi::c_int,
-                    buf,
-                    key,
-                );
+                log_debug(format_args!(
+                    "{}: complete key {} {}",
+                    log_cstr(
+                        (((*c).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                            as *const _
+                    ),
+                    log_cstr_n((buf) as *const _, size as ::core::ffi::c_int),
+                    log_hex((key) as u64)
+                ));
                 if event_initialized(&(*tty).key_timer) != 0 {
                     event_del(&raw mut (*tty).key_timer);
                 }
@@ -2096,14 +2122,16 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 return 1 as ::core::ffi::c_int;
             }
             _ => {
-                log_debug(
-                    b"%s: partial key %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*c).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    len as ::core::ffi::c_int,
-                    buf,
-                );
+                log_debug(format_args!(
+                    "{}: partial key {}",
+                    log_cstr(
+                        (((*c).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                            as *const _
+                    ),
+                    log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
+                ));
                 if (*tty).flags & TTY_TIMER != 0 {
                     if event_initialized(&(*tty).key_timer) != 0
                         && event_pending(
@@ -2135,13 +2163,15 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         | BracketedPasteBoundaryMatch::NoMatch { .. } => false,
                     };
                     if (*tty).flags & TTY_BRACKETPASTE != 0 && partial_paste_end {
-                        log_debug(
-                            b"%s: increasing delay (partial paste end)\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            ((*c).name)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        );
+                        log_debug(format_args!(
+                            "{}: increasing delay (partial paste end)",
+                            log_cstr(
+                                (((*c).name)
+                                    .as_ref()
+                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                                    as *const _
+                            )
+                        ));
                         if delay < 500 as ::core::ffi::c_int {
                             delay = 500 as ::core::ffi::c_int;
                         }
@@ -2151,13 +2181,15 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         || (*tty).flags & TTY_ALL_REQUEST_FLAGS != TTY_ALL_REQUEST_FLAGS
                         || input_client_has_requests(c)
                     {
-                        log_debug(
-                            b"%s: increasing delay (active query)\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            ((*c).name)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        );
+                        log_debug(format_args!(
+                            "{}: increasing delay (active query)",
+                            log_cstr(
+                                (((*c).name)
+                                    .as_ref()
+                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                                    as *const _
+                            )
+                        ));
                         if delay < 500 as ::core::ffi::c_int {
                             delay = 500 as ::core::ffi::c_int;
                         }
@@ -2328,16 +2360,18 @@ unsafe fn tty_keys_extended_key(
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
         let key_string = key_string_format(nkey, true);
-        log_debug(
-            b"%s: extended key %.*s is %llx (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            *size as ::core::ffi::c_int,
-            buf,
-            nkey,
-            key_string.as_ptr(),
-        );
+        log_debug(format_args!(
+            "{}: extended key {} is {:x} ({})",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int),
+            (nkey) as u64,
+            log_cstr((key_string.as_ptr()) as *const _)
+        ));
     }
     *key = nkey;
     return 0 as ::core::ffi::c_int;
@@ -2394,14 +2428,16 @@ unsafe fn tty_keys_mouse(
             }
             i = i.wrapping_add(1);
         }
-        log_debug(
-            b"%s: mouse input: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            *size as ::core::ffi::c_int,
-            buf,
-        );
+        log_debug(format_args!(
+            "{}: mouse input: {}",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
+        ));
         if b < MOUSE_PARAM_BTN_OFF as u_int
             || x < MOUSE_PARAM_POS_OFF as u_int
             || y < MOUSE_PARAM_POS_OFF as u_int
@@ -2464,14 +2500,16 @@ unsafe fn tty_keys_mouse(
                 .wrapping_mul(y)
                 .wrapping_add((ch as ::core::ffi::c_int - '0' as i32) as u_int);
         }
-        log_debug(
-            b"%s: mouse input (SGR): %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            *size as ::core::ffi::c_int,
-            buf,
-        );
+        log_debug(format_args!(
+            "{}: mouse input (SGR): {}",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
+        ));
         if x < 1 as u_int || y < 1 as u_int {
             return -(2 as ::core::ffi::c_int);
         }
@@ -2605,12 +2643,14 @@ unsafe fn tty_keys_clipboard(
     }
     out.set_len(outlen as usize);
     drop(copy);
-    log_debug(
-        b"%s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"tty_keys_clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-        outlen,
-        out.as_ptr().cast::<::core::ffi::c_char>(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "tty_keys_clipboard",
+        log_cstr_n(
+            (out.as_ptr().cast::<::core::ffi::c_char>()) as *const _,
+            outlen
+        )
+    ));
     let mut cd = input_request_clipboard_data { data: out, clip };
     input_request_reply(
         c,
@@ -2741,13 +2781,16 @@ unsafe fn tty_keys_device_attributes(
         61..=65 => {
             i = 1 as u_int;
             while i < n {
-                log_debug(
-                    b"%s: DA feature: %d\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*c).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    p[i as usize] as ::core::ffi::c_int,
-                );
+                log_debug(format_args!(
+                    "{}: DA feature: {}",
+                    log_cstr(
+                        (((*c).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                            as *const _
+                    ),
+                    p[i as usize] as ::core::ffi::c_int
+                ));
                 if p[i as usize] as ::core::ffi::c_int == 4 as ::core::ffi::c_int {
                     tty_parse_client_features(
                         c,
@@ -2781,14 +2824,16 @@ unsafe fn tty_keys_device_attributes(
         }
         _ => {}
     }
-    log_debug(
-        b"%s: received primary DA %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        *size as ::core::ffi::c_int,
-        buf,
-    );
+    log_debug(format_args!(
+        "{}: received primary DA {}",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
+    ));
     tty_update_features(tty);
     (*tty).flags |= TTY_HAVEDA;
     return 0 as ::core::ffi::c_int;
@@ -2859,14 +2904,16 @@ unsafe fn tty_keys_sync(
         );
         tty_update_features(tty);
     }
-    log_debug(
-        b"%s: received DECRPM %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        *size as ::core::ffi::c_int,
-        buf,
-    );
+    log_debug(format_args!(
+        "{}: received DECRPM {}",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
+    ));
     (*tty).flags |= TTY_HAVESYNC;
     return 0 as ::core::ffi::c_int;
 }
@@ -2998,14 +3045,16 @@ unsafe fn tty_keys_device_attributes2(
         }
         _ => {}
     }
-    log_debug(
-        b"%s: received secondary DA %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        *size as ::core::ffi::c_int,
-        buf,
-    );
+    log_debug(format_args!(
+        "{}: received secondary DA {}",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
+    ));
     tty_update_features(tty);
     (*tty).flags |= TTY_HAVEDA2;
     return 0 as ::core::ffi::c_int;
@@ -3132,14 +3181,16 @@ unsafe fn tty_keys_extended_device_attributes(
     {
         tty_default_features(c, b"Rio\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    log_debug(
-        b"%s: received extended DA %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        *size as ::core::ffi::c_int,
-        buf,
-    );
+    log_debug(format_args!(
+        "{}: received extended DA {}",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
+    ));
     server_client_set_term_type(&mut *c, Some(CStr::from_ptr(tmp.as_ptr()).to_owned()));
     tty_update_features(tty);
     (*tty).flags |= TTY_HAVEXDA;
@@ -3235,35 +3286,41 @@ pub unsafe fn tty_keys_colours(
         && *buf.offset(3 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '0' as i32
     {
         if !c.is_null() {
-            log_debug(
-                b"%s fg is %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                colour_format(n).as_ptr(),
-            );
+            log_debug(format_args!(
+                "{} fg is {}",
+                log_cstr(
+                    (((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                ),
+                log_cstr((colour_format(n).as_ptr()) as *const _)
+            ));
         } else {
-            log_debug(
-                b"fg is %s\0" as *const u8 as *const ::core::ffi::c_char,
-                colour_format(n).as_ptr(),
-            );
+            log_debug(format_args!(
+                "fg is {}",
+                log_cstr((colour_format(n).as_ptr()) as *const _)
+            ));
         }
         *fg = n;
         (*tty).flags &= !TTY_WAITFG;
     } else if n != -(1 as ::core::ffi::c_int) {
         if !c.is_null() {
-            log_debug(
-                b"%s bg is %s\0" as *const u8 as *const ::core::ffi::c_char,
-                ((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                colour_format(n).as_ptr(),
-            );
+            log_debug(format_args!(
+                "{} bg is {}",
+                log_cstr(
+                    (((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                ),
+                log_cstr((colour_format(n).as_ptr()) as *const _)
+            ));
         } else {
-            log_debug(
-                b"bg is %s\0" as *const u8 as *const ::core::ffi::c_char,
-                colour_format(n).as_ptr(),
-            );
+            log_debug(format_args!(
+                "bg is {}",
+                log_cstr((colour_format(n).as_ptr()) as *const _)
+            ));
         }
         *bg = n;
         (*tty).flags &= !TTY_WAITBG;

@@ -247,11 +247,11 @@ unsafe fn cmd_pipe_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     }
     evb = (*(*wp).pipe_event).input;
     available = evbuffer_get_length(&*(evb));
-    log_debug(
-        b"%%%u pipe read %zu\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        available,
-    );
+    log_debug(format_args!(
+        "%{} pipe read {}",
+        ((*wp).id) as u32,
+        (available) as usize
+    ));
     bufferevent_write(
         (*wp).event,
         evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *const ::core::ffi::c_void,
@@ -264,20 +264,14 @@ unsafe fn cmd_pipe_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn cmd_pipe_pane_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
-    log_debug(
-        b"%%%u pipe empty\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!("%{} pipe empty", ((*wp).id) as u32));
     if window_pane_destroy_ready(wp) != 0 {
         server_destroy_pane(wp, 1 as ::core::ffi::c_int);
     }
 }
 unsafe fn cmd_pipe_pane_error_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
-    log_debug(
-        b"%%%u pipe error\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!("%{} pipe error", ((*wp).id) as u32));
     bufferevent_free((*wp).pipe_event);
     close((*wp).pipe_fd);
     (*wp).pipe_fd = -(1 as ::core::ffi::c_int);

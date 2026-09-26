@@ -7,7 +7,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::sscanf;
 use crate::src::layout::layout_resize;
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::server::clients;
 use crate::src::server_fn::server_redraw_window;
@@ -118,15 +118,15 @@ pub unsafe fn resize_window(
         sy = (*(*w).layout_root).g.sy;
     }
     window_resize(w, sx, sy, xpixel, ypixel);
-    log_debug(
-        b"%s: @%u resized to %ux%u; layout %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"resize_window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        sx,
-        sy,
-        (*(*w).layout_root).g.sx,
-        (*(*w).layout_root).g.sy,
-    );
+    log_debug(format_args!(
+        "{}: @{} resized to {}x{}; layout {}x{}",
+        "resize_window",
+        ((*w).id) as u32,
+        (sx) as u32,
+        (sy) as u32,
+        ((*(*w).layout_root).g.sx) as u32,
+        ((*(*w).layout_root).g.sy) as u32
+    ));
     if !zwp.is_null() && window_has_pane(w, zwp) != 0 {
         window_zoom(zwp);
     }
@@ -203,12 +203,12 @@ unsafe fn clients_calculate_size(
     } else if !w.is_null() && type_0 == WINDOW_SIZE_MANUAL {
         *sx = (*w).manual_sx;
         *sy = (*w).manual_sy;
-        log_debug(
-            b"%s: manual size %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-            *sx,
-            *sy,
-        );
+        log_debug(format_args!(
+            "{}: manual size {}x{}",
+            "clients_calculate_size",
+            (*sx) as u32,
+            (*sy) as u32
+        ));
     } else {
         *sx = UINT_MAX as u_int;
         *sy = UINT_MAX as u_int;
@@ -222,32 +222,41 @@ unsafe fn clients_calculate_size(
         loop_0 = clients.first();
         while !loop_0.is_null() {
             if loop_0 != c && ignore_client_size(loop_0) != 0 {
-                log_debug(
-                    b"%s: ignoring %s (1)\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*loop_0).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                );
+                log_debug(format_args!(
+                    "{}: ignoring {} (1)",
+                    "clients_calculate_size",
+                    log_cstr(
+                        (((*loop_0).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                            as *const _
+                    )
+                ));
             } else if loop_0 != c && skip_client(&*loop_0) {
-                log_debug(
-                    b"%s: skipping %s (1)\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*loop_0).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                );
+                log_debug(format_args!(
+                    "{}: skipping {} (1)",
+                    "clients_calculate_size",
+                    log_cstr(
+                        (((*loop_0).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                            as *const _
+                    )
+                ));
             } else if type_0 == WINDOW_SIZE_LATEST
                 && n > 1 as u_int
                 && loop_0 != (*w).latest as *mut client
             {
-                log_debug(
-                    b"%s: %s is not latest\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*loop_0).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                );
+                log_debug(format_args!(
+                    "{}: {} is not latest",
+                    "clients_calculate_size",
+                    log_cstr(
+                        (((*loop_0).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                            as *const _
+                    )
+                ));
             } else {
                 if w.is_null()
                     || control_get_window_size(loop_0, (*w).id, &raw mut cx, &raw mut cy) == 0
@@ -276,33 +285,35 @@ unsafe fn clients_calculate_size(
                     *xpixel = (*loop_0).tty.xpixel;
                     *ypixel = (*loop_0).tty.ypixel;
                 }
-                log_debug(
-                    b"%s: after %s (%ux%u), size is %ux%u\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                    b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                    ((*loop_0).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    cx,
-                    cy,
-                    *sx,
-                    *sy,
-                );
+                log_debug(format_args!(
+                    "{}: after {} ({}x{}), size is {}x{}",
+                    "clients_calculate_size",
+                    log_cstr(
+                        (((*loop_0).name)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                            as *const _
+                    ),
+                    (cx) as u32,
+                    (cy) as u32,
+                    (*sx) as u32,
+                    (*sy) as u32
+                ));
             }
             loop_0 = clients.next(loop_0);
         }
         if *sx != UINT_MAX && *sy != UINT_MAX {
-            log_debug(
-                b"%s: calculated size %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-                b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-                *sx,
-                *sy,
-            );
+            log_debug(format_args!(
+                "{}: calculated size {}x{}",
+                "clients_calculate_size",
+                (*sx) as u32,
+                (*sy) as u32
+            ));
         } else {
-            log_debug(
-                b"%s: no calculated size\0" as *const u8 as *const ::core::ffi::c_char,
-                b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            log_debug(format_args!(
+                "{}: no calculated size",
+                "clients_calculate_size"
+            ));
         }
     }
     if !w.is_null() {
@@ -316,20 +327,22 @@ unsafe fn clients_calculate_size(
                         if !(control_get_window_size(loop_0, (*w).id, &raw mut cx, &raw mut cy)
                             == 0)
                         {
-                            log_debug(
-                                b"%s: %s size for @%u is %ux%u\0" as *const u8
-                                    as *const ::core::ffi::c_char,
-                                b"clients_calculate_size\0" as *const u8
-                                    as *const ::core::ffi::c_char,
-                                ((*loop_0).name)
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| {
-                                        value.as_ptr().cast_mut()
-                                    }),
-                                (*w).id,
-                                cx,
-                                cy,
-                            );
+                            log_debug(format_args!(
+                                "{}: {} size for @{} is {}x{}",
+                                log_cstr(
+                                    (b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char) as *const _
+                                ),
+                                log_cstr(
+                                    (((*loop_0).name)
+                                        .as_ref()
+                                        .map_or(::core::ptr::null_mut(), |value| {
+                                            value.as_ptr().cast_mut()
+                                        })) as *const _
+                                ),
+                                ((*w).id) as u32,
+                                (cx) as u32,
+                                (cy) as u32
+                            ));
                             if cx != 0 as u_int && *sx > cx {
                                 *sx = cx;
                             }
@@ -344,42 +357,36 @@ unsafe fn clients_calculate_size(
         }
     }
     if *sx != UINT_MAX && *sy != UINT_MAX {
-        log_debug(
-            b"%s: calculated size %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-            *sx,
-            *sy,
-        );
+        log_debug(format_args!(
+            "{}: calculated size {}x{}",
+            "clients_calculate_size",
+            (*sx) as u32,
+            (*sy) as u32
+        ));
     } else {
-        log_debug(
-            b"%s: no calculated size\0" as *const u8 as *const ::core::ffi::c_char,
-            b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!(
+            "{}: no calculated size",
+            "clients_calculate_size"
+        ));
     }
     if type_0 == WINDOW_SIZE_MANUAL {
-        log_debug(
-            b"%s: type is manual\0" as *const u8 as *const ::core::ffi::c_char,
-            b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!("{}: type is manual", "clients_calculate_size"));
         return (w != NULL as *mut window) as ::core::ffi::c_int;
     }
     if type_0 == WINDOW_SIZE_LARGEST {
-        log_debug(
-            b"%s: type is largest\0" as *const u8 as *const ::core::ffi::c_char,
-            b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!(
+            "{}: type is largest",
+            "clients_calculate_size"
+        ));
         return (*sx != 0 as u_int && *sy != 0 as u_int) as ::core::ffi::c_int;
     }
     if type_0 == WINDOW_SIZE_LATEST {
-        log_debug(
-            b"%s: type is latest\0" as *const u8 as *const ::core::ffi::c_char,
-            b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!("{}: type is latest", "clients_calculate_size"));
     } else {
-        log_debug(
-            b"%s: type is smallest\0" as *const u8 as *const ::core::ffi::c_char,
-            b"clients_calculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!(
+            "{}: type is smallest",
+            "clients_calculate_size"
+        ));
     }
     return (*sx != UINT_MAX && *sy != UINT_MAX) as ::core::ffi::c_int;
 }
@@ -405,15 +412,18 @@ pub unsafe fn default_window_size(
         *sy = (*c).tty.sy.wrapping_sub(status_line_size(c));
         *xpixel = (*c).tty.xpixel;
         *ypixel = (*c).tty.ypixel;
-        log_debug(
-            b"%s: using %ux%u from %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"default_window_size\0" as *const u8 as *const ::core::ffi::c_char,
-            *sx,
-            *sy,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: using {}x{} from {}",
+            "default_window_size",
+            (*sx) as u32,
+            (*sy) as u32,
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
     } else {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             c = ::core::ptr::null_mut::<client>();
@@ -446,12 +456,12 @@ pub unsafe fn default_window_size(
                 *sx = 80 as u_int;
                 *sy = 24 as u_int;
             }
-            log_debug(
-                b"%s: using %ux%u from default-size\0" as *const u8 as *const ::core::ffi::c_char,
-                b"default_window_size\0" as *const u8 as *const ::core::ffi::c_char,
-                *sx,
-                *sy,
-            );
+            log_debug(format_args!(
+                "{}: using {}x{} from default-size",
+                "default_window_size",
+                (*sx) as u32,
+                (*sy) as u32
+            ));
         }
     }
     if *sx < WINDOW_MINIMUM as u_int {
@@ -466,12 +476,12 @@ pub unsafe fn default_window_size(
     if *sy > WINDOW_MAXIMUM as u_int {
         *sy = WINDOW_MAXIMUM as u_int;
     }
-    log_debug(
-        b"%s: resulting size is %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"default_window_size\0" as *const u8 as *const ::core::ffi::c_char,
-        *sx,
-        *sy,
-    );
+    log_debug(format_args!(
+        "{}: resulting size is {}x{}",
+        "default_window_size",
+        (*sx) as u32,
+        (*sy) as u32
+    ));
 }
 pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) {
     let mut sx: u_int = 0;
@@ -484,13 +494,13 @@ pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) 
     if (*w).active.is_null() {
         return;
     }
-    log_debug(
-        b"%s: @%u is %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"recalculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        (*w).sx,
-        (*w).sy,
-    );
+    log_debug(format_args!(
+        "{}: @{} is {}x{}",
+        "recalculate_size",
+        ((*w).id) as u32,
+        ((*w).sx) as u32,
+        ((*w).sy) as u32
+    ));
     type_0 = options_get_number(
         (*w).options,
         b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
@@ -527,21 +537,21 @@ pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) 
         changed = 0 as ::core::ffi::c_int;
     }
     if changed == 0 {
-        log_debug(
-            b"%s: @%u no size change\0" as *const u8 as *const ::core::ffi::c_char,
-            b"recalculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-        );
+        log_debug(format_args!(
+            "{}: @{} no size change",
+            "recalculate_size",
+            ((*w).id) as u32
+        ));
         tty_update_window_offset(w);
         return;
     }
-    log_debug(
-        b"%s: @%u new size %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"recalculate_size\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        sx,
-        sy,
-    );
+    log_debug(format_args!(
+        "{}: @{} new size {}x{}",
+        "recalculate_size",
+        ((*w).id) as u32,
+        (sx) as u32,
+        (sy) as u32
+    ));
     if now != 0 || type_0 == WINDOW_SIZE_MANUAL {
         resize_window(
             w,

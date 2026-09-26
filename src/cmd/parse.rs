@@ -8,7 +8,7 @@ use crate::src::environ::environ_put;
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_value;
 use crate::src::shared::arguments::*;
@@ -338,17 +338,19 @@ unsafe fn cmd_parse_log_commands(mut cmds: *mut cmd_parse_commands, prefix: &CSt
             arg = cmd_parse_argument_at(&raw mut (*cmd).arguments, j as usize);
             match (*arg).type_0 as ::core::ffi::c_uint {
                 0 => {
-                    log_debug(
-                        b"%s %u:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        prefix.as_ptr(),
-                        i,
-                        j,
-                        (*arg)
-                            .string
-                            .as_ref()
-                            .expect("parser string argument owns its text")
-                            .as_ptr(),
-                    );
+                    log_debug(format_args!(
+                        "{} {}:{}: {}",
+                        log_cstr((prefix.as_ptr()) as *const _),
+                        (i) as u32,
+                        (j) as u32,
+                        log_cstr(
+                            ((*arg)
+                                .string
+                                .as_ref()
+                                .expect("parser string argument owns its text")
+                                .as_ptr()) as *const _
+                        )
+                    ));
                 }
                 1 => {
                     let mut nested = prefix.to_bytes().to_vec();
@@ -358,13 +360,13 @@ unsafe fn cmd_parse_log_commands(mut cmds: *mut cmd_parse_commands, prefix: &CSt
                 }
                 2 => {
                     let s = cmd_list_print_cstring(&*(*arg).cmdlist, 0);
-                    log_debug(
-                        b"%s %u:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        prefix.as_ptr(),
-                        i,
-                        j,
-                        s.as_ptr(),
-                    );
+                    log_debug(format_args!(
+                        "{} {}:{}: {}",
+                        log_cstr((prefix.as_ptr()) as *const _),
+                        (i) as u32,
+                        (j) as u32,
+                        log_cstr((s.as_ptr()) as *const _)
+                    ));
                 }
                 _ => {}
             }
@@ -404,13 +406,13 @@ unsafe fn cmd_parse_expand_alias(
     let Some(alias) = cmd_get_alias(CStr::from_ptr(name)) else {
         return 0 as ::core::ffi::c_int;
     };
-    log_debug(
-        b"%s: %u alias %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
-        c"cmd_parse_expand_alias".as_ptr(),
-        (*pi).line,
-        name,
-        alias.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {} alias {} = {}",
+        "cmd_parse_expand_alias",
+        ((*pi).line) as u32,
+        log_cstr((name) as *const _),
+        log_cstr((alias.as_ptr()) as *const _)
+    ));
     let parsed = cmd_parse_do_buffer(alias.as_ptr(), alias.as_bytes().len(), pi);
     cmds = match parsed {
         Ok(cmds) => cmds,
@@ -580,11 +582,11 @@ unsafe fn cmd_parse_build_commands(
         cmd_list_free(current);
     }
     let s = cmd_list_print_cstring(&*result, 0);
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        c"cmd_parse_build_commands".as_ptr(),
-        s.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "cmd_parse_build_commands",
+        log_cstr((s.as_ptr()) as *const _)
+    ));
     (*pr).status = CMD_PARSE_SUCCESS;
     (*pr).cmdlist = result;
 }

@@ -9,7 +9,7 @@ use crate::src::ffi::libc::{
     _exit, chdir, close, closefrom, dup2, execl, execvp, fork, ioctl, kill, killpg, memset, open,
     setenv, shutdown, sigfillset, sigprocmask, socketpair, strlcpy,
 };
-use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_pointer};
 use crate::src::options::options_get_string;
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::{
@@ -182,26 +182,30 @@ pub unsafe fn job_run(
         224731115979188411 => {
             if cmd.is_none() {
                 cmd_log_argv(argv, c"job_run:");
-                log_debug(
-                    b"%s: cwd=%s, shell=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"job_run\0" as *const u8 as *const ::core::ffi::c_char,
-                    cwd.map_or(
-                        b"\0" as *const u8 as *const ::core::ffi::c_char,
-                        CStr::as_ptr,
+                log_debug(format_args!(
+                    "{}: cwd={}, shell={}",
+                    "job_run",
+                    log_cstr(
+                        (cwd.map_or(
+                            b"\0" as *const u8 as *const ::core::ffi::c_char,
+                            CStr::as_ptr,
+                        )) as *const _
                     ),
-                    shell,
-                );
+                    log_cstr((shell) as *const _)
+                ));
             } else {
-                log_debug(
-                    b"%s: cmd=%s, cwd=%s, shell=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"job_run\0" as *const u8 as *const ::core::ffi::c_char,
-                    cmd.unwrap().as_ptr(),
-                    cwd.map_or(
-                        b"\0" as *const u8 as *const ::core::ffi::c_char,
-                        CStr::as_ptr,
+                log_debug(format_args!(
+                    "{}: cmd={}, cwd={}, shell={}",
+                    "job_run",
+                    log_cstr((cmd.unwrap().as_ptr()) as *const _),
+                    log_cstr(
+                        (cwd.map_or(
+                            b"\0" as *const u8 as *const ::core::ffi::c_char,
+                            CStr::as_ptr,
+                        )) as *const _
                     ),
-                    shell,
-                );
+                    log_cstr((shell) as *const _)
+                ));
             }
             match pid {
                 -1 => {
@@ -388,14 +392,17 @@ pub unsafe fn job_run(
                         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
                     }
                     bufferevent_enable((*job).event, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
-                    log_debug(
-                        b"run job %p: %s, pid %ld\0" as *const u8 as *const ::core::ffi::c_char,
-                        job,
-                        ((*job).cmd)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        (*job).pid as ::core::ffi::c_long,
-                    );
+                    log_debug(format_args!(
+                        "run job {}: {}, pid {}",
+                        log_pointer((job) as *const ::core::ffi::c_void),
+                        log_cstr(
+                            (((*job).cmd)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                                as *const _
+                        ),
+                        (*job).pid as ::core::ffi::c_long
+                    ));
                     return job;
                 }
             }
@@ -411,13 +418,16 @@ pub unsafe fn job_run(
     return ::core::ptr::null_mut::<job>();
 }
 pub unsafe fn job_free(mut job: *mut job) {
-    log_debug(
-        b"free job %p: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        job,
-        ((*job).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    log_debug(format_args!(
+        "free job {}: {}",
+        log_pointer((job) as *const ::core::ffi::c_void),
+        log_cstr(
+            (((*job).cmd)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        )
+    ));
     if !(*job).entry.le_next.is_null() {
         (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
     }
@@ -446,12 +456,12 @@ pub unsafe fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {
     if (*job).fd == -(1 as ::core::ffi::c_int) || !(*job).flags & JOB_PTY != 0 {
         return;
     }
-    log_debug(
-        b"resize job %p: %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-        job,
-        sx,
-        sy,
-    );
+    log_debug(format_args!(
+        "resize job {}: {}x{}",
+        log_pointer((job) as *const ::core::ffi::c_void),
+        (sx) as u32,
+        (sy) as u32
+    ));
     memset(
         &raw mut ws as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -482,15 +492,18 @@ unsafe fn job_read_callback(mut data: *mut ::core::ffi::c_void) {
 unsafe fn job_write_callback(mut data: *mut ::core::ffi::c_void) {
     let mut job: *mut job = data as *mut job;
     let mut len: size_t = evbuffer_get_length(&*(bufferevent_get_output((*job).event)));
-    log_debug(
-        b"job write %p: %s, pid %ld, output left %zu\0" as *const u8 as *const ::core::ffi::c_char,
-        job,
-        ((*job).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    log_debug(format_args!(
+        "job write {}: {}, pid {}, output left {}",
+        log_pointer((job) as *const ::core::ffi::c_void),
+        log_cstr(
+            (((*job).cmd)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
         (*job).pid as ::core::ffi::c_long,
-        len,
-    );
+        (len) as usize
+    ));
     if len == 0 as size_t && !(*job).flags & JOB_KEEPWRITE != 0 {
         shutdown((*job).fd, SHUT_WR as ::core::ffi::c_int);
         bufferevent_disable((*job).event, EV_WRITE as ::core::ffi::c_short);
@@ -498,14 +511,17 @@ unsafe fn job_write_callback(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn job_error_callback(mut data: *mut ::core::ffi::c_void) {
     let mut job: *mut job = data as *mut job;
-    log_debug(
-        b"job error %p: %s, pid %ld\0" as *const u8 as *const ::core::ffi::c_char,
-        job,
-        ((*job).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        (*job).pid as ::core::ffi::c_long,
-    );
+    log_debug(format_args!(
+        "job error {}: {}, pid {}",
+        log_pointer((job) as *const ::core::ffi::c_void),
+        log_cstr(
+            (((*job).cmd)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        (*job).pid as ::core::ffi::c_long
+    ));
     if (*job).state as ::core::ffi::c_uint == JOB_DEAD as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if let Some(callback) = (*job).completecb.take() {
@@ -538,14 +554,17 @@ pub unsafe fn job_check_died(mut pid: pid_t, mut status: ::core::ffi::c_int) {
         killpg((*job).pid as __pid_t, SIGCONT);
         return;
     }
-    log_debug(
-        b"job died %p: %s, pid %ld\0" as *const u8 as *const ::core::ffi::c_char,
-        job,
-        ((*job).cmd)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        (*job).pid as ::core::ffi::c_long,
-    );
+    log_debug(format_args!(
+        "job died {}: {}, pid {}",
+        log_pointer((job) as *const ::core::ffi::c_void),
+        log_cstr(
+            (((*job).cmd)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        (*job).pid as ::core::ffi::c_long
+    ));
     (*job).status = status;
     if (*job).state as ::core::ffi::c_uint
         == JOB_CLOSED as ::core::ffi::c_int as ::core::ffi::c_uint

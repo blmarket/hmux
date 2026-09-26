@@ -10,7 +10,7 @@ use crate::src::hooks::hooks_monitor_free;
 use crate::src::input::input_set_buffer_size;
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::layout::layout_fix_panes;
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options_parse::{
     match_option_name, parse_array_index, parse_option_name, ArrayIndex, ArrayIndexError,
     OptionNameMatch, OptionNameMatchError,
@@ -1301,12 +1301,12 @@ pub unsafe fn options_string_to_style(
     }
     s = (*o).value.string_ptr();
     oe = (*o).tableentry;
-    log_debug(
-        b"%s: %s is '%s'\0" as *const u8 as *const ::core::ffi::c_char,
-        b"options_string_to_style\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
-        s,
-    );
+    log_debug(format_args!(
+        "{}: {} is '{}'",
+        "options_string_to_style",
+        log_cstr((name) as *const _),
+        log_cstr((s) as *const _)
+    ));
     style_set(&raw mut (*o).style, dgc);
     (*o).cached = (strstr(s, b"#{\0" as *const u8 as *const ::core::ffi::c_char)
         == NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
@@ -1640,11 +1640,11 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"options_push_changes\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "options_push_changes",
+        log_cstr((name) as *const _)
+    ));
     if strcmp(name, b"theme\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
         || strncmp(

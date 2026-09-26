@@ -1,7 +1,7 @@
 use crate::src::ffi::libc::{memcpy, memset, strlcat, strlen};
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
-use crate::src::log::{fatalx, log_debug, log_get_level};
+use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::menu::{menu_height, menu_screen, menu_update, menu_width, menu_x, menu_y};
 use crate::src::options::options_get_number;
 use crate::src::prompt::prompt_draw;
@@ -1113,19 +1113,21 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
     }
     redraw_set_context(c, &raw mut bctx);
     let mut cells = RedrawCellScratch::take();
-    log_debug(
-        b"%s: building @%u scene (%ux%u %u,%u; generation %llu)\0" as *const u8
-            as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        (*w).id,
-        bctx.sx,
-        bctx.sy,
-        bctx.ox,
-        bctx.oy,
-        (*w).redraw_scene_generation as ::core::ffi::c_ulonglong,
-    );
+    log_debug(format_args!(
+        "{}: building @{} scene ({}x{} {},{}; generation {})",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        ((*w).id) as u32,
+        (bctx.sx) as u32,
+        (bctx.sy) as u32,
+        (bctx.ox) as u32,
+        (bctx.oy) as u32,
+        (*w).redraw_scene_generation as ::core::ffi::c_ulonglong
+    ));
     redraw_build_cells(&raw mut bctx, &mut cells.0);
     // The client borrows this address until redraw_free_scene releases it.
     scene = Box::into_raw(Box::new(redraw_scene {
@@ -1175,13 +1177,16 @@ unsafe fn redraw_make_scene(mut c: *mut client) -> *mut redraw_scene {
         }
         y = y.wrapping_add(1);
     }
-    log_debug(
-        b"%s: finished building @%u scene\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        (*w).id,
-    );
+    log_debug(format_args!(
+        "{}: finished building @{} scene",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        ((*w).id) as u32
+    ));
     return scene;
 }
 pub unsafe fn redraw_free_scene(mut scene: *mut redraw_scene) {
@@ -1223,14 +1228,17 @@ unsafe fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {
         reason = b"size changed\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if !reason.is_null() {
-        log_debug(
-            b"%s: @%u scene invalid: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            (*w).id,
-            reason,
-        );
+        log_debug(format_args!(
+            "{}: @{} scene invalid: {}",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            ((*w).id) as u32,
+            log_cstr((reason) as *const _)
+        ));
         redraw_free_scene(scene);
         scene = redraw_make_scene(c);
         (*c).redraw_scene = scene;
@@ -2453,14 +2461,17 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
         }
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
-        log_debug(
-            b"%s: starting @%u redraw (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            (*w).id,
-            redraw_flags_to_string(flags),
-        );
+        log_debug(format_args!(
+            "{}: starting @{} redraw ({})",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            ((*w).id) as u32,
+            log_cstr((redraw_flags_to_string(flags)) as *const _)
+        ));
     }
     scene = redraw_get_scene(c);
     if scene.is_null() {
@@ -2601,13 +2612,16 @@ unsafe fn redraw_draw(mut c: *mut client, mut wp: *mut window_pane, mut flags: :
         }
     }
     tty_reset(tty);
-    log_debug(
-        b"%s: finished @%u redraw\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*c).name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        (*(*scene).w).id,
-    );
+    log_debug(format_args!(
+        "{}: finished @{} redraw",
+        log_cstr(
+            (((*c).name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        ),
+        ((*(*scene).w).id) as u32
+    ));
 }
 pub unsafe fn redraw_get_status_border_cell_type(
     mut spans: *const redraw_spans,

@@ -1,3 +1,4 @@
+use crate::src::log::log_cstr;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
@@ -3869,12 +3870,12 @@ pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
 pub unsafe fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
     let value = colour_parse_x11_cstr(input);
     let formatted = colour_format(value.unwrap_or(-1));
-    crate::src::log::log_debug(
-        c"%s: %s = %s".as_ptr(),
-        c"colour_parseX11".as_ptr(),
-        input.as_ptr(),
-        formatted.as_ptr(),
-    );
+    crate::src::log::log_debug(format_args!(
+        "{}: {} = {}",
+        "colour_parseX11",
+        log_cstr((input.as_ptr()) as *const _),
+        log_cstr((formatted.as_ptr()) as *const _)
+    ));
     value
 }
 

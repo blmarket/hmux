@@ -23,7 +23,7 @@ use crate::src::format::{
     format_add, format_create, format_create_defaults, format_expand_cstring, format_free,
     format_log_debug, format_merge,
 };
-use crate::src::log::{log_debug, log_get_level};
+use crate::src::log::{log_cstr, log_debug, log_get_level};
 use crate::src::monitor::{
     monitor_add, monitor_create_session, monitor_destroy, monitor_get_fire_count,
     monitor_get_fire_time,
@@ -117,12 +117,12 @@ unsafe fn hooks_insert_one(
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
         let s = cmd_list_print_cstring(&*cmdlist, 0 as ::core::ffi::c_int);
-        log_debug(
-            b"%s: hook %s is: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"hooks_insert_one\0" as *const u8 as *const ::core::ffi::c_char,
-            (*hd).name,
-            s.as_ptr(),
-        );
+        log_debug(format_args!(
+            "{}: hook {} is: {}",
+            "hooks_insert_one",
+            log_cstr(((*hd).name) as *const _),
+            log_cstr((s.as_ptr()) as *const _)
+        ));
     }
     new_item = cmdq_get_command(cmdlist, state);
     if !item.is_null() {
@@ -170,11 +170,11 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    log_debug(
-        b"%s: inserting hook %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"hooks_insert\0" as *const u8 as *const ::core::ffi::c_char,
-        (*hd).name,
-    );
+    log_debug(format_args!(
+        "{}: inserting hook {}",
+        "hooks_insert",
+        log_cstr(((*hd).name) as *const _)
+    ));
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     if cmd_find_empty_state(&raw mut (*hd).fs) != 0 || cmd_find_valid_state(&raw mut (*hd).fs) == 0
     {
@@ -202,11 +202,11 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         }
     }
     if o.is_null() {
-        log_debug(
-            b"%s: hook %s not found\0" as *const u8 as *const ::core::ffi::c_char,
-            b"hooks_insert\0" as *const u8 as *const ::core::ffi::c_char,
-            (*hd).name,
-        );
+        log_debug(format_args!(
+            "{}: hook {} not found",
+            "hooks_insert",
+            log_cstr(((*hd).name) as *const _)
+        ));
         return;
     }
     options_hook_fired(o);
@@ -225,14 +225,16 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
         pr = hooks_parse(&*hd, &fs, CStr::from_ptr(value));
         match pr.status as ::core::ffi::c_uint {
             0 => {
-                log_debug(
-                    b"%s: can't parse hook %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"hooks_insert\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*hd).name,
-                    pr.error
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-                );
+                log_debug(format_args!(
+                    "{}: can't parse hook {}: {}",
+                    "hooks_insert",
+                    log_cstr(((*hd).name) as *const _),
+                    log_cstr(
+                        (pr.error
+                            .as_ref()
+                            .map_or(::core::ptr::null(), |cause| cause.as_ptr())) as *const _
+                    )
+                ));
             }
             1 => {
                 hooks_insert_one(item, hd, pr.cmdlist, state);

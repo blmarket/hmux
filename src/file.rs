@@ -6,7 +6,7 @@ use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{
     __errno_location, close, dup, ferror, fopen, fread, fwrite, memcpy, open, strcmp, strlen,
 };
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
 use crate::src::reactor::{
     bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write, evbuffer_add,
@@ -685,10 +685,7 @@ unsafe fn file_read_impl(
 }
 pub unsafe fn file_cancel(mut cf: *mut client_file) {
     let mut msg: msg_read_cancel = msg_read_cancel { stream: 0 };
-    log_debug(
-        b"read cancel file %d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-    );
+    log_debug(format_args!("read cancel file {}", ((*cf).stream) as i32));
     if (*cf).closed != 0 {
         return;
     }
@@ -755,12 +752,12 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
         }
         evbuffer_drain((*cf).buffer, sent);
         left = evbuffer_get_length(&*((*cf).buffer));
-        log_debug(
-            b"file %d sent %zu, left %zu\0" as *const u8 as *const ::core::ffi::c_char,
-            (*cf).stream,
-            sent,
-            left,
-        );
+        log_debug(format_args!(
+            "file {} sent {}, left {}",
+            ((*cf).stream) as i32,
+            (sent) as usize,
+            (left) as usize
+        ));
     }
     if left != 0 as size_t {
         crate::src::shared::rc::retain(cf);
@@ -791,11 +788,11 @@ pub unsafe fn file_write_left(mut files: *mut client_files) -> ::core::ffi::c_in
             left = evbuffer_get_length(&*((*(*cf).event).output));
             if left != 0 as size_t {
                 waiting += 1;
-                log_debug(
-                    b"file %u %zu bytes left\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*cf).stream,
-                    left,
-                );
+                log_debug(format_args!(
+                    "file {} {} bytes left",
+                    ((*cf).stream) as u32,
+                    (left) as usize
+                ));
             }
         }
         cf = client_files_next(&*cf);
@@ -851,10 +848,7 @@ unsafe fn file_write_error_callback(
     if error == 0 as ::core::ffi::c_int {
         error = EIO;
     }
-    log_debug(
-        b"write error file %d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-    );
+    log_debug(format_args!("write error file {}", ((*cf).stream) as i32));
     (*cf).error = error;
     bufferevent_free((*cf).event);
     (*cf).event = ::core::ptr::null_mut::<bufferevent>();
@@ -874,10 +868,7 @@ unsafe fn file_write_error_callback(
 }
 unsafe fn file_write_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
-    log_debug(
-        b"write check file %d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-    );
+    log_debug(format_args!("write check file {}", ((*cf).stream) as i32));
     if (*cf).closed != 0 && evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
         file_write_finished(cf);
     } else if let Some(callback) = (*cf).cb.as_mut() {
@@ -918,11 +909,11 @@ pub unsafe fn file_write_open(
             .as_ptr()
             .cast::<::core::ffi::c_char>();
     }
-    log_debug(
-        b"open write file %d %s\0" as *const u8 as *const ::core::ffi::c_char,
-        msg.stream,
-        path,
-    );
+    log_debug(format_args!(
+        "open write file {} {}",
+        (msg.stream) as i32,
+        log_cstr((path) as *const _)
+    ));
     find.stream = msg.stream;
     if !client_files_find(&*files, &find).is_null() {
         error = EBADF;
@@ -988,11 +979,11 @@ pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    log_debug(
-        b"write %zu to file %d\0" as *const u8 as *const ::core::ffi::c_char,
-        size,
-        (*cf).stream,
-    );
+    log_debug(format_args!(
+        "write {} to file {}",
+        (size) as usize,
+        ((*cf).stream) as i32
+    ));
     if !(*cf).event.is_null() {
         bufferevent_write(
             (*cf).event,
@@ -1016,10 +1007,7 @@ pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    log_debug(
-        b"close file %d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-    );
+    log_debug(format_args!("close file {}", ((*cf).stream) as i32));
     (*cf).closed = 1 as ::core::ffi::c_int;
     if (*cf).event.is_null() || evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
         file_write_finished(cf);
@@ -1034,10 +1022,7 @@ unsafe fn file_read_error_callback(
         stream: 0,
         error: 0,
     };
-    log_debug(
-        b"read error file %d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-    );
+    log_debug(format_args!("read error file {}", ((*cf).stream) as i32));
     msg.stream = (*cf).stream;
     msg.error = if what as ::core::ffi::c_int & EVBUFFER_ERROR != 0 {
         EIO
@@ -1078,11 +1063,11 @@ unsafe fn file_read_callback(mut arg: *mut ::core::ffi::c_void) {
                 as size_t;
         }
         bdata = evbuffer_pullup((*(*cf).event).input, bsize as ssize_t) as *mut ::core::ffi::c_void;
-        log_debug(
-            b"read %zu from file %d\0" as *const u8 as *const ::core::ffi::c_char,
-            bsize,
-            (*cf).stream,
-        );
+        log_debug(format_args!(
+            "read {} from file {}",
+            (bsize) as usize,
+            ((*cf).stream) as i32
+        ));
         let msglen = header_len + bsize;
         msg.resize(msglen, 0);
         let header = msg_read_data {
@@ -1132,11 +1117,11 @@ pub unsafe fn file_read_open(
             .as_ptr()
             .cast::<::core::ffi::c_char>();
     }
-    log_debug(
-        b"open read file %d %s\0" as *const u8 as *const ::core::ffi::c_char,
-        msg.stream,
-        path,
-    );
+    log_debug(format_args!(
+        "open read file {} {}",
+        (msg.stream) as i32,
+        log_cstr((path) as *const _)
+    ));
     find.stream = msg.stream;
     if !client_files_find(&*files, &find).is_null() {
         error = EBADF;
@@ -1202,10 +1187,7 @@ pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    log_debug(
-        b"cancel file %d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-    );
+    log_debug(format_args!("cancel file {}", ((*cf).stream) as i32));
     file_read_error_callback(0 as ::core::ffi::c_short, cf as *mut ::core::ffi::c_void);
 }
 pub unsafe fn file_write_ready(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
@@ -1245,10 +1227,7 @@ pub unsafe fn file_write_done(mut files: *mut client_files, imsg: &imsg) -> ::co
     if (*cf).c.is_null() || !(*(*cf).c).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"file %d write done\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-    );
+    log_debug(format_args!("file {} write done", ((*cf).stream) as i32));
     (*cf).error = msg.error;
     file_fire_done(cf);
     return 0 as ::core::ffi::c_int;
@@ -1270,11 +1249,11 @@ pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::cor
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"file %d read %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-        bsize,
-    );
+    log_debug(format_args!(
+        "file {} read {} bytes",
+        ((*cf).stream) as i32,
+        (bsize) as usize
+    ));
     if (*cf).error == 0 as ::core::ffi::c_int && (*cf).closed == 0 {
         if evbuffer_add((*cf).buffer, bdata, bsize) != 0 as ::core::ffi::c_int {
             (*cf).error = ENOMEM;
@@ -1298,10 +1277,7 @@ pub unsafe fn file_read_done(mut files: *mut client_files, imsg: &imsg) -> ::cor
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"file %d read done\0" as *const u8 as *const ::core::ffi::c_char,
-        (*cf).stream,
-    );
+    log_debug(format_args!("file {} read done", ((*cf).stream) as i32));
     (*cf).error = msg.error;
     file_fire_done(cf);
     return 0 as ::core::ffi::c_int;

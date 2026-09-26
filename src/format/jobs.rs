@@ -1,3 +1,4 @@
+use crate::src::log::{log_cstr, log_pointer};
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy
 // lifecycle.  It calls the parent facade for expansion, logging, and allocation.
@@ -52,15 +53,18 @@ pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
     };
     (*fj).updated = 1 as ::core::ffi::c_int;
     format_job_set_out_from_line(&mut *fj, &line);
-    log_debug(
-        b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"format_job_update\0" as *const u8 as *const ::core::ffi::c_char,
-        fj,
-        ((*fj).cmd).as_ptr().cast_mut(),
-        ((*fj).out)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    log_debug(format_args!(
+        "{}: {} {}: {}",
+        "format_job_update",
+        log_pointer((fj) as *const ::core::ffi::c_void),
+        log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _),
+        log_cstr(
+            (((*fj).out)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        )
+    ));
     t = time(::core::ptr::null_mut::<time_t>());
     if (*fj).status != 0 && (*fj).last != t {
         if !(*fj).client.is_null() {
@@ -102,13 +106,13 @@ pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut
         CString::new(&bytes[..visible]).expect("visible job output contains no NUL")
     };
     evbuffer_free(evb);
-    log_debug(
-        b"%s: %p %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"format_job_complete\0" as *const u8 as *const ::core::ffi::c_char,
-        fj,
-        ((*fj).cmd).as_ptr().cast_mut(),
-        output.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {} {}: {}",
+        "format_job_complete",
+        log_pointer((fj) as *const ::core::ffi::c_void),
+        log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _),
+        log_cstr((output.as_ptr()) as *const _)
+    ));
     if !output.as_bytes().is_empty() || (*fj).updated == 0 {
         format_job_set_out(&mut *fj, output);
     }
@@ -277,11 +281,11 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
             .entries
             .remove(&key)
             .expect("format job still cached");
-        log_debug(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_job_tidy\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*fj).cmd).as_ptr().cast_mut(),
-        );
+        log_debug(format_args!(
+            "{}: {}",
+            "format_job_tidy",
+            log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _)
+        ));
         if !(*fj).job.is_null() {
             job_free((*fj).job);
         }

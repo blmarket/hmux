@@ -15,7 +15,7 @@ use crate::src::grid::{
     grid_cells_look_equal, grid_default_cell, grid_get_cell, grid_get_line, grid_set_tab,
 };
 use crate::src::hyperlinks::hyperlinks_put;
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_byte, log_cstr, log_cstr_n, log_cstr_width, log_debug, log_hex};
 use crate::src::options::{
     options_get_number, options_get_only, options_remove_or_default, options_set_number,
 };
@@ -2104,11 +2104,11 @@ unsafe fn input_fire_pane_title_changed(
 }
 unsafe fn input_ground_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut ictx: *mut input_ctx = arg as *mut input_ctx;
-    log_debug(
-        b"%s: %s expired\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_ground_timer_callback\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(*ictx).state).name,
-    );
+    log_debug(format_args!(
+        "{}: {} expired",
+        "input_ground_timer_callback",
+        log_cstr((*(*ictx).state).name.as_ptr())
+    ));
     input_reset(ictx, 0 as ::core::ffi::c_int);
 }
 unsafe fn input_start_ground_timer(mut ictx: *mut input_ctx) {
@@ -2332,15 +2332,14 @@ pub unsafe fn input_parse_buffer(
     } else {
         screen_write_start(sctx, &raw mut (*wp).base);
     }
-    log_debug(
-        b"%s: %%%u %s, %zu bytes: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_parse_buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        (*(*ictx).state).name,
-        len,
-        len as ::core::ffi::c_int,
-        buf,
-    );
+    log_debug(format_args!(
+        "{}: %{} {}, {} bytes: {}",
+        "input_parse_buffer",
+        ((*wp).id) as u32,
+        log_cstr((*(*ictx).state).name.as_ptr()),
+        (len) as usize,
+        log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
+    ));
     input_parse(ictx, buf, len);
     screen_write_stop(sctx);
 }
@@ -2411,11 +2410,19 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         ip = (&raw mut (*ictx).param_list as *mut input_param).offset(i as isize)
             as *mut input_param;
         match &*ip {
-            input_param::Missing => log_debug(c"parameter %u: missing".as_ptr(), i),
+            input_param::Missing => log_debug(format_args!("parameter {}: missing", (i) as u32)),
             input_param::String(value) => {
-                log_debug(c"parameter %u: string %s".as_ptr(), i, value.as_ptr());
+                log_debug(format_args!(
+                    "parameter {}: string {}",
+                    (i) as u32,
+                    log_cstr((value.as_ptr()) as *const _)
+                ));
             }
-            input_param::Number(value) => log_debug(c"parameter %u: number %d".as_ptr(), i, *value),
+            input_param::Number(value) => log_debug(format_args!(
+                "parameter {}: number {}",
+                (i) as u32,
+                (*value) as i32
+            )),
         }
         i = i.wrapping_add(1);
     }
@@ -2446,11 +2453,11 @@ unsafe fn input_get(
 }
 unsafe fn input_send_reply(mut ictx: *mut input_ctx, mut reply: *const ::core::ffi::c_char) {
     if !(*ictx).event.is_null() {
-        log_debug(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_send_reply\0" as *const u8 as *const ::core::ffi::c_char,
-            reply,
-        );
+        log_debug(format_args!(
+            "{}: {}",
+            "input_send_reply",
+            log_cstr((reply) as *const _)
+        ));
         bufferevent_write(
             (*ictx).event,
             reply as *const ::core::ffi::c_void,
@@ -2598,11 +2605,11 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut width: u_int = 0;
     let mut has_content: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     input_stop_utf8(ictx);
-    log_debug(
-        b"%s: '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_c0_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ictx).ch,
-    );
+    log_debug(format_args!(
+        "{}: '{}'",
+        "input_c0_dispatch",
+        log_byte(((*ictx).ch) as u8)
+    ));
     match (*ictx).ch {
         0 => {}
         7 => {
@@ -2669,11 +2676,11 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             (*ictx).cell.set = 0 as ::core::ffi::c_int;
         }
         _ => {
-            log_debug(
-                b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                b"input_c0_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-                (*ictx).ch,
-            );
+            log_debug(format_args!(
+                "{}: unknown '{}'",
+                "input_c0_dispatch",
+                log_byte(((*ictx).ch) as u8)
+            ));
         }
     }
     (*ictx).flags &= !INPUT_LAST;
@@ -2686,21 +2693,21 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"%s: '%c', %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_esc_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ictx).ch,
-        &raw mut (*ictx).interm_buf as *mut u_char,
-    );
+    log_debug(format_args!(
+        "{}: '{}', {}",
+        "input_esc_dispatch",
+        log_byte(((*ictx).ch) as u8),
+        log_cstr((&raw mut (*ictx).interm_buf as *mut u_char) as *const _)
+    ));
     entry = input_table_find(&input_esc_table, &*ictx).map_or(::core::ptr::null(), |entry| {
         entry as *const input_table_entry
     });
     if entry.is_null() {
-        log_debug(
-            b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_esc_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-            (*ictx).ch,
-        );
+        log_debug(format_args!(
+            "{}: unknown '{}'",
+            "input_esc_dispatch",
+            log_byte(((*ictx).ch) as u8)
+        ));
         return 0 as ::core::ffi::c_int;
     }
     match (*entry).type_0 {
@@ -2774,13 +2781,13 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"%s: '%c' \"%s\" \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_csi_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ictx).ch,
-        &raw mut (*ictx).interm_buf as *mut u_char,
-        &raw mut (*ictx).param_buf as *mut u_char,
-    );
+    log_debug(format_args!(
+        "{}: '{}' \"{}\" \"{}\"",
+        "input_csi_dispatch",
+        log_byte(((*ictx).ch) as u8),
+        log_cstr((&raw mut (*ictx).interm_buf as *mut u_char) as *const _),
+        log_cstr((&raw mut (*ictx).param_buf as *mut u_char) as *const _)
+    ));
     if input_split(ictx) != 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -2788,11 +2795,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         entry as *const input_table_entry
     });
     if entry.is_null() {
-        log_debug(
-            b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_csi_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-            (*ictx).ch,
-        );
+        log_debug(format_args!(
+            "{}: unknown '{}'",
+            "input_csi_dispatch",
+            log_byte(((*ictx).ch) as u8)
+        ));
         return 0 as ::core::ffi::c_int;
     }
     match (*entry).type_0 {
@@ -2978,11 +2985,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     );
                 }
                 _ => {
-                    log_debug(
-                        b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"input_csi_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*ictx).ch,
-                    );
+                    log_debug(format_args!(
+                        "{}: unknown '{}'",
+                        "input_csi_dispatch",
+                        log_byte(((*ictx).ch) as u8)
+                    ));
                 }
             }
         }
@@ -3002,11 +3009,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     );
                 }
                 _ => {
-                    log_debug(
-                        b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"input_csi_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*ictx).ch,
-                    );
+                    log_debug(format_args!(
+                        "{}: unknown '{}'",
+                        "input_csi_dispatch",
+                        log_byte(((*ictx).ch) as u8)
+                    ));
                 }
             }
         }
@@ -3284,11 +3291,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     );
                 }
                 _ => {
-                    log_debug(
-                        b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"input_csi_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*ictx).ch,
-                    );
+                    log_debug(format_args!(
+                        "{}: unknown '{}'",
+                        "input_csi_dispatch",
+                        log_byte(((*ictx).ch) as u8)
+                    ));
                 }
             }
         }
@@ -3321,11 +3328,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     }
                 }
                 _ => {
-                    log_debug(
-                        b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"input_csi_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*ictx).ch,
-                    );
+                    log_debug(format_args!(
+                        "{}: unknown '{}'",
+                        "input_csi_dispatch",
+                        log_byte(((*ictx).ch) as u8)
+                    ));
                 }
             }
         }
@@ -3347,11 +3354,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     screen_write_clearline(sctx, bg);
                 }
                 _ => {
-                    log_debug(
-                        b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"input_csi_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*ictx).ch,
-                    );
+                    log_debug(format_args!(
+                        "{}: unknown '{}'",
+                        "input_csi_dispatch",
+                        log_byte(((*ictx).ch) as u8)
+                    ));
                 }
             }
         }
@@ -3493,11 +3500,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     screen_clear_tabs(&mut *s);
                 }
                 _ => {
-                    log_debug(
-                        b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"input_csi_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*ictx).ch,
-                    );
+                    log_debug(format_args!(
+                        "{}: unknown '{}'",
+                        "input_csi_dispatch",
+                        log_byte(((*ictx).ch) as u8)
+                    ));
                 }
             }
         }
@@ -3566,11 +3573,11 @@ unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
                 screen_write_mode_set(sctx, MODE_CURSOR_VERY_VISIBLE);
             }
             _ => {
-                log_debug(
-                    b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"input_csi_dispatch_rm\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*ictx).ch,
-                );
+                log_debug(format_args!(
+                    "{}: unknown '{}'",
+                    "input_csi_dispatch_rm",
+                    log_byte(((*ictx).ch) as u8)
+                ));
             }
         }
         i = i.wrapping_add(1);
@@ -3646,11 +3653,11 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
                 }
             }
             _ => {
-                log_debug(
-                    b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"input_csi_dispatch_rm_private\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*ictx).ch,
-                );
+                log_debug(format_args!(
+                    "{}: unknown '{}'",
+                    "input_csi_dispatch_rm_private",
+                    log_byte(((*ictx).ch) as u8)
+                ));
             }
         }
         i = i.wrapping_add(1);
@@ -3670,11 +3677,11 @@ unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx) {
                 screen_write_mode_clear(sctx, MODE_CURSOR_VERY_VISIBLE);
             }
             _ => {
-                log_debug(
-                    b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"input_csi_dispatch_sm\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*ictx).ch,
-                );
+                log_debug(format_args!(
+                    "{}: unknown '{}'",
+                    "input_csi_dispatch_sm",
+                    log_byte(((*ictx).ch) as u8)
+                ));
             }
         }
         i = i.wrapping_add(1);
@@ -3760,11 +3767,11 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
                 screen_write_start_sync((*ictx).wp);
             }
             _ => {
-                log_debug(
-                    b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"input_csi_dispatch_sm_private\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*ictx).ch,
-                );
+                log_debug(format_args!(
+                    "{}: unknown '{}'",
+                    "input_csi_dispatch_sm_private",
+                    log_byte(((*ictx).ch) as u8)
+                ));
             }
         }
         i = i.wrapping_add(1);
@@ -3915,11 +3922,11 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 current_block_25 = 980989089337379490;
             }
             _ => {
-                log_debug(
-                    b"%s: unknown '%c'\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"input_csi_dispatch_winops\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*ictx).ch,
-                );
+                log_debug(format_args!(
+                    "{}: unknown '{}'",
+                    "input_csi_dispatch_winops",
+                    log_byte(((*ictx).ch) as u8)
+                ));
                 current_block_25 = 980989089337379490;
             }
         }
@@ -4090,12 +4097,12 @@ unsafe fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
                 return;
             }
         }
-        log_debug(
-            b"%s: %u = %d\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_csi_dispatch_sgr_colon\0" as *const u8 as *const ::core::ffi::c_char,
-            n.wrapping_sub(1 as u_int),
-            p[n.wrapping_sub(1 as u_int) as usize],
-        );
+        log_debug(format_args!(
+            "{}: {} = {}",
+            "input_csi_dispatch_sgr_colon",
+            (n.wrapping_sub(1 as u_int)) as u32,
+            (p[n.wrapping_sub(1 as u_int) as usize]) as i32
+        ));
     }
     if n == 0 as u_int {
         return;
@@ -4394,18 +4401,12 @@ unsafe fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
     }
 }
 unsafe fn input_end_bel(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
-    log_debug(
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_end_bel\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    log_debug(format_args!("{}", "input_end_bel"));
     (*ictx).input_end = INPUT_END_BEL;
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn input_enter_dcs(mut ictx: *mut input_ctx) {
-    log_debug(
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_enter_dcs\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    log_debug(format_args!("{}", "input_enter_dcs"));
     input_clear(ictx);
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
@@ -4481,14 +4482,13 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             }
             ps = opt_ps;
         }
-        log_debug(
-            b"%s: DECRQSS cursor -> Ps=%d (cstyle=%d mode=%#x)\0" as *const u8
-                as *const ::core::ffi::c_char,
-            b"input_handle_decrqss\0" as *const u8 as *const ::core::ffi::c_char,
-            ps,
-            (*s).cstyle as ::core::ffi::c_uint,
-            (*s).mode,
-        );
+        log_debug(format_args!(
+            "{}: DECRQSS cursor -> Ps={} (cstyle={} mode={})",
+            "input_handle_decrqss",
+            (ps) as i32,
+            ((*s).cstyle as ::core::ffi::c_uint) as i32,
+            log_hex((((*s).mode) as u32) as u64)
+        ));
         input_reply(
             ictx,
             1 as ::core::ffi::c_int,
@@ -4515,11 +4515,11 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         oo = (*wp).options;
     }
     if (*ictx).flags & INPUT_DISCARD != 0 {
-        log_debug(
-            b"%s: %zu bytes (discard)\0" as *const u8 as *const ::core::ffi::c_char,
-            b"input_dcs_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-            len,
-        );
+        log_debug(format_args!(
+            "{}: {} bytes (discard)",
+            "input_dcs_dispatch",
+            (len) as usize
+        ));
         return 0 as ::core::ffi::c_int;
     }
     if (*ictx).interm_len == 1 as size_t
@@ -4538,11 +4538,11 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     if allow_passthrough == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"%s: \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_dcs_dispatch\0" as *const u8 as *const ::core::ffi::c_char,
-        buf,
-    );
+    log_debug(format_args!(
+        "{}: \"{}\"",
+        "input_dcs_dispatch",
+        log_cstr((buf) as *const _)
+    ));
     if len >= prefixlen as size_t
         && strncmp(
             buf as *const ::core::ffi::c_char,
@@ -4560,10 +4560,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn input_enter_osc(mut ictx: *mut input_ctx) {
-    log_debug(
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_enter_osc\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    log_debug(format_args!("{}", "input_enter_osc"));
     input_clear(ictx);
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
@@ -4582,18 +4579,20 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
     {
         return;
     }
-    log_debug(
-        b"%s: \"%s\" (end %s)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_exit_osc\0" as *const u8 as *const ::core::ffi::c_char,
-        p,
-        if (*ictx).input_end as ::core::ffi::c_uint
-            == INPUT_END_ST as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            b"ST\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"BEL\0" as *const u8 as *const ::core::ffi::c_char
-        },
-    );
+    log_debug(format_args!(
+        "{}: \"{}\" (end {})",
+        "input_exit_osc",
+        log_cstr((p) as *const _),
+        log_cstr(
+            (if (*ictx).input_end as ::core::ffi::c_uint
+                == INPUT_END_ST as ::core::ffi::c_int as ::core::ffi::c_uint
+            {
+                b"ST\0" as *const u8 as *const ::core::ffi::c_char
+            } else {
+                b"BEL\0" as *const u8 as *const ::core::ffi::c_char
+            }) as *const _
+        )
+    ));
     option = 0 as u_int;
     while *p as ::core::ffi::c_int >= '0' as i32 && *p as ::core::ffi::c_int <= '9' as i32 {
         let fresh2 = p;
@@ -4670,19 +4669,16 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
             input_osc_133(ictx, p as *const ::core::ffi::c_char);
         }
         _ => {
-            log_debug(
-                b"%s: unknown '%u'\0" as *const u8 as *const ::core::ffi::c_char,
-                b"input_exit_osc\0" as *const u8 as *const ::core::ffi::c_char,
-                option,
-            );
+            log_debug(format_args!(
+                "{}: unknown '{}'",
+                "input_exit_osc",
+                (option) as u32
+            ));
         }
     };
 }
 unsafe fn input_enter_apc(mut ictx: *mut input_ctx) {
-    log_debug(
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_enter_apc\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    log_debug(format_args!("{}", "input_enter_apc"));
     input_clear(ictx);
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
@@ -4693,11 +4689,11 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return;
     }
-    log_debug(
-        b"%s: \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_exit_apc\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ictx).input_buf.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: \"{}\"",
+        "input_exit_apc",
+        log_cstr(((*ictx).input_buf.as_ptr()) as *const _)
+    ));
     if !wp.is_null()
         && options_get_number(
             (*wp).options,
@@ -4715,10 +4711,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
     }
 }
 unsafe fn input_enter_rename(mut ictx: *mut input_ctx) {
-    log_debug(
-        b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_enter_rename\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    log_debug(format_args!("{}", "input_enter_rename"));
     input_clear(ictx);
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
@@ -4740,11 +4733,11 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
     {
         return;
     }
-    log_debug(
-        b"%s: \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_exit_rename\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ictx).input_buf.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: \"{}\"",
+        "input_exit_rename",
+        log_cstr(((*ictx).input_buf.as_ptr()) as *const _)
+    ));
     if utf8_isvalid((*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char) == 0 {
         return;
     }
@@ -4809,14 +4802,16 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         1 | _ => {}
     }
     (*ictx).utf8started = 0 as ::core::ffi::c_int;
-    log_debug(
-        b"%s %hhu '%*s' (width %hhu)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_top_bit_set\0" as *const u8 as *const ::core::ffi::c_char,
-        (*ud).size as ::core::ffi::c_int,
-        (*ud).size as ::core::ffi::c_int,
-        &raw mut (*ud).data as *mut u_char,
-        (*ud).width as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "{} {} '{}' (width {})",
+        "input_top_bit_set",
+        ((*ud).size as ::core::ffi::c_int) as u8,
+        log_cstr_width(
+            (&raw mut (*ud).data as *mut u_char) as *const _,
+            (*ud).size as ::core::ffi::c_int
+        ),
+        ((*ud).width as ::core::ffi::c_int) as u8
+    ));
     utf8_copy(&raw mut (*ictx).cell.cell.data, ud);
     screen_write_collect_add(sctx, &raw mut (*ictx).cell.cell);
     utf8_copy(&raw mut (*ictx).last, &raw mut (*ictx).cell.cell.data);
@@ -4941,10 +4936,7 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
         }
     }
     if bad != 0 {
-        log_debug(
-            b"bad OSC 4: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            p,
-        );
+        log_debug(format_args!("bad OSC 4: {}", log_cstr((p) as *const _)));
     }
     if redraw != 0 {
         screen_write_fullredraw(&raw mut (*ictx).ctx);
@@ -5000,29 +4992,25 @@ unsafe fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
                 let id_ptr = id.as_ref().map_or(std::ptr::null(), |id| id.as_ptr());
                 (*gc).link = hyperlinks_put(hl, uri, id_ptr);
                 if id.is_none() {
-                    log_debug(
-                        b"hyperlink (anonymous) %s = %u\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                        uri,
-                        (*gc).link,
-                    );
+                    log_debug(format_args!(
+                        "hyperlink (anonymous) {} = {}",
+                        log_cstr((uri) as *const _),
+                        ((*gc).link) as u32
+                    ));
                 } else {
-                    log_debug(
-                        b"hyperlink (id=%s) %s = %u\0" as *const u8 as *const ::core::ffi::c_char,
-                        id_ptr,
-                        uri,
-                        (*gc).link,
-                    );
+                    log_debug(format_args!(
+                        "hyperlink (id={}) {} = {}",
+                        log_cstr((id_ptr) as *const _),
+                        log_cstr((uri) as *const _),
+                        ((*gc).link) as u32
+                    ));
                 }
                 return;
             }
         }
         _ => {}
     }
-    log_debug(
-        b"bad OSC 8 %s\0" as *const u8 as *const ::core::ffi::c_char,
-        p,
-    );
+    log_debug(format_args!("bad OSC 8 {}", log_cstr((p) as *const _)));
 }
 unsafe fn input_set_progress_bar(
     mut ictx: *mut input_ctx,
@@ -5100,10 +5088,7 @@ unsafe fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
             }
         }
     }
-    log_debug(
-        b"bad OSC 9;4 %s\0" as *const u8 as *const ::core::ffi::c_char,
-        p,
-    );
+    log_debug(format_args!("bad OSC 9;4 {}", log_cstr((p) as *const _)));
 }
 unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut wp: *mut window_pane = (*ictx).wp;
@@ -5147,10 +5132,7 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     }
     c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(p)).unwrap_or(-1);
     if c == -(1 as ::core::ffi::c_int) {
-        log_debug(
-            b"bad OSC 10: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            p,
-        );
+        log_debug(format_args!("bad OSC 10: {}", log_cstr((p) as *const _)));
         return;
     }
     if !(*ictx).palette.is_null() {
@@ -5194,10 +5176,7 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     }
     c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(p)).unwrap_or(-1);
     if c == -(1 as ::core::ffi::c_int) {
-        log_debug(
-            b"bad OSC 11: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            p,
-        );
+        log_debug(format_args!("bad OSC 11: {}", log_cstr((p) as *const _)));
         return;
     }
     if !(*ictx).palette.is_null() {
@@ -5243,10 +5222,7 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
     }
     c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(p)).unwrap_or(-1);
     if c == -(1 as ::core::ffi::c_int) {
-        log_debug(
-            b"bad OSC 12: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            p,
-        );
+        log_debug(format_args!("bad OSC 12: {}", log_cstr((p) as *const _)));
         return;
     }
     screen_set_cursor_colour((*ictx).ctx.s, c);
@@ -5563,11 +5539,11 @@ unsafe fn input_osc_52_parse(
     if *end as ::core::ffi::c_int == '\0' as i32 {
         return None;
     }
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_osc_52_parse\0" as *const u8 as *const ::core::ffi::c_char,
-        end,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "input_osc_52_parse",
+        log_cstr((end) as *const _)
+    ));
     i = 0 as u_int;
     while p.offset(i as isize) != end {
         if !strchr(allow, *p.offset(i as isize) as ::core::ffi::c_int).is_null()
@@ -5579,14 +5555,16 @@ unsafe fn input_osc_52_parse(
         }
         i = i.wrapping_add(1);
     }
-    log_debug(
-        b"%s: %.*s %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_osc_52_parse\0" as *const u8 as *const ::core::ffi::c_char,
-        (end.offset_from(p) as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
-            as ::core::ffi::c_int,
-        p,
-        clip,
-    );
+    log_debug(format_args!(
+        "{}: {} {}",
+        "input_osc_52_parse",
+        log_cstr_n(
+            (p) as *const _,
+            (end.offset_from(p) as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
+                as ::core::ffi::c_int
+        ),
+        log_cstr((clip) as *const _)
+    ));
     if strcmp(end, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         input_osc_52_reply(ictx, *clip);
         return None;
@@ -5686,10 +5664,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
         }
     }
     if bad != 0 {
-        log_debug(
-            b"bad OSC 104: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            p,
-        );
+        log_debug(format_args!("bad OSC 104: {}", log_cstr((p) as *const _)));
     }
     if redraw != 0 {
         screen_write_fullredraw(&raw mut (*ictx).ctx);
@@ -5750,12 +5725,12 @@ pub unsafe fn input_reply_clipboard(
     bufferevent_write(bev, end as *const ::core::ffi::c_void, strlen(end));
 }
 pub unsafe fn input_set_buffer_size(mut buffer_size: size_t) {
-    log_debug(
-        b"%s: %lu -> %lu\0" as *const u8 as *const ::core::ffi::c_char,
-        b"input_set_buffer_size\0" as *const u8 as *const ::core::ffi::c_char,
-        input_buffer_size,
-        buffer_size,
-    );
+    log_debug(format_args!(
+        "{}: {} -> {}",
+        "input_set_buffer_size",
+        (input_buffer_size) as ::core::ffi::c_ulong,
+        (buffer_size) as ::core::ffi::c_ulong
+    ));
     input_buffer_size = buffer_size;
 }
 unsafe fn input_request_timer_callback(mut arg: *mut ::core::ffi::c_void) {
@@ -6034,11 +6009,11 @@ unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
         (*wp).flags &= !PANE_THEMECHANGED;
         match (*wp).last_theme as ::core::ffi::c_uint {
             2 => {
-                log_debug(
-                    b"%s: %%%u dark theme\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"input_report_current_theme\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                log_debug(format_args!(
+                    "{}: %{} dark theme",
+                    "input_report_current_theme",
+                    ((*wp).id) as u32
+                ));
                 input_reply(
                     ictx,
                     0 as ::core::ffi::c_int,
@@ -6046,11 +6021,11 @@ unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
                 );
             }
             1 => {
-                log_debug(
-                    b"%s: %%%u light theme\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"input_report_current_theme\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                log_debug(format_args!(
+                    "{}: %{} light theme",
+                    "input_report_current_theme",
+                    ((*wp).id) as u32
+                ));
                 input_reply(
                     ictx,
                     0 as ::core::ffi::c_int,
@@ -6058,11 +6033,11 @@ unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
                 );
             }
             0 => {
-                log_debug(
-                    b"%s: %%%u unknown theme\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"input_report_current_theme\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                );
+                log_debug(format_args!(
+                    "{}: %{} unknown theme",
+                    "input_report_current_theme",
+                    ((*wp).id) as u32
+                ));
             }
             _ => {}
         }

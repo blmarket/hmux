@@ -6,7 +6,7 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_list_print_cstring};
 use crate::src::ffi::libc::strcmp;
 use crate::src::key_string::key_string_format;
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug, log_hex};
 use crate::src::server::clients;
 use crate::src::server_client::server_client_set_key_table;
 use crate::src::shared::abi::*;
@@ -183,13 +183,13 @@ pub unsafe fn key_bindings_add(
     (*bd).cmdlist = cmdlist;
     let s = cmd_list_print_cstring(&*(*bd).cmdlist, 0);
     let key_string = key_string_format((*bd).key, true);
-    log_debug(
-        b"%s: %#llx %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"key_bindings_add\0" as *const u8 as *const ::core::ffi::c_char,
-        (*bd).key,
-        key_string.as_ptr(),
-        s.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {} {} = {}",
+        "key_bindings_add",
+        log_hex(((*bd).key) as u64),
+        log_cstr((key_string.as_ptr()) as *const _),
+        log_cstr((s.as_ptr()) as *const _)
+    ));
 }
 pub unsafe fn key_bindings_remove(mut name: *const ::core::ffi::c_char, mut key: key_code) {
     let mut table: *mut key_table = ::core::ptr::null_mut::<key_table>();
@@ -203,12 +203,12 @@ pub unsafe fn key_bindings_remove(mut name: *const ::core::ffi::c_char, mut key:
         return;
     }
     let key_string = key_string_format((*bd).key, true);
-    log_debug(
-        b"%s: %#llx %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"key_bindings_remove\0" as *const u8 as *const ::core::ffi::c_char,
-        (*bd).key,
-        key_string.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {} {}",
+        "key_bindings_remove",
+        log_hex(((*bd).key) as u64),
+        log_cstr((key_string.as_ptr()) as *const _)
+    ));
     key_bindings_index_remove(&raw mut (*table).key_bindings, bd);
     key_bindings_free(bd);
     if (*table).key_bindings.storage.is_none() && (*table).default_key_bindings.storage.is_none() {
@@ -929,12 +929,14 @@ pub unsafe fn key_bindings_init() {
         if pr.status as ::core::ffi::c_uint
             != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            log_debug(
-                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                pr.error
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-            );
+            log_debug(format_args!(
+                "{}",
+                log_cstr(
+                    (pr.error
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |cause| cause.as_ptr())) as *const _
+                )
+            ));
             fatalx(
                 b"bad default key: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 defaults[i as usize],

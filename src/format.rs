@@ -21,7 +21,7 @@ use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::job::{job_free, job_get_event, job_run};
 use crate::src::layout::custom::layout_dump_owned;
 use crate::src::layout::layout_add_horizontal_border;
-use crate::src::log::{fatalx, log_debug, log_get_level};
+use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::names::parse_window_name_cstring;
 use crate::src::options::options_table_entry;
 use crate::src::options::{
@@ -322,11 +322,11 @@ unsafe extern "C" fn format_log1(
     }
     ap = args.clone();
     let s = xvasprintf_cstring(fmt, ap);
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        from,
-        s.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        log_cstr((from) as *const _),
+        log_cstr((s.as_ptr()) as *const _)
+    ));
     if !(*ft).item.is_null() && (*ft).flags & FORMAT_VERBOSE != 0 {
         cmdq_print(
             (*ft).item,
@@ -399,60 +399,51 @@ pub unsafe fn format_defaults(
 ) {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
     if !c.is_null() && !(*c).name.is_none() {
-        log_debug(
-            b"%s: c=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{}: c={}",
+            "format_defaults",
+            log_cstr(
+                (((*c).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
     } else {
-        log_debug(
-            b"%s: c=none\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!("{}: c=none", "format_defaults"));
     }
     if !s.is_null() {
-        log_debug(
-            b"%s: s=$%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-            (*s).id,
-        );
+        log_debug(format_args!(
+            "{}: s=${}",
+            "format_defaults",
+            ((*s).id) as u32
+        ));
     } else {
-        log_debug(
-            b"%s: s=none\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!("{}: s=none", "format_defaults"));
     }
     if !wl.is_null() {
-        log_debug(
-            b"%s: wl=%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wl).idx,
-        );
+        log_debug(format_args!(
+            "{}: wl={}",
+            "format_defaults",
+            ((*wl).idx) as u32
+        ));
     } else {
-        log_debug(
-            b"%s: wl=none\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!("{}: wl=none", "format_defaults"));
     }
     if !wp.is_null() {
-        log_debug(
-            b"%s: wp=%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).id,
-        );
+        log_debug(format_args!(
+            "{}: wp=%{}",
+            "format_defaults",
+            ((*wp).id) as u32
+        ));
     } else {
-        log_debug(
-            b"%s: wp=none\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!("{}: wp=none", "format_defaults"));
     }
     if !c.is_null() && !s.is_null() && (*c).session != s {
-        log_debug(
-            b"%s: session does not match\0" as *const u8 as *const ::core::ffi::c_char,
-            b"format_defaults\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!(
+            "{}: session does not match",
+            "format_defaults"
+        ));
     }
     if !wp.is_null() {
         (*ft).type_0 = FORMAT_TYPE_PANE;

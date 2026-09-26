@@ -2,7 +2,7 @@ use crate::src::ffi::libc::{sscanf, strcmp};
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::server::current_time;
 use crate::src::session::sessions;
@@ -127,12 +127,12 @@ unsafe fn monitor_report(
         wl: ::core::ptr::null_mut::<winlink>(),
         wp: ::core::ptr::null_mut::<window_pane>(),
     };
-    log_debug(
-        b"%s: %s changed to %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"monitor_report\0" as *const u8 as *const ::core::ffi::c_char,
-        name.as_ptr(),
-        value,
-    );
+    log_debug(format_args!(
+        "{}: {} changed to {}",
+        "monitor_report",
+        log_cstr((name.as_ptr()) as *const _),
+        log_cstr((value) as *const _)
+    ));
     (*me).fire_count = (*me).fire_count.wrapping_add(1);
     (*me).fire_time = current_time;
     change.name = name.as_ptr();
@@ -528,10 +528,7 @@ unsafe fn monitor_timer(mut data: *mut ::core::ffi::c_void) {
     let mut have_session: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut have_all_panes: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut have_all_windows: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    log_debug(
-        b"%s: timer fired\0" as *const u8 as *const ::core::ffi::c_char,
-        b"monitor_timer\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    log_debug(format_args!("{}: timer fired", "monitor_timer"));
     event_add(&raw mut (*ms).timer, &raw mut tv);
     if monitor_get_session(ms).is_null() {
         return;

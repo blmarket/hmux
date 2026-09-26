@@ -9,7 +9,7 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::strcmp;
 use crate::src::format::{format_create, format_expand_cstring, format_free, format_true};
 use crate::src::hooks::hooks_valid_event_name;
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug, log_pointer};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -189,10 +189,10 @@ unsafe fn cmd_wait_for_add(name: *const ::core::ffi::c_char) -> *mut wait_channe
         lockers: Vec::new(),
     });
     let wc = wait_channels_insert(&mut *(&raw mut wait_channels), owner);
-    log_debug(
-        b"add wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*wc).name).as_ptr().cast_mut(),
-    );
+    log_debug(format_args!(
+        "add wait channel {}",
+        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+    ));
     return wc;
 }
 unsafe fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
@@ -202,10 +202,10 @@ unsafe fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
     if !(*wait_channel_waiters(wc)).is_empty() || (*wc).woken == 0 {
         return;
     }
-    log_debug(
-        b"remove wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*wc).name).as_ptr().cast_mut(),
-    );
+    log_debug(format_args!(
+        "remove wait channel {}",
+        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+    ));
     drop(wait_channels_remove(&mut *(&raw mut wait_channels), &*wc));
 }
 unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
@@ -215,10 +215,10 @@ unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     if !(*wait_channel_waiters(wc)).is_empty() || !(*wait_channel_lockers(wc)).is_empty() {
         return;
     }
-    log_debug(
-        b"remove empty wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*wc).name).as_ptr().cast_mut(),
-    );
+    log_debug(format_args!(
+        "remove empty wait channel {}",
+        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+    ));
     drop(wait_channels_remove(&mut *(&raw mut wait_channels), &*wc));
 }
 
@@ -473,17 +473,17 @@ unsafe fn cmd_wait_for_signal(
         wc = cmd_wait_for_add(name);
     }
     if (*wait_channel_waiters(wc)).is_empty() && (*wc).woken == 0 {
-        log_debug(
-            b"signal wait channel %s, no waiters\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*wc).name).as_ptr().cast_mut(),
-        );
+        log_debug(format_args!(
+            "signal wait channel {}, no waiters",
+            log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+        ));
         (*wc).woken = 1 as ::core::ffi::c_int;
         return CMD_RETURN_NORMAL;
     }
-    log_debug(
-        b"signal wait channel %s, with waiters\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*wc).name).as_ptr().cast_mut(),
-    );
+    log_debug(format_args!(
+        "signal wait channel {}, with waiters",
+        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+    ));
     let waiters = wait_channel_waiters(wc);
     let mut wi = wait_item_ptr(waiters, 0);
     while !wi.is_null() {
@@ -512,19 +512,19 @@ unsafe fn cmd_wait_for_wait(
         wc = cmd_wait_for_add(name);
     }
     if (*wc).woken != 0 {
-        log_debug(
-            b"wait channel %s already woken (%p)\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*wc).name).as_ptr().cast_mut(),
-            c,
-        );
+        log_debug(format_args!(
+            "wait channel {} already woken ({})",
+            log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _),
+            log_pointer((c) as *const ::core::ffi::c_void)
+        ));
         cmd_wait_for_remove(wc);
         return CMD_RETURN_NORMAL;
     }
-    log_debug(
-        b"wait channel %s not woken (%p)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*wc).name).as_ptr().cast_mut(),
-        c,
-    );
+    log_debug(format_args!(
+        "wait channel {} not woken ({})",
+        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _),
+        log_pointer((c) as *const ::core::ffi::c_void)
+    ));
     (*wait_channel_waiters(wc)).push(Box::new(wait_item { item }));
     return CMD_RETURN_WAIT;
 }

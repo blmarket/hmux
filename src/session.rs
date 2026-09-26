@@ -9,7 +9,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{gettimeofday, memcpy, strcmp};
 use crate::src::grid::grid_collect_history;
-use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::{options_free, options_get_number};
 use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
 use crate::src::resize::recalculate_sizes;
@@ -388,11 +388,11 @@ pub unsafe fn session_create(
         }
     }
     sessions_insert(&raw mut sessions, s);
-    log_debug(
-        b"new session %s $%u\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*s).name).as_ptr().cast_mut(),
-        (*s).id,
-    );
+    log_debug(format_args!(
+        "new session {} ${}",
+        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
+        ((*s).id) as u32
+    ));
     if gettimeofday(&raw mut (*s).creation_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -401,24 +401,27 @@ pub unsafe fn session_create(
 }
 pub unsafe fn session_add_ref(mut s: *mut session, mut from: *const ::core::ffi::c_char) {
     crate::src::shared::rc::retain(s);
-    log_debug(
-        b"%s: %s %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"session_add_ref\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*s).name).as_ptr().cast_mut(),
-        from,
-        crate::src::shared::rc::strong_count(s) as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "{}: {} {}, now {}",
+        "session_add_ref",
+        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
+        log_cstr((from) as *const _),
+        crate::src::shared::rc::strong_count(s) as ::core::ffi::c_int
+    ));
 }
 pub unsafe fn session_remove_ref(s: *mut session, from: *const ::core::ffi::c_char) {
-    log_debug(
-        c"release session %s (%s)".as_ptr(),
-        (*s).name.as_ptr(),
-        from,
-    );
+    log_debug(format_args!(
+        "release session {} ({})",
+        log_cstr(((*s).name.as_ptr()) as *const _),
+        log_cstr((from) as *const _)
+    ));
     crate::src::shared::rc::release_later(crate::src::shared::rc::take(s));
 }
 unsafe fn session_free(s: *mut session) {
-    log_debug(c"session %s freed".as_ptr(), (*s).name.as_ptr());
+    log_debug(format_args!(
+        "session {} freed",
+        log_cstr(((*s).name.as_ptr()) as *const _)
+    ));
     environ_free((*s).environ);
     if !(*s).options.is_null() {
         options_free((*s).options);
@@ -431,11 +434,11 @@ pub unsafe fn session_destroy(
     mut from: *const ::core::ffi::c_char,
 ) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    log_debug(
-        b"session %s destroyed (%s)\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*s).name).as_ptr().cast_mut(),
-        from,
-    );
+    log_debug(format_args!(
+        "session {} destroyed ({})",
+        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
+        log_cstr((from) as *const _)
+    ));
     if (*s).curw.is_null() {
         return;
     }
@@ -477,11 +480,11 @@ unsafe fn session_lock_timer(mut arg: *mut ::core::ffi::c_void) {
     if (*s).attached == 0 as u_int {
         return;
     }
-    log_debug(
-        b"session %s locked, activity time %lld\0" as *const u8 as *const ::core::ffi::c_char,
-        ((*s).name).as_ptr().cast_mut(),
-        (*s).activity_time.tv_sec as ::core::ffi::c_longlong,
-    );
+    log_debug(format_args!(
+        "session {} locked, activity time {}",
+        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
+        (*s).activity_time.tv_sec as ::core::ffi::c_longlong
+    ));
     server_lock_session(s);
     recalculate_sizes();
 }
@@ -499,13 +502,13 @@ pub unsafe fn session_update_activity(mut s: *mut session, mut from: *mut timeva
             ::core::mem::size_of::<timeval>() as size_t,
         );
     }
-    log_debug(
-        b"session $%u %s activity %lld.%06d\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).id,
-        ((*s).name).as_ptr().cast_mut(),
+    log_debug(format_args!(
+        "session ${} {} activity {}.{:06}",
+        ((*s).id) as u32,
+        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
         (*s).activity_time.tv_sec as ::core::ffi::c_longlong,
-        (*s).activity_time.tv_usec as ::core::ffi::c_int,
-    );
+        (*s).activity_time.tv_usec as ::core::ffi::c_int
+    ));
     if event_initialized(&(*s).lock_timer) != 0 {
         event_del(&raw mut (*s).lock_timer);
     } else {
@@ -1124,13 +1127,13 @@ pub unsafe fn session_update_history(mut s: *mut session) {
             (*gd).hlimit = limit;
             grid_collect_history(gd, 1 as ::core::ffi::c_int);
             if (*gd).hsize != osize {
-                log_debug(
-                    b"%s: %%%u %u -> %u\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"session_update_history\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*wp).id,
-                    osize,
-                    (*gd).hsize,
-                );
+                log_debug(format_args!(
+                    "{}: %{} {} -> {}",
+                    "session_update_history",
+                    ((*wp).id) as u32,
+                    (osize) as u32,
+                    ((*gd).hsize) as u32
+                ));
             }
             wp = window_pane_next(wp);
         }

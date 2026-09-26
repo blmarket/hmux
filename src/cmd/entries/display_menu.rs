@@ -11,7 +11,7 @@ use crate::src::format::{
     format_single_from_target_cstring,
 };
 use crate::src::key_string::key_string_parse_cstr;
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::menu::{menu_add_item, menu_create, menu_display, menu_free};
 use crate::src::options::options_table_entry;
 use crate::src::options::{
@@ -480,14 +480,14 @@ unsafe fn cmd_display_menu_get_popup_pos(
         n = 0 as ::core::ffi::c_long;
     }
     *px = n as u_int;
-    log_debug(
-        b"%s: -x: %s = %s = %u (-w %u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_display_menu_get_popup_pos\0" as *const u8 as *const ::core::ffi::c_char,
-        xp,
-        p.as_ptr(),
-        *px,
-        w,
-    );
+    log_debug(format_args!(
+        "{}: -x: {} = {} = {} (-w {})",
+        "cmd_display_menu_get_popup_pos",
+        log_cstr((xp) as *const _),
+        log_cstr((p.as_ptr()) as *const _),
+        (*px) as u32,
+        (w) as u32
+    ));
     yp = args_get(args, 'y' as i32 as u_char);
     if yp.is_null()
         || strcmp(yp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
@@ -531,14 +531,14 @@ unsafe fn cmd_display_menu_get_popup_pos(
         n = 0 as ::core::ffi::c_long;
     }
     *py = n as u_int;
-    log_debug(
-        b"%s: -y: %s = %s = %u (-h %u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_display_menu_get_popup_pos\0" as *const u8 as *const ::core::ffi::c_char,
-        yp,
-        p.as_ptr(),
-        *py,
-        h,
-    );
+    log_debug(format_args!(
+        "{}: -y: {} = {} = {} (-h {})",
+        "cmd_display_menu_get_popup_pos",
+        log_cstr((yp) as *const _),
+        log_cstr((p.as_ptr()) as *const _),
+        (*py) as u32,
+        (h) as u32
+    ));
     format_free(ft);
     return 1 as ::core::ffi::c_int;
 }
@@ -899,14 +899,14 @@ unsafe fn cmd_display_menu_get_menu_pos(
         n = max_x;
     }
     *px = n as u_int;
-    log_debug(
-        b"%s: -x: %s = %s = %u (-w %u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_display_menu_get_menu_pos\0" as *const u8 as *const ::core::ffi::c_char,
-        xp,
-        p.as_ptr(),
-        *px,
-        w,
-    );
+    log_debug(format_args!(
+        "{}: -x: {} = {} = {} (-w {})",
+        "cmd_display_menu_get_menu_pos",
+        log_cstr((xp) as *const _),
+        log_cstr((p.as_ptr()) as *const _),
+        (*px) as u32,
+        (w) as u32
+    ));
     yp = args_get(args, 'y' as i32 as u_char);
     if yp.is_null()
         || strcmp(yp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
@@ -951,14 +951,14 @@ unsafe fn cmd_display_menu_get_menu_pos(
         n = max_y;
     }
     *py = n as u_int;
-    log_debug(
-        b"%s: -y: %s = %s = %u (-h %u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_display_menu_get_menu_pos\0" as *const u8 as *const ::core::ffi::c_char,
-        yp,
-        p.as_ptr(),
-        *py,
-        h,
-    );
+    log_debug(format_args!(
+        "{}: -y: {} = {} = {} (-h {})",
+        "cmd_display_menu_get_menu_pos",
+        log_cstr((yp) as *const _),
+        log_cstr((p.as_ptr()) as *const _),
+        (*py) as u32,
+        (h) as u32
+    ));
     format_free(ft);
     return 1 as ::core::ffi::c_int;
 }

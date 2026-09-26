@@ -9,7 +9,7 @@ use crate::src::control::{
     control_remove_sub, control_set_pane_off, control_set_pane_on, control_set_window_size,
 };
 use crate::src::ffi::libc::sscanf;
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
 use crate::src::server_client::server_client_set_flags;
@@ -106,16 +106,19 @@ unsafe fn cmd_refresh_client_control_client_size(
             );
             return CMD_RETURN_ERROR;
         }
-        log_debug(
-            b"%s: client %s window @%u: size %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmd_refresh_client_control_client_size\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*tc).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            w,
-            x,
-            y,
-        );
+        log_debug(format_args!(
+            "{}: client {} window @{}: size {}x{}",
+            "cmd_refresh_client_control_client_size",
+            log_cstr(
+                (((*tc).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            (w) as u32,
+            (x) as u32,
+            (y) as u32
+        ));
         control_set_window_size(tc, w, x, y);
         (*tc).flags =
             ((*tc).flags as ::core::ffi::c_ulonglong | CLIENT_WINDOWSIZECHANGED) as uint64_t;
@@ -128,14 +131,17 @@ unsafe fn cmd_refresh_client_control_client_size(
         &raw mut w,
     ) == 1 as ::core::ffi::c_int
     {
-        log_debug(
-            b"%s: client %s window @%u: no size\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmd_refresh_client_control_client_size\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*tc).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            w,
-        );
+        log_debug(format_args!(
+            "{}: client {} window @{}: no size",
+            "cmd_refresh_client_control_client_size",
+            log_cstr(
+                (((*tc).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            (w) as u32
+        ));
         control_clear_window_size(tc, w);
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;

@@ -9,7 +9,7 @@ use crate::src::compat::glob::GlobResult;
 use crate::src::ffi::libc::{__ctype_b_loc, strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::format_single_from_target_cstring;
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::{server_client_get_cwd, server_client_unref};
 use crate::src::shared::abi::*;
@@ -79,18 +79,18 @@ unsafe fn cmd_source_file_decrement_depth(cdata: &cmd_source_file_data) {
     let c = cdata.client;
     if c.is_null() {
         cmd_source_file_depth = cmd_source_file_depth.wrapping_sub(1);
-        log_debug(
-            b"%s: depth now %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmd_source_file_complete_cb\0" as *const u8 as *const ::core::ffi::c_char,
-            cmd_source_file_depth,
-        );
+        log_debug(format_args!(
+            "{}: depth now {}",
+            "cmd_source_file_complete_cb",
+            (cmd_source_file_depth) as u32
+        ));
     } else {
         (*c).source_file_depth = (*c).source_file_depth.wrapping_sub(1);
-        log_debug(
-            b"%s: depth now %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmd_source_file_complete_cb\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).source_file_depth,
-        );
+        log_debug(format_args!(
+            "{}: depth now {}",
+            "cmd_source_file_complete_cb",
+            ((*c).source_file_depth) as u32
+        ));
     }
 }
 unsafe fn cmd_source_file_cancel_complete_typed(cdata: *mut cmd_source_file_data) {
@@ -205,11 +205,11 @@ unsafe fn cmd_source_file_done(
     };
 }
 unsafe fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmd_source_file_add\0" as *const u8 as *const ::core::ffi::c_char,
-        path.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "cmd_source_file_add",
+        log_cstr((path.as_ptr()) as *const _)
+    ));
     cdata.files.push(path.to_owned());
 }
 unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
@@ -246,11 +246,11 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             return CMD_RETURN_ERROR;
         }
         cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
-        log_debug(
-            b"%s: depth now %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmd_source_file_exec\0" as *const u8 as *const ::core::ffi::c_char,
-            cmd_source_file_depth,
-        );
+        log_debug(format_args!(
+            "{}: depth now {}",
+            "cmd_source_file_exec",
+            (cmd_source_file_depth) as u32
+        ));
     } else {
         if (*c).source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
             cmdq_error(
@@ -260,11 +260,11 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             return CMD_RETURN_ERROR;
         }
         (*c).source_file_depth = (*c).source_file_depth.wrapping_add(1);
-        log_debug(
-            b"%s: depth now %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmd_source_file_exec\0" as *const u8 as *const ::core::ffi::c_char,
-            (*c).source_file_depth,
-        );
+        log_debug(format_args!(
+            "{}: depth now {}",
+            "cmd_source_file_exec",
+            ((*c).source_file_depth) as u32
+        ));
     }
     cdata = Box::into_raw(Box::new(cmd_source_file_data {
         item,
@@ -321,11 +321,11 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 bytes.extend_from_slice(path_bytes);
                 CString::new(bytes).expect("C strings have no interior NUL")
             };
-            log_debug(
-                b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                b"cmd_source_file_exec\0" as *const u8 as *const ::core::ffi::c_char,
-                pattern.as_ptr(),
-            );
+            log_debug(format_args!(
+                "{}: {}",
+                "cmd_source_file_exec",
+                log_cstr((pattern.as_ptr()) as *const _)
+            ));
             let (matches, result) = GlobResult::run(pattern.as_c_str());
             if result != 0 as ::core::ffi::c_int {
                 if result != GLOB_NOMATCH || !(*cdata).flags & CMD_PARSE_QUIET != 0 {

@@ -1,5 +1,5 @@
 use crate::src::ffi::libc::{strcasecmp, strcmp, strlcat, strlen, strsep};
-use crate::src::log::log_debug;
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_UTF8;
@@ -233,10 +233,10 @@ pub unsafe fn tty_parse_features(
     let mut loop_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut remove: ::core::ffi::c_int = 0;
-    log_debug(
-        b"adding terminal features %s\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
-    );
+    log_debug(format_args!(
+        "adding terminal features {}",
+        log_cstr((s) as *const _)
+    ));
     // strsep and the trailing-@ removal both write into this local copy.
     let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
     loop_0 = copy.as_mut_ptr().cast();
@@ -261,16 +261,16 @@ pub unsafe fn tty_parse_features(
             i = i.wrapping_add(1);
         }
         if i as usize == tty_features.len() {
-            log_debug(
-                b"unknown terminal feature: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                next,
-            );
+            log_debug(format_args!(
+                "unknown terminal feature: {}",
+                log_cstr((next) as *const _)
+            ));
             break;
         } else if remove != 0 {
-            log_debug(
-                b"removing terminal feature: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*tf).name.as_ptr(),
-            );
+            log_debug(format_args!(
+                "removing terminal feature: {}",
+                log_cstr(((*tf).name.as_ptr()) as *const _)
+            ));
             *enabled &= !((1 as ::core::ffi::c_int) << i);
             if !disabled.is_null() {
                 *disabled |= (1 as ::core::ffi::c_int) << i;
@@ -280,10 +280,10 @@ pub unsafe fn tty_parse_features(
                 continue;
             }
             if !*enabled & (1 as ::core::ffi::c_int) << i != 0 {
-                log_debug(
-                    b"adding terminal feature: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*tf).name.as_ptr(),
-                );
+                log_debug(format_args!(
+                    "adding terminal feature: {}",
+                    log_cstr(((*tf).name.as_ptr()) as *const _)
+                ));
                 *enabled |= (1 as ::core::ffi::c_int) << i;
             }
         }
@@ -374,26 +374,26 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int 
     if feat == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    log_debug(
-        b"applying terminal features: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        tty_get_features(feat),
-    );
+    log_debug(format_args!(
+        "applying terminal features: {}",
+        log_cstr((tty_get_features(feat)) as *const _)
+    ));
     i = 0 as u_int;
     while (i as usize) < tty_features.len() {
         if !((*term).applied_features & (1 as ::core::ffi::c_int) << i != 0
             || !feat & (1 as ::core::ffi::c_int) << i != 0)
         {
             tf = tty_features[i as usize];
-            log_debug(
-                b"applying terminal feature: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                (*tf).name.as_ptr(),
-            );
+            log_debug(format_args!(
+                "applying terminal feature: {}",
+                log_cstr(((*tf).name.as_ptr()) as *const _)
+            ));
             if let Some(capabilities) = (*tf).capabilities {
                 for capability in capabilities {
-                    log_debug(
-                        b"adding capability: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                        capability.as_ptr(),
-                    );
+                    log_debug(format_args!(
+                        "adding capability: {}",
+                        log_cstr((capability.as_ptr()) as *const _)
+                    ));
                     tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int);
                 }
             }

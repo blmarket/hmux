@@ -24,7 +24,7 @@ use crate::src::layout::{
     layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free, layout_free_cell,
     layout_init,
 };
-use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::{options_create, options_free, options_get_number};
 use crate::src::prompt::{
@@ -1075,19 +1075,19 @@ pub unsafe fn window_create(
         fatal(b"gettimeofday failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
     window_update_activity(w);
-    log_debug(
-        b"%s: @%u create %ux%u (%ux%u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_create\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        sx,
-        sy,
-        (*w).xpixel,
-        (*w).ypixel,
-    );
+    log_debug(format_args!(
+        "{}: @{} create {}x{} ({}x{})",
+        "window_create",
+        ((*w).id) as u32,
+        (sx) as u32,
+        (sy) as u32,
+        ((*w).xpixel) as u32,
+        ((*w).ypixel) as u32
+    ));
     return w;
 }
 unsafe fn window_destroy(mut w: *mut window) {
-    log_debug(c"window @%u destroyed".as_ptr(), (*w).id);
+    log_debug(format_args!("window @{} destroyed", ((*w).id) as u32));
     window_unzoom(w, 0 as ::core::ffi::c_int);
     if (*w).entry.owner.is_some() {
         windows_remove(&raw mut windows, w);
@@ -1135,22 +1135,38 @@ pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi
 }
 pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) {
     crate::src::shared::rc::retain(w);
-    log_debug(c"retain window @%u (%s)".as_ptr(), (*w).id, from);
+    log_debug(format_args!(
+        "retain window @{} ({})",
+        ((*w).id) as u32,
+        log_cstr((from) as *const _)
+    ));
 }
 pub unsafe fn window_remove_ref(w: *mut window, from: *const ::core::ffi::c_char) {
     // Notify while a strong reference still exists: callbacks may retain w.
     if crate::src::shared::rc::strong_count(w) == 1 {
         events_fire_window(c"window-closed".as_ptr(), w);
     }
-    log_debug(c"release window @%u (%s)".as_ptr(), (*w).id, from);
+    log_debug(format_args!(
+        "release window @{} ({})",
+        ((*w).id) as u32,
+        log_cstr((from) as *const _)
+    ));
     crate::src::shared::rc::release(w);
 }
 pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) {
     crate::src::shared::rc::retain(wp);
-    log_debug(c"retain pane %%%u (%s)".as_ptr(), (*wp).id, from);
+    log_debug(format_args!(
+        "retain pane %{} ({})",
+        ((*wp).id) as u32,
+        log_cstr((from) as *const _)
+    ));
 }
 pub unsafe fn window_pane_remove_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) {
-    log_debug(c"release pane %%%u (%s)".as_ptr(), (*wp).id, from);
+    log_debug(format_args!(
+        "release pane %{} ({})",
+        ((*wp).id) as u32,
+        log_cstr((from) as *const _)
+    ));
     crate::src::shared::rc::release(wp);
 }
 pub unsafe fn window_set_name(
@@ -1177,23 +1193,23 @@ pub unsafe fn window_resize(
     if ypixel == 0 as ::core::ffi::c_int {
         ypixel = DEFAULT_YPIXEL;
     }
-    log_debug(
-        b"%s: @%u resize %ux%u (%ux%u)\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_resize\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        sx,
-        sy,
-        if xpixel == -(1 as ::core::ffi::c_int) {
+    log_debug(format_args!(
+        "{}: @{} resize {}x{} ({}x{})",
+        "window_resize",
+        ((*w).id) as u32,
+        (sx) as u32,
+        (sy) as u32,
+        (if xpixel == -(1 as ::core::ffi::c_int) {
             (*w).xpixel
         } else {
             xpixel as u_int
-        },
-        if ypixel == -(1 as ::core::ffi::c_int) {
+        }) as u32,
+        (if ypixel == -(1 as ::core::ffi::c_int) {
             (*w).ypixel
         } else {
             ypixel as u_int
-        },
-    );
+        }) as u32
+    ));
     (*w).sx = sx;
     (*w).sy = sy;
     if !(*w).menu.is_null() {
@@ -1219,13 +1235,13 @@ pub unsafe fn window_pane_send_resize(mut wp: *mut window_pane, mut sx: u_int, m
     if (*wp).fd == -(1 as ::core::ffi::c_int) {
         return;
     }
-    log_debug(
-        b"%s: %%%u resize to %u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_pane_send_resize\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        sx,
-        sy,
-    );
+    log_debug(format_args!(
+        "{}: %{} resize to {},{}",
+        "window_pane_send_resize",
+        ((*wp).id) as u32,
+        (sx) as u32,
+        (sy) as u32
+    ));
     memset(
         &raw mut ws as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -1301,11 +1317,11 @@ pub unsafe fn window_pane_contains(
 }
 pub unsafe fn window_update_focus(mut w: *mut window) {
     if !w.is_null() {
-        log_debug(
-            b"%s: @%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"window_update_focus\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-        );
+        log_debug(format_args!(
+            "{}: @{}",
+            "window_update_focus",
+            ((*w).id) as u32
+        ));
         window_pane_update_focus((*w).active);
     }
 }
@@ -1333,11 +1349,11 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
             }
         }
         if focused == 0 && (*wp).flags & PANE_FOCUSED != 0 {
-            log_debug(
-                b"%s: %%%u focus out\0" as *const u8 as *const ::core::ffi::c_char,
-                b"window_pane_update_focus\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            log_debug(format_args!(
+                "{}: %{} focus out",
+                "window_pane_update_focus",
+                ((*wp).id) as u32
+            ));
             if (*wp).base.mode & MODE_FOCUSON != 0 {
                 bufferevent_write(
                     (*wp).event,
@@ -1352,11 +1368,11 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
             );
             (*wp).flags &= !PANE_FOCUSED;
         } else if focused != 0 && !(*wp).flags & PANE_FOCUSED != 0 {
-            log_debug(
-                b"%s: %%%u focus in\0" as *const u8 as *const ::core::ffi::c_char,
-                b"window_pane_update_focus\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            log_debug(format_args!(
+                "{}: %{} focus in",
+                "window_pane_update_focus",
+                ((*wp).id) as u32
+            ));
             if (*wp).base.mode & MODE_FOCUSON != 0 {
                 bufferevent_write(
                     (*wp).event,
@@ -1371,11 +1387,11 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
             );
             (*wp).flags |= PANE_FOCUSED;
         } else {
-            log_debug(
-                b"%s: %%%u focus unchanged\0" as *const u8 as *const ::core::ffi::c_char,
-                b"window_pane_update_focus\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            log_debug(format_args!(
+                "{}: %{} focus unchanged",
+                "window_pane_update_focus",
+                ((*wp).id) as u32
+            ));
         }
     }
 }
@@ -1385,11 +1401,11 @@ pub unsafe fn window_set_active_pane(
     mut notify: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    log_debug(
-        b"%s: pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_set_active_pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!(
+        "{}: pane %{}",
+        "window_set_active_pane",
+        ((*wp).id) as u32
+    ));
     if wp == (*w).active {
         return 0 as ::core::ffi::c_int;
     }
@@ -1813,12 +1829,12 @@ pub unsafe fn window_push_zoom(
     mut flag: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = window_zoomed_pane(w);
-    log_debug(
-        b"%s: @%u %d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_push_zoom\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        (flag != 0 && (*w).flags & WINDOW_ZOOMED != 0) as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "{}: @{} {}",
+        "window_push_zoom",
+        ((*w).id) as u32,
+        (flag != 0 && (*w).flags & WINDOW_ZOOMED != 0) as ::core::ffi::c_int
+    ));
     if flag != 0 && (always != 0 || (*w).flags & WINDOW_ZOOMED != 0) {
         (*w).flags |= WINDOW_WASZOOMED;
     } else {
@@ -1834,12 +1850,12 @@ pub unsafe fn window_push_zoom(
 }
 pub unsafe fn window_pop_zoom(mut w: *mut window) -> ::core::ffi::c_int {
     let mut wp: *mut window_pane = (*w).was_zoomed;
-    log_debug(
-        b"%s: @%u %d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_pop_zoom\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        ((*w).flags & WINDOW_WASZOOMED != 0) as ::core::ffi::c_int,
-    );
+    log_debug(format_args!(
+        "{}: @{} {}",
+        "window_pop_zoom",
+        ((*w).id) as u32,
+        ((*w).flags & WINDOW_WASZOOMED != 0) as ::core::ffi::c_int
+    ));
     if (*w).flags & WINDOW_WASZOOMED != 0 {
         (*w).flags &= !WINDOW_WASZOOMED;
         (*w).was_zoomed = ::core::ptr::null_mut::<window_pane>();
@@ -1870,31 +1886,31 @@ pub unsafe fn window_add_pane(
     }
     wp = window_pane_create(w, (*w).sx, (*w).sy, hlimit);
     if window_pane_first(w).is_null() {
-        log_debug(
-            b"%s: @%u at start\0" as *const u8 as *const ::core::ffi::c_char,
-            b"window_add_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-        );
+        log_debug(format_args!(
+            "{}: @{} at start",
+            "window_add_pane",
+            ((*w).id) as u32
+        ));
         window_pane_list_insert_front(w, wp);
     } else if flags & SPAWN_BEFORE != 0 {
-        log_debug(
-            b"%s: @%u before %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"window_add_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-            (*wp).id,
-        );
+        log_debug(format_args!(
+            "{}: @{} before %{}",
+            "window_add_pane",
+            ((*w).id) as u32,
+            ((*wp).id) as u32
+        ));
         if flags & SPAWN_FULLSIZE != 0 {
             window_pane_list_insert_front(w, wp);
         } else {
             window_pane_list_insert_before(w, other, wp);
         }
     } else {
-        log_debug(
-            b"%s: @%u after %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"window_add_pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-            (*wp).id,
-        );
+        log_debug(format_args!(
+            "{}: @{} after %{}",
+            "window_add_pane",
+            ((*w).id) as u32,
+            ((*wp).id) as u32
+        ));
         if flags & (SPAWN_FULLSIZE | SPAWN_FLOATING) != 0 {
             window_pane_list_insert_back(w, wp);
         } else {
@@ -1913,12 +1929,12 @@ pub unsafe fn window_add_pane(
 }
 pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    log_debug(
-        b"%s: @%u pane %%%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_lost_pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).id,
-        (*wp).id,
-    );
+    log_debug(format_args!(
+        "{}: @{} pane %{}",
+        "window_lost_pane",
+        ((*w).id) as u32,
+        ((*wp).id) as u32
+    ));
     if wp == marked_pane.wp {
         server_clear_marked();
     }
@@ -2891,7 +2907,7 @@ unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
     );
 }
 unsafe fn window_pane_free(mut wp: *mut window_pane) {
-    log_debug(c"pane %%%u freed".as_ptr(), (*wp).id);
+    log_debug(format_args!("pane %{} freed", ((*wp).id) as u32));
     window_pane_set_searchstr(&mut *wp, None);
     if !(*wp).status_screen.grid.is_null() {
         screen_free(&raw mut (*wp).status_screen);
@@ -2926,11 +2942,11 @@ unsafe fn window_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
             window_pane_update_used_data(wp, wpo, new_size);
         }
     }
-    log_debug(
-        b"%%%u has %zu bytes\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        size,
-    );
+    log_debug(format_args!(
+        "%{} has {} bytes",
+        ((*wp).id) as u32,
+        (size) as usize
+    ));
     c = clients.first();
     while !c.is_null() {
         if !(*c).session.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
@@ -2943,10 +2959,7 @@ unsafe fn window_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
 }
 unsafe fn window_pane_error_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
-    log_debug(
-        b"%%%u error\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-    );
+    log_debug(format_args!("%{} error", ((*wp).id) as u32));
     (*wp).flags |= PANE_EXITED;
     if window_pane_destroy_ready(wp) != 0 {
         server_destroy_pane(wp, 1 as ::core::ffi::c_int);
@@ -3007,13 +3020,13 @@ pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy
     });
     (*wp).sx = sx;
     (*wp).sy = sy;
-    log_debug(
-        b"%s: %%%u resize %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_pane_resize\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        sx,
-        sy,
-    );
+    log_debug(format_args!(
+        "{}: %{} resize {}x{}",
+        "window_pane_resize",
+        ((*wp).id) as u32,
+        (sx) as u32,
+        (sy) as u32
+    ));
     screen_resize(
         &raw mut (*wp).base,
         sx,
@@ -3154,17 +3167,14 @@ pub unsafe fn window_pane_reset_mode(mut wp: *mut window_pane) {
     next = (*wp).modes.active;
     if next.is_null() {
         (*wp).flags &= !PANE_UNSEENCHANGES;
-        log_debug(
-            b"%s: no next mode\0" as *const u8 as *const ::core::ffi::c_char,
-            b"window_pane_reset_mode\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        log_debug(format_args!("{}: no next mode", "window_pane_reset_mode"));
         (*wp).screen = &raw mut (*wp).base;
     } else {
-        log_debug(
-            b"%s: next mode is %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"window_pane_reset_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*next).mode).name.as_ptr(),
-        );
+        log_debug(format_args!(
+            "{}: next mode is {}",
+            "window_pane_reset_mode",
+            log_cstr(((*(*next).mode).name.as_ptr()) as *const _)
+        ));
         (*wp).screen = (*next).screen;
         if (*(*next).mode).resize.is_some() {
             (*(*next).mode).resize.expect("non-null function pointer")(next, (*wp).sx, (*wp).sy);
@@ -3392,12 +3402,11 @@ unsafe fn window_pane_copy_paste(
                 b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
             ) != 0
         {
-            log_debug(
-                b"%s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-                b"window_pane_copy_paste\0" as *const u8 as *const ::core::ffi::c_char,
-                len as ::core::ffi::c_int,
-                buf,
-            );
+            log_debug(format_args!(
+                "{}: {}",
+                "window_pane_copy_paste",
+                log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
+            ));
             bufferevent_write((*loop_0).event, buf as *const ::core::ffi::c_void, len);
         }
         loop_0 = window_pane_next(loop_0);
@@ -3445,12 +3454,11 @@ pub unsafe fn window_pane_paste(
     {
         return;
     }
-    log_debug(
-        b"%s: %.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_pane_paste\0" as *const u8 as *const ::core::ffi::c_char,
-        len as ::core::ffi::c_int,
-        buf,
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "window_pane_paste",
+        log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
+    ));
     bufferevent_write((*wp).event, buf as *const ::core::ffi::c_void, len);
     if options_get_number(
         (*wp).options,
@@ -3592,11 +3600,11 @@ pub unsafe fn window_pane_search(
             line.pop();
         }
         line.push(0);
-        log_debug(
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"window_pane_search\0" as *const u8 as *const ::core::ffi::c_char,
-            line.as_ptr().cast::<::core::ffi::c_char>(),
-        );
+        log_debug(format_args!(
+            "{}: {}",
+            "window_pane_search",
+            log_cstr((line.as_ptr().cast::<::core::ffi::c_char>()) as *const _)
+        ));
         if regex == 0 {
             found = (fnmatch(
                 glob.as_ref()
@@ -4294,11 +4302,11 @@ pub unsafe fn window_pane_send_theme_update(mut wp: *mut window_pane) {
     (*wp).flags &= !PANE_THEMECHANGED;
     match theme as ::core::ffi::c_uint {
         1 => {
-            log_debug(
-                b"%s: %%%u light theme\0" as *const u8 as *const ::core::ffi::c_char,
-                b"window_pane_send_theme_update\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            log_debug(format_args!(
+                "{}: %{} light theme",
+                "window_pane_send_theme_update",
+                ((*wp).id) as u32
+            ));
             bufferevent_write(
                 (*wp).event,
                 b"\x1B[?997;2n\0" as *const u8 as *const ::core::ffi::c_char
@@ -4307,11 +4315,11 @@ pub unsafe fn window_pane_send_theme_update(mut wp: *mut window_pane) {
             );
         }
         2 => {
-            log_debug(
-                b"%s: %%%u dark theme\0" as *const u8 as *const ::core::ffi::c_char,
-                b"window_pane_send_theme_update\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            log_debug(format_args!(
+                "{}: %{} dark theme",
+                "window_pane_send_theme_update",
+                ((*wp).id) as u32
+            ));
             bufferevent_write(
                 (*wp).event,
                 b"\x1B[?997;1n\0" as *const u8 as *const ::core::ffi::c_char
@@ -4320,11 +4328,11 @@ pub unsafe fn window_pane_send_theme_update(mut wp: *mut window_pane) {
             );
         }
         0 => {
-            log_debug(
-                b"%s: %%%u unknown theme\0" as *const u8 as *const ::core::ffi::c_char,
-                b"window_pane_send_theme_update\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).id,
-            );
+            log_debug(format_args!(
+                "{}: %{} unknown theme",
+                "window_pane_send_theme_update",
+                ((*wp).id) as u32
+            ));
         }
         _ => {}
     };

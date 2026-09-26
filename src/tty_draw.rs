@@ -1,7 +1,7 @@
 use crate::src::ffi::libc::memcpy;
 use crate::src::grid::view::grid_view_get_cell;
 use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
-use crate::src::log::{fatalx, log_debug, log_get_level};
+use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::screen::screen_select_cell;
 use crate::src::shared::abi::*;
 use crate::src::shared::colour::*;
@@ -198,15 +198,15 @@ pub unsafe fn tty_draw_line(
         style_ctx = &raw mut default_style_ctx;
     }
     defaults = (*style_ctx).defaults;
-    log_debug(
-        b"%s: px=%u py=%u nx=%u atx=%u aty=%u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"tty_draw_line\0" as *const u8 as *const ::core::ffi::c_char,
-        px,
-        py,
-        nx,
-        atx,
-        aty,
-    );
+    log_debug(format_args!(
+        "{}: px={} py={} nx={} atx={} aty={}",
+        "tty_draw_line",
+        (px) as u32,
+        (py) as u32,
+        (nx) as u32,
+        (atx) as u32,
+        (aty) as u32
+    ));
     if atx >= (*tty).sx {
         return;
     }
@@ -222,19 +222,18 @@ pub unsafe fn tty_draw_line(
     } else {
         ex = (*(*s).grid).sx;
     }
-    log_debug(
-        b"%s: drawing %u-%u,%u (end %u) at %u,%u; defaults: fg=%d, bg=%d\0" as *const u8
-            as *const ::core::ffi::c_char,
-        b"tty_draw_line\0" as *const u8 as *const ::core::ffi::c_char,
-        px,
-        px.wrapping_add(nx),
-        py,
-        ex,
-        atx,
-        aty,
-        (*defaults).fg,
-        (*defaults).bg,
-    );
+    log_debug(format_args!(
+        "{}: drawing {}-{},{} (end {}) at {},{}; defaults: fg={}, bg={}",
+        "tty_draw_line",
+        (px) as u32,
+        (px.wrapping_add(nx)) as u32,
+        (py) as u32,
+        (ex) as u32,
+        (atx) as u32,
+        (aty) as u32,
+        ((*defaults).fg) as i32,
+        ((*defaults).bg) as i32
+    ));
     flags = (*tty).flags & TTY_NOCURSOR;
     (*tty).flags |= TTY_NOCURSOR;
     tty_update_mode(tty, (*tty).mode, s);
@@ -282,11 +281,11 @@ pub unsafe fn tty_draw_line(
             }
         }
         tty_attributes(tty, &raw mut last, style_ctx);
-        log_debug(
-            b"%s: clearing %u padding cells\0" as *const u8 as *const ::core::ffi::c_char,
-            b"tty_draw_line\0" as *const u8 as *const ::core::ffi::c_char,
-            cx,
-        );
+        log_debug(format_args!(
+            "{}: clearing {} padding cells",
+            "tty_draw_line",
+            (cx) as u32
+        ));
         tty_draw_line_clear(tty, atx, aty, cx, defaults, bg, 0 as ::core::ffi::c_int);
         if cx == ex {
             current_block = 15064833524635049977;
@@ -373,16 +372,15 @@ pub unsafe fn tty_draw_line(
                     }
                 }
                 if log_get_level() != 0 as ::core::ffi::c_int {
-                    log_debug(
-                        b"%s: cell %u empty %u, bg %u; state: current %s, next %s\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                        b"tty_draw_line\0" as *const u8 as *const ::core::ffi::c_char,
-                        px.wrapping_add(i),
-                        empty,
-                        (*gcp).bg,
-                        tty_draw_line_states[current_state as usize],
-                        tty_draw_line_states[next_state as usize],
-                    );
+                    log_debug(format_args!(
+                        "{}: cell {} empty {}, bg {}; state: current {}, next {}",
+                        "tty_draw_line",
+                        (px.wrapping_add(i)) as u32,
+                        (empty) as u32,
+                        ((*gcp).bg) as u32,
+                        log_cstr((tty_draw_line_states[current_state as usize]) as *const _),
+                        log_cstr((tty_draw_line_states[next_state as usize]) as *const _)
+                    ));
                 }
                 if next_state as ::core::ffi::c_uint != current_state as ::core::ffi::c_uint {
                     if current_state as ::core::ffi::c_uint

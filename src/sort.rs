@@ -48,7 +48,8 @@ fn sort_by_criteria<T>(
         }
         return;
     }
-    values.sort_unstable_by(|a, b| compare(a, b, sort_crit));
+    // Preserve traversal order for equal keys, as the pinned tmux sort does.
+    values.sort_by(|a, b| compare(a, b, sort_crit));
 }
 
 unsafe fn sort_buffer_cmp(
@@ -590,6 +591,30 @@ pub unsafe fn sort_get_key_bindings_table(
 #[cfg(test)]
 mod sequence_tests {
     use super::*;
+
+    #[test]
+    fn equal_keys_preserve_input_order_in_both_directions() {
+        for reversed in [0, 1] {
+            let criteria = sort_criteria {
+                order: SORT_NAME,
+                reversed,
+                order_seq: &[],
+            };
+            let mut values: Vec<_> = (0..30).map(|index| (index % 2, index)).collect();
+            sort_by_criteria(&mut values, &criteria, |a, b, criteria| {
+                sort_ordering(a.0 - b.0, criteria.reversed)
+            });
+            let first = reversed;
+            let expected: Vec<_> = (first..30)
+                .step_by(2)
+                .chain((1 - first..30).step_by(2))
+                .collect();
+            assert_eq!(
+                values.iter().map(|value| value.1).collect::<Vec<_>>(),
+                expected
+            );
+        }
+    }
 
     #[test]
     fn sort_sequence_cycles_and_recovers_unknown_order() {

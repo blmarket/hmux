@@ -1,3 +1,4 @@
+use crate::src::log::log_cstr;
 // Private tree-storage implementation.  It owns the format-entry tree and
 // format-tree CRUD operations.
 // Shared C-layout types, allocator/FFI helpers, and callback-table symbols
@@ -214,12 +215,12 @@ pub unsafe fn format_log_debug(mut ft: *mut format_tree, mut prefix: *const ::co
         return;
     }
     format_each(ft, |key, value| {
-        log_debug(
-            b"%s: %s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            prefix,
-            key.as_ptr(),
-            value.as_ptr(),
-        );
+        log_debug(format_args!(
+            "{}: {}={}",
+            log_cstr((prefix) as *const _),
+            log_cstr((key.as_ptr()) as *const _),
+            log_cstr((value.as_ptr()) as *const _)
+        ));
     });
 }
 pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)) {

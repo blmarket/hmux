@@ -4,7 +4,7 @@ use crate::src::cmd::find::{
     cmd_find_valid_state,
 };
 use crate::src::format::format_add;
-use crate::src::log::{fatalx, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::reactor::{
     evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup,
@@ -678,12 +678,15 @@ pub unsafe extern "C" fn event_payload_log(
             epi = event_payload_tree_next(epi);
         }
     }
-    log_debug(
-        b"%s%.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        prefix.as_ptr(),
-        evbuffer_get_length(&*(evb)) as ::core::ffi::c_int,
-        evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_char,
-    );
+    log_debug(format_args!(
+        "{}{}",
+        log_cstr((prefix.as_ptr()) as *const _),
+        log_cstr_n(
+            (evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t)
+                as *mut ::core::ffi::c_char) as *const _,
+            evbuffer_get_length(&*(evb)) as ::core::ffi::c_int
+        )
+    ));
     evbuffer_free(evb);
 }
 pub unsafe fn event_payload_get_client(mut ep: *mut event_payload) -> *mut client {

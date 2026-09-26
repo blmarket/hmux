@@ -21,7 +21,7 @@ use crate::src::ffi::libc::{__ctype_toupper_loc, getpwuid, getuid, time};
 use crate::src::file::{file_cancel_cmdq_wait, file_error};
 use crate::src::format::{format_add, format_add_cstr, format_create, format_free, format_merge};
 use crate::src::key_string::key_string_format;
-use crate::src::log::{fatalx, log_debug, log_get_level};
+use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::reactor::{evbuffer_add_vprintf, evbuffer_free, evbuffer_new};
 use crate::src::server::server_add_message;
@@ -333,14 +333,17 @@ pub unsafe fn cmdq_append(mut c: *mut client, mut item: *mut cmdq_item) -> *mut 
         (*item).queue = queue;
         // Enqueue consumes the detached allocation without moving the item.
         (*queue).list.push_back(Box::from_raw(item));
-        log_debug(
-            b"%s %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmdq_append\0" as *const u8 as *const ::core::ffi::c_char,
-            cmdq_name(c),
-            ((*item).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{} {}: {}",
+            "cmdq_append",
+            log_cstr((cmdq_name(c)) as *const _),
+            log_cstr(
+                (((*item).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         item = next;
         if item.is_null() {
             break;
@@ -368,17 +371,23 @@ pub unsafe fn cmdq_insert_after(
         // Enqueue consumes the detached allocation without moving the item.
         (*queue).list.insert(position, Box::from_raw(item));
         position += 1;
-        log_debug(
-            b"%s %s: %s after %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmdq_insert_after\0" as *const u8 as *const ::core::ffi::c_char,
-            cmdq_name(c),
-            ((*item).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ((*after).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        log_debug(format_args!(
+            "{} {}: {} after {}",
+            "cmdq_insert_after",
+            log_cstr((cmdq_name(c)) as *const _),
+            log_cstr(
+                (((*item).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            log_cstr(
+                (((*after).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            )
+        ));
         after = item;
         item = next;
         if item.is_null() {
@@ -560,14 +569,17 @@ pub unsafe fn cmdq_get_command(
         (*item).cmdlist = cmdlist;
         (*item).cmd = cmd;
         crate::src::shared::rc::retain(cmdlist);
-        log_debug(
-            b"%s: %s group %u\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmdq_get_command\0" as *const u8 as *const ::core::ffi::c_char,
-            ((*item).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            (*item).group,
-        );
+        log_debug(format_args!(
+            "{}: {} group {}",
+            "cmdq_get_command",
+            log_cstr(
+                (((*item).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            ((*item).group) as u32
+        ));
         if first.is_null() {
             first = item;
         }
@@ -679,13 +691,13 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     }
     if log_get_level() > 1 as ::core::ffi::c_int {
         let tmp = cmd_print_cstring(&*cmd);
-        log_debug(
-            b"%s %s: (%u) %s\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmdq_fire_command\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-            (*item).group,
-            tmp.as_ptr(),
-        );
+        log_debug(format_args!(
+            "{} {}: ({}) {}",
+            "cmdq_fire_command",
+            log_cstr((name) as *const _),
+            ((*item).group) as u32,
+            log_cstr((tmp.as_ptr()) as *const _)
+        ));
     }
     flags = ((*state).flags & CMDQ_STATE_CONTROL != 0) as ::core::ffi::c_int;
     cmdq_guard(
@@ -876,26 +888,26 @@ pub unsafe fn cmdq_next(mut c: *mut client) -> u_int {
     let mut items: u_int = 0 as u_int;
     static mut number: u_int = 0;
     if (*queue).list.is_empty() {
-        log_debug(
-            b"%s %s: empty\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-        );
+        log_debug(format_args!(
+            "{} {}: empty",
+            "cmdq_next",
+            log_cstr((name) as *const _)
+        ));
         return 0 as u_int;
     }
     if (*(*queue).first_ptr()).flags & CMDQ_WAITING != 0 {
-        log_debug(
-            b"%s %s: waiting\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-        );
+        log_debug(format_args!(
+            "{} {}: waiting",
+            "cmdq_next",
+            log_cstr((name) as *const _)
+        ));
         return 0 as u_int;
     }
-    log_debug(
-        b"%s %s: enter\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
-        name,
-    );
+    log_debug(format_args!(
+        "{} {}: enter",
+        "cmdq_next",
+        log_cstr((name) as *const _)
+    ));
     loop {
         (*queue).item = (*queue).first_ptr();
         item = (*queue).item;
@@ -903,16 +915,19 @@ pub unsafe fn cmdq_next(mut c: *mut client) -> u_int {
             current_block = 7056779235015430508;
             break;
         }
-        log_debug(
-            b"%s %s: %s (%d), flags %x\0" as *const u8 as *const ::core::ffi::c_char,
-            b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-            ((*item).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            (*item).type_0 as ::core::ffi::c_uint,
-            (*item).flags,
-        );
+        log_debug(format_args!(
+            "{} {}: {} ({}), flags {:x}",
+            "cmdq_next",
+            log_cstr((name) as *const _),
+            log_cstr(
+                (((*item).name)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                    as *const _
+            ),
+            ((*item).type_0 as ::core::ffi::c_uint) as i32,
+            ((*item).flags) as u32
+        ));
         if (*item).flags & CMDQ_WAITING != 0 {
             current_block = 8107417685847451382;
             break;
@@ -948,20 +963,20 @@ pub unsafe fn cmdq_next(mut c: *mut client) -> u_int {
     }
     match current_block {
         8107417685847451382 => {
-            log_debug(
-                b"%s %s: exit (wait)\0" as *const u8 as *const ::core::ffi::c_char,
-                b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-            );
+            log_debug(format_args!(
+                "{} {}: exit (wait)",
+                "cmdq_next",
+                log_cstr((name) as *const _)
+            ));
             return items;
         }
         _ => {
             (*queue).item = ::core::ptr::null_mut::<cmdq_item>();
-            log_debug(
-                b"%s %s: exit (empty)\0" as *const u8 as *const ::core::ffi::c_char,
-                b"cmdq_next\0" as *const u8 as *const ::core::ffi::c_char,
-                name,
-            );
+            log_debug(format_args!(
+                "{} {}: exit (empty)",
+                "cmdq_next",
+                log_cstr((name) as *const _)
+            ));
             return items;
         }
     };
@@ -1020,11 +1035,11 @@ pub unsafe extern "C" fn cmdq_error(
     let mut line: u_int = 0;
     ap = args.clone();
     let mut msg = xvasprintf_cstring(fmt, ap);
-    log_debug(
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"cmdq_error\0" as *const u8 as *const ::core::ffi::c_char,
-        msg.as_ptr(),
-    );
+    log_debug(format_args!(
+        "{}: {}",
+        "cmdq_error",
+        log_cstr((msg.as_ptr()) as *const _)
+    ));
     if c.is_null() {
         cmd_get_source(cmd, &raw mut file, &raw mut line);
         if cfg_finished == 0 {
