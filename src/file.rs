@@ -104,15 +104,14 @@ pub const EVBUFFER_ERROR: ::core::ffi::c_int = BEV_EVENT_ERROR;
 static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 
 unsafe fn file_create_owner() -> *mut client_file {
-    Box::into_raw(Box::new(client_file {
+    crate::src::shared::rc::new(client_file {
         path: None,
         wait_item: std::ptr::null_mut(),
         wait_client: std::ptr::null_mut(),
         cancel_data: None,
         terminal_scheduled: false,
         ..client_file::empty()
-    }))
-    .cast()
+    }, file_destroy)
 }
 
 fn file_set_path(cf: &mut client_file, path: CString) {
@@ -176,7 +175,6 @@ pub unsafe fn file_create_with_peer(
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     cf = file_create_owner();
     (*cf).c = ::core::ptr::null_mut::<client>();
-    (*cf).references = 1 as ::core::ffi::c_int;
     (*cf).stream = stream;
     (*cf).buffer = evbuffer_new();
     if (*cf).buffer.is_null() {
@@ -199,7 +197,6 @@ unsafe fn file_create_with_client(
     }
     cf = file_create_owner();
     (*cf).c = c;
-    (*cf).references = 1 as ::core::ffi::c_int;
     (*cf).stream = stream;
     (*cf).buffer = evbuffer_new();
     if (*cf).buffer.is_null() {
@@ -214,11 +211,10 @@ unsafe fn file_create_with_client(
     }
     return cf;
 }
-pub unsafe fn file_free(mut cf: *mut client_file) {
-    (*cf).references -= 1;
-    if (*cf).references != 0 as ::core::ffi::c_int {
-        return;
-    }
+pub unsafe fn file_free(cf: *mut client_file) {
+    crate::src::shared::rc::release(cf);
+}
+unsafe fn file_destroy(cf: *mut client_file) {
     evbuffer_free((*cf).buffer);
     if !(*cf).tree.is_null() {
         client_files_remove((*cf).tree as *mut client_files, cf);
@@ -227,7 +223,6 @@ pub unsafe fn file_free(mut cf: *mut client_file) {
         server_client_unref((*cf).c);
     }
     (*cf).path = Default::default();
-    drop(Box::from_raw(cf));
 }
 unsafe fn file_fire_done_cb(mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
@@ -317,7 +312,6 @@ pub unsafe fn file_vprint(
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -368,7 +362,6 @@ pub unsafe fn file_print_buffer(
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -419,7 +412,6 @@ pub unsafe extern "C" fn file_error(
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -820,7 +812,7 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
         );
     }
     if left != 0 as size_t {
-        (*cf).references += 1;
+        crate::src::shared::rc::retain(cf);
         event_once(move |_, _| unsafe { file_push_cb(cf as *mut ::core::ffi::c_void) });
     } else if (*cf).stream > 2 as ::core::ffi::c_int {
         close_0.stream = (*cf).stream;
@@ -968,7 +960,6 @@ pub unsafe fn file_write_open(
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -1056,7 +1047,6 @@ pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -1100,7 +1090,6 @@ pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -1227,7 +1216,6 @@ pub unsafe fn file_read_open(
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -1316,7 +1304,6 @@ pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -1350,7 +1337,6 @@ pub unsafe fn file_write_ready(mut files: *mut client_files, imsg: &imsg) -> ::c
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -1386,7 +1372,6 @@ pub unsafe fn file_write_done(mut files: *mut client_files, imsg: &imsg) -> ::co
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -1425,7 +1410,6 @@ pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::cor
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
@@ -1472,7 +1456,6 @@ pub unsafe fn file_read_done(mut files: *mut client_files, imsg: &imsg) -> ::cor
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
         tree: ::core::ptr::null_mut::<client_files>(),
-        references: 0,
         stream: 0,
         path: Default::default(),
         buffer: ::core::ptr::null_mut::<evbuffer>(),
