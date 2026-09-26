@@ -301,7 +301,7 @@ unsafe fn args_copy_value(from: &args_value) -> args_value {
     match from.type_0() as ::core::ffi::c_uint {
         2 => {
             let cmdlist = from.cmdlist();
-            (*cmdlist).references += 1;
+            crate::src::shared::rc::retain(cmdlist);
             args_value::commands(cmdlist)
         }
         1 => args_value::string(CStr::from_ptr(from.string_ptr()).to_owned()),
@@ -1085,7 +1085,7 @@ pub unsafe fn args_make_commands_prepare(
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             (*state).cmdlist = (*value).cmdlist() as *mut cmd_list;
-            (*(*state).cmdlist).references += 1;
+            crate::src::shared::rc::retain((*state).cmdlist);
             return state;
         }
         cmd = (*value).string_ptr();
@@ -1130,7 +1130,7 @@ pub unsafe fn args_make_commands(
     let mut i: ::core::ffi::c_int = 0;
     if !(*state).cmdlist.is_null() {
         if argv.is_empty() {
-            (*(*state).cmdlist).references += 1;
+            crate::src::shared::rc::retain((*state).cmdlist);
             return Ok((*state).cmdlist);
         }
         return Ok(cmd_list_copy(&*(*state).cmdlist, argv));

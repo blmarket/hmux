@@ -89,7 +89,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         key_bindings_add(tablename, key, note, repeat, (*value).cmdlist());
-        (*(*value).cmdlist()).references += 1;
+        crate::src::shared::rc::retain((*value).cmdlist());
         return CMD_RETURN_NORMAL;
     }
     if count == 2 as u_int {

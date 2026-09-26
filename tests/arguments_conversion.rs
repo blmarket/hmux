@@ -210,13 +210,13 @@ fn borrowed_parser_command_retains_only_while_stored() {
             cb: Some(commands),
         };
         let stored = parse_args(&spec, values.as_mut_ptr(), 2).expect("valid command argument");
-        assert_eq!((*cmdlist).references, 2);
+        assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 2);
         args_free(stored);
-        assert_eq!((*cmdlist).references, 1);
+        assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 1);
 
         spec.lower = 2;
         assert!(parse_args(&spec, values.as_mut_ptr(), 2).is_err());
-        assert_eq!((*cmdlist).references, 1);
+        assert_eq!(hmux2::src::shared::rc::strong_count(cmdlist), 1);
         cmd_list_free(cmdlist);
     }
 }

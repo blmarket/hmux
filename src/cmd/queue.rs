@@ -571,7 +571,7 @@ pub unsafe fn cmdq_get_command(
         (*item).state = cmdq_link_state(state);
         (*item).cmdlist = cmdlist;
         (*item).cmd = cmd;
-        (*cmdlist).references += 1;
+        crate::src::shared::rc::retain(cmdlist);
         log_debug(
             b"%s: %s group %u\0" as *const u8 as *const ::core::ffi::c_char,
             b"cmdq_get_command\0" as *const u8 as *const ::core::ffi::c_char,

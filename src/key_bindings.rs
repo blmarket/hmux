@@ -240,7 +240,7 @@ pub unsafe fn key_bindings_reset(mut name: *const ::core::ffi::c_char, mut key: 
     }
     cmd_list_free((*bd).cmdlist);
     (*bd).cmdlist = (*dd).cmdlist;
-    (*(*bd).cmdlist).references += 1;
+    crate::src::shared::rc::retain((*bd).cmdlist);
     key_bindings_set_note(bd, (*dd).note.as_deref());
     (*bd).flags = (*dd).flags;
 }
@@ -287,7 +287,7 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
     while !table.is_null() {
         bd = key_bindings_index_minmax(&(*table).key_bindings);
         while !bd.is_null() {
-            (*(*bd).cmdlist).references += 1;
+            crate::src::shared::rc::retain((*bd).cmdlist);
             new_bd = key_bindings_add_default(
                 table,
                 (*bd).key,

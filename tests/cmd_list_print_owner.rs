@@ -124,7 +124,7 @@ fn list_splice_copy_and_refcount_keep_command_pointers_stable() {
             b"display-message ; display-message ;; display-message"
         );
 
-        (*destination).references += 1;
+        hmux2::src::shared::rc::retain(destination);
         cmd_list_free(destination);
         assert_eq!(cmd_list_first(destination), first);
         assert_eq!(cmd_list_next(second), third);

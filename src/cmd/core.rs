@@ -492,8 +492,7 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
 }
 pub unsafe fn cmd_list_new() -> *mut cmd_list {
     let mut cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();
-    cmdlist = Box::into_raw(Box::new(cmd_list::default()));
-    (*cmdlist).references = 1 as ::core::ffi::c_int;
+    cmdlist = crate::src::shared::rc::new(cmd_list::default(), cmd_list_destroy);
     let fresh6 = cmd_list_next_group;
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
     (*cmdlist).group = fresh6;
@@ -541,11 +540,10 @@ pub unsafe fn cmd_list_move(mut cmdlist: *mut cmd_list, mut from: *mut cmd_list)
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
     (*cmdlist).group = fresh8;
 }
-pub unsafe fn cmd_list_free(mut cmdlist: *mut cmd_list) {
-    (*cmdlist).references -= 1;
-    if (*cmdlist).references != 0 as ::core::ffi::c_int {
-        return;
-    }
+pub unsafe fn cmd_list_free(cmdlist: *mut cmd_list) {
+    crate::src::shared::rc::release(cmdlist);
+}
+unsafe fn cmd_list_destroy(cmdlist: *mut cmd_list) {
     let commands = std::mem::take(&mut (*cmdlist).list);
     {
         let mut memberships = cmd_list_memberships()
@@ -558,7 +556,6 @@ pub unsafe fn cmd_list_free(mut cmdlist: *mut cmd_list) {
     for cmd in commands {
         cmd_free(cmd);
     }
-    drop(Box::from_raw(cmdlist));
 }
 pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> *mut cmd_list {
     let mut new_cmdlist: *mut cmd_list = ::core::ptr::null_mut::<cmd_list>();

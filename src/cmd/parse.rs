@@ -554,7 +554,7 @@ unsafe fn cmd_parse_build_command(
                 *value = args_value::commands((*pr).cmdlist as *mut cmd_list);
             }
             2 => {
-                (*(*arg).cmdlist).references += 1;
+                crate::src::shared::rc::retain((*arg).cmdlist);
                 *value = args_value::commands((*arg).cmdlist as *mut cmd_list);
             }
             _ => {}
@@ -859,7 +859,7 @@ pub unsafe fn cmd_parse_from_arguments(
             arg = cmd_parse_new_argument();
             (*arg).type_0 = CMD_PARSE_PARSED_COMMANDS;
             (*arg).cmdlist = (*values.offset(i as isize)).cmdlist();
-            (*(*arg).cmdlist).references += 1;
+            crate::src::shared::rc::retain((*arg).cmdlist);
             cmd_parse_arguments_push(&raw mut (*cmd).arguments, arg);
         } else {
             fatalx(b"unknown argument type\0" as *const u8 as *const ::core::ffi::c_char);

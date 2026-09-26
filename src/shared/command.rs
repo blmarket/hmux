@@ -219,10 +219,9 @@ pub struct cmd_find_state {
 }
 
 #[repr(C)]
-/// Box-owned from `cmd_list_new` until the last explicit reference is freed.
+/// Rc-owned from `cmd_list_new` until the last retained reference is released.
 #[derive(Default)]
 pub struct cmd_list {
-    pub references: ::core::ffi::c_int,
     pub group: u_int,
     /// Owned command pointer array, released with the final `cmd_list_free` reference.
     pub list: Vec<*mut cmd>,
