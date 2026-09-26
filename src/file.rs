@@ -91,6 +91,13 @@ pub const EBADF: ::core::ffi::c_int = 9 as ::core::ffi::c_int;
 
 pub const O_RDONLY: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 
+unsafe fn read_imsg_payload<T: Copy>(imsg: &imsg) -> Option<T> {
+    if imsg.data.len() < ::core::mem::size_of::<T>() {
+        return None;
+    }
+    Some(::core::ptr::read_unaligned(imsg.data.as_ptr().cast::<T>()))
+}
+
 pub const BEV_EVENT_ERROR: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const EVBUFFER_ERROR: ::core::ffi::c_int = BEV_EVENT_ERROR;
 
@@ -988,13 +995,16 @@ unsafe fn file_write_callback(_bev: *mut bufferevent, mut arg: *mut ::core::ffi:
 pub unsafe fn file_write_open(
     mut files: *mut client_files,
     mut peer: *mut tmuxpeer,
-    mut imsg: *mut imsg,
+    imsg: &imsg,
     mut allow_streams: ::core::ffi::c_int,
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
 ) {
-    let mut msg: *mut msg_write_open = (*imsg).data as *mut msg_write_open;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+    let msglen = imsg.data.len();
+    if msglen < ::core::mem::size_of::<msg_write_open>() {
+        fatalx(b"bad MSG_WRITE_OPEN size\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+    let msg = read_imsg_payload::<msg_write_open>(imsg).unwrap();
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut reply: msg_write_ready = msg_write_ready {
         stream: 0,
@@ -1019,37 +1029,36 @@ pub unsafe fn file_write_open(
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let flags: ::core::ffi::c_int = O_NONBLOCK | O_WRONLY | O_CREAT;
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if msglen < ::core::mem::size_of::<msg_write_open>() as usize {
-        fatalx(b"bad MSG_WRITE_OPEN size\0" as *const u8 as *const ::core::ffi::c_char);
-    }
     if msglen == ::core::mem::size_of::<msg_write_open>() as usize {
         path = b"-\0" as *const u8 as *const ::core::ffi::c_char;
     } else {
-        path = msg.offset(1 as ::core::ffi::c_int as isize) as *const ::core::ffi::c_char;
+        path = imsg.data[::core::mem::size_of::<msg_write_open>()..]
+            .as_ptr()
+            .cast::<::core::ffi::c_char>();
     }
     log_debug(
         b"open write file %d %s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*msg).stream,
+        msg.stream,
         path,
     );
-    find.stream = (*msg).stream;
+    find.stream = msg.stream;
     if !client_files_find(&*files, &find).is_null() {
         error = EBADF;
     } else {
-        cf = file_create_with_peer(peer, files, (*msg).stream, cb);
+        cf = file_create_with_peer(peer, files, msg.stream, cb);
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
             (*cf).fd = -(1 as ::core::ffi::c_int);
-            if (*msg).fd == -(1 as ::core::ffi::c_int) {
-                (*cf).fd = open(path, (*msg).flags | flags, 0o644 as ::core::ffi::c_int);
+            if msg.fd == -(1 as ::core::ffi::c_int) {
+                (*cf).fd = open(path, msg.flags | flags, 0o644 as ::core::ffi::c_int);
             } else if allow_streams != 0 {
-                if (*msg).fd != STDOUT_FILENO && (*msg).fd != STDERR_FILENO {
+                if msg.fd != STDOUT_FILENO && msg.fd != STDERR_FILENO {
                     *__errno_location() = EBADF;
                 } else {
-                    (*cf).fd = dup((*msg).fd);
+                    (*cf).fd = dup(msg.fd);
                     if close_received != 0 {
-                        close((*msg).fd);
+                        close(msg.fd);
                     }
                 }
             } else {
@@ -1079,7 +1088,7 @@ pub unsafe fn file_write_open(
             }
         }
     }
-    reply.stream = (*msg).stream;
+    reply.stream = msg.stream;
     reply.error = error;
     proc_send(
         peer,
@@ -1089,9 +1098,12 @@ pub unsafe fn file_write_open(
         ::core::mem::size_of::<msg_write_ready>() as size_t,
     );
 }
-pub unsafe fn file_write_data(mut files: *mut client_files, mut imsg: *mut imsg) {
-    let mut msg: *mut msg_write_data = (*imsg).data as *mut msg_write_data;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
+    let msglen = imsg.data.len();
+    if msglen < ::core::mem::size_of::<msg_write_data>() {
+        fatalx(b"bad MSG_WRITE size\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+    let msg = read_imsg_payload::<msg_write_data>(imsg).unwrap();
     let mut find: client_file = client_file {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
@@ -1109,11 +1121,8 @@ pub unsafe fn file_write_data(mut files: *mut client_files, mut imsg: *mut imsg)
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut size: size_t = msglen.wrapping_sub(::core::mem::size_of::<msg_write_data>() as size_t);
-    if msglen < ::core::mem::size_of::<msg_write_data>() as usize {
-        fatalx(b"bad MSG_WRITE size\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    find.stream = (*msg).stream;
+    let size = msglen - ::core::mem::size_of::<msg_write_data>();
+    find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1126,14 +1135,19 @@ pub unsafe fn file_write_data(mut files: *mut client_files, mut imsg: *mut imsg)
     if !(*cf).event.is_null() {
         bufferevent_write(
             (*cf).event,
-            msg.offset(1 as ::core::ffi::c_int as isize) as *const ::core::ffi::c_void,
+            imsg.data[::core::mem::size_of::<msg_write_data>()..]
+                .as_ptr()
+                .cast::<::core::ffi::c_void>(),
             size,
         );
     }
 }
-pub unsafe fn file_write_close(mut files: *mut client_files, mut imsg: *mut imsg) {
-    let mut msg: *mut msg_write_close = (*imsg).data as *mut msg_write_close;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
+    let msglen = imsg.data.len();
+    if msglen != ::core::mem::size_of::<msg_write_close>() {
+        fatalx(b"bad MSG_WRITE_CLOSE size\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+    let msg = read_imsg_payload::<msg_write_close>(imsg).unwrap();
     let mut find: client_file = client_file {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
@@ -1151,10 +1165,7 @@ pub unsafe fn file_write_close(mut files: *mut client_files, mut imsg: *mut imsg
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    if msglen != ::core::mem::size_of::<msg_write_close>() as usize {
-        fatalx(b"bad MSG_WRITE_CLOSE size\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    find.stream = (*msg).stream;
+    find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1251,13 +1262,16 @@ unsafe fn file_read_callback(_bev: *mut bufferevent, mut arg: *mut ::core::ffi::
 pub unsafe fn file_read_open(
     mut files: *mut client_files,
     mut peer: *mut tmuxpeer,
-    mut imsg: *mut imsg,
+    imsg: &imsg,
     mut allow_streams: ::core::ffi::c_int,
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
 ) {
-    let mut msg: *mut msg_read_open = (*imsg).data as *mut msg_read_open;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+    let msglen = imsg.data.len();
+    if msglen < ::core::mem::size_of::<msg_read_open>() {
+        fatalx(b"bad MSG_READ_OPEN size\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+    let msg = read_imsg_payload::<msg_read_open>(imsg).unwrap();
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut reply: msg_read_done = msg_read_done {
         stream: 0,
@@ -1282,37 +1296,36 @@ pub unsafe fn file_read_open(
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let flags: ::core::ffi::c_int = O_NONBLOCK | O_RDONLY;
     let mut error: ::core::ffi::c_int = 0;
-    if msglen < ::core::mem::size_of::<msg_read_open>() as usize {
-        fatalx(b"bad MSG_READ_OPEN size\0" as *const u8 as *const ::core::ffi::c_char);
-    }
     if msglen == ::core::mem::size_of::<msg_read_open>() as usize {
         path = b"-\0" as *const u8 as *const ::core::ffi::c_char;
     } else {
-        path = msg.offset(1 as ::core::ffi::c_int as isize) as *const ::core::ffi::c_char;
+        path = imsg.data[::core::mem::size_of::<msg_read_open>()..]
+            .as_ptr()
+            .cast::<::core::ffi::c_char>();
     }
     log_debug(
         b"open read file %d %s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*msg).stream,
+        msg.stream,
         path,
     );
-    find.stream = (*msg).stream;
+    find.stream = msg.stream;
     if !client_files_find(&*files, &find).is_null() {
         error = EBADF;
     } else {
-        cf = file_create_with_peer(peer, files, (*msg).stream, cb);
+        cf = file_create_with_peer(peer, files, msg.stream, cb);
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
             (*cf).fd = -(1 as ::core::ffi::c_int);
-            if (*msg).fd == -(1 as ::core::ffi::c_int) {
+            if msg.fd == -(1 as ::core::ffi::c_int) {
                 (*cf).fd = open(path, flags);
             } else if allow_streams != 0 {
-                if (*msg).fd != STDIN_FILENO {
+                if msg.fd != STDIN_FILENO {
                     *__errno_location() = EBADF;
                 } else {
-                    (*cf).fd = dup((*msg).fd);
+                    (*cf).fd = dup(msg.fd);
                     if close_received != 0 {
-                        close((*msg).fd);
+                        close(msg.fd);
                     }
                 }
             } else {
@@ -1343,7 +1356,7 @@ pub unsafe fn file_read_open(
             }
         }
     }
-    reply.stream = (*msg).stream;
+    reply.stream = msg.stream;
     reply.error = error;
     proc_send(
         peer,
@@ -1353,9 +1366,12 @@ pub unsafe fn file_read_open(
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );
 }
-pub unsafe fn file_read_cancel(mut files: *mut client_files, mut imsg: *mut imsg) {
-    let mut msg: *mut msg_read_cancel = (*imsg).data as *mut msg_read_cancel;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
+    let msglen = imsg.data.len();
+    if msglen != ::core::mem::size_of::<msg_read_cancel>() {
+        fatalx(b"bad MSG_READ_CANCEL size\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+    let msg = read_imsg_payload::<msg_read_cancel>(imsg).unwrap();
     let mut find: client_file = client_file {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
@@ -1373,10 +1389,7 @@ pub unsafe fn file_read_cancel(mut files: *mut client_files, mut imsg: *mut imsg
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    if msglen != ::core::mem::size_of::<msg_read_cancel>() as usize {
-        fatalx(b"bad MSG_READ_CANCEL size\0" as *const u8 as *const ::core::ffi::c_char);
-    }
-    find.stream = (*msg).stream;
+    find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1393,10 +1406,13 @@ pub unsafe fn file_read_cancel(mut files: *mut client_files, mut imsg: *mut imsg
 }
 pub unsafe fn file_write_ready(
     mut files: *mut client_files,
-    mut imsg: *mut imsg,
+    imsg: &imsg,
 ) -> ::core::ffi::c_int {
-    let mut msg: *mut msg_write_ready = (*imsg).data as *mut msg_write_ready;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+    let msglen = imsg.data.len();
+    if msglen != ::core::mem::size_of::<msg_write_ready>() {
+        return -1;
+    }
+    let msg = read_imsg_payload::<msg_write_ready>(imsg).unwrap();
     let mut find: client_file = client_file {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
@@ -1414,16 +1430,13 @@ pub unsafe fn file_write_ready(
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    if msglen != ::core::mem::size_of::<msg_write_ready>() as usize {
-        return -(1 as ::core::ffi::c_int);
-    }
-    find.stream = (*msg).stream;
+    find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if (*msg).error != 0 as ::core::ffi::c_int {
-        (*cf).error = (*msg).error;
+    if msg.error != 0 as ::core::ffi::c_int {
+        (*cf).error = msg.error;
         file_fire_done(cf);
     } else {
         file_push(cf);
@@ -1432,10 +1445,13 @@ pub unsafe fn file_write_ready(
 }
 pub unsafe fn file_write_done(
     mut files: *mut client_files,
-    mut imsg: *mut imsg,
+    imsg: &imsg,
 ) -> ::core::ffi::c_int {
-    let mut msg: *mut msg_write_done = (*imsg).data as *mut msg_write_done;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+    let msglen = imsg.data.len();
+    if msglen != ::core::mem::size_of::<msg_write_done>() {
+        return -1;
+    }
+    let msg = read_imsg_payload::<msg_write_done>(imsg).unwrap();
     let mut find: client_file = client_file {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
@@ -1453,10 +1469,7 @@ pub unsafe fn file_write_done(
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    if msglen != ::core::mem::size_of::<msg_write_done>() as usize {
-        return -(1 as ::core::ffi::c_int);
-    }
-    find.stream = (*msg).stream;
+    find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
@@ -1468,16 +1481,19 @@ pub unsafe fn file_write_done(
         b"file %d write done\0" as *const u8 as *const ::core::ffi::c_char,
         (*cf).stream,
     );
-    (*cf).error = (*msg).error;
+    (*cf).error = msg.error;
     file_fire_done(cf);
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn file_read_data(
     mut files: *mut client_files,
-    mut imsg: *mut imsg,
+    imsg: &imsg,
 ) -> ::core::ffi::c_int {
-    let mut msg: *mut msg_read_data = (*imsg).data as *mut msg_read_data;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+    let msglen = imsg.data.len();
+    if msglen < ::core::mem::size_of::<msg_read_data>() {
+        return -1;
+    }
+    let msg = read_imsg_payload::<msg_read_data>(imsg).unwrap();
     let mut find: client_file = client_file {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
@@ -1495,13 +1511,11 @@ pub unsafe fn file_read_data(
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut bdata: *mut ::core::ffi::c_void =
-        msg.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_void;
-    let mut bsize: size_t = msglen.wrapping_sub(::core::mem::size_of::<msg_read_data>() as size_t);
-    if msglen < ::core::mem::size_of::<msg_read_data>() as usize {
-        return -(1 as ::core::ffi::c_int);
-    }
-    find.stream = (*msg).stream;
+    let bdata = imsg.data[::core::mem::size_of::<msg_read_data>()..]
+        .as_ptr()
+        .cast::<::core::ffi::c_void>();
+    let bsize = msglen - ::core::mem::size_of::<msg_read_data>();
+    find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
@@ -1523,10 +1537,13 @@ pub unsafe fn file_read_data(
 }
 pub unsafe fn file_read_done(
     mut files: *mut client_files,
-    mut imsg: *mut imsg,
+    imsg: &imsg,
 ) -> ::core::ffi::c_int {
-    let mut msg: *mut msg_read_done = (*imsg).data as *mut msg_read_done;
-    let mut msglen: size_t = ((*imsg).hdr.len as size_t).wrapping_sub(IMSG_HEADER_SIZE);
+    let msglen = imsg.data.len();
+    if msglen != ::core::mem::size_of::<msg_read_done>() {
+        return -1;
+    }
+    let msg = read_imsg_payload::<msg_read_done>(imsg).unwrap();
     let mut find: client_file = client_file {
         c: ::core::ptr::null_mut::<client>(),
         peer: ::core::ptr::null_mut::<tmuxpeer>(),
@@ -1544,10 +1561,7 @@ pub unsafe fn file_read_done(
         ..client_file::empty()
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    if msglen != ::core::mem::size_of::<msg_read_done>() as usize {
-        return -(1 as ::core::ffi::c_int);
-    }
-    find.stream = (*msg).stream;
+    find.stream = msg.stream;
     cf = client_files_find(&*files, &find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
@@ -1556,7 +1570,7 @@ pub unsafe fn file_read_done(
         b"file %d read done\0" as *const u8 as *const ::core::ffi::c_char,
         (*cf).stream,
     );
-    (*cf).error = (*msg).error;
+    (*cf).error = msg.error;
     file_fire_done(cf);
     return 0 as ::core::ffi::c_int;
 }

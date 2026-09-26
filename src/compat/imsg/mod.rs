@@ -17,206 +17,190 @@ pub use message::{
 
 use imsg_buffer::{
     ibuf_add, ibuf_close, ibuf_data, ibuf_dynamic, ibuf_fd_avail, ibuf_fd_get, ibuf_fd_set,
-    ibuf_free, ibuf_get, ibuf_open, ibuf_read, ibuf_set_h32, ibuf_size, ibuf_write, msgbuf_free,
-    msgbuf_get, msgbuf_new_reader_owned, msgbuf_queuelen, msgbuf_read, msgbuf_write, IbufView,
+    ibuf_get, ibuf_open, ibuf_read, ibuf_set_h32, ibuf_size, ibuf_write, msgbuf_get,
+    msgbuf_new_reader_owned, msgbuf_queuelen, msgbuf_read, msgbuf_write,
 };
-use crate::src::ffi::libc::{__errno_location, getpid, memset};
+use crate::src::ffi::libc::getpid;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::uint32_t;
-use crate::src::shared::errno::ERANGE;
-use std::os::fd::{IntoRawFd, OwnedFd};
+use crate::src::shared::errno::{EBADMSG, EINVAL, ENOMEM, ERANGE};
+use std::os::fd::OwnedFd;
 
 pub const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const IMSG_FD_MARK: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
-pub unsafe fn imsgbuf_init(
-    mut imsgbuf: *mut imsgbuf,
-    mut fd: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+pub fn imsgbuf_init(
+    imsgbuf: &mut imsgbuf,
+    fd: ::core::ffi::c_int,
+) -> Result<(), ::core::ffi::c_int> {
     let maxsize = MAX_IMSGSIZE as uint32_t;
-    (*imsgbuf).w = msgbuf_new_reader_owned(IMSG_HEADER_SIZE, move |header, fd| unsafe {
+    let msgbuf = msgbuf_new_reader_owned(IMSG_HEADER_SIZE, move |header, fd| {
         imsg_parse_hdr(header, maxsize, fd)
-    });
-    if (*imsgbuf).w.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    (*imsgbuf).pid = getpid() as pid_t;
-    (*imsgbuf).maxsize = maxsize;
-    (*imsgbuf).fd = fd;
-    (*imsgbuf).flags = 0 as ::core::ffi::c_int;
-    return 0 as ::core::ffi::c_int;
+    })?;
+    imsgbuf.w = Some(msgbuf);
+    imsgbuf.pid = unsafe { getpid() } as pid_t;
+    imsgbuf.maxsize = maxsize;
+    imsgbuf.fd = fd;
+    imsgbuf.flags = 0;
+    Ok(())
 }
-pub unsafe fn imsgbuf_allow_fdpass(mut imsgbuf: *mut imsgbuf) {
-    (*imsgbuf).flags |= IMSG_ALLOW_FDPASS;
+pub fn imsgbuf_allow_fdpass(imsgbuf: &mut imsgbuf) {
+    imsgbuf.flags |= IMSG_ALLOW_FDPASS;
 }
-pub unsafe fn imsgbuf_read(
-    mut imsgbuf: *mut imsgbuf,
-) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
-    if (*imsgbuf).flags & IMSG_ALLOW_FDPASS != 0 {
-        return msgbuf_read((*imsgbuf).fd, (*imsgbuf).w);
+pub fn imsgbuf_read(imsgbuf: &mut imsgbuf) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
+    let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
+        return Err(EINVAL);
+    };
+    if imsgbuf.flags & IMSG_ALLOW_FDPASS != 0 {
+        msgbuf_read(imsgbuf.fd, msgbuf)
     } else {
-        return ibuf_read((*imsgbuf).fd, (*imsgbuf).w);
-    };
+        ibuf_read(imsgbuf.fd, msgbuf)
+    }
 }
-pub unsafe fn imsgbuf_write(mut imsgbuf: *mut imsgbuf) -> ::core::ffi::c_int {
-    if (*imsgbuf).flags & IMSG_ALLOW_FDPASS != 0 {
-        return msgbuf_write((*imsgbuf).fd, (*imsgbuf).w);
+pub fn imsgbuf_write(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
+    let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
+        return Err(EINVAL);
+    };
+    if imsgbuf.flags & IMSG_ALLOW_FDPASS != 0 {
+        msgbuf_write(imsgbuf.fd, msgbuf)
     } else {
-        return ibuf_write((*imsgbuf).fd, (*imsgbuf).w);
+        ibuf_write(imsgbuf.fd, msgbuf)
+    }
+}
+pub fn imsgbuf_flush(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
+    while imsgbuf_queuelen(imsgbuf) > 0 {
+        imsgbuf_write(imsgbuf)?;
+    }
+    Ok(())
+}
+pub fn imsgbuf_clear(imsgbuf: &mut imsgbuf) {
+    imsgbuf.w = None;
+}
+pub fn imsgbuf_queuelen(imsgbuf: &imsgbuf) -> uint32_t {
+    imsgbuf.w.as_deref().map_or(0, msgbuf_queuelen)
+}
+pub fn imsgbuf_get(imsgbuf: &mut imsgbuf) -> Result<Option<imsg>, ::core::ffi::c_int> {
+    let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
+        return Ok(None);
     };
-}
-pub unsafe fn imsgbuf_flush(mut imsgbuf: *mut imsgbuf) -> ::core::ffi::c_int {
-    while imsgbuf_queuelen(imsgbuf) > 0 as uint32_t {
-        if imsgbuf_write(imsgbuf) == -(1 as ::core::ffi::c_int) {
-            return -(1 as ::core::ffi::c_int);
-        }
-    }
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn imsgbuf_clear(mut imsgbuf: *mut imsgbuf) {
-    msgbuf_free((*imsgbuf).w);
-    (*imsgbuf).w = ::core::ptr::null_mut::<msgbuf>();
-}
-pub unsafe fn imsgbuf_queuelen(mut imsgbuf: *mut imsgbuf) -> uint32_t {
-    return msgbuf_queuelen((*imsgbuf).w);
-}
-pub unsafe fn imsgbuf_get(mut imsgbuf: *mut imsgbuf, mut imsg: *mut imsg) -> ::core::ffi::c_int {
-    let mut m: imsg = imsg {
-        hdr: imsg_hdr {
-            type_0: 0,
-            len: 0,
-            peerid: 0,
-            pid: 0,
-        },
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        buf: ::core::ptr::null_mut::<OwnedIbuf>(),
+    let Some(mut buf) = msgbuf_get(msgbuf) else {
+        return Ok(None);
     };
-    let mut buf: *mut OwnedIbuf = ::core::ptr::null_mut::<OwnedIbuf>();
-    buf = msgbuf_get((*imsgbuf).w);
-    if buf.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    if ibuf_get(
-        buf,
-        &raw mut m.hdr as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<imsg_hdr>() as size_t,
-    ) == -(1 as ::core::ffi::c_int)
-    {
-        ibuf_free(buf);
-        return -(1 as ::core::ffi::c_int);
-    }
-    if ibuf_size(buf) != 0 {
-        m.data = ibuf_data(buf);
-    } else {
-        m.data = NULL;
-    }
-    m.buf = buf;
-    m.hdr.len = (m.hdr.len as ::core::ffi::c_uint & !IMSG_FD_MARK) as uint32_t;
-    *imsg = m;
-    return 1 as ::core::ffi::c_int;
-}
-pub unsafe fn imsg_get_fd(mut imsg: *mut imsg) -> ::core::ffi::c_int {
-    return ibuf_fd_get((*imsg).buf);
-}
-pub unsafe fn imsg_compose(
-    mut imsgbuf: *mut imsgbuf,
-    mut type_0: uint32_t,
-    mut id: uint32_t,
-    mut pid: pid_t,
-    mut fd: ::core::ffi::c_int,
-    mut data: *const ::core::ffi::c_void,
-    mut datalen: size_t,
-) -> ::core::ffi::c_int {
-    let Some(mut wbuf) = imsg_create(imsgbuf, type_0, id, pid, datalen) else {
-        return -(1 as ::core::ffi::c_int);
+    let Some(mut hdr) = decode_imsg_hdr(ibuf_data(&buf)) else {
+        return Err(EBADMSG);
     };
-    let wbuf_ptr = &mut *wbuf as *mut OwnedIbuf;
-    if ibuf_add(wbuf_ptr, data, datalen) == -(1 as ::core::ffi::c_int) {
-        return -(1 as ::core::ffi::c_int);
+    if !buf.skip(IMSG_HEADER_SIZE) {
+        return Err(EBADMSG);
     }
-    ibuf_fd_set(wbuf_ptr, fd);
-    imsg_close(imsgbuf, wbuf);
-    1 as ::core::ffi::c_int
+    hdr.len = (hdr.len & !IMSG_FD_MARK) as uint32_t;
+    let mut data = Vec::new();
+    data.try_reserve_exact(buf.size()).map_err(|_| ENOMEM)?;
+    data.extend_from_slice(buf.unread());
+    let data = data.into_boxed_slice();
+    let fd = ibuf_fd_get(&mut buf);
+    Ok(Some(imsg { hdr, data, fd }))
 }
-pub unsafe fn imsg_create(
-    mut imsgbuf: *mut imsgbuf,
-    mut type_0: uint32_t,
-    mut id: uint32_t,
-    mut pid: pid_t,
-    mut datalen: size_t,
-) -> Option<Box<OwnedIbuf>> {
+pub fn imsg_get_fd(imsg: &mut imsg) -> Option<OwnedFd> {
+    imsg.fd.take()
+}
+pub fn imsg_compose(
+    imsgbuf: &mut imsgbuf,
+    type_0: uint32_t,
+    id: uint32_t,
+    pid: pid_t,
+    fd: Option<OwnedFd>,
+    data: &[u8],
+) -> Result<(), ::core::ffi::c_int> {
+    let mut wbuf = imsg_create(imsgbuf, type_0, id, pid, data.len())?;
+    ibuf_add(&mut wbuf, data)?;
+    ibuf_fd_set(&mut wbuf, fd)?;
+    imsg_close(imsgbuf, wbuf)
+}
+pub fn imsg_create(
+    imsgbuf: &imsgbuf,
+    type_0: uint32_t,
+    id: uint32_t,
+    pid: pid_t,
+    datalen: usize,
+) -> Result<Box<OwnedIbuf>, ::core::ffi::c_int> {
     let mut hdr: imsg_hdr = imsg_hdr {
         type_0: 0,
         len: 0,
         peerid: 0,
         pid: 0,
     };
-    datalen = (datalen as ::core::ffi::c_ulong)
-        .wrapping_add(IMSG_HEADER_SIZE as ::core::ffi::c_ulong) as size_t as size_t;
-    if datalen > (*imsgbuf).maxsize as size_t {
-        *__errno_location() = ERANGE;
-        return None;
+    let Some(datalen) = datalen.checked_add(IMSG_HEADER_SIZE) else {
+        return Err(ERANGE);
+    };
+    if datalen > imsgbuf.maxsize as usize {
+        return Err(ERANGE);
     }
     hdr.len = 0 as uint32_t;
     hdr.type_0 = type_0;
     hdr.peerid = id;
     hdr.pid = pid as uint32_t;
     if hdr.pid == 0 as uint32_t {
-        hdr.pid = (*imsgbuf).pid as uint32_t;
+        hdr.pid = imsgbuf.pid as uint32_t;
     }
-    let mut wbuf = ibuf_dynamic(datalen, (*imsgbuf).maxsize as size_t)?;
-    if ibuf_add(
-        &mut *wbuf as *mut OwnedIbuf,
-        &raw mut hdr as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<imsg_hdr>() as size_t,
-    ) == -(1 as ::core::ffi::c_int)
-    {
-        return None;
-    }
-    Some(wbuf)
+    let mut wbuf = ibuf_dynamic(datalen, imsgbuf.maxsize as usize)?;
+    ibuf_add(&mut wbuf, &encode_imsg_hdr(hdr))?;
+    Ok(wbuf)
 }
-pub unsafe fn imsg_close(mut imsgbuf: *mut imsgbuf, mut msg: Box<OwnedIbuf>) {
-    let mut len: uint32_t = 0;
-    let msg_ptr = &mut *msg as *mut OwnedIbuf;
-    len = ibuf_size(msg_ptr) as uint32_t;
-    if ibuf_fd_avail(msg_ptr) != 0 {
-        len = (len as ::core::ffi::c_uint | IMSG_FD_MARK) as uint32_t;
+pub fn imsg_close(
+    imsgbuf: &mut imsgbuf,
+    mut msg: Box<OwnedIbuf>,
+) -> Result<(), ::core::ffi::c_int> {
+    let mut len = ibuf_size(&msg) as uint32_t;
+    if ibuf_fd_avail(&msg) {
+        len |= IMSG_FD_MARK;
     }
-    ibuf_set_h32(msg_ptr, 4 as size_t, len as uint64_t);
-    ibuf_close((*imsgbuf).w, msg);
+    ibuf_set_h32(&mut msg, 4, len as uint64_t)?;
+    let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
+        return Err(EINVAL);
+    };
+    ibuf_close(msgbuf, msg)
 }
-unsafe fn imsg_parse_hdr(
+fn imsg_parse_hdr(
     header: &[u8],
     maxsize: uint32_t,
-    mut fd: Option<OwnedFd>,
-) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>) {
-    let mut view = IbufView::new(header);
-    let mut hdr: imsg_hdr = imsg_hdr {
-        type_0: 0,
-        len: 0,
-        peerid: 0,
-        pid: 0,
+    fd: Option<OwnedFd>,
+) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int> {
+    let Some(hdr) = decode_imsg_hdr(header) else {
+        return Err(EBADMSG);
     };
-    let mut len: uint32_t = 0;
-    let header_view = unsafe { view.as_ibuf_ptr() };
-    if ibuf_get(
-        header_view,
-        &raw mut hdr as *mut ::core::ffi::c_void,
-        ::core::mem::size_of::<imsg_hdr>() as size_t,
-    ) == -(1 as ::core::ffi::c_int)
-    {
-        return (None, fd);
-    }
-    len = hdr.len & !(IMSG_FD_MARK as uint32_t);
+    let len = hdr.len & !IMSG_FD_MARK;
     if (len as usize) < IMSG_HEADER_SIZE || len > maxsize {
-        *__errno_location() = ERANGE;
-        return (None, fd);
+        return Err(ERANGE);
     }
-    let Some(mut b) = ibuf_open(len as size_t) else {
-        return (None, fd);
+    let mut b = ibuf_open(len as size_t)?;
+    if hdr.len & IMSG_FD_MARK != 0 {
+        ibuf_fd_set(&mut b, fd)?;
+        Ok((b, None))
+    } else {
+        Ok((b, fd))
+    }
+}
+
+fn decode_imsg_hdr(bytes: &[u8]) -> Option<imsg_hdr> {
+    if bytes.len() < IMSG_HEADER_SIZE {
+        return None;
+    }
+    let read_u32 = |offset: usize| -> Option<u32> {
+        let bytes: [u8; 4] = bytes.get(offset..offset + 4)?.try_into().ok()?;
+        Some(u32::from_ne_bytes(bytes))
     };
-    if hdr.len & IMSG_FD_MARK as uint32_t != 0 {
-        let raw_fd = fd.take().map(IntoRawFd::into_raw_fd).unwrap_or(-1);
-        ibuf_fd_set(&mut *b as *mut OwnedIbuf, raw_fd);
-    }
-    (Some(b), fd)
+    Some(imsg_hdr {
+        type_0: read_u32(0)?,
+        len: read_u32(4)?,
+        peerid: read_u32(8)?,
+        pid: read_u32(12)?,
+    })
+}
+
+fn encode_imsg_hdr(hdr: imsg_hdr) -> [u8; IMSG_HEADER_SIZE] {
+    let mut bytes = [0; IMSG_HEADER_SIZE];
+    bytes[0..4].copy_from_slice(&hdr.type_0.to_ne_bytes());
+    bytes[4..8].copy_from_slice(&hdr.len.to_ne_bytes());
+    bytes[8..12].copy_from_slice(&hdr.peerid.to_ne_bytes());
+    bytes[12..16].copy_from_slice(&hdr.pid.to_ne_bytes());
+    bytes
 }

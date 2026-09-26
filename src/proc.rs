@@ -9,7 +9,7 @@ use crate::src::ffi::libc::{
     close, daemon, fork, getpid, memset, sigaction, sigemptyset, socketpair, uname,
 };
 use crate::src::ffi::utf8proc::utf8proc_version;
-use crate::src::log::{fatal, log_debug, log_open, log_toggle};
+use crate::src::log::{fatal, fatalx, log_debug, log_open, log_toggle};
 use crate::src::reactor::{
     event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
 };
@@ -17,8 +17,8 @@ use crate::src::shared::abi::*;
 use crate::src::shared::abi::{gid_t, uid_t, uint32_t};
 use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{imsg, imsgbuf, OwnedIbuf};
-use crate::src::compat::imsg::{imsg_hdr, PROTOCOL_VERSION};
+use crate::src::compat::imsg::{imsg, imsgbuf};
+use crate::src::compat::imsg::PROTOCOL_VERSION;
 use crate::src::shared::process::PeerMessage;
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 use crate::src::shared::signal::ProcessSignal;
@@ -30,6 +30,7 @@ pub use crate::src::shared::signal::{
 use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::tmux::{getversion, socket_path};
 use std::ffi::CStr;
+use std::os::fd::FromRawFd;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
@@ -63,48 +64,29 @@ unsafe fn proc_event_cb(
     mut arg: *mut ::core::ffi::c_void,
 ) {
     let mut peer: *mut tmuxpeer = arg as *mut tmuxpeer;
-    let mut n: ::core::ffi::c_int = 0;
-    let mut imsg: imsg = imsg {
-        hdr: imsg_hdr {
-            type_0: 0,
-            len: 0,
-            peerid: 0,
-            pid: 0,
-        },
-        data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-        buf: ::core::ptr::null_mut::<OwnedIbuf>(),
-    };
     if (*peer).flags & PEER_BAD == 0 && events as ::core::ffi::c_int & EV_READ != 0 {
-        if !matches!(imsgbuf_read(&raw mut (*peer).ibuf), Ok(1)) {
+        if !matches!(imsgbuf_read(&mut (*peer).ibuf), Ok(1)) {
             proc_dispatch(peer, PeerMessage::Disconnected);
             return;
         }
         loop {
-            n = imsgbuf_get(&raw mut (*peer).ibuf, &raw mut imsg);
-            if n == -(1 as ::core::ffi::c_int) {
-                proc_dispatch(peer, PeerMessage::Disconnected);
-                return;
-            }
-            if n == 0 as ::core::ffi::c_int {
-                break;
-            }
+            let mut imsg = match imsgbuf_get(&mut (*peer).ibuf) {
+                Ok(Some(imsg)) => imsg,
+                Ok(None) => break,
+                Err(_) => {
+                    proc_dispatch(peer, PeerMessage::Disconnected);
+                    return;
+                }
+            };
             log_debug(
                 b"peer %p message %d\0" as *const u8 as *const ::core::ffi::c_char,
                 peer,
                 imsg.hdr.type_0,
             );
-            let Some(owned_buf) = OwnedIbuf::from_raw_owned(imsg.buf) else {
-                proc_dispatch(peer, PeerMessage::Disconnected);
-                return;
-            };
-            if peer_check_version(peer, &raw mut imsg) != 0 as ::core::ffi::c_int {
-                drop(owned_buf);
-                imsg.buf = ::core::ptr::null_mut::<OwnedIbuf>();
+            if peer_check_version(peer, &imsg) != 0 as ::core::ffi::c_int {
                 break;
             } else {
                 let peer_alive = proc_dispatch(peer, PeerMessage::Message(&mut imsg));
-                drop(owned_buf);
-                imsg.buf = ::core::ptr::null_mut::<OwnedIbuf>();
                 if !peer_alive {
                     return;
                 }
@@ -112,12 +94,12 @@ unsafe fn proc_event_cb(
         }
     }
     if events as ::core::ffi::c_int & EV_WRITE != 0 {
-        if imsgbuf_write(&raw mut (*peer).ibuf) == -(1 as ::core::ffi::c_int) {
+        if imsgbuf_write(&mut (*peer).ibuf).is_err() {
             proc_dispatch(peer, PeerMessage::Disconnected);
             return;
         }
     }
-    if (*peer).flags & PEER_BAD != 0 && imsgbuf_queuelen(&raw mut (*peer).ibuf) == 0 as uint32_t {
+    if (*peer).flags & PEER_BAD != 0 && imsgbuf_queuelen(&(*peer).ibuf) == 0 as uint32_t {
         proc_dispatch(peer, PeerMessage::Disconnected);
         return;
     }
@@ -134,10 +116,10 @@ unsafe fn proc_signal_cb(
         .as_mut()
         .expect("signal callback is installed")(ProcessSignal::from_raw(signo));
 }
-unsafe fn peer_check_version(mut peer: *mut tmuxpeer, mut imsg: *mut imsg) -> ::core::ffi::c_int {
+unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c_int {
     let mut version: ::core::ffi::c_int = 0;
-    version = ((*imsg).hdr.peerid & 0xff as uint32_t) as ::core::ffi::c_int;
-    if (*imsg).hdr.type_0 != MSG_VERSION as ::core::ffi::c_int as uint32_t
+    version = (imsg.hdr.peerid & 0xff as uint32_t) as ::core::ffi::c_int;
+    if imsg.hdr.type_0 != MSG_VERSION as ::core::ffi::c_int as uint32_t
         && version != PROTOCOL_VERSION
     {
         log_debug(
@@ -160,7 +142,7 @@ unsafe fn peer_check_version(mut peer: *mut tmuxpeer, mut imsg: *mut imsg) -> ::
 unsafe fn proc_update_event(mut peer: *mut tmuxpeer) {
     let mut events: ::core::ffi::c_short = 0;
     events = EV_READ as ::core::ffi::c_short;
-    if imsgbuf_queuelen(&raw mut (*peer).ibuf) > 0 as uint32_t {
+    if imsgbuf_queuelen(&(*peer).ibuf) > 0 as uint32_t {
         events = (events as ::core::ffi::c_int | EV_WRITE) as ::core::ffi::c_short;
     }
     // Keep the descriptor registration while its interest is unchanged.
@@ -186,9 +168,7 @@ pub unsafe fn proc_send(
     mut buf: *const ::core::ffi::c_void,
     mut len: size_t,
 ) -> ::core::ffi::c_int {
-    let mut ibuf: *mut imsgbuf = &raw mut (*peer).ibuf;
-    let mut vp: *mut ::core::ffi::c_void = buf as *mut ::core::ffi::c_void;
-    let mut retval: ::core::ffi::c_int = 0;
+    let imsgbuf = &mut (*peer).ibuf;
     if (*peer).flags & PEER_BAD != 0 {
         return -(1 as ::core::ffi::c_int);
     }
@@ -198,16 +178,22 @@ pub unsafe fn proc_send(
         peer,
         len,
     );
-    retval = imsg_compose(
-        ibuf,
+    let Some(data) = (len == 0).then_some(&[][..]).or_else(|| {
+        (!buf.is_null()).then(|| unsafe { std::slice::from_raw_parts(buf.cast::<u8>(), len) })
+    }) else {
+        return -1;
+    };
+    let fd = (fd >= 0).then(|| unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) });
+    if imsg_compose(
+        imsgbuf,
         type_0 as uint32_t,
         PROTOCOL_VERSION as uint32_t,
         -(1 as pid_t),
         fd,
-        vp,
-        len,
-    );
-    if retval != 1 as ::core::ffi::c_int {
+        data,
+    )
+    .is_err()
+    {
         return -(1 as ::core::ffi::c_int);
     }
     proc_update_event(peer);
@@ -300,7 +286,7 @@ pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut
 pub unsafe fn proc_exit(mut tp: *mut tmuxproc) {
     for peer in (*tp).peers.iter_mut() {
         let peer: *mut tmuxpeer = &mut **peer;
-        imsgbuf_flush(&raw mut (*peer).ibuf);
+        let _ = imsgbuf_flush(&mut (*peer).ibuf);
     }
     (*tp).exit = 1 as ::core::ffi::c_int;
 }
@@ -434,10 +420,13 @@ pub unsafe fn proc_add_peer(
     let peer: *mut tmuxpeer = &mut *owned_peer;
     (*peer).parent = tp;
     (*peer).dispatchcb = Some(dispatchcb);
-    if imsgbuf_init(&raw mut (*peer).ibuf, fd) == -(1 as ::core::ffi::c_int) {
-        fatal(b"imsgbuf_init\0" as *const u8 as *const ::core::ffi::c_char);
+    if let Err(error) = imsgbuf_init(&mut (*peer).ibuf, fd) {
+        fatalx(
+            b"imsgbuf_init failed (errno %d)\0" as *const u8 as *const ::core::ffi::c_char,
+            error,
+        );
     }
-    imsgbuf_allow_fdpass(&raw mut (*peer).ibuf);
+    imsgbuf_allow_fdpass(&mut (*peer).ibuf);
     event_set(
         &raw mut (*peer).event,
         fd,
@@ -469,7 +458,7 @@ pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
         peer,
     );
     event_del(&raw mut (*peer).event);
-    imsgbuf_clear(&raw mut (*peer).ibuf);
+    imsgbuf_clear(&mut (*peer).ibuf);
     close((*peer).ibuf.fd);
     drop(owned_peer);
 }
@@ -477,7 +466,7 @@ pub unsafe fn proc_kill_peer(mut peer: *mut tmuxpeer) {
     (*peer).flags |= PEER_BAD;
 }
 pub unsafe fn proc_flush_peer(mut peer: *mut tmuxpeer) {
-    imsgbuf_flush(&raw mut (*peer).ibuf);
+    let _ = imsgbuf_flush(&mut (*peer).ibuf);
 }
 pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
     log_toggle((*tp).name.as_ptr());

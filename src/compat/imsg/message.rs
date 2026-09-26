@@ -111,7 +111,7 @@ pub struct ibuf<'a> {
     pub(crate) max: size_t,
     pub(crate) wpos: size_t,
     pub(crate) rpos: size_t,
-    pub(crate) fd: ::core::ffi::c_int,
+    pub(crate) fd: Option<OwnedFd>,
 }
 
 impl<'a> ibuf<'a> {
@@ -121,7 +121,7 @@ impl<'a> ibuf<'a> {
             max: 0,
             wpos: bytes.len(),
             rpos: 0,
-            fd: -1,
+            fd: None,
         }
     }
 
@@ -186,28 +186,11 @@ impl<'a> ibuf<'a> {
     }
 }
 
-impl ibuf<'static> {
-    /// Reclaim a raw buffer only after checking that its byte storage is owned.
-    ///
-    /// # Safety
-    /// A non-null `buf` must point to a uniquely owned heap allocation that
-    /// was created as an `ibuf<'static>` and has not already been reclaimed.
-    pub(crate) unsafe fn from_raw_owned(buf: *mut Self) -> Option<Box<Self>> {
-        if buf.is_null() || !(*buf).is_owned() {
-            return None;
-        }
-        Some(Box::from_raw(buf))
-    }
-}
-
 impl Drop for ibuf<'_> {
     fn drop(&mut self) {
         unsafe {
             let saved_errno = *crate::src::ffi::libc::__errno_location();
-            if self.fd >= 0 {
-                crate::src::ffi::libc::close(self.fd);
-                self.fd = -1;
-            }
+            drop(self.fd.take());
             let storage = ::core::mem::replace(&mut self.storage, IbufStorage::Borrowed(&[]));
             if let IbufStorage::Owned(mut bytes) = storage {
                 bytes.fill(0);
@@ -218,36 +201,34 @@ impl Drop for ibuf<'_> {
     }
 }
 
-/// Raw compatibility spelling for `ibuf<'static>`.
+/// A buffer whose borrowed storage, if any, must be `'static`.
 ///
-/// The static lifetime does not prove that the storage is owned; use checked
-/// ownership boundaries before reclaiming or queueing its raw pointer.
+/// Queue insertion still checks `is_owned`; a static lifetime alone does not
+/// establish ownership of the bytes.
 pub type OwnedIbuf = ibuf<'static>;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct imsg {
     pub hdr: imsg_hdr,
-    pub data: *mut ::core::ffi::c_void,
-    pub buf: *mut OwnedIbuf,
+    pub data: Box<[u8]>,
+    pub(crate) fd: Option<OwnedFd>,
 }
 
-#[repr(C)]
 pub struct msgbuf {
     pub bufs: ibufqueue,
     pub rbufs: ibufqueue,
-    pub rbuf: *mut ::core::ffi::c_char,
-    pub rpmsg: *mut OwnedIbuf,
+    pub rbuf: Box<[u8]>,
+    pub rpmsg: Option<Box<OwnedIbuf>>,
     pub readhdr:
-        Option<Box<dyn FnMut(&[u8], Option<OwnedFd>) -> (Option<Box<OwnedIbuf>>, Option<OwnedFd>)>>,
+        Option<
+            Box<dyn FnMut(&[u8], Option<OwnedFd>) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int>>,
+        >,
     pub roff: size_t,
     pub hdrsize: size_t,
 }
 
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
+#[derive(Default)]
 pub struct imsgbuf {
-    pub w: *mut msgbuf,
+    pub w: Option<Box<msgbuf>>,
     pub pid: pid_t,
     pub maxsize: uint32_t,
     pub fd: ::core::ffi::c_int,

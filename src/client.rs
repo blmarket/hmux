@@ -839,7 +839,7 @@ unsafe fn client_dispatch(message: crate::src::shared::process::PeerMessage<'_>)
             proc_exit(client_proc);
             return;
         }
-        crate::src::shared::process::PeerMessage::Message(imsg) => imsg as *mut imsg,
+        crate::src::shared::process::PeerMessage::Message(imsg) => imsg,
     };
     if client_attached != 0 {
         client_dispatch_attached(imsg);
@@ -872,7 +872,7 @@ unsafe fn client_dispatch_exit_message(mut data: *mut ::core::ffi::c_char, mut d
         client_exitreason = CLIENT_EXIT_MESSAGE_PROVIDED;
     }
 }
-unsafe fn client_dispatch_wait(mut imsg: *mut imsg) {
+unsafe fn client_dispatch_wait(imsg: &mut imsg) {
     let mut data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut datalen: ssize_t = 0;
     static mut pledge_applied: ::core::ffi::c_int = 0;
@@ -882,9 +882,9 @@ unsafe fn client_dispatch_wait(mut imsg: *mut imsg) {
         }
         pledge_applied = 1 as ::core::ffi::c_int;
     }
-    data = (*imsg).data as *mut ::core::ffi::c_char;
-    datalen = ((*imsg).hdr.len as usize).wrapping_sub(IMSG_HEADER_SIZE) as ssize_t;
-    match (*imsg).hdr.type_0 {
+    data = imsg.data.as_mut_ptr().cast::<::core::ffi::c_char>();
+    datalen = imsg.data.len() as ssize_t;
+    match imsg.hdr.type_0 {
         203 | 210 => {
             client_dispatch_exit_message(data, datalen as size_t);
             client_exitflag = 1 as ::core::ffi::c_int;
@@ -912,7 +912,7 @@ unsafe fn client_dispatch_wait(mut imsg: *mut imsg) {
                 b"protocol version mismatch (client %d, server %u)\n\0" as *const u8
                     as *const ::core::ffi::c_char,
                 PROTOCOL_VERSION,
-                (*imsg).hdr.peerid & 0xff as uint32_t,
+                imsg.hdr.peerid & 0xff as uint32_t,
             );
             client_exitval = 1 as ::core::ffi::c_int;
             proc_exit(client_proc);
@@ -992,12 +992,12 @@ unsafe fn client_dispatch_wait(mut imsg: *mut imsg) {
         _ => {
             log_debug(
                 b"unknown message type %u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*imsg).hdr.type_0,
+                imsg.hdr.type_0,
             );
         }
     };
 }
-unsafe fn client_dispatch_attached(mut imsg: *mut imsg) {
+unsafe fn client_dispatch_attached(imsg: &mut imsg) {
     let mut sigact: sigaction = sigaction {
         __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },
@@ -1006,9 +1006,9 @@ unsafe fn client_dispatch_attached(mut imsg: *mut imsg) {
     };
     let mut data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut datalen: ssize_t = 0;
-    data = (*imsg).data as *mut ::core::ffi::c_char;
-    datalen = ((*imsg).hdr.len as usize).wrapping_sub(IMSG_HEADER_SIZE) as ssize_t;
-    match (*imsg).hdr.type_0 {
+    data = imsg.data.as_mut_ptr().cast::<::core::ffi::c_char>();
+    datalen = imsg.data.len() as ssize_t;
+    match imsg.hdr.type_0 {
         218 => {
             if datalen as usize != ::core::mem::size_of::<uint64_t>() as usize {
                 fatalx(b"bad MSG_FLAGS string\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1031,8 +1031,8 @@ unsafe fn client_dispatch_attached(mut imsg: *mut imsg) {
                 fatalx(b"bad MSG_DETACH string\0" as *const u8 as *const ::core::ffi::c_char);
             }
             client_exitsession = Some(std::ffi::CStr::from_ptr(data).to_owned());
-            client_exittype = (*imsg).hdr.type_0 as msgtype;
-            if (*imsg).hdr.type_0 == MSG_DETACHKILL as ::core::ffi::c_int as uint32_t {
+            client_exittype = imsg.hdr.type_0 as msgtype;
+            if imsg.hdr.type_0 == MSG_DETACHKILL as ::core::ffi::c_int as uint32_t {
                 client_exitreason = CLIENT_EXIT_DETACHED_HUP;
             } else {
                 client_exitreason = CLIENT_EXIT_DETACHED;
@@ -1056,7 +1056,7 @@ unsafe fn client_dispatch_attached(mut imsg: *mut imsg) {
             let command = std::ffi::CStr::from_ptr(data).to_owned();
             let shell = std::ffi::CStr::from_ptr(data.add(strlen(data) + 1)).to_owned();
             client_exec_payload = Some((shell, command));
-            client_exittype = (*imsg).hdr.type_0 as msgtype;
+            client_exittype = imsg.hdr.type_0 as msgtype;
             proc_send(
                 client_peer,
                 MSG_EXITING,
@@ -1142,7 +1142,7 @@ unsafe fn client_dispatch_attached(mut imsg: *mut imsg) {
         _ => {
             log_debug(
                 b"unknown message type %u\0" as *const u8 as *const ::core::ffi::c_char,
-                (*imsg).hdr.type_0,
+                imsg.hdr.type_0,
             );
         }
     };

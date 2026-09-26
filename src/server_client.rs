@@ -4329,10 +4329,10 @@ unsafe fn server_client_dispatch(
             server_client_lost(c);
             return;
         }
-        crate::src::shared::process::PeerMessage::Message(imsg) => imsg as *mut imsg,
+        crate::src::shared::process::PeerMessage::Message(imsg) => imsg,
     };
-    datalen = ((*imsg).hdr.len as usize).wrapping_sub(IMSG_HEADER_SIZE) as ssize_t;
-    match (*imsg).hdr.type_0 {
+    datalen = imsg.data.len() as ssize_t;
+    match imsg.hdr.type_0 {
         107 | 108 | 105 | 109 | 100 | 111 | 104 | 110 | 101 | 112 | 102 | 106 => {
             if server_client_dispatch_identify(c, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
@@ -4464,7 +4464,7 @@ unsafe fn server_client_dispatch(
             log_debug(
                 b"client %p invalid message type %d\0" as *const u8 as *const ::core::ffi::c_char,
                 c,
-                (*imsg).hdr.type_0,
+                imsg.hdr.type_0,
             );
             proc_kill_peer((*c).peer);
             return;
@@ -4515,11 +4515,10 @@ unsafe fn server_client_command_done(mut item: *mut cmdq_item) -> cmd_retval {
 }
 unsafe fn server_client_dispatch_command(
     mut c: *mut client,
-    mut imsg: *mut imsg,
+    imsg: &mut imsg,
 ) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let mut data: msg_command = msg_command { argc: 0 };
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut len: size_t = 0;
     let mut argv = Vec::new();
     let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -4528,33 +4527,22 @@ unsafe fn server_client_dispatch_command(
     if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if ((*imsg).hdr.len as usize).wrapping_sub(IMSG_HEADER_SIZE)
-        < ::core::mem::size_of::<msg_command>() as usize
-    {
+    let command_size = ::core::mem::size_of::<msg_command>();
+    if imsg.data.len() < command_size {
         return -(1 as ::core::ffi::c_int);
     }
-    memcpy(
-        &raw mut data as *mut ::core::ffi::c_void,
-        (*imsg).data,
-        ::core::mem::size_of::<msg_command>() as size_t,
-    );
-    buf = ((*imsg).data as *mut ::core::ffi::c_char)
-        .offset(::core::mem::size_of::<msg_command>() as usize as isize);
-    len = ((*imsg).hdr.len as usize)
-        .wrapping_sub(IMSG_HEADER_SIZE)
-        .wrapping_sub(::core::mem::size_of::<msg_command>() as usize) as size_t;
-    if len > 0 as size_t
-        && *buf.offset(len.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int != '\0' as i32
-    {
+    let argc_bytes: [u8; ::core::mem::size_of::<::core::ffi::c_int>()] =
+        imsg.data[..command_size].try_into().unwrap();
+    data.argc = ::core::ffi::c_int::from_ne_bytes(argc_bytes);
+    let trailing = &mut imsg.data[command_size..];
+    len = trailing.len();
+    if len > 0 && trailing[len - 1] != 0 {
         return -(1 as ::core::ffi::c_int);
     }
     let unpacked = if len == 0 {
         unpack_argv(&mut [], data.argc)
     } else {
-        unpack_argv(
-            std::slice::from_raw_parts_mut(buf.cast::<u8>(), len as usize),
-            data.argc,
-        )
+        unpack_argv(trailing, data.argc)
     };
     if let Ok(decoded) = unpacked {
         argv = decoded;
@@ -4626,7 +4614,7 @@ unsafe fn server_client_dispatch_command(
 }
 unsafe fn server_client_dispatch_identify(
     mut c: *mut client,
-    mut imsg: *mut imsg,
+    imsg: &mut imsg,
 ) -> ::core::ffi::c_int {
     let mut data: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut datalen: size_t = 0;
@@ -4636,9 +4624,9 @@ unsafe fn server_client_dispatch_identify(
     if (*c).flags & CLIENT_IDENTIFIED as uint64_t != 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    data = (*imsg).data as *const ::core::ffi::c_char;
-    datalen = ((*imsg).hdr.len as usize).wrapping_sub(IMSG_HEADER_SIZE) as size_t;
-    match (*imsg).hdr.type_0 {
+    data = imsg.data.as_ptr().cast::<::core::ffi::c_char>();
+    datalen = imsg.data.len();
+    match imsg.hdr.type_0 {
         109 => {
             if datalen != ::core::mem::size_of::<::core::ffi::c_int>() as usize {
                 return -(1 as ::core::ffi::c_int);
@@ -4755,7 +4743,9 @@ unsafe fn server_client_dispatch_identify(
             if datalen != 0 as size_t {
                 return -(1 as ::core::ffi::c_int);
             }
-            (*c).fd = imsg_get_fd(imsg);
+            (*c).fd = imsg_get_fd(imsg)
+                .map(std::os::fd::IntoRawFd::into_raw_fd)
+                .unwrap_or(-1);
             log_debug(
                 b"client %p IDENTIFY_STDIN %d\0" as *const u8 as *const ::core::ffi::c_char,
                 c,
@@ -4766,7 +4756,9 @@ unsafe fn server_client_dispatch_identify(
             if datalen != 0 as size_t {
                 return -(1 as ::core::ffi::c_int);
             }
-            (*c).out_fd = imsg_get_fd(imsg);
+            (*c).out_fd = imsg_get_fd(imsg)
+                .map(std::os::fd::IntoRawFd::into_raw_fd)
+                .unwrap_or(-1);
             log_debug(
                 b"client %p IDENTIFY_STDOUT %d\0" as *const u8 as *const ::core::ffi::c_char,
                 c,
@@ -4806,7 +4798,7 @@ unsafe fn server_client_dispatch_identify(
         }
         _ => {}
     }
-    if (*imsg).hdr.type_0 != MSG_IDENTIFY_DONE as ::core::ffi::c_int as uint32_t {
+    if imsg.hdr.type_0 != MSG_IDENTIFY_DONE as ::core::ffi::c_int as uint32_t {
         return 0 as ::core::ffi::c_int;
     }
     (*c).flags |= CLIENT_IDENTIFIED as uint64_t;
