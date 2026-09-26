@@ -78,9 +78,8 @@ use std::ffi::{CStr, CString};
 pub struct window_tree_modedata {
     pub wp: *mut window_pane,
     pub dead: ::core::ffi::c_int,
-    pub references: ::core::ffi::c_int,
     pub data: *mut mode_tree_data,
-    // Callback references keep this boxed record alive until the final destroy.
+    // Callback Rc references keep this record alive after mode shutdown.
     pub format: CString,
     pub key_format: CString,
     pub command: CString,
@@ -1697,10 +1696,9 @@ unsafe fn window_tree_init(
     } else {
         args_string(args, 0 as u_int)
     };
-    data = Box::into_raw(Box::new(window_tree_modedata {
+    data = crate::src::shared::rc::new(window_tree_modedata {
         wp: ::core::ptr::null_mut(),
         dead: 0,
-        references: 0,
         data: ::core::ptr::null_mut(),
         format: CStr::from_ptr(format).to_owned(),
         key_format: CStr::from_ptr(key_format).to_owned(),
@@ -1719,10 +1717,9 @@ unsafe fn window_tree_init(
         start: 0,
         end: 0,
         each: 0,
-    }));
+    }, |_| {});
     (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = wp;
-    (*data).references = 1 as ::core::ffi::c_int;
     if args_has(args, 's' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_TREE_SESSION;
     } else if args_has(args, 'w' as i32 as u_char) != 0 {
@@ -1796,11 +1793,7 @@ unsafe fn window_tree_init(
     return s;
 }
 unsafe fn window_tree_destroy(mut data: *mut window_tree_modedata) {
-    (*data).references -= 1;
-    if (*data).references != 0 as ::core::ffi::c_int {
-        return;
-    }
-    drop(Box::from_raw(data));
+    crate::src::shared::rc::release(data);
 }
 unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
@@ -1901,7 +1894,7 @@ unsafe fn window_tree_cancel_command_done(modedata: *mut window_tree_modedata) {
     window_tree_destroy(modedata);
 }
 unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tree_modedata) {
-    (*data).references += 1;
+    crate::src::shared::rc::retain(data);
     let item = cmdq_get_callback_owned(
         b"window_tree_command_done\0" as *const u8 as *const ::core::ffi::c_char,
         Some(Box::new(move |_| unsafe { window_tree_command_done(data) })),
@@ -2269,7 +2262,7 @@ unsafe fn window_tree_key(
                 0 | _ => None,
             };
             if let Some(prompt) = prompt {
-                (*data).references += 1;
+                crate::src::shared::rc::retain(data);
                 mode_tree_set_prompt(
                     (*data).data,
                     c,
@@ -2293,7 +2286,7 @@ unsafe fn window_tree_key(
             tagged = mode_tree_count_tagged((*data).data);
             if !(tagged == 0 as u_int) {
                 let prompt = CString::new(format!("Kill {tagged} tagged? ")).unwrap();
-                (*data).references += 1;
+                crate::src::shared::rc::retain(data);
                 mode_tree_set_prompt(
                     (*data).data,
                     c,
@@ -2320,7 +2313,7 @@ unsafe fn window_tree_key(
             } else {
                 CString::new("(current) ").unwrap()
             };
-            (*data).references += 1;
+            crate::src::shared::rc::retain(data);
             mode_tree_set_prompt(
                 (*data).data,
                 c,
