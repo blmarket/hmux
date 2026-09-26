@@ -147,7 +147,6 @@ pub struct window_pane_prompt {
 #[repr(C)]
 pub struct window_pane {
     pub id: u_int,
-    pub references: ::core::ffi::c_int,
     pub active_point: u_int,
     pub window: *mut window,
     pub options: *mut options,

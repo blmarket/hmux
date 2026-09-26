@@ -143,12 +143,11 @@ pub const DEFAULT_YPIXEL: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
 pub const WINDOW_WASZOOMED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub static mut windows: windows = windows { storage: None };
 pub static mut all_window_panes: window_pane_tree = window_pane_tree { storage: None };
-/// Owns every pane allocation until the manual reference protocol reaches its
-/// existing final release point. `all_window_panes` remains a live index and
-/// is intentionally removed earlier during pane destruction.
-static mut window_pane_owners: Option<
-    std::collections::BTreeMap<usize, refbox::RefBox<window_pane>>,
-> = None;
+// Rc controls lifetime; RefBox preserves the pane collections' existing weak
+// observers. The registry holds one strong reference, transferred to the last
+// release. Additional retained raw pane pointers represent additional Rc counts.
+type PaneOwner = std::rc::Rc<crate::src::shared::rc::Allocation<refbox::RefBox<window_pane>>>;
+static mut window_pane_owners: Option<std::collections::BTreeMap<usize, PaneOwner>> = None;
 static mut next_window_pane_id: u_int = 0;
 static mut next_window_id: u_int = 0;
 static mut next_active_point: u_int = 0;
@@ -1150,30 +1149,23 @@ pub unsafe fn window_remove_ref(w: *mut window, from: *const ::core::ffi::c_char
     log_debug(c"release window @%u (%s)".as_ptr(), (*w).id, from);
     crate::src::shared::rc::release(w);
 }
-pub unsafe fn window_pane_add_ref(mut wp: *mut window_pane, mut from: *const ::core::ffi::c_char) {
-    (*wp).references += 1;
-    log_debug(
-        b"%s: %%%u %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_pane_add_ref\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        from,
-        (*wp).references,
-    );
+pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) {
+    let owner = window_pane_owners.as_ref().unwrap().get(&(wp as usize)).expect("live pane owner");
+    std::rc::Rc::increment_strong_count(std::rc::Rc::as_ptr(owner));
+    log_debug(c"retain pane %%%u (%s)".as_ptr(), (*wp).id, from);
 }
-pub unsafe fn window_pane_remove_ref(
-    mut wp: *mut window_pane,
-    mut from: *const ::core::ffi::c_char,
-) {
-    (*wp).references -= 1;
-    log_debug(
-        b"%s: %%%u %s, now %d\0" as *const u8 as *const ::core::ffi::c_char,
-        b"window_pane_remove_ref\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).id,
-        from,
-        (*wp).references,
-    );
-    if (*wp).references == 0 as ::core::ffi::c_int {
-        window_pane_free(wp);
+pub unsafe fn window_pane_remove_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) {
+    log_debug(c"release pane %%%u (%s)".as_ptr(), (*wp).id, from);
+    let (ptr, count) = {
+        let owner = window_pane_owners.as_ref().unwrap().get(&(wp as usize)).expect("live pane owner");
+        (std::rc::Rc::as_ptr(owner), std::rc::Rc::strong_count(owner))
+    };
+    if count == 1 {
+        let owner = window_pane_owners.as_mut().unwrap().remove(&(wp as usize)).unwrap();
+        // Release the registry borrow before final cleanup can reenter the model.
+        drop(owner);
+    } else {
+        std::rc::Rc::decrement_strong_count(ptr);
     }
 }
 pub unsafe fn window_set_name(
@@ -2230,7 +2222,6 @@ pub unsafe fn window_pane_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *
 pub unsafe fn window_pane_find_by_id(mut id: u_int) -> *mut window_pane {
     let mut wp: window_pane = window_pane {
         id: 0,
-        references: 0,
         active_point: 0,
         window: ::core::ptr::null_mut::<window>(),
         options: ::core::ptr::null_mut::<options>(),
@@ -2402,8 +2393,9 @@ pub(crate) unsafe fn window_pane_weak(wp: *mut window_pane) -> refbox::Weak<wind
     let owner = owners
         .get(&(wp as usize))
         .expect("pane must belong to the owner registry");
-    assert_eq!(owner.as_ptr(), wp as *const window_pane);
-    owner.downgrade()
+    let pane = &*crate::src::shared::rc::as_ptr(owner);
+    assert_eq!(pane.as_ptr(), wp as *const window_pane);
+    pane.downgrade()
 }
 
 pub unsafe fn window_pane_first(w: *mut window) -> *mut window_pane {
@@ -2764,13 +2756,13 @@ unsafe fn window_pane_create(
 ) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
-    let owner = refbox::RefBox::new(window_pane::empty());
-    wp = owner.as_ptr() as *mut window_pane;
+    let pane = refbox::RefBox::new(window_pane::empty());
+    wp = pane.as_ptr() as *mut window_pane;
+    let owner = crate::src::shared::rc::take(crate::src::shared::rc::new(pane, window_pane_drop_owner));
     let previous = window_pane_owners
         .get_or_insert_with(std::collections::BTreeMap::new)
         .insert(wp as usize, owner);
     assert!(previous.is_none(), "pane allocation identity was reused");
-    (*wp).references = 1 as ::core::ffi::c_int;
     (*wp).window = w as *mut window;
     (*wp).options = options_create((*w).options);
     (*wp).flags = PANE_STYLECHANGED;
@@ -2925,11 +2917,13 @@ unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
         b"window_pane_destroy\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
+unsafe fn window_pane_drop_owner(owner: *mut refbox::RefBox<window_pane>) {
+    window_pane_free((*owner).as_ptr() as *mut window_pane);
+}
 unsafe fn window_pane_free(mut wp: *mut window_pane) {
     log_debug(
-        b"pane %%%u freed (%d references)\0" as *const u8 as *const ::core::ffi::c_char,
+        c"pane %%%u freed".as_ptr(),
         (*wp).id,
-        (*wp).references,
     );
     window_pane_set_searchstr(&mut *wp, None);
     screen_free(&raw mut (*wp).status_screen);
@@ -2939,12 +2933,6 @@ unsafe fn window_pane_free(mut wp: *mut window_pane) {
     window_pane_set_shell(&mut *wp, None);
     colour_palette_free(&raw mut (*wp).palette);
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);
-    let owner = window_pane_owners
-        .as_mut()
-        .expect("pane owner registry must be initialized")
-        .remove(&(wp as usize))
-        .expect("final pane release must have an owner");
-    drop(owner);
 }
 unsafe fn window_pane_read_callback(mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
@@ -4466,6 +4454,26 @@ pub unsafe fn window_pane_is_floating(mut wp: *mut window_pane) -> ::core::ffi::
 #[cfg(test)]
 mod collection_index_tests {
     use super::*;
+
+    #[test]
+    fn pane_rc_keeps_weak_observers_alive_until_the_last_release() {
+        unsafe {
+            let pane = refbox::RefBox::new(window_pane::empty());
+            let wp = pane.as_ptr() as *mut window_pane;
+            // No display resources in this fixture; exercise the actual pane
+            // registry and retain/release functions with ordinary field drop.
+            let owner = crate::src::shared::rc::take(crate::src::shared::rc::new(pane, |_| {}));
+            window_pane_owners.get_or_insert_with(Default::default).insert(wp as usize, owner);
+            let weak = window_pane_weak(wp);
+            window_pane_add_ref(wp, c"callback".as_ptr());
+            window_pane_remove_ref(wp, c"pane shutdown".as_ptr());
+            assert!(weak.try_borrow_mut().is_ok());
+            assert!(window_pane_owners.as_ref().unwrap().contains_key(&(wp as usize)));
+            window_pane_remove_ref(wp, c"callback complete".as_ptr());
+            assert_eq!(weak.try_borrow_mut().err(), Some(refbox::BorrowError::Dropped));
+            assert!(!window_pane_owners.as_ref().unwrap().contains_key(&(wp as usize)));
+        }
+    }
 
     #[test]
     fn winlink_index_keeps_order_and_weak_observers_across_moves() {
