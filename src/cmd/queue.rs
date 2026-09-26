@@ -244,13 +244,12 @@ pub unsafe fn cmdq_new_state(
     } else {
         (*event).metadata_snapshot()
     };
-    let state = Box::into_raw(Box::new(cmdq_state {
-        references: 1,
+    let state = crate::src::shared::rc::new(cmdq_state {
         flags,
         formats: ::core::ptr::null_mut(),
         event: snapshot,
         current: Default::default(),
-    }));
+    }, cmdq_destroy_state);
     if !current.is_null() && cmd_find_valid_state(current) != 0 {
         cmd_find_copy_state(&raw mut (*state).current, current);
     } else {
@@ -259,7 +258,7 @@ pub unsafe fn cmdq_new_state(
     return state;
 }
 pub unsafe fn cmdq_link_state(mut state: *mut cmdq_state) -> *mut cmdq_state {
-    (*state).references += 1;
+    crate::src::shared::rc::retain(state);
     return state;
 }
 pub unsafe fn cmdq_copy_state(
@@ -276,14 +275,12 @@ pub unsafe fn cmdq_copy_state(
     );
 }
 pub unsafe fn cmdq_free_state(mut state: *mut cmdq_state) {
-    (*state).references -= 1;
-    if (*state).references != 0 as ::core::ffi::c_int {
-        return;
-    }
+    crate::src::shared::rc::release(state);
+}
+unsafe fn cmdq_destroy_state(state: *mut cmdq_state) {
     if !(*state).formats.is_null() {
         format_free((*state).formats);
     }
-    drop(Box::from_raw(state));
 }
 pub unsafe extern "C" fn cmdq_add_format(
     mut state: *mut cmdq_state,

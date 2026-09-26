@@ -273,10 +273,9 @@ pub struct cmd_entry {
 }
 
 #[repr(C)]
-/// Box-owned while its explicit `references` count is nonzero; queue items
-/// and callers hold counted raw pointers released through `cmdq_free_state`.
+/// Rc-owned; queue items and callers retain raw strong references released
+/// through `cmdq_free_state`.
 pub struct cmdq_state {
-    pub references: ::core::ffi::c_int,
     pub flags: ::core::ffi::c_int,
     pub formats: *mut format_tree,
     pub event: key_event,

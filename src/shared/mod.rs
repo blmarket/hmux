@@ -41,6 +41,7 @@ pub mod posix_io;
 pub mod posix_terminal;
 pub mod process;
 pub mod prompt;
+pub mod rc;
 pub mod redraw;
 pub mod regex;
 pub mod screen;
