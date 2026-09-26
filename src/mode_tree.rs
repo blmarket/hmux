@@ -45,7 +45,7 @@ use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
     mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
     mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
-    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemId,
+    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
@@ -278,8 +278,10 @@ unsafe extern "C" fn mode_tree_build_lines(
             );
         }
         if (*mtd).keycb.is_some() {
-            (*mti).key =
-                (*mtd).keycb.as_mut().expect("non-null key callback")((*mti).item_id, (*mti).line);
+            (*mti).key = (*mtd)
+                .keycb
+                .as_mut()
+                .expect("non-null key callback")((*mti).itemdata, (*mti).line);
             if (*mti).key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                 (*mti).key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
             }
@@ -396,19 +398,22 @@ unsafe extern "C" fn mode_tree_swap(
     let current = (*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item;
     let other = (*(*mtd).lines.as_mut_ptr().offset(swap_with as isize)).item;
     if (*mtd).swapcb.as_mut().expect("non-null swap callback")(
-        (*current).item_id,
-        (*other).item_id,
+        (*current).itemdata,
+        (*other).itemdata,
         &mut (*mtd).sort_crit,
     ) {
         (*mtd).current = swap_with;
         mode_tree_build(mtd);
     }
 }
-pub unsafe fn mode_tree_get_current(mtd: *mut mode_tree_data) -> Option<ModeTreeItemId> {
+#[no_mangle]
+pub unsafe extern "C" fn mode_tree_get_current(
+    mut mtd: *mut mode_tree_data,
+) -> *mut ::core::ffi::c_void {
     if mode_tree_line_count(&*mtd) == 0 as u_int {
-        return None;
+        return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
-    (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).item_id
+    return (*(*(*mtd).lines.as_mut_ptr().offset((*mtd).current as isize)).item).itemdata;
 }
 #[no_mangle]
 pub unsafe extern "C" fn mode_tree_get_current_name(
@@ -720,10 +725,11 @@ pub unsafe extern "C" fn mode_tree_resize(
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
 }
-pub unsafe fn mode_tree_add(
+#[no_mangle]
+pub unsafe extern "C" fn mode_tree_add(
     mut mtd: *mut mode_tree_data,
     mut parent: *mut mode_tree_item,
-    item_id: Option<ModeTreeItemId>,
+    mut itemdata: *mut ::core::ffi::c_void,
     mut tag: uint64_t,
     mut name: *const ::core::ffi::c_char,
     mut text: *const ::core::ffi::c_char,
@@ -754,7 +760,7 @@ pub unsafe fn mode_tree_add(
 
     mti = &mut *owner;
     (*mti).parent = parent;
-    (*mti).item_id = item_id;
+    (*mti).itemdata = itemdata;
     saved = mode_tree_find_item(&raw mut (*mtd).saved, tag);
     if !saved.is_null() {
         if parent.is_null() || (*parent).expanded != 0 {
@@ -1360,12 +1366,10 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     h.wrapping_add(1 as u_int) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                (*mtd).drawcb.as_mut().expect("non-null draw callback")(
-                    (*mti).item_id,
-                    &mut ctx,
-                    box_x,
-                    box_y,
-                );
+                (*mtd)
+                    .drawcb
+                    .as_mut()
+                    .expect("non-null draw callback")((*mti).itemdata, &mut ctx, box_x, box_y);
             }
         }
     }
@@ -1585,11 +1589,11 @@ unsafe extern "C" fn mode_tree_search_backward(
             {
                 return mti;
             }
-        } else if (*mtd).searchcb.as_mut().expect("non-null search callback")(
-            (*mti).item_id,
-            CStr::from_ptr(search),
-            icase != 0,
-        ) {
+        } else if (*mtd)
+            .searchcb
+            .as_mut()
+            .expect("non-null search callback")((*mti).itemdata, CStr::from_ptr(search), icase != 0)
+        {
             return mti;
         }
     }
@@ -1644,11 +1648,11 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
             {
                 return mti;
             }
-        } else if (*mtd).searchcb.as_mut().expect("non-null search callback")(
-            (*mti).item_id,
-            CStr::from_ptr(search),
-            icase != 0,
-        ) {
+        } else if (*mtd)
+            .searchcb
+            .as_mut()
+            .expect("non-null search callback")((*mti).itemdata, CStr::from_ptr(search), icase != 0)
+        {
             return mti;
         }
     }
@@ -2430,7 +2434,15 @@ mod mode_tree_tests {
         unsafe {
             let mtd = mode_tree_alloc_data();
             let add = move |parent, tag, name: &CStr| {
-                mode_tree_add(mtd, parent, None, tag, name.as_ptr(), std::ptr::null(), 1)
+                mode_tree_add(
+                    mtd,
+                    parent,
+                    std::ptr::null_mut(),
+                    tag,
+                    name.as_ptr(),
+                    std::ptr::null(),
+                    1,
+                )
             };
             let first = add(std::ptr::null_mut(), 1, c"match first");
             let branch = add(std::ptr::null_mut(), 2, c"branch");
@@ -2480,7 +2492,7 @@ mod mode_tree_tests {
             let item = mode_tree_add(
                 mtd,
                 ::core::ptr::null_mut(),
-                None,
+                ::core::ptr::null_mut(),
                 1,
                 c"row".as_ptr(),
                 ::core::ptr::null(),
@@ -2533,7 +2545,7 @@ mod mode_tree_tests {
         let parent = mode_tree_add(
             state.mtd,
             std::ptr::null_mut(),
-            None,
+            std::ptr::null_mut(),
             1,
             c"parent".as_ptr(),
             std::ptr::null(),
@@ -2543,7 +2555,7 @@ mod mode_tree_tests {
             mode_tree_add(
                 state.mtd,
                 parent,
-                None,
+                std::ptr::null_mut(),
                 id as u64 + 2,
                 c"child".as_ptr(),
                 std::ptr::null(),
@@ -2593,7 +2605,7 @@ mod mode_tree_tests {
             let prior = mode_tree_add(
                 mtd,
                 std::ptr::null_mut(),
-                None,
+                std::ptr::null_mut(),
                 7,
                 c"row".as_ptr(),
                 std::ptr::null(),
@@ -2606,7 +2618,7 @@ mod mode_tree_tests {
             let restored = mode_tree_add(
                 mtd,
                 std::ptr::null_mut(),
-                None,
+                std::ptr::null_mut(),
                 7,
                 c"row".as_ptr(),
                 std::ptr::null(),
@@ -2615,7 +2627,7 @@ mod mode_tree_tests {
             let different = mode_tree_add(
                 mtd,
                 std::ptr::null_mut(),
-                None,
+                std::ptr::null_mut(),
                 8,
                 c"other".as_ptr(),
                 std::ptr::null(),

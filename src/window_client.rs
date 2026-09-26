@@ -31,9 +31,7 @@ use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
 use crate::src::shared::message::*;
-use crate::src::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemId,
-};
+use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
@@ -60,11 +58,10 @@ pub struct window_client_modedata {
     pub command: CString,
     pub hide_preview_this_pane: ::core::ffi::c_int,
     pub preview_is_info: ::core::ffi::c_int,
-    // Boxes keep item owners stable when the list grows.
+    // Boxes keep the mode-tree itemdata pointers stable when the list grows.
     pub items: Vec<Box<window_client_itemdata>>,
 }
 pub struct window_client_itemdata {
-    pub mode_tree_id: Option<ModeTreeItemId>,
     pub c: *mut client,
     pub ttyname: CString,
 }
@@ -72,7 +69,6 @@ pub struct window_client_itemdata {
 impl window_client_itemdata {
     fn new(c: *mut client, ttyname: &CStr) -> Self {
         Self {
-            mode_tree_id: None,
             c,
             ttyname: ttyname.to_owned(),
         }
@@ -87,19 +83,6 @@ impl Drop for window_client_itemdata {
         }
         // CString is released after unref, matching the former free path.
     }
-}
-
-unsafe fn window_client_item_from_id(
-    data: *mut window_client_modedata,
-    item_id: Option<ModeTreeItemId>,
-) -> *mut window_client_itemdata {
-    item_id
-        .and_then(|id| {
-            (&mut (*data).items)
-                .get_mut(id.index())
-                .map(|item| &mut **item as *mut window_client_itemdata)
-        })
-        .unwrap_or(::core::ptr::null_mut())
 }
 
 pub const WINDOW_CLIENT_DEFAULT_COMMAND: [::core::ffi::c_char; 22] = unsafe {
@@ -252,7 +235,7 @@ pub static mut window_client_mode: window_mode = unsafe {
 static mut window_client_order_seq: [sort_order; 5] =
     [SORT_NAME, SORT_SIZE, SORT_CREATION, SORT_ACTIVITY, SORT_END];
 unsafe fn window_client_add_item(data: *mut window_client_modedata, c: *mut client) {
-    let mut item = Box::new(window_client_itemdata::new(
+    let item = Box::new(window_client_itemdata::new(
         c,
         CStr::from_ptr(
             ((*c).ttyname)
@@ -260,7 +243,6 @@ unsafe fn window_client_add_item(data: *mut window_client_modedata, c: *mut clie
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         ),
     ));
-    item.mode_tree_id = Some(ModeTreeItemId::from_index((*data).items.len()));
     (*c).references += 1;
     (*data).items.push(item);
 }
@@ -356,7 +338,7 @@ unsafe fn window_client_build(
                 mode_tree_add(
                     (*data).data,
                     ::core::ptr::null_mut::<mode_tree_item>(),
-                    (*item).mode_tree_id,
+                    item as *mut ::core::ffi::c_void,
                     c as uint64_t,
                     ((*c).name)
                         .as_ref()
@@ -371,11 +353,13 @@ unsafe fn window_client_build(
     }
 }
 unsafe extern "C" fn window_client_draw_info(
-    mut item: *mut window_client_itemdata,
+    _modedata: *mut ::core::ffi::c_void,
+    mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let mut item: *mut window_client_itemdata = itemdata as *mut window_client_itemdata;
     let mut c: *mut client = (*item).c;
     let mut s: *mut screen = (*ctx).s;
     let mut w: *mut window = (*(*(*c).session).curw).window;
@@ -477,13 +461,14 @@ unsafe extern "C" fn window_client_draw_info(
     format_free(ft);
 }
 unsafe fn window_client_draw(
-    mut modedata: *mut window_client_modedata,
-    mut item: *mut window_client_itemdata,
+    mut modedata: *mut ::core::ffi::c_void,
+    mut itemdata: *mut ::core::ffi::c_void,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut data: *mut window_client_modedata = modedata;
+    let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
+    let mut item: *mut window_client_itemdata = itemdata as *mut window_client_itemdata;
     let mut c: *mut client = (*item).c;
     let mut session: *mut session = (*c).session;
     let mut s: *mut screen = (*ctx).s;
@@ -511,7 +496,7 @@ unsafe fn window_client_draw(
         return;
     }
     if (*data).preview_is_info != 0 {
-        window_client_draw_info(item, ctx, sx, sy);
+        window_client_draw_info(modedata, itemdata, ctx, sx, sy);
         return;
     }
     w = (*(*session).curw).window;
@@ -628,11 +613,12 @@ unsafe fn window_client_menu(
     );
 }
 unsafe fn window_client_get_key(
-    mut modedata: *mut window_client_modedata,
-    mut item: *mut window_client_itemdata,
+    mut modedata: *mut ::core::ffi::c_void,
+    mut itemdata: *mut ::core::ffi::c_void,
     mut line: u_int,
 ) -> key_code {
-    let mut data: *mut window_client_modedata = modedata;
+    let mut data: *mut window_client_modedata = modedata as *mut window_client_modedata;
+    let mut item: *mut window_client_itemdata = itemdata as *mut window_client_itemdata;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut key: key_code = 0;
     ft = format_create(
@@ -741,11 +727,14 @@ unsafe fn window_client_init(
             );
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
-        Some(Box::new(move |item_id, ctx, sx, sy| unsafe {
-            let item = window_client_item_from_id(data_handle.as_ptr(), item_id);
-            if !item.is_null() {
-                window_client_draw(data_handle.as_ptr(), item, ctx, sx, sy);
-            }
+        Some(Box::new(move |itemdata, ctx, sx, sy| {
+            window_client_draw(
+                data_handle.as_ptr().cast(),
+                itemdata,
+                ctx as *mut screen_write_ctx,
+                sx,
+                sy,
+            )
         })),
         None,
         Some(Box::new(move |client, key| {
@@ -756,13 +745,8 @@ unsafe fn window_client_init(
             )
         })),
         None,
-        Some(Box::new(move |item_id, line| unsafe {
-            let item = window_client_item_from_id(data_handle.as_ptr(), item_id);
-            if item.is_null() {
-                KEYC_NONE as ::core::ffi::c_ulong as key_code
-            } else {
-                window_client_get_key(data_handle.as_ptr(), item, line)
-            }
+        Some(Box::new(move |itemdata, line| {
+            window_client_get_key(data_handle.as_ptr().cast(), itemdata, line)
         })),
         None,
         Some(window_client_sort),
@@ -815,7 +799,7 @@ unsafe fn window_client_do_detach(
     _c: *mut client,
     mut key: key_code,
 ) {
-    if (*item).mode_tree_id == mode_tree_get_current((*data).data) {
+    if item == mode_tree_get_current((*data).data) as *mut window_client_itemdata {
         mode_tree_down((*data).data, 0 as ::core::ffi::c_int);
     }
     if key == 'd' as i32 as key_code || key == 'D' as i32 as key_code {
@@ -849,20 +833,20 @@ unsafe fn window_client_key(
     );
     match key {
         100 | 120 | 122 => {
-            item = window_client_item_from_id(data, mode_tree_get_current(mtd));
-            window_client_do_detach(data, item, c, key);
+            item = mode_tree_get_current(mtd) as *mut window_client_itemdata;
+            window_client_do_detach(
+                data,
+                item,
+                c,
+                key,
+            );
             mode_tree_build(mtd);
         }
         68 | 88 | 90 => {
             mode_tree_each_tagged(
                 mtd,
                 |row, c, key| unsafe {
-                    window_client_do_detach(
-                        data,
-                        window_client_item_from_id(data, (*row).item_id),
-                        c,
-                        key,
-                    )
+                    window_client_do_detach(data, (*row).itemdata.cast(), c, key)
                 },
                 c,
                 key,
@@ -880,7 +864,7 @@ unsafe fn window_client_key(
             mode_tree_build(mtd);
         }
         13 => {
-            item = window_client_item_from_id(data, mode_tree_get_current(mtd));
+            item = mode_tree_get_current(mtd) as *mut window_client_itemdata;
             mode_tree_run_command(
                 c,
                 ::core::ptr::null_mut::<cmd_find_state>(),
