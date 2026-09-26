@@ -55,8 +55,8 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
-    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE,
-    PROMPT_INCREMENTAL, PROMPT_NOFREEZE, PROMPT_SINGLE,
+    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_INCREMENTAL,
+    PROMPT_NOFREEZE, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -110,7 +110,9 @@ pub unsafe extern "C" fn status_timer_start(mut c: *mut client) {
             &raw mut (*c).status.timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe { status_timer_callback(fd, flags, c as *mut ::core::ffi::c_void) },
+            move |fd, flags| unsafe {
+                status_timer_callback(fd, flags, c as *mut ::core::ffi::c_void)
+            },
         );
     }
     if !s.is_null()
@@ -521,7 +523,9 @@ pub unsafe extern "C" fn status_message_set(
             &raw mut (*c).message_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe { status_message_callback(fd, flags, c as *mut ::core::ffi::c_void) },
+            move |fd, flags| unsafe {
+                status_message_callback(fd, flags, c as *mut ::core::ffi::c_void)
+            },
         );
         event_add(&raw mut (*c).message_timer, &raw mut tv);
     }

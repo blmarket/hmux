@@ -59,9 +59,7 @@ pub static mut cmd_set_option_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -88,9 +86,7 @@ pub static mut cmd_set_window_option_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -117,12 +113,13 @@ pub static mut cmd_set_hook_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_set_option_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-fn cmd_set_option_args_parse(args: &mut args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_set_option_args_parse(
+    args: &mut args,
+    idx: u_int,
+) -> Result<args_parse_type, ArgsParseError> {
     if unsafe { args_has(args as *mut args, 'B' as i32 as u_char) } != 0 {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
@@ -330,10 +327,7 @@ unsafe extern "C" fn cmd_set_hook_monitor_exec(
     }
     return CMD_RETURN_ERROR;
 }
-unsafe fn cmd_set_option_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args(self_0);
     let mut append: ::core::ffi::c_int = args_has(args, 'a' as i32 as u_char);

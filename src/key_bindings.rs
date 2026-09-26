@@ -1028,9 +1028,7 @@ pub unsafe extern "C" fn key_bindings_init() {
         ),
     );
 }
-unsafe fn key_bindings_read_only(
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn key_bindings_read_only(mut item: *mut cmdq_item) -> cmd_retval {
     cmdq_error(
         item,
         b"client is read-only\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1057,7 +1055,9 @@ pub unsafe extern "C" fn key_bindings_dispatch(
     if readonly == 0 {
         new_item = cmdq_get_callback_owned(
             b"key_bindings_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(Box::new(|item| unsafe { key_bindings_read_only(item.as_ptr()) })),
+            Some(Box::new(|item| unsafe {
+                key_bindings_read_only(item.as_ptr())
+            })),
         );
     } else {
         if (*bd).flags & KEY_BINDING_REPEAT != 0 {

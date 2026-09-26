@@ -231,20 +231,17 @@ pub type mode_tree_swap_cb = Option<
     Box<dyn FnMut(*mut ::core::ffi::c_void, *mut ::core::ffi::c_void, &mut sort_criteria) -> bool>,
 >;
 
-pub type mode_tree_key_cb =
-    Option<Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>>;
+pub type mode_tree_key_cb = Option<Box<dyn FnMut(*mut ::core::ffi::c_void, u_int) -> key_code>>;
 
 pub type mode_tree_height_cb = Option<Box<dyn FnMut(u_int) -> u_int>>;
 
-pub type mode_tree_menu_cb =
-    Option<Box<dyn FnMut(Option<std::ptr::NonNull<client>>, key_code)>>;
+pub type mode_tree_menu_cb = Option<Box<dyn FnMut(Option<std::ptr::NonNull<client>>, key_code)>>;
 
 pub type mode_tree_search_cb =
     Option<Box<dyn FnMut(*mut ::core::ffi::c_void, &std::ffi::CStr, bool) -> bool>>;
 
-pub type mode_tree_draw_cb = Option<
-    Box<dyn FnMut(*mut ::core::ffi::c_void, &mut screen_write_ctx, u_int, u_int)>,
->;
+pub type mode_tree_draw_cb =
+    Option<Box<dyn FnMut(*mut ::core::ffi::c_void, &mut screen_write_ctx, u_int, u_int)>>;
 
 pub type mode_tree_build_cb = Option<
     Box<

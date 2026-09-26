@@ -7,9 +7,7 @@ use super::abi::*;
 pub use crate::src::reactor::{bufferevent_ops, evbuffer, event_base};
 
 pub type EventCallback = Option<
-    std::rc::Rc<
-        std::cell::RefCell<Box<dyn FnMut(::core::ffi::c_int, ::core::ffi::c_short)>>,
-    >,
+    std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(::core::ffi::c_int, ::core::ffi::c_short)>>>,
 >;
 
 #[derive(Default)]
@@ -54,25 +52,26 @@ pub struct bufferevent {
 
 pub type bufferevent_event_cb = Option<
     std::rc::Rc<
-        std::cell::RefCell<
-            Box<dyn FnMut(std::ptr::NonNull<bufferevent>, ::core::ffi::c_short)>,
-        >,
+        std::cell::RefCell<Box<dyn FnMut(std::ptr::NonNull<bufferevent>, ::core::ffi::c_short)>>,
     >,
 >;
-pub type bufferevent_data_cb = Option<
-    std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(std::ptr::NonNull<bufferevent>)>>>,
->;
+pub type bufferevent_data_cb =
+    Option<std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(std::ptr::NonNull<bufferevent>)>>>>;
 
 pub fn bufferevent_data_callback(
     callback: impl FnMut(std::ptr::NonNull<bufferevent>) + 'static,
 ) -> bufferevent_data_cb {
-    Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(callback))))
+    Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(
+        callback,
+    ))))
 }
 
 pub fn bufferevent_event_callback(
     callback: impl FnMut(std::ptr::NonNull<bufferevent>, ::core::ffi::c_short) + 'static,
 ) -> bufferevent_event_cb {
-    Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(callback))))
+    Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(
+        callback,
+    ))))
 }
 
 #[derive(Copy, Clone, Default)]

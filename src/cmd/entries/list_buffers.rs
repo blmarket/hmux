@@ -43,15 +43,10 @@ pub static mut cmd_list_buffers_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_list_buffers_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_list_buffers_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_list_buffers_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_list_buffers_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

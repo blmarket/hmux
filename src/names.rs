@@ -94,7 +94,9 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
                 &raw mut (*w).name_event,
                 -(1 as ::core::ffi::c_int),
                 0 as ::core::ffi::c_short,
-                move |fd, flags| unsafe { name_time_callback(fd, flags, w as *mut ::core::ffi::c_void) },
+                move |fd, flags| unsafe {
+                    name_time_callback(fd, flags, w as *mut ::core::ffi::c_void)
+                },
             );
         }
         if event_pending(
@@ -132,9 +134,7 @@ pub unsafe extern "C" fn check_window_name(mut w: *mut window) {
     }
     (*(*w).active).flags &= !PANE_CHANGED;
     let name = format_window_name(w);
-    if strcmp(name.as_ptr().cast_mut(), (*w).name.as_ptr().cast_mut())
-        != 0 as ::core::ffi::c_int
-    {
+    if strcmp(name.as_ptr().cast_mut(), (*w).name.as_ptr().cast_mut()) != 0 as ::core::ffi::c_int {
         log_debug(
             b"@%u new name %s (was %s)\0" as *const u8 as *const ::core::ffi::c_char,
             (*w).id,

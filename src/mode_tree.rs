@@ -55,8 +55,8 @@ use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE,
-    PROMPT_ISMODE, PROMPT_NOFORMAT, PROMPT_SINGLE,
+    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_ISMODE,
+    PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -278,10 +278,8 @@ unsafe extern "C" fn mode_tree_build_lines(
             );
         }
         if (*mtd).keycb.is_some() {
-            (*mti).key = (*mtd)
-                .keycb
-                .as_mut()
-                .expect("non-null key callback")((*mti).itemdata, (*mti).line);
+            (*mti).key =
+                (*mtd).keycb.as_mut().expect("non-null key callback")((*mti).itemdata, (*mti).line);
             if (*mti).key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                 (*mti).key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
             }
@@ -615,9 +613,7 @@ unsafe extern "C" fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let mut height: u_int = 0;
     if (*mtd).heightcb.is_some() {
-        height = (*mtd).heightcb.as_mut().expect("non-null height callback")(
-            (*(*s).grid).sy,
-        );
+        height = (*mtd).heightcb.as_mut().expect("non-null height callback")((*(*s).grid).sy);
         if height < (*(*s).grid).sy {
             (*mtd).height = (*(*s).grid).sy.wrapping_sub(height);
         }
@@ -1366,10 +1362,12 @@ pub unsafe extern "C" fn mode_tree_draw(mut mtd: *mut mode_tree_data) {
                     h.wrapping_add(1 as u_int) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                (*mtd)
-                    .drawcb
-                    .as_mut()
-                    .expect("non-null draw callback")((*mti).itemdata, &mut ctx, box_x, box_y);
+                (*mtd).drawcb.as_mut().expect("non-null draw callback")(
+                    (*mti).itemdata,
+                    &mut ctx,
+                    box_x,
+                    box_y,
+                );
             }
         }
     }
@@ -1539,9 +1537,7 @@ pub unsafe fn mode_tree_set_prompt(
         );
         cmdq_set_cancel_callback(
             &mut *item,
-            Box::new(move || unsafe {
-                mode_tree_cancel_prompt_accept(mtd)
-            }),
+            Box::new(move || unsafe { mode_tree_cancel_prompt_accept(mtd) }),
         );
         cmdq_append(c, item);
     }
@@ -1589,11 +1585,11 @@ unsafe extern "C" fn mode_tree_search_backward(
             {
                 return mti;
             }
-        } else if (*mtd)
-            .searchcb
-            .as_mut()
-            .expect("non-null search callback")((*mti).itemdata, CStr::from_ptr(search), icase != 0)
-        {
+        } else if (*mtd).searchcb.as_mut().expect("non-null search callback")(
+            (*mti).itemdata,
+            CStr::from_ptr(search),
+            icase != 0,
+        ) {
             return mti;
         }
     }
@@ -1648,11 +1644,11 @@ unsafe extern "C" fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *
             {
                 return mti;
             }
-        } else if (*mtd)
-            .searchcb
-            .as_mut()
-            .expect("non-null search callback")((*mti).itemdata, CStr::from_ptr(search), icase != 0)
-        {
+        } else if (*mtd).searchcb.as_mut().expect("non-null search callback")(
+            (*mti).itemdata,
+            CStr::from_ptr(search),
+            icase != 0,
+        ) {
             return mti;
         }
     }

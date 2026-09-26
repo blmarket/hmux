@@ -440,13 +440,17 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
         &raw mut (*tty).clipboard_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { tty_clipboard_query_callback(fd, flags, tty as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            tty_clipboard_query_callback(fd, flags, tty as *mut ::core::ffi::c_void)
+        },
     );
     event_set(
         &raw mut (*tty).start_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { tty_start_timer_callback(fd, flags, tty as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            tty_start_timer_callback(fd, flags, tty as *mut ::core::ffi::c_void)
+        },
     );
     event_set(
         &raw mut (*tty).timer,
@@ -1479,10 +1483,7 @@ unsafe extern "C" fn tty_redraw_region(mut tty: *mut tty, mut ctx: *const tty_ct
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
-        (*ctx)
-            .redraw_cb
-            .as_ref()
-            .expect("non-null redraw callback")(&*ctx);
+        (*ctx).redraw_cb.as_ref().expect("non-null redraw callback")(&*ctx);
         return;
     }
     log_debug(
@@ -2472,10 +2473,7 @@ pub unsafe fn tty_cmd_alignmenttest(mut tty: *mut tty, mut ctx: *const tty_ctx) 
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     if (*ctx).flags & TTY_CTX_WINDOW_BIGGER != 0 || (*c).overlay_check.is_some() {
-        (*ctx)
-            .redraw_cb
-            .as_ref()
-            .expect("non-null redraw callback")(&*ctx);
+        (*ctx).redraw_cb.as_ref().expect("non-null redraw callback")(&*ctx);
         return;
     }
     tty_attributes(
@@ -2585,10 +2583,7 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, mut ctx: *const tty_ctx) {
         {
             tty_draw_pane(tty, ctx, (*ctx).ocy);
         } else {
-            (*ctx)
-                .redraw_cb
-                .as_ref()
-                .expect("non-null redraw callback")(&*ctx);
+            (*ctx).redraw_cb.as_ref().expect("non-null redraw callback")(&*ctx);
         }
         return;
     }

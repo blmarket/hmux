@@ -988,7 +988,9 @@ unsafe fn control_error(mut item: *mut cmdq_item, error: Option<CString>) -> cmd
     control_write(
         c,
         b"parse error: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        error.as_ref().map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+        error
+            .as_ref()
+            .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
     );
     cmdq_guard(
         item,
@@ -1005,10 +1007,7 @@ unsafe fn control_error_callback(
     let mut c: *mut client = data as *mut client;
     (*c).flags |= CLIENT_EXIT as uint64_t;
 }
-unsafe fn control_read_callback(
-    _bufev: *mut bufferevent,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn control_read_callback(_bufev: *mut bufferevent, mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
     let mut buffer: *mut evbuffer = (*(*cs).read_event).input;
@@ -1046,7 +1045,7 @@ unsafe fn control_read_callback(
                     let error_item = cmdq_get_callback_owned(
                         b"control_error\0" as *const u8 as *const ::core::ffi::c_char,
                         Some(Box::new(move |item| unsafe {
-                                control_error(item.as_ptr(), error)
+                            control_error(item.as_ptr(), error)
                         })),
                     );
                     cmdq_append(c, error_item);
@@ -1315,10 +1314,7 @@ unsafe extern "C" fn control_write_pending(
     }
     return !(*cp).blocks.is_empty() as ::core::ffi::c_int;
 }
-unsafe fn control_write_callback(
-    _bufev: *mut bufferevent,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn control_write_callback(_bufev: *mut bufferevent, mut data: *mut ::core::ffi::c_void) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
     let mut evb: *mut evbuffer = (*(*cs).write_event).output;
@@ -1432,14 +1428,14 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
     ) as *mut monitor_set;
     (*cs).read_event = bufferevent_new(
         (*c).fd,
-        bufferevent_data_callback(move |stream| {
-            unsafe { control_read_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void) }
+        bufferevent_data_callback(move |stream| unsafe {
+            control_read_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void)
         }),
-        bufferevent_data_callback(move |stream| {
-            unsafe { control_write_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void) }
+        bufferevent_data_callback(move |stream| unsafe {
+            control_write_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void)
         }),
-        bufferevent_event_callback(move |stream, flags| {
-            unsafe { control_error_callback(stream.as_ptr(), flags, c as *mut ::core::ffi::c_void) }
+        bufferevent_event_callback(move |stream, flags| unsafe {
+            control_error_callback(stream.as_ptr(), flags, c as *mut ::core::ffi::c_void)
         }),
     );
     if (*cs).read_event.is_null() {
@@ -1451,11 +1447,11 @@ pub unsafe extern "C" fn control_start(mut c: *mut client) {
         (*cs).write_event = bufferevent_new(
             (*c).out_fd,
             None,
-            bufferevent_data_callback(move |stream| {
-                unsafe { control_write_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void) }
+            bufferevent_data_callback(move |stream| unsafe {
+                control_write_callback(stream.as_ptr(), c as *mut ::core::ffi::c_void)
             }),
-            bufferevent_event_callback(move |stream, flags| {
-                unsafe { control_error_callback(stream.as_ptr(), flags, c as *mut ::core::ffi::c_void) }
+            bufferevent_event_callback(move |stream, flags| unsafe {
+                control_error_callback(stream.as_ptr(), flags, c as *mut ::core::ffi::c_void)
             }),
         );
         if (*cs).write_event.is_null() {

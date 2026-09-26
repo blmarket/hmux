@@ -478,11 +478,7 @@ pub unsafe extern "C" fn hooks_monitor_remove(
         hooks_monitor_free(hm as *mut ::core::ffi::c_void);
     }
 }
-unsafe fn hooks_monitor_hook_cb(
-    name: &CStr,
-    payload: &mut event_payload,
-    hm: *mut hooks_monitor,
-) {
+unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *mut hooks_monitor) {
     let name = name.as_ptr();
     let ep = payload as *mut event_payload;
     if event_payload_get_pointer(
@@ -655,9 +651,7 @@ pub unsafe extern "C" fn hooks_monitor_add(
     );
     (*hm).sink = events_add_sink(
         CStr::from_ptr(name),
-        events_callback(move |name, payload| unsafe {
-            hooks_monitor_hook_cb(name, payload, hm)
-        }),
+        events_callback(move |name, payload| unsafe { hooks_monitor_hook_cb(name, payload, hm) }),
     );
     options_set_monitor_data(o, hm as *mut ::core::ffi::c_void);
     monitor_add((*hm).set, name, type_0, id, format, flags);

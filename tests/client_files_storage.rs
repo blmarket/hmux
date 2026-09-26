@@ -2,8 +2,8 @@ use hmux2::src::file::*;
 use hmux2::src::reactor::{event_init, event_loop, shutdown_runtime};
 use hmux2::src::shared::client::{client_file, client_files};
 use std::cell::Cell;
-use std::rc::Rc;
 use std::ptr::null_mut;
+use std::rc::Rc;
 
 #[test]
 fn terminal_file_completion_is_scheduled_once() {
@@ -38,12 +38,7 @@ fn stream_lookup_order_reference_release_and_double_removal() {
         let mut files = client_files { storage: None };
         let mut nodes = Vec::new();
         for stream in [i32::MAX, -1, 42, 0, i32::MIN] {
-            nodes.push(file_create_with_peer(
-                null_mut(),
-                &mut files,
-                stream,
-                None,
-            ));
+            nodes.push(file_create_with_peer(null_mut(), &mut files, stream, None));
         }
         let mut probe: client_file = client_file::empty();
         probe.stream = 1;

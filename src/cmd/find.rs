@@ -625,11 +625,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
     wl = winlinks_minmax(&(*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
-        if strncmp(
-            window,
-            (*(*wl).window).name.as_ptr(),
-            strlen(window),
-        ) == 0 as ::core::ffi::c_int
+        if strncmp(window, (*(*wl).window).name.as_ptr(), strlen(window)) == 0 as ::core::ffi::c_int
         {
             if !(*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);

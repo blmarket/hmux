@@ -155,9 +155,8 @@ pub struct format_entry {
     pub key: std::ffi::CString,
     pub value: Option<std::ffi::CString>,
     pub time: time_t,
-    pub(crate) owned_cb: Option<
-        Box<dyn FnMut(std::ptr::NonNull<format_tree>) -> Option<std::ffi::CString>>,
-    >,
+    pub(crate) owned_cb:
+        Option<Box<dyn FnMut(std::ptr::NonNull<format_tree>) -> Option<std::ffi::CString>>>,
 }
 
 impl format_entry {

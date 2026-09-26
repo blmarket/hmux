@@ -29,9 +29,7 @@ pub static mut cmd_kill_server_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_kill_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_kill_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -57,15 +55,10 @@ pub static mut cmd_start_server_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_STARTSERVER,
-        exec: Some(
-            cmd_kill_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_kill_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_kill_server_exec(
-    mut self_0: *mut cmd,
-    _item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_kill_server_exec(mut self_0: *mut cmd, _item: *mut cmdq_item) -> cmd_retval {
     if cmd_get_entry(self_0) == &raw const cmd_kill_server_entry {
         kill(getpid(), SIGTERM);
     }

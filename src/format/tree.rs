@@ -36,8 +36,8 @@ pub(super) unsafe fn format_entry_ensure_value(ft: *mut format_tree, fe: *mut fo
     let Some(mut callback) = (*fe).owned_cb.take() else {
         return;
     };
-    let value = callback(std::ptr::NonNull::new(ft).expect("format tree is non-null"))
-        .unwrap_or_default();
+    let value =
+        callback(std::ptr::NonNull::new(ft).expect("format tree is non-null")).unwrap_or_default();
     let current = format_entry_tree_find_key(&mut (*ft).tree, key.as_c_str());
     if current == fe
         && !current.is_null()

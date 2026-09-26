@@ -38,8 +38,8 @@ use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    prompt_result, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL,
-    PROMPT_ISMODE, PROMPT_NOFORMAT,
+    prompt_result, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE,
+    PROMPT_NOFORMAT,
 };
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -122,10 +122,7 @@ pub static mut window_switch_mode: window_mode = unsafe {
                 ) -> *mut screen,
         ),
         free: Some(window_switch_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(
-            window_switch_resize
-                as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
-        ),
+        resize: Some(window_switch_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
         update: None,
         style_changed: None,
         key: Some(
@@ -559,11 +556,7 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
 }
-unsafe fn window_switch_resize(
-    mut wme: *mut window_mode_entry,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+unsafe fn window_switch_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
     let mut s: *mut screen = &raw mut (*data).screen;
     screen_resize(s, sx, sy, 0 as ::core::ffi::c_int);

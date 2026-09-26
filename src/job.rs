@@ -376,14 +376,18 @@ pub unsafe fn job_run(
                     setblocking((*job).fd, 0 as ::core::ffi::c_int);
                     (*job).event = bufferevent_new(
                         (*job).fd,
-                        bufferevent_data_callback(move |stream| {
-                            unsafe { job_read_callback(stream.as_ptr(), job as *mut ::core::ffi::c_void) }
+                        bufferevent_data_callback(move |stream| unsafe {
+                            job_read_callback(stream.as_ptr(), job as *mut ::core::ffi::c_void)
                         }),
-                        bufferevent_data_callback(move |stream| {
-                            unsafe { job_write_callback(stream.as_ptr(), job as *mut ::core::ffi::c_void) }
+                        bufferevent_data_callback(move |stream| unsafe {
+                            job_write_callback(stream.as_ptr(), job as *mut ::core::ffi::c_void)
                         }),
-                        bufferevent_event_callback(move |stream, flags| {
-                            unsafe { job_error_callback(stream.as_ptr(), flags, job as *mut ::core::ffi::c_void) }
+                        bufferevent_event_callback(move |stream, flags| unsafe {
+                            job_error_callback(
+                                stream.as_ptr(),
+                                flags,
+                                job as *mut ::core::ffi::c_void,
+                            )
                         }),
                     );
                     if (*job).event.is_null() {
@@ -503,10 +507,7 @@ pub unsafe extern "C" fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_
         fatal(b"ioctl failed\0" as *const u8 as *const ::core::ffi::c_char);
     }
 }
-unsafe fn job_read_callback(
-    _bufev: *mut bufferevent,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn job_read_callback(_bufev: *mut bufferevent, mut data: *mut ::core::ffi::c_void) {
     let mut job: *mut job = data as *mut job;
     let Some(callback_slot) = (*job).updatecb.as_ref().cloned() else {
         return;
@@ -520,10 +521,7 @@ unsafe fn job_read_callback(
         *callback_owner = Some(callback);
     }
 }
-unsafe fn job_write_callback(
-    _bufev: *mut bufferevent,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn job_write_callback(_bufev: *mut bufferevent, mut data: *mut ::core::ffi::c_void) {
     let mut job: *mut job = data as *mut job;
     let mut len: size_t = evbuffer_get_length(&*(bufferevent_get_output((*job).event)));
     log_debug(

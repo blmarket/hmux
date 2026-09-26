@@ -107,9 +107,7 @@ use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{
-    prompt_input_cb, prompt_free_cb, prompt_result, PROMPT_CLOSE,
-};
+use crate::src::shared::prompt::{prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_CLOSE};
 use crate::src::shared::regex::{
     re_dfa_t, re_pattern_buffer, regex_t, regmatch_t, REG_EXTENDED, REG_ICASE,
 };
@@ -3038,7 +3036,9 @@ unsafe extern "C" fn window_pane_create(
         &raw mut (*wp).sb_auto_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { window_pane_scrollbar_timer(fd, flags, wp as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            window_pane_scrollbar_timer(fd, flags, wp as *mut ::core::ffi::c_void)
+        },
     );
     if gethostname(
         &raw mut host as *mut ::core::ffi::c_char,
@@ -3189,10 +3189,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
         .expect("final pane release must have an owner");
     drop(owner);
 }
-unsafe fn window_pane_read_callback(
-    _bufev: *mut bufferevent,
-    mut data: *mut ::core::ffi::c_void,
-) {
+unsafe fn window_pane_read_callback(_bufev: *mut bufferevent, mut data: *mut ::core::ffi::c_void) {
     let mut wp: *mut window_pane = data as *mut window_pane;
     let mut evb: *mut evbuffer = (*(*wp).event).input;
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
@@ -3246,12 +3243,12 @@ pub unsafe extern "C" fn window_pane_set_event(mut wp: *mut window_pane) {
     setblocking((*wp).fd, 0 as ::core::ffi::c_int);
     (*wp).event = bufferevent_new(
         (*wp).fd,
-        bufferevent_data_callback(move |stream| {
-            unsafe { window_pane_read_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void) }
+        bufferevent_data_callback(move |stream| unsafe {
+            window_pane_read_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void)
         }),
         None,
-        bufferevent_event_callback(move |stream, flags| {
-            unsafe { window_pane_error_callback(stream.as_ptr(), flags, wp as *mut ::core::ffi::c_void) }
+        bufferevent_event_callback(move |stream, flags| unsafe {
+            window_pane_error_callback(stream.as_ptr(), flags, wp as *mut ::core::ffi::c_void)
         }),
     );
     if (*wp).event.is_null() {
@@ -4811,25 +4808,30 @@ mod name_tests {
                 reenter: true,
             }));
             let callback_state = state.clone();
-            let sink = events_add_sink(c"window-renamed", events_callback(move |_, payload| {
-                let payload = payload as *mut event_payload;
-                let (window, reenter) = unsafe {
-                    let old = CStr::from_ptr(event_payload_get_string(payload, c"old_name".as_ptr()))
-                        .to_bytes()
-                        .to_vec();
-                    let new = CStr::from_ptr(event_payload_get_string(payload, c"new_name".as_ptr()))
-                        .to_bytes()
-                        .to_vec();
-                    let mut state = callback_state.borrow_mut();
-                    state.events.push((old, new));
-                    let reenter = state.reenter;
-                    state.reenter = false;
-                    (state.window, reenter)
-                };
-                if reenter {
-                    unsafe { window_set_name(window, c"inner".as_ptr(), 0) };
-                }
-            }));
+            let sink = events_add_sink(
+                c"window-renamed",
+                events_callback(move |_, payload| {
+                    let payload = payload as *mut event_payload;
+                    let (window, reenter) = unsafe {
+                        let old =
+                            CStr::from_ptr(event_payload_get_string(payload, c"old_name".as_ptr()))
+                                .to_bytes()
+                                .to_vec();
+                        let new =
+                            CStr::from_ptr(event_payload_get_string(payload, c"new_name".as_ptr()))
+                                .to_bytes()
+                                .to_vec();
+                        let mut state = callback_state.borrow_mut();
+                        state.events.push((old, new));
+                        let reenter = state.reenter;
+                        state.reenter = false;
+                        (state.window, reenter)
+                    };
+                    if reenter {
+                        unsafe { window_set_name(window, c"inner".as_ptr(), 0) };
+                    }
+                }),
+            );
 
             window_set_name(w, c"outer".as_ptr(), 0);
             assert_eq!(

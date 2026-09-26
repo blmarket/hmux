@@ -900,17 +900,13 @@ static mut input_state_ground_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -922,33 +918,25 @@ static mut input_state_ground_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_print,
-            ),
+            handler: Some(input_print),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -960,9 +948,7 @@ static mut input_state_ground_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0x80 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
-            handler: Some(
-                input_top_bit_set,
-            ),
+            handler: Some(input_top_bit_set),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -978,17 +964,13 @@ static mut input_state_esc_enter_table: [input_transition; 23] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1000,41 +982,31 @@ static mut input_state_esc_enter_table: [input_transition; 23] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: &raw const input_state_esc_intermediate,
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x4f as ::core::ffi::c_int,
-            handler: Some(
-                input_esc_dispatch,
-            ),
+            handler: Some(input_esc_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1046,9 +1018,7 @@ static mut input_state_esc_enter_table: [input_transition; 23] = unsafe {
         input_transition {
             first: 0x51 as ::core::ffi::c_int,
             last: 0x57 as ::core::ffi::c_int,
-            handler: Some(
-                input_esc_dispatch,
-            ),
+            handler: Some(input_esc_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1060,17 +1030,13 @@ static mut input_state_esc_enter_table: [input_transition; 23] = unsafe {
         input_transition {
             first: 0x59 as ::core::ffi::c_int,
             last: 0x59 as ::core::ffi::c_int,
-            handler: Some(
-                input_esc_dispatch,
-            ),
+            handler: Some(input_esc_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x5a as ::core::ffi::c_int,
             last: 0x5a as ::core::ffi::c_int,
-            handler: Some(
-                input_esc_dispatch,
-            ),
+            handler: Some(input_esc_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1082,9 +1048,7 @@ static mut input_state_esc_enter_table: [input_transition; 23] = unsafe {
         input_transition {
             first: 0x5c as ::core::ffi::c_int,
             last: 0x5c as ::core::ffi::c_int,
-            handler: Some(
-                input_esc_dispatch,
-            ),
+            handler: Some(input_esc_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1108,9 +1072,7 @@ static mut input_state_esc_enter_table: [input_transition; 23] = unsafe {
         input_transition {
             first: 0x60 as ::core::ffi::c_int,
             last: 0x6a as ::core::ffi::c_int,
-            handler: Some(
-                input_esc_dispatch,
-            ),
+            handler: Some(input_esc_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1122,9 +1084,7 @@ static mut input_state_esc_enter_table: [input_transition; 23] = unsafe {
         input_transition {
             first: 0x6c as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_esc_dispatch,
-            ),
+            handler: Some(input_esc_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1146,17 +1106,13 @@ static mut input_state_esc_intermediate_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1168,41 +1124,31 @@ static mut input_state_esc_intermediate_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_esc_dispatch,
-            ),
+            handler: Some(input_esc_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1224,17 +1170,13 @@ static mut input_state_csi_enter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1246,73 +1188,55 @@ static mut input_state_csi_enter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: &raw const input_state_csi_intermediate,
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x39 as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: &raw const input_state_csi_parameter,
         },
         input_transition {
             first: 0x3a as ::core::ffi::c_int,
             last: 0x3a as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: &raw const input_state_csi_parameter,
         },
         input_transition {
             first: 0x3b as ::core::ffi::c_int,
             last: 0x3b as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: &raw const input_state_csi_parameter,
         },
         input_transition {
             first: 0x3c as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: &raw const input_state_csi_parameter,
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_csi_dispatch,
-            ),
+            handler: Some(input_csi_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1334,17 +1258,13 @@ static mut input_state_csi_parameter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1356,57 +1276,43 @@ static mut input_state_csi_parameter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: &raw const input_state_csi_intermediate,
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x39 as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x3a as ::core::ffi::c_int,
             last: 0x3a as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x3b as ::core::ffi::c_int,
             last: 0x3b as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -1418,9 +1324,7 @@ static mut input_state_csi_parameter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_csi_dispatch,
-            ),
+            handler: Some(input_csi_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1442,17 +1346,13 @@ static mut input_state_csi_intermediate_table: [input_transition; 11] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1464,33 +1364,25 @@ static mut input_state_csi_intermediate_table: [input_transition; 11] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -1502,9 +1394,7 @@ static mut input_state_csi_intermediate_table: [input_transition; 11] = unsafe {
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_csi_dispatch,
-            ),
+            handler: Some(input_csi_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1526,17 +1416,13 @@ static mut input_state_csi_ignore_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1548,25 +1434,19 @@ static mut input_state_csi_ignore_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x17 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x19 as ::core::ffi::c_int,
             last: 0x19 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0x1f as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -1600,17 +1480,13 @@ static mut input_state_dcs_enter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1640,17 +1516,13 @@ static mut input_state_dcs_enter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: &raw const input_state_dcs_intermediate,
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x39 as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: &raw const input_state_dcs_parameter,
         },
         input_transition {
@@ -1662,25 +1534,19 @@ static mut input_state_dcs_enter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x3b as ::core::ffi::c_int,
             last: 0x3b as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: &raw const input_state_dcs_parameter,
         },
         input_transition {
             first: 0x3c as ::core::ffi::c_int,
             last: 0x3f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: &raw const input_state_dcs_parameter,
         },
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: &raw const input_state_dcs_handler,
         },
         input_transition {
@@ -1702,17 +1568,13 @@ static mut input_state_dcs_parameter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1742,17 +1604,13 @@ static mut input_state_dcs_parameter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: &raw const input_state_dcs_intermediate,
         },
         input_transition {
             first: 0x30 as ::core::ffi::c_int,
             last: 0x39 as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -1764,9 +1622,7 @@ static mut input_state_dcs_parameter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x3b as ::core::ffi::c_int,
             last: 0x3b as ::core::ffi::c_int,
-            handler: Some(
-                input_parameter,
-            ),
+            handler: Some(input_parameter),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -1778,9 +1634,7 @@ static mut input_state_dcs_parameter_table: [input_transition; 14] = unsafe {
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: &raw const input_state_dcs_handler,
         },
         input_transition {
@@ -1802,17 +1656,13 @@ static mut input_state_dcs_intermediate_table: [input_transition; 11] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -1842,9 +1692,7 @@ static mut input_state_dcs_intermediate_table: [input_transition; 11] = unsafe {
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0x2f as ::core::ffi::c_int,
-            handler: Some(
-                input_intermediate,
-            ),
+            handler: Some(input_intermediate),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -1856,9 +1704,7 @@ static mut input_state_dcs_intermediate_table: [input_transition; 11] = unsafe {
         input_transition {
             first: 0x40 as ::core::ffi::c_int,
             last: 0x7e as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: &raw const input_state_dcs_handler,
         },
         input_transition {
@@ -1880,9 +1726,7 @@ static mut input_state_dcs_handler_table: [input_transition; 4] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -1894,9 +1738,7 @@ static mut input_state_dcs_handler_table: [input_transition; 4] = unsafe {
         input_transition {
             first: 0x1c as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -1912,25 +1754,19 @@ static mut input_state_dcs_escape_table: [input_transition; 4] = unsafe {
         input_transition {
             first: 0 as ::core::ffi::c_int,
             last: 0x5b as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: &raw const input_state_dcs_handler,
         },
         input_transition {
             first: 0x5c as ::core::ffi::c_int,
             last: 0x5c as ::core::ffi::c_int,
-            handler: Some(
-                input_dcs_dispatch,
-            ),
+            handler: Some(input_dcs_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x5d as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: &raw const input_state_dcs_handler,
         },
         input_transition {
@@ -1946,17 +1782,13 @@ static mut input_state_dcs_ignore_table: [input_transition; 8] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -2002,17 +1834,13 @@ static mut input_state_osc_string_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -2030,9 +1858,7 @@ static mut input_state_osc_string_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0x7 as ::core::ffi::c_int,
             last: 0x7 as ::core::ffi::c_int,
-            handler: Some(
-                input_end_bel,
-            ),
+            handler: Some(input_end_bel),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -2056,9 +1882,7 @@ static mut input_state_osc_string_table: [input_transition; 10] = unsafe {
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -2074,17 +1898,13 @@ static mut input_state_apc_string_table: [input_transition; 8] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -2114,9 +1934,7 @@ static mut input_state_apc_string_table: [input_transition; 8] = unsafe {
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -2132,17 +1950,13 @@ static mut input_state_rename_string_table: [input_transition; 8] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -2172,9 +1986,7 @@ static mut input_state_rename_string_table: [input_transition; 8] = unsafe {
         input_transition {
             first: 0x20 as ::core::ffi::c_int,
             last: 0xff as ::core::ffi::c_int,
-            handler: Some(
-                input_input,
-            ),
+            handler: Some(input_input),
             state: ::core::ptr::null::<input_state>(),
         },
         input_transition {
@@ -2190,17 +2002,13 @@ static mut input_state_consume_st_table: [input_transition; 8] = unsafe {
         input_transition {
             first: 0x18 as ::core::ffi::c_int,
             last: 0x18 as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
             first: 0x1a as ::core::ffi::c_int,
             last: 0x1a as ::core::ffi::c_int,
-            handler: Some(
-                input_c0_dispatch,
-            ),
+            handler: Some(input_c0_dispatch),
             state: &raw const input_state_ground,
         },
         input_transition {
@@ -2384,13 +2192,17 @@ pub unsafe extern "C" fn input_init(
         &raw mut (*ictx).ground_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { input_ground_timer_callback(fd, flags, ictx as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            input_ground_timer_callback(fd, flags, ictx as *mut ::core::ffi::c_void)
+        },
     );
     event_set(
         &raw mut (*ictx).request_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { input_request_timer_callback(fd, flags, ictx as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            input_request_timer_callback(fd, flags, ictx as *mut ::core::ffi::c_void)
+        },
     );
     input_reset(ictx, 0 as ::core::ffi::c_int);
     return ictx;
@@ -2478,9 +2290,7 @@ unsafe extern "C" fn input_parse(
             }
         }
         state = (*ictx).state as *const input_state;
-        if (*itr).handler
-            != Some(input_print)
-        {
+        if (*itr).handler != Some(input_print) {
             screen_write_collect_end(sctx);
         }
         if (*itr).handler.is_some()

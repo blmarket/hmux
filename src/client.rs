@@ -44,8 +44,8 @@ use crate::src::shared::posix_io::{
 use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{
-    __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, siginfo_t,
-    ProcessSignal, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
+    __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, siginfo_t, ProcessSignal,
+    SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
 };
 use crate::src::shared::socket::{
     sa_family_t, sockaddr, sockaddr_un, __CONST_SOCKADDR_ARG, AF_UNIX, SOCK_STREAM,

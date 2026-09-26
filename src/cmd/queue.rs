@@ -877,15 +877,11 @@ pub unsafe fn cmdq_get_callback_owned(
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_get_callback1(
     name: *const ::core::ffi::c_char,
-    cb: Option<
-        unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval,
-    >,
+    cb: Option<unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval>,
     data: *mut ::core::ffi::c_void,
 ) -> *mut cmdq_item {
     let callback = cb.map(|callback| {
-        Box::new(move |item: std::ptr::NonNull<cmdq_item>| unsafe {
-            callback(item.as_ptr(), data)
-        })
+        Box::new(move |item: std::ptr::NonNull<cmdq_item>| unsafe { callback(item.as_ptr(), data) })
             as Box<dyn FnOnce(std::ptr::NonNull<cmdq_item>) -> cmd_retval>
     });
     let item = cmdq_get_callback_owned(name, callback);
@@ -913,10 +909,7 @@ pub unsafe extern "C" fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -
 }
 unsafe extern "C" fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
     (*item).flags |= CMDQ_FIRED;
-    return (*item)
-        .cb
-        .take()
-        .expect("non-null queue callback")(
+    return (*item).cb.take().expect("non-null queue callback")(
         std::ptr::NonNull::new(item).expect("queue callback item is non-null"),
     );
 }
@@ -1231,10 +1224,7 @@ mod cancellation_tests {
         let before = DROPPED.load(Ordering::SeqCst);
         unsafe {
             let payload = Box::new(Payload);
-            let item = cmdq_get_callback_owned(
-                c"cancel-payload".as_ptr(),
-                None,
-            );
+            let item = cmdq_get_callback_owned(c"cancel-payload".as_ptr(), None);
             cmdq_set_cancel_callback(&mut *item, Box::new(move || drop(payload)));
             cmdq_free_detached(item);
         }

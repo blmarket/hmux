@@ -33,9 +33,7 @@ pub static mut cmd_lock_server_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -61,9 +59,7 @@ pub static mut cmd_lock_session_entry: cmd_entry = unsafe {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -89,15 +85,10 @@ pub static mut cmd_lock_client_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG,
-        exec: Some(
-            cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_lock_server_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_lock_server_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_lock_server_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut tc: *mut client = cmdq_get_target_client(item);
     if cmd_get_entry(self_0) == &raw const cmd_lock_server_entry {

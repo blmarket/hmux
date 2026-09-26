@@ -326,8 +326,7 @@ pub static mut window_customize_mode: window_mode = unsafe {
         ),
         free: Some(window_customize_free as unsafe fn(*mut window_mode_entry) -> ()),
         resize: Some(
-            window_customize_resize
-                as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
+            window_customize_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
         ),
         update: Some(window_customize_update as unsafe fn(*mut window_mode_entry) -> ()),
         style_changed: None,
@@ -2898,10 +2897,7 @@ unsafe fn window_customize_menu(
         ::core::ptr::null_mut::<mouse_event>(),
     );
 }
-unsafe fn window_customize_height(
-    _modedata: *mut ::core::ffi::c_void,
-    _height: u_int,
-) -> u_int {
+unsafe fn window_customize_height(_modedata: *mut ::core::ffi::c_void, _height: u_int) -> u_int {
     return 12 as u_int;
 }
 static window_customize_help_lines: &[&'static CStr] = &[
@@ -3028,11 +3024,7 @@ unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     mode_tree_free((*data).data);
     window_customize_destroy(data);
 }
-unsafe fn window_customize_resize(
-    mut wme: *mut window_mode_entry,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+unsafe fn window_customize_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
     mode_tree_resize((*data).data, sx, sy);
 }
@@ -4629,9 +4621,7 @@ unsafe fn window_customize_change_tagged_callback(
     }
     mode_tree_each_tagged(
         (*data).data,
-        |row, c, key| unsafe {
-            window_customize_change_each(data, (*row).itemdata.cast(), c, key)
-        },
+        |row, c, key| unsafe { window_customize_change_each(data, (*row).itemdata.cast(), c, key) },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         0 as ::core::ffi::c_int,

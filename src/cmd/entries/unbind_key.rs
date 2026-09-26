@@ -35,15 +35,10 @@ pub static mut cmd_unbind_key_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_unbind_key_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_unbind_key_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_unbind_key_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_unbind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

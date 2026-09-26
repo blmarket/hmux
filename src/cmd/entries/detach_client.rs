@@ -41,9 +41,7 @@ pub static mut cmd_detach_client_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_READONLY | CMD_CLIENT_TFLAG,
-        exec: Some(
-            cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -69,15 +67,10 @@ pub static mut cmd_suspend_client_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_CLIENT_TFLAG,
-        exec: Some(
-            cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_detach_client_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_detach_client_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut source: *mut cmd_find_state = cmdq_get_source(item);
     let mut c: *mut client = cmdq_get_client(item);

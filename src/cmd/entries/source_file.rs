@@ -65,9 +65,7 @@ pub static mut cmd_source_file_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_source_file_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_source_file_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 unsafe fn cmd_source_file_free_data(cdata: *mut cmd_source_file_data) {
@@ -130,9 +128,7 @@ unsafe extern "C" fn cmd_source_file_complete(mut cdata: *mut cmd_source_file_da
     );
     cmdq_set_cancel_callback(
         &mut *new_item,
-        Box::new(move || unsafe {
-            cmd_source_file_cancel_complete_typed(cdata)
-        }),
+        Box::new(move || unsafe { cmd_source_file_cancel_complete_typed(cdata) }),
     );
     cmdq_insert_after((*cdata).after, new_item);
 }
@@ -232,10 +228,7 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     }
     CString::new(quoted).expect("C string path has no interior NUL")
 }
-unsafe fn cmd_source_file_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut cdata: *mut cmd_source_file_data = ::core::ptr::null_mut::<cmd_source_file_data>();
     let mut c: *mut client = cmdq_get_client(item);

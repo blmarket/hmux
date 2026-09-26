@@ -98,7 +98,10 @@ pub static mut cmd_run_shell_entry: cmd_entry = unsafe {
         ),
     }
 };
-fn cmd_run_shell_args_parse(args: &mut args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_run_shell_args_parse(
+    args: &mut args,
+    _idx: u_int,
+) -> Result<args_parse_type, ArgsParseError> {
     if unsafe { args_has(args as *mut args, 'C' as i32 as u_char) } != 0 {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
@@ -174,10 +177,7 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
     CString::new(message).expect("run-shell command and status text contain no NUL")
 }
 
-unsafe fn cmd_run_shell_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut cdata: *mut cmd_run_shell_data = ::core::ptr::null_mut::<cmd_run_shell_data>();
@@ -290,7 +290,9 @@ unsafe fn cmd_run_shell_exec(
         &raw mut (*cdata).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { cmd_run_shell_timer(fd, flags, cdata as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            cmd_run_shell_timer(fd, flags, cdata as *mut ::core::ffi::c_void)
+        },
     );
     if !delay.is_null() {
         tv.tv_usec = 0 as __suseconds_t;
@@ -340,9 +342,7 @@ unsafe fn cmd_run_shell_timer(
             Some(Box::new(move |completion| unsafe {
                 cmd_run_shell_callback(completion, cdata)
             })),
-            Some(Box::new(move || unsafe {
-                cmd_run_shell_free(cdata)
-            })),
+            Some(Box::new(move || unsafe { cmd_run_shell_free(cdata) })),
             (*cdata).flags,
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),
@@ -416,7 +416,11 @@ unsafe fn cmd_run_shell_timer(
 unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_run_shell_data) {
     let event = evbuffer_new();
     if !completion.output.is_empty() {
-        evbuffer_add(event, completion.output.as_ptr().cast(), completion.output.len());
+        evbuffer_add(
+            event,
+            completion.output.as_ptr().cast(),
+            completion.output.len(),
+        );
     }
     let mut item: *mut cmdq_item = (*cdata).item;
     let cmd = (*cdata)
@@ -428,11 +432,8 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, mut cdata: *mut cmd_
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
     loop {
-        let Some(line) = evbuffer_readln(
-            event,
-            ::core::ptr::null_mut::<size_t>(),
-            EVBUFFER_EOL_LF,
-        ) else {
+        let Some(line) = evbuffer_readln(event, ::core::ptr::null_mut::<size_t>(), EVBUFFER_EOL_LF)
+        else {
             break;
         };
         cmd_run_shell_print(cdata, line.as_ptr().cast());

@@ -892,7 +892,9 @@ pub unsafe fn server_client_set_overlay(
         &raw mut (*c).overlay_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { server_client_overlay_timer(fd, flags, c as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            server_client_overlay_timer(fd, flags, c as *mut ::core::ffi::c_void)
+        },
     );
     if delay != 0 as u_int {
         event_add(&raw mut (*c).overlay_timer, &raw mut tv);
@@ -930,7 +932,13 @@ pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
     if let Some(free) = overlay_free {
         free(&mut *c);
     }
-    drop((overlay_check, overlay_mode, overlay_draw, overlay_key, overlay_resize));
+    drop((
+        overlay_check,
+        overlay_mode,
+        overlay_draw,
+        overlay_key,
+        overlay_resize,
+    ));
     drop(overlay_data);
     (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
     if !(*c).session.is_null() {
@@ -1139,19 +1147,25 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         &raw mut (*c).repeat_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { server_client_repeat_timer(fd, flags, c as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            server_client_repeat_timer(fd, flags, c as *mut ::core::ffi::c_void)
+        },
     );
     event_set(
         &raw mut (*c).click_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { server_client_click_timer(fd, flags, c as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            server_client_click_timer(fd, flags, c as *mut ::core::ffi::c_void)
+        },
     );
     event_set(
         &raw mut (*c).exit_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { server_client_exit_timer(fd, flags, c as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            server_client_exit_timer(fd, flags, c as *mut ::core::ffi::c_void)
+        },
     );
     (*c).click_wp = -(1 as ::core::ffi::c_int);
     clients.push_back(owner);
@@ -1541,7 +1555,9 @@ pub unsafe extern "C" fn server_client_unref(mut c: *mut client) {
         event_once(
             -(1 as ::core::ffi::c_int),
             EV_TIMEOUT as ::core::ffi::c_short,
-            move |fd, flags| unsafe { server_client_free(fd, flags, c as *mut ::core::ffi::c_void) },
+            move |fd, flags| unsafe {
+                server_client_free(fd, flags, c as *mut ::core::ffi::c_void)
+            },
             ::core::ptr::null::<timeval>(),
         );
     }
@@ -3494,7 +3510,9 @@ unsafe extern "C" fn server_client_check_pane_resize(mut wp: *mut window_pane) {
             &raw mut (*wp).resize_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe { server_client_resize_timer(fd, flags, wp as *mut ::core::ffi::c_void) },
+            move |fd, flags| unsafe {
+                server_client_resize_timer(fd, flags, wp as *mut ::core::ffi::c_void)
+            },
         );
     }
     if event_pending(
@@ -4170,7 +4188,13 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
                 &raw mut ev,
                 -(1 as ::core::ffi::c_int),
                 0 as ::core::ffi::c_short,
-                move |fd, flags| unsafe { server_client_redraw_timer(fd, flags, ::core::ptr::null_mut::<::core::ffi::c_void>()) },
+                move |fd, flags| unsafe {
+                    server_client_redraw_timer(
+                        fd,
+                        flags,
+                        ::core::ptr::null_mut::<::core::ffi::c_void>(),
+                    )
+                },
             );
         }
         if event_pending(
@@ -4503,7 +4527,9 @@ unsafe fn server_client_default_command(mut item: *mut cmdq_item) -> cmd_retval 
     {
         new_item = cmdq_get_callback_owned(
             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-            Some(Box::new(|item| unsafe { server_client_read_only(item.as_ptr()) })),
+            Some(Box::new(|item| unsafe {
+                server_client_read_only(item.as_ptr())
+            })),
         );
     } else {
         new_item = cmdq_get_command(cmdlist, ::core::ptr::null_mut::<cmdq_state>());
@@ -4572,7 +4598,9 @@ unsafe extern "C" fn server_client_dispatch_command(
         if argc == 0 as ::core::ffi::c_int {
             new_item = cmdq_get_callback_owned(
                 b"server_client_default_command\0" as *const u8 as *const ::core::ffi::c_char,
-                Some(Box::new(|item| unsafe { server_client_default_command(item.as_ptr()) })),
+                Some(Box::new(|item| unsafe {
+                    server_client_default_command(item.as_ptr())
+                })),
             );
             current_block = 13472856163611868459;
         } else {
@@ -4589,7 +4617,9 @@ unsafe extern "C" fn server_client_dispatch_command(
                     {
                         new_item = cmdq_get_callback_owned(
                             b"server_client_read_only\0" as *const u8 as *const ::core::ffi::c_char,
-                            Some(Box::new(|item| unsafe { server_client_read_only(item.as_ptr()) })),
+                            Some(Box::new(|item| unsafe {
+                                server_client_read_only(item.as_ptr())
+                            })),
                         );
                     } else {
                         new_item =
@@ -4608,7 +4638,9 @@ unsafe extern "C" fn server_client_dispatch_command(
                     c,
                     cmdq_get_callback_owned(
                         b"server_client_command_done\0" as *const u8 as *const ::core::ffi::c_char,
-                        Some(Box::new(|item| unsafe { server_client_command_done(item.as_ptr()) })),
+                        Some(Box::new(|item| unsafe {
+                            server_client_command_done(item.as_ptr())
+                        })),
                     ),
                 );
                 return 0 as ::core::ffi::c_int;

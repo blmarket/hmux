@@ -37,7 +37,8 @@ pub const PROMPT_EDITARROWS: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
 pub type prompt_result = ::core::ffi::c_uint;
 
 pub type prompt_free_cb = Option<Box<dyn FnOnce()>>;
-pub type prompt_input_cb = Option<Box<dyn FnMut(Option<&CStr>, prompt_key_result) -> prompt_result>>;
+pub type prompt_input_cb =
+    Option<Box<dyn FnMut(Option<&CStr>, prompt_key_result) -> prompt_result>>;
 
 #[cfg(test)]
 mod tests {

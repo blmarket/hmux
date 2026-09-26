@@ -37,12 +37,7 @@ fn timers_activation_cancellation_and_deadline_queries() {
         assert_eq!(event_initialized(&event), 0);
         let mut calls = 0usize;
         let calls_ptr = &mut calls as *mut usize;
-        event_set(
-            &mut event,
-            -1,
-            0,
-            move |_, _| *calls_ptr += 1,
-        );
+        event_set(&mut event, -1, 0, move |_, _| *calls_ptr += 1);
         assert_eq!(event_initialized(&event), 1);
         assert_eq!(event_pending(&event, 1, std::ptr::null_mut()), 0);
         let mut absolute = timeval {
@@ -71,12 +66,7 @@ fn timers_activation_cancellation_and_deadline_queries() {
         rt.tick();
         assert_eq!(calls, 1);
         assert_eq!(event_pending(&event, 1, std::ptr::null_mut()), 0);
-        event_once(
-            -1,
-            0,
-            move |_, _| *calls_ptr += 1,
-            std::ptr::null(),
-        );
+        event_once(-1, 0, move |_, _| *calls_ptr += 1, std::ptr::null());
         rt.tick();
         assert_eq!(calls, 2);
     }
@@ -369,7 +359,9 @@ unsafe fn reuse_event(state: *mut Reuse, fd: c_int) {
     if state.calls == 1 {
         libc::dup2(state.replacement, state.old_fd);
         let state_ptr = state as *mut Reuse;
-        event_set(&mut state.event, fd, 2, move |fd, _| reuse_event(state_ptr, fd));
+        event_set(&mut state.event, fd, 2, move |fd, _| {
+            reuse_event(state_ptr, fd)
+        });
         event_add(&mut state.event, std::ptr::null());
     }
 }
@@ -386,12 +378,9 @@ fn callback_rearming_a_reused_descriptor_cannot_keep_the_old_lease() {
     };
     unsafe {
         let state_ptr = &mut state as *mut Reuse;
-        event_set(
-            &mut state.event,
-            old_fd.as_raw_fd(),
-            2,
-            move |fd, _| reuse_event(state_ptr, fd),
-        );
+        event_set(&mut state.event, old_fd.as_raw_fd(), 2, move |fd, _| {
+            reuse_event(state_ptr, fd)
+        });
         event_add(&mut state.event, std::ptr::null());
         old_peer.write_all(b"old").unwrap();
         rt.tick();

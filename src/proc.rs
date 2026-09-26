@@ -19,8 +19,8 @@ use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::message::*;
 use crate::src::shared::message::{imsg, imsgbuf, OwnedIbuf};
 use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
-use crate::src::shared::process::{tmuxpeer, tmuxproc};
 use crate::src::shared::process::PeerMessage;
+use crate::src::shared::process::{tmuxpeer, tmuxproc};
 use crate::src::shared::signal::ProcessSignal;
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, SA_RESTART, SIGCHLD,
@@ -286,10 +286,7 @@ pub unsafe extern "C" fn proc_start(mut name: *const ::core::ffi::c_char) -> *mu
     }));
     return tp;
 }
-pub unsafe fn proc_loop(
-    mut tp: *mut tmuxproc,
-    mut loopcb: Option<&mut dyn FnMut() -> bool>,
-) {
+pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut() -> bool>) {
     log_debug(
         b"%s loop enter\0" as *const u8 as *const ::core::ffi::c_char,
         (*tp).name.as_ptr(),

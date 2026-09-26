@@ -156,7 +156,9 @@ unsafe extern "C" fn screen_write_set_cursor(
             &raw mut (*w).offset_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe { screen_write_offset_timer(fd, flags, w as *mut ::core::ffi::c_void) },
+            move |fd, flags| unsafe {
+                screen_write_offset_timer(fd, flags, w as *mut ::core::ffi::c_void)
+            },
         );
     }
     if event_pending(
@@ -195,10 +197,8 @@ fn screen_write_set_client_cb(wp: *mut window_pane) -> tty_ctx_set_client_cb {
         }
         if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
             log_debug(
-                b"%s: adding %%%u to deferred redraw\0" as *const u8
-                    as *const ::core::ffi::c_char,
-                b"screen_write_set_client_cb\0" as *const u8
-                    as *const ::core::ffi::c_char,
+                b"%s: adding %%%u to deferred redraw\0" as *const u8 as *const ::core::ffi::c_char,
+                b"screen_write_set_client_cb\0" as *const u8 as *const ::core::ffi::c_char,
                 (*wp).id,
             );
             (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
@@ -221,8 +221,8 @@ fn screen_write_set_client_cb(wp: *mut window_pane) -> tty_ctx_set_client_cb {
         (*ttyctx).ryoff = (*wp).yoff;
         (*ttyctx).yoff = (*ttyctx).ryoff;
         if status_at_line(c) == 0 {
-            (*ttyctx).yoff = ((*ttyctx).yoff as u_int).wrapping_add(status_line_size(c))
-                as ::core::ffi::c_int;
+            (*ttyctx).yoff =
+                ((*ttyctx).yoff as u_int).wrapping_add(status_line_size(c)) as ::core::ffi::c_int;
         }
         1
     }))
@@ -1508,7 +1508,9 @@ pub unsafe extern "C" fn screen_write_start_sync(mut wp: *mut window_pane) {
             &raw mut (*wp).sync_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe { screen_write_sync_callback(fd, flags, wp as *mut ::core::ffi::c_void) },
+            move |fd, flags| unsafe {
+                screen_write_sync_callback(fd, flags, wp as *mut ::core::ffi::c_void)
+            },
         );
     }
     event_add(&raw mut (*wp).sync_timer, &raw mut tv);
@@ -1740,10 +1742,7 @@ unsafe extern "C" fn screen_write_redraw_line(
                     (*ttyctx).ocy = yy;
                     if (*ttyctx).c2rust_unnamed.n != 1 as u_int {
                         tty_write(
-                            Some(
-                                tty_cmd_redrawline
-                                    as unsafe fn(*mut tty, *const tty_ctx) -> (),
-                            ),
+                            Some(tty_cmd_redrawline as unsafe fn(*mut tty, *const tty_ctx) -> ()),
                             ttyctx,
                         );
                     } else {
@@ -1751,8 +1750,7 @@ unsafe extern "C" fn screen_write_redraw_line(
                         if screen_write_cell_is_single(&raw mut gc) == 0 {
                             tty_write(
                                 Some(
-                                    tty_cmd_redrawline
-                                        as unsafe fn(*mut tty, *const tty_ctx) -> (),
+                                    tty_cmd_redrawline as unsafe fn(*mut tty, *const tty_ctx) -> (),
                                 ),
                                 ttyctx,
                             );
@@ -1764,10 +1762,7 @@ unsafe extern "C" fn screen_write_redraw_line(
                                 (*ttyctx).cell = &raw mut ngc;
                             }
                             tty_write(
-                                Some(
-                                    tty_cmd_cell
-                                        as unsafe fn(*mut tty, *const tty_ctx) -> (),
-                                ),
+                                Some(tty_cmd_cell as unsafe fn(*mut tty, *const tty_ctx) -> ()),
                                 ttyctx,
                             );
                         }
@@ -3207,9 +3202,7 @@ pub unsafe extern "C" fn screen_write_clearstartofscreen(
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
         tty_write(
-            Some(
-                tty_cmd_clearstartofscreen as unsafe fn(*mut tty, *const tty_ctx) -> (),
-            ),
+            Some(tty_cmd_clearstartofscreen as unsafe fn(*mut tty, *const tty_ctx) -> ()),
             &raw mut ttyctx,
         );
         return;
@@ -3438,10 +3431,7 @@ pub unsafe extern "C" fn screen_write_fullredraw(mut ctx: *mut screen_write_ctx)
         0 as ::core::ffi::c_int,
     );
     if ttyctx.redraw_cb.is_some() {
-        ttyctx
-            .redraw_cb
-            .as_ref()
-            .expect("non-null redraw callback")(&ttyctx);
+        ttyctx.redraw_cb.as_ref().expect("non-null redraw callback")(&ttyctx);
     }
 }
 unsafe fn screen_write_collect_trim(
@@ -3815,8 +3805,7 @@ unsafe extern "C" fn screen_write_collect_flush_line(
                                 ttyctx.c2rust_unnamed.data.size = w_length as size_t;
                                 tty_write(
                                     Some(
-                                        tty_cmd_cells
-                                            as unsafe fn(*mut tty, *const tty_ctx) -> (),
+                                        tty_cmd_cells as unsafe fn(*mut tty, *const tty_ctx) -> (),
                                     ),
                                     &raw mut ttyctx,
                                 );
@@ -4461,9 +4450,7 @@ pub unsafe extern "C" fn screen_write_cell(
         ttyctx.c2rust_unnamed.n = width;
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
             tty_write(
-                Some(
-                    tty_cmd_insertcharacter as unsafe fn(*mut tty, *const tty_ctx) -> (),
-                ),
+                Some(tty_cmd_insertcharacter as unsafe fn(*mut tty, *const tty_ctx) -> ()),
                 &raw mut ttyctx,
             );
         }
@@ -5034,10 +5021,7 @@ pub unsafe extern "C" fn screen_write_alternateon(
         0 as ::core::ffi::c_int,
     );
     if ttyctx.redraw_cb.is_some() {
-        ttyctx
-            .redraw_cb
-            .as_ref()
-            .expect("non-null redraw callback")(&ttyctx);
+        ttyctx.redraw_cb.as_ref().expect("non-null redraw callback")(&ttyctx);
     }
 }
 #[no_mangle]
@@ -5120,10 +5104,7 @@ pub unsafe extern "C" fn screen_write_alternateoff(
         0 as ::core::ffi::c_int,
     );
     if ttyctx.redraw_cb.is_some() {
-        ttyctx
-            .redraw_cb
-            .as_ref()
-            .expect("non-null redraw callback")(&ttyctx);
+        ttyctx.redraw_cb.as_ref().expect("non-null redraw callback")(&ttyctx);
     }
 }
 

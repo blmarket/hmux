@@ -51,18 +51,16 @@ pub static mut cmd_confirm_before_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_CLIENT_TFLAG,
-        exec: Some(
-            cmd_confirm_before_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_confirm_before_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-fn cmd_confirm_before_args_parse(_args: &mut args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_confirm_before_args_parse(
+    _args: &mut args,
+    _idx: u_int,
+) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_confirm_before_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
@@ -121,13 +119,14 @@ unsafe fn cmd_confirm_before_exec(
         CString::new(bytes).expect("C string command and validated key contain no interior NUL")
     };
     let cdata = Box::into_raw(cdata);
-    let inputcb: crate::src::shared::status::status_prompt_input_cb = Some(Box::new(move |c, s, _key| unsafe {
-        cmd_confirm_before_callback(
-            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
-            cdata,
-            s,
-        )
-    }));
+    let inputcb: crate::src::shared::status::status_prompt_input_cb =
+        Some(Box::new(move |c, s, _key| unsafe {
+            cmd_confirm_before_callback(
+                c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                cdata,
+                s,
+            )
+        }));
     let freecb: prompt_free_cb = Some(Box::new(move || unsafe { cmd_confirm_before_free(cdata) }));
     status_prompt_set(
         tc,

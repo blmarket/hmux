@@ -48,15 +48,10 @@ pub static mut cmd_kill_session_entry: cmd_entry = unsafe {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_kill_session_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_kill_session_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_kill_session_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut s: *mut session = (*target).s;

@@ -68,10 +68,7 @@ pub static mut cmd_resize_pane_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe fn cmd_resize_pane_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut wp: *mut window_pane = (*target).wp;
@@ -313,10 +310,7 @@ unsafe extern "C" fn cmd_resize_pane_mouse_update(
     cmd_resize_pane_mouse_resize_move_floating(c, &raw mut (*event).m);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_resize_pane_mouse_resize_move_floating(
-    mut c: *mut client,
-    mut m: *mut mouse_event,
-) {
+unsafe fn cmd_resize_pane_mouse_resize_move_floating(mut c: *mut client, mut m: *mut mouse_event) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -457,10 +451,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
         server_redraw_window_borders(w);
     }
 }
-unsafe fn cmd_resize_pane_mouse_resize_tiled(
-    mut c: *mut client,
-    mut m: *mut mouse_event,
-) {
+unsafe fn cmd_resize_pane_mouse_resize_tiled(mut c: *mut client, mut m: *mut mouse_event) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut y: u_int = 0;

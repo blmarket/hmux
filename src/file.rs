@@ -507,15 +507,7 @@ pub(crate) unsafe fn file_write_with_cmdq_wait(
     item: *mut cmdq_item,
     cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
-    file_write_impl(
-        c,
-        path,
-        flags,
-        bdata,
-        bsize,
-        cb,
-        Some((item, cancel_cb)),
-    );
+    file_write_impl(c, path, flags, bdata, bsize, cb, Some((item, cancel_cb)));
 }
 
 unsafe fn file_write_impl(
@@ -990,10 +982,7 @@ unsafe fn file_write_error_callback(
         });
     }
 }
-unsafe fn file_write_callback(
-    _bev: *mut bufferevent,
-    mut arg: *mut ::core::ffi::c_void,
-) {
+unsafe fn file_write_callback(_bev: *mut bufferevent, mut arg: *mut ::core::ffi::c_void) {
     let mut cf: *mut client_file = arg as *mut client_file;
     log_debug(
         b"write check file %d\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1087,11 +1076,15 @@ pub unsafe fn file_write_open(
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
                     None,
-                    bufferevent_data_callback(move |stream| {
-                        unsafe { file_write_callback(stream.as_ptr(), cf as *mut ::core::ffi::c_void) }
+                    bufferevent_data_callback(move |stream| unsafe {
+                        file_write_callback(stream.as_ptr(), cf as *mut ::core::ffi::c_void)
                     }),
-                    bufferevent_event_callback(move |stream, flags| {
-                        unsafe { file_write_error_callback(stream.as_ptr(), flags, cf as *mut ::core::ffi::c_void) }
+                    bufferevent_event_callback(move |stream, flags| unsafe {
+                        file_write_error_callback(
+                            stream.as_ptr(),
+                            flags,
+                            cf as *mut ::core::ffi::c_void,
+                        )
                     }),
                 );
                 if (*cf).event.is_null() {
@@ -1347,12 +1340,16 @@ pub unsafe fn file_read_open(
             } else {
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
-                    bufferevent_data_callback(move |stream| {
-                        unsafe { file_read_callback(stream.as_ptr(), cf as *mut ::core::ffi::c_void) }
+                    bufferevent_data_callback(move |stream| unsafe {
+                        file_read_callback(stream.as_ptr(), cf as *mut ::core::ffi::c_void)
                     }),
                     None,
-                    bufferevent_event_callback(move |stream, flags| {
-                        unsafe { file_read_error_callback(stream.as_ptr(), flags, cf as *mut ::core::ffi::c_void) }
+                    bufferevent_event_callback(move |stream, flags| unsafe {
+                        file_read_error_callback(
+                            stream.as_ptr(),
+                            flags,
+                            cf as *mut ::core::ffi::c_void,
+                        )
                     }),
                 );
                 if (*cf).event.is_null() {

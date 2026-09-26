@@ -72,7 +72,11 @@ pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
 pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut format_job) {
     let evb = evbuffer_new();
     if !completion.output.is_empty() {
-        evbuffer_add(evb, completion.output.as_ptr().cast(), completion.output.len());
+        evbuffer_add(
+            evb,
+            completion.output.as_ptr().cast(),
+            completion.output.len(),
+        );
     }
     (*fj).job = ::core::ptr::null_mut::<job>();
     let line = evbuffer_readline(evb);
@@ -187,9 +191,7 @@ pub(super) unsafe fn format_job_get(
                 let cwd = server_client_get_cwd((*ft).client, ::core::ptr::null_mut::<session>());
                 (!cwd.is_null()).then(|| CStr::from_ptr(cwd))
             },
-            job_update_callback(move |job| unsafe {
-                format_job_update(job, fj)
-            }),
+            job_update_callback(move |job| unsafe { format_job_update(job, fj) }),
             Some(Box::new(move |completion| unsafe {
                 format_job_complete(completion, fj)
             })),

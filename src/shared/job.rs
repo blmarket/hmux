@@ -48,9 +48,7 @@ impl job {
     }
 }
 
-pub type job_update_cb = Option<
-    Rc<RefCell<Option<Box<dyn FnMut(&mut job)>>>>,
->;
+pub type job_update_cb = Option<Rc<RefCell<Option<Box<dyn FnMut(&mut job)>>>>>;
 
 pub fn job_update_callback(callback: impl FnMut(&mut job) + 'static) -> job_update_cb {
     Some(Rc::new(RefCell::new(Some(Box::new(callback)))))

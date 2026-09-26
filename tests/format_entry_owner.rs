@@ -1,7 +1,6 @@
 //! Exercise lazy format-entry caching through the owned expansion path.
 use hmux2::src::format::{
-    format_add, format_add_owned_cb, format_create, format_expand_cstring, format_free,
-    format_tree,
+    format_add, format_add_owned_cb, format_create, format_expand_cstring, format_free, format_tree,
 };
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::tmux::{global_options, global_s_options, global_w_options};

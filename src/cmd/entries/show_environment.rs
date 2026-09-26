@@ -36,10 +36,7 @@ pub static mut cmd_show_environment_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_show_environment_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_show_environment_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
@@ -108,10 +105,7 @@ unsafe extern "C" fn cmd_show_environment_print(
         );
     };
 }
-unsafe fn cmd_show_environment_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut env: *mut environ = ::core::ptr::null_mut::<environ>();

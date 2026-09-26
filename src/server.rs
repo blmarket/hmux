@@ -404,7 +404,9 @@ unsafe fn server_start_inner(
         &raw mut server_ev_tidy,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { server_tidy_event(fd, flags, ::core::ptr::null_mut::<::core::ffi::c_void>()) },
+        move |fd, flags| unsafe {
+            server_tidy_event(fd, flags, ::core::ptr::null_mut::<::core::ffi::c_void>())
+        },
     );
     event_add(&raw mut server_ev_tidy, &raw mut tv);
     server_acl_init();

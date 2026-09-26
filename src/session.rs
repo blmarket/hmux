@@ -657,7 +657,9 @@ pub unsafe extern "C" fn session_update_activity(mut s: *mut session, mut from: 
             &raw mut (*s).lock_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |fd, flags| unsafe { session_lock_timer(fd, flags, s as *mut ::core::ffi::c_void) },
+            move |fd, flags| unsafe {
+                session_lock_timer(fd, flags, s as *mut ::core::ffi::c_void)
+            },
         );
     }
     if (*s).attached != 0 as u_int {

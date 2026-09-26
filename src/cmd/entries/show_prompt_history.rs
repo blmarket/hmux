@@ -35,8 +35,7 @@ pub static mut cmd_show_prompt_history_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_show_prompt_history_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_show_prompt_history_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };
@@ -64,8 +63,7 @@ pub static mut cmd_clear_prompt_history_entry: cmd_entry = unsafe {
         },
         flags: CMD_AFTERHOOK,
         exec: Some(
-            cmd_show_prompt_history_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+            cmd_show_prompt_history_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
         ),
     }
 };

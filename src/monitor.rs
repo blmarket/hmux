@@ -624,19 +624,13 @@ unsafe fn monitor_create(cb: monitor_cb) -> *mut monitor_set {
         generation: 0,
     }))
 }
-pub unsafe fn monitor_create_client(
-    mut c: *mut client,
-    cb: monitor_cb,
-) -> *mut monitor_set {
+pub unsafe fn monitor_create_client(mut c: *mut client, cb: monitor_cb) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
     ms = monitor_create(cb);
     (*ms).client = c;
     return ms as *mut monitor_set;
 }
-pub unsafe fn monitor_create_session(
-    mut s: *mut session,
-    cb: monitor_cb,
-) -> *mut monitor_set {
+pub unsafe fn monitor_create_session(mut s: *mut session, cb: monitor_cb) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
     ms = monitor_create(cb);
     (*ms).session = s;

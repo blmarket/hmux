@@ -91,9 +91,7 @@ pub static mut cmd_wait_for_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_wait_for_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_wait_for_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 static mut wait_event_items: Vec<Box<wait_event_item>> = Vec::new();
@@ -265,10 +263,7 @@ unsafe extern "C" fn cmd_wait_for_client_name(
 ) -> *const ::core::ffi::c_char {
     return cmd_wait_for_item_client_name((*wei).item);
 }
-unsafe fn cmd_wait_for_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut name: *const ::core::ffi::c_char = args_string(args, 0 as u_int);
     let mut wc: *mut wait_channel = ::core::ptr::null_mut::<wait_channel>();
@@ -397,9 +392,7 @@ unsafe extern "C" fn cmd_wait_for_event(
     wei = &raw mut *owner;
     (*wei).sink = events_add_sink(
         &(*wei).name,
-        events_callback(move |name, payload| unsafe {
-            cmd_wait_for_event_cb(name, payload, wei)
-        }),
+        events_callback(move |name, payload| unsafe { cmd_wait_for_event_cb(name, payload, wei) }),
     );
     (&raw mut wait_event_items).as_mut().unwrap().push(owner);
     return CMD_RETURN_WAIT;

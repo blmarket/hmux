@@ -79,9 +79,7 @@ impl Signals {
                     return true;
                 }
                 // SAFETY: querying a signal disposition without changing it.
-                unsafe {
-                    libc::sigaction(*signal, std::ptr::null(), std::ptr::null_mut()) != 0
-                }
+                unsafe { libc::sigaction(*signal, std::ptr::null(), std::ptr::null_mut()) != 0 }
             })
         {
             return Err(io::Error::new(

@@ -100,8 +100,8 @@ use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
-    format_entry, format_entry_tree, format_entry_tree_storage, format_job,
-    format_job_tree, format_tree, format_type,
+    format_entry, format_entry_tree, format_entry_tree_storage, format_job, format_job_tree,
+    format_tree, format_type,
 };
 use crate::src::shared::format::{
     FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENTS, FORMAT_CLIENT_ENVIRON,
@@ -117,8 +117,8 @@ use crate::src::shared::format::{
     FORMAT_WINDOW, FORMAT_WINDOWS, FORMAT_WINDOW_NAME,
 };
 use crate::src::shared::grid::*;
-use crate::src::shared::job::{job, job_update_callback, JobCompletion};
 use crate::src::shared::job::JOB_NOWAIT;
+use crate::src::shared::job::{job, job_update_callback, JobCompletion};
 use crate::src::shared::key::key_event;
 use crate::src::shared::layout::layout_cell;
 use crate::src::shared::layout::*;
@@ -172,8 +172,8 @@ mod tree;
 pub use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
-    format_add, format_add_tv, format_create, format_each, format_free,
-    format_get_pane, format_log_debug, format_merge,
+    format_add, format_add_tv, format_create, format_each, format_free, format_get_pane,
+    format_log_debug, format_merge,
 };
 mod jobs;
 use jobs::*;

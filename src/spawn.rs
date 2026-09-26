@@ -1006,10 +1006,7 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
         }
         drop(stream);
     }
-    (*es)
-        .cb
-        .take()
-        .expect("non-null editor callback")(result);
+    (*es).cb.take().expect("non-null editor callback")(result);
     spawn_editor_free(es);
 }
 
@@ -1274,11 +1271,8 @@ mod tests {
                 let edited = b"edited by child\0\xff";
                 fs::write(path.to_str().unwrap(), edited).unwrap();
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
-                let state = spawn_editor_state::new(
-                    path.to_owned(),
-                    capture_editor_result(result),
-                )
-                .into_state_ptr();
+                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result))
+                    .into_state_ptr();
                 let wp = Box::into_raw(Box::new(window_pane::empty()));
                 (*wp).editor = state;
                 (*wp).flags = PANE_STATUSREADY;
@@ -1292,11 +1286,8 @@ mod tests {
                 drop(fd_owner);
                 fs::write(path.to_str().unwrap(), []).unwrap();
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
-                let state = spawn_editor_state::new(
-                    path.to_owned(),
-                    capture_editor_result(result),
-                )
-                .into_state_ptr();
+                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result))
+                    .into_state_ptr();
                 let wp = Box::into_raw(Box::new(window_pane::empty()));
                 (*wp).editor = state;
                 (*wp).flags = PANE_STATUSREADY;
@@ -1310,11 +1301,8 @@ mod tests {
                 drop(fd_owner);
                 fs::write(path.to_str().unwrap(), b"ignored after failure").unwrap();
                 let result = Box::into_raw(Box::new(None::<Vec<u8>>));
-                let state = spawn_editor_state::new(
-                    path.to_owned(),
-                    capture_editor_result(result),
-                )
-                .into_state_ptr();
+                let state = spawn_editor_state::new(path.to_owned(), capture_editor_result(result))
+                    .into_state_ptr();
                 let wp = Box::into_raw(Box::new(window_pane::empty()));
                 (*wp).editor = state;
                 (*wp).flags = PANE_STATUSREADY;

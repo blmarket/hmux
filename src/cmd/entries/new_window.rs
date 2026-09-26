@@ -71,10 +71,7 @@ pub static mut cmd_new_window_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe fn cmd_new_window_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut c: *mut client = cmdq_get_client(item);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
@@ -168,10 +165,8 @@ unsafe fn cmd_new_window_exec(
             );
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
             while !wl.is_null() {
-                if !(strcmp(
-                    (*(*wl).window).name.as_ptr(),
-                    expanded.as_ptr(),
-                ) != 0 as ::core::ffi::c_int)
+                if !(strcmp((*(*wl).window).name.as_ptr(), expanded.as_ptr())
+                    != 0 as ::core::ffi::c_int)
                 {
                     if new_wl.is_null() {
                         new_wl = wl;

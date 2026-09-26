@@ -129,10 +129,7 @@ unsafe extern "C" fn cmd_break_pane_float(
     server_redraw_window(w);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_break_pane_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

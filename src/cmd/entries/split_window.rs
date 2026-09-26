@@ -125,10 +125,7 @@ pub static mut cmd_split_window_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe fn cmd_split_window_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args(self_0);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);
@@ -537,12 +534,13 @@ unsafe fn cmd_split_window_exec(
                                                 (*new_wp).id as ::core::ffi::c_int;
                                             let drag_client = std::ptr::NonNull::new(tc)
                                                 .expect("live drag client");
-                                            (*tc).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
-                                                cmd_split_window_mouse_resize(
-                                                    drag_client.as_ptr(),
-                                                    m as *mut mouse_event,
-                                                )
-                                            }));
+                                            (*tc).tty.mouse_drag_update =
+                                                Some(Box::new(move |m| unsafe {
+                                                    cmd_split_window_mouse_resize(
+                                                        drag_client.as_ptr(),
+                                                        m as *mut mouse_event,
+                                                    )
+                                                }));
                                             cmd_split_window_mouse_resize(tc, &raw mut (*event).m);
                                         }
                                         if args_has(args, 'P' as i32 as u_char) != 0 {

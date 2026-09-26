@@ -191,10 +191,7 @@ pub static mut window_buffer_mode: window_mode = unsafe {
                 ) -> *mut screen,
         ),
         free: Some(window_buffer_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(
-            window_buffer_resize
-                as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
-        ),
+        resize: Some(window_buffer_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
         update: Some(window_buffer_update as unsafe fn(*mut window_mode_entry) -> ()),
         style_changed: None,
         key: Some(
@@ -569,7 +566,7 @@ fn window_buffer_sort(sort_crit: &mut sort_criteria) {
     unsafe {
         sort_crit.order_seq = &raw mut window_buffer_order_seq as *mut sort_order;
         if sort_crit.order as ::core::ffi::c_uint
-        == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
+            == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             sort_crit.order = *sort_crit.order_seq;
         }
@@ -695,11 +692,7 @@ unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
     window_buffer_clear_items(&mut (*data).item_list);
     drop(Box::from_raw(data));
 }
-unsafe fn window_buffer_resize(
-    mut wme: *mut window_mode_entry,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+unsafe fn window_buffer_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
     mode_tree_resize((*data).data, sx, sy);
 }
@@ -858,10 +851,7 @@ unsafe extern "C" fn window_buffer_draw_waiting(mut data: *mut window_buffer_mod
     );
     screen_write_stop(&raw mut ctx);
 }
-unsafe fn window_buffer_edit_close_cb(
-    buf: Option<Vec<u8>>,
-    mut ed: *mut window_buffer_editdata,
-) {
+unsafe fn window_buffer_edit_close_cb(buf: Option<Vec<u8>>, mut ed: *mut window_buffer_editdata) {
     let mut oldlen: size_t = 0;
     let mut oldbuf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
@@ -1002,12 +992,7 @@ unsafe fn window_buffer_key(
             }
             100 => {
                 item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
-                window_buffer_do_delete(
-                    data,
-                    item,
-                    c,
-                    key,
-                );
+                window_buffer_do_delete(data, item, c, key);
                 mode_tree_build(mtd);
             }
             68 => {
@@ -1036,12 +1021,7 @@ unsafe fn window_buffer_key(
             }
             112 | 13 => {
                 item = mode_tree_get_current(mtd) as *mut window_buffer_itemdata;
-                window_buffer_do_paste(
-                    data,
-                    item,
-                    c,
-                    key,
-                );
+                window_buffer_do_paste(data, item, c, key);
                 finished = 1 as ::core::ffi::c_int;
             }
             _ => {}

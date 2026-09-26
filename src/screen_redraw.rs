@@ -1054,10 +1054,7 @@ unsafe extern "C" fn redraw_compare_data(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn redraw_build_cells(
-    mut bctx: *mut redraw_build_ctx,
-    cells: &mut Vec<redraw_build_cell>,
-) {
+unsafe fn redraw_build_cells(mut bctx: *mut redraw_build_ctx, cells: &mut Vec<redraw_build_cell>) {
     let mut w: *mut window = (*bctx).w;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ncells: size_t = 0;

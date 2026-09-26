@@ -37,16 +37,10 @@ pub static mut cmd_set_environment_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_set_environment_exec
-                as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_set_environment_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_set_environment_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_set_environment_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

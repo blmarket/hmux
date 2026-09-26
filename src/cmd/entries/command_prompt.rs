@@ -118,13 +118,13 @@ pub static mut cmd_command_prompt_entry: cmd_entry = unsafe {
         ),
     }
 };
-fn cmd_command_prompt_args_parse(_args: &mut args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_command_prompt_args_parse(
+    _args: &mut args,
+    _idx: u_int,
+) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_command_prompt_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
@@ -225,14 +225,15 @@ unsafe fn cmd_command_prompt_exec(
         (*cdata).flags |= PROMPT_NOFREEZE;
     }
     let (prompt_ptr, input_ptr) = (&(*cdata).prompts)[0].pointers();
-    let inputcb: crate::src::shared::status::status_prompt_input_cb = Some(Box::new(move |c, s, key| unsafe {
-        cmd_command_prompt_callback(
-            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
-            cdata,
-            s,
-            key,
-        )
-    }));
+    let inputcb: crate::src::shared::status::status_prompt_input_cb =
+        Some(Box::new(move |c, s, key| unsafe {
+            cmd_command_prompt_callback(
+                c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                cdata,
+                s,
+                key,
+            )
+        }));
     let freecb: prompt_free_cb = Some(Box::new(move || unsafe { cmd_command_prompt_free(cdata) }));
     if pane != 0 {
         (*cdata).flags |= PROMPT_ISPANE;

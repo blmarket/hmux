@@ -53,9 +53,7 @@ pub static mut window_clock_mode: window_mode = unsafe {
                 ) -> *mut screen,
         ),
         free: Some(window_clock_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(
-            window_clock_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
-        ),
+        resize: Some(window_clock_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
         update: None,
         style_changed: None,
         key: Some(
@@ -684,7 +682,9 @@ unsafe fn window_clock_init(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { window_clock_timer_callback(fd, flags, wme as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            window_clock_timer_callback(fd, flags, wme as *mut ::core::ffi::c_void)
+        },
     );
     window_clock_start_timer(wme);
     s = &raw mut (*data).screen;
@@ -699,11 +699,7 @@ unsafe fn window_clock_free(mut wme: *mut window_mode_entry) {
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
 }
-unsafe fn window_clock_resize(
-    mut wme: *mut window_mode_entry,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+unsafe fn window_clock_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     screen_resize(s, sx, sy, 0 as ::core::ffi::c_int);

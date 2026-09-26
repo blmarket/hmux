@@ -67,9 +67,7 @@ pub static mut cmd_select_pane_entry: cmd_entry = unsafe {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -95,9 +93,7 @@ pub static mut cmd_last_pane_entry: cmd_entry = unsafe {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_select_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 unsafe extern "C" fn cmd_select_pane_redraw(mut w: *mut window) {
@@ -228,10 +224,7 @@ unsafe extern "C" fn cmd_select_pane_marked_pane(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_select_pane_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut entry: *const cmd_entry = cmd_get_entry(self_0);
     let mut current: *mut cmd_find_state = cmdq_get_current(item);

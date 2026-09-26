@@ -243,10 +243,7 @@ unsafe extern "C" fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi
     }
 }
 
-unsafe fn cmd_refresh_client_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut tty: *mut tty = &raw mut (*tc).tty;

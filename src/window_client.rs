@@ -209,10 +209,7 @@ pub static mut window_client_mode: window_mode = unsafe {
                 ) -> *mut screen,
         ),
         free: Some(window_client_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(
-            window_client_resize
-                as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
-        ),
+        resize: Some(window_client_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
         update: Some(window_client_update as unsafe fn(*mut window_mode_entry) -> ()),
         style_changed: None,
         key: Some(
@@ -649,7 +646,7 @@ fn window_client_sort(sort_crit: &mut sort_criteria) {
     unsafe {
         sort_crit.order_seq = &raw mut window_client_order_seq as *mut sort_order;
         if sort_crit.order as ::core::ffi::c_uint
-        == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
+            == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             sort_crit.order = *sort_crit.order_seq;
         }
@@ -779,11 +776,7 @@ unsafe fn window_client_free(mut wme: *mut window_mode_entry) {
     (*data).items.clear();
     drop(Box::from_raw(data));
 }
-unsafe fn window_client_resize(
-    mut wme: *mut window_mode_entry,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+unsafe fn window_client_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
     mode_tree_resize((*data).data, sx, sy);
 }
@@ -834,12 +827,7 @@ unsafe fn window_client_key(
     match key {
         100 | 120 | 122 => {
             item = mode_tree_get_current(mtd) as *mut window_client_itemdata;
-            window_client_do_detach(
-                data,
-                item,
-                c,
-                key,
-            );
+            window_client_do_detach(data, item, c, key);
             mode_tree_build(mtd);
         }
         68 | 88 | 90 => {

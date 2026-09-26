@@ -189,12 +189,7 @@ pub unsafe fn event_del(ev: *mut event) -> c_int {
     remove(ev as usize);
     0
 }
-pub unsafe fn event_set<F>(
-    ev: *mut event,
-    fd: c_int,
-    flags: c_short,
-    callback: F,
-)
+pub unsafe fn event_set<F>(ev: *mut event, fd: c_int, flags: c_short, callback: F)
 where
     F: FnMut(c_int, c_short) + 'static,
 {
@@ -244,12 +239,7 @@ pub unsafe fn event_active(ev: *mut event, flags: c_int, _: c_short) {
     state.active.set(state.active.get() | flags as c_short);
     activate(&state);
 }
-pub unsafe fn event_once<F>(
-    fd: c_int,
-    flags: c_short,
-    cb: F,
-    timeout: *const timeval,
-) -> c_int
+pub unsafe fn event_once<F>(fd: c_int, flags: c_short, cb: F, timeout: *const timeval) -> c_int
 where
     F: FnMut(c_int, c_short) + 'static,
 {

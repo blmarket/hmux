@@ -1,8 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
-use crate::src::cmd::queue::{
-    cmdq_append, cmdq_get_callback_owned, cmdq_set_cancel_callback,
-};
+use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_set_cancel_callback};
 use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
@@ -222,9 +220,7 @@ pub static mut window_tree_mode: window_mode = unsafe {
                 ) -> *mut screen,
         ),
         free: Some(window_tree_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(
-            window_tree_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
-        ),
+        resize: Some(window_tree_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
         update: Some(window_tree_update as unsafe fn(*mut window_mode_entry) -> ()),
         style_changed: None,
         key: Some(
@@ -1699,7 +1695,7 @@ fn window_tree_sort(sort_crit: &mut sort_criteria) {
     unsafe {
         sort_crit.order_seq = &raw mut window_tree_order_seq as *mut sort_order;
         if sort_crit.order as ::core::ffi::c_uint
-        == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
+            == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             sort_crit.order = *sort_crit.order_seq;
         }
@@ -1837,11 +1833,7 @@ unsafe fn window_tree_init(
             window_tree_get_key(data_handle.as_ptr().cast(), itemdata, line)
         })),
         Some(Box::new(move |current, other, sort| {
-            window_tree_swap(
-                current,
-                other,
-                sort as *mut sort_criteria,
-            ) != 0
+            window_tree_swap(current, other, sort as *mut sort_criteria) != 0
         })),
         Some(window_tree_sort),
         Some(window_tree_help),
@@ -1874,11 +1866,7 @@ unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
     mode_tree_free((*data).data);
     window_tree_destroy(data);
 }
-unsafe fn window_tree_resize(
-    mut wme: *mut window_mode_entry,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+unsafe fn window_tree_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
     mode_tree_resize((*data).data, sx, sy);
 }
@@ -1972,15 +1960,11 @@ unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tre
     (*data).references += 1;
     let item = cmdq_get_callback_owned(
         b"window_tree_command_done\0" as *const u8 as *const ::core::ffi::c_char,
-        Some(Box::new(move |_| unsafe {
-            window_tree_command_done(data)
-        })),
+        Some(Box::new(move |_| unsafe { window_tree_command_done(data) })),
     );
     cmdq_set_cancel_callback(
         &mut *item,
-        Box::new(move || unsafe {
-            window_tree_cancel_command_done(data)
-        }),
+        Box::new(move || unsafe { window_tree_cancel_command_done(data) }),
     );
     cmdq_append(c, item);
 }
@@ -1999,9 +1983,7 @@ unsafe fn window_tree_command_callback(
     (*data).entered = Some(s.to_owned());
     mode_tree_each_tagged(
         (*data).data,
-        |row, c, key| unsafe {
-            window_tree_command_each(data, (*row).itemdata.cast(), c, key)
-        },
+        |row, c, key| unsafe { window_tree_command_each(data, (*row).itemdata.cast(), c, key) },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
@@ -2139,9 +2121,7 @@ unsafe fn window_tree_kill_tagged_callback(
     }
     mode_tree_each_tagged(
         mtd,
-        |row, c, key| unsafe {
-            window_tree_kill_each((*row).itemdata.cast(), c, key)
-        },
+        |row, c, key| unsafe { window_tree_kill_each((*row).itemdata.cast(), c, key) },
         c,
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,

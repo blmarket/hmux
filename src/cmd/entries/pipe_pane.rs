@@ -63,15 +63,10 @@ pub static mut cmd_pipe_pane_entry: cmd_entry = unsafe {
             flags: 0 as ::core::ffi::c_int,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_pipe_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_pipe_pane_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_pipe_pane_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut tc: *mut client = cmdq_get_target_client(item);
@@ -223,14 +218,18 @@ unsafe fn cmd_pipe_pane_exec(
             setblocking((*wp).pipe_fd, 0 as ::core::ffi::c_int);
             (*wp).pipe_event = bufferevent_new(
                 (*wp).pipe_fd,
-                bufferevent_data_callback(move |stream| {
-                    unsafe { cmd_pipe_pane_read_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void) }
+                bufferevent_data_callback(move |stream| unsafe {
+                    cmd_pipe_pane_read_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void)
                 }),
-                bufferevent_data_callback(move |stream| {
-                    unsafe { cmd_pipe_pane_write_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void) }
+                bufferevent_data_callback(move |stream| unsafe {
+                    cmd_pipe_pane_write_callback(stream.as_ptr(), wp as *mut ::core::ffi::c_void)
                 }),
-                bufferevent_event_callback(move |stream, flags| {
-                    unsafe { cmd_pipe_pane_error_callback(stream.as_ptr(), flags, wp as *mut ::core::ffi::c_void) }
+                bufferevent_event_callback(move |stream, flags| unsafe {
+                    cmd_pipe_pane_error_callback(
+                        stream.as_ptr(),
+                        flags,
+                        wp as *mut ::core::ffi::c_void,
+                    )
                 }),
             );
             if (*wp).pipe_event.is_null() {

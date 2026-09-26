@@ -69,9 +69,7 @@ pub static mut cmd_show_options_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -98,9 +96,7 @@ pub static mut cmd_show_window_options_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 #[no_mangle]
@@ -127,15 +123,10 @@ pub static mut cmd_show_hooks_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_show_options_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-unsafe fn cmd_show_options_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_show_options_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

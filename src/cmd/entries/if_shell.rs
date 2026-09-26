@@ -66,21 +66,19 @@ pub static mut cmd_if_shell_entry: cmd_entry = unsafe {
             flags: CMD_FIND_CANFAIL,
         },
         flags: 0 as ::core::ffi::c_int,
-        exec: Some(
-            cmd_if_shell_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_if_shell_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-fn cmd_if_shell_args_parse(_args: &mut args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_if_shell_args_parse(
+    _args: &mut args,
+    idx: u_int,
+) -> Result<args_parse_type, ArgsParseError> {
     if idx == 1 as u_int || idx == 2 as u_int {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_if_shell_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -158,9 +156,7 @@ unsafe fn cmd_if_shell_exec(
         Some(Box::new(move |completion| unsafe {
             cmd_if_shell_callback(completion, cdata)
         })),
-        Some(Box::new(move || unsafe {
-            cmd_if_shell_free(cdata)
-        })),
+        Some(Box::new(move || unsafe { cmd_if_shell_free(cdata) })),
         0 as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
         -(1 as ::core::ffi::c_int),

@@ -106,9 +106,7 @@ pub static mut window_panes_mode: window_mode = unsafe {
                 ) -> *mut screen,
         ),
         free: Some(window_panes_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(
-            window_panes_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
-        ),
+        resize: Some(window_panes_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
         update: None,
         style_changed: None,
         key: Some(
@@ -1642,7 +1640,9 @@ unsafe fn window_panes_init(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |fd, flags| unsafe { window_panes_timer_callback(fd, flags, wme as *mut ::core::ffi::c_void) },
+        move |fd, flags| unsafe {
+            window_panes_timer_callback(fd, flags, wme as *mut ::core::ffi::c_void)
+        },
     );
     if (*data).delay != 0 as u_int {
         tv.tv_sec = (*data).delay.wrapping_div(1000 as u_int) as __time_t;
@@ -1675,11 +1675,7 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     screen_free(&raw mut (*data).screen);
     drop(Box::from_raw(data));
 }
-unsafe fn window_panes_resize(
-    mut wme: *mut window_mode_entry,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+unsafe fn window_panes_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
     screen_resize(&raw mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
     window_panes_draw_screen(wme);

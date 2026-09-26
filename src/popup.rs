@@ -302,9 +302,7 @@ unsafe fn popup_init_ctx(pd: *mut popup_data, ttyctx: *mut tty_ctx) {
         popup_set_client(pd, ttyctx, c as *mut client)
     }));
 }
-unsafe fn popup_mode(
-    pd: *mut popup_data,
-) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)> {
+unsafe fn popup_mode(pd: *mut popup_data) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)> {
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         Some((
             std::ptr::NonNull::from(&mut (*pd).s),
@@ -748,7 +746,9 @@ unsafe fn popup_job_update_cb(job: &mut job, mut pd: *mut popup_data) {
     input_parse_screen(
         (*pd).ictx,
         s,
-        Some(Box::new(move |ttyctx| unsafe { popup_init_ctx(pd, ttyctx) })),
+        Some(Box::new(move |ttyctx| unsafe {
+            popup_init_ctx(pd, ttyctx)
+        })),
         data as *const u_char,
         size,
     );
@@ -1073,9 +1073,7 @@ pub unsafe fn popup_display(
         env,
         s,
         (!cwd.is_null()).then(|| CStr::from_ptr(cwd)),
-        job_update_callback(move |job| unsafe {
-            popup_job_update_cb(job, pd)
-        }),
+        job_update_callback(move |job| unsafe { popup_job_update_cb(job, pd) }),
         Some(Box::new(move |completion| unsafe {
             popup_job_complete_cb(completion, pd)
         })),
@@ -1099,16 +1097,22 @@ pub unsafe fn popup_display(
     let check_cb: overlay_check_cb = Some(Box::new(move |_c, px, py, nx| unsafe {
         popup_check(pd_handle.as_ptr(), px, py, nx)
     }));
-    let mode_cb: overlay_mode_cb =
-        Some(Box::new(move |_c| unsafe { popup_mode(pd_handle.as_ptr()) }));
+    let mode_cb: overlay_mode_cb = Some(Box::new(move |_c| unsafe {
+        popup_mode(pd_handle.as_ptr())
+    }));
     let draw_cb: overlay_draw_cb = Some(Box::new(move |c| unsafe {
         popup_draw(c as *mut client, pd_handle.as_ptr())
     }));
     let key_cb: overlay_key_cb = Some(Box::new(move |c, event| unsafe {
-        popup_key(c as *mut client, pd_handle.as_ptr(), event as *mut key_event)
+        popup_key(
+            c as *mut client,
+            pd_handle.as_ptr(),
+            event as *mut key_event,
+        )
     }));
-    let free_cb: overlay_free_cb =
-        Some(Box::new(move |c| unsafe { popup_free_callback(pd_handle.as_ptr(), c) }));
+    let free_cb: overlay_free_cb = Some(Box::new(move |c| unsafe {
+        popup_free_callback(pd_handle.as_ptr(), c)
+    }));
     let resize_cb: overlay_resize_cb = Some(Box::new(move |c| unsafe {
         popup_resize(c as *mut client, pd_handle.as_ptr())
     }));

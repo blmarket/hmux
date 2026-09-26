@@ -50,10 +50,7 @@ pub static mut cmd_respawn_pane_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe fn cmd_respawn_pane_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
     let mut sc: spawn_context = spawn_context {

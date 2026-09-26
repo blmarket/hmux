@@ -38,18 +38,16 @@ pub static mut cmd_bind_key_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_AFTERHOOK,
-        exec: Some(
-            cmd_bind_key_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_bind_key_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
-fn cmd_bind_key_args_parse(_args: &mut args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_bind_key_args_parse(
+    _args: &mut args,
+    _idx: u_int,
+) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_bind_key_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_bind_key_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

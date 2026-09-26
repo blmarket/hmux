@@ -64,9 +64,7 @@ pub static mut cmd_load_buffer_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_AFTERHOOK | CMD_CLIENT_TFLAG | CMD_CLIENT_CANFAIL,
-        exec: Some(
-            cmd_load_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_load_buffer_exec as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 unsafe fn cmd_load_buffer_done(
@@ -125,10 +123,7 @@ unsafe fn cmd_load_buffer_done(
     cdata.release_client();
     cmdq_continue(item);
 }
-unsafe fn cmd_load_buffer_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_load_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut tc: *mut client = cmdq_get_target_client(item);
     let mut cdata = Box::new(cmd_load_buffer_data {
@@ -182,13 +177,7 @@ mod tests {
         for count in 2..=16 {
             buffer.put(SegmentedBuf::from(vec![2; 4096]));
             unsafe {
-                cmd_load_buffer_done(
-                    &mut data,
-                    Some(c"input"),
-                    0,
-                    0,
-                    &mut buffer,
-                );
+                cmd_load_buffer_done(&mut data, Some(c"input"), 0, 0, &mut buffer);
             }
             assert_eq!(buffer.chunks().count(), count);
             assert_eq!(buffer.chunk().as_ptr(), first);

@@ -110,7 +110,10 @@ pub static mut cmd_display_popup_entry: cmd_entry = unsafe {
         ),
     }
 };
-fn cmd_display_menu_args_parse(args: &mut args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_display_menu_args_parse(
+    args: &mut args,
+    idx: u_int,
+) -> Result<args_parse_type, ArgsParseError> {
     let mut i: u_int = 0 as u_int;
     let mut type_0: args_parse_type = ARGS_PARSE_STRING;
     loop {
@@ -964,10 +967,7 @@ unsafe extern "C" fn cmd_display_menu_get_menu_pos(
     format_free(ft);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn cmd_display_menu_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_display_menu_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
@@ -1171,10 +1171,7 @@ unsafe fn cmd_display_menu_exec(
     menu_free(menu);
     return CMD_RETURN_ERROR;
 }
-unsafe fn cmd_display_popup_exec(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let mut args: *mut args = cmd_get_args(self_0);
     let mut target: *mut cmd_find_state = cmdq_get_target(item);

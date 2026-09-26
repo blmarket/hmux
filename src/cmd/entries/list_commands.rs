@@ -48,9 +48,7 @@ pub static mut cmd_list_commands_entry: cmd_entry = unsafe {
             flags: 0,
         },
         flags: CMD_STARTSERVER | CMD_AFTERHOOK,
-        exec: Some(
-            cmd_list_commands as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
-        ),
+        exec: Some(cmd_list_commands as unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
     }
 };
 unsafe extern "C" fn cmd_list_single_command(
@@ -97,10 +95,7 @@ unsafe extern "C" fn cmd_list_single_command(
         );
     }
 }
-unsafe fn cmd_list_commands(
-    mut self_0: *mut cmd,
-    mut item: *mut cmdq_item,
-) -> cmd_retval {
+unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args(self_0);
     let mut entryp: *mut *const cmd_entry = ::core::ptr::null_mut::<*const cmd_entry>();
     let mut entry: *const cmd_entry = ::core::ptr::null::<cmd_entry>();
