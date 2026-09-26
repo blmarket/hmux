@@ -21,15 +21,15 @@ use crate::src::shared::window::winlink;
 use crate::src::window::{window_pane_first, window_pane_next, window_remove_pane};
 pub static mut cmd_kill_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"kill-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"killp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kill-pane",
+        alias: Some(c"killp"),
         args: args_parse {
             template: b"af:t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-a] [-f filter] [-t target-pane]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-a] [-f filter] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

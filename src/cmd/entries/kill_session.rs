@@ -25,16 +25,15 @@ use crate::src::shared::window::{WINDOW_ALERTFLAGS, WINLINK_ALERTFLAGS};
 use crate::src::window::{winlinks_minmax, winlinks_next};
 pub static mut cmd_kill_session_entry: cmd_entry =  {
     cmd_entry {
-        name: b"kill-session\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"kill-session",
+        alias: None,
         args: args_parse {
             template: b"aCgf:t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-aCg] [-f filter] [-t target-session]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-aCg] [-f filter] [-t target-session]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

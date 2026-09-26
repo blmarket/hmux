@@ -21,16 +21,15 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
 pub static mut cmd_server_access_entry: cmd_entry =  {
     cmd_entry {
-        name: b"server-access\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"server-access",
+        alias: None,
         args: args_parse {
             template: b"adglrw\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-adglrw] [-t target-pane] [user|group]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-adglrw] [-t target-pane] [user|group]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

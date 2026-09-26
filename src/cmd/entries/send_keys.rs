@@ -33,16 +33,15 @@ use crate::src::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use crate::src::window::window_pane_key;
 pub static mut cmd_send_keys_entry: cmd_entry =  {
     cmd_entry {
-        name: b"send-keys\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"send\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"send-keys",
+        alias: Some(c"send"),
         args: args_parse {
             template: b"c:FHKlMN:Rt:X\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: b"[-FHKlMRX] [-c target-client] [-N repeat-count] [-t target-pane] [key ...]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-FHKlMRX] [-c target-client] [-N repeat-count] [-t target-pane] [key ...]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -59,15 +58,15 @@ pub static mut cmd_send_keys_entry: cmd_entry =  {
 };
 pub static mut cmd_send_prefix_entry: cmd_entry =  {
     cmd_entry {
-        name: b"send-prefix\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"send-prefix",
+        alias: None,
         args: args_parse {
             template: b"2t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-2] [-t target-pane]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-2] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

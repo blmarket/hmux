@@ -18,16 +18,15 @@ use crate::src::text::utf8::utf8_stravisx_bytes;
 use crate::src::window::window_pane_exited;
 pub static mut cmd_paste_buffer_entry: cmd_entry =  {
     cmd_entry {
-        name: b"paste-buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"pasteb\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"paste-buffer",
+        alias: Some(c"pasteb"),
         args: args_parse {
             template: b"db:prSs:t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-dprS] [-s separator] [-b buffer-name] [-t target-pane]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-dprS] [-s separator] [-b buffer-name] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

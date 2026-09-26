@@ -20,16 +20,15 @@ use crate::src::shared::window::winlink;
 use crate::src::spawn::spawn_window;
 pub static mut cmd_respawn_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"respawn-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"respawnw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"respawn-window",
+        alias: Some(c"respawnw"),
         args: args_parse {
             template: b"c:e:Ekt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: b"[-Ek] [-c start-directory] [-e environment] [-t target-window] [shell-command [argument ...]]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-Ek] [-c start-directory] [-e environment] [-t target-window] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

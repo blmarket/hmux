@@ -21,15 +21,15 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::window::{winlinks_minmax, winlinks_next, winlinks_prev};
 pub static mut cmd_kill_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"kill-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"killw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"kill-window",
+        alias: Some(c"killw"),
         args: args_parse {
             template: b"af:t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-a] [-f filter] [-t target-window]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-a] [-f filter] [-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -46,15 +46,15 @@ pub static mut cmd_kill_window_entry: cmd_entry =  {
 };
 pub static mut cmd_unlink_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"unlink-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"unlinkw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"unlink-window",
+        alias: Some(c"unlinkw"),
         args: args_parse {
             template: b"kt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-k] [-t target-window]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-k] [-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

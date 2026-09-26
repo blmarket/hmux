@@ -2522,11 +2522,6 @@ unsafe fn tty_keys_clipboard(
     let mut needed: size_t = 0;
     let mut clip: ::core::ffi::c_char = 0 as ::core::ffi::c_char;
     let mut outlen: ::core::ffi::c_int = 0;
-    let mut cd: input_request_clipboard_data = input_request_clipboard_data {
-        buf: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        len: 0,
-        clip: 0,
-    };
     *size = 0 as size_t;
     if *buf.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\u{1b}' as i32 {
         return -(1 as ::core::ffi::c_int);
@@ -2622,16 +2617,14 @@ unsafe fn tty_keys_clipboard(
         outlen,
         out.as_ptr().cast::<::core::ffi::c_char>(),
     );
-    cd.buf = out.as_mut_ptr().cast();
-    cd.len = outlen as size_t;
-    cd.clip = clip;
+    let mut cd = input_request_clipboard_data { data: out, clip };
     input_request_reply(
         c,
         INPUT_REQUEST_CLIPBOARD,
         &raw mut cd as *mut ::core::ffi::c_void,
     );
     if (*tty).flags & TTY_OSC52QUERY != 0 {
-        paste_add_owned(None, out.into_boxed_slice());
+        paste_add_owned(None, cd.data.into_boxed_slice());
         event_del(&raw mut (*tty).clipboard_timer);
         (*tty).flags &= !TTY_OSC52QUERY;
     }

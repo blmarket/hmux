@@ -328,7 +328,7 @@ pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_t
             ft,
             b"command\0" as *const u8 as *const ::core::ffi::c_char,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*entry).name,
+            (*entry).name.as_ptr(),
         );
     }
     if !(*(*item).state).formats.is_null() {
@@ -568,7 +568,7 @@ pub unsafe fn cmdq_get_command(
     }
     while !cmd.is_null() {
         entry = cmd_get_entry(cmd);
-        item = cmdq_new_named_item(Some(CStr::from_ptr((*entry).name)));
+        item = cmdq_new_named_item(Some((*entry).name));
         (*item).type_0 = CMDQ_COMMAND;
         (*item).group = cmd_get_group(cmd);
         (*item).state = cmdq_link_state(state);
@@ -777,7 +777,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
                                         item,
                                         fsp,
                                         b"after-%s\0" as *const u8 as *const ::core::ffi::c_char,
-                                        (*entry).name,
+                                        (*entry).name.as_ptr(),
                                     );
                                 }
                             }

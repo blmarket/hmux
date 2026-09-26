@@ -43,16 +43,15 @@ pub const NEW_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
 };
 pub static mut cmd_new_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"new-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"neww\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"new-window",
+        alias: Some(c"neww"),
         args: args_parse {
             template: b"abc:de:EF:kn:PSt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: b"[-abdEkPS] [-c start-directory] [-e environment] [-F format] [-n window-name] [-t target-window] [shell-command [argument ...]]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-abdEkPS] [-c start-directory] [-e environment] [-F format] [-n window-name] [-t target-window] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

@@ -16,15 +16,15 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::window::{window_winlinks_append, window_winlinks_remove};
 pub static mut cmd_swap_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"swap-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"swapw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"swap-window",
+        alias: Some(c"swapw"),
         args: args_parse {
             template: b"ds:t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-d] [-s src-window] [-t dst-window]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-d] [-s src-window] [-t dst-window]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_WINDOW,

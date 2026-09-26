@@ -27,15 +27,15 @@ pub const LIST_COMMANDS_TEMPLATE: [::core::ffi::c_char; 91] = unsafe {
 };
 pub static mut cmd_list_commands_entry: cmd_entry =  {
     cmd_entry {
-        name: b"list-commands\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lscm\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"list-commands",
+        alias: Some(c"lscm"),
         args: args_parse {
             template: b"F:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-F format] [command]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-F format] [command]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -56,34 +56,23 @@ unsafe fn cmd_list_single_command(
     mut template: *const ::core::ffi::c_char,
     mut item: *mut cmdq_item,
 ) {
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     format_add(
         ft,
         b"command_list_name\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        (*entry).name,
+        (*entry).name.as_ptr(),
     );
-    if !(*entry).alias.is_null() {
-        s = (*entry).alias;
-    } else {
-        s = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
     format_add(
         ft,
         b"command_list_alias\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        (*entry).alias.unwrap_or(c"").as_ptr(),
     );
-    if !(*entry).usage.is_null() {
-        s = (*entry).usage;
-    } else {
-        s = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    }
     format_add(
         ft,
         b"command_list_usage\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        (*entry).usage.as_ptr(),
     );
     let line = format_expand_cstring(ft, template);
     if !line.is_empty() {

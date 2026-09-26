@@ -7,15 +7,15 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::signal::SIGTERM;
 pub static mut cmd_kill_server_entry: cmd_entry =  {
     cmd_entry {
-        name: b"kill-server\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"kill-server",
+        alias: None,
         args: args_parse {
             template: b"\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -32,15 +32,15 @@ pub static mut cmd_kill_server_entry: cmd_entry =  {
 };
 pub static mut cmd_start_server_entry: cmd_entry =  {
     cmd_entry {
-        name: b"start-server\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"start\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"start-server",
+        alias: Some(c"start"),
         args: args_parse {
             template: b"\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

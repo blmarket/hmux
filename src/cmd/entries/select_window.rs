@@ -17,15 +17,15 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
 pub static mut cmd_select_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"select-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"selectw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"select-window",
+        alias: Some(c"selectw"),
         args: args_parse {
             template: b"lnpTt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-lnpT] [-t target-window]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-lnpT] [-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -42,15 +42,15 @@ pub static mut cmd_select_window_entry: cmd_entry =  {
 };
 pub static mut cmd_next_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"next-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"next\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"next-window",
+        alias: Some(c"next"),
         args: args_parse {
             template: b"at:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-a] [-t target-session]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-a] [-t target-session]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -67,15 +67,15 @@ pub static mut cmd_next_window_entry: cmd_entry =  {
 };
 pub static mut cmd_previous_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"previous-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"prev\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"previous-window",
+        alias: Some(c"prev"),
         args: args_parse {
             template: b"at:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-a] [-t target-session]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-a] [-t target-session]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -92,15 +92,15 @@ pub static mut cmd_previous_window_entry: cmd_entry =  {
 };
 pub static mut cmd_last_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"last-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"last\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"last-window",
+        alias: Some(c"last"),
         args: args_parse {
             template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_TARGET_SESSION_USAGE.as_ptr(),
+        usage: CMD_TARGET_SESSION_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

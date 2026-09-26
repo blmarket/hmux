@@ -25,15 +25,15 @@ use crate::src::window::{
 };
 pub static mut cmd_swap_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"swap-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"swapp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"swap-pane",
+        alias: Some(c"swapp"),
         args: args_parse {
             template: b"dDs:t:UZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-dDUZ] [-s src-pane] [-t dst-pane]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-dDUZ] [-s src-pane] [-t dst-pane]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,

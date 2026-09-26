@@ -12,15 +12,15 @@ use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
 pub static mut cmd_show_prompt_history_entry: cmd_entry =  {
     cmd_entry {
-        name: b"show-prompt-history\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"showphist\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"show-prompt-history",
+        alias: Some(c"showphist"),
         args: args_parse {
             template: b"T:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-T prompt-type]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-T prompt-type]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -39,15 +39,15 @@ pub static mut cmd_show_prompt_history_entry: cmd_entry =  {
 };
 pub static mut cmd_clear_prompt_history_entry: cmd_entry =  {
     cmd_entry {
-        name: b"clear-prompt-history\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"clearphist\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"clear-prompt-history",
+        alias: Some(c"clearphist"),
         args: args_parse {
             template: b"T:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-T prompt-type]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-T prompt-type]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

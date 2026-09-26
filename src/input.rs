@@ -5937,7 +5937,7 @@ unsafe fn input_request_clipboard_reply(
 ) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
     let mut ev: *mut bufferevent = (*ictx).event;
-    let mut cd: *mut input_request_clipboard_data = data as *mut input_request_clipboard_data;
+    let cd = &*data.cast::<input_request_clipboard_data>();
     let mut state: ::core::ffi::c_int = 0;
     state = options_get_number(
         global_options,
@@ -5946,25 +5946,25 @@ unsafe fn input_request_clipboard_reply(
     if state == 0 as ::core::ffi::c_int || state == 1 as ::core::ffi::c_int {
         return;
     }
-    if state == 3 as ::core::ffi::c_int && (*cd).len != 0 {
-        let owned: Box<[u8]> = std::slice::from_raw_parts((*cd).buf.cast::<u8>(), (*cd).len).into();
+    if state == 3 as ::core::ffi::c_int && !cd.data.is_empty() {
+        let owned: Box<[u8]> = cd.data.as_slice().into();
         paste_add_owned(None, owned);
     }
     if (*ir).idx == INPUT_END_BEL as ::core::ffi::c_int {
         input_reply_clipboard(
             ev,
-            (*cd).buf,
-            (*cd).len,
+            cd.data.as_ptr().cast(),
+            cd.data.len(),
             b"\x07\0" as *const u8 as *const ::core::ffi::c_char,
-            (*cd).clip,
+            cd.clip,
         );
     } else {
         input_reply_clipboard(
             ev,
-            (*cd).buf,
-            (*cd).len,
+            cd.data.as_ptr().cast(),
+            cd.data.len(),
             b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-            (*cd).clip,
+            cd.clip,
         );
     };
 }

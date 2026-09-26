@@ -29,16 +29,15 @@ pub const LIST_WINDOWS_WITH_SESSION_TEMPLATE: [::core::ffi::c_char; 127] = unsaf
 };
 pub static mut cmd_list_windows_entry: cmd_entry = {
     cmd_entry {
-        name: b"list-windows\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lsw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"list-windows",
+        alias: Some(c"lsw"),
         args: args_parse {
             template: b"aF:f:O:rt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-ar] [-F format] [-f filter] [-O order][-t target-session]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-ar] [-F format] [-f filter] [-O order][-t target-session]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

@@ -14,16 +14,15 @@ use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::tmux::global_environ;
 pub static mut cmd_set_environment_entry: cmd_entry =  {
     cmd_entry {
-        name: b"set-environment\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"setenv\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"set-environment",
+        alias: Some(c"setenv"),
         args: args_parse {
             template: b"Fhgrt:u\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-Fhgru] [-t target-session] variable [value]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-Fhgru] [-t target-session] variable [value]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

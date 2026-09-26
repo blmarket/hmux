@@ -48,16 +48,15 @@ use crate::src::window::{
 };
 pub static mut cmd_join_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"join-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"joinp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"join-pane",
+        alias: Some(c"joinp"),
         args: args_parse {
             template: b"bdfhvp:l:s:t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-bdfhv] [-l size] [-s src-pane] [-t dst-pane]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-bdfhv] [-l size] [-s src-pane] [-t dst-pane]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,
@@ -74,8 +73,8 @@ pub static mut cmd_join_pane_entry: cmd_entry =  {
 };
 pub static mut cmd_move_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"move-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"movep\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"move-pane",
+        alias: Some(c"movep"),
         args: args_parse {
             template: b"bdD::fhMvl:L::P:R::s:t:U::X:Y:z:\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -83,8 +82,7 @@ pub static mut cmd_move_pane_entry: cmd_entry =  {
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-bdfhMv] [-D lines] [-l size] [-L columns] [-P position] [-R columns] [-s src-pane] [-t dst-pane] [-U lines] [-X x-position] [-Y y-position] [-z z-index]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-bdfhMv] [-D lines] [-l size] [-L columns] [-P position] [-R columns] [-s src-pane] [-t dst-pane] [-U lines] [-X x-position] [-Y y-position] [-z z-index]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,

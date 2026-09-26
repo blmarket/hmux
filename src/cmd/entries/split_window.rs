@@ -65,8 +65,8 @@ pub const SPLIT_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
 };
 pub static mut cmd_new_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"new-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"newp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"new-pane",
+        alias: Some(c"newp"),
         args: args_parse {
             template: b"AbB:Cc:Dde:EfF:hIkl:KLMm:Op:PR:s:S:t:T:vWx:X:y:Y:Z\0"
                 as *const u8 as *const ::core::ffi::c_char,
@@ -74,8 +74,7 @@ pub static mut cmd_new_pane_entry: cmd_entry =  {
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: b"[-AbCDefhIkKLMOPvWZ] [-B border-lines] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-x width] [-y height] [-X x-position] [-Y y-position] [-t target-pane] [shell-command [argument ...]]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-AbCDefhIkKLMOPvWZ] [-B border-lines] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-x width] [-y height] [-X x-position] [-Y y-position] [-t target-pane] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -95,8 +94,8 @@ pub static mut cmd_new_pane_entry: cmd_entry =  {
 };
 pub static mut cmd_split_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"split-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"splitw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"split-window",
+        alias: Some(c"splitw"),
         args: args_parse {
             template: b"bB:c:de:EfF:hIkl:m:p:PR:s:S:t:T:vWZ\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -104,8 +103,7 @@ pub static mut cmd_split_window_entry: cmd_entry =  {
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: b"[-bdefhIklPvWZ] [-B border-lines] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-bdefhIklPvWZ] [-B border-lines] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

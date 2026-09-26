@@ -28,16 +28,15 @@ pub const LIST_CLIENTS_TEMPLATE: [::core::ffi::c_char; 225] = unsafe {
 };
 pub static mut cmd_list_clients_entry: cmd_entry = {
     cmd_entry {
-        name: b"list-clients\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lsc\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"list-clients",
+        alias: Some(c"lsc"),
         args: args_parse {
             template: b"F:f:O:rt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-F format] [-f filter] [-O order][-t target-session]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-F format] [-f filter] [-O order][-t target-session]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

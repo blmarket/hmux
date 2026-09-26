@@ -18,16 +18,15 @@ use crate::src::tty::tty_set_selection;
 use std::ffi::{CStr, CString};
 pub static mut cmd_set_buffer_entry: cmd_entry =  {
     cmd_entry {
-        name: b"set-buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"setb\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"set-buffer",
+        alias: Some(c"setb"),
         args: args_parse {
             template: b"ab:t:n:w\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-aw] [-b buffer-name] [-n new-buffer-name] [-t target-client] [data]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-aw] [-b buffer-name] [-n new-buffer-name] [-t target-client] [data]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -44,15 +43,15 @@ pub static mut cmd_set_buffer_entry: cmd_entry =  {
 };
 pub static mut cmd_delete_buffer_entry: cmd_entry =  {
     cmd_entry {
-        name: b"delete-buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"deleteb\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"delete-buffer",
+        alias: Some(c"deleteb"),
         args: args_parse {
             template: b"b:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_BUFFER_USAGE.as_ptr(),
+        usage: CMD_BUFFER_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

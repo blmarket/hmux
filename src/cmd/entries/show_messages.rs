@@ -25,15 +25,15 @@ pub const SHOW_MESSAGES_TEMPLATE: [::core::ffi::c_char; 37] = unsafe {
 };
 pub static mut cmd_show_messages_entry: cmd_entry =  {
     cmd_entry {
-        name: b"show-messages\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"showmsgs\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"show-messages",
+        alias: Some(c"showmsgs"),
         args: args_parse {
             template: b"JTt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-JT] [-t target-client]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-JT] [-t target-client]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

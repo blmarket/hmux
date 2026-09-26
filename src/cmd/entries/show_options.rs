@@ -47,16 +47,15 @@ pub const SHOW_HOOKS_MONITOR_TEMPLATE: [::core::ffi::c_char; 61] = unsafe {
 };
 pub static mut cmd_show_options_entry: cmd_entry =  {
     cmd_entry {
-        name: b"show-options\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"show\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"show-options",
+        alias: Some(c"show"),
         args: args_parse {
             template: b"AgF:Hpqst:vw\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-AgHpqsvw] [-F format] [-t target-pane] [option]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-AgHpqsvw] [-F format] [-t target-pane] [option]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -73,16 +72,15 @@ pub static mut cmd_show_options_entry: cmd_entry =  {
 };
 pub static mut cmd_show_window_options_entry: cmd_entry =  {
     cmd_entry {
-        name: b"show-window-options\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"showw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"show-window-options",
+        alias: Some(c"showw"),
         args: args_parse {
             template: b"F:gvt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-gv] [-F format] [-t target-window] [option]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-gv] [-F format] [-t target-window] [option]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -99,16 +97,15 @@ pub static mut cmd_show_window_options_entry: cmd_entry =  {
 };
 pub static mut cmd_show_hooks_entry: cmd_entry =  {
     cmd_entry {
-        name: b"show-hooks\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"show-hooks",
+        alias: None,
         args: args_parse {
             template: b"BF:gpt:w\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-Bgpw] [-F format] [-t target-pane] [hook]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-Bgpw] [-F format] [-t target-pane] [hook]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

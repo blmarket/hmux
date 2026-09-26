@@ -20,15 +20,15 @@ use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
 use std::ffi::CStr;
 pub static mut cmd_save_buffer_entry: cmd_entry =  {
     cmd_entry {
-        name: b"save-buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"saveb\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"save-buffer",
+        alias: Some(c"saveb"),
         args: args_parse {
             template: b"ab:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-a] [-b buffer-name] path\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-a] [-b buffer-name] path",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -45,15 +45,15 @@ pub static mut cmd_save_buffer_entry: cmd_entry =  {
 };
 pub static mut cmd_show_buffer_entry: cmd_entry =  {
     cmd_entry {
-        name: b"show-buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"showb\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"show-buffer",
+        alias: Some(c"showb"),
         args: args_parse {
             template: b"b:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_BUFFER_USAGE.as_ptr(),
+        usage: CMD_BUFFER_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

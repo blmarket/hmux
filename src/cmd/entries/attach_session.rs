@@ -34,16 +34,15 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_set_active_pane;
 pub static mut cmd_attach_session_entry: cmd_entry =  {
     cmd_entry {
-        name: b"attach-session\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"attach\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"attach-session",
+        alias: Some(c"attach"),
         args: args_parse {
             template: b"c:dEf:rt:x\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-dErx] [-c working-directory] [-f flags] [-t target-session]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-dErx] [-c working-directory] [-f flags] [-t target-session]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

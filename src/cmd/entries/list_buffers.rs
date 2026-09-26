@@ -22,15 +22,15 @@ pub const LIST_BUFFERS_TEMPLATE: [::core::ffi::c_char; 57] = unsafe {
 };
 pub static mut cmd_list_buffers_entry: cmd_entry = {
     cmd_entry {
-        name: b"list-buffers\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lsb\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"list-buffers",
+        alias: Some(c"lsb"),
         args: args_parse {
             template: b"F:f:O:r\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-F format] [-f filter] [-O order]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-F format] [-f filter] [-O order]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

@@ -11,15 +11,15 @@ use crate::src::shared::command::{
 };
 pub static mut cmd_lock_server_entry: cmd_entry =  {
     cmd_entry {
-        name: b"lock-server\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lock\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"lock-server",
+        alias: Some(c"lock"),
         args: args_parse {
             template: b"\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -36,15 +36,15 @@ pub static mut cmd_lock_server_entry: cmd_entry =  {
 };
 pub static mut cmd_lock_session_entry: cmd_entry =  {
     cmd_entry {
-        name: b"lock-session\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"locks\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"lock-session",
+        alias: Some(c"locks"),
         args: args_parse {
             template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_TARGET_SESSION_USAGE.as_ptr(),
+        usage: CMD_TARGET_SESSION_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -61,15 +61,15 @@ pub static mut cmd_lock_session_entry: cmd_entry =  {
 };
 pub static mut cmd_lock_client_entry: cmd_entry =  {
     cmd_entry {
-        name: b"lock-client\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lockc\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"lock-client",
+        alias: Some(c"lockc"),
         args: args_parse {
             template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_TARGET_CLIENT_USAGE.as_ptr(),
+        usage: CMD_TARGET_CLIENT_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

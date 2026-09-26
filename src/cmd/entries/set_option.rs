@@ -37,16 +37,15 @@ use crate::src::window::{window_pane_first, window_pane_next};
 use std::ffi::{CStr, CString};
 pub static mut cmd_set_option_entry: cmd_entry =  {
     cmd_entry {
-        name: b"set-option\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"set\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"set-option",
+        alias: Some(c"set"),
         args: args_parse {
             template: b"aFgopqst:uUw\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
             cb: Some(cmd_set_option_args_parse),
         },
-        usage: b"[-aFgopqsuUw] [-t target-pane] option [value]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-aFgopqsuUw] [-t target-pane] option [value]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -63,16 +62,15 @@ pub static mut cmd_set_option_entry: cmd_entry =  {
 };
 pub static mut cmd_set_window_option_entry: cmd_entry =  {
     cmd_entry {
-        name: b"set-window-option\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"setw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"set-window-option",
+        alias: Some(c"setw"),
         args: args_parse {
             template: b"aFgoqt:u\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
             cb: Some(cmd_set_option_args_parse),
         },
-        usage: b"[-aFgoqu] [-t target-window] option [value]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-aFgoqu] [-t target-window] option [value]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -89,16 +87,15 @@ pub static mut cmd_set_window_option_entry: cmd_entry =  {
 };
 pub static mut cmd_set_hook_entry: cmd_entry =  {
     cmd_entry {
-        name: b"set-hook\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"set-hook",
+        alias: None,
         args: args_parse {
             template: b"agpERTt:uB:w\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 2 as ::core::ffi::c_int,
             cb: Some(cmd_set_option_args_parse),
         },
-        usage: b"[-agpERTuw] [-B name:what:format] [-t target-pane] [hook] [command]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-agpERTuw] [-B name:what:format] [-t target-pane] [hook] [command]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

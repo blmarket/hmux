@@ -38,8 +38,8 @@ use crate::src::window::{
 };
 pub static mut cmd_resize_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"resize-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"resizep\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"resize-pane",
+        alias: Some(c"resizep"),
         args: args_parse {
             template: b"D::L::MR::Tt:U::x:y:Z\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -47,8 +47,7 @@ pub static mut cmd_resize_pane_entry: cmd_entry =  {
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-MTZ] [-D lines] [-L columns] [-R columns] [-U lines] [-x width] [-y height] [-t target-pane]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-MTZ] [-D lines] [-L columns] [-R columns] [-U lines] [-x width] [-y height] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

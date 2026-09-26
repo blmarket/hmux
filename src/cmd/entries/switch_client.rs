@@ -36,16 +36,15 @@ use crate::src::window::{
 };
 pub static mut cmd_switch_client_entry: cmd_entry = {
     cmd_entry {
-        name: b"switch-client\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"switchc\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"switch-client",
+        alias: Some(c"switchc"),
         args: args_parse {
             template: b"c:EFlnO:pt:rT:Z\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

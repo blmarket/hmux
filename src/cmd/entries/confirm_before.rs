@@ -29,16 +29,15 @@ pub struct cmd_confirm_before_data {
 }
 pub static mut cmd_confirm_before_entry: cmd_entry =  {
     cmd_entry {
-        name: b"confirm-before\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"confirm\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"confirm-before",
+        alias: Some(c"confirm"),
         args: args_parse {
             template: b"bc:p:t:y\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(cmd_confirm_before_args_parse),
         },
-        usage: b"[-by] [-c confirm-key] [-p prompt] [-t target-client] command\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-by] [-c confirm-key] [-p prompt] [-t target-client] command",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -109,7 +108,7 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
-        cmd = (*cmd_get_entry(cmd_list_first(cdata.cmdlist))).name;
+        cmd = (*cmd_get_entry(cmd_list_first(cdata.cmdlist))).name.as_ptr();
         let mut bytes = b"Confirm '".to_vec();
         bytes.extend_from_slice(CStr::from_ptr(cmd).to_bytes());
         bytes.extend_from_slice(b"'? (");

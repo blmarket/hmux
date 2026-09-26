@@ -38,17 +38,15 @@ use std::ffi::{CStr, CString};
 use std::io::Write;
 pub static mut cmd_capture_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"capture-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"capturep\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"capture-pane",
+        alias: Some(c"capturep"),
         args: args_parse {
             template: b"ab:CeE:FHIJLMNpPqRS:Tt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage:
-            b"[-aCeFHIJLMNpPqRT] [-b buffer-name] [-E end-line] [-S start-line] [-t target-pane]\0"
-                as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-aCeFHIJLMNpPqRT] [-b buffer-name] [-E end-line] [-S start-line] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -65,15 +63,15 @@ pub static mut cmd_capture_pane_entry: cmd_entry =  {
 };
 pub static mut cmd_clear_history_entry: cmd_entry =  {
     cmd_entry {
-        name: b"clear-history\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"clearhist\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"clear-history",
+        alias: Some(c"clearhist"),
         args: args_parse {
             template: b"Ht:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-H] [-t target-pane]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-H] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

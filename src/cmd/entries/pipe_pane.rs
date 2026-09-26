@@ -40,16 +40,15 @@ use crate::src::tmux::setblocking;
 use crate::src::window::{window_pane_destroy_ready, window_pane_exited};
 pub static mut cmd_pipe_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"pipe-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"pipep\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"pipe-pane",
+        alias: Some(c"pipep"),
         args: args_parse {
             template: b"IOot:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-IOo] [-t target-pane] [shell-command]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-IOo] [-t target-pane] [shell-command]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

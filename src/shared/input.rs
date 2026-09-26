@@ -121,10 +121,8 @@ pub struct input_request_palette_data {
     pub c: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct input_request_clipboard_data {
-    pub buf: *mut ::core::ffi::c_char,
-    pub len: size_t,
+    /// Decoded bytes owned through synchronous reply dispatch and optional paste storage.
+    pub data: Vec<u8>,
     pub clip: ::core::ffi::c_char,
 }

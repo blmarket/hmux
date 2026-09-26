@@ -17,16 +17,15 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::window::winlink_shuffle_up;
 pub static mut cmd_move_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"move-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"movew\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"move-window",
+        alias: Some(c"movew"),
         args: args_parse {
             template: b"abdkrs:t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-abdkr] [-s src-window] [-t dst-window]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-abdkr] [-s src-window] [-t dst-window]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_WINDOW,
@@ -43,16 +42,15 @@ pub static mut cmd_move_window_entry: cmd_entry =  {
 };
 pub static mut cmd_link_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"link-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"linkw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"link-window",
+        alias: Some(c"linkw"),
         args: args_parse {
             template: b"abdks:t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-abdk] [-s src-window] [-t dst-window]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-abdk] [-s src-window] [-t dst-window]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_WINDOW,

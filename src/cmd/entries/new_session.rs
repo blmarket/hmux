@@ -60,8 +60,8 @@ pub const NEW_SESSION_TEMPLATE: [::core::ffi::c_char; 17] = unsafe {
 };
 pub static mut cmd_new_session_entry: cmd_entry =  {
     cmd_entry {
-        name: b"new-session\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"new\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"new-session",
+        alias: Some(c"new"),
         args: args_parse {
             template: b"Ac:dDe:EF:f:n:Ps:t:x:Xy:\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -69,8 +69,7 @@ pub static mut cmd_new_session_entry: cmd_entry =  {
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: b"[-AdDEPX] [-c start-directory] [-e environment] [-F format] [-f flags] [-n window-name] [-s session-name] [-t target-session] [-x width] [-y height] [shell-command [argument ...]]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-AdDEPX] [-c start-directory] [-e environment] [-F format] [-f flags] [-n window-name] [-s session-name] [-t target-session] [-x width] [-y height] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -90,15 +89,15 @@ pub static mut cmd_new_session_entry: cmd_entry =  {
 };
 pub static mut cmd_has_session_entry: cmd_entry =  {
     cmd_entry {
-        name: b"has-session\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"has\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"has-session",
+        alias: Some(c"has"),
         args: args_parse {
             template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_TARGET_SESSION_USAGE.as_ptr(),
+        usage: CMD_TARGET_SESSION_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

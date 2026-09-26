@@ -34,8 +34,8 @@ use crate::src::window::window_pane_find_by_id;
 use std::ffi::{CStr, CString};
 pub static mut cmd_refresh_client_entry: cmd_entry =  {
     cmd_entry {
-        name: b"refresh-client\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"refresh\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"refresh-client",
+        alias: Some(c"refresh"),
         args: args_parse {
             template: b"A:B:cC:Df:r:F:lLRSt:U\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -43,8 +43,7 @@ pub static mut cmd_refresh_client_entry: cmd_entry =  {
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-cDlLRSU] [-A pane:state] [-B name:what:format] [-C XxY] [-f flags] [-r pane:report] [-t target-client] [adjustment]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-cDlLRSU] [-A pane:state] [-B name:what:format] [-C XxY] [-f flags] [-r pane:report] [-t target-client] [adjustment]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

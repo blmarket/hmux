@@ -13,16 +13,15 @@ use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
 pub static mut cmd_find_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"find-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"findw\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"find-window",
+        alias: Some(c"findw"),
         args: args_parse {
             template: b"CiNrt:TZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-CiNrTZ] [-t target-pane] match-string\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-CiNrTZ] [-t target-pane] match-string",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

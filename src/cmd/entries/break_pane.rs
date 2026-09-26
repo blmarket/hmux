@@ -51,8 +51,8 @@ pub const BREAK_PANE_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
 };
 pub static mut cmd_break_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"break-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"breakp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"break-pane",
+        alias: Some(c"breakp"),
         args: args_parse {
             template: b"abdPF:n:s:t:Wx:X:y:Y:\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -60,8 +60,7 @@ pub static mut cmd_break_pane_entry: cmd_entry =  {
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-abdPW] [-F format] [-n window-name] [-s src-pane] [-t dst-window] [-x width] [-y height] [-X x-position] [-Y y-position]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-abdPW] [-F format] [-n window-name] [-s src-pane] [-t dst-window] [-x width] [-y height] [-X x-position] [-Y y-position]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,

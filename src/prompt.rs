@@ -10820,7 +10820,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     cmdent = &raw mut cmd_table as *mut *const cmd_entry;
     while !(*cmdent).is_null() {
-        let name = CStr::from_ptr((**cmdent).name);
+        let name = (**cmdent).name;
         if name.to_bytes().starts_with(prefix) {
             prompt_complete_add(&mut list, name);
         }

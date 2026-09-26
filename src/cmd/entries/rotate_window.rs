@@ -19,15 +19,15 @@ use crate::src::window::{
 };
 pub static mut cmd_rotate_window_entry: cmd_entry =  {
     cmd_entry {
-        name: b"rotate-window\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"rotatew\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"rotate-window",
+        alias: Some(c"rotatew"),
         args: args_parse {
             template: b"Dt:UZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-DUZ] [-t target-window]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-DUZ] [-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

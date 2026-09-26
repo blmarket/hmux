@@ -28,16 +28,15 @@ pub const LIST_SESSIONS_TEMPLATE: [::core::ffi::c_char; 175] = unsafe {
 };
 pub static mut cmd_list_sessions_entry: cmd_entry = {
     cmd_entry {
-        name: b"list-sessions\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"ls\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"list-sessions",
+        alias: Some(c"ls"),
         args: args_parse {
             template: b"F:f:O:r\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-r] [-F format] [-f filter] [-O order]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-r] [-F format] [-f filter] [-O order]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

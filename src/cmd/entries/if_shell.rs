@@ -44,16 +44,15 @@ unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
 }
 pub static mut cmd_if_shell_entry: cmd_entry =  {
     cmd_entry {
-        name: b"if-shell\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"if\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"if-shell",
+        alias: Some(c"if"),
         args: args_parse {
             template: b"bFt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 2 as ::core::ffi::c_int,
             upper: 3 as ::core::ffi::c_int,
             cb: Some(cmd_if_shell_args_parse),
         },
-        usage: b"[-bF] [-t target-pane] shell-command command [command]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-bF] [-t target-pane] shell-command command [command]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

@@ -22,8 +22,8 @@ use crate::src::window_switch::window_switch_mode;
 use crate::src::window_tree::window_tree_mode;
 pub static mut cmd_choose_tree_entry: cmd_entry =  {
     cmd_entry {
-        name: b"choose-tree\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"choose-tree",
+        alias: None,
         args: args_parse {
             template: b"F:f:GhK:kNO:rst:wyZ\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -33,8 +33,7 @@ pub static mut cmd_choose_tree_entry: cmd_entry =  {
                 cmd_choose_tree_args_parse
             ),
         },
-        usage: b"[-GhkNrswZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-GhkNrswZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -54,8 +53,8 @@ pub static mut cmd_choose_tree_entry: cmd_entry =  {
 };
 pub static mut cmd_choose_client_entry: cmd_entry =  {
     cmd_entry {
-        name: b"choose-client\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"choose-client",
+        alias: None,
         args: args_parse {
             template: b"F:f:hiK:kNO:rt:yZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
@@ -64,8 +63,7 @@ pub static mut cmd_choose_client_entry: cmd_entry =  {
                 cmd_choose_tree_args_parse
             ),
         },
-        usage: b"[-hikNrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-hikNrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -85,8 +83,8 @@ pub static mut cmd_choose_client_entry: cmd_entry =  {
 };
 pub static mut cmd_choose_buffer_entry: cmd_entry =  {
     cmd_entry {
-        name: b"choose-buffer\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"choose-buffer",
+        alias: None,
         args: args_parse {
             template: b"F:f:K:kNO:rt:yZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
@@ -95,8 +93,7 @@ pub static mut cmd_choose_buffer_entry: cmd_entry =  {
                 cmd_choose_tree_args_parse
             ),
         },
-        usage: b"[-kNrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-kNrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -116,16 +113,15 @@ pub static mut cmd_choose_buffer_entry: cmd_entry =  {
 };
 pub static mut cmd_customize_mode_entry: cmd_entry =  {
     cmd_entry {
-        name: b"customize-mode\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"customize-mode",
+        alias: None,
         args: args_parse {
             template: b"F:f:kNt:yZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-kNZ] [-F format] [-f filter] [-t target-pane]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-kNZ] [-F format] [-f filter] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -142,16 +138,15 @@ pub static mut cmd_customize_mode_entry: cmd_entry =  {
 };
 pub static mut cmd_switch_mode_entry: cmd_entry =  {
     cmd_entry {
-        name: b"switch-mode\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"switch-mode",
+        alias: None,
         args: args_parse {
             template: b"F:kst:wZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(cmd_choose_tree_args_parse),
         },
-        usage: b"[-kswZ] [-F format] [-t target-pane] [command]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-kswZ] [-F format] [-t target-pane] [command]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -168,16 +163,15 @@ pub static mut cmd_switch_mode_entry: cmd_entry =  {
 };
 pub static mut cmd_display_panes_entry: cmd_entry =  {
     cmd_entry {
-        name: b"display-panes\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"displayp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"display-panes",
+        alias: Some(c"displayp"),
         args: args_parse {
             template: b"d:kNs:t:Z\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(cmd_choose_tree_args_parse),
         },
-        usage: b"[-kNZ] [-d duration] [-s source-window] [-t target-pane] [template]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-kNZ] [-d duration] [-s source-window] [-t target-pane] [template]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_WINDOW,

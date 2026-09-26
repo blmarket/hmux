@@ -47,8 +47,8 @@ use crate::src::tmux::checkshell;
 use crate::src::tty::tty_window_offset;
 pub static mut cmd_display_menu_entry: cmd_entry =  {
     cmd_entry {
-        name: b"display-menu\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"menu\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"display-menu",
+        alias: Some(c"menu"),
         args: args_parse {
             template: b"b:c:C:H:s:S:MOt:T:x:y:\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -58,8 +58,7 @@ pub static mut cmd_display_menu_entry: cmd_entry =  {
                 cmd_display_menu_args_parse
             ),
         },
-        usage: b"[-MO] [-b border-lines] [-c target-client] [-C starting-choice] [-H selected-style] [-s style] [-S border-style] [-t target-pane] [-T title] [-x position] [-y position] name [key] [command] ...\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-MO] [-b border-lines] [-c target-client] [-C starting-choice] [-H selected-style] [-s style] [-S border-style] [-t target-pane] [-T title] [-x position] [-y position] name [key] [command] ...",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -79,8 +78,8 @@ pub static mut cmd_display_menu_entry: cmd_entry =  {
 };
 pub static mut cmd_display_popup_entry: cmd_entry =  {
     cmd_entry {
-        name: b"display-popup\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"popup\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"display-popup",
+        alias: Some(c"popup"),
         args: args_parse {
             template: b"Bb:Cc:d:e:Eh:kNs:S:t:T:w:x:y:\0" as *const u8
                 as *const ::core::ffi::c_char,
@@ -88,8 +87,7 @@ pub static mut cmd_display_popup_entry: cmd_entry =  {
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: b"[-BCEkN] [-b border-lines] [-c target-client] [-d start-directory] [-e environment] [-h height] [-s style] [-S border-style] [-t target-pane] [-T title] [-w width] [-x position] [-y position] [shell-command [argument ...]]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-BCEkN] [-b border-lines] [-c target-client] [-d start-directory] [-e environment] [-h height] [-s style] [-S border-style] [-t target-pane] [-T title] [-w width] [-x position] [-y position] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

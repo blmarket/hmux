@@ -24,16 +24,15 @@ use crate::src::sort::{sort_get_panes_window, sort_order_from_string};
 use crate::src::window::{winlinks_minmax, winlinks_next};
 pub static mut cmd_list_panes_entry: cmd_entry = {
     cmd_entry {
-        name: b"list-panes\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lsp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"list-panes",
+        alias: Some(c"lsp"),
         args: args_parse {
             template: b"aF:f:O:rst:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-asr] [-F format] [-f filter] [-O order][-t target-window]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-asr] [-F format] [-f filter] [-O order][-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

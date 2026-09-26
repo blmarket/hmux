@@ -44,15 +44,15 @@ pub const GLOB_NOMATCH: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 static mut cmd_source_file_depth: u_int = 0;
 pub static mut cmd_source_file_entry: cmd_entry =  {
     cmd_entry {
-        name: b"source-file\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"source\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"source-file",
+        alias: Some(c"source"),
         args: args_parse {
             template: b"t:Fnqv\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 1 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: b"[-Fnqv] [-t target-pane] path ...\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-Fnqv] [-t target-pane] path ...",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

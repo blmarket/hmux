@@ -88,22 +88,16 @@ pub const CMD_READONLY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_FIND_WINDOW_INDEX: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_CLIENT_TFLAG: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const CMD_TARGET_PANE_USAGE: [::core::ffi::c_char; 17] = unsafe {
-    ::core::mem::transmute::<[u8; 17], [::core::ffi::c_char; 17]>(*b"[-t target-pane]\0")
-};
+pub const CMD_TARGET_PANE_USAGE: &'static std::ffi::CStr = c"[-t target-pane]";
 pub const CMD_FIND_CANFAIL: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const CMD_TARGET_CLIENT_USAGE: [::core::ffi::c_char; 19] = unsafe {
-    ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"[-t target-client]\0")
-};
+pub const CMD_TARGET_CLIENT_USAGE: &'static std::ffi::CStr = c"[-t target-client]";
 pub const CMD_CLIENT_CFLAG: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const CMD_CLIENT_CANFAIL: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const CMD_FIND_QUIET: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMD_FIND_DEFAULT_MARKED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const CMD_FIND_EXACT_SESSION: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const CMD_FIND_EXACT_WINDOW: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const CMD_TARGET_SESSION_USAGE: [::core::ffi::c_char; 20] = unsafe {
-    ::core::mem::transmute::<[u8; 20], [::core::ffi::c_char; 20]>(*b"[-t target-session]\0")
-};
+pub const CMD_TARGET_SESSION_USAGE: &'static std::ffi::CStr = c"[-t target-session]";
 pub const CMD_PARSE_NOALIAS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_PARSE_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const CMD_PARSE_ONEGROUP: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
@@ -112,12 +106,8 @@ pub const CMDQ_STATE_CONTROL: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMDQ_STATE_NOHOOKS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMDQ_FIRED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const CMDQ_WAITING: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const CMD_BUFFER_USAGE: [::core::ffi::c_char; 17] = unsafe {
-    ::core::mem::transmute::<[u8; 17], [::core::ffi::c_char; 17]>(*b"[-b buffer-name]\0")
-};
-pub const CMD_TARGET_WINDOW_USAGE: [::core::ffi::c_char; 19] = unsafe {
-    ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"[-t target-window]\0")
-};
+pub const CMD_BUFFER_USAGE: &'static std::ffi::CStr = c"[-b buffer-name]";
+pub const CMD_TARGET_WINDOW_USAGE: &'static std::ffi::CStr = c"[-t target-window]";
 pub const CMD_SOURCE_FILE_DEPTH_LIMIT: ::core::ffi::c_int = 50 as ::core::ffi::c_int;
 
 #[cfg(test)]
@@ -274,10 +264,10 @@ pub struct cmd_entry_flag {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_entry {
-    pub name: *const ::core::ffi::c_char,
-    pub alias: *const ::core::ffi::c_char,
+    pub name: &'static std::ffi::CStr,
+    pub alias: Option<&'static std::ffi::CStr>,
     pub args: args_parse,
-    pub usage: *const ::core::ffi::c_char,
+    pub usage: &'static std::ffi::CStr,
     pub source: cmd_entry_flag,
     pub target: cmd_entry_flag,
     pub flags: ::core::ffi::c_int,

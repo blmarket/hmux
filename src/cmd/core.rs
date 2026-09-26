@@ -344,21 +344,17 @@ pub unsafe fn cmd_find(name: &CStr) -> Result<*const cmd_entry, CString> {
     loop_0 = &raw mut cmd_table as *mut *const cmd_entry;
     while !(*loop_0).is_null() {
         entry = *loop_0;
-        if !(*entry).alias.is_null()
-            && strcmp((*entry).alias, name.as_ptr()) == 0 as ::core::ffi::c_int
-        {
+        if (*entry).alias == Some(name) {
             ambiguous = 0 as ::core::ffi::c_int;
             found = entry;
             break;
         } else {
-            if !(strncmp((*entry).name, name.as_ptr(), name.to_bytes().len())
-                != 0 as ::core::ffi::c_int)
-            {
+            if (*entry).name.to_bytes().starts_with(name.to_bytes()) {
                 if !found.is_null() {
                     ambiguous = 1 as ::core::ffi::c_int;
                 }
                 found = entry;
-                if strcmp((*entry).name, name.as_ptr()) == 0 as ::core::ffi::c_int {
+                if (*entry).name == name {
                     break;
                 }
             }
@@ -370,12 +366,10 @@ pub unsafe fn cmd_find(name: &CStr) -> Result<*const cmd_entry, CString> {
         loop_0 = &raw mut cmd_table as *mut *const cmd_entry;
         while !(*loop_0).is_null() {
             entry = *loop_0;
-            if !(strncmp((*entry).name, name.as_ptr(), name.to_bytes().len())
-                != 0 as ::core::ffi::c_int)
-            {
+            if (*entry).name.to_bytes().starts_with(name.to_bytes()) {
                 if strlcat(
                     &raw mut s as *mut ::core::ffi::c_char,
-                    (*entry).name,
+                    (*entry).name.as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as size_t,
                 ) as usize
                     >= ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as usize
@@ -443,14 +437,14 @@ pub unsafe fn cmd_parse(
         Ok(args) => args,
         Err(ArgsParseError::Usage) => {
             let mut error = b"usage: ".to_vec();
-            error.extend_from_slice(CStr::from_ptr((*entry).name).to_bytes());
+            error.extend_from_slice((*entry).name.to_bytes());
             error.push(b' ');
-            error.extend_from_slice(CStr::from_ptr((*entry).usage).to_bytes());
+            error.extend_from_slice((*entry).usage.to_bytes());
             return Err(CString::new(error).expect("command diagnostic contains no NUL"));
         }
         Err(ArgsParseError::Message(message)) => {
             let mut error = b"command ".to_vec();
-            error.extend_from_slice(CStr::from_ptr((*entry).name).to_bytes());
+            error.extend_from_slice((*entry).name.to_bytes());
             error.extend_from_slice(b": ");
             error.extend_from_slice(message.as_bytes());
             return Err(CString::new(error).expect("command diagnostic contains no NUL"));
@@ -482,7 +476,7 @@ pub unsafe fn cmd_print(cmd: &cmd) -> CString {
 pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
     let args = args_print_cstring(cmd.args);
     let arguments = args.as_bytes();
-    let name = CStr::from_ptr((*cmd.entry).name).to_bytes();
+    let name = (*cmd.entry).name.to_bytes();
     let mut buf = Vec::with_capacity(
         name.len()
             + if arguments.is_empty() {

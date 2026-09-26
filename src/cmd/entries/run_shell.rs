@@ -67,8 +67,8 @@ unsafe fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
 }
 pub static mut cmd_run_shell_entry: cmd_entry =  {
     cmd_entry {
-        name: b"run-shell\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"run\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"run-shell",
+        alias: Some(c"run"),
         args: args_parse {
             template: b"bd:Ct:Es:c:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
@@ -77,8 +77,7 @@ pub static mut cmd_run_shell_entry: cmd_entry =  {
                 cmd_run_shell_args_parse
             ),
         },
-        usage: b"[-bCE] [-c start-directory] [-d delay] [-t target-pane] [shell-command [argument ...]]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-bCE] [-c start-directory] [-d delay] [-t target-pane] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

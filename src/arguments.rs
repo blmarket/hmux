@@ -1256,7 +1256,7 @@ pub(crate) unsafe fn args_make_commands_get_command_cstring(
         if first.is_null() {
             return CString::new(Vec::new()).expect("empty command name has no NUL");
         }
-        return CStr::from_ptr((*cmd_get_entry(first)).name).to_owned();
+        return (*cmd_get_entry(first)).name.to_owned();
     }
     let n = strcspn(
         ((*state).cmd)

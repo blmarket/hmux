@@ -18,16 +18,15 @@ use crate::src::compat::imsg::*;
 use crate::src::shared::session::session;
 pub static mut cmd_detach_client_entry: cmd_entry =  {
     cmd_entry {
-        name: b"detach-client\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"detach\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"detach-client",
+        alias: Some(c"detach"),
         args: args_parse {
             template: b"aE:s:t:P\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-aP] [-E shell-command] [-s target-session] [-t target-client]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-aP] [-E shell-command] [-s target-session] [-t target-client]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_SESSION,
@@ -44,15 +43,15 @@ pub static mut cmd_detach_client_entry: cmd_entry =  {
 };
 pub static mut cmd_suspend_client_entry: cmd_entry =  {
     cmd_entry {
-        name: b"suspend-client\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"suspendc\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"suspend-client",
+        alias: Some(c"suspendc"),
         args: args_parse {
             template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_TARGET_CLIENT_USAGE.as_ptr(),
+        usage: CMD_TARGET_CLIENT_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

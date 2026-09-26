@@ -44,16 +44,15 @@ pub const LIST_KEYS_TEMPLATE: [::core::ffi::c_char; 250] = unsafe {
 };
 pub static mut cmd_list_keys_entry: cmd_entry = {
     cmd_entry {
-        name: b"list-keys\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lsk\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"list-keys",
+        alias: Some(c"lsk"),
         args: args_parse {
             template: b"1aF:NO:P:rT:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-1aNr] [-F format] [-O order] [-P prefix-string][-T key-table] [key]\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-1aNr] [-F format] [-O order] [-P prefix-string][-T key-table] [key]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

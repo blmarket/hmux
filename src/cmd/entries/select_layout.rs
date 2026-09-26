@@ -23,16 +23,15 @@ use crate::src::window::window_replace_old_layout;
 use std::ffi::CString;
 pub static mut cmd_select_layout_entry: cmd_entry =  {
     cmd_entry {
-        name: b"select-layout\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"selectl\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"select-layout",
+        alias: Some(c"selectl"),
         args: args_parse {
             template: b"Enopt:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-Enop] [-t target-pane] [layout-name]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-Enop] [-t target-pane] [layout-name]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -49,15 +48,15 @@ pub static mut cmd_select_layout_entry: cmd_entry =  {
 };
 pub static mut cmd_next_layout_entry: cmd_entry =  {
     cmd_entry {
-        name: b"next-layout\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"nextl\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"next-layout",
+        alias: Some(c"nextl"),
         args: args_parse {
             template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_TARGET_WINDOW_USAGE.as_ptr(),
+        usage: CMD_TARGET_WINDOW_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -74,15 +73,15 @@ pub static mut cmd_next_layout_entry: cmd_entry =  {
 };
 pub static mut cmd_previous_layout_entry: cmd_entry =  {
     cmd_entry {
-        name: b"previous-layout\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"prevl\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"previous-layout",
+        alias: Some(c"prevl"),
         args: args_parse {
             template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_TARGET_WINDOW_USAGE.as_ptr(),
+        usage: CMD_TARGET_WINDOW_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

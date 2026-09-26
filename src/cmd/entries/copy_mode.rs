@@ -21,16 +21,15 @@ use crate::src::window_copy::{
 };
 pub static mut cmd_copy_mode_entry: cmd_entry =  {
     cmd_entry {
-        name: b"copy-mode\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"copy-mode",
+        alias: None,
         args: args_parse {
             template: b"dekHMqSs:t:u\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-dekHMqSu] [-s src-pane] [-t target-pane]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-dekHMqSu] [-s src-pane] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,
@@ -47,15 +46,15 @@ pub static mut cmd_copy_mode_entry: cmd_entry =  {
 };
 pub static mut cmd_clock_mode_entry: cmd_entry =  {
     cmd_entry {
-        name: b"clock-mode\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: c"clock-mode",
+        alias: None,
         args: args_parse {
             template: b"t:\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: CMD_TARGET_PANE_USAGE.as_ptr(),
+        usage: CMD_TARGET_PANE_USAGE,
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

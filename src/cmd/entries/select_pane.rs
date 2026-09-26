@@ -44,16 +44,15 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 pub static mut cmd_select_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"select-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"selectp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"select-pane",
+        alias: Some(c"selectp"),
         args: args_parse {
             template: b"DdegLlMmP:RT:t:UZ\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-DdeLlMmRUZ] [-T title] [-t target-pane]\0" as *const u8
-            as *const ::core::ffi::c_char,
+        usage: c"[-DdeLlMmRUZ] [-T title] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -70,15 +69,15 @@ pub static mut cmd_select_pane_entry: cmd_entry =  {
 };
 pub static mut cmd_last_pane_entry: cmd_entry =  {
     cmd_entry {
-        name: b"last-pane\0" as *const u8 as *const ::core::ffi::c_char,
-        alias: b"lastp\0" as *const u8 as *const ::core::ffi::c_char,
+        name: c"last-pane",
+        alias: Some(c"lastp"),
         args: args_parse {
             template: b"det:Z\0" as *const u8 as *const ::core::ffi::c_char,
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: b"[-deZ] [-t target-window]\0" as *const u8 as *const ::core::ffi::c_char,
+        usage: c"[-deZ] [-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
