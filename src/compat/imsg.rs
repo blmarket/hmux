@@ -12,7 +12,6 @@ use crate::src::shared::errno::{EBADMSG, EINVAL, ERANGE};
 use crate::src::shared::limits::UINT32_MAX;
 pub use crate::src::shared::message::{ibuf, ibufqueue, imsg, imsgbuf, msgbuf, OwnedIbuf};
 use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE, MAX_IMSGSIZE};
-use crate::src::shared::posix_io::iovec;
 use std::os::fd::{IntoRawFd, OwnedFd};
 
 pub const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -248,7 +247,7 @@ pub unsafe fn imsg_composev(
     mut id: uint32_t,
     mut pid: pid_t,
     mut fd: ::core::ffi::c_int,
-    mut iov: *const iovec,
+    mut iov: *const libc::iovec,
     mut iovcnt: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut current_block: u64;

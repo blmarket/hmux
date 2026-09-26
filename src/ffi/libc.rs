@@ -5,7 +5,7 @@ use crate::src::shared::abi::{
     socklen_t, speed_t, ssize_t, time_t, timeval,
 };
 use crate::src::shared::account::{group, passwd};
-use crate::src::shared::posix_io::{glob_t, iovec, stat};
+use crate::src::shared::posix_io::{glob_t, stat};
 use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::regex::{regex_t, regmatch_t};
 use crate::src::shared::signal::{sigaction, sigset_t};
@@ -46,7 +46,7 @@ pub struct pollfd {
 pub struct msghdr {
     pub msg_name: *mut ::core::ffi::c_void,
     pub msg_namelen: socklen_t,
-    pub msg_iov: *mut iovec,
+    pub msg_iov: *mut ::libc::iovec,
     pub msg_iovlen: size_t,
     pub msg_control: *mut ::core::ffi::c_void,
     pub msg_controllen: size_t,
@@ -284,7 +284,7 @@ extern "C" {
     ) -> ssize_t;
     pub fn readv(
         __fd: ::core::ffi::c_int,
-        __iovec: *const iovec,
+        __iovec: *const ::libc::iovec,
         __count: ::core::ffi::c_int,
     ) -> ssize_t;
     pub fn realloc(__ptr: *mut ::core::ffi::c_void, __size: size_t) -> *mut ::core::ffi::c_void;
@@ -524,7 +524,7 @@ extern "C" {
     ) -> ssize_t;
     pub fn writev(
         __fd: ::core::ffi::c_int,
-        __iovec: *const iovec,
+        __iovec: *const ::libc::iovec,
         __count: ::core::ffi::c_int,
     ) -> ssize_t;
     pub fn forkpty(

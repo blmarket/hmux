@@ -1,7 +1,7 @@
 //! Authoritative posix io declarations.
 use super::abi::{
     __blkcnt_t, __blksize_t, __dev_t, __gid_t, __ino_t, __mode_t, __nlink_t, __off_t, __size_t,
-    __syscall_slong_t, __uid_t, size_t,
+    __syscall_slong_t, __uid_t,
 };
 use super::time::timespec;
 pub use crate::src::ffi::libc::dirent;
@@ -78,11 +78,4 @@ pub struct glob_t {
         Option<unsafe extern "C" fn(*const ::core::ffi::c_char, *mut stat) -> ::core::ffi::c_int>,
     pub gl_stat:
         Option<unsafe extern "C" fn(*const ::core::ffi::c_char, *mut stat) -> ::core::ffi::c_int>,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct iovec {
-    pub iov_base: *mut ::core::ffi::c_void,
-    pub iov_len: size_t,
 }

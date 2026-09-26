@@ -10,7 +10,6 @@ pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERAN
 use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
 use crate::src::shared::message::IbufStorage;
 pub use crate::src::shared::message::{ibuf, ibufqueue, msgbuf, OwnedIbuf};
-use crate::src::shared::posix_io::iovec;
 use crate::src::shared::socket::SOL_SOCKET;
 use std::ffi::CString;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
@@ -953,7 +952,7 @@ pub unsafe fn ibuf_write(
     mut fd: ::core::ffi::c_int,
     mut msgbuf: *mut msgbuf,
 ) -> ::core::ffi::c_int {
-    let mut iov: [iovec; 1024] = [iovec {
+    let mut iov: [libc::iovec; 1024] = [libc::iovec {
         iov_base: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         iov_len: 0,
     }; 1024];
@@ -963,7 +962,7 @@ pub unsafe fn ibuf_write(
     memset(
         &raw mut iov as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<[iovec; 1024]>() as size_t,
+        ::core::mem::size_of::<[libc::iovec; 1024]>() as size_t,
     );
     for queued_buf in (*msgbuf).bufs.bufs.iter() {
         buf = queued_buf;
@@ -979,7 +978,7 @@ pub unsafe fn ibuf_write(
     }
     's_68: {
         loop {
-            n = writev(fd, &raw mut iov as *mut iovec, i as ::core::ffi::c_int);
+            n = writev(fd, &raw mut iov as *mut libc::iovec, i as ::core::ffi::c_int);
             if n == -(1 as ::core::ffi::c_int) as ssize_t {
                 if *__errno_location() == EINTR {
                     continue;
@@ -1000,7 +999,7 @@ pub unsafe fn msgbuf_write(
     mut fd: ::core::ffi::c_int,
     mut msgbuf: *mut msgbuf,
 ) -> ::core::ffi::c_int {
-    let mut iov: [iovec; 1024] = [iovec {
+    let mut iov: [libc::iovec; 1024] = [libc::iovec {
         iov_base: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         iov_len: 0,
     }; 1024];
@@ -1011,7 +1010,7 @@ pub unsafe fn msgbuf_write(
     let mut msg: msghdr = msghdr {
         msg_name: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         msg_namelen: 0,
-        msg_iov: ::core::ptr::null_mut::<iovec>(),
+        msg_iov: ::core::ptr::null_mut::<libc::iovec>(),
         msg_iovlen: 0,
         msg_control: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         msg_controllen: 0,
@@ -1029,7 +1028,7 @@ pub unsafe fn msgbuf_write(
     memset(
         &raw mut iov as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<[iovec; 1024]>() as size_t,
+        ::core::mem::size_of::<[libc::iovec; 1024]>() as size_t,
     );
     memset(
         &raw mut msg as *mut ::core::ffi::c_void,
@@ -1059,7 +1058,7 @@ pub unsafe fn msgbuf_write(
     if i == 0 as ::core::ffi::c_uint {
         return 0 as ::core::ffi::c_int;
     }
-    msg.msg_iov = &raw mut iov as *mut iovec;
+    msg.msg_iov = &raw mut iov as *mut libc::iovec;
     msg.msg_iovlen = i as size_t;
     if !buf0.is_null() {
         msg.msg_control = &raw mut cmsgbuf.buf as caddr_t as *mut ::core::ffi::c_void;
@@ -1195,7 +1194,7 @@ unsafe fn ibuf_read_process(
     1 as ::core::ffi::c_int
 }
 pub unsafe fn ibuf_read(mut fd: ::core::ffi::c_int, mut msgbuf: *mut msgbuf) -> ::core::ffi::c_int {
-    let mut iov: iovec = iovec {
+    let mut iov: libc::iovec = libc::iovec {
         iov_base: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         iov_len: 0,
     };
@@ -1235,7 +1234,7 @@ pub unsafe fn msgbuf_read(
     let mut msg: msghdr = msghdr {
         msg_name: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         msg_namelen: 0,
-        msg_iov: ::core::ptr::null_mut::<iovec>(),
+        msg_iov: ::core::ptr::null_mut::<libc::iovec>(),
         msg_iovlen: 0,
         msg_control: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         msg_controllen: 0,
@@ -1250,7 +1249,7 @@ pub unsafe fn msgbuf_read(
             __cmsg_data: [],
         },
     };
-    let mut iov: iovec = iovec {
+    let mut iov: libc::iovec = libc::iovec {
         iov_base: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         iov_len: 0,
     };
