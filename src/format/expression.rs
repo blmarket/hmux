@@ -288,10 +288,7 @@ pub(super) unsafe fn format_find(
         found = Some(options_to_cstring(o, array_key, 1 as ::core::ffi::c_int));
     } else {
         if let Some(entry) = format_table_get(CStr::from_ptr(key)) {
-            let mut context = FormatContext::from_tree(
-                std::ptr::NonNull::new(ft).expect("format tree is non-null"),
-            );
-            match entry.get(&mut context) {
+            match entry.get(ft) {
                 Some(FormatValue::String(value)) => found = Some(value),
                 Some(FormatValue::Time(value)) => t = value,
                 None => {}
